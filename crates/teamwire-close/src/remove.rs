@@ -204,10 +204,10 @@ pub(crate) fn run(
     // it is taken away; then the checkout, which git refuses to remove over
     // uncommitted work.
     if go("close_place", &mut report, &|c| {
-        guard(c, &member)?;
+        guard(c, &member, opts.stop)?;
         close_place(c, &member)
     }) && go("remove_worktree", &mut report, &|c| {
-        guard(c, &member)?;
+        guard(c, &member, opts.stop)?;
         remove_worktree(c, &member)
     }) {
         go("mark_removed", &mut report, &|c| {
@@ -219,8 +219,8 @@ pub(crate) fn run(
 
 /// Busy and dirty state read again right before a destructive step. A
 /// `--stop` stays allowed: the caller already accepted the lost turn.
-fn guard(ctx: &Ctx<'_>, member: &Member) -> Result<(), String> {
-    match dirty_refusal(ctx, member) {
+fn guard(ctx: &Ctx<'_>, member: &Member, stop: bool) -> Result<(), String> {
+    match busy_refusal(ctx, member, stop).or_else(|| dirty_refusal(ctx, member)) {
         Some(why) => Err(format!("the world changed: {why}")),
         None => Ok(()),
     }

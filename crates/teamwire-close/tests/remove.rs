@@ -515,3 +515,49 @@ fn the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_not
     assert_eq!(rig.member("api").state, MemberState::Started);
     assert!(rig.member("api").cwd.is_dir());
 }
+
+#[test]
+fn a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop() {
+    // The first checks pass; then a turn starts. The re-check right before
+    // the place closes sees it (CLS-3, CLS-4).
+    for stop in [false, true] {
+        let mut rig = Rig::new();
+        rig.add_pane_member("scout", MemberKind::Investigator);
+        let host = rig.host.clone();
+        let place = rig.place_of("scout");
+        let opts = CloseOpts {
+            stop,
+            ..CloseOpts::default()
+        };
+        let report = teamwire_close::close_observed(
+            &mut rig.ctx(),
+            CloseTarget::Member(role("scout")),
+            opts,
+            &|step| {
+                if step == "close_place" {
+                    host.set_state(&place, PlaceState::Working);
+                }
+            },
+        );
+        if stop {
+            assert_eq!(report.stopped_at, None, "{report:?}");
+            assert!(place_is_closed(&rig, "scout"));
+        } else {
+            assert_eq!(
+                report.stopped_at.as_deref(),
+                Some("close_place"),
+                "{report:?}"
+            );
+            assert!(
+                report
+                    .steps
+                    .last()
+                    .unwrap()
+                    .detail
+                    .contains("scout is busy")
+            );
+            assert!(!place_is_closed(&rig, "scout"), "the turn was not cut off");
+            assert_eq!(rig.member("scout").state, MemberState::Started);
+        }
+    }
+}
