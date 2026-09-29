@@ -289,6 +289,15 @@ impl World {
         Store::open_read_only(self.home.path(), &TeamName::parse(team).unwrap()).unwrap()
     }
 
+    /// The state of one member in the store.
+    pub fn state_of(&self, team: &str, role: &str) -> teamwire_core::MemberState {
+        self.store(team)
+            .read(|tx| tx.member(&Role::parse(role).unwrap()))
+            .unwrap()
+            .unwrap()
+            .state
+    }
+
     pub fn team_dir(&self, team: &str) -> PathBuf {
         self.home.path().join("teams").join(team)
     }
