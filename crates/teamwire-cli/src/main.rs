@@ -38,8 +38,6 @@ mod cmd {
 }
 mod wiring;
 
-use wiring::Wiring;
-
 /// Exit code for a usage error.
 const USAGE: u8 = 3;
 
@@ -452,35 +450,6 @@ fn init_logging() {
 fn internal_error(e: &dyn std::fmt::Display) -> ExitCode {
     eprintln!("teamwire: internal error: {e}");
     ExitCode::FAILURE
-}
-
-/// What every command that is not built yet does: say so on stderr and exit
-/// 3. A hook passes `exit_zero`, because a hook never fails a turn.
-#[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
-pub(crate) fn not_built(
-    command: &str,
-    global: &Global,
-    wiring: &Wiring,
-    exit_zero: bool,
-) -> ExitCode {
-    let Global { home } = global;
-    tracing::debug!(
-        command,
-        home = ?home,
-        lead_harness = %wiring.lead_harness,
-        lead_host = %wiring.lead_host,
-        harnesses = ?wiring.registry.harness_ids(),
-        hosts = ?wiring.registry.host_ids(),
-        sleep_hold = wiring.platform.sleep_hold().is_some(),
-        clock = ?wiring.clock,
-        "command not built yet"
-    );
-    eprintln!("teamwire {command}: not built yet");
-    if exit_zero {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(USAGE)
-    }
 }
 
 #[cfg(test)]
