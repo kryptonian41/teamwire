@@ -7,15 +7,23 @@
 //! Invariants: every test's `TEAMWIRE_HOME` is a fresh temporary directory,
 //! removed when the `TestHome` is dropped.
 
+mod bins;
 mod calls;
+pub mod claude_bin;
 mod clock;
 pub mod contract;
+mod fixture;
+mod fsutil;
 mod harness;
+pub mod herdr_bin;
 mod host;
 mod platform;
 
+pub use bins::{FakeBinDir, FakeBins};
 pub use calls::{Call, CallKind, CallLog};
+pub use claude_bin::{Fault as ClaudeFault, Script as ClaudeScript, Startup, Step};
 pub use clock::FakeClock;
+pub use fixture::{CliOutput, FakeHerdrEnv, HerdrFaults, LoggedCall};
 pub use harness::{ESCALATED_TRUST_TEXT, FakeHarness, PLAIN_TRUST_TEXT, PROMPT_TEXT};
 pub use host::{FakeHost, Fault, SpawnedWith};
 pub use platform::{FakePlatform, FakeSleepHold, HoldEvent};
