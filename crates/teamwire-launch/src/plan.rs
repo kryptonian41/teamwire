@@ -3,29 +3,24 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use globset::Glob;
 use teamwire_core::{
     Address, HarnessId, HostId, IdentityChannel, MemberKind, MemberSpec, MemberState, Mode, NoHost,
     Role, TeamSpec,
 };
 
-use crate::git;
 use crate::validate::{Existing, TITLE_MAX, host_or, is_failed, live_names};
 use crate::{LeadPlan, PlannedMember, SpecError, ValidateEnv, WorktreePlan};
 
-/// The harness a member gets when neither it nor the team names one.
-const MAX_OPEN_IMPLEMENTERS: usize = 5;
-
 /// State shared while the members of one spec are checked.
 pub(crate) struct Cx<'a> {
-    env: &'a ValidateEnv<'a>,
-    spec: &'a TeamSpec,
-    existing: Option<&'a Existing>,
-    lead: &'a LeadPlan,
-    roles: BTreeSet<String>,
-    titles: BTreeMap<String, Role>,
-    slugs: BTreeMap<(PathBuf, String), String>,
-    live: BTreeMap<HostId, Result<Vec<String>, String>>,
+    pub(crate) env: &'a ValidateEnv<'a>,
+    pub(crate) spec: &'a TeamSpec,
+    pub(crate) existing: Option<&'a Existing>,
+    pub(crate) lead: &'a LeadPlan,
+    pub(crate) roles: BTreeSet<String>,
+    pub(crate) titles: BTreeMap<String, Role>,
+    pub(crate) slugs: BTreeMap<(PathBuf, String), String>,
+    pub(crate) live: BTreeMap<HostId, Result<Vec<String>, String>>,
 }
 
 impl<'a> Cx<'a> {
@@ -77,7 +72,7 @@ fn is_home(env: &ValidateEnv<'_>, path: &Path) -> bool {
 }
 
 /// A branch name git accepts and that makes a safe directory name.
-fn branch_ok(branch: &str) -> bool {
+pub(crate) fn branch_ok(branch: &str) -> bool {
     !branch.is_empty()
         && !branch.starts_with(['-', '/', '.'])
         && !branch.ends_with(['/', '.'])
@@ -180,7 +175,7 @@ pub(crate) fn plan_member(
     })
 }
 
-type Bad<'a> = dyn FnMut(&str, &str, String) + 'a;
+pub(crate) type Bad<'a> = dyn FnMut(&str, &str, String) + 'a;
 
 /// LCH-5: a role is never reused, except one that failed before it started.
 fn role_state(cx: &Cx<'_>, child: &MemberSpec, bad: &mut Bad<'_>) -> bool {
@@ -363,174 +358,6 @@ fn location(
     if child.mode == Mode::Pane {
         return (Some(dir.to_path_buf()), None);
     }
-    let plan = worktree_plan(cx, child, dir, bad, warnings);
+    let plan = crate::plan_worktree::worktree_plan(cx, child, dir, bad, warnings);
     (plan.as_ref().map(|w| w.path.clone()), plan)
-}
-
-fn worktree_plan(
-    cx: &mut Cx<'_>,
-    child: &MemberSpec,
-    repo: &Path,
-    bad: &mut Bad<'_>,
-    warnings: &mut Vec<String>,
-) -> Option<WorktreePlan> {
-    let role = child.role.as_str();
-    let platform = cx.env.platform;
-    let branch = child.branch.clone().unwrap_or_else(|| role.to_owned());
-    if !branch_ok(&branch) {
-        bad(
-            "branch",
-            "bad_branch",
-            format!("branch {branch:?} is not a usable branch name"),
-        );
-        return None;
-    }
-    let slug = branch.replace('/', "-");
-    if let Some(other) = cx
-        .slugs
-        .insert((repo.to_path_buf(), slug.clone()), role.to_owned())
-    {
-        bad(
-            "branch",
-            "slug_collision",
-            format!("roles {other} and {role} both map to the directory .worktrees/{slug}"),
-        );
-        return None;
-    }
-    let path = repo.join(".worktrees").join(&slug);
-    if path.exists() {
-        bad(
-            "branch",
-            "path_exists",
-            format!("{} already exists", path.display()),
-        );
-        return None;
-    }
-    match git::run(platform, repo, &["rev-parse", "--git-dir"]) {
-        Ok(out) if out.success() => {}
-        Ok(out) => {
-            bad(
-                "repo",
-                "not_a_repo",
-                format!(
-                    "{} is not a git repository: {}",
-                    repo.display(),
-                    git::failure_text(&out)
-                ),
-            );
-            return None;
-        }
-        Err(e) => {
-            bad("repo", "git_failed", e);
-            return None;
-        }
-    }
-    let head = format!("refs/heads/{branch}");
-    let branch_exists = git::run(platform, repo, &["rev-parse", "--verify", "--quiet", &head])
-        .is_ok_and(|o| o.success());
-    if branch_exists {
-        let ignored = child
-            .base
-            .as_ref()
-            .map_or(String::new(), |b| format!("; base {b} is ignored"));
-        warnings.push(format!(
-            "role {role}: branch {branch} already exists and is reused{ignored}"
-        ));
-    } else if let Some(base) = &child.base {
-        let spec = format!("{base}^{{commit}}");
-        if !git::run(platform, repo, &["rev-parse", "--verify", "--quiet", &spec])
-            .is_ok_and(|o| o.success())
-        {
-            bad(
-                "base",
-                "bad_base",
-                format!("base {base} is not a commit in {}", repo.display()),
-            );
-            return None;
-        }
-    }
-    let ignore_path = format!(".worktrees/{slug}/x");
-    if git::run(platform, repo, &["check-ignore", "-q", &ignore_path])
-        .is_ok_and(|o| o.exit_code == 1)
-    {
-        warnings.push(format!(
-            "role {role}: .worktrees is not ignored by {}; add it to .gitignore or `git add -A` will commit the checkout",
-            repo.display()
-        ));
-    }
-    Some(WorktreePlan {
-        repo: repo.to_path_buf(),
-        branch,
-        path,
-        base: child.base.clone(),
-        branch_exists,
-    })
-}
-
-/// True when two `owns` patterns can name the same path (LCH-18).
-fn owns_overlap(a: &str, b: &str) -> bool {
-    let (a, b) = (a.trim_start_matches("./"), b.trim_start_matches("./"));
-    if a == b {
-        return true;
-    }
-    let under = |dir: &str, other: &str| dir.ends_with('/') && other.starts_with(dir);
-    if under(a, b) || under(b, a) {
-        return true;
-    }
-    let hit = |pattern: &str, text: &str| {
-        Glob::new(pattern).is_ok_and(|g| g.compile_matcher().is_match(text))
-    };
-    hit(a, b) || hit(b, a)
-}
-
-/// The planning rules of LCH-18. They warn; they never refuse.
-pub(crate) fn planning_warnings(
-    cx: &Cx<'_>,
-    members: &[PlannedMember],
-    warnings: &mut Vec<String>,
-) {
-    let implementers: Vec<&PlannedMember> = members
-        .iter()
-        .filter(|m| m.kind == MemberKind::Implementer)
-        .collect();
-    for m in &implementers {
-        if m.spec.check.is_none() || m.spec.owns.is_empty() {
-            warnings.push(format!(
-                "role {}: an implementer without a check and an owns list cannot be verified",
-                m.spec.role
-            ));
-        }
-    }
-    for (i, a) in implementers.iter().enumerate() {
-        for b in implementers.iter().skip(i + 1) {
-            let clash = a.spec.owns.iter().find_map(|x| {
-                b.spec
-                    .owns
-                    .iter()
-                    .find(|y| owns_overlap(x, y))
-                    .map(|y| (x, y))
-            });
-            if let Some((x, y)) = clash {
-                warnings.push(format!(
-                    "roles {} and {} both own overlapping paths ({x} and {y})",
-                    a.spec.role, b.spec.role
-                ));
-            }
-        }
-    }
-    let open = cx.existing.map_or(0, |e| {
-        e.members
-            .iter()
-            .filter(|m| {
-                m.kind == MemberKind::Implementer
-                    && matches!(m.state, MemberState::Creating | MemberState::Started)
-            })
-            .count()
-    });
-    if open + implementers.len() > MAX_OPEN_IMPLEMENTERS {
-        warnings.push(format!(
-            "{} implementer branches would be open; more than {MAX_OPEN_IMPLEMENTERS} makes integration hard",
-            open + implementers.len()
-        ));
-    }
 }

@@ -186,3 +186,86 @@ fn add_to_a_closed_team_refused() {
         ["team_closed"]
     );
 }
+
+#[test]
+fn hanging_agent_start_fails_one_member_only() {
+    use teamwire_core::MemberState;
+    use teamwire_fakes::Fault;
+    use teamwire_launch::LaunchOutcome;
+    let rig = Rig::new();
+    rig.host.inject("spawn", Fault::Hang, 1);
+    let repo = rig.repo("proj");
+    let spec = team_spec(
+        "demo",
+        &[
+            worktree_member("first", "First", &repo),
+            worktree_member("second", "Second", &repo),
+        ],
+    );
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, store) = rig.launch("demo", plan);
+    let outcomes: Vec<&LaunchOutcome> = report.members.iter().map(|m| &m.outcome).collect();
+    let first = format!("{:?}", outcomes.first().unwrap());
+    assert!(
+        first.starts_with("Failed(") && first.contains("timeout"),
+        "{first}"
+    );
+    assert_eq!(outcomes.get(1).copied(), Some(&LaunchOutcome::Started));
+    assert_eq!(
+        common::member_row(&store, "first").unwrap().state,
+        MemberState::Failed
+    );
+    assert_eq!(
+        common::member_row(&store, "second").unwrap().state,
+        MemberState::Started
+    );
+    assert!(
+        !repo.join(".worktrees/first").exists(),
+        "the failed member's checkout is taken back"
+    );
+    assert!(repo.join(".worktrees/second").is_dir());
+}
+
+#[test]
+fn a_host_that_is_not_ready_is_retried_and_a_taken_name_refuses_the_member() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    use teamwire_launch::LaunchOutcome;
+    let rig = Rig::new();
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(HostErrorCode::NotReady, "agent_not_ready")),
+        1,
+    );
+    let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
+    let (report, _store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    assert_eq!(rig.host.log().count_named("spawn"), 2);
+
+    let rig = Rig::new();
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(
+            HostErrorCode::BadArgument,
+            "agent_name_taken: tw_demo_a",
+        )),
+        1,
+    );
+    let (report, store) = rig.launch("demo", rig.validate(&spec_for(&rig), false).unwrap());
+    assert!(matches!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Refused(_)
+    ));
+    assert_eq!(rig.host.log().count_named("spawn"), 1, "not retried");
+    assert_eq!(
+        common::member_row(&store, "a").unwrap().state,
+        teamwire_core::MemberState::Failed
+    );
+}
+
+fn spec_for(rig: &Rig) -> serde_json::Value {
+    team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())])
+}

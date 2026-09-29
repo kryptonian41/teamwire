@@ -109,7 +109,7 @@ pub fn validate(
         .filter_map(|child| plan::plan_member(&mut cx, child, &mut errors, &mut warnings))
         .collect();
     disk_check(env, &members, &mut errors);
-    plan::planning_warnings(&cx, &members, &mut warnings);
+    crate::plan_rules::planning_warnings(&cx, &members, &mut warnings);
     if !errors.is_empty() {
         return Err(errors);
     }

@@ -287,3 +287,45 @@ pub(crate) fn new_member(role: &str, title: &str, cwd: &Path) -> teamwire_store:
         deadline_s: 1800,
     }
 }
+
+/// The member row, read back from the store.
+pub(crate) fn member_row(store: &Store, role: &str) -> Option<teamwire_core::Member> {
+    let role = teamwire_core::Role::parse(role).unwrap();
+    store.read(|tx| tx.member(&role)).unwrap()
+}
+
+/// The events written for one role, as (type, data).
+pub(crate) fn role_events(store: &Store, role: &str) -> Vec<(String, Value)> {
+    let role = teamwire_core::Role::parse(role).unwrap();
+    store
+        .read(|tx| tx.events_of_role(&role)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind.as_str().to_owned(), e.data))
+        .collect()
+}
+
+/// A one-member team spec with a worktree implementer.
+pub(crate) fn one_worktree_team(rig: &Rig, team: &str) -> (Value, PathBuf) {
+    let repo = rig.repo("proj");
+    (
+        team_spec(team, &[worktree_member("api", "API work", &repo)]),
+        repo,
+    )
+}
+
+/// The value at a JSON pointer such as `/steps/setup`.
+pub(crate) fn jget<'a>(value: &'a Value, pointer: &str) -> &'a Value {
+    value.pointer(pointer).unwrap()
+}
+
+pub(crate) fn all_files_under(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_dir() {
+            all_files_under(&path, out);
+        } else {
+            out.push(path);
+        }
+    }
+}

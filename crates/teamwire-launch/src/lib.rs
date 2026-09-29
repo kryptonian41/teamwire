@@ -16,9 +16,13 @@ mod env;
 mod git;
 mod hold;
 mod member;
+mod member_steps;
 mod plan;
+mod plan_rules;
+mod plan_worktree;
 mod spec;
 mod validate;
+mod worktree;
 
 use std::path::PathBuf;
 
@@ -148,8 +152,12 @@ pub(crate) fn watch_command(team: &TeamName) -> String {
 
 /// Launches every member of `plan`, then starts or reuses the sleep hold.
 /// One member's failure never stops the others (LCH-4).
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "the agreed signature (docs/api/core.md) hands the plan over"
+)]
 pub fn launch(ctx: &mut Ctx<'_>, plan: ValidPlan) -> LaunchReport {
-    member::launch_all(ctx, plan)
+    member::launch_all(ctx, &plan)
 }
 
 #[cfg(test)]
