@@ -25,7 +25,7 @@ use teamwire_store::{Ctx, NewMember, NewTeam, Store};
 /// Runs real processes for `run`, unless the test scripted the next answer;
 /// everything else is the in-process fake.
 #[derive(Debug)]
-pub(crate) struct TestPlatform {
+pub struct TestPlatform {
     inner: FakePlatform,
     runs: Mutex<Vec<(Command, Duration)>>,
     scripted: Mutex<VecDeque<(String, RunOutput)>>,
@@ -41,12 +41,12 @@ impl TestPlatform {
     }
 
     /// Every command passed to `run`, with its timeout, in order.
-    pub(crate) fn commands(&self) -> Vec<(Command, Duration)> {
+    pub fn commands(&self) -> Vec<(Command, Duration)> {
         self.runs.lock().unwrap().clone()
     }
 
     /// Answers the next `run` of `program` with `out` instead of starting it.
-    pub(crate) fn script_next(&self, program: &str, out: RunOutput) {
+    pub fn script_next(&self, program: &str, out: RunOutput) {
         self.scripted
             .lock()
             .unwrap()
@@ -127,13 +127,14 @@ impl Platform for TestPlatform {
 }
 
 /// A git repository in a temporary directory.
-pub(crate) struct Repo {
+#[derive(Debug)]
+pub struct Repo {
     dir: tempfile::TempDir,
 }
 
 impl Repo {
     /// `main` with one commit that holds `files`, authored at `at` (unix seconds).
-    pub(crate) fn init(files: &[(&str, &str)], at: i64) -> Self {
+    pub fn init(files: &[(&str, &str)], at: i64) -> Self {
         let repo = Self {
             dir: tempfile::Builder::new()
                 .prefix("teamwire-verify-repo-")
@@ -148,12 +149,12 @@ impl Repo {
         repo
     }
 
-    pub(crate) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         self.dir.path()
     }
 
     /// Runs git in the repository; panics unless it exits 0. Returns stdout.
-    pub(crate) fn git(&self, args: &[&str]) -> String {
+    pub fn git(&self, args: &[&str]) -> String {
         let out = std::process::Command::new("git")
             .args(args)
             .current_dir(self.path())
@@ -169,14 +170,14 @@ impl Repo {
     }
 
     /// Writes `files` and commits them, authored and committed at `at`.
-    pub(crate) fn commit(&self, files: &[(&str, &str)], message: &str, at: i64) -> String {
+    pub fn commit(&self, files: &[(&str, &str)], message: &str, at: i64) -> String {
         self.write(files);
         self.git(&["add", "-A", "--", "."]);
         self.git_at(&["commit", "--quiet", "-m", message], at)
     }
 
     /// Like `git`, with author and committer time fixed at `at`.
-    pub(crate) fn git_at(&self, args: &[&str], at: i64) -> String {
+    pub fn git_at(&self, args: &[&str], at: i64) -> String {
         let date = format!("{at} +0000");
         let out = std::process::Command::new("git")
             .args(args)
@@ -195,7 +196,7 @@ impl Repo {
     }
 
     /// Writes files without committing them.
-    pub(crate) fn write(&self, files: &[(&str, &str)]) {
+    pub fn write(&self, files: &[(&str, &str)]) {
         for (path, content) in files {
             let full = self.path().join(path);
             std::fs::create_dir_all(full.parent().unwrap()).unwrap();
@@ -203,40 +204,48 @@ impl Repo {
         }
     }
 
-    pub(crate) fn remove(&self, path: &str) {
+    pub fn remove(&self, path: &str) {
         std::fs::remove_file(self.path().join(path)).unwrap();
     }
 
-    pub(crate) fn head(&self) -> String {
+    pub fn head(&self) -> String {
         self.git(&["rev-parse", "HEAD"])
     }
 }
 
 /// What a test says about the one member it adds.
-pub(crate) struct MemberSetup<'a> {
-    pub(crate) role: &'a str,
-    pub(crate) kind: MemberKind,
-    pub(crate) mode: Mode,
-    pub(crate) check: Option<&'a str>,
-    pub(crate) owns: &'a [&'a str],
-    pub(crate) base_sha: Option<String>,
-    pub(crate) cwd: PathBuf,
+#[derive(Debug)]
+pub struct MemberSetup<'a> {
+    pub role: &'a str,
+    pub kind: MemberKind,
+    pub mode: Mode,
+    pub check: Option<&'a str>,
+    pub owns: &'a [&'a str],
+    pub base_sha: Option<String>,
+    pub cwd: PathBuf,
 }
 
 /// A team store, the fakes, and everything a `Ctx` borrows.
-pub(crate) struct Fixture {
-    pub(crate) home: TestHome,
-    pub(crate) store: Store,
-    pub(crate) platform: TestPlatform,
-    pub(crate) clock: FakeClock,
-    pub(crate) registry: Registry,
-    pub(crate) config: Config,
+#[derive(Debug)]
+pub struct Fixture {
+    pub home: TestHome,
+    pub store: Store,
+    pub platform: TestPlatform,
+    pub clock: FakeClock,
+    pub registry: Registry,
+    pub config: Config,
+}
+
+impl Default for Fixture {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Fixture {
-    pub(crate) const TEAM: &'static str = "alpha";
+    pub const TEAM: &'static str = "alpha";
 
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let home = TestHome::new().unwrap();
         let team = TeamName::parse(Self::TEAM).unwrap();
         let mut store = Store::open(home.path(), &team).unwrap();
@@ -267,7 +276,7 @@ impl Fixture {
         }
     }
 
-    pub(crate) fn ctx(&mut self) -> Ctx<'_> {
+    pub fn ctx(&mut self) -> Ctx<'_> {
         Ctx {
             home: self.home.path(),
             store: &mut self.store,
@@ -279,12 +288,12 @@ impl Fixture {
     }
 
     /// `$TEAMWIRE_HOME/teams/alpha`.
-    pub(crate) fn team_dir(&self) -> PathBuf {
+    pub fn team_dir(&self) -> PathBuf {
         self.home.path().join("teams").join(Self::TEAM)
     }
 
     /// Adds a member and starts it. Returns the stored row.
-    pub(crate) fn add_member(&mut self, setup: &MemberSetup<'_>) -> Member {
+    pub fn add_member(&mut self, setup: &MemberSetup<'_>) -> Member {
         let role = Role::parse(setup.role).unwrap();
         let now = teamwire_core::Clock::now(&self.clock);
         let new = NewMember {
@@ -312,13 +321,13 @@ impl Fixture {
         self.member(setup.role)
     }
 
-    pub(crate) fn member(&self, role: &str) -> Member {
+    pub fn member(&self, role: &str) -> Member {
         let role = Role::parse(role).unwrap();
         self.store.read(|tx| tx.member(&role)).unwrap().unwrap()
     }
 
     /// Writes `reports/<role>.md` under the team directory.
-    pub(crate) fn write_report(&self, role: &str, text: &str) {
+    pub fn write_report(&self, role: &str, text: &str) {
         let dir = self.team_dir().join("reports");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(format!("{role}.md")), text).unwrap();
@@ -326,7 +335,7 @@ impl Fixture {
 }
 
 /// An implementer in a worktree of `repo`, started from its first commit.
-pub(crate) fn implementer<'a>(
+pub fn implementer<'a>(
     role: &'a str,
     repo: &Repo,
     check: Option<&'a str>,
@@ -344,6 +353,6 @@ pub(crate) fn implementer<'a>(
 }
 
 /// `FakeClock`'s starting time, in unix seconds.
-pub(crate) fn start_secs() -> i64 {
+pub fn start_secs() -> i64 {
     FakeClock::DEFAULT_START_MILLIS / 1000
 }

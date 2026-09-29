@@ -10,7 +10,7 @@
 )]
 
 #[path = "support/fixture.rs"]
-mod fixture;
+pub mod fixture;
 
 use fixture::{Fixture, Repo, implementer, start_secs};
 use sha2::{Digest, Sha256};
