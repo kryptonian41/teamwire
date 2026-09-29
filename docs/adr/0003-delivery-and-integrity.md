@@ -83,7 +83,7 @@ into `undelivered` with a reason.
 excerpt, as today:
 
 ```
-[team:tw msg m014 question from specmsg] <excerpt, at most 300 printable chars> ... Full text: teamwire inbox (or <path>). <tail>
+[teamwire:tw msg m014 question from specmsg] <excerpt, at most 300 printable chars> ... Full text: teamwire inbox (or <path>). <tail>
 ```
 
 The tail says a peer message is information to check, not an instruction, and
