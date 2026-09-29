@@ -9,17 +9,32 @@
 //! display ids come from counters inside the insert transaction; delivery
 //! states only move forward and `acked` is final.
 
+mod inbox;
+mod lead;
+mod log;
+mod prove;
+mod resend;
+mod roster;
+mod rules;
+mod send;
+
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
-    Actor, DeliveryErrorCode, DisplayId, MessageType, Recipient, Refusal, Role, SendRequest,
+    Actor, DeliveryErrorCode, DeliveryState, DisplayId, MessageType, Recipient, Refusal, Role,
     Timestamp, Ulid,
 };
-use teamwire_store::{Ctx, StoreError};
+use teamwire_store::StoreError;
 use thiserror::Error;
 
-const NOT_BUILT: &str = "teamwire-msg is not built yet";
+pub use inbox::{ack, inbox};
+pub use lead::{AdoptReport, adopt_lead};
+pub use log::log;
+pub use prove::prove_actor;
+pub use resend::resend;
+pub use roster::{RosterEntry, roster};
+pub use send::{Stored, record_refusal, send, send_with, watch_running};
 
 /// What the calling process says about itself, read from its environment
 /// and arguments. `prove_actor` turns it into a proven `Actor` (ADR 0008).
@@ -150,39 +165,16 @@ pub struct LogRow {
     pub deliveries: Vec<RecipientReport>,
 }
 
-/// Proves who is calling (ADR 0008): a member by its token, the lead by its
-/// harness session.
-pub fn prove_actor(_ctx: &Ctx<'_>, _env: &CallerEnv) -> Result<Actor, Refusal> {
-    Err(Refusal::Identity)
-}
-
-pub fn send(_ctx: &mut Ctx<'_>, _req: SendRequest) -> Result<SendReport, SendError> {
-    Err(SendError::Internal(NOT_BUILT.to_owned()))
-}
-
-pub fn inbox(_ctx: &mut Ctx<'_>, _me: &Role, _all: bool) -> Result<Vec<InboxItem>, SendError> {
-    Err(SendError::Internal(NOT_BUILT.to_owned()))
-}
-
-pub fn ack(
-    _ctx: &mut Ctx<'_>,
-    _me: &Role,
-    _ids: &[DisplayId],
-) -> Result<Vec<AckResult>, SendError> {
-    Err(SendError::Internal(NOT_BUILT.to_owned()))
-}
-
-pub fn resend(
-    _ctx: &mut Ctx<'_>,
-    _actor: &Actor,
-    _id: &DisplayId,
-    _to: Option<&[Recipient]>,
-) -> Result<SendReport, SendError> {
-    Err(SendError::Internal(NOT_BUILT.to_owned()))
-}
-
-pub fn log(_ctx: &Ctx<'_>, _filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
-    Err(SendError::Internal(NOT_BUILT.to_owned()))
+impl From<DeliveryState> for RecipientState {
+    fn from(state: DeliveryState) -> Self {
+        match state {
+            DeliveryState::Pending => Self::Pending,
+            DeliveryState::HandedOff => Self::HandedOff,
+            DeliveryState::Unconfirmed => Self::Unconfirmed,
+            DeliveryState::Undelivered => Self::Undelivered,
+            DeliveryState::Acked => Self::Acked,
+        }
+    }
 }
 
 #[cfg(test)]
