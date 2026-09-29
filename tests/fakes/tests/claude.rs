@@ -755,3 +755,55 @@ fn the_agent_gets_its_panes_herdr_variables() {
         format!("1|{pane_id}")
     );
 }
+
+#[test]
+fn dropping_the_env_ends_a_step_shell_that_never_finishes() {
+    let pid_file;
+    {
+        let mut env = FakeHerdrEnv::new().unwrap();
+        env.set_script(&script(vec![Step::Run(
+            r#"echo $$ > "$TMPDIR/step.pid"; while true; do sleep 0.1; done"#.into(),
+        )]))
+        .unwrap();
+        let settings = settings_with(&env, LOGGING_HOOK, &identity());
+        let pane_id = pane(&env);
+        let started = env
+            .run(&[
+                "agent",
+                "start",
+                "tw_demo_api",
+                "--kind",
+                "claude",
+                "--pane",
+                &pane_id,
+                "--",
+                "--settings",
+                &settings,
+            ])
+            .unwrap();
+        assert_eq!(started.code, Some(0), "{started:?}");
+        // The step never finishes, so the prompt is sent without --wait.
+        let sent = env
+            .run(&["agent", "prompt", "tw_demo_api", "loop"])
+            .unwrap();
+        assert_eq!(sent.code, Some(0), "{sent:?}");
+        pid_file = tmp(&env, "step.pid");
+        wait_for_file(&pid_file);
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        drop(env);
+        let pid = pid.trim().to_owned();
+        let mut gone = false;
+        for _ in 0..50 {
+            let alive = std::process::Command::new("kill")
+                .args(["-0", &pid])
+                .status()
+                .is_ok_and(|s| s.success());
+            if !alive {
+                gone = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(gone, "the step shell {pid} outlived the fake environment");
+    }
+}

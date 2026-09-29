@@ -64,7 +64,10 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
             .is_ok_and(|s| s.success())
 }
 
-/// Sends SIGTERM to a process. Best effort: an error means it was gone.
+/// Sends SIGTERM to a process and to its process group. `fake-herdr` starts
+/// each agent as the leader of its own group, so the group signal also ends
+/// the shells its steps started, which would otherwise outlive a failing
+/// test. Best effort: an error means it was gone.
 #[expect(
     clippy::disallowed_methods,
     reason = "the fake binaries end a child with kill(1); this crate may start processes"
@@ -73,12 +76,14 @@ pub(crate) fn terminate(pid: u32) {
     if pid == 0 {
         return;
     }
-    std::process::Command::new("kill")
-        .arg(pid.to_string())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .ok();
+    for target in [format!("-{pid}"), pid.to_string()] {
+        std::process::Command::new("kill")
+            .args(["-TERM", "--", &target])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .ok();
+    }
 }
 
 /// Elapsed real time, for the fake binaries' waits. They run as separate
