@@ -20,6 +20,24 @@ use teamwire_core::{
 };
 use time::OffsetDateTime;
 
+mod run;
+
+/// Map an I/O error to the platform error code a caller can act on.
+pub(crate) fn io_error(what: &str, err: &std::io::Error) -> PlatformError {
+    use std::io::ErrorKind;
+    let kind = err.kind();
+    let code = if kind == ErrorKind::NotFound {
+        PlatformErrorCode::NotFound
+    } else if kind == ErrorKind::PermissionDenied {
+        PlatformErrorCode::PermissionDenied
+    } else if kind == ErrorKind::StorageFull {
+        PlatformErrorCode::NoSpace
+    } else {
+        PlatformErrorCode::Io
+    };
+    PlatformError::new(code, format!("{what}: {err}"))
+}
+
 fn not_built() -> PlatformError {
     PlatformError::new(
         PlatformErrorCode::Other,
@@ -46,8 +64,8 @@ macro_rules! not_built_platform {
                 Err(not_built())
             }
 
-            fn run(&self, _cmd: &Command, _timeout: Duration) -> Result<RunOutput, PlatformError> {
-                Err(not_built())
+            fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
+                run::run_command(cmd, timeout)
             }
 
             fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> Result<(), PlatformError> {
