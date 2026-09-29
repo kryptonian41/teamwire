@@ -1,0 +1,29 @@
+[package]
+name = "teamwire-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[dependencies]
+rmcp = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+teamwire-core = { workspace = true }
+teamwire-msg = { workspace = true }
+teamwire-report = { workspace = true }
+teamwire-store = { workspace = true }
+teamwire-watch = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client"] }
+teamwire-fakes = { workspace = true }
+tempfile = { workspace = true }
+
+[lints]
+workspace = true
