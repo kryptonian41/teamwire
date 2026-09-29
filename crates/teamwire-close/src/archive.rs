@@ -51,6 +51,11 @@ fn first_free(parent: &Path, team: &str, now: Timestamp) -> PathBuf {
 /// whole, current copy of the database, so the live files are never copied.
 const DB_FILES: [&str; 4] = ["team.db", "team.db-wal", "team.db-shm", "team.db-journal"];
 const SUMS: &str = "SHA256SUMS";
+/// The next `SHA256SUMS`, written before `team.db` is replaced and renamed
+/// into place after, so a file that checks out exists at every instant.
+const SUMS_NEXT: &str = "SHA256SUMS.next";
+/// The second backup, while it is being made.
+const DB_NEW: &str = "team.db.new";
 
 /// One file of the archive: its path under the archive and its content hash.
 type Sums = BTreeMap<String, String>;
@@ -112,26 +117,30 @@ fn slash(rel: &Path) -> String {
         .join("/")
 }
 
-fn write_sums(ctx: &Ctx<'_>, dest: &Path, sums: &Sums) -> Result<(), String> {
+fn write_sums(ctx: &Ctx<'_>, dest: &Path, sums: &Sums, name: &str) -> Result<(), String> {
     let text = sums.iter().fold(String::new(), |mut text, (path, hash)| {
         // Writing to a `String` cannot fail.
         writeln!(text, "{hash}  {path}").ok();
         text
     });
     ctx.platform
-        .write_atomic(&dest.join(SUMS), text.as_bytes())
-        .map_err(|e| format!("cannot write {SUMS}: {e}"))
+        .write_atomic(&dest.join(name), text.as_bytes())
+        .map_err(|e| format!("cannot write {name}: {e}"))
 }
 
 fn read_sums(dest: &Path) -> Result<Sums, String> {
-    let text = std::fs::read_to_string(dest.join(SUMS))
-        .map_err(|e| format!("cannot read {SUMS} in {}: {e}", dest.display()))?;
+    read_sums_named(dest, SUMS)
+}
+
+fn read_sums_named(dest: &Path, name: &str) -> Result<Sums, String> {
+    let text = std::fs::read_to_string(dest.join(name))
+        .map_err(|e| format!("cannot read {name} in {}: {e}", dest.display()))?;
     let mut sums = Sums::new();
     for line in text.lines().filter(|l| !l.is_empty()) {
         let (hash, path) = line
             .split_once("  ")
             .filter(|(hash, _)| hash.len() == 64)
-            .ok_or_else(|| format!("{SUMS} has a line that is not `<sha256>  <path>`: {line}"))?;
+            .ok_or_else(|| format!("{name} has a line that is not `<sha256>  <path>`: {line}"))?;
         sums.insert(path.to_owned(), hash.to_owned());
     }
     Ok(sums)
@@ -171,7 +180,7 @@ pub(crate) fn write(ctx: &Ctx<'_>, team_dir: &Path, dest: &Path) -> Result<Strin
     let db = std::fs::read(dest.join("team.db"))
         .map_err(|e| format!("cannot read the archived database: {e}"))?;
     sums.insert("team.db".to_owned(), sha256(&db));
-    write_sums(ctx, dest, &sums)?;
+    write_sums(ctx, dest, &sums, SUMS)?;
     let skipped = if links.is_empty() {
         String::new()
     } else {
@@ -221,12 +230,30 @@ pub(crate) fn verify(
     dest: &Path,
     expect_closed: bool,
 ) -> Result<(), String> {
+    verify_files(team_dir, dest)?;
+    verify_db(ctx, dest, expect_closed)
+}
+
+/// The file checks of `verify`. While the second backup replaces `team.db`,
+/// the archive may hold a `SHA256SUMS.next`; `team.db` then may match either
+/// list, and nothing else may differ between them.
+fn verify_files(team_dir: &Path, dest: &Path) -> Result<(), String> {
     let sums = read_sums(dest)?;
+    let next = if dest.join(SUMS_NEXT).is_file() {
+        Some(read_sums_named(dest, SUMS_NEXT)?)
+    } else {
+        None
+    };
     for (path, want) in &sums {
         let file = dest.join(path);
         let bytes = std::fs::read(&file)
             .map_err(|e| format!("archived file {path} cannot be read: {e}"))?;
-        if &sha256(&bytes) != want {
+        let got = sha256(&bytes);
+        let also = next
+            .as_ref()
+            .filter(|_| path == "team.db")
+            .and_then(|n| n.get(path));
+        if &got != want && also != Some(&got) {
             return Err(format!(
                 "archived file {path} does not match {SUMS}: the archive is not trusted"
             ));
@@ -237,7 +264,8 @@ pub(crate) fn verify(
         .files
         .iter()
         .map(|p| slash(p))
-        .filter(|p| p != SUMS && p != "team.db" && !sums.contains_key(p))
+        .filter(|p| ![SUMS, SUMS_NEXT, "team.db", DB_NEW].contains(&p.as_str()))
+        .filter(|p| !sums.contains_key(p))
         .collect();
     if !extra.is_empty() {
         return Err(format!(
@@ -264,7 +292,7 @@ pub(crate) fn verify(
             }
         }
     }
-    verify_db(ctx, dest, expect_closed)
+    Ok(())
 }
 
 fn verify_db(ctx: &Ctx<'_>, dest: &Path, expect_closed: bool) -> Result<(), String> {
@@ -300,18 +328,41 @@ fn read_team(store: &Store) -> Result<teamwire_store::TeamRow, String> {
 
 /// Replaces the archive's `team.db` with a new backup, so the last event of
 /// the close (`team.closed`) is in it, and rewrites `SHA256SUMS` to match.
+/// The order keeps the archive checkable at every instant: the new sums go to
+/// `SHA256SUMS.next` first, `verify` accepts `team.db` under either list, and
+/// the sums are replaced last.
 pub(crate) fn refresh_db(ctx: &Ctx<'_>, dest: &Path) -> Result<(), String> {
-    let fresh = dest.join("team.db.new");
+    refresh_db_observed(ctx, dest, &|_| {})
+}
+
+fn refresh_db_observed(ctx: &Ctx<'_>, dest: &Path, after: &dyn Fn(&str)) -> Result<(), String> {
+    let fresh = dest.join(DB_NEW);
+    // A crash in an earlier attempt may have left a partial backup.
+    match std::fs::remove_file(&fresh) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("cannot remove {}: {e}", fresh.display())),
+    }
     ctx.store
         .backup_to(&fresh)
         .map_err(|e| format!("the second database backup failed: {e}"))?;
     let bytes =
         std::fs::read(&fresh).map_err(|e| format!("cannot read {}: {e}", fresh.display()))?;
-    std::fs::remove_file(&fresh).map_err(|e| format!("cannot remove {}: {e}", fresh.display()))?;
+    let mut sums = read_sums(dest)?;
+    sums.insert("team.db".to_owned(), sha256(&bytes));
+    write_sums(ctx, dest, &sums, SUMS_NEXT)?;
+    after("sums_next");
     ctx.platform
         .write_atomic(&dest.join("team.db"), &bytes)
         .map_err(|e| format!("cannot replace the archived database: {e}"))?;
-    let mut sums = read_sums(dest)?;
-    sums.insert("team.db".to_owned(), sha256(&bytes));
-    write_sums(ctx, dest, &sums)
+    after("db_replaced");
+    write_sums(ctx, dest, &sums, SUMS)?;
+    after("sums_replaced");
+    for name in [SUMS_NEXT, DB_NEW] {
+        std::fs::remove_file(dest.join(name)).map_err(|e| format!("cannot remove {name}: {e}"))?;
+    }
+    Ok(())
 }
+
+#[cfg(test)]
+mod tests;
