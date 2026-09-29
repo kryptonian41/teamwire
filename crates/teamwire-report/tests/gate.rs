@@ -1,7 +1,8 @@
 //! The report check: who is told about report gaps, and how often.
 #![expect(
     clippy::unwrap_used,
-    reason = "a failing unwrap in an integration test fails the test"
+    clippy::indexing_slicing,
+    reason = "a failing unwrap or index in an integration test fails the test"
 )]
 
 #[expect(
@@ -15,10 +16,13 @@ mod members;
 #[path = "../../teamwire-deliver/tests/support/rig.rs"]
 mod rig;
 
-use teamwire_core::{CompletionStatus, EventType};
-use teamwire_report::{DoneReport, done};
+use teamwire_core::{
+    CompletionStatus, EventType, PlatformError, PlatformErrorCode, ReportState, RunOutput,
+    TurnEndReply,
+};
+use teamwire_report::{DoneReport, done, on_turn_end};
 
-use kit::team;
+use kit::{data_str, stop, team};
 
 #[test]
 fn no_hook_harness_told_once() {
@@ -82,4 +86,180 @@ fn a_new_generation_is_told_again() {
         .write(|tx| tx.bump_generation(kit::at(9), &api, "again").map(|_| ()))
         .unwrap();
     assert!(told(&mut rig), "generation 2 is told once more");
+}
+
+fn reply(rig: &mut rig::Rig, who: &teamwire_core::Role) -> TurnEndReply {
+    on_turn_end(&mut rig.ctx(), who, &stop("api-1"))
+}
+
+fn held_note(reply: TurnEndReply) -> String {
+    match reply {
+        TurnEndReply::Hold(note) => note,
+        TurnEndReply::Continue => unreachable!("expected a hold"),
+    }
+}
+
+#[test]
+fn hold_once_then_deliver() {
+    let (mut rig, api) = team();
+    rig.complete_now(&api);
+
+    // A missing report holds the member once, with the facts.
+    let note = held_note(reply(&mut rig, &api));
+    assert!(note.contains("reports/api.md"), "{note}");
+    assert!(note.contains("does not exist"), "{note}");
+    assert!(rig.typed_to_lead().is_empty(), "the lead hears nothing yet");
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Pending
+    );
+    let held = &rig.events(EventType::MemberHeld)[0];
+    assert_eq!(data_str(held, "hook"), Some("claude-stop"));
+    assert!(held.data.get("hook_ms").is_some());
+
+    // The next stop delivers whatever the report says.
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert_eq!(rig.events(EventType::MemberHeld).len(), 1);
+}
+
+#[test]
+fn a_complete_report_is_delivered_at_the_first_stop() {
+    let (mut rig, api) = team();
+    rig.write_report(&api, "Found it.\n\nDecisions I made: none\n");
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+}
+
+#[test]
+fn missing_decisions_list_is_named() {
+    let (mut rig, api) = team();
+    rig.write_report(&api, "Found it.\n");
+    rig.complete_now(&api);
+    let note = held_note(reply(&mut rig, &api));
+    assert!(note.contains("Decisions I made"), "{note}");
+    assert!(!note.contains("does not exist"), "{note}");
+}
+
+/// The output of `git log` for one commit authored after the member started.
+fn one_commit(sha: &str) -> RunOutput {
+    RunOutput {
+        exit_code: 0,
+        stdout: format!("{sha} 1790000100\n").into_bytes(),
+        stderr: Vec::new(),
+        timed_out: false,
+    }
+}
+
+#[test]
+fn commit_without_progress_line_is_held() {
+    let mut rig = rig::Rig::new();
+    rig.healthy("lead-1", 100);
+    let api = rig.add_worktree_member("api", "api-1", "0123456789abcdef");
+    rig.write_report(&api, "- 9999999 something else\n\nDecisions I made: none\n");
+    rig.complete_now(&api);
+    rig.platform
+        .queue_run(Ok(one_commit("abcdef0123456789abcdef0123456789abcdef01")));
+    let note = held_note(reply(&mut rig, &api));
+    assert!(note.contains("abcdef0"), "{note}");
+    assert!(rig.typed_to_lead().is_empty());
+}
+
+#[test]
+fn a_progress_line_for_each_commit_is_enough() {
+    let mut rig = rig::Rig::new();
+    rig.healthy("lead-1", 100);
+    let api = rig.add_worktree_member("api", "api-1", "0123456789abcdef");
+    rig.write_report(
+        &api,
+        "- abcdef0 did it | left: nothing\n\nDecisions I made: none\n",
+    );
+    rig.complete_now(&api);
+    rig.platform
+        .queue_run(Ok(one_commit("abcdef0123456789abcdef0123456789abcdef01")));
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+}
+
+#[test]
+fn check_error_means_no_gaps() {
+    let mut rig = rig::Rig::new();
+    rig.healthy("lead-1", 100);
+    let api = rig.add_worktree_member("api", "api-1", "0123456789abcdef");
+    // The report lacks its decisions list, but the check itself fails.
+    rig.write_report(&api, "notes only\n");
+    rig.complete_now(&api);
+    rig.platform.queue_run(Err(PlatformError::new(
+        PlatformErrorCode::Io,
+        "git is not installed",
+    )));
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert!(
+        !rig.platform.runs().is_empty(),
+        "the check did run and fail"
+    );
+    assert_eq!(rig.typed_to_lead().len(), 1, "delivered, not held");
+    assert!(rig.events(EventType::MemberHeld).is_empty());
+}
+
+#[test]
+fn unread_messages_hold_once_and_do_not_use_up_the_report_hold() {
+    let (mut rig, api) = team();
+    let id = rig.unread_from_lead(&api, "please also check the docs");
+
+    // Stopping with no completion yet: held for the unread message only.
+    let note = held_note(reply(&mut rig, &api));
+    assert!(
+        note.contains(&id) && note.contains("teamwire inbox"),
+        "{note}"
+    );
+    assert_eq!(
+        reply(&mut rig, &api),
+        TurnEndReply::Continue,
+        "each id once"
+    );
+    assert_eq!(
+        rig.store
+            .read(|tx| tx.member(&api))
+            .unwrap()
+            .unwrap()
+            .gate_told_generation,
+        None
+    );
+
+    // The report-gap hold is still available afterwards.
+    rig.complete_now(&api);
+    let note = held_note(reply(&mut rig, &api));
+    assert!(note.contains("does not exist"), "{note}");
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+}
+
+#[test]
+fn gaps_and_unread_messages_share_one_note() {
+    let (mut rig, api) = team();
+    let id = rig.unread_from_lead(&api, "look at this");
+    rig.complete_now(&api);
+    let note = held_note(reply(&mut rig, &api));
+    assert!(
+        note.contains("does not exist") && note.contains(&id),
+        "{note}"
+    );
+    assert_eq!(rig.events(EventType::MemberHeld).len(), 1);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+}
+
+#[test]
+fn no_hold_at_all_when_the_stop_was_already_held() {
+    let (mut rig, api) = team();
+    rig.unread_from_lead(&api, "look at this");
+    rig.complete_now(&api);
+    let mut t = stop("api-1");
+    t.hold_already_active = true;
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &t),
+        TurnEndReply::Continue
+    );
+    assert!(rig.events(EventType::MemberHeld).is_empty());
 }

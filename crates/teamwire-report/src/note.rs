@@ -36,3 +36,11 @@ pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path) -> String {
         facts.join("; ")
     )
 }
+
+/// The reminder of unread messages, with the command that reads them.
+pub(crate) fn unread_note(ids: &[String]) -> String {
+    format!(
+        "You have unread teamwire message(s): {}. Read them with: teamwire inbox",
+        ids.join(", ")
+    )
+}

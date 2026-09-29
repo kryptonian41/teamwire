@@ -1,9 +1,75 @@
-//! The in-turn reminder of unread messages.
+//! Unread messages: the in-turn reminder, and the list the Stop hook adds to
+//! its hold note. Each message id is reminded at most once (ADR 0003 point 8).
 
-use teamwire_core::Role;
-use teamwire_store::Ctx;
+use teamwire_core::{DeliveryState, Recipient, Role, Ulid};
+use teamwire_store::{Ctx, StoreError};
+
+use crate::note::unread_note;
+
+/// A message the member has not read and has not been reminded of.
+pub(crate) struct Unread {
+    pub(crate) message: Ulid,
+    pub(crate) display_id: String,
+}
+
+/// Deliveries to `me` that are not read (`acked`) and whose reminder has not
+/// been sent. A `pending` delivery is still being sent by its sender.
+pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError> {
+    ctx.store.read(|tx| {
+        let recipient = Recipient::Member(me.clone());
+        let deliveries = tx.deliveries_for(
+            &recipient,
+            &[
+                DeliveryState::HandedOff,
+                DeliveryState::Unconfirmed,
+                DeliveryState::Undelivered,
+            ],
+        )?;
+        let mut out = Vec::new();
+        for d in deliveries.items.iter().filter(|d| d.reminded_at.is_none()) {
+            if let Some(message) = tx.message(&d.delivery.message)? {
+                out.push(Unread {
+                    message: message.ulid,
+                    display_id: message.display_id.to_string(),
+                });
+            }
+        }
+        Ok(out)
+    })
+}
 
 /// The reminder of unread message ids for the in-turn hook, once per id.
-pub fn on_tool_use(_ctx: &mut Ctx<'_>, _me: &Role) -> Option<String> {
-    None
+///
+/// Any store error means no reminder: a hook never fails a turn.
+pub fn on_tool_use(ctx: &mut Ctx<'_>, me: &Role) -> Option<String> {
+    let found = match unread(ctx, me) {
+        Ok(found) => found,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not read the unread messages");
+            return None;
+        }
+    };
+    if found.is_empty() {
+        return None;
+    }
+    let at = ctx.clock.now();
+    let recipient = Recipient::Member(me.clone());
+    let marked = ctx.store.write(|tx| {
+        let mut ids = Vec::new();
+        for u in &found {
+            // A message read since the list was made is not reminded.
+            if tx.mark_reminded(at, &u.message, &recipient).is_ok() {
+                ids.push(u.display_id.clone());
+            }
+        }
+        Ok(ids)
+    });
+    match marked {
+        Ok(ids) if !ids.is_empty() => Some(unread_note(&ids)),
+        Ok(_) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, "could not mark the reminders");
+            None
+        }
+    }
 }
