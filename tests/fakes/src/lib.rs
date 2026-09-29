@@ -9,6 +9,7 @@
 
 mod calls;
 mod clock;
+pub mod contract;
 mod harness;
 mod host;
 mod platform;
