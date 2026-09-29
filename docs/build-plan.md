@@ -1,6 +1,6 @@
 # Build plan
 
-The build as 19 tickets in five waves. Each ticket is a vertical slice with
+The build as 20 tickets in five waves. Each ticket is a vertical slice with
 its own tests, sized to fit one fresh context window. No two tickets in one
 wave own the same path. Every wave has at most five implementer tickets.
 
@@ -10,7 +10,7 @@ How the waves run:
    to `main` before anything else starts. It fixes the workspace, every crate's
    name and dependencies, the core types and traits of `docs/api/core.md`, the
    schema DDL, the CLI's subcommand list, and the lint, format and gate setup
-   of `docs/conventions.md`.
+   of `docs/conventions.md`, with a minimal structure checker.
 2. Each later wave branches from `main` after the previous wave is merged and
    `scripts/gate.sh` passed on the merge.
 3. A ticket's **Check** is the exact command that proves it. The ticket must
@@ -25,10 +25,11 @@ How the waves run:
 
 | Ticket | Wave | Blocked by | Owns | Check | Size |
 | --- | --- | --- | --- | --- | --- |
-| T01 Workspace skeleton and contract | 1 | none | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `rustfmt.toml`, `AGENTS.md`, `CLAUDE.md` (content from `docs/conventions.md` §6, with the lead's approval), `scripts/gate.sh`, `crates/teamwire-core/`, `crates/*/Cargo.toml` and `crates/*/src/lib.rs` skeletons of every other crate, `crates/teamwire-store/src/schema/v1.sql`, `cli/src/main.rs`, `cli/src/wiring.rs`, `cli/src/cmd/*.rs` stubs, `tests/fakes/Cargo.toml`, `tests/crash/Cargo.toml`, `tests/e2e/Cargo.toml` and their empty `src/lib.rs` | `cargo build --workspace --locked && cargo test -p teamwire-core --locked && cargo run -q -p teamwire-cli --locked -- --help` | L |
+| T01 Workspace skeleton and contract | 1 | none | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `.cargo/config.toml`, `xtask/` (minimal tidy), `AGENTS.md`, `CLAUDE.md` (content from `docs/conventions.md` §6, with the lead's approval), `scripts/gate.sh`, `crates/teamwire-core/`, `crates/*/Cargo.toml` and `crates/*/src/lib.rs` skeletons of every other crate, `crates/teamwire-store/src/schema/v1.sql`, `cli/src/main.rs`, `cli/src/wiring.rs`, `cli/src/cmd/*.rs` stubs, `tests/fakes/Cargo.toml`, `tests/crash/Cargo.toml`, `tests/e2e/Cargo.toml` and their empty `src/lib.rs` | `cargo build --workspace --locked && cargo test -p teamwire-core --locked && cargo xtask tidy && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo run -q -p teamwire-cli --locked -- --help` | L |
 | T02 Store | 2 | T01 | `crates/teamwire-store/` | `cargo test -p teamwire-store --locked` | L |
 | T03 Platform | 2 | T01 | `crates/teamwire-platform/` | `cargo test -p teamwire-platform --locked` | M |
 | T04 Fakes and contract suites | 2 | T01 | `tests/fakes/` | `cargo test -p teamwire-fakes --locked` | L |
+| T20 Structure checker (`xtask tidy`) | 2 | T01 | `xtask/` | `cargo test -p xtask --locked && cargo xtask tidy` | M |
 | T05 herdr host adapter | 3 | T04 | `crates/teamwire-host-herdr/` | `cargo test -p teamwire-host-herdr --locked` | M |
 | T06 Claude Code harness adapter | 3 | T03, T04 | `crates/teamwire-harness-claude/` | `cargo test -p teamwire-harness-claude --locked` | L |
 | T07 Locator and delivery | 3 | T02, T03, T04 | `crates/teamwire-deliver/` | `cargo test -p teamwire-deliver --locked` | M |
@@ -50,7 +51,7 @@ Waves at a glance:
 | Wave | Tickets | What exists when it is merged |
 | --- | --- | --- |
 | 1 | T01 | The contract: workspace, core types and traits, schema DDL, CLI skeleton, gates |
-| 2 | T02, T03, T04 | Store, platform, fakes and contract suites |
+| 2 | T02, T03, T04, T20 | Store, platform, fakes and contract suites, the full structure checker |
 | 3 | T05, T06, T07, T08, T09 | Real adapters, delivery, launch, verify |
 | 4 | T10, T11, T12, T13, T14 | Watch, metrics, messages, completions, close: the full lifecycle |
 | 5 | T15, T16, T17, T18, T19 | MCP, tmux, end-to-end and crash proof, extras |
@@ -90,11 +91,28 @@ Builds:
   `docs/api/cli.md`; each dispatches to `cmd::<name>::run`, whose stub prints
   "not built yet" and exits 3. `cli/src/wiring.rs` builds the concrete host,
   harness and platform from config and environment.
-- `scripts/gate.sh`: the five gates of `docs/conventions.md` §2 in order.
+- `scripts/gate.sh`: the six gates of `docs/conventions.md` §2 in order, one
+  line per step with its time, and `fast` mode for steps 1-3.
+- `clippy.toml`, `.cargo/config.toml` (the `xtask` alias), the lint table and
+  `[profile.dev]` of `docs/conventions.md` §4. Run clippy once and drop any
+  option name it rejects.
+- `xtask/` with a minimal `tidy`: every member has `[lints] workspace = true`,
+  every member dependency is `workspace = true`, no `mod.rs`, `CLAUDE.md`'s
+  first line is `@AGENTS.md`. T20 adds the rest.
 - `AGENTS.md` and `CLAUDE.md` from `docs/conventions.md` §6, applied only
   after the lead confirms the text.
 - First build fetches the pinned toolchain through rustup once; this ticket
   may do that.
+
+### T20 Structure checker (wave 2)
+
+Completes `cargo xtask tidy` with every rule of `docs/conventions.md` §1:
+crate naming and manifest fields, file-size report and limit, the `//!`
+note at the top of each crate and the one-row-per-crate check against
+`ARCHITECTURE.md`'s Components table, `AGENTS.md` length, the layer graph of
+§5 from `cargo metadata`, and `--base <ref>` reporting `PROTECTED-CHANGED`
+and `WEAKENED` lines. Tests use small fixture workspaces in temporary
+directories, one per rule, each proving the rule fails when broken.
 
 ### T02 Store (wave 2)
 
@@ -110,7 +128,7 @@ that reads back each pragma, and the store properties of
 
 ### T03 Platform (wave 2)
 
-`MacOs` and `Linux` implementations of `Platform`: pid liveness, `env_of`
+`MacOs` and `Linux` implementations of `Platform`, and `SystemClock`, the real `Clock` (the only code allowed to read the system clock): pid liveness, `env_of`
 (with `sysinfo`; confirm it reads a same-user process's environment on
 macOS, else stop and ask the lead), `run` in a new process group with a
 timeout that kills the group and reports 124, `write_atomic` (temp file,
@@ -133,7 +151,7 @@ documented in the crate's README. The fakes pass their own contract suites.
 
 ### T05 herdr host adapter (wave 3)
 
-`Herdr` implements `Host` over herdr's JSON CLI, every call with a timeout;
+`Herdr` implements `Host` over herdr's JSON CLI, running every command through `Platform::run` with a timeout;
 error envelope mapped to `HostErrorCode` by `error.code`; `agent start` with
 the bounded retry on `agent_pane_busy` and `agent_not_ready`; `occupant` from
 `agent get` (`agent_session.value`); one workspace per team and one tab per

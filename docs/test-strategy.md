@@ -121,6 +121,14 @@ user, never in `cargo test`:
 These are examples, not ignored tests, so nothing in the test suite is ever
 skipped.
 
+## Later: mutation testing
+
+`cargo-mutants` on `teamwire-store`, `teamwire-deliver` and `teamwire-msg`
+would show whether the tests catch changes to the integrity code (repopract
+R20). It is not installed; installing it is open question 11 in
+`ARCHITECTURE.md`. When installed, run it before each release, not on every
+commit, and turn each surviving mutant in the delivery path into a ticket.
+
 ## Gates
 
 The gates, in the order they run, are listed in `docs/conventions.md`. A
