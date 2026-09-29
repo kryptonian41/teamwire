@@ -25,7 +25,7 @@ How the waves run:
 
 | Ticket | Wave | Blocked by | Owns | Check | Size |
 | --- | --- | --- | --- | --- | --- |
-| T01 Workspace skeleton and contract | 1 | none | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `.cargo/config.toml`, `xtask/` (minimal tidy), `AGENTS.md`, `CLAUDE.md` (content from `docs/conventions.md` §6, with the lead's approval), `scripts/gate.sh`, `crates/teamwire-core/`, `crates/*/Cargo.toml` and `crates/*/src/lib.rs` skeletons of every other crate, `crates/teamwire-store/src/schema/v1.sql`, `cli/src/main.rs`, `cli/src/wiring.rs`, `cli/src/cmd/*.rs` stubs, `tests/fakes/Cargo.toml`, `tests/crash/Cargo.toml`, `tests/e2e/Cargo.toml` and their empty `src/lib.rs` | `cargo build --workspace --locked && cargo test -p teamwire-core --locked && cargo xtask tidy && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo run -q -p teamwire-cli --locked -- --help` | L |
+| T01 Workspace skeleton and contract | 1 | none | `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `rustfmt.toml`, `clippy.toml`, `.cargo/config.toml`, `xtask/` (minimal tidy), `AGENTS.md`, `CLAUDE.md` (content from `docs/conventions.md` §6, with the lead's approval), `scripts/gate.sh`, `crates/teamwire-core/`, `crates/*/Cargo.toml` and `crates/*/src/lib.rs` skeletons of every other crate, `crates/teamwire-store/src/schema/v1.sql`, `cli/src/main.rs`, `cli/src/wiring.rs`, `cli/src/cmd/*.rs` stubs, `tests/fakes/Cargo.toml` and `tests/fakes/src/lib.rs` holding `TestHome` only, `tests/crash/Cargo.toml`, `tests/e2e/Cargo.toml` and their empty `src/lib.rs` | `cargo build --workspace --locked && cargo test -p teamwire-core --locked && cargo xtask tidy && cargo clippy --workspace --all-targets --locked -- -D warnings && cargo run -q -p teamwire-cli --locked -- --help` | L |
 | T02 Store | 2 | T01 | `crates/teamwire-store/` | `cargo test -p teamwire-store --locked` | L |
 | T03 Platform | 2 | T01 | `crates/teamwire-platform/` | `cargo test -p teamwire-platform --locked` | M |
 | T04 Fakes and contract suites | 2 | T01 | `tests/fakes/` | `cargo test -p teamwire-fakes --locked` | L |
@@ -41,7 +41,7 @@ How the waves run:
 | T13 Completions, results and hooks | 4 | T06, T07, T09 | `crates/teamwire-report/`, `cli/src/cmd/done.rs`, `cli/src/cmd/hook.rs`, `cli/tests/done.rs`, `cli/tests/hook.rs` | `cargo test -p teamwire-report --locked && cargo test -p teamwire-cli --test done --test hook --locked` | L |
 | T14 Close, removal and archive | 4 | T03, T08, T09 | `crates/teamwire-close/`, `cli/src/cmd/close.rs`, `cli/tests/close.rs` | `cargo test -p teamwire-close --locked && cargo test -p teamwire-cli --test close --locked` | L |
 | T15 MCP server | 5 | T10, T12, T13 | `crates/teamwire-mcp/`, `cli/src/cmd/mcp.rs` | `cargo test -p teamwire-mcp --locked` | M |
-| T16 tmux host adapter | 5 | T04 | `crates/teamwire-host-tmux/` | `cargo test -p teamwire-host-tmux --locked` | M |
+| T16 tmux host adapter | 5 | T04 | `crates/teamwire-host-tmux/`, `cli/src/wiring.rs`, `cli/tests/tmux_wiring.rs` | `cargo test -p teamwire-host-tmux --locked && cargo test -p teamwire-cli --test tmux_wiring --locked` | M |
 | T17 End-to-end tests | 5 | T05, T06, T08, T10, T12, T13, T14 | `tests/e2e/` | `cargo test -p teamwire-e2e --locked` | L |
 | T18 Crash tests | 5 | T12, T13, T14 | `tests/crash/` | `cargo test -p teamwire-crash-tests --locked` | M |
 | T19 Doctor, PR watch, presets, skill, examples | 5 | T02, T03, T05, T06 | `cli/src/cmd/doctor.rs`, `cli/src/cmd/pr_watch.rs`, `cli/src/cmd/preset.rs`, `cli/src/cmd/version.rs`, `cli/tests/doctor.rs`, `cli/tests/pr_watch.rs`, `cli/tests/preset.rs`, `examples/` | `cargo test -p teamwire-cli --test doctor --test pr_watch --test preset --locked` | M |
@@ -105,6 +105,9 @@ Builds:
   first line is `@AGENTS.md`. T20 adds the rest.
 - `AGENTS.md` and `CLAUDE.md` from `docs/conventions.md` §6, applied only
   after the lead confirms the text.
+- `tests/fakes/src/lib.rs` with `TestHome` (a temporary `TEAMWIRE_HOME`,
+  about 20 lines), so the wave-2 tickets T02 and T03 use the same helper
+  before T04 builds the rest of the fakes crate.
 - First build fetches the pinned toolchain through rustup once; this ticket
   may do that.
 
@@ -307,7 +310,10 @@ the pid tree for `occupant`. `reports_state` and `guards_dialogs` are false,
 so delivery through tmux always passes the screen check of ADR 0006 point 3a
 first; T16 adds a test that a pane showing a dialog receives no paste and no
 Enter. Passes `host_contract` against a real tmux on a private socket
-(`tmux -L teamwire-test-<pid>`), killed at the end of each test.
+(`tmux -L teamwire-test-<pid>`), killed at the end of each test. T16 also
+owns `cli/src/wiring.rs` in wave 5 (no other wave-5 ticket touches it): it
+registers the tmux adapter and picks it for the lead when `TMUX` is set and
+`HERDR_ENV` is not, with `cli/tests/tmux_wiring.rs` proving that detection.
 
 ### T17 End-to-end tests (wave 5)
 

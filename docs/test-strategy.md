@@ -10,6 +10,7 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
 
 - `TEAMWIRE_HOME` is always a fresh temporary directory (`tempfile::TempDir`).
   A shared helper, `teamwire_fakes::TestHome`, creates it and removes it.
+  T01 writes it, so every wave-2 ticket has it from the start.
 - No test types into a real herdr pane or starts a real Claude session. Tests
   use the fakes under `tests/fakes/`. The real `herdr` and `claude` binaries
   are hidden from tests by putting the fake binaries first on a `PATH` the test
