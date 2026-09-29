@@ -12,175 +12,21 @@
 //!
 //! This crate also holds `Ctx`, the handle every service call takes.
 
-use std::fmt;
-use std::path::Path;
+mod ctx;
+mod error;
+mod store;
+mod tx;
 
-use teamwire_core::{
-    Clock, Config, DeliveryError, DeliveryErrorCode, Harness, Host, Platform, Registry, Role,
-    TeamName,
-};
-use thiserror::Error;
+pub use ctx::{Ctx, Party};
+pub use error::StoreError;
+pub use store::{APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path};
+pub use tx::{BadRow, Listing, ReadTx, Tx};
 
 /// The schema version this binary writes.
 pub const SCHEMA_VERSION: u32 = 1;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
-
-const NOT_BUILT: &str = "teamwire-store is not built yet";
-
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum StoreError {
-    #[error("the database stayed locked past the busy timeout")]
-    Busy,
-    #[error("the disk is full")]
-    Full,
-    #[error("the database has schema {db}; this binary knows {binary}")]
-    SchemaNewer { db: u32, binary: u32 },
-    #[error("the database has schema {db}; this binary writes {binary}")]
-    SchemaOlder { db: u32, binary: u32 },
-    #[error("not a teamwire database")]
-    NotTeamwire,
-    #[error("the database is corrupt: {0}")]
-    Corrupt(String),
-    #[error("a constraint failed: {0}")]
-    Constraint(String),
-    #[error("{0}")]
-    Io(String),
-}
-
-/// One team's database. One `rusqlite::Connection`, never shared across
-/// processes.
-#[derive(Debug)]
-pub struct Store {
-    conn: rusqlite::Connection,
-}
-
-/// A write transaction, open inside `Store::write`.
-#[derive(Debug)]
-pub struct Tx<'a> {
-    conn: &'a rusqlite::Connection,
-}
-
-/// A read transaction, open inside `Store::read`.
-#[derive(Debug)]
-pub struct ReadTx<'a> {
-    conn: &'a rusqlite::Connection,
-}
-
-impl Store {
-    /// Creates the directory and database if missing; applies pragmas;
-    /// migrates forward; refuses a newer schema (`StoreError::SchemaNewer`).
-    pub fn open(_home: &Path, _team: &TeamName) -> Result<Self, StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    pub fn open_existing(_home: &Path, _team: &TeamName) -> Result<Self, StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    /// For commands that only read (status, log, members, metrics, export,
-    /// doctor): `mode=ro`, never creates, never migrates. A database whose
-    /// schema version differs from the binary's is refused with `SchemaNewer` or
-    /// `SchemaOlder`, and nothing on disk changes (WAT-11).
-    pub fn open_read_only(_home: &Path, _team: &TeamName) -> Result<Self, StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    /// Runs `f` inside BEGIN IMMEDIATE; commits on Ok, rolls back on Err.
-    pub fn write<T>(
-        &mut self,
-        _f: impl FnOnce(&Tx<'_>) -> Result<T, StoreError>,
-    ) -> Result<T, StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    pub fn read<T>(
-        &self,
-        _f: impl FnOnce(&ReadTx<'_>) -> Result<T, StoreError>,
-    ) -> Result<T, StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    pub fn backup_to(&self, _path: &Path) -> Result<(), StoreError> {
-        Err(StoreError::Io(NOT_BUILT.to_owned()))
-    }
-
-    /// `PRAGMA quick_check`: `ok`, or the problems it found.
-    pub fn quick_check(&self) -> Result<String, StoreError> {
-        self.pragma_check("quick_check")
-    }
-
-    /// `PRAGMA integrity_check`: `ok`, or the problems it found.
-    pub fn integrity_check(&self) -> Result<String, StoreError> {
-        self.pragma_check("integrity_check")
-    }
-
-    fn pragma_check(&self, pragma: &str) -> Result<String, StoreError> {
-        let mut stmt = self
-            .conn
-            .prepare(&format!("PRAGMA {pragma}"))
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        let lines = stmt
-            .query_map([], |row| row.get::<_, String>(0))
-            .and_then(Iterator::collect::<Result<Vec<String>, _>>)
-            .map_err(|e| StoreError::Io(e.to_string()))?;
-        Ok(lines.join("\n"))
-    }
-}
-
-impl Tx<'_> {
-    /// The connection this transaction runs on.
-    pub fn connection(&self) -> &rusqlite::Connection {
-        self.conn
-    }
-}
-
-impl ReadTx<'_> {
-    /// The connection this transaction runs on.
-    pub fn connection(&self) -> &rusqlite::Connection {
-        self.conn
-    }
-}
-
-/// What every service call takes: the store, the adapters, the clock and
-/// the config. The CLI and the MCP server build one per command.
-pub struct Ctx<'a> {
-    pub home: &'a Path,
-    pub store: &'a mut Store,
-    pub registry: &'a Registry,
-    pub platform: &'a dyn Platform,
-    pub clock: &'a dyn Clock,
-    pub config: &'a Config,
-}
-
-/// Who a delivery or lookup is for. Resolves to that party's own adapters.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Party {
-    Lead,
-    Member(Role),
-}
-
-impl Ctx<'_> {
-    /// The harness and host recorded for `party`, from the registry.
-    pub fn adapters(&self, _party: &Party) -> Result<(&dyn Harness, &dyn Host), DeliveryError> {
-        Err(DeliveryError::new(
-            DeliveryErrorCode::UnknownAdapter,
-            NOT_BUILT,
-        ))
-    }
-}
-
-impl fmt::Debug for Ctx<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Ctx")
-            .field("home", &self.home)
-            .field("store", &self.store)
-            .field("registry", &self.registry)
-            .field("config", &self.config)
-            .finish_non_exhaustive()
-    }
-}
 
 #[cfg(test)]
 mod tests {
