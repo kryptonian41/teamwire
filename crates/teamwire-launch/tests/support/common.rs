@@ -129,6 +129,17 @@ pub(crate) struct Rig {
 
 impl Rig {
     pub(crate) fn new() -> Self {
+        Self::with_platform(GitPlatform::default())
+    }
+
+    /// A rig on a platform that has no sleep hold (Linux).
+    pub(crate) fn without_hold() -> Self {
+        Self::with_platform(GitPlatform {
+            inner: FakePlatform::without_sleep_hold(),
+        })
+    }
+
+    fn with_platform(platform: GitPlatform) -> Self {
         let host = Arc::new(FakeHost::new());
         let harness = Arc::new(FakeHarness::new());
         let mut registry = Registry::new();
@@ -145,7 +156,7 @@ impl Rig {
         Self {
             home: TestHome::new().unwrap(),
             work,
-            platform: Arc::new(GitPlatform::default()),
+            platform: Arc::new(platform),
             host,
             harness,
             registry,
@@ -328,4 +339,52 @@ pub(crate) fn all_files_under(dir: &std::path::Path, out: &mut Vec<std::path::Pa
             out.push(path);
         }
     }
+}
+
+/// A team database for another team of the same lead, with a recorded hold.
+pub(crate) fn seed_lead_team(rig: &Rig, team: &str, hold: Option<HoldInfo>) {
+    let name = TeamName::parse(team).unwrap();
+    let mut store = Store::open(rig.home.path(), &name).unwrap();
+    let at = rig.clock.now();
+    store
+        .write(|tx| {
+            tx.create_team(
+                at,
+                &teamwire_store::NewTeam {
+                    name: name.clone(),
+                    title: "Other".to_owned(),
+                    lead_harness: teamwire_core::HarnessId::from_static(FakeHarness::ID),
+                    lead_host: teamwire_core::HostId::from_static(FakeHost::ID),
+                    lead_route: teamwire_core::LeadRoute::Sink,
+                    lead_session: Some((
+                        teamwire_core::SessionId::parse("lead-session").unwrap(),
+                        teamwire_core::SessionKind::Interactive,
+                    )),
+                },
+            )?;
+            tx.set_sleep_hold(hold.as_ref())
+        })
+        .unwrap();
+}
+
+/// The hold recorded on the team row.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+pub(crate) fn team_hold(store: &Store) -> Option<HoldInfo> {
+    store.read(|tx| tx.team()).unwrap().unwrap().sleep_hold
+}
+
+pub(crate) fn lead_at(rig: &Rig, pid: u32) {
+    rig.harness.add_session(
+        teamwire_core::SessionId::parse("lead-session").unwrap(),
+        vec![Pid::new(pid)],
+        teamwire_core::Liveness::Alive(teamwire_core::PlaceState::Working),
+    );
+}
+
+pub(crate) fn launch_one(rig: &Rig, team: &str, role: &str, add: bool) -> (LaunchReport, Store) {
+    let spec = team_spec(team, &[pane_member(role, role, rig.work.path())]);
+    rig.launch(team, rig.validate(&spec, add).unwrap())
 }
