@@ -11,23 +11,24 @@
 //! them at a temporary directory; the member's identity travels in the
 //! `env` key of its own `settings.json`.
 
+mod hook;
+mod launch;
+mod screen;
+mod session;
+mod trust;
+
+pub use trust::{StartupPoll, TrustCheck};
+
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
-    LaunchSpec, Liveness, MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState,
-    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
+    MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome,
+    TeamName, TrustPolicy, TurnEnd,
 };
-
-fn not_built() -> HarnessError {
-    HarnessError::new(
-        HarnessErrorCode::Other,
-        "teamwire-harness-claude is not built yet",
-    )
-}
 
 /// Where Claude Code keeps its files, and how to start it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,17 +45,44 @@ pub struct ClaudeConfig {
 pub struct ClaudeCode {
     platform: Arc<dyn Platform>,
     config: ClaudeConfig,
+    startup_poll: StartupPoll,
 }
 
 impl ClaudeCode {
     pub const ID: &'static str = "claude-code";
 
     pub fn new(platform: Arc<dyn Platform>, config: ClaudeConfig) -> Self {
-        Self { platform, config }
+        Self {
+            platform,
+            config,
+            startup_poll: StartupPoll::default(),
+        }
+    }
+
+    /// How long `answer_startup` waits for the prompt or a dialog.
+    #[must_use]
+    pub fn with_startup_poll(mut self, poll: StartupPoll) -> Self {
+        self.startup_poll = poll;
+        self
     }
 
     pub fn config(&self) -> &ClaudeConfig {
         &self.config
+    }
+
+    /// The caller's session, read through `get` instead of the process
+    /// environment: `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_CODE_SESSION_KIND`
+    /// (`bg` is a background session). `current_session` calls this with the
+    /// real environment.
+    pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        session::caller_from_env(get)
+    }
+
+    /// What `.claude.json` says about `cwd`, read-only. Launch calls this
+    /// before it starts a member, because `answer_startup` sees only the
+    /// screen and cannot know the directory.
+    pub fn trust_check(&self, cwd: &Path) -> TrustCheck {
+        trust::check(&self.config.claude_json, cwd)
     }
 
     /// The platform Claude's commands run through.
@@ -87,57 +115,66 @@ impl Harness for ClaudeCode {
         }
     }
 
-    fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
-        Err(not_built())
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.claude_bin, m, &launch::SessionArg::New)
     }
 
-    fn resume_spec(&self, _m: &MemberLaunch, _s: &SessionId) -> Result<LaunchSpec, HarnessError> {
-        Err(not_built())
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.claude_bin, m, &launch::SessionArg::Resume(s))
     }
 
     fn current_session(&self) -> Option<CallerSession> {
-        None
+        self.session_from_env(|name| std::env::var(name).ok())
     }
 
     fn processes_for_session(
         &self,
-        _s: &SessionId,
-        _timeout: Duration,
+        s: &SessionId,
+        timeout: Duration,
     ) -> Result<Vec<Pid>, HarnessError> {
-        Err(not_built())
+        session::processes(
+            self.platform.as_ref(),
+            &self.config.claude_dir,
+            &self.config.claude_bin,
+            s,
+            timeout,
+        )
     }
 
-    fn is_alive(&self, _s: &SessionId, _timeout: Duration) -> Result<Liveness, HarnessError> {
-        Err(not_built())
+    fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError> {
+        Ok(session::liveness(
+            self.platform.as_ref(),
+            &self.config.claude_dir,
+            &self.config.claude_bin,
+            s,
+            timeout,
+        ))
     }
 
-    fn parse_turn_end(&self, _stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
-        Err(not_built())
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        hook::parse_turn_end(stdin)
     }
 
-    fn hold_reply(&self, _note: &str) -> Vec<u8> {
-        Vec::new()
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        hook::hold_reply(note)
     }
 
-    fn screen_state(&self, _tail: &str) -> ScreenState {
-        ScreenState::Unknown
+    fn screen_state(&self, tail: &str) -> ScreenState {
+        screen::classify(tail)
     }
 
     fn answer_startup(
         &self,
-        _host: &dyn Host,
-        _place: &Place,
-        _policy: TrustPolicy,
+        host: &dyn Host,
+        place: &Place,
+        policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
-        Err(not_built())
+        trust::answer_startup(host, place, policy, self.startup_poll)
     }
 
-    fn otel_env(
-        &self,
-        _team: &TeamName,
-        _role: &Role,
-        _base: &OtelConfig,
-    ) -> Vec<(String, String)> {
-        Vec::new()
+    fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
+        // The launcher's own attributes are kept and ours are appended.
+        let existing = std::env::var("OTEL_RESOURCE_ATTRIBUTES").ok();
+        launch::otel_vars(team, role, base, existing.as_deref())
     }
 }
