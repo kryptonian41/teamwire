@@ -15,7 +15,7 @@ mod members;
 #[path = "../../teamwire-deliver/tests/support/rig.rs"]
 mod rig;
 
-use teamwire_core::{CompletionStatus, EventType, ReportState};
+use teamwire_core::{CompletionStatus, EventType, ReportState, TeamName};
 use teamwire_report::{DoneError, DoneReport, done, parse_status};
 
 use kit::{at, team};
@@ -108,23 +108,57 @@ fn unknown_or_removed_member_and_closed_team_are_refused() {
 #[test]
 fn a_token_matches_only_its_own_members_hash() {
     let (mut rig, api) = team();
+    let alpha = TeamName::parse("alpha").unwrap();
     let token = "a".repeat(64);
     assert!(
-        !teamwire_report::token_matches(&rig.ctx(), &api, &token),
+        !teamwire_report::token_matches(&rig.ctx(), &alpha, &api, &token),
         "no hash stored"
     );
     rig.store
         .write(|tx| tx.set_member_token_hash(&api, &teamwire_report::hash_token(&token)))
         .unwrap();
-    assert!(teamwire_report::token_matches(&rig.ctx(), &api, &token));
+    assert!(teamwire_report::token_matches(
+        &rig.ctx(),
+        &alpha,
+        &api,
+        &token
+    ));
     assert!(!teamwire_report::token_matches(
         &rig.ctx(),
+        &alpha,
         &api,
         &"b".repeat(64)
     ));
     assert!(!teamwire_report::token_matches(
         &rig.ctx(),
+        &alpha,
         &role("ghost"),
         &token
     ));
+}
+
+#[test]
+fn a_token_of_another_team_or_a_removed_member_is_refused() {
+    let (mut rig, api) = team();
+    let alpha = TeamName::parse("alpha").unwrap();
+    let token = "c".repeat(64);
+    rig.store
+        .write(|tx| tx.set_member_token_hash(&api, &teamwire_report::hash_token(&token)))
+        .unwrap();
+    let beta = TeamName::parse("beta").unwrap();
+    assert!(
+        !teamwire_report::token_matches(&rig.ctx(), &beta, &api, &token),
+        "wrong team"
+    );
+
+    rig.store
+        .write(|tx| {
+            tx.remove_member(at(9), &api, None, &serde_json::json!({}))
+                .map(|_| ())
+        })
+        .unwrap();
+    assert!(
+        !teamwire_report::token_matches(&rig.ctx(), &alpha, &api, &token),
+        "removed member"
+    );
 }

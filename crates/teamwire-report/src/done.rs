@@ -3,7 +3,9 @@
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use teamwire_core::{CompletionStatus, FinalSource, MemberState, ReportGaps, Role, TeamState};
+use teamwire_core::{
+    CompletionStatus, FinalSource, MemberState, ReportGaps, Role, TeamName, TeamState,
+};
 use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
 
 use crate::note::gap_note;
@@ -25,14 +27,41 @@ pub fn hash_token(token: &str) -> [u8; 32] {
     Sha256::digest(token.as_bytes()).into()
 }
 
-/// True when `token` is the token launch gave `role`. A member with no
-/// stored hash matches nothing (ADR 0008 point 2).
-pub fn token_matches(ctx: &Ctx<'_>, role: &Role, token: &str) -> bool {
-    ctx.store
+/// True when `token` is the token launch gave `role` in team `team`.
+///
+/// Refused, with no reason given: a team that is not this store's, a member
+/// that was removed, a member with no stored hash, a token whose hash
+/// differs (ADR 0008 point 2). The hashes are compared without stopping at
+/// the first difference.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+pub fn token_matches(ctx: &Ctx<'_>, team: &TeamName, role: &Role, token: &str) -> bool {
+    let Ok(Some(row)) = ctx.store.read(|tx| tx.team()) else {
+        return false;
+    };
+    if row.name != *team {
+        return false;
+    }
+    let live = matches!(
+        ctx.store.read(|tx| tx.member(role)),
+        Ok(Some(m)) if m.state != MemberState::Removed
+    );
+    let stored = ctx
+        .store
         .read(|tx| tx.member_token_hash(role))
         .ok()
-        .flatten()
-        .is_some_and(|stored| stored == hash_token(token))
+        .flatten();
+    let given = hash_token(token);
+    let same = stored.is_some_and(|stored| {
+        stored
+            .iter()
+            .zip(given.iter())
+            .fold(0_u8, |diff, (a, b)| diff | (a ^ b))
+            == 0
+    });
+    live && same
 }
 
 /// What the write transaction decided.

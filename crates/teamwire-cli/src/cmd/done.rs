@@ -70,7 +70,7 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
         clock: &wiring.clock,
         config: &config,
     };
-    if !teamwire_report::token_matches(&ctx, &role, &token) {
+    if !teamwire_report::token_matches(&ctx, &team, &role, &token) {
         return fail(
             "refused.identity: the token does not belong to this member",
             REFUSED,
