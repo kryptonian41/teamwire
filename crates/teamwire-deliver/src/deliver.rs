@@ -1,0 +1,176 @@
+//! Typing one line into a located session.
+
+use std::thread;
+use std::time::{Duration, Instant};
+
+use teamwire_core::{
+    DeliveryError, DeliveryErrorCode, Harness, Host, HostError, HostErrorCode, Liveness, OneLine,
+    Place, PlaceState, ScreenState,
+};
+use teamwire_store::{Ctx, Party};
+
+use crate::DeliveryOutcome;
+use crate::budget::Budget;
+use crate::locate::{locate_with, recheck};
+
+/// A submit is tried at most this many times (ADR 0003 point 7).
+const MAX_TRIES: u32 = 3;
+/// No new try starts once this long has passed since the first.
+const RETRY_WINDOW: Duration = Duration::from_secs(5);
+/// The pause before the next try, times the number of tries so far.
+const RETRY_PAUSE: Duration = Duration::from_millis(250);
+/// How much of the screen the dialog check reads.
+const TAIL_LINES: u16 = 40;
+
+/// Locates `party` and types `line` into its session.
+///
+/// Nothing is typed unless the host view still confirms the place just
+/// before the send and the session is at its input prompt. A host code that
+/// proves nothing was submitted is retried, at most 3 tries in about 5
+/// seconds. A stall or timeout is `Unconfirmed` and never retried.
+pub fn deliver_line(ctx: &Ctx<'_>, party: &Party, line: &OneLine) -> DeliveryOutcome {
+    run(ctx, party, line, None)
+}
+
+/// Like `deliver_line`, for a caller with a time limit (the turn-end hook's
+/// 40 s, ADR 0007 point 6a). Every harness and host call gets the smaller of
+/// its own bound and the time left before `deadline`, measured with
+/// `ctx.clock.monotonic()`. A call that cannot start before the deadline
+/// gives `Undelivered` with `budget_exhausted`: nothing was typed by then. A
+/// submit cut short by the deadline is `Unconfirmed`, as any timeout is.
+pub fn deliver_line_within(
+    ctx: &Ctx<'_>,
+    party: &Party,
+    line: &OneLine,
+    deadline: Instant,
+) -> DeliveryOutcome {
+    run(ctx, party, line, Some(deadline))
+}
+
+fn run(ctx: &Ctx<'_>, party: &Party, line: &OneLine, deadline: Option<Instant>) -> DeliveryOutcome {
+    let budget = Budget::new(ctx.clock, deadline);
+    match try_deliver(ctx, party, line, &budget) {
+        Ok(outcome) => outcome,
+        Err(e) => DeliveryOutcome::Undelivered(e),
+    }
+}
+
+fn try_deliver(
+    ctx: &Ctx<'_>,
+    party: &Party,
+    line: &OneLine,
+    budget: &Budget<'_>,
+) -> Result<DeliveryOutcome, DeliveryError> {
+    let (harness, host) = ctx.adapters(party)?;
+    if !host.capabilities().can_type {
+        return Err(DeliveryError::new(
+            DeliveryErrorCode::NoHost,
+            format!("host {} cannot type into a session", host.id()),
+        ));
+    }
+    if line.as_str().is_empty() {
+        // Real herdr refuses empty text, and an empty line carries no message.
+        return Err(DeliveryError::new(
+            DeliveryErrorCode::HostBadArgument,
+            "there is nothing to type",
+        ));
+    }
+    let found = locate_with(ctx, party, harness, host, budget)?;
+    recheck(host, &found, budget)?;
+    check_input_ready(harness, host, &found.place, &found.session, budget)?;
+    Ok(submit_with_retries(ctx, host, &found.place, line, budget))
+}
+
+/// ADR 0006 point 3a: never type into a dialog.
+fn check_input_ready(
+    harness: &dyn Harness,
+    host: &dyn Host,
+    place: &Place,
+    session: &teamwire_core::SessionId,
+    budget: &Budget<'_>,
+) -> Result<(), DeliveryError> {
+    let blocked = |source: &str| {
+        DeliveryError::new(
+            DeliveryErrorCode::SessionBlocked,
+            format!("{source} reports the session is blocked"),
+        )
+    };
+    if host
+        .state(place, budget.call()?)
+        .map_err(DeliveryError::from)?
+        == PlaceState::Blocked
+    {
+        return Err(blocked("the host"));
+    }
+    // The harness listing may report the state too. A failed listing is not
+    // a reason to refuse: the host view already confirmed the place.
+    if harness.is_alive(session, budget.call()?) == Ok(Liveness::Alive(PlaceState::Blocked)) {
+        return Err(blocked("the harness"));
+    }
+    if host.capabilities().guards_dialogs {
+        return Ok(());
+    }
+    let tail = host
+        .read_tail(place, TAIL_LINES, budget.call()?)
+        .map_err(DeliveryError::from)?;
+    match harness.screen_state(&tail) {
+        ScreenState::InputPrompt => Ok(()),
+        ScreenState::Dialog | ScreenState::Unknown => Err(DeliveryError::new(
+            DeliveryErrorCode::NotAtInputPrompt,
+            "the screen does not show the input prompt",
+        )),
+    }
+}
+
+fn submit_with_retries(
+    ctx: &Ctx<'_>,
+    host: &dyn Host,
+    place: &Place,
+    line: &OneLine,
+    budget: &Budget<'_>,
+) -> DeliveryOutcome {
+    let started = ctx.clock.monotonic();
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        let timeout = match budget.call() {
+            Ok(t) => t,
+            Err(e) => return DeliveryOutcome::Undelivered(e),
+        };
+        let err = match host.submit(place, line, timeout) {
+            Ok(()) => return DeliveryOutcome::HandedOff,
+            Err(e) => e,
+        };
+        match err.code {
+            // Only these codes prove the text was not submitted.
+            HostErrorCode::NotReady | HostErrorCode::Busy => {
+                let in_time =
+                    ctx.clock.monotonic().saturating_duration_since(started) < RETRY_WINDOW;
+                if tries >= MAX_TRIES || !in_time {
+                    return DeliveryOutcome::Undelivered(err.into());
+                }
+                let pause = RETRY_PAUSE * tries;
+                thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
+            }
+            // The text may be on screen: never send it again (INV-5).
+            HostErrorCode::Stalled | HostErrorCode::Timeout => {
+                return DeliveryOutcome::Unconfirmed(err.into());
+            }
+            HostErrorCode::Blocked
+            | HostErrorCode::NotFound
+            | HostErrorCode::BadArgument
+            | HostErrorCode::Unsupported
+            | HostErrorCode::Other => return DeliveryOutcome::Undelivered(refused(err)),
+        }
+    }
+}
+
+/// A host that refuses to type into a dialog is reported as a blocked
+/// session, as the state check would have; every other code keeps its own.
+fn refused(err: HostError) -> DeliveryError {
+    if err.code == HostErrorCode::Blocked {
+        DeliveryError::new(DeliveryErrorCode::SessionBlocked, err.detail)
+    } else {
+        err.into()
+    }
+}

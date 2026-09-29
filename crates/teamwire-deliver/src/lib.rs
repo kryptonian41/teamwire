@@ -4,16 +4,22 @@
 //!
 //! Never: type into a place that only one view names; retry after a stall
 //! or a timeout (that outcome is `Unconfirmed`); hold a store transaction
-//! across a host call.
+//! across a host call; type into a session that shows a dialog.
 //!
 //! Invariants: every typed line is a `OneLine`; a "not submitted" host code
 //! is retried at most 3 times in about 5 seconds, then `Undelivered`.
 
-use serde::{Deserialize, Serialize};
-use teamwire_core::{DeliveryError, DeliveryErrorCode, OneLine, Place};
-use teamwire_store::{Ctx, Party};
+mod budget;
+mod deliver;
+mod lines;
+mod locate;
 
-const NOT_BUILT: &str = "teamwire-deliver is not built yet";
+use serde::{Deserialize, Serialize};
+use teamwire_core::DeliveryError;
+
+pub use deliver::{deliver_line, deliver_line_within};
+pub use lines::{message_line, result_line};
+pub use locate::locate;
 
 /// What happened to one typed line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,14 +31,4 @@ pub enum DeliveryOutcome {
     Unconfirmed(DeliveryError),
     /// Nothing was typed.
     Undelivered(DeliveryError),
-}
-
-/// The place where `party`'s session runs now, agreed by two views.
-pub fn locate(_ctx: &Ctx<'_>, _party: &Party) -> Result<Place, DeliveryError> {
-    Err(DeliveryError::new(DeliveryErrorCode::HostOther, NOT_BUILT))
-}
-
-/// Locates `party` and types `line` into its session.
-pub fn deliver_line(_ctx: &Ctx<'_>, _party: &Party, _line: &OneLine) -> DeliveryOutcome {
-    DeliveryOutcome::Undelivered(DeliveryError::new(DeliveryErrorCode::HostOther, NOT_BUILT))
 }
