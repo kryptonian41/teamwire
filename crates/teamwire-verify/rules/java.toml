@@ -1,0 +1,18 @@
+# Java and Kotlin.
+language = "java"
+extensions = ["java", "kt"]
+test_paths = ["**/src/test/**", "**/*Test.java", "**/*Tests.java", "**/*Test.kt", "**/*Tests.kt"]
+test_markers = ["@Test"]
+config_files = ["**/checkstyle*.xml", "**/spotbugs*.xml", "**/detekt*.yml", "**/.editorconfig"]
+
+[[weakening]]
+id = "disabled"
+contains = "@Disabled"
+
+[[weakening]]
+id = "ignore"
+contains = "@Ignore"
+
+[[weakening]]
+id = "suppress-warnings"
+contains = "@SuppressWarnings"

@@ -1,0 +1,28 @@
+language = "go"
+extensions = ["go"]
+test_paths = ["**/*_test.go"]
+test_markers = ["func Test"]
+config_files = [
+  "**/.golangci.yml",
+  "**/.golangci.yaml",
+  "**/.golangci.toml",
+  "**/.golangci.json",
+]
+
+[[weakening]]
+id = "skip"
+contains = "t.Skip("
+word_start = true
+
+[[weakening]]
+id = "skip-now"
+contains = "t.SkipNow("
+word_start = true
+
+[[weakening]]
+id = "nolint"
+contains = "//nolint"
+
+[[weakening]]
+id = "nolint-spaced"
+contains = "// nolint"
