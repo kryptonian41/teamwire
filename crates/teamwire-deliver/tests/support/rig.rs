@@ -36,7 +36,12 @@ impl Rig {
     }
 
     pub(crate) fn with_lead_kind(kind: SessionKind) -> Self {
-        let harness = Arc::new(FakeHarness::new());
+        Self::build(kind, "fake")
+    }
+
+    /// The lead's harness has the id `harness_id`.
+    pub(crate) fn build(kind: SessionKind, harness_id: &'static str) -> Self {
+        let harness = Arc::new(FakeHarness::with_id(HarnessId::from_static(harness_id)));
         let host = Arc::new(FakeHost::new());
         let mut registry = Registry::new();
         registry.add_harness(harness.clone()).unwrap();
@@ -50,7 +55,7 @@ impl Rig {
                     &NewTeam {
                         name: TeamName::parse("alpha").unwrap(),
                         title: "Alpha".to_owned(),
-                        lead_harness: HarnessId::from_static("fake"),
+                        lead_harness: HarnessId::from_static(harness_id),
                         lead_host: HostId::from_static("fake"),
                         lead_route: teamwire_core::LeadRoute::Sink,
                         lead_session: Some((sid("lead-1"), kind)),
