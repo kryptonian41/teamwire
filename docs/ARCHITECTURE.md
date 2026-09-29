@@ -94,7 +94,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `team.db` (with `-wal`, `-shm`) | teamwire only | Every record below |
 | `briefs/<role>.md` | launch | The brief as sent |
 | `contract/<role>.md` | launch | The rendered system-prompt contract |
-| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks and MCP server (mode 0600) |
+| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
 | `setup/<role>.log` | launch | Output of the setup command |
 | `comms/<display-id>.md` | send | Full message text (copy; the store has the original) |
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |
@@ -280,7 +280,9 @@ Claude Code specifics that the adapter owns:
   --permission-mode bypassPermissions --append-system-prompt-file
   contract/<role>.md --settings members/<role>/settings.json --mcp-config
   members/<role>/mcp.json [--model ...] [--effort ...]`. teamwire chooses the
-  session id.
+  session id. The member's identity variables travel in the `env` key of that
+  `settings.json`, because herdr cannot pass environment to the agent
+  (ADR 0008).
 - The lead's session id and kind come from `CLAUDE_CODE_SESSION_ID` and
   `CLAUDE_CODE_SESSION_KIND`; `bg` is refused.
 - Liveness comes from `~/.claude/sessions/<pid>.json` first and `claude

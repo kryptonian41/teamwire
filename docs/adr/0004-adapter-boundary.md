@@ -61,6 +61,8 @@ The full signatures are in `docs/api/core.md`. Rules that go with them:
    | `mcp_client` | yes | n/a | n/a | yes |
    | `choose_session_id` | yes (`--session-id`) | n/a | n/a | yes |
    | `can_push` (harness puts text in its own session) | no in v1 | n/a | n/a | configurable |
+   | `session_env_via_config` (identity through a config file) | yes (`settings.json` `env`) | n/a | n/a | configurable |
+   | `sets_env_at_spawn` (host passes environment) | n/a | no | yes (`new-window -e`) | configurable; `fake-herdr` never |
    | `submit_ack` | none | "submitted", `--wait` sees a state change | none | configurable |
 
    The core picks routes from these fields, never from product names.

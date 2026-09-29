@@ -14,11 +14,31 @@ headless runs have no `HERDR_PANE_ID`.
 
 ## Decision
 
-1. **Every member gets a random 128-bit token at launch.** teamwire puts it in
-   the member's environment as `TEAMWIRE_TOKEN` and in the argv of its MCP
-   server entry in `members/<role>/mcp.json` (file mode 0600). The store keeps
-   only its SHA-256. `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` and `TEAMWIRE_HOME` go
-   beside it.
+1. **Every member gets a random 128-bit token at launch.** The store keeps
+   only its SHA-256. The token and `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`,
+   `TEAMWIRE_HOME` reach the member through the first identity channel that
+   the member's adapters offer, in this order:
+
+   | Channel | Capability | v1 adapters |
+   | --- | --- | --- |
+   | The harness's per-session configuration file | harness `session_env_via_config` | Claude Code: the `env` key of the per-member `settings.json` passed with `--settings` |
+   | The host sets the environment when it starts the place | host `sets_env_at_spawn` | tmux (`new-window -e`); herdr cannot (`herdr agent start --help`, 2026-09-29: only `--kind`, `--pane`, `--timeout` and agent args) |
+   | Neither | | Launch refuses the member with `no_identity_channel` before creating anything |
+
+   The host's own shell environment is never assumed to reach the agent:
+   herdr types the start command into a shell it started itself, so
+   teamwire's environment does not reach it. The lead checked on 2026-09-29
+   that a Claude session started with `--settings <file>` whose file holds
+   `{"env": {...}}` shows the value both in the Bash tool and in a Stop hook
+   defined in the same file.
+
+   The configuration files that hold the token (`members/<role>/settings.json`
+   and `members/<role>/mcp.json`) are written with mode 0600 under
+   `$TEAMWIRE_HOME/teams/<team>/`, never in the member's worktree. The MCP
+   server also gets the token in its argv from `mcp.json`, because whether a
+   stdio MCP server inherits the session's environment is untested (harness
+   Q4). The hook commands in `settings.json` carry `--team` and `--role` in
+   their argv as well.
 2. **A member's call is accepted only with a token whose hash matches its
    role.** `--from` defaults to `TEAMWIRE_ROLE`. A `--from` naming another
    role, or a missing or wrong token, is refused with `refused.identity`.

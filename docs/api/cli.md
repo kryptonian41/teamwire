@@ -152,7 +152,9 @@ and its rules as text.
 ## Member commands
 
 Each reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`, `TEAMWIRE_TOKEN` and
-`TEAMWIRE_HOME` from the environment that launch set.
+`TEAMWIRE_HOME` from its environment. Launch puts them there through the
+member's identity channel (ADR 0008): for Claude Code, the `env` key of the
+per-member `settings.json`, which reaches the Bash tool and the hooks.
 
 ### `teamwire done --status done|blocked|failed --summary TEXT`
 

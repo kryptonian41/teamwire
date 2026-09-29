@@ -30,8 +30,8 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
 | `FakeHarness` | in-process `Harness` | Sessions, pids and liveness in a map; configurable capabilities (with or without turn-end hook) | Background caller, dead session, two processes for one session, listing failure |
 | `FakePlatform` | in-process `Platform` | Environments per pid, free space, a sleep hold that records start and release | Env read failure, low disk, network filesystem |
 | `FakeClock` | in-process `Clock` | Time moves only when the test says so | Jumps (sleep and wake) |
-| `fake-herdr` | binary | Speaks herdr's JSON CLI for the commands teamwire uses (`agent start/prompt/get/list/read/send-keys`, `pane close/list/get`, `workspace` and `tab` create and rename). State in a JSON file named by `FAKE_HERDR_STATE`; every call appended to `FAKE_HERDR_LOG` | A fault file (`FAKE_HERDR_FAULTS`) scripts errors by command and target: `agent_pane_busy` twice then success, `agent_prompt_stalled`, a hang, `agent_not_found`, garbage output |
-| `fake-claude` | binary | Started by `fake-herdr agent start` in a fake pane. Writes a session file into `TEAMWIRE_CLAUDE_DIR/sessions/`, reads its `--settings` file, and plays a script (`FAKE_CLAUDE_SCRIPT`) of steps: run a shell command (for example `teamwire send ...`, `teamwire done ...`), then end the turn by running the Stop hook from its settings with the JSON Claude Code would send | Never stop, stop twice, send a wrong session id, exit without stopping, print the trust dialog or the escalated trust dialog |
+| `fake-herdr` | binary | Starts every agent with a **cleared environment** (only `PATH`, `HOME`, `TMPDIR` and its own `FAKE_*` variables), as real herdr does in effect, so a member can get its identity only through its declared channel. Speaks herdr's JSON CLI for the commands teamwire uses (`agent start/prompt/get/list/read/send-keys`, `pane close/list/get`, `workspace` and `tab` create and rename). State in a JSON file named by `FAKE_HERDR_STATE`; every call appended to `FAKE_HERDR_LOG` | A fault file (`FAKE_HERDR_FAULTS`) scripts errors by command and target: `agent_pane_busy` twice then success, `agent_prompt_stalled`, a hang, `agent_not_found`, garbage output |
+| `fake-claude` | binary | Started by `fake-herdr agent start` in a fake pane. Writes a session file into `TEAMWIRE_CLAUDE_DIR/sessions/`, reads its `--settings` file and applies its `env` key to every shell step and hook it runs (as Claude Code does), and plays a script (`FAKE_CLAUDE_SCRIPT`) of steps: run a shell command (for example `teamwire send ...`, `teamwire done ...`), then end the turn by running the Stop hook from its settings with the JSON Claude Code would send | Never stop, stop twice, send a wrong session id, exit without stopping, print the trust dialog or the escalated trust dialog |
 
 Each trait has a **contract suite** in `teamwire_fakes::contract`
 (`host_contract(&dyn Host)`, `harness_contract(&dyn Harness)`,
@@ -95,6 +95,7 @@ temporary `TEAMWIRE_HOME` and temporary repository. Scenarios:
 | Scenario | Proves |
 | --- | --- |
 | Launch two implementers and an investigator; each sends one message, commits, calls `done`; the watch prints `WATCHING` then `TEAM-COMPLETE 3/3 done`; verify passes; close archives and cleans up | The whole lifecycle, and "a healthy team wakes the lead with exactly two watch lines plus one line per result" |
+| A member started by `fake-herdr` (cleared environment) runs `teamwire send` and `teamwire done` from a shell step, and its Stop hook delivers | Identity reaches the member only through `settings.json` `env`; this test fails if launch forgets it |
 | A member's report lacks a progress line | Held once with the facts, then delivered on the next stop |
 | The lead's pane is taken over by another fake session before a member finishes | Nothing typed into it; `UNDELIVERED` printed once; `status` shows the result path |
 | A reprompt to a finished member | Watch re-arms; the second completion is a second result |
@@ -112,8 +113,10 @@ user, never in `cargo test`:
 
 - `crates/teamwire-harness-claude/examples/live_check.rs`: starts one real
   Claude Code session in a scratch directory with teamwire's per-run
-  `--settings` and `--mcp-config`, and confirms the Stop hook runs and the MCP
-  tools are listed. It prints each step and exits.
+  `--settings` and `--mcp-config`, and confirms the Stop hook runs, the
+  `settings.json` `env` values reach the Bash tool and the hook (the lead
+  confirmed this by hand on 2026-09-29), and the MCP tools are listed. It
+  prints each step and exits.
 - `crates/teamwire-host-herdr/examples/live_check.rs`: read-only herdr calls
   (`agent list`, `agent get` on the caller's own pane) to confirm the JSON
   shapes still match the adapter's parser.

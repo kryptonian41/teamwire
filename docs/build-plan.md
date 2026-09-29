@@ -148,7 +148,9 @@ tests first; T05-T09 run in the next wave).
 `FakeHost`, `FakeHarness`, `FakePlatform`, `FakeClock`, `TestHome`, the
 `fake-herdr` and `fake-claude` binaries, and the contract suites
 `host_contract`, `harness_contract`, `platform_contract`, all as described in
-`docs/test-strategy.md`. The fake binaries' fault files and scripts are
+`docs/test-strategy.md`. `fake-herdr` starts every agent with a cleared
+environment, and `fake-claude` applies the `env` key of its `--settings` file
+to its shell steps and hooks. The fake binaries' fault files and scripts are
 documented in the crate's README. The fakes pass their own contract suites.
 
 ### T05 herdr host adapter (wave 3)
@@ -157,7 +159,8 @@ documented in the crate's README. The fakes pass their own contract suites.
 error envelope mapped to `HostErrorCode` by `error.code`; `agent start` with
 the bounded retry on `agent_pane_busy` and `agent_not_ready`; `occupant` from
 `agent get` (`agent_session.value`); one workspace per team and one tab per
-member, labels set once. Passes `host_contract` against `fake-herdr`.
+member, labels set once. Capabilities: `sets_env_at_spawn = false`.
+Passes `host_contract` against `fake-herdr`.
 Required test: `crates/teamwire-host-herdr/tests/errors.rs::pane_busy_retried_by_code`.
 Adds `examples/live_check.rs` (read-only calls only).
 
@@ -165,8 +168,11 @@ Adds `examples/live_check.rs` (read-only calls only).
 
 `ClaudeCode` implements `Harness`: `launch_spec` (argv of
 `ARCHITECTURE.md`, contract and brief as files, `--session-id` chosen by
-teamwire, per-run `settings.json` with the Stop and PostToolUse hooks and
-`mcp.json` with the member's token, `OTEL_RESOURCE_ATTRIBUTES` appended);
+teamwire, per-run `settings.json` with the Stop and PostToolUse hooks (their
+commands carry `--team` and `--role`) and an `env` key holding the member's
+`TEAMWIRE_*` identity and token, `mcp.json` with the token in the server's
+argv, both mode 0600 under `$TEAMWIRE_HOME`, `OTEL_RESOURCE_ATTRIBUTES`
+appended; capability `session_env_via_config = true`);
 `current_session` from `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CODE_SESSION_KIND`;
 liveness from session files, then `claude agents --json` with both row shapes
 and a 5 s bound; `parse_turn_end` and `hold_reply`; the trust step (read
@@ -190,7 +196,9 @@ locator property.
 ### T08 Launch (wave 3)
 
 Spec parsing and whole-spec validation (LCH-2, LCH-5, LCH-6, LCH-7,
-LCH-9, LCH-10, LCH-18, LCH-23); member records written before each
+LCH-9, LCH-10, LCH-18, LCH-20, LCH-23), including the choice of each
+member's identity channel from its adapters' capabilities and the refusal
+`no_identity_channel`; member records written before each
 irreversible step (LCH-3); `git worktree add` with `base_sha`; setup with the
 `TEAMWIRE_*` variables, timeout, log and undo; contract text as data files in
 `crates/teamwire-launch/contracts/` (one per kind, plus the shared "talking to

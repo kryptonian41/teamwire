@@ -187,7 +187,10 @@ pub trait Host: Send + Sync {
 }
 
 pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
-                      pub knows_session_of_place: bool, pub submit_ack: SubmitAck }
+                      pub knows_session_of_place: bool, pub submit_ack: SubmitAck,
+                      /// The host can give the started program environment
+                      /// variables (tmux `new-window -e`). herdr cannot.
+                      pub sets_env_at_spawn: bool }
 pub enum PlaceState { Idle, Working, Blocked, Gone, Unknown }
 pub struct Occupant { pub session: Option<SessionId>, pub pids: Vec<Pid> }
 pub struct HostError { pub code: HostErrorCode, pub detail: String }
@@ -220,7 +223,10 @@ pub trait Harness: Send + Sync {
 
 pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          pub mcp_client: bool, pub choose_session_id: bool,
-                         pub can_push: bool }
+                         pub can_push: bool,
+                         /// Environment for the session can be set in a per-run
+                         /// config file (Claude Code `settings.json` `env`).
+                         pub session_env_via_config: bool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      pub transcript: Option<PathBuf> }
