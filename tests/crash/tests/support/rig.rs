@@ -139,6 +139,8 @@ impl Rng {
 
 #[derive(Debug)]
 pub enum Identity {
+    /// No identity variables: `launch` and `close` are run by the lead's shell.
+    Nobody,
     Lead,
     Member(String),
 }
@@ -208,12 +210,22 @@ impl Default for Rig {
 }
 
 impl Rig {
-    /// Team `alpha`, its lead session `lead-1`, no members yet.
-    pub fn new() -> Self {
+    /// A home with no team in it: `launch` makes the team.
+    pub fn bare() -> Self {
         let mut herdr = FakeHerdrEnv::new().unwrap();
         herdr.set_script(&ClaudeScript::default()).unwrap();
         let home = TestHome::new().unwrap();
-        let mut store = Store::open(home.path(), &team_name()).unwrap();
+        Self {
+            herdr,
+            home,
+            path_prefix: None,
+        }
+    }
+
+    /// Team `alpha`, its lead session `lead-1`, no members yet.
+    pub fn new() -> Self {
+        let rig = Self::bare();
+        let mut store = Store::open(rig.home.path(), &team_name()).unwrap();
         store
             .write(|tx| {
                 tx.create_team(
@@ -233,11 +245,7 @@ impl Rig {
                 .map(|_| ())
             })
             .unwrap();
-        Self {
-            herdr,
-            home,
-            path_prefix: None,
-        }
+        rig
     }
 
     pub fn store(&self) -> Store {
@@ -364,6 +372,7 @@ impl Rig {
                     .env("TEAMWIRE_ROLE", role)
                     .env("TEAMWIRE_TOKEN", token_of(role));
             }
+            Identity::Nobody => {}
             Identity::Lead => {
                 cmd.env("CLAUDE_CODE_SESSION_ID", LEAD_SESSION);
             }
@@ -493,4 +502,55 @@ pub fn recipient(role: &str) -> Recipient {
 
 pub fn actor(name: &str) -> Actor {
     Actor::parse(name).unwrap()
+}
+
+/// Runs a launch of one pane member `scout` in team `alpha`, and asserts it
+/// started.
+pub fn launch_scout(rig: &Rig, work: &Path) {
+    let spec = serde_json::json!({"team": "alpha", "title": "Alpha", "children": [
+        {"role": "scout", "title": "Scout", "mode": "pane", "cwd": work, "task": "look around"}]});
+    let out = rig
+        .start_with_stdin(&["launch"], &Identity::Nobody, &spec.to_string())
+        .finish();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    wait_idle(rig);
+}
+
+/// Waits until `close --dry-run` no longer calls a member busy: `close`
+/// refuses a busy member, and a fresh member works on its first task for a
+/// moment.
+pub fn wait_idle(rig: &Rig) {
+    let waited = Instant::now();
+    loop {
+        let out = rig.run(&["close", "alpha", "--dry-run"], &Identity::Nobody);
+        if !out.stdout.contains("busy") && !out.stderr.contains("busy") {
+            return;
+        }
+        assert!(
+            waited.elapsed() < Duration::from_secs(20),
+            "the member stayed busy: {out:?}"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Every archive directory of the home, oldest name first.
+pub fn archives(home: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(home.join("archive")) else {
+        return Vec::new();
+    };
+    let mut dirs: Vec<PathBuf> = entries.map(|e| e.unwrap().path()).collect();
+    dirs.sort();
+    dirs
+}
+
+/// True when every file of the archive hashes to its `SHA256SUMS` line.
+pub fn archive_verifies(dir: &Path) -> bool {
+    Command::new("/usr/bin/shasum")
+        .args(["-a", "256", "-c", "SHA256SUMS"])
+        .current_dir(dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|s| s.success())
 }
