@@ -110,7 +110,7 @@ crate and listed in `docs/api/core.md`):
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation`, `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender`, `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
-| `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `route`, `reason`, `result_sha256` |
+| `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `result_sha256` |
 | `verify_records` | verify run per member | `role`, `head_sha`, `verdict`, `exit_code`, `seconds`, `flags`, `log_sha256` |
 | `waivers` | waived flag | `role`, `flag_id`, `head_sha`, `reason` |
 | `watch_lease` | team (single row) | `pid`, `host`, `started_at`, `heartbeat_at` |

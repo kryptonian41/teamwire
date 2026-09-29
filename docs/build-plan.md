@@ -225,7 +225,9 @@ Required tests: every `crates/teamwire-verify/tests/...` row in
 
 `poll` with the rules of WAT-1 to WAT-16: one line per poll, announcements
 persisted, startup grace, listing failure, sleep gap, reprompt re-arm, watch
-route `COMPLETED`, `UNDELIVERED`, `QUESTION-UNDELIVERED`, `TEAM-STALLED`,
+route `COMPLETED`, `UNDELIVERED` (including `delivery_interrupted` after
+90 s in `delivering`, set by a conditional update), `UNCONFIRMED`,
+`QUESTION-UNDELIVERED`, `QUESTION-UNCONFIRMED` (ADR 0007 point 6a), `TEAM-STALLED`,
 `TEAM-COMPLETE`; the watch lease; the watch never calls a writing host
 method. `status` as in `docs/api/cli.md`, read-only. Required tests: every
 `crates/teamwire-watch/tests/...` row in `docs/failure-modes.md` and the watch
@@ -253,7 +255,9 @@ delivery-state property.
 
 ### T13 Completions, results and hooks (wave 4)
 
-`done` (validation, route B gap check), the result file with its marker and
+`done` (validation, route B gap check), the 40 s delivery deadline inside the
+Stop hook and the `"timeout": 60` it relies on (ADR 0007 point 6a;
+`delivering_since` recorded), the result file with its marker and
 rescue, `on_turn_end` (route A of ADR 0007, including `delivering` recovery
 and the combined hold note), `on_tool_use` reminders, and the CLI entry
 points `teamwire done`, `teamwire hook claude-stop`, `teamwire hook

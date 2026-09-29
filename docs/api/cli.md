@@ -80,8 +80,10 @@ Events, each announced once per occurrence:
 | `LATE <role> <age>` | Past its deadline, once per generation |
 | `DECLARED <role>` | A completion recorded but not reported for 2 polls |
 | `COMPLETED <role> (<status>) <summary> Result: <path>` | Watch route only (ADR 0007) |
-| `UNDELIVERED <role> <reason> Result: <path>` | A result the lead could not be reached with |
+| `UNDELIVERED <role> <reason> Result: <path>` | A result the lead could not be reached with, including `delivery_interrupted` (left in `delivering` for over 90 s, ADR 0007 point 6a) |
+| `UNCONFIRMED <role> Result: <path>` | A result whose typing stalled or timed out; it may or may not be on the lead's screen |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to the lead that could not be typed |
+| `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
 | `STORE-ERROR <code>` | The store could not be read; once per code |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |
 | `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live member has a completion in its current generation that was reported (by the hook or the watch); the watch exits |

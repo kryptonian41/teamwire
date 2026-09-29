@@ -68,6 +68,30 @@ Weak points found by the reports:
 6. **The watch does not repeat route A.** A completion delivered by the hook
    produces no watch line (WAT-1). A completion still `pending` for two polls
    produces `DECLARED` once (WAT-12).
+6a. **One rule for results nobody announced, shared by the hook and the
+   watch** (REP-4, REP-14):
+   - The per-run settings give the Stop hook `"timeout": 60`. The hook
+     carries a 40 s delivery budget as a deadline; every harness and host
+     call inside it gets the smaller of its own bound and the time left. When
+     the budget runs out before the host accepted the line, the completion is
+     `undelivered` with `budget_exhausted` (known not typed) or
+     `unconfirmed` (a submit was in flight).
+   - `delivering` records `delivering_since`. The watch marks a completion
+     that has been `delivering` for more than 90 s (the hook's 60 s limit
+     plus margin, so the hook is certainly dead) as `undelivered` with
+     `delivery_interrupted`, in one conditional update
+     (`WHERE report_state = 'delivering' AND delivering_since < now - 90 s`),
+     and prints `UNDELIVERED <role> delivery_interrupted Result: <path>` once.
+     This covers a finished member that never ends another turn. Python
+     reported the same case as `DECLARED` because it wrote its marker only
+     after delivery.
+   - A result whose typing ended `unconfirmed` gets
+     `UNCONFIRMED <role> Result: <path>` once. A question to the lead gets
+     `QUESTION-UNDELIVERED <id> from <role>` or
+     `QUESTION-UNCONFIRMED <id> from <role>` once. Printing on the watch's
+     own output types into no session, so INV-5 and INV-8 hold.
+   - Every one of these lines ends that result for `TEAM-COMPLETE`
+     (see `docs/api/cli.md`).
 7. **The report check stays at completion time**, in route A and route B, and
    also runs in `verify` (VER-3). It is cheap and exists for two incidents
    (INV-18, INV-19). specmsg Q5 is decided: keep it.
