@@ -1,0 +1,104 @@
+[workspace]
+resolver = "2"
+members = ["crates/*", "tests/fakes", "tests/crash", "tests/e2e", "xtask"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.94"
+version = "0.0.0"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# The workspace's own crates.
+teamwire-core = { path = "crates/teamwire-core" }
+teamwire-store = { path = "crates/teamwire-store" }
+teamwire-platform = { path = "crates/teamwire-platform" }
+teamwire-host-herdr = { path = "crates/teamwire-host-herdr" }
+teamwire-host-tmux = { path = "crates/teamwire-host-tmux" }
+teamwire-harness-claude = { path = "crates/teamwire-harness-claude" }
+teamwire-deliver = { path = "crates/teamwire-deliver" }
+teamwire-verify = { path = "crates/teamwire-verify" }
+teamwire-msg = { path = "crates/teamwire-msg" }
+teamwire-report = { path = "crates/teamwire-report" }
+teamwire-launch = { path = "crates/teamwire-launch" }
+teamwire-close = { path = "crates/teamwire-close" }
+teamwire-watch = { path = "crates/teamwire-watch" }
+teamwire-otel = { path = "crates/teamwire-otel" }
+teamwire-mcp = { path = "crates/teamwire-mcp" }
+teamwire-fakes = { path = "tests/fakes" }
+
+# Exact pins (docs/build-plan.md T01).
+rmcp = { version = "=3.5.0", features = ["server", "transport-io", "macros", "schemars"] }
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "metrics", "trace"] }
+prost = "0.14.4"
+ureq = "3.4.2"
+
+# Newest on crates.io on 2026-09-29 that builds on the pinned 1.94.1.
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive", "env"] }
+getrandom = "0.4.3"
+globset = "0.4.20"
+hex = "0.4.3"
+nix = { version = "0.31.3", features = ["process", "signal", "fs", "user"] }
+proptest = "1.11.0"
+rusqlite = { version = "0.40.2", features = ["bundled", "backup", "limits"] }
+schemars = "1.2.2"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+sysinfo = "0.38.4" # 0.39 needs Rust 1.95; the toolchain is pinned at 1.94.1
+tempfile = "3.27.0"
+thiserror = "2.0.21"
+time = { version = "0.3.55", features = ["formatting", "parsing", "macros"] }
+tokio = { version = "1.53.1", features = ["full"] }
+toml = "1.1.6"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+ulid = { version = "3.0.0", features = ["serde"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unreachable_pub = "warn"
+unused_must_use = "deny"
+unexpected_cfgs = "warn"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+# Base: pedantic, as in uv and ruff, with their noisy lints allowed.
+pedantic = { level = "warn", priority = -2 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+if_not_else = "allow"
+map_unwrap_or = "allow"
+match_same_arms = "allow"
+implicit_hasher = "allow"
+# Stability: no panics or silent drops in library code.
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+indexing_slicing = "warn"
+let_underscore_must_use = "warn"
+await_holding_lock = "deny"
+# Suppression discipline: #[expect(lint, reason = "...")] only.
+allow_attributes = "deny"
+allow_attributes_without_reason = "deny"
+# A new enum variant forces a decision at every match.
+wildcard_enum_match_arm = "warn"
+# Hygiene.
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+exit = "warn"
+get_unwrap = "warn"
+use_self = "warn"
+
+[profile.dev]
+debug = "line-tables-only"
