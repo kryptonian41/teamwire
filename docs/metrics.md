@@ -63,7 +63,7 @@ paths never appear as labels.
 | `teamwire.verify.check.duration` | histogram | `s` | `team`, `verdict` | How long do member checks take? |
 | `teamwire.close.runs` | counter | `{run}` | `outcome`, `failed_step` | Where do closes stop? |
 | `teamwire.store.errors` | counter | `{error}` | `op`, `code` | Is the store healthy (busy, full, corrupt)? |
-| `teamwire.hook.duration` | histogram | `s` | `hook` | What does a hook cost each member turn? Read from the `hook_ms` field that a hook run puts in the `data` of every event it writes; a hook run that writes no event is not measured. |
+| `teamwire.hook.duration` | histogram | `s` | `hook` | What does a hook cost each member turn? Read from the `hook_ms` field that a hook run puts in the `data` of the last event it writes; a hook run that writes no event is not measured. |
 | `teamwire.export.lag` | gauge | `{event}` | none | How far behind is the OTLP export? |
 
 `teamwire metrics` prints these per team, plus three derived lines the lead
@@ -115,8 +115,9 @@ wave-1 contract:
 - A whole-spec refusal (exit 1) creates nothing, so it is not counted under
   `teamwire.launch.members` `outcome=refused`; only refusals of single
   members inside a launch that also stored something are.
-- Every event a hook run writes carries `data.hook` (`claude-stop`,
-  `claude-post-tool`) and `data.hook_ms`.
+- The last event a hook run writes (the `result.*` outcome or `member.held`)
+  carries `data.hook` (`claude-stop`, `claude-post-tool`) and
+  `data.hook_ms`; only then is the run's duration known.
 - A `member.reprompted` event with `data.undone: true` records an undone
   reprompt and is not counted as a reprompt. A `team.closed` event carries
   `data.outcome`; only `completed` closes the team.
