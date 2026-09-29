@@ -1,0 +1,91 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the test writes a config file into a temporary home"
+)]
+
+use std::fs;
+
+use teamwire_fakes::TestHome;
+
+use super::*;
+
+fn none(_: &str) -> Option<String> {
+    None
+}
+
+#[test]
+fn the_environment_wins_over_the_file() {
+    let home = TestHome::new().unwrap();
+    fs::write(
+        home.path().join("config.toml"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT = \"http://file:4318\"\n",
+    )
+    .unwrap();
+    let env = |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "http://env:4318".to_owned());
+    assert_eq!(
+        load_otlp_config(home.path(), &env).unwrap().endpoint,
+        "http://env:4318"
+    );
+    assert_eq!(
+        load_otlp_config(home.path(), &none).unwrap().endpoint,
+        "http://file:4318"
+    );
+}
+
+#[test]
+fn no_endpoint_means_export_is_off() {
+    let home = TestHome::new().unwrap();
+    assert!(load_otlp_config(home.path(), &none).is_none());
+    let empty = |_: &str| Some(String::new());
+    assert!(load_otlp_config(home.path(), &empty).is_none());
+}
+
+#[test]
+fn headers_and_timeout_are_read_and_decoded() {
+    let home = TestHome::new().unwrap();
+    let env = |k: &str| match k {
+        "OTEL_EXPORTER_OTLP_ENDPOINT" => Some("http://c:4318".to_owned()),
+        "OTEL_EXPORTER_OTLP_HEADERS" => {
+            Some("authorization=Bearer a%2Cb%25,x-team=alpha".to_owned())
+        }
+        "OTEL_EXPORTER_OTLP_TIMEOUT" => Some("2500".to_owned()),
+        _ => None,
+    };
+    let cfg = load_otlp_config(home.path(), &env).unwrap();
+    assert_eq!(
+        cfg.headers,
+        vec![
+            ("authorization".to_owned(), "Bearer a,b%".to_owned()),
+            ("x-team".to_owned(), "alpha".to_owned()),
+        ]
+    );
+    assert_eq!(cfg.timeout, Duration::from_millis(2500));
+    let plain = |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "http://c".to_owned());
+    assert_eq!(
+        load_otlp_config(home.path(), &plain).unwrap().timeout,
+        DEFAULT_TIMEOUT
+    );
+}
+
+#[test]
+fn file_values_drop_inline_comments_outside_quotes() {
+    let file = "\
+# a comment line
+OTEL_EXPORTER_OTLP_ENDPOINT = \"http://c:4318/#frag\" # trailing
+OTEL_EXPORTER_OTLP_TIMEOUT = 3000 # ms
+OTEL_EXPORTER_OTLP_HEADERS = 'a=b # not a comment'
+";
+    assert_eq!(
+        file_setting(file, "OTEL_EXPORTER_OTLP_ENDPOINT").as_deref(),
+        Some("http://c:4318/#frag")
+    );
+    assert_eq!(
+        file_setting(file, "OTEL_EXPORTER_OTLP_TIMEOUT").as_deref(),
+        Some("3000")
+    );
+    assert_eq!(
+        file_setting(file, "OTEL_EXPORTER_OTLP_HEADERS").as_deref(),
+        Some("a=b # not a comment")
+    );
+    assert_eq!(file_setting(file, "MISSING"), None);
+}

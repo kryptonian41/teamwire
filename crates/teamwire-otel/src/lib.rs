@@ -9,6 +9,7 @@
 //! the export mark; trace and span ids are derived from the team and event
 //! ids, so a resend produces the same ids.
 
+mod config;
 mod defs;
 mod export;
 mod history;
@@ -106,6 +107,7 @@ pub fn metrics(ctx: &Ctx<'_>, q: MetricsQuery) -> MetricsView {
     local::metrics_with(ctx.home, ctx.store, ctx.clock.now(), &q)
 }
 
+pub use config::load_otlp_config;
 pub use export::export_once;
 
 #[cfg(test)]

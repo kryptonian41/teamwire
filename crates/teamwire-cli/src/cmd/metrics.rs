@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Clock, Config, TeamName};
-use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView, OtlpConfig};
+use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView};
 use teamwire_store::{Ctx, Store, database_path};
 
 use crate::wiring::Wiring;
@@ -15,10 +15,6 @@ use crate::{Global, MetricsArgs, MetricsCommand, USAGE};
 const REFUSED: u8 = 1;
 /// The store could not be read or written.
 const STORE: u8 = 6;
-
-/// How long one export call may wait for a collector, unless
-/// `OTEL_EXPORTER_OTLP_TIMEOUT` (milliseconds) says otherwise.
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub(crate) fn run(args: &MetricsArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let MetricsArgs {
@@ -122,7 +118,7 @@ fn line(m: &MetricValue) -> String {
 /// slow collector never changes the exit code (OBS-2): the failure is
 /// printed, the mark stays, and the next run sends the batch.
 fn export(home: &Path, wiring: &Wiring) -> ExitCode {
-    let Some(config) = otlp_config(home) else {
+    let Some(config) = teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok()) else {
         warn("export is off: set OTEL_EXPORTER_OTLP_ENDPOINT to turn it on");
         return ExitCode::SUCCESS;
     };
@@ -185,54 +181,6 @@ fn team_dirs(home: &Path) -> Result<Vec<TeamName>, String> {
     Ok(teams)
 }
 
-/// The endpoint, headers and timeout from `OTEL_EXPORTER_OTLP_*` in the
-/// environment, else from the same keys in `$TEAMWIRE_HOME/config.toml`.
-/// `None` when no endpoint is set.
-fn otlp_config(home: &Path) -> Option<OtlpConfig> {
-    let file = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
-    let setting = |key: &str| {
-        std::env::var(key)
-            .ok()
-            .filter(|v| !v.is_empty())
-            .or_else(|| file_setting(&file, key))
-    };
-    let endpoint = setting("OTEL_EXPORTER_OTLP_ENDPOINT")?;
-    let headers = setting("OTEL_EXPORTER_OTLP_HEADERS")
-        .map(|list| parse_headers(&list))
-        .unwrap_or_default();
-    let timeout = setting("OTEL_EXPORTER_OTLP_TIMEOUT")
-        .and_then(|ms| ms.parse().ok())
-        .map_or(DEFAULT_TIMEOUT, Duration::from_millis);
-    Some(OtlpConfig {
-        endpoint,
-        headers,
-        timeout,
-    })
-}
-
-/// `KEY = "value"` on one line. The file is small and flat, so this reads
-/// only that shape.
-fn file_setting(file: &str, key: &str) -> Option<String> {
-    file.lines().find_map(|line| {
-        let (k, v) = line.split_once('=')?;
-        (k.trim() == key).then(|| v.trim().trim_matches('"').to_owned())
-    })
-}
-
-/// `name=value,name2=value2`, with `%2C` and `%25` in values as the
-/// exporter specification writes them.
-fn parse_headers(list: &str) -> Vec<(String, String)> {
-    list.split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(k, v)| {
-            (
-                k.trim().to_owned(),
-                v.replace("%2C", ",").replace("%25", "%"),
-            )
-        })
-        .collect()
-}
-
 #[expect(clippy::print_stdout, reason = "the metrics are the command's output")]
 fn say(text: &str) {
     print!("{text}");
@@ -261,26 +209,5 @@ mod tests {
         for bad in ["", "30", "m", "5x", "-5m", "1.5h"] {
             assert!(parse_duration(bad).is_err(), "{bad}");
         }
-    }
-
-    #[test]
-    fn header_lists_unescape_commas_and_percent() {
-        assert_eq!(
-            parse_headers("authorization=Bearer a%2Cb%25,x-team=alpha"),
-            vec![
-                ("authorization".to_owned(), "Bearer a,b%".to_owned()),
-                ("x-team".to_owned(), "alpha".to_owned()),
-            ]
-        );
-    }
-
-    #[test]
-    fn a_config_file_line_names_one_key() {
-        let file = "# comment\nOTEL_EXPORTER_OTLP_ENDPOINT = \"http://c:4318\"\nOTHER=1\n";
-        assert_eq!(
-            file_setting(file, "OTEL_EXPORTER_OTLP_ENDPOINT").as_deref(),
-            Some("http://c:4318")
-        );
-        assert_eq!(file_setting(file, "MISSING"), None);
     }
 }

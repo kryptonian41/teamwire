@@ -273,11 +273,46 @@ pub(crate) fn post(
     }
     let response = request
         .send(&message.encode_to_vec()[..])
-        .map_err(|e| ExportError::Http(format!("{url}: {e}")))?;
+        .map_err(|e| ExportError::Http(redact(&config.endpoint, &format!("{url}: {e}"))))?;
     let status = response.status().as_u16();
     if (200..300).contains(&status) {
         Ok(())
     } else {
-        Err(ExportError::Http(format!("{url}: status {status}")))
+        Err(ExportError::Http(redact(
+            &config.endpoint,
+            &format!("{url}: status {status}"),
+        )))
+    }
+}
+
+/// `text` with the `user:password@` part of `endpoint` (if it has one)
+/// replaced, so a credential in the URL never reaches an error message.
+fn redact(endpoint: &str, text: &str) -> String {
+    let userinfo = endpoint
+        .split_once("://")
+        .map(|(_, rest)| rest.split('/').next().unwrap_or(rest))
+        .and_then(|authority| authority.rsplit_once('@'))
+        .map(|(userinfo, _)| userinfo);
+    match userinfo {
+        Some(secret) if !secret.is_empty() => text.replace(secret, "***"),
+        _ => text.to_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact;
+
+    #[test]
+    fn a_credential_in_the_url_is_hidden() {
+        let text = "http://bob:hunter2@c:4318/v1/traces: status 401";
+        assert_eq!(
+            redact("http://bob:hunter2@c:4318", text),
+            "http://***@c:4318/v1/traces: status 401"
+        );
+        assert_eq!(
+            redact("http://c:4318", "http://c:4318/x"),
+            "http://c:4318/x"
+        );
     }
 }
