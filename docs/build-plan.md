@@ -123,7 +123,8 @@ directories, one per rule, each proving the rule fails when broken.
 
 ### T02 Store (wave 2)
 
-`Store::open`, `open_existing`, `write` (always `BEGIN IMMEDIATE`), `read`,
+`Store::open`, `open_existing`, `open_read_only` (never creates or migrates),
+`write` (always `BEGIN IMMEDIATE`), `read`,
 `backup_to`, `quick_check`, `integrity_check`; pragmas on every connection;
 `application_id` and `user_version`; forward migration in one transaction;
 refusal of a newer schema; one typed `Tx` method per operation named in

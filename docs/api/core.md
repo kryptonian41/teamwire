@@ -316,6 +316,11 @@ impl Store {
     /// migrates forward; refuses a newer schema (StoreError::SchemaNewer).
     pub fn open(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
     pub fn open_existing(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
+    /// For commands that only read (status, log, members, metrics, export,
+    /// doctor): `mode=ro`, never creates, never migrates. A database whose
+    /// schema version differs from the binary's is refused with SchemaNewer or
+    /// SchemaOlder, and nothing on disk changes (WAT-11).
+    pub fn open_read_only(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
     /// Runs `f` inside BEGIN IMMEDIATE; commits on Ok, rolls back on Err.
     pub fn write<T>(&mut self, f: impl FnOnce(&Tx) -> Result<T, StoreError>) -> Result<T, StoreError>;
     pub fn read<T>(&self, f: impl FnOnce(&ReadTx) -> Result<T, StoreError>) -> Result<T, StoreError>;
@@ -324,7 +329,7 @@ impl Store {
     pub fn integrity_check(&self) -> Result<String, StoreError>;
 }
 
-pub enum StoreError { Busy, Full, SchemaNewer { db: u32, binary: u32 },
+pub enum StoreError { Busy, Full, SchemaNewer { db: u32, binary: u32 }, SchemaOlder { db: u32, binary: u32 },
                       NotTeamwire, Corrupt(String), Constraint(String), Io(String) }
 ```
 

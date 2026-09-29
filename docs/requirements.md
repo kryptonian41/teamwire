@@ -176,7 +176,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | WAT-8 | MUST | A reprompt resets that member's counters and timers. A prompt that reached a finished member outside teamwire is shown in status as "prompted outside teamwire". | specmsg R40, E14, L14; INV-14 |
 | WAT-9 | SHOULD | `SILENT` after 3 quiet polls, `LATE` at a per-member deadline (default 1800 s), poll interval 20 s. All are configurable and tested. | specmsg R41, E15 |
 | WAT-10 | SHOULD | `TEAM-STALLED` is the only event the lead is told to turn into a push notification to the user. | specmsg R42 |
-| WAT-11 | MUST | `status` changes nothing and shows, per member: state, delivery state, reprompt count, age against deadline; then the last five messages, undelivered message ids and undelivered results. | specmsg R43, F; speclife LC-30, S1 |
+| WAT-11 | MUST | `status` (and every other read-only command) opens the store read-only, never creates or migrates it, changes nothing, and shows, per member: state, delivery state, reprompt count, age against deadline; then the last five messages, undelivered message ids and undelivered results. | specmsg R43, F; speclife LC-30, S1 |
 | WAT-12 | MUST | `DECLARED` is announced when a completion has been recorded but not reported for two polls. | specmsg E10 |
 | WAT-13 | MUST | `BLOCKED` is announced once when the host reports the member blocked by a dialog. | specmsg E9 |
 | WAT-14 | MUST | A gap between polls much longer than the interval (the machine slept) resets quiet counters instead of producing SILENT or DIED for everyone. | architect, from rust 1.9 and INV-10 |
