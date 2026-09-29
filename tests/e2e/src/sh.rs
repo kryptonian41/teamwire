@@ -19,14 +19,17 @@ pub fn commit() -> &'static str {
 /// Writes the member's report file. With `progress`, it holds a line for
 /// `$sha`; without, only the decisions list.
 pub fn report(progress: bool) -> String {
-    let line = if progress {
-        "- $sha work of $TEAMWIRE_ROLE | left: nothing\\n\\n"
+    let (line, args) = if progress {
+        (
+            "- %s work of %s | left: nothing\\n\\n",
+            " \"$sha\" \"$TEAMWIRE_ROLE\"",
+        )
     } else {
-        ""
+        ("", "")
     };
     format!(
         "mkdir -p \"$TEAMWIRE_HOME/teams/$TEAMWIRE_TEAM/reports\"\n\
-         printf '# report\\n\\n{line}Decisions I made: none\\n' \\\n\
+         printf '# report\\n\\n{line}Decisions I made: none\\n'{args} \\\n\
          > \"$TEAMWIRE_HOME/teams/$TEAMWIRE_TEAM/reports/$TEAMWIRE_ROLE.md\"\n"
     )
 }

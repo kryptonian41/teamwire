@@ -211,36 +211,41 @@ impl World {
     /// cleared environment with the fakes' `PATH`, the temporary home, and
     /// the lead's pane and session, so the locator finds the lead.
     fn command(&self, args: &[&str]) -> Command {
+        let mut cmd = self.command_outside_herdr(args);
+        cmd.env("HERDR_ENV", "1")
+            .env("HERDR_PANE_ID", &self.lead_pane)
+            .env("CLAUDE_CODE_SESSION_ID", LEAD_SESSION);
+        cmd
+    }
+
+    /// Like `command`, for a caller that is not in a herdr pane and has no
+    /// Claude session: the lead's host is then one that cannot be typed to,
+    /// and results reach the lead through the watch.
+    fn command_outside_herdr(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(teamwire());
         cmd.args(args)
             .env_clear()
             .envs(self.herdr.env())
             .env("TEAMWIRE_HOME", self.home.path())
-            .env("HERDR_ENV", "1")
-            .env("HERDR_PANE_ID", &self.lead_pane)
-            .env("CLAUDE_CODE_SESSION_ID", LEAD_SESSION)
             .current_dir(&self.repo);
         cmd
     }
 
     /// Runs `teamwire <args>` as the lead and waits, with `stdin` if given.
     pub fn teamwire(&self, args: &[&str], stdin: Option<&str>) -> Run {
-        let mut cmd = self.command(args);
-        cmd.stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = cmd.spawn().unwrap();
-        let mut input = child.stdin.take().unwrap();
-        if let Some(text) = stdin {
-            input.write_all(text.as_bytes()).unwrap();
-        }
-        drop(input);
-        let out = child.wait_with_output().unwrap();
-        Run {
-            code: out.status.code().unwrap_or(-1),
-            out: String::from_utf8_lossy(&out.stdout).into_owned(),
-            err: String::from_utf8_lossy(&out.stderr).into_owned(),
-        }
+        run(self.command(args), stdin)
+    }
+
+    /// Runs `teamwire <args>` from outside any herdr pane (see
+    /// `command_outside_herdr`).
+    pub fn teamwire_outside_herdr(&self, args: &[&str], stdin: Option<&str>) -> Run {
+        run(self.command_outside_herdr(args), stdin)
+    }
+
+    /// `teamwire launch` outside any herdr pane, with the spec on standard
+    /// input.
+    pub fn launch_outside_herdr(&self, spec: &Value) -> Run {
+        self.teamwire_outside_herdr(&["launch"], Some(&spec.to_string()))
     }
 
     /// `teamwire launch` with the spec on standard input.
@@ -255,6 +260,21 @@ impl World {
         let out = self.work.path().join(format!("watch-{team}.out"));
         let file = std::fs::File::create(&out).unwrap();
         let mut cmd = self.command(&["watch", team, "--interval", &interval_s.to_string()]);
+        let child = cmd
+            .stdin(Stdio::null())
+            .stdout(Stdio::from(file))
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        Watch { child, out }
+    }
+
+    /// Like `watch`, from outside any herdr pane.
+    pub fn watch_outside_herdr(&self, team: &str, interval_s: u32) -> Watch {
+        let out = self.work.path().join(format!("watch-{team}.out"));
+        let file = std::fs::File::create(&out).unwrap();
+        let mut cmd =
+            self.command_outside_herdr(&["watch", team, "--interval", &interval_s.to_string()]);
         let child = cmd
             .stdin(Stdio::null())
             .stdout(Stdio::from(file))
@@ -329,5 +349,23 @@ impl World {
             .lines()
             .map(str::to_owned)
             .collect()
+    }
+}
+
+fn run(mut cmd: Command, stdin: Option<&str>) -> Run {
+    cmd.stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    let mut input = child.stdin.take().unwrap();
+    if let Some(text) = stdin {
+        input.write_all(text.as_bytes()).unwrap();
+    }
+    drop(input);
+    let out = child.wait_with_output().unwrap();
+    Run {
+        code: out.status.code().unwrap_or(-1),
+        out: String::from_utf8_lossy(&out.stdout).into_owned(),
+        err: String::from_utf8_lossy(&out.stderr).into_owned(),
     }
 }
