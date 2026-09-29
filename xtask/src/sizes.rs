@@ -1,7 +1,8 @@
 //! File-size rule of `docs/conventions.md` section 1: a source file over 400
 //! non-test lines is reported, over 800 fails.
 //!
-//! Never: count a `#[cfg(test)]` module or an integration-test file.
+//! Never: count a `#[cfg(test)]` module, a `tests.rs` file or a file under
+//! a `tests/` directory (integration tests, or `src/<file>/tests/`).
 //! Invariants: rustfmt closes a test module with a `}` in column 0, which is
 //! how the end of the module is found.
 
@@ -54,7 +55,8 @@ fn collect(dir: &Path, files: &mut Vec<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-/// `<crate>/tests/**`: integration tests, all of it test code.
+/// Test code by location: `<crate>/tests/**`, `src/**/tests.rs` and
+/// `src/**/tests/*.rs`.
 fn in_integration_tests(root: &Path, path: &Path) -> bool {
     let mut dir = path.parent();
     while let Some(d) = dir {
@@ -62,11 +64,10 @@ fn in_integration_tests(root: &Path, path: &Path) -> bool {
             return false;
         }
         if d.join("Cargo.toml").is_file() {
-            return path
-                .strip_prefix(d)
-                .ok()
-                .and_then(|p| p.components().next())
-                .is_some_and(|c| c.as_os_str() == "tests");
+            return path.strip_prefix(d).is_ok_and(|p| {
+                p.file_name().is_some_and(|n| n == "tests.rs")
+                    || p.components().any(|c| c.as_os_str() == "tests")
+            });
         }
         dir = d.parent();
     }
@@ -157,6 +158,27 @@ mod tests {
             found.problems.is_empty() && found.notes.is_empty(),
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn sibling_test_files_under_src_do_not_count() {
+        let dir = clean_workspace();
+        let big = "let z = 3;\n".repeat(900);
+        write(dir.path(), "crates/teamwire-a/src/thing/tests.rs", &big);
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/thing/tests/more.rs",
+            &big,
+        );
+        write(dir.path(), "crates/teamwire-a/src/tests.rs", &big);
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        assert!(
+            found.problems.is_empty() && found.notes.is_empty(),
+            "{found:?}"
+        );
+        write(dir.path(), "crates/teamwire-a/src/thing.rs", &big);
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        assert_eq!(found.problems.len(), 1, "{found:?}");
     }
 
     #[test]
