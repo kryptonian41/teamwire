@@ -119,6 +119,10 @@ fn resumed_lead_in_new_place_receives() {
     rig.platform.set_alive(Pid::new(100), false);
     let new = rig.healthy("lead-1", 200);
     assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), new);
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert_eq!(rig.host.submitted(&new), ["hello"]);
+    assert!(rig.host.submitted(&old).is_empty());
 }
 
 #[test]
