@@ -1,0 +1,130 @@
+//! `resend`: an explicit retry of one stored message (ADR 0003 point 2a,
+//! MSG-19). It never makes a message. It adds a delivery attempt to the
+//! existing rows and skips the burst and repeat limits.
+
+use std::time::Duration;
+
+use teamwire_core::{Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, Timestamp};
+use teamwire_store::{Ctx, DeliveryRecord};
+
+use crate::attempt::{bump_again, deliver_one, report_of};
+use crate::send::{record_refusal, team_name};
+use crate::{RecipientReport, RecipientState, SendError, SendReport};
+
+/// A `pending` row is resendable only after this long: a crash left it, and
+/// a send that is still delivering must not be typed a second time.
+const PENDING_STALE: Duration = Duration::from_secs(60);
+
+/// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
+/// recipients, or only to those named in `to`. Only the sender or the lead
+/// may resend. A recipient that was reached, or is not yet resendable, is
+/// reported as `skipped`.
+pub fn resend(
+    ctx: &mut Ctx<'_>,
+    actor: &Actor,
+    id: &DisplayId,
+    to: Option<&[Recipient]>,
+) -> Result<SendReport, SendError> {
+    let message = ctx
+        .store
+        .read(|tx| tx.message_by_display_id(id))?
+        .ok_or_else(|| SendError::InvalidArgument(format!("no message {id}")))?;
+    let rows = ctx
+        .store
+        .read(|tx| tx.deliveries_of(&message.ulid)?.all_or_corrupt())?;
+    if *actor != Actor::Lead && *actor != message.sender {
+        let recipients: Vec<Recipient> =
+            rows.iter().map(|r| r.delivery.recipient.clone()).collect();
+        record_refusal(
+            ctx,
+            Some(actor),
+            &Refusal::NotResendable,
+            Some(message.kind),
+            &recipients,
+        );
+        return Err(Refusal::NotResendable.into());
+    }
+    if let Some(named) = to
+        && let Some(stranger) = named
+            .iter()
+            .find(|r| !rows.iter().any(|row| &row.delivery.recipient == *r))
+    {
+        return Err(SendError::InvalidArgument(format!(
+            "{stranger} is not a recipient of {id}"
+        )));
+    }
+    let now = ctx.clock.now();
+    let wanted =
+        |row: &DeliveryRecord| to.is_none_or(|named| named.contains(&row.delivery.recipient));
+    let chosen: Vec<&DeliveryRecord> = rows
+        .iter()
+        .filter(|r| wanted(r) && resendable(r, &message, now))
+        .collect();
+    if chosen.is_empty() {
+        return Err(SendError::NotResendable(format!(
+            "no recipient of {id} is undelivered, unconfirmed or pending for over 60 seconds"
+        )));
+    }
+    let team = team_name(ctx)?;
+    let mut deliveries: Vec<RecipientReport> = Vec::new();
+    for row in rows.iter().filter(|r| wanted(r)) {
+        if !chosen
+            .iter()
+            .any(|c| c.delivery.recipient == row.delivery.recipient)
+        {
+            deliveries.push(RecipientReport {
+                state: RecipientState::Skipped,
+                ..report_of(row)
+            });
+            continue;
+        }
+        deliveries.push(retry(ctx, &team, &message, row)?);
+    }
+    Ok(SendReport {
+        id: message.ulid,
+        display_id: message.display_id,
+        seq: message.seq,
+        deliveries,
+        duplicate_of_key: false,
+    })
+}
+
+fn resendable(row: &DeliveryRecord, message: &Message, now: Timestamp) -> bool {
+    match row.delivery.state {
+        DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
+        DeliveryState::Pending => now.saturating_since(message.created_at) > PENDING_STALE,
+        DeliveryState::HandedOff | DeliveryState::Acked => false,
+    }
+}
+
+/// One more attempt for one row: the attempt is counted and written as
+/// `delivery.resent` first, then the line is delivered.
+fn retry(
+    ctx: &mut Ctx<'_>,
+    team: &teamwire_core::TeamName,
+    message: &Message,
+    row: &DeliveryRecord,
+) -> Result<RecipientReport, SendError> {
+    let recipient = &row.delivery.recipient;
+    let before = row.delivery.state;
+    // A reprompt that failed cleanly was undone, so its next try starts the
+    // generation again. One that may have arrived kept its generation.
+    let bump = if before == DeliveryState::Undelivered {
+        bump_again(ctx, message, recipient)?
+    } else {
+        None
+    };
+    let now = ctx.clock.now();
+    let attempts = ctx
+        .store
+        .write(|tx| tx.begin_resend(now, &message.ulid, recipient))?;
+    deliver_one(
+        ctx,
+        team,
+        message,
+        recipient,
+        before,
+        attempts,
+        bump.as_ref(),
+    )
+}
