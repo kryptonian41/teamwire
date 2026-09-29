@@ -61,7 +61,8 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         return plan;
     }
     if team.state == TeamState::Open {
-        plan.refusals.extend(facts::member_refusals(ctx, members));
+        plan.refusals
+            .extend(facts::member_refusals(ctx, &team.name, members));
         plan.steps.push(step(
             "check",
             format!(

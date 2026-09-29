@@ -6,7 +6,9 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HostErrorCode, Member, MemberState, Mode, PlaceState, Role, TeamState};
+use teamwire_core::{
+    Address, HostErrorCode, Member, MemberState, Mode, PlaceState, Role, TeamName, TeamState,
+};
 use teamwire_store::{Ctx, TeamRow};
 
 use crate::git;
@@ -124,11 +126,47 @@ pub(crate) fn dirty_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
     }
 }
 
-/// Every busy and dirty refusal for `members`, busy first.
-pub(crate) fn member_refusals(ctx: &Ctx<'_>, members: &[Member]) -> Vec<String> {
+/// Why close must not go on for a member that has no recorded place while
+/// its agent may still run. A launch killed inside the host's start call
+/// leaves the member `creating` with no place, and the agent running under
+/// the member's address (LCH-3). Close has no place to close it through, so
+/// it refuses and names the agent, and the state that records the member is
+/// kept. A listing that fails is "unknown", and unknown refuses.
+pub(crate) fn unplaced_refusal(ctx: &Ctx<'_>, team: &TeamName, member: &Member) -> Option<String> {
+    if member.place.is_some() || member.state == MemberState::Removed {
+        return None;
+    }
+    let role = &member.role;
+    let address = Address::of(team, role);
+    let (_, host) = match ctx.adapters(&teamwire_store::Party::Member(role.clone())) {
+        Ok(pair) => pair,
+        Err(e) => {
+            return Some(format!(
+                "cannot tell whether {role}'s agent {address} is running ({e}); refusing \
+                 rather than guess"
+            ));
+        }
+    };
+    match host.live_agent_names(HOST_TIMEOUT) {
+        Ok(names) if names.iter().any(|n| n == address.as_str()) => Some(format!(
+            "{role} has no recorded place, but its agent {address} is live in the host: a \
+             launch was interrupted after the host started it. Stop that agent by hand \
+             (close its pane or window), then run close again"
+        )),
+        Ok(_) => None,
+        Err(e) => Some(format!(
+            "cannot tell whether {role}'s agent {address} is running ({e}); refusing rather \
+             than guess"
+        )),
+    }
+}
+
+/// Every busy, unplaced and dirty refusal for `members`, busy first.
+pub(crate) fn member_refusals(ctx: &Ctx<'_>, team: &TeamName, members: &[Member]) -> Vec<String> {
     let mut out: Vec<String> = live(members)
         .filter_map(|m| busy_refusal(ctx, m, false))
         .collect();
+    out.extend(live(members).filter_map(|m| unplaced_refusal(ctx, team, m)));
     out.extend(live(members).filter_map(|m| dirty_refusal(ctx, m)));
     out
 }

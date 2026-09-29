@@ -6,7 +6,7 @@ use serde_json::json;
 use teamwire_core::{HostErrorCode, Member, MemberKind, MemberState, Mode, Role, TeamState};
 use teamwire_store::{Ctx, Party, TeamRow};
 
-use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal};
+use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal, unplaced_refusal};
 use crate::{CloseOpts, CloseReport, StepOutcome, git, team_close};
 
 /// What stands between this member and removal.
@@ -28,6 +28,8 @@ pub(crate) fn gate(
 ) -> Gate {
     let mut gate = Gate::default();
     gate.refusals.extend(busy_refusal(ctx, member, opts.stop));
+    gate.refusals
+        .extend(unplaced_refusal(ctx, &team.name, member));
     gate.refusals.extend(dirty_refusal(ctx, member));
     let unchecked = unchecked(ctx, team, members, member);
     if opts.unverified {

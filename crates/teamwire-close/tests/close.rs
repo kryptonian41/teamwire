@@ -902,3 +902,73 @@ fn a_private_file_stays_private_in_the_archive() {
         .mode();
     assert_eq!(mode & 0o777, 0o600);
 }
+
+/// Inserts `role` as `creating` with no place: a launch killed inside the
+/// host's start call, after the host started the agent (LCH-3).
+fn unplaced_member(rig: &mut Rig, role: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let now = rig.clock.now();
+    let cwd = rig.work.path().to_path_buf();
+    let role = Role::parse(role)?;
+    rig.store.write(|tx| {
+        tx.insert_member(
+            now,
+            &teamwire_store::NewMember {
+                role: role.clone(),
+                title: role.to_string(),
+                kind: MemberKind::Investigator,
+                mode: teamwire_core::Mode::Pane,
+                harness: teamwire_core::HarnessId::from_static("claude-code"),
+                host: teamwire_core::HostId::from_static("herdr"),
+                cwd,
+                repo: None,
+                branch: None,
+                base: None,
+                base_sha: None,
+                check: None,
+                owns: Vec::new(),
+                deadline_s: 1800,
+            },
+        )
+    })?;
+    Ok(())
+}
+
+#[test]
+fn live_agent_without_a_recorded_place_refuses_and_keeps_the_state() {
+    let mut rig = Rig::new();
+    unplaced_member(&mut rig, "scout").unwrap();
+    rig.host.add_foreign_agent("tw_alpha_scout");
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.iter().any(|r| r.contains("tw_alpha_scout")),
+        "{report:?}"
+    );
+    assert!(rig.team_dir().exists(), "the state that records it is kept");
+}
+
+#[test]
+fn no_live_agent_for_an_unplaced_member_lets_close_finish() {
+    let mut rig = Rig::new();
+    unplaced_member(&mut rig, "scout").unwrap();
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!rig.team_dir().exists());
+}
+
+#[test]
+fn an_unreadable_agent_listing_refuses_for_an_unplaced_member() {
+    let mut rig = Rig::new();
+    unplaced_member(&mut rig, "scout").unwrap();
+    rig.host
+        .inject_always("live_agent_names", teamwire_fakes::Fault::Hang);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report
+            .refusals
+            .iter()
+            .any(|r| r.contains("refusing rather than guess")),
+        "{report:?}"
+    );
+    assert!(rig.team_dir().exists());
+}

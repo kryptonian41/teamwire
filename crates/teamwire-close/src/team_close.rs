@@ -230,8 +230,8 @@ impl Seq<'_, '_> {
     /// Busy and dirty state, read again under the lock (CLS-3), right before
     /// a step that destroys something.
     fn recheck(&self) -> Result<Vec<Member>, String> {
-        let (_, members) = read(self.ctx)?;
-        let refusals = facts::member_refusals(self.ctx, &members);
+        let (team, members) = read(self.ctx)?;
+        let refusals = facts::member_refusals(self.ctx, &team.name, &members);
         if refusals.is_empty() {
             Ok(members)
         } else {
