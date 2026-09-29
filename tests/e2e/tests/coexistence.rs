@@ -1,5 +1,7 @@
 //! The Python tooling's global Stop hook (`~/.claude/hooks/team-report.sh`)
-//! is also present. Its first checks find no manifest for a teamwire member,
+//! is also present. This test runs a shell copy of its first checks from the
+//! member's shell step after `done`, not as a second Stop hook, because
+//! `fake-claude` runs only the hooks in the `--settings` file launch writes. Its first checks find no manifest for a teamwire member,
 //! so it does nothing, and teamwire's own delivery is not doubled.
 
 use std::time::Duration;
