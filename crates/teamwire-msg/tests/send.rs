@@ -517,11 +517,7 @@ fn a_comms_write_failure_does_not_lose_the_message_or_stop_delivery() {
 fn replaced_recipient_is_not_delivered() {
     let mut rig = team_rig();
     // The recipient's session is gone: the locator finds no live process.
-    rig.harness.add_session(
-        rig::sid("session-api"),
-        vec![],
-        teamwire_core::Liveness::Dead,
-    );
+    rig.set_reachable("api", false);
     let req = rig.request("scout", &["api", "web"], MessageType::Finding, "x");
     let report = send(&mut rig.ctx(), req).unwrap();
     let by_role = |name: &str| report.deliveries.iter().find(|d| d.to == to(name)).unwrap();

@@ -28,6 +28,8 @@ pub(crate) struct Rig {
     pub(crate) host: Arc<FakeHost>,
     team: TeamName,
     next_pid: u32,
+    /// The process of each session `healthy` made, to bring it back.
+    processes: Vec<(String, u32)>,
 }
 
 pub(crate) fn sid(text: &str) -> SessionId {
@@ -101,6 +103,7 @@ impl Rig {
             host,
             team: TeamName::parse("alpha").unwrap(),
             next_pid: 100,
+            processes: Vec::new(),
         };
         rig.healthy_lead();
         rig
@@ -139,11 +142,30 @@ impl Rig {
             vec![Pid::new(pid)],
             Liveness::Alive(PlaceState::Idle),
         );
+        self.processes.push((session.to_owned(), pid));
         self.platform.set_alive(Pid::new(pid), true);
         self.platform
             .set_env(Pid::new(pid), "FAKE_PLACE_ID", &place.id);
         self.host.set_screen(&place, "ready\n> ");
         place
+    }
+
+    /// Makes `member`'s session unreachable (the locator finds no process:
+    /// the session was replaced or died) or reachable again.
+    pub(crate) fn set_reachable(&self, member: &str, reachable: bool) {
+        let session = format!("session-{member}");
+        let pid = self
+            .processes
+            .iter()
+            .find(|(s, _)| *s == session)
+            .map(|(_, pid)| *pid)
+            .unwrap();
+        let (pids, liveness) = if reachable {
+            (vec![Pid::new(pid)], Liveness::Alive(PlaceState::Idle))
+        } else {
+            (vec![], Liveness::Dead)
+        };
+        self.harness.add_session(sid(&session), pids, liveness);
     }
 
     pub(crate) fn healthy_lead(&mut self) -> Place {

@@ -30,8 +30,9 @@ const EVERY: [DeliveryState; 5] = [
 /// read messages too, and nothing is marked.
 ///
 /// A body that no longer matches its stored hash is returned with `hash_ok:
-/// false`, and a `store.error` event says so. A row that cannot be parsed
-/// at all is left out and recorded the same way.
+/// false`, and a `store.error` event says so; it is not marked read, since
+/// the store cannot ack a message it cannot verify. A row that cannot be
+/// parsed at all is left out and recorded the same way.
 pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, SendError> {
     let now = ctx.clock.now();
     let recipient = Recipient::Member(me.clone());
@@ -75,7 +76,10 @@ pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, 
                 text: m.body.clone(),
                 hash_ok: entry.hash_ok,
             });
-            if !all {
+            // The store cannot mark a message read once its body fails the hash,
+            // because it reads the message row to time the event. Such a message
+            // is returned with `hash_ok: false` and stays unread until it is repaired.
+            if !all && entry.hash_ok {
                 tx.ack_delivery(now, &m.ulid, &recipient)?;
             }
         }

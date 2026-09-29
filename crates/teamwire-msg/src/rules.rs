@@ -310,10 +310,15 @@ fn earlier(now: Timestamp, ms: i64) -> Timestamp {
 fn check_rate_and_repeat(ctx: &Ctx<'_>, req: &SendRequest) -> Result<(), SendError> {
     let now = ctx.clock.now();
     for to in &req.to {
-        let recent = ctx.store.read(|tx| {
-            tx.sent_to_since(&req.actor, to, earlier(now, REPEAT_WINDOW_MS))?
-                .all_or_corrupt()
-        })?;
+        let found = ctx
+            .store
+            .read(|tx| tx.sent_to_since(&req.actor, to, earlier(now, REPEAT_WINDOW_MS)))?;
+        // A damaged old message must not stop new ones: these two limits are
+        // advisory, and `verify --deep` names the damaged row.
+        for bad in &found.bad {
+            tracing::warn!(key = %bad.key, reason = %bad.reason, "skipped a damaged message in the burst check");
+        }
+        let recent = found.items;
         let in_minute = recent
             .iter()
             .filter(|r| r.message.created_at >= earlier(now, BURST_WINDOW_MS))
