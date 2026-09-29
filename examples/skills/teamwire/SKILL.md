@@ -41,15 +41,24 @@ Whether and when to switch is the user's decision. The steps, in order:
 
 1. Install the binary (`cargo install --path crates/teamwire-cli`) and run
    `teamwire doctor`. It changes nothing.
-2. Run the Claude adapter's live check
-   (`crates/teamwire-harness-claude/examples/live_check.rs`). It proves the
-   per-run `--settings` hooks and `--mcp-config` work with the installed Claude
-   Code. The user runs it by hand.
-3. Run one throwaway team in a scratch repository.
-4. Let every running Python team finish and close under Python.
-5. Install this skill: copy `examples/skills/teamwire/` to
+2. Run the live checks by hand (`docs/test-strategy.md`, section 6):
+   - the Claude adapter's check
+     (`crates/teamwire-harness-claude/examples/live_check.rs`). It proves the
+     per-run `--settings` hooks and `--mcp-config` work with the installed
+     Claude Code.
+   - the host adapter's check for the host you use
+     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
+   - the lead's MCP server. Register it by hand (step 3), start a session, and
+     confirm the server sees `CLAUDE_CODE_SESSION_ID`, so the lead's calls are
+     accepted. Until that is confirmed, use the CLI.
+3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
+   `examples/mcp/lead.json` into the MCP settings of the lead's Claude Code
+   session. teamwire never registers it.
+4. Run one throwaway team in a scratch repository.
+5. Let every running Python team finish and close under Python.
+6. Install this skill: copy `examples/skills/teamwire/` to
    `~/.claude/skills/teamwire/`.
-6. Only then remove `team-report.sh` from `~/.claude/settings.json`. The user
+7. Only then remove `team-report.sh` from `~/.claude/settings.json`. The user
    does this by hand.
 
 Rolling back is the same list in reverse. teamwire's state stays in

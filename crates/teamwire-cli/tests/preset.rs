@@ -384,6 +384,17 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         );
     }
 
+    // The cutover list registers the lead's server by hand and checks it live.
+    let (_, cutover) = skill.split_once("## Cutover").unwrap();
+    let (cutover, _) = cutover.split_once("## How it fits together").unwrap();
+    for needed in [
+        "examples/mcp/lead.json",
+        "CLAUDE_CODE_SESSION_ID",
+        "live_check.rs",
+    ] {
+        assert!(cutover.contains(needed), "the cutover list lacks {needed}");
+    }
+
     for shape in NAMES {
         assert!(
             skill.contains(&format!("`{shape}`")),

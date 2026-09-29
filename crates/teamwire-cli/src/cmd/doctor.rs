@@ -69,8 +69,31 @@ impl Check {
     }
 }
 
+/// The host teamwire starts members in: herdr inside a herdr pane
+/// (`HERDR_ENV=1`), else tmux inside a tmux session (`TMUX` set), else none.
+/// Only the tools of the host in use are required.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Host {
+    Herdr,
+    Tmux,
+    None,
+}
+
+impl Host {
+    pub(crate) fn detect(herdr_env: Option<&str>, tmux: Option<&str>) -> Self {
+        if herdr_env == Some("1") {
+            Self::Herdr
+        } else if tmux.is_some_and(|t| !t.is_empty()) {
+            Self::Tmux
+        } else {
+            Self::None
+        }
+    }
+}
+
 /// What the checks look at.
 pub(crate) struct Inputs<'a> {
+    pub(crate) host: Host,
     pub(crate) home: PathBuf,
     pub(crate) platform: &'a dyn Platform,
     /// `$PATH`, where the harness and host binaries are looked for.
@@ -254,26 +277,30 @@ fn on_path(path_var: Option<&OsString>, program: &str) -> Option<PathBuf> {
 
 fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = Vec::new();
-    for (program, role, required) in [
-        ("claude", "harness", true),
-        ("herdr", "host", true),
-        ("tmux", "host", false),
-    ] {
+    let host_program = match inputs.host {
+        Host::Herdr => Some("herdr"),
+        Host::Tmux => Some("tmux"),
+        Host::None => None,
+    };
+    let wanted = std::iter::once(("claude", "harness")).chain(host_program.map(|h| (h, "host")));
+    for (program, role) in wanted {
         let name = format!("{program} on PATH");
         match on_path(inputs.path_var.as_ref(), program) {
             Some(path) => checks.push(Check::pass(
                 name,
                 format!("{role} binary at {}", path.display()),
             )),
-            None if required => checks.push(Check::fail(
+            None => checks.push(Check::fail(
                 name,
                 format!("the {role} binary `{program}` is not on PATH"),
             )),
-            None => checks.push(Check::pass(
-                name,
-                format!("the optional {role} binary `{program}` is not installed"),
-            )),
         }
+    }
+    if inputs.host == Host::None {
+        checks.push(Check::pass(
+            "host",
+            "no herdr pane or tmux session: members cannot be started from here (host none)",
+        ));
     }
     checks
 }
@@ -282,7 +309,9 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
 pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = disk_checks(inputs);
     checks.extend(database_checks(inputs));
-    checks.push(herdr_hook_check(inputs));
+    if inputs.host == Host::Herdr {
+        checks.push(herdr_hook_check(inputs));
+    }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
     checks
@@ -337,6 +366,10 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
     };
     let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let inputs = Inputs {
+        host: Host::detect(
+            std::env::var("HERDR_ENV").ok().as_deref(),
+            std::env::var("TMUX").ok().as_deref(),
+        ),
         home,
         platform: wiring.platform.as_ref(),
         path_var: std::env::var_os("PATH"),
