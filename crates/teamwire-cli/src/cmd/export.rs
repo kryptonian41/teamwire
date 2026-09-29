@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use serde::Serialize;
 use serde_json::{Value, json};
 use teamwire_core::{TeamName, Timestamp};
-use teamwire_store::{MessageFilter, ReadTx, Store, StoreError, database_path};
+use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
@@ -46,10 +46,17 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
     if !database_path(&home, &team).is_file() {
         return fail(&format!("no database for team {team}"), REFUSED);
     }
-    let text = match Store::open_read_only(&home, &team).and_then(|s| render(&s, &team)) {
-        Ok(text) => text,
+    let (text, skipped) = match Store::open_read_only(&home, &team).and_then(|s| render(&s, &team))
+    {
+        Ok(done) => done,
         Err(e) => return fail(&e.to_string(), STORE),
     };
+    for row in &skipped {
+        warn(&format!(
+            "skipped {} row {}: {}",
+            row.table, row.key, row.reason
+        ));
+    }
     if let Some(path) = out {
         return match wiring.platform.write_atomic(path, text.as_bytes()) {
             Ok(()) => ExitCode::SUCCESS,
@@ -70,12 +77,12 @@ fn state_home(global: &Global) -> PathBuf {
 }
 
 /// Every event, message with its deliveries, member, completion, waiver and
-/// announcement, one JSON object per line. Every record must read: a
-/// damaged row stops the export, because a silent gap in a record of what
-/// happened is worse than no file.
-fn render(store: &Store, team: &TeamName) -> Result<String, StoreError> {
+/// announcement, one JSON object per line. A row that cannot be read is
+/// skipped and returned, so the caller can name it: the rest of the record
+/// is still worth having (STO-15).
+fn render(store: &Store, team: &TeamName) -> Result<(String, Vec<BadRow>), StoreError> {
     let source = format!("teamwire/{team}");
-    let records = store.read(|tx| records(tx, &source))?;
+    let (records, skipped) = store.read(|tx| records(tx, &source))?;
     let mut text = String::new();
     for record in records {
         let line = serde_json::to_string(&record)
@@ -83,10 +90,17 @@ fn render(store: &Store, team: &TeamName) -> Result<String, StoreError> {
         text.push_str(&line);
         text.push('\n');
     }
-    Ok(text)
+    Ok((text, skipped))
 }
 
-fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
+/// The rows of `listing` that read; the ones that did not go to `skipped`.
+fn keep<T>(skipped: &mut Vec<BadRow>, listing: Listing<T>) -> Vec<T> {
+    skipped.extend(listing.bad);
+    listing.items
+}
+
+fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), StoreError> {
+    let mut skipped = Vec::new();
     let record =
         |id: String, kind: &str, time: Timestamp, subject: Option<String>, data: Value| Record {
             specversion: "1.0",
@@ -100,7 +114,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             data,
         };
     let mut out = Vec::new();
-    for e in tx.events_after(0, None, None)?.all_or_corrupt()? {
+    for e in keep(&mut skipped, tx.events_after(0, None, None)?) {
         out.push(Record {
             seq: Some(e.seq),
             role: e.role.as_ref().map(|r| r.as_str().to_owned()),
@@ -113,11 +127,9 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             )
         });
     }
-    let messages = tx.messages(&MessageFilter::default())?.all_or_corrupt()?;
+    let messages = keep(&mut skipped, tx.messages(&MessageFilter::default())?);
     for m in messages {
-        let deliveries: Vec<Value> = tx
-            .deliveries_of(&m.ulid)?
-            .all_or_corrupt()?
+        let deliveries: Vec<Value> = keep(&mut skipped, tx.deliveries_of(&m.ulid)?)
             .iter()
             .map(|d| json!(d.delivery))
             .collect();
@@ -129,7 +141,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             json!({ "message": m, "deliveries": deliveries }),
         ));
     }
-    let members = tx.members()?.all_or_corrupt()?;
+    let members = keep(&mut skipped, tx.members()?);
     for m in &members {
         out.push(Record {
             role: Some(m.role.as_str().to_owned()),
@@ -141,7 +153,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
                 json!(m),
             )
         });
-        for c in tx.completions_of(&m.role)?.all_or_corrupt()? {
+        for c in keep(&mut skipped, tx.completions_of(&m.role)?) {
             out.push(Record {
                 role: Some(m.role.as_str().to_owned()),
                 ..record(
@@ -154,7 +166,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             });
         }
     }
-    for w in tx.all_waivers()?.all_or_corrupt()? {
+    for w in keep(&mut skipped, tx.all_waivers()?) {
         out.push(Record {
             role: Some(w.role.as_str().to_owned()),
             ..record(
@@ -166,7 +178,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             )
         });
     }
-    for a in tx.announcements()?.all_or_corrupt()? {
+    for a in keep(&mut skipped, tx.announcements()?) {
         out.push(record(
             format!("announcement:{}", a.key),
             "announcement",
@@ -175,7 +187,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<Vec<Record>, StoreError> {
             json!({ "key": a.key }),
         ));
     }
-    Ok(out)
+    Ok((out, skipped))
 }
 
 #[expect(clippy::print_stdout, reason = "the records are the command's output")]
@@ -183,11 +195,12 @@ fn say(text: &str) {
     print!("{text}");
 }
 
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str, code: u8) -> ExitCode {
+#[expect(clippy::print_stderr, reason = "the binary reports problems on stderr")]
+fn warn(message: &str) {
     eprintln!("teamwire export: {message}");
+}
+
+fn fail(message: &str, code: u8) -> ExitCode {
+    warn(message);
     ExitCode::from(code)
 }

@@ -488,3 +488,38 @@ fn export_of_an_unknown_team_is_refused() {
     let run = teamwire(&home, &[], &["export", "nope"]);
     assert_eq!(run.code, 1);
 }
+
+#[test]
+fn export_skips_a_damaged_row_names_it_and_still_exits_zero() {
+    let home = TestHome::new().unwrap();
+    let mut s = busy_team(&home, "alpha");
+    // One event whose time is not a time, as a damaged file might hold.
+    s.write(|tx| {
+        tx.connection().execute(
+            "UPDATE events SET time = 'yesterday' WHERE type = 'watch.line' AND seq = 3",
+            [],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    let run = teamwire(&home, &[], &["export", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(run.err.contains("skipped events row 3"), "{}", run.err);
+    let ours = run
+        .err
+        .lines()
+        .filter(|l| l.starts_with("teamwire export: skipped"))
+        .count();
+    assert_eq!(ours, 1, "{}", run.err);
+    let records: Vec<Value> = run
+        .out
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    assert!(records.iter().any(|r| r["type"] == "teamwire.team.created"));
+    assert!(records.iter().any(|r| r["type"] == "teamwire.message.sent"));
+    assert!(
+        records.iter().all(|r| r["seq"] != 3),
+        "the damaged event is not written"
+    );
+}
