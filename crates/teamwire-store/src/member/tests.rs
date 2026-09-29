@@ -331,3 +331,33 @@ fn a_role_that_reached_started_is_not_relaunched() {
     assert_eq!(state_of(&f, "api"), MemberState::Failed);
     assert_eq!(count_events(&f.store, EventType::MemberReplaced), 0);
 }
+
+#[test]
+fn creating_event_carries_extra_data_but_kind_and_mode_win() {
+    let mut f = with_members(&[]);
+    let extra = json!({ "launch": "01L", "requested": 3, "kind": "forged" });
+    f.store
+        .write(|tx| tx.insert_member_with(at(1), &new_member("api"), &extra))
+        .unwrap();
+    let event = last_event(&f.store);
+    assert_eq!(event.kind, EventType::MemberCreating);
+    assert_eq!(
+        (
+            &event.data["launch"],
+            &event.data["requested"],
+            &event.data["kind"]
+        ),
+        (&json!("01L"), &json!(3), &json!("implementer"))
+    );
+    let r = role("api");
+    f.store
+        .write(|tx| tx.set_member_state(at(2), &r, MemberState::Failed, &json!({})))
+        .unwrap();
+    let again = json!({ "launch": "02L", "requested": 1 });
+    assert!(
+        f.store
+            .write(|tx| tx.relaunch_failed_member_with(at(3), &new_member("api"), &again))
+            .unwrap()
+    );
+    assert_eq!(last_event(&f.store).data["launch"], "02L");
+}

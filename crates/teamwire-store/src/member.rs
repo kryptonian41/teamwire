@@ -109,6 +109,18 @@ impl Tx<'_> {
     /// `member.creating`. A second insert of the same role is a constraint
     /// error; a `failed` role is relaunched with `relaunch_failed_member`.
     pub fn insert_member(&self, at: Timestamp, m: &NewMember) -> Result<(), StoreError> {
+        self.insert_member_with(at, m, &Value::Null)
+    }
+
+    /// `insert_member`, with `extra` (a JSON object) merged into the
+    /// `member.creating` event's data, such as the launch id and requested
+    /// count of `docs/metrics.md` section 5. `kind` and `mode` always win.
+    pub fn insert_member_with(
+        &self,
+        at: Timestamp,
+        m: &NewMember,
+        extra: &Value,
+    ) -> Result<(), StoreError> {
         self.connection().execute(
             "INSERT INTO members (role, title, kind, mode, harness, host, cwd, repo, branch, base,
                                   base_sha, check_cmd, owns, deadline_s, state, generation,
@@ -132,16 +144,24 @@ impl Tx<'_> {
                 at.to_string(),
             ],
         )?;
-        self.creating_event(at, m)
+        self.creating_event(at, m, extra)
     }
 
-    fn creating_event(&self, at: Timestamp, m: &NewMember) -> Result<(), StoreError> {
+    fn creating_event(
+        &self,
+        at: Timestamp,
+        m: &NewMember,
+        extra: &Value,
+    ) -> Result<(), StoreError> {
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("kind".to_owned(), json!(m.kind.as_str()));
+        data.insert("mode".to_owned(), json!(m.mode.as_str()));
         self.record_event(
             at,
             EventType::MemberCreating,
             Some(&m.role),
             None,
-            &json!({ "kind": m.kind.as_str(), "mode": m.mode.as_str() }),
+            &Value::Object(data),
         )?;
         Ok(())
     }
@@ -153,6 +173,17 @@ impl Tx<'_> {
     /// and `member.creating`. False, and nothing changes, when the role's row
     /// is not `failed`.
     pub fn relaunch_failed_member(&self, at: Timestamp, m: &NewMember) -> Result<bool, StoreError> {
+        self.relaunch_failed_member_with(at, m, &Value::Null)
+    }
+
+    /// `relaunch_failed_member`, with `extra` merged into the new
+    /// `member.creating` event's data, as `insert_member_with` does.
+    pub fn relaunch_failed_member_with(
+        &self,
+        at: Timestamp,
+        m: &NewMember,
+        extra: &Value,
+    ) -> Result<bool, StoreError> {
         let Some(old) = self.reader().member(&m.role)? else {
             return Ok(false);
         };
@@ -207,7 +238,7 @@ impl Tx<'_> {
                 "previous_started_at": old.gen_started_at.to_string(),
             }),
         )?;
-        self.creating_event(at, m)?;
+        self.creating_event(at, m, extra)?;
         Ok(true)
     }
 
