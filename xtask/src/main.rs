@@ -1,30 +1,49 @@
 //! `cargo xtask tidy`: the structure rules of `docs/conventions.md` section 1
-//! that a program checks. This minimal version checks lint opt-in, workspace
-//! dependencies, `mod.rs` files and `CLAUDE.md`'s first line.
+//! and the layers of section 5, plus, with `--base <ref>`, a report of
+//! protected files changed and tests weakened since the merge-base.
 //!
 //! Never: change a file; pass when a rule is broken.
 //!
 //! Invariants: each broken rule prints one line naming the file and the
-//! rule, and the command fails when any line was printed.
+//! rule, and the command fails when any such line was printed. Report lines
+//! (`PROTECTED-CHANGED`, `WEAKENED`, a file over 400 lines) are printed but
+//! never fail the command: the lead reads them at each integration.
+
+mod crates;
+#[cfg(test)]
+mod fixture;
+mod layers;
+mod sizes;
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{Context, Result, bail};
+use serde_json::Value;
 
 const USAGE: &str = "usage: cargo xtask tidy [--base <ref>]";
 
+/// What one run found. `problems` fail the command; `notes` are reports.
+#[derive(Debug, Default)]
+struct Findings {
+    problems: Vec<String>,
+    notes: Vec<String>,
+}
+
 fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()) {
-        Ok(problems) if problems.is_empty() => {
-            say("tidy: ok");
-            ExitCode::SUCCESS
-        }
-        Ok(problems) => {
-            for problem in &problems {
+        Ok(found) => {
+            for note in &found.notes {
+                say(note);
+            }
+            if found.problems.is_empty() {
+                say("tidy: ok");
+                return ExitCode::SUCCESS;
+            }
+            for problem in &found.problems {
                 say(problem);
             }
-            say(&format!("tidy: {} problem(s)", problems.len()));
+            say(&format!("tidy: {} problem(s)", found.problems.len()));
             ExitCode::FAILURE
         }
         Err(e) => {
@@ -39,7 +58,7 @@ fn say(line: &str) {
     println!("{line}");
 }
 
-fn run(args: Vec<String>) -> Result<Vec<String>> {
+fn run(args: Vec<String>) -> Result<Findings> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
         Some("tidy") => {}
@@ -52,12 +71,15 @@ fn run(args: Vec<String>) -> Result<Vec<String>> {
             _ => bail!("unknown argument {arg:?}; {USAGE}"),
         }
     }
+    let root = repo_root()?;
+    let metadata = layers::cargo_metadata(&root)?;
+    let found = tidy(&root, &metadata)?;
     if let Some(base) = base {
         say(&format!(
             "tidy: --base {base}: the protected-file and weakened-test checks are not built yet"
         ));
     }
-    tidy(&repo_root()?)
+    Ok(found)
 }
 
 fn repo_root() -> Result<PathBuf> {
@@ -68,15 +90,22 @@ fn repo_root() -> Result<PathBuf> {
         .context("xtask has no parent directory")
 }
 
-/// Every rule, over the repository at `root`. Returns one line per problem.
-fn tidy(root: &Path) -> Result<Vec<String>> {
-    let mut problems = Vec::new();
-    for member in members(root)? {
-        check_manifest(root, &member, &mut problems)?;
+/// Every rule but `--base`, over the repository at `root`. `metadata` is the
+/// output of `cargo metadata --no-deps`, which the layer rule reads.
+fn tidy(root: &Path, metadata: &Value) -> Result<Findings> {
+    let mut found = Findings::default();
+    let members = members(root)?;
+    for member in &members {
+        check_manifest(root, member, &mut found.problems)?;
     }
-    check_no_mod_rs(root, root, &mut problems)?;
-    check_claude_md(root, &mut problems);
-    Ok(problems)
+    crates::check_crates(root, &members, &mut found.problems)?;
+    crates::check_components(root, &mut found.problems);
+    crates::check_agents_md(root, &mut found.problems);
+    check_no_mod_rs(root, root, &mut found.problems)?;
+    check_claude_md(root, &mut found.problems);
+    sizes::check_sizes(root, &mut found)?;
+    layers::check_layers(metadata, &mut found.problems);
+    Ok(found)
 }
 
 /// The directories of every workspace member, from the root manifest's
@@ -108,14 +137,14 @@ fn members(root: &Path) -> Result<Vec<PathBuf>> {
     Ok(dirs)
 }
 
-fn read_toml(path: &Path) -> Result<toml::Table> {
+pub(crate) fn read_toml(path: &Path) -> Result<toml::Table> {
     let text =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     text.parse::<toml::Table>()
         .with_context(|| format!("parsing {}", path.display()))
 }
 
-fn relative(root: &Path, path: &Path) -> String {
+pub(crate) fn relative(root: &Path, path: &Path) -> String {
     path.strip_prefix(root)
         .unwrap_or(path)
         .display()
@@ -196,37 +225,16 @@ fn check_claude_md(root: &Path, problems: &mut Vec<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixture::{clean_workspace, empty_metadata, write};
 
-    fn write(root: &Path, path: &str, text: &str) {
-        let full = root.join(path);
-        std::fs::create_dir_all(full.parent().unwrap()).unwrap();
-        #[expect(
-            clippy::disallowed_methods,
-            reason = "test fixtures in a temporary directory"
-        )]
-        std::fs::write(full, text).unwrap();
-    }
-
-    fn clean_workspace() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write(
-            root,
-            "Cargo.toml",
-            "[workspace]\nmembers = [\"crates/*\", \"xtask\"]\n",
-        );
-        write(root, "CLAUDE.md", "@AGENTS.md\n");
-        let good = "[package]\nname = \"a\"\n\n[dependencies]\nserde = { workspace = true }\n\n[lints]\nworkspace = true\n";
-        write(root, "crates/teamwire-a/Cargo.toml", good);
-        write(root, "crates/teamwire-a/src/lib.rs", "");
-        write(root, "xtask/Cargo.toml", good);
-        dir
+    fn tidy_problems(root: &Path) -> Vec<String> {
+        tidy(root, &empty_metadata()).unwrap().problems
     }
 
     #[test]
     fn clean_workspace_passes() {
         let dir = clean_workspace();
-        assert_eq!(tidy(dir.path()).unwrap(), Vec::<String>::new());
+        assert_eq!(tidy_problems(dir.path()), Vec::<String>::new());
     }
 
     #[test]
@@ -235,9 +243,9 @@ mod tests {
         write(
             dir.path(),
             "crates/teamwire-a/Cargo.toml",
-            "[package]\nname = \"a\"\n",
+            "[package]\nname = \"teamwire-a\"\nversion.workspace = true\npublish.workspace = true\n",
         );
-        let problems = tidy(dir.path()).unwrap();
+        let problems = tidy_problems(dir.path());
         assert_eq!(
             problems,
             ["crates/teamwire-a/Cargo.toml: missing `[lints] workspace = true`"]
@@ -250,9 +258,9 @@ mod tests {
         write(
             dir.path(),
             "xtask/Cargo.toml",
-            "[dev-dependencies]\nserde = \"1\"\n\n[lints]\nworkspace = true\n",
+            "[package]\nname = \"xtask\"\nversion.workspace = true\npublish.workspace = true\n\n[dev-dependencies]\nserde = \"1\"\n\n[lints]\nworkspace = true\n",
         );
-        let problems = tidy(dir.path()).unwrap();
+        let problems = tidy_problems(dir.path());
         assert_eq!(
             problems,
             ["xtask/Cargo.toml: [dev-dependencies] serde is not `workspace = true`"]
@@ -263,7 +271,7 @@ mod tests {
     fn mod_rs_fails() {
         let dir = clean_workspace();
         write(dir.path(), "crates/teamwire-a/src/x/mod.rs", "");
-        let problems = tidy(dir.path()).unwrap();
+        let problems = tidy_problems(dir.path());
         assert_eq!(problems.len(), 1);
         assert!(
             problems
@@ -277,7 +285,7 @@ mod tests {
     fn claude_md_without_import_fails() {
         let dir = clean_workspace();
         write(dir.path(), "CLAUDE.md", "# teamwire\n");
-        let problems = tidy(dir.path()).unwrap();
+        let problems = tidy_problems(dir.path());
         assert_eq!(problems, ["CLAUDE.md: the first line must be `@AGENTS.md`"]);
     }
 
