@@ -138,6 +138,9 @@ string_enum! {
         /// A result left in `delivering` past `delivering_stale_s`: the hook
         /// that was delivering it was killed (REP-14).
         DeliveryInterrupted => "delivery_interrupted",
+        /// The turn-end hook's delivery budget ran out before this call, so
+        /// nothing was typed (ADR 0007 point 6a).
+        BudgetExhausted => "budget_exhausted",
     }
 }
 
@@ -191,6 +194,10 @@ pub enum Refusal {
     RateLimited,
     #[error("the same text went to the same recipient within 10 minutes and was delivered")]
     Repeat,
+    #[error(
+        "only the sender or the lead may resend, and only to a recipient in a resendable state"
+    )]
+    NotResendable,
 }
 
 impl Refusal {
@@ -212,6 +219,7 @@ impl Refusal {
             Self::TeamClosed => "team_closed",
             Self::RateLimited => "rate_limited",
             Self::Repeat => "repeat",
+            Self::NotResendable => "not_resendable",
         }
     }
 }
