@@ -64,7 +64,7 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9, LCH-10, LCH-18, and the watch command to
-run. Exit 2 when some members started and some did not.
+run. Exit 2 when any member did not start (including when none started).
 
 ### `teamwire watch <team> [--interval SECONDS] [--once]`
 
@@ -201,7 +201,7 @@ These are started by a harness, not typed by people.
 | --- | --- | --- |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. Always exits 0. |
-| `teamwire mcp [--team T --role R --token K \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). |
+| `teamwire --home H mcp [--team T --role R --token K \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). |
 
 ## Maintenance
 

@@ -163,7 +163,8 @@ pub(crate) struct VerifyArgs {
     /// Also run the database integrity check and check every message hash.
     #[arg(long)]
     pub(crate) deep: bool,
-    /// Rewrite missing or differing comms/ and outbox/ copies from the store.
+    /// Rewrite missing or differing comms/ copies from the store; outbox/
+    /// copies are reported, never rewritten.
     #[arg(long)]
     pub(crate) repair_files: bool,
 }

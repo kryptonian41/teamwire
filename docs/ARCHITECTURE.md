@@ -202,9 +202,11 @@ Principles, each with the requirement it serves:
   milliseconds; host, harness and git calls happen between transactions
   (STO-4, MSG-8).
 - **Every external call is bounded.** Host calls 30 s (`agent start` up to
-  150 s), harness listings 5 s, setup 600 s, checks by the member's timeout
-  (default 1800 s), each run in its own process group and killed as a group
-  (DEL-14, VER-1).
+  150 s), except during a delivery, where each host and harness call gets
+  5 s and never more than the time left in the Stop hook's 40 s budget;
+  harness listings 5 s, setup 600 s, git inside the report check 10 s,
+  checks by the member's timeout (default 1800 s), each run in its own
+  process group and killed as a group (DEL-14, VER-1).
 - **Record before the irreversible step.** Launch records a member as
   `creating` before `git worktree add`, records the place before the agent
   starts, and marks `started` after. Close finds everything recorded, whatever

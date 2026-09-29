@@ -453,7 +453,9 @@ pub fn on_turn_end(ctx: &mut Ctx, me: &Role, t: &TurnEnd) -> TurnEndReply; // Co
 pub fn on_tool_use(ctx: &mut Ctx, me: &Role) -> Option<String>;            // reminder text
 
 // teamwire-launch
-pub fn validate(spec: &TeamSpec, add: bool, ctx: &Ctx) -> Result<ValidPlan, Vec<SpecError>>;
+// ValidateEnv carries the adapters, platform, config and lead identity, and no
+// store, so a refused launch creates nothing (INV-3; T08).
+pub fn validate(spec: &TeamSpec, add: bool, env: &ValidateEnv) -> Result<ValidPlan, Vec<SpecError>>;
 pub fn launch(ctx: &mut Ctx, plan: ValidPlan) -> LaunchReport;          // per-member outcomes
 
 // teamwire-verify
