@@ -201,3 +201,240 @@ fn the_diff_base_never_moves_back() {
     let record = run_one(&mut fx, "api");
     assert_eq!(flag_ids(&record), Vec::<&str>::new(), "{record:?}");
 }
+
+// ---- U2: the rules ----
+
+/// Writes the report for `role` naming every commit since the start.
+fn report_all_commits(fx: &Fixture, repo: &Repo, role: &str) {
+    let base = fx.member(role).base_sha.unwrap();
+    let out = repo.git(&[
+        "log",
+        "--reverse",
+        "--format=%H",
+        "--first-parent",
+        "--no-merges",
+        &format!("{base}..HEAD"),
+    ]);
+    let shas: Vec<&str> = out.lines().collect();
+    fx.write_report(role, &full_report(&shas));
+}
+
+const A_TEST: &str = "#[test]\nfn a() {}\n";
+
+/// A repository with one Rust test file, and an implementer that owns `owns`.
+fn rust_member(owns: &'static [&'static str], files: &[(&str, &str)]) -> (Fixture, Repo) {
+    let mut all = vec![
+        ("tests/a.rs", A_TEST),
+        ("Cargo.toml", "[package]\nname = \"a\"\n"),
+    ];
+    all.extend_from_slice(files);
+    let repo = repo_on_work(&all);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), owns));
+    (fx, repo)
+}
+
+#[test]
+fn a_rust_branch_that_adds_ignore_is_flagged() {
+    let (mut fx, repo) = rust_member(&["tests/"], &[]);
+    repo.commit(
+        &[("tests/a.rs", "#[test]\n#[ignore]\nfn a() {}\n")],
+        "make the suite pass",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert_eq!(record.exit_code, Some(0));
+    assert_eq!(flag_ids(&record), ["weakened:tests/a.rs:2"]);
+    let flag = record.flags.first().unwrap();
+    assert!(flag.detail.contains("ignore"), "{}", flag.detail);
+    assert!(!flag.waived);
+}
+
+#[test]
+fn each_rust_weakening_marker_is_flagged_on_its_own_line() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    let source = "fn a() {}\n#[allow(dead_code)]\nfn b() {}\n#![allow(unused)]\n#[should_panic]\n#[expect(clippy::all, reason = \"r\")]\nfn c() {}\n// #[ignore] in prose\n";
+    repo.commit(&[("src/lib.rs", source)], "add code", start_secs() + 5);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        flag_ids(&record),
+        [
+            "weakened:src/lib.rs:2",
+            "weakened:src/lib.rs:4",
+            "weakened:src/lib.rs:5",
+            "weakened:src/lib.rs:6"
+        ]
+    );
+}
+
+#[test]
+fn a_deleted_test_file_and_a_removed_test_are_flagged() {
+    let (mut fx, repo) = rust_member(
+        &["tests/", "src/"],
+        &[("src/lib.rs", "#[test]\nfn one() {}\n#[test]\nfn two() {}\n")],
+    );
+    repo.remove("tests/a.rs");
+    repo.commit(
+        &[("src/lib.rs", "#[test]\nfn one() {}\n")],
+        "trim the suite",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        flag_ids(&record),
+        ["test-deleted:tests/a.rs", "test-removed:src/lib.rs"]
+    );
+}
+
+#[test]
+fn a_test_moved_within_a_file_is_not_a_removal() {
+    let (mut fx, repo) = rust_member(&["tests/"], &[]);
+    repo.commit(
+        &[("tests/a.rs", "// moved\n#[test]\nfn a() {}\n")],
+        "move",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), Vec::<&str>::new());
+    assert_eq!(record.verdict, Verdict::Pass);
+}
+
+#[test]
+fn check_config_is_flagged_unless_the_member_owns_it() {
+    for (owns, expected) in [
+        (
+            &["src/"][..],
+            vec!["config-changed:clippy.toml", "outside-owns:clippy.toml"],
+        ),
+        (&["src/", "clippy.toml"][..], vec![]),
+    ] {
+        let (mut fx, repo) = rust_member(&["src/"], &[]);
+        // Rebuild the member's owns through the store row.
+        fx.store
+            .write(|tx| {
+                tx.connection()
+                    .execute(
+                        "UPDATE members SET owns = ?1",
+                        [serde_json::json!(owns).to_string()],
+                    )
+                    .map(|_| ())
+                    .map_err(teamwire_store::StoreError::from)
+            })
+            .unwrap();
+        repo.commit(
+            &[("clippy.toml", "msrv = \"1.0\"\n")],
+            "tune clippy",
+            start_secs() + 5,
+        );
+        report_all_commits(&fx, &repo, "api");
+        let record = run_one(&mut fx, "api");
+        assert_eq!(flag_ids(&record), expected, "owns {owns:?}");
+    }
+}
+
+#[test]
+fn cargo_lint_tables_are_watched_and_dependencies_are_not() {
+    let manifest = "[package]\nname = \"a\"\n\n[dependencies]\nserde = \"1\"\n\n[lints.clippy]\npedantic = \"warn\"\nunwrap_used = \"warn\"\n";
+    let (mut fx, repo) = rust_member(&["crates/"], &[("crates/a/Cargo.toml", manifest)]);
+    let loosened = manifest
+        .replace("unwrap_used = \"warn\"", "unwrap_used = \"allow\"")
+        .replace("serde = \"1\"", "serde = \"2\"");
+    repo.commit(
+        &[("crates/a/Cargo.toml", &loosened)],
+        "unblock the build",
+        start_secs() + 5,
+    );
+    // A new crate that opts into the workspace table loosens nothing.
+    repo.commit(
+        &[(
+            "crates/b/Cargo.toml",
+            "[package]\nname = \"b\"\n\n[lints]\nworkspace = true\n",
+        )],
+        "add b",
+        start_secs() + 6,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        flag_ids(&record),
+        [
+            "weakened:crates/a/Cargo.toml:9",
+            "lint-removed:crates/a/Cargo.toml:9"
+        ]
+    );
+}
+
+#[test]
+fn task_md_is_ignored_wherever_verify_looks() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    repo.commit(
+        &[("TASK.md", "# brief\n#[ignore]\n")],
+        "oops",
+        start_secs() + 5,
+    );
+    repo.write(&[("TASK.md", "# brief, edited\n")]);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), Vec::<&str>::new(), "{record:?}");
+}
+
+#[test]
+fn uncommitted_paths_are_flagged() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    repo.write(&[("src/new.rs", "fn n() {}\n"), ("TASK.md", "brief\n")]);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["uncommitted"]);
+    assert!(record.flags.first().unwrap().detail.contains("src/new.rs"));
+    assert_eq!(record.verdict, Verdict::Flagged);
+}
+
+#[test]
+fn verify_changes_no_worktree() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    repo.commit(&[("src/lib.rs", "fn a() {}\n")], "own", start_secs() + 5);
+    repo.write(&[("scratch.txt", "untracked\n")]);
+    report_all_commits(&fx, &repo, "api");
+    let status = repo.git(&["status", "--porcelain=v2", "--untracked-files=all"]);
+    let head = repo.head();
+    let index = std::fs::metadata(repo.path().join(".git/index"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    run_one(&mut fx, "api");
+    // `git status` would rewrite the index without GIT_OPTIONAL_LOCKS=0.
+    let after = std::fs::metadata(repo.path().join(".git/index"))
+        .unwrap()
+        .modified()
+        .unwrap();
+    assert_eq!(index, after);
+    assert_eq!(
+        repo.git(&["status", "--porcelain=v2", "--untracked-files=all"]),
+        status
+    );
+    assert_eq!(repo.head(), head);
+    for (cmd, _) in fx.platform.commands() {
+        if cmd.program == "git" {
+            let sub = cmd
+                .args
+                .iter()
+                .skip(2)
+                .map(String::as_str)
+                .next()
+                .unwrap_or("");
+            assert!(
+                ["rev-parse", "merge-base", "diff", "status", "log", "show"].contains(&sub),
+                "verify ran a git command that may write: {cmd:?}"
+            );
+            assert!(
+                cmd.env
+                    .contains(&("GIT_OPTIONAL_LOCKS".to_owned(), "0".to_owned()))
+            );
+        }
+    }
+}

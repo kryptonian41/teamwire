@@ -119,7 +119,7 @@ impl<'a> Git<'a> {
 
     /// Paths with uncommitted changes, `TASK.md` left out.
     pub(crate) fn uncommitted(&self) -> Result<Vec<String>, VerifyError> {
-        let out = self.stdout(&["status", "--porcelain", "-z"])?;
+        let out = self.stdout(&["status", "--porcelain", "-z", "--untracked-files=all"])?;
         let mut fields = out.split('\0').filter(|f| !f.is_empty());
         let mut paths = Vec::new();
         while let Some(entry) = fields.next() {

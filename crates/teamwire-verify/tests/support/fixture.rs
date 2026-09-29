@@ -203,6 +203,10 @@ impl Repo {
         }
     }
 
+    pub(crate) fn remove(&self, path: &str) {
+        std::fs::remove_file(self.path().join(path)).unwrap();
+    }
+
     pub(crate) fn head(&self) -> String {
         self.git(&["rev-parse", "HEAD"])
     }

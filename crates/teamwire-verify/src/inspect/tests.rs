@@ -1,4 +1,4 @@
-use super::{header_path, hunk_start, in_lint_section, is_workspace_true, section_by_line};
+use super::{header_path, hunk_start, in_lint_section, section_by_line, sets_nothing};
 
 #[test]
 fn a_hunk_header_gives_the_first_old_and_new_line() {
@@ -36,7 +36,8 @@ fn every_line_of_a_manifest_knows_its_table() {
 
 #[test]
 fn opting_into_the_workspace_table_is_not_a_weakening() {
-    assert!(is_workspace_true("workspace = true"));
-    assert!(is_workspace_true("  workspace=true "));
-    assert!(!is_workspace_true("unsafe_code = \"allow\""));
+    assert!(sets_nothing("workspace = true"));
+    assert!(sets_nothing("  workspace=true "));
+    assert!(sets_nothing("[lints.clippy]"));
+    assert!(!sets_nothing("unsafe_code = \"allow\""));
 }

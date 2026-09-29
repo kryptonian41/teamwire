@@ -165,7 +165,7 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
         let by_line = section_by_line(&text);
         for &n in &file.lint_added {
             if in_lint_section(&by_line, n, sections)
-                && !text_line(&text, n).is_some_and(is_workspace_true)
+                && !text_line(&text, n).is_some_and(sets_nothing)
             {
                 flags.push(RawFlag::new(
                     format!("weakened:{new_path}:{n}"),
@@ -179,7 +179,9 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
     {
         let by_line = section_by_line(&text);
         for &n in &file.lint_removed {
-            if in_lint_section(&by_line, n, sections) {
+            if in_lint_section(&by_line, n, sections)
+                && !text_line(&text, n).is_some_and(sets_nothing)
+            {
                 flags.push(RawFlag::new(
                     format!("lint-removed:{old_path}:{n}"),
                     format!("lint table line removed from {old_path}:{n}"),
@@ -190,10 +192,11 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
     flags
 }
 
-/// `[lints] workspace = true` opts a new crate into the workspace's own
-/// table. It loosens nothing.
-fn is_workspace_true(line: &str) -> bool {
-    line.split_whitespace().collect::<String>() == "workspace=true"
+/// A table header sets no level, and `workspace = true` opts a new crate into
+/// the workspace's own table. Neither loosens anything.
+fn sets_nothing(line: &str) -> bool {
+    line.trim_start().starts_with('[')
+        || line.split_whitespace().collect::<String>() == "workspace=true"
 }
 
 fn text_line(text: &str, number: u32) -> Option<&str> {
