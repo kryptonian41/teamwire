@@ -12,6 +12,7 @@
 //! `env` key of its own `settings.json`.
 
 mod launch;
+mod session;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -59,6 +60,14 @@ impl ClaudeCode {
         &self.config
     }
 
+    /// The caller's session, read through `get` instead of the process
+    /// environment: `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_CODE_SESSION_KIND`
+    /// (`bg` is a background session). `current_session` calls this with the
+    /// real environment.
+    pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        session::caller_from_env(get)
+    }
+
     /// The platform Claude's commands run through.
     pub fn platform(&self) -> &dyn Platform {
         self.platform.as_ref()
@@ -98,19 +107,31 @@ impl Harness for ClaudeCode {
     }
 
     fn current_session(&self) -> Option<CallerSession> {
-        None
+        self.session_from_env(|name| std::env::var(name).ok())
     }
 
     fn processes_for_session(
         &self,
-        _s: &SessionId,
-        _timeout: Duration,
+        s: &SessionId,
+        timeout: Duration,
     ) -> Result<Vec<Pid>, HarnessError> {
-        Err(not_built())
+        session::processes(
+            self.platform.as_ref(),
+            &self.config.claude_dir,
+            &self.config.claude_bin,
+            s,
+            timeout,
+        )
     }
 
-    fn is_alive(&self, _s: &SessionId, _timeout: Duration) -> Result<Liveness, HarnessError> {
-        Err(not_built())
+    fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError> {
+        Ok(session::liveness(
+            self.platform.as_ref(),
+            &self.config.claude_dir,
+            &self.config.claude_bin,
+            s,
+            timeout,
+        ))
     }
 
     fn parse_turn_end(&self, _stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
