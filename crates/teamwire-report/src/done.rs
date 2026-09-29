@@ -2,6 +2,7 @@
 //! the member about report gaps once first (route B of ADR 0007).
 
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use teamwire_core::{CompletionStatus, FinalSource, MemberState, ReportGaps, Role, TeamState};
 use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
 
@@ -17,6 +18,21 @@ pub fn parse_status(text: &str) -> Result<CompletionStatus, DoneError> {
         field: "status".to_owned(),
         message: format!("{text:?} is not one of done, blocked, failed"),
     })
+}
+
+/// The SHA-256 the store keeps of a member's token (ADR 0008 point 1).
+pub fn hash_token(token: &str) -> [u8; 32] {
+    Sha256::digest(token.as_bytes()).into()
+}
+
+/// True when `token` is the token launch gave `role`. A member with no
+/// stored hash matches nothing (ADR 0008 point 2).
+pub fn token_matches(ctx: &Ctx<'_>, role: &Role, token: &str) -> bool {
+    ctx.store
+        .read(|tx| tx.member_token_hash(role))
+        .ok()
+        .flatten()
+        .is_some_and(|stored| stored == hash_token(token))
 }
 
 /// What the write transaction decided.

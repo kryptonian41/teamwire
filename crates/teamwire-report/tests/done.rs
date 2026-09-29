@@ -104,3 +104,27 @@ fn unknown_or_removed_member_and_closed_team_are_refused() {
     assert_eq!(err, DoneError::TeamClosed);
     assert_eq!(rig.completions(&api), 0);
 }
+
+#[test]
+fn a_token_matches_only_its_own_members_hash() {
+    let (mut rig, api) = team();
+    let token = "a".repeat(64);
+    assert!(
+        !teamwire_report::token_matches(&rig.ctx(), &api, &token),
+        "no hash stored"
+    );
+    rig.store
+        .write(|tx| tx.set_member_token_hash(&api, &teamwire_report::hash_token(&token)))
+        .unwrap();
+    assert!(teamwire_report::token_matches(&rig.ctx(), &api, &token));
+    assert!(!teamwire_report::token_matches(
+        &rig.ctx(),
+        &api,
+        &"b".repeat(64)
+    ));
+    assert!(!teamwire_report::token_matches(
+        &rig.ctx(),
+        &role("ghost"),
+        &token
+    ));
+}

@@ -23,7 +23,7 @@ mod reminder;
 mod result_file;
 mod turn_end;
 
-pub use done::{done, parse_status};
+pub use done::{done, hash_token, parse_status, token_matches};
 pub use reminder::on_tool_use;
 pub use turn_end::on_turn_end;
 
