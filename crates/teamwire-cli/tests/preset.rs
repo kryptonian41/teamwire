@@ -282,3 +282,127 @@ fn an_unknown_shape_is_a_usage_error_that_names_the_shapes() {
     assert!(run.err.contains("survey"), "{}", run.err);
     assert!(run.out.is_empty());
 }
+
+fn example(path: &str) -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples")
+            .join(path),
+    )
+    .unwrap()
+}
+
+/// The subcommands `teamwire --help` lists.
+fn subcommands() -> Vec<String> {
+    let run = teamwire(&["--help"]);
+    run.out
+        .lines()
+        .skip_while(|l| !l.starts_with("Commands:"))
+        .skip(1)
+        .take_while(|l| l.starts_with("  "))
+        .filter_map(|l| l.split_whitespace().next().map(str::to_owned))
+        .collect()
+}
+
+#[test]
+fn lead_json_registers_the_lead_mcp_server_with_arguments_the_binary_accepts() {
+    let doc: Value = serde_json::from_str(&example("mcp/lead.json")).unwrap();
+    let server = &doc["mcpServers"]["teamwire"];
+    assert_eq!(server["command"], "teamwire");
+    assert_eq!(server["args"], serde_json::json!(["mcp", "--lead"]));
+    let help = teamwire(&["mcp", "--help"]);
+    assert_eq!(help.code, 0, "{}", help.err);
+    assert!(help.out.contains("--lead"), "{}", help.out);
+}
+
+/// The word after `teamwire ` in every place the skill shows a command: text
+/// in backticks, and lines inside a fenced block.
+fn shown_commands(skill: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut fenced = false;
+    for line in skill.lines() {
+        if line.trim_start().starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        let word_after = |text: &str| {
+            text.trim_start_matches("teamwire ")
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+                .next()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        if fenced {
+            if line.trim_start().starts_with("teamwire ") {
+                found.push((word_after(line.trim_start()), line.to_owned()));
+            }
+        } else {
+            for span in line.split('`').skip(1).step_by(2) {
+                if span.starts_with("teamwire ") {
+                    found.push((word_after(span), line.to_owned()));
+                }
+            }
+        }
+    }
+    found
+}
+
+#[test]
+fn the_skill_names_only_commands_and_tools_that_exist() {
+    let skill = example("skills/teamwire/SKILL.md");
+    assert!(
+        skill.starts_with("---\nname: teamwire\ndescription: "),
+        "the front matter names the skill"
+    );
+
+    let commands = subcommands();
+    assert!(commands.iter().any(|c| c == "launch"), "{commands:?}");
+    let shown = shown_commands(&skill);
+    assert!(shown.len() > 20, "the skill shows {} commands", shown.len());
+    for (word, line) in &shown {
+        assert!(
+            commands.contains(word),
+            "`teamwire {word}` is not a command: {line}"
+        );
+    }
+
+    let mcp = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/api/mcp.md"),
+    )
+    .unwrap();
+    let tools: Vec<&str> = skill
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter(|s| s.starts_with("team_"))
+        .collect();
+    assert!(!tools.is_empty());
+    for tool in tools {
+        assert!(
+            mcp.contains(&format!("## `{tool}`")),
+            "{tool} is not an MCP tool"
+        );
+    }
+
+    for shape in NAMES {
+        assert!(
+            skill.contains(&format!("`{shape}`")),
+            "the skill does not name the shape {shape}"
+        );
+    }
+
+    // Past the section that explains the two tools, no Python script or
+    // pane-typing command is named as a way to work.
+    let (_, body) = skill.split_once("## How it fits together").unwrap();
+    for forbidden in [
+        ".py",
+        "team-report.sh",
+        "herdr agent prompt",
+        "~/.claude/team/",
+    ] {
+        assert!(
+            !body.contains(forbidden),
+            "the skill's procedures name {forbidden}"
+        );
+    }
+}

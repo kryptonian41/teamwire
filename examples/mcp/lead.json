@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "teamwire": {
+      "command": "teamwire",
+      "args": ["mcp", "--lead"]
+    }
+  }
+}
