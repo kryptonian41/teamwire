@@ -1,0 +1,44 @@
+{
+  "_shape": "One implementer, then ONE independent reviewer. Sequential, not a loop.",
+  "_why_this_works": "Review is where the tokens go in agentic software work, driven by long dialogue between a programmer and a reviewer. One fresh reviewer reading a finished diff costs a fraction of that and catches the same class of bug, because it has no stake in the code it reads.",
+  "_rules": [
+    "Launch the reviewer with `teamwire launch --add` only AFTER the implementer reports done. Do not run them together.",
+    "The reviewer reads the committed diff and writes findings. It must NOT edit code. A reviewer that starts rewriting has stopped reviewing.",
+    "Send the findings that carry a concrete failure back to the implementer with `teamwire send <team> --to impl --type reprompt --file <findings>`. Allow at most two fix rounds. If the second still leaves real findings, the task was underspecified, so fix the spec yourself instead of running a third round.",
+    "Reviewer on opus, implementer on sonnet. Judgement is worth more than speed on the review side.",
+    "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
+    "Act only on findings that carry a concrete failure. A reviewer asked to find gaps will usually report some even when the work is sound, and chasing every one leads to over-engineering."
+  ],
+  "team": "myteam",
+  "title": "Build and review CHANGEME",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "children": [
+    {
+      "role": "impl",
+      "title": "Build: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/impl",
+      "base": "main",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/path/"
+      ],
+      "task": "<what to build, with acceptance criteria, as units>. <which files you own>. Commit after each unit. Run only your check and the tests you write; do not run the full suite or the repo-wide lint and type gates, which the lead runs once."
+    },
+    {
+      "_launch_after": "impl reports done",
+      "role": "review",
+      "title": "Review: CHANGEME",
+      "kind": "reviewer",
+      "mode": "pane",
+      "cwd": "/abs/path/repo",
+      "model": "opus",
+      "deadline_s": 1200,
+      "task": "Review the diff on branch myteam/impl against main. Read it with `git diff main...myteam/impl`. Report correctness, security and data-loss bugs, each with file:line and a concrete failure scenario. Do NOT edit any file in the repository. If the diff is sound, say so plainly rather than inventing findings."
+    }
+  ]
+}

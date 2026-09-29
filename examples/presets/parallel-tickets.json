@@ -1,0 +1,54 @@
+{
+  "_shape": "Several genuinely independent tickets at once.",
+  "_why_this_works": "Independent tasks are the one case where parallel coding agents reliably beat a single agent. Independence removes the shared context that makes the other shapes fail.",
+  "_rules": [
+    "Tickets must not touch the same modules. Two tickets in one file belong to ONE member, done in order.",
+    "Paste the full acceptance criteria into the brief. A member cannot read your issue tracker or see your screen.",
+    "One branch per ticket, and each branch becomes its own pull request. Members' branches are never merged into each other. That is the point of this shape.",
+    "Every worktree member needs the repository's setup command in the `setup` field. Launch runs it before the agent starts and refuses the member if it fails. Without it a member has no dependencies installed and spends its time on a broken checkout.",
+    "Write each brief as a file and pass it with task_file. Inline task strings are for one-paragraph jobs.",
+    "Tell members which tests to run and which gates to skip. You run the full gate yourself on each branch before its pull request.",
+    "Route implementers to sonnet and keep the lead on opus for planning and review.",
+    "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
+    "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest with `teamwire launch --add`.",
+    "One coherent change per branch. Agent pull requests succeed less often as they grow. A ticket that touches more than one module is two members, or one member with two units.",
+    "Size the team to what will actually be reviewed. Five open implementer branches is a sensible ceiling per run; launch warns above it."
+  ],
+  "team": "myteam",
+  "title": "CHANGEME tickets",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "children": [
+    {
+      "role": "ticket_a",
+      "title": "TICKET-A: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ticket-a",
+      "base": "main",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/a/"
+      ],
+      "task_file": "/abs/path/briefs/ticket_a.md"
+    },
+    {
+      "role": "ticket_b",
+      "title": "TICKET-B: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ticket-b",
+      "base": "main",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/b/"
+      ],
+      "task_file": "/abs/path/briefs/ticket_b.md"
+    }
+  ]
+}

@@ -1,0 +1,51 @@
+{
+  "_shape": "LAST RESORT. Splitting ONE feature across parallel implementers.",
+  "_why_this_is_risky": "Parallel implementers of one feature make conflicting unstated decisions, and the integrator inherits the mismatch. Prefer one agent doing the whole feature, or split the work into independent tickets instead.",
+  "_only_if": [
+    "You COMMIT the contract to the base branch FIRST: a real module with the shared types, function signatures and doc comments that carry the reasoning. Every member's branch is cut from that commit, so the contract is in every worktree before any member starts.",
+    "Every file has exactly one owner, named in each brief under 'Files you own' and 'Owned by others'. A member that needs a change in a file it does not own asks you and never edits it.",
+    "Tell each member that files it does not own may be missing or out of date in its worktree, and that it must not create stubs for them.",
+    "When you find a hole in the contract mid-run, fix it on the base branch, commit, and send each affected member ONE message: 'CONTRACT AMENDMENT: run `git merge --no-edit <sha>` now; <what changed and why>'. Never describe the change in prose and hope the member works it out again.",
+    "Budget for bugs where the parts meet. The modules will be fine; the joins between them are where it breaks.",
+    "Do the integration yourself: an integration worktree, every member's branch merged, the FULL gate, a report per branch, and fixes on the owning branch.",
+    "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
+    "For a risky change, commit failing acceptance tests to the contract base beside the shared types, written by you or by a separate implementer, before the implementers start. Tests written by another agent shape the code less than tests written after it."
+  ],
+  "team": "myteam",
+  "title": "CHANGEME: logic and UI split",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "children": [
+    {
+      "role": "logic",
+      "title": "Logic: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/logic",
+      "base": "myteam/contract-base",
+      "model": "sonnet",
+      "deadline_s": 1800,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/logic/"
+      ],
+      "task_file": "/abs/path/briefs/logic.md"
+    },
+    {
+      "role": "ui",
+      "title": "UI: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ui",
+      "base": "myteam/contract-base",
+      "model": "sonnet",
+      "deadline_s": 1800,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/ui/"
+      ],
+      "task_file": "/abs/path/briefs/ui.md"
+    }
+  ]
+}
