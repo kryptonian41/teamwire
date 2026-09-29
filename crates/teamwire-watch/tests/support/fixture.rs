@@ -4,10 +4,6 @@
     clippy::unwrap_used,
     reason = "test support: a failure here fails the test"
 )]
-#![allow(
-    dead_code,
-    reason = "each integration-test file uses part of this shared support"
-)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
