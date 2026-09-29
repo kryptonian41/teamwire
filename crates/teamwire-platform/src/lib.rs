@@ -20,11 +20,25 @@ use teamwire_core::{
 };
 use time::OffsetDateTime;
 
-fn not_built() -> PlatformError {
-    PlatformError::new(
-        PlatformErrorCode::Other,
-        "teamwire-platform is not built yet",
-    )
+mod files;
+mod process;
+mod run;
+mod sleephold;
+
+/// Map an I/O error to the platform error code a caller can act on.
+pub(crate) fn io_error(what: &str, err: &std::io::Error) -> PlatformError {
+    use std::io::ErrorKind;
+    let kind = err.kind();
+    let code = if kind == ErrorKind::NotFound {
+        PlatformErrorCode::NotFound
+    } else if kind == ErrorKind::PermissionDenied {
+        PlatformErrorCode::PermissionDenied
+    } else if kind == ErrorKind::StorageFull {
+        PlatformErrorCode::NoSpace
+    } else {
+        PlatformErrorCode::Io
+    };
+    PlatformError::new(code, format!("{what}: {err}"))
 }
 
 /// macOS: every call, including the `caffeinate` sleep hold.
@@ -35,42 +49,43 @@ pub struct MacOs;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Linux;
 
-macro_rules! not_built_platform {
-    ($name:ident) => {
+macro_rules! platform_impl {
+    ($name:ident, $me:ident => $hold:expr) => {
         impl Platform for $name {
-            fn pid_alive(&self, _pid: Pid) -> bool {
-                false
+            fn pid_alive(&self, pid: Pid) -> bool {
+                process::pid_alive(pid)
             }
 
-            fn env_of(&self, _pid: Pid, _var: &str) -> Result<Option<String>, PlatformError> {
-                Err(not_built())
+            fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
+                process::env_of(pid, var)
             }
 
-            fn run(&self, _cmd: &Command, _timeout: Duration) -> Result<RunOutput, PlatformError> {
-                Err(not_built())
+            fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
+                run::run_command(cmd, timeout)
             }
 
-            fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> Result<(), PlatformError> {
-                Err(not_built())
+            fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+                files::write_atomic(path, bytes)
             }
 
             fn sleep_hold(&self) -> Option<&dyn SleepHold> {
-                None
+                let $me = self;
+                $hold
             }
 
-            fn free_bytes(&self, _path: &Path) -> Result<u64, PlatformError> {
-                Err(not_built())
+            fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError> {
+                files::free_bytes(path)
             }
 
-            fn on_network_fs(&self, _path: &Path) -> Result<bool, PlatformError> {
-                Err(not_built())
+            fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError> {
+                files::on_network_fs(path)
             }
         }
     };
 }
 
-not_built_platform!(MacOs);
-not_built_platform!(Linux);
+platform_impl!(MacOs, me => Some(me));
+platform_impl!(Linux, _me => None);
 
 /// The platform this binary was built for.
 pub fn native() -> Arc<dyn Platform> {
