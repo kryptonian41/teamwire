@@ -23,6 +23,7 @@ use time::OffsetDateTime;
 mod files;
 mod process;
 mod run;
+mod sleephold;
 
 /// Map an I/O error to the platform error code a caller can act on.
 pub(crate) fn io_error(what: &str, err: &std::io::Error) -> PlatformError {
@@ -48,8 +49,8 @@ pub struct MacOs;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Linux;
 
-macro_rules! not_built_platform {
-    ($name:ident) => {
+macro_rules! platform_impl {
+    ($name:ident, $me:ident => $hold:expr) => {
         impl Platform for $name {
             fn pid_alive(&self, pid: Pid) -> bool {
                 process::pid_alive(pid)
@@ -68,7 +69,8 @@ macro_rules! not_built_platform {
             }
 
             fn sleep_hold(&self) -> Option<&dyn SleepHold> {
-                None
+                let $me = self;
+                $hold
             }
 
             fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError> {
@@ -82,8 +84,8 @@ macro_rules! not_built_platform {
     };
 }
 
-not_built_platform!(MacOs);
-not_built_platform!(Linux);
+platform_impl!(MacOs, me => Some(me));
+platform_impl!(Linux, _me => None);
 
 /// The platform this binary was built for.
 pub fn native() -> Arc<dyn Platform> {
