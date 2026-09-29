@@ -31,15 +31,39 @@ fn name_already_live_in_host_refused() {
 }
 
 #[test]
-fn an_unreadable_agent_list_refuses_rather_than_guessing() {
+fn an_unreadable_agent_list_warns_and_the_host_still_guards_the_name() {
     let rig = Rig::new();
     rig.host.inject_always(
         "live_agent_names",
         Fault::Fail(teamwire_core::HostError::new(HostErrorCode::Other, "boom")),
     );
     let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
-    assert_eq!(
-        codes(&rig.validate(&spec, false).unwrap_err()),
-        ["host_listing_failed"]
+    let plan = rig.validate(&spec, false).unwrap();
+    assert!(
+        plan.warnings
+            .iter()
+            .any(|w| w.contains("agent list could not be read"))
     );
+}
+
+#[test]
+fn a_name_taken_answer_from_the_host_at_spawn_refuses_only_that_member() {
+    use teamwire_launch::LaunchOutcome;
+    let rig = Rig::new();
+    rig.host.inject_always(
+        "live_agent_names",
+        Fault::Fail(teamwire_core::HostError::new(HostErrorCode::Other, "boom")),
+    );
+    rig.host.add_foreign_agent("tw_demo_a");
+    let spec = team_spec(
+        "demo",
+        &[
+            pane_member("a", "Alpha", rig.work.path()),
+            pane_member("b", "Beta", rig.work.path()),
+        ],
+    );
+    let (report, _store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    let outcomes: Vec<&LaunchOutcome> = report.members.iter().map(|m| &m.outcome).collect();
+    assert!(matches!(outcomes.first(), Some(LaunchOutcome::Failed(_))));
+    assert_eq!(outcomes.get(1).copied(), Some(&LaunchOutcome::Started));
 }

@@ -153,7 +153,7 @@ pub(crate) fn plan_member(
     let channel = adapters(cx, role, &harness_id, &host_id, &mut bad);
     let (cwd, worktree) = location(cx, child, &mut bad, warnings);
     let address = Address::of(&cx.spec.team, &child.role);
-    live_name_check(cx, role, &address, &host_id, &mut bad);
+    live_name_check(cx, role, &address, &host_id, &mut bad, warnings);
     if errors.len() > before {
         return None;
     }
@@ -291,6 +291,7 @@ fn live_name_check(
     address: &Address,
     host_id: &HostId,
     bad: &mut Bad<'_>,
+    warnings: &mut Vec<String>,
 ) {
     let Ok(host) = cx.env.registry.host(host_id) else {
         return;
@@ -309,7 +310,15 @@ fn live_name_check(
             format!("role {role}: an agent named {address} is already live in {host_id}"),
         ),
         Ok(_) => {}
-        Err(e) => bad("host", "host_listing_failed", e.clone()),
+        // An unreadable list is not a name that is taken. The host itself
+        // refuses a second live agent of the same name when it starts one.
+        Err(e) => {
+            let text =
+                format!("{e}; a name already live in {host_id} is caught when the agent starts");
+            if !warnings.contains(&text) {
+                warnings.push(text);
+            }
+        }
     }
 }
 
