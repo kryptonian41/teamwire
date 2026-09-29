@@ -15,6 +15,7 @@ mod observe;
 mod plan;
 mod poll;
 mod snapshot;
+mod status;
 mod text;
 
 use std::path::PathBuf;
@@ -29,8 +30,6 @@ use teamwire_store::Ctx;
 pub use lease::{WatchError, start, stop};
 pub use memory::{WatchEnd, WatchMemory};
 pub use poll::poll;
-
-const NOT_BUILT: &str = "teamwire-watch is not built yet";
 
 /// The lead as `status` shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -106,9 +105,8 @@ pub struct StatusView {
 }
 
 /// The status view. Reads only.
-pub fn status(_ctx: &Ctx<'_>) -> StatusView {
-    StatusView {
-        errors: vec![NOT_BUILT.to_owned()],
-        ..StatusView::default()
-    }
+pub fn status(ctx: &Ctx<'_>) -> StatusView {
+    status::status_with(ctx, None)
 }
+
+pub use status::status_with;

@@ -1,5 +1,10 @@
 //! One watch per team (WAT-16).
 
+#![expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::watch_lease` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+
 #[path = "support/fixture.rs"]
 pub mod fixture;
 

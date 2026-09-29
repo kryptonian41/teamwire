@@ -1,0 +1,294 @@
+//! `teamwire status`: the same reading of each member as the watch, without
+//! any memory of earlier polls, and without a single write (WAT-11).
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use teamwire_core::{
+    Address, DeliveryState, Liveness, Member, MemberState, OtelConfig, Recipient, ReportState,
+    Role, SessionId, Timestamp, one_line,
+};
+use teamwire_store::{CompletionRecord, Ctx, Party, ReadTx, StoreError, database_path};
+
+use crate::observe::{Activity, Listings, Seen, observe};
+use crate::text::result_path;
+use crate::{LeadView, MemberView, MessageView, StatusView, StuckDelivery, UndeliveredResult};
+
+/// How long a `pending` delivery may wait before status calls it stuck.
+const PENDING_STUCK: Duration = Duration::from_secs(60);
+const EXCERPT: usize = 80;
+
+/// The rows status shows, read in one transaction.
+struct Rows {
+    view: StatusView,
+    members: Vec<(Member, Option<CompletionRecord>, Timestamp)>,
+    team_dir: PathBuf,
+}
+
+fn seconds(span: Duration) -> u64 {
+    span.as_secs()
+}
+
+fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, StoreError> {
+    let mut view = StatusView::default();
+    let Some(team) = tx.team()? else {
+        view.errors.push("the team has no record".to_owned());
+        return Ok(Rows {
+            view,
+            members: Vec::new(),
+            team_dir: PathBuf::new(),
+        });
+    };
+    let team_dir = database_path(ctx.home, &team.name)
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    view.team = Some(team.name.clone());
+    view.title = Some(team.title.clone());
+    view.state = Some(team.state);
+    view.lead = Some(LeadView {
+        session_id: team.lead_session.clone(),
+        liveness: Liveness::Unknown,
+    });
+
+    let mut members = Vec::new();
+    for member in tx.members()?.all_or_corrupt()? {
+        if member.state == MemberState::Removed {
+            continue;
+        }
+        let started = tx
+            .events_of_role(&member.role)?
+            .all_or_corrupt()?
+            .into_iter()
+            .rev()
+            .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
+            .map(|e| e.time);
+        let run_start = started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at));
+        let completion = tx
+            .latest_completion(&member.role)?
+            .filter(|c| c.completion.generation == member.generation);
+        members.push((member, completion, run_start));
+    }
+
+    let recent = tx
+        .messages(&teamwire_store::MessageFilter {
+            limit: Some(5),
+            newest: true,
+            ..Default::default()
+        })?
+        .all_or_corrupt()?;
+    for m in recent {
+        let to = tx
+            .deliveries_of(&m.ulid)?
+            .all_or_corrupt()?
+            .into_iter()
+            .map(|d| d.delivery.recipient)
+            .collect::<Vec<Recipient>>();
+        view.messages.push(MessageView {
+            display_id: m.display_id,
+            time: m.created_at,
+            kind: m.kind,
+            from: m.sender,
+            to,
+            excerpt: one_line(&m.body, EXCERPT).into_string(),
+        });
+    }
+
+    let stuck = tx
+        .deliveries_in_states(&[
+            DeliveryState::Pending,
+            DeliveryState::Unconfirmed,
+            DeliveryState::Undelivered,
+        ])?
+        .all_or_corrupt()?;
+    for record in stuck {
+        let d = record.delivery;
+        let Some(message) = tx.message(&d.message)? else {
+            continue;
+        };
+        let age = now.saturating_since(message.created_at);
+        if d.state == DeliveryState::Pending && age <= PENDING_STUCK {
+            continue;
+        }
+        view.stuck_deliveries.push(StuckDelivery {
+            display_id: message.display_id,
+            to: d.recipient,
+            state: d.state,
+            age_s: seconds(age),
+        });
+    }
+
+    for record in tx
+        .completions_in_states(&[ReportState::Undelivered, ReportState::Unconfirmed])?
+        .all_or_corrupt()?
+    {
+        let c = record.completion;
+        view.undelivered_results.push(UndeliveredResult {
+            path: PathBuf::from(result_path(&team_dir, &c.role)),
+            role: c.role,
+            n: c.n,
+            report_state: c.report_state,
+        });
+    }
+    Ok(Rows {
+        view,
+        members,
+        team_dir,
+    })
+}
+
+/// The word `status` shows for a member, from its records and one look at it.
+fn state_word(
+    ctx: &Ctx<'_>,
+    member: &Member,
+    completion: Option<&CompletionRecord>,
+    seen: Seen,
+    age: Duration,
+) -> String {
+    match member.state {
+        MemberState::Creating => return "not started".to_owned(),
+        MemberState::Failed => return "failed to start".to_owned(),
+        MemberState::Started | MemberState::Removed => {}
+    }
+    if let Some(record) = completion {
+        let c = &record.completion;
+        return match c.report_state {
+            // A finished member that works again was prompted by someone
+            // other than teamwire, which would have started a generation.
+            ReportState::Delivered if seen == Seen::Alive(Activity::Working) => {
+                "prompted outside teamwire".to_owned()
+            }
+            ReportState::Delivered => format!("done({})", c.status),
+            ReportState::Pending | ReportState::Delivering => "unreported".to_owned(),
+            ReportState::Undelivered => "undelivered".to_owned(),
+            ReportState::Unconfirmed => "unconfirmed".to_owned(),
+        };
+    }
+    let grace = Duration::from_secs(ctx.config.startup_grace_s);
+    match seen {
+        Seen::Absent => "died?".to_owned(),
+        _ if age > Duration::from_secs(member.deadline_s) => "late".to_owned(),
+        Seen::Alive(Activity::Blocked) => "blocked".to_owned(),
+        Seen::Alive(Activity::Idle) if age >= grace => "quiet".to_owned(),
+        Seen::Alive(_) | Seen::NoInfo => "working".to_owned(),
+    }
+}
+
+/// The command that resumes a member's session with its per-run files. Its
+/// settings, MCP configuration and contract are already on disk, so only
+/// the path names matter here; the token is not part of the command.
+fn resume_command(
+    ctx: &Ctx<'_>,
+    team_dir: &std::path::Path,
+    team: &teamwire_core::TeamName,
+    member: &Member,
+    session: &SessionId,
+) -> Result<String, String> {
+    let (harness, _) = ctx
+        .adapters(&Party::Member(member.role.clone()))
+        .map_err(|e| e.to_string())?;
+    let launch = teamwire_core::MemberLaunch {
+        team: team.clone(),
+        role: member.role.clone(),
+        address: Address::of(team, &member.role),
+        kind: member.kind,
+        cwd: member.cwd.clone(),
+        session_id: session.clone(),
+        model: None,
+        effort: None,
+        member_dir: team_dir.join("members").join(member.role.as_str()),
+        contract_path: team_dir
+            .join("contract")
+            .join(format!("{}.md", member.role)),
+        identity: vec![("TEAMWIRE_TOKEN".to_owned(), "-".to_owned())],
+        otel: OtelConfig::default(),
+        teamwire_bin: PathBuf::from("teamwire"),
+    };
+    let spec = harness
+        .resume_spec(&launch, session)
+        .map_err(|e| e.to_string())?;
+    Ok(spec
+        .argv
+        .iter()
+        .map(|a| shell_word(a))
+        .collect::<Vec<_>>()
+        .join(" "))
+}
+
+fn shell_word(text: &str) -> String {
+    let plain = !text.is_empty()
+        && text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
+    if plain {
+        text.to_owned()
+    } else {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    }
+}
+
+/// The status view. `role` adds the resume command of that member. Reads only.
+pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
+    let now = ctx.clock.now();
+    let rows = match ctx.store.read(|tx| read_rows(tx, ctx, now)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            return StatusView {
+                errors: vec![e.to_string()],
+                ..StatusView::default()
+            };
+        }
+    };
+    let Rows {
+        mut view,
+        members,
+        team_dir,
+    } = rows;
+    let mut listings = Listings::default();
+    for (member, completion, run_start) in &members {
+        let seen = observe(ctx, member, &mut listings);
+        let age = now.saturating_since(*run_start);
+        let resume = match (role, &view.team, &member.session_id) {
+            (Some(wanted), Some(team), Some(session)) if *wanted == member.role => {
+                match resume_command(ctx, &team_dir, team, member, session) {
+                    Ok(command) => Some(command),
+                    Err(why) => {
+                        view.errors
+                            .push(format!("no resume command for {wanted}: {why}"));
+                        None
+                    }
+                }
+            }
+            (Some(wanted), _, None) if *wanted == member.role => {
+                view.errors
+                    .push(format!("{wanted} has no session recorded to resume"));
+                None
+            }
+            _ => None,
+        };
+        view.members.push(MemberView {
+            role: member.role.clone(),
+            title: member.title.clone(),
+            state: state_word(ctx, member, completion.as_ref(), seen, age),
+            generation: member.generation,
+            age_s: seconds(age),
+            deadline_s: member.deadline_s,
+            result: completion.as_ref().map(|c| c.completion.report_state),
+            branch: member.branch.clone(),
+            resume_command: resume,
+        });
+    }
+    if let (Some(lead), Ok((harness, _))) = (view.lead.as_mut(), ctx.adapters(&Party::Lead))
+        && let Some(session) = &lead.session_id
+    {
+        lead.liveness = harness
+            .is_alive(session, Duration::from_secs(5))
+            .unwrap_or(Liveness::Unknown);
+    }
+    if let Some(wanted) = role
+        && !view.members.iter().any(|m| &m.role == wanted)
+    {
+        view.errors.push(format!("no member {wanted} in this team"));
+    }
+    view
+}
