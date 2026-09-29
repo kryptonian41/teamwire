@@ -102,7 +102,9 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
         }
         EventType::MessageRefused => {
             let kind = text(d, "type").unwrap_or("unknown");
-            let reason = text(d, "reason").unwrap_or("unknown");
+            let reason = text(d, "reason")
+                .or_else(|| text(d, "code"))
+                .unwrap_or("unknown");
             o.count(
                 &defs::MESSAGES_REFUSED,
                 &[("type", kind), ("reason", reason)],
@@ -201,22 +203,22 @@ fn completed(h: &History, o: &mut Out<'_>) {
     }
 }
 
-/// The four reasons of `docs/metrics.md`. A gap name outside them counts as a
-/// missing report, the check's catch-all.
-fn hold_reason(gap: &str) -> &'static str {
-    if gap.contains("progress") {
-        "progress_lines"
-    } else if gap.contains("decision") {
-        "decisions"
-    } else {
-        "report_missing"
-    }
-}
-
 fn held(o: &mut Out<'_>, d: &Value) {
-    if let Some(gaps) = d.get("gaps").and_then(Value::as_array) {
-        for gap in gaps.iter().filter_map(Value::as_str) {
-            o.count(&defs::HOLDS, &[("reason", hold_reason(gap))]);
+    // `gaps` is the core `ReportGaps` object.
+    if let Some(gaps) = d.get("gaps") {
+        let listed = |key: &str| {
+            gaps.get(key)
+                .and_then(Value::as_array)
+                .is_some_and(|list| !list.is_empty())
+        };
+        for (present, reason) in [
+            (flag(gaps, "report_missing"), "report_missing"),
+            (listed("commits_without_line"), "progress_lines"),
+            (flag(gaps, "decisions_missing"), "decisions"),
+        ] {
+            if present {
+                o.count(&defs::HOLDS, &[("reason", reason)]);
+            }
         }
     }
     let unread = match d.get("unread") {

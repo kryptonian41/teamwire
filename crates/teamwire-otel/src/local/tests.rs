@@ -438,6 +438,39 @@ fn a_member_run_is_timed_from_its_start_or_latest_reprompt() {
 }
 
 #[test]
+fn a_refusal_reason_is_read_from_reason_or_code() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    ev(
+        &mut s,
+        1,
+        EventType::MessageRefused,
+        Some("api"),
+        None,
+        &json!({"type": "note", "code": "too_long"}),
+    );
+    ev(
+        &mut s,
+        2,
+        EventType::MessageRefused,
+        Some("api"),
+        None,
+        &json!({"type": "note", "reason": "empty"}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    for reason in ["too_long", "empty"] {
+        assert_eq!(
+            value(
+                &v,
+                "teamwire.messages.refused",
+                &[("team", "alpha"), ("type", "note"), ("reason", reason)]
+            ),
+            Some(1.0)
+        );
+    }
+}
+
+#[test]
 fn holds_count_each_gap_and_unread() {
     let home = TestHome::new().unwrap();
     let mut s = open(&home, "alpha");
@@ -447,9 +480,18 @@ fn holds_count_each_gap_and_unread() {
         EventType::MemberHeld,
         Some("api"),
         None,
-        &json!({"gaps": ["progress_lines", "decisions"], "unread": 2}),
+        &json!({"gaps": {"report_missing": false, "commits_without_line": ["abc1234"],
+                 "decisions_missing": true}, "unread": 2}),
     );
     let v = view(&home, &query(Some("alpha")), 100);
+    assert_eq!(
+        value(
+            &v,
+            "teamwire.holds",
+            &[("team", "alpha"), ("reason", "report_missing")]
+        ),
+        None
+    );
     for reason in ["progress_lines", "decisions", "unread"] {
         assert_eq!(
             value(

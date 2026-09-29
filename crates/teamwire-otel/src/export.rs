@@ -50,22 +50,25 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
     };
     match send_batch(ctx, exporter, &claim) {
         Ok(report) => {
-            if ctx
+            match ctx
                 .store
-                .write(|tx| tx.commit_metric_export(&me, claim.to_seq))?
+                .write(|tx| tx.commit_metric_export(&me, claim.to_seq))
             {
-                Ok(report)
-            } else {
-                Err(ExportError::Claimed(
+                Ok(true) => Ok(report),
+                Ok(false) => Err(ExportError::Claimed(
                     "the claim was taken over while the batch was sent".to_owned(),
-                ))
+                )),
+                Err(e) => {
+                    // Without this the claim would stay with this live pid
+                    // until it exits, and every later export would be refused.
+                    release(ctx, &me);
+                    Err(e.into())
+                }
             }
         }
         Err(e) => {
             // The mark stays. Dropping the claim lets the next run retry at once.
-            if let Err(release) = ctx.store.write(|tx| tx.release_metric_claim(&me)) {
-                tracing::warn!(error = %release, "could not release the export claim");
-            }
+            release(ctx, &me);
             Err(e)
         }
     }
@@ -129,4 +132,10 @@ fn send_batch(
         metric_points: points,
         spans: spans.len() as u64,
     })
+}
+
+fn release(ctx: &mut Ctx<'_>, me: &str) {
+    if let Err(e) = ctx.store.write(|tx| tx.release_metric_claim(me)) {
+        tracing::warn!(error = %e, "could not release the export claim");
+    }
 }
