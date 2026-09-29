@@ -72,6 +72,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | INV-29 | verify runs each member's check itself and records the real exit code. | A child reported `node --test test/` passing, a command that cannot work on Node 24 (speclife V1). | VER-1 |
 | INV-30 | verify diffs from the member's start commit, moved forward past a merged contract amendment. | A merged CONTRACT AMENDMENT would otherwise be flagged as an edit outside `owns` (speclife V2). | VER-2 |
 | INV-31 | Close refuses while a member is busy or while busy state is unknown, refuses over uncommitted work, archives and verifies the archive before destroying anything, and never forces. | "The team directory is the only copy of what the team produced" (speclife C1-C6). | CLS-1, CLS-2, CLS-3 |
+| INV-32 | teamwire never takes a name the running Python tooling can use. Its host agent names are `tw_<team>_<role>`, which contain no hyphen, while every Python name is `<team>-<role>` and always contains one. Launch also refuses a name already live in the host. | User's hard rule: teamwire must not break the running Python setup (`CLAUDE.md`). `team-msg.py` types into members by herdr agent name (`team-msg.py:321-324`); a shared name would let Python type into a teamwire member or make the teamwire launch fail (archrev 7). herdr names must match `[a-z][a-z0-9_-]{0,31}` and be unique among live agents (`herdr --skill`, read 2026-09-29). | LCH-6, LCH-25 |
 
 ## Requirements
 
@@ -191,7 +192,8 @@ Each one has a test named in `docs/failure-modes.md`.
 | LCH-3 | MUST | Record each resource (worktree, place, agent) with a state such as `creating` or `started` before the next step that cannot be undone. A crash leaves a resource close can find. | speclife LC-4, F3, L18 |
 | LCH-4 | MUST | A host timeout during launch is a failure of that member, with the same cleanup as any other, never an abort of the team. | speclife LC-5, F4 |
 | LCH-5 | MUST | A role name is never reused in a team, including a removed member's. One exception: a member whose launch failed before it reached `started` (for example a failed setup) may be launched again under the same role with `--add`; the failed attempt stays in the event log as `member.replaced`. | speclife LC-6, LC-12, L4, L13; archrev 6 |
-| LCH-6 | MUST | Team and role names match `^[a-z][a-z0-9_-]{0,31}$`; the address `<team>-<role>` is unique across live teams. | speclife LC-7, L3 |
+| LCH-6 | MUST | Team names match `^[a-z][a-z0-9]{0,11}$` and role names `^[a-z][a-z0-9_]{0,15}$`; neither may contain a hyphen. The address, used as the host agent name and the harness session name, is `tw_<team>_<role>` (at most 32 characters, herdr's limit). It is unique across live teams. | speclife LC-7, L3; INV-32 |
+| LCH-25 | MUST | Launch lists the host's live agent names and refuses a member whose address is already present, before creating anything for it. | INV-32; lead's triage m016 (herdr's handling of a duplicate name is untested, so teamwire does not rely on it) |
 | LCH-7 | MUST | An implementer gets its own checkout. | speclife LC-8, L6 |
 | LCH-8 | MUST | Worktrees are made with `git worktree add` under `<repo>/.worktrees/<slug>` by default, and the start commit (`base_sha`) is recorded. | speclife LC-9, L9, L11; INV-23 |
 | LCH-9 | MUST | When the branch already exists, say so and say that `base` was ignored. Two branches that map to one slug are refused. | speclife LC-10, L10 |

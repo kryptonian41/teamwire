@@ -276,7 +276,7 @@ its name:
 
 Claude Code specifics that the adapter owns:
 
-- Members start with `claude -n <team>-<role> --session-id <uuid>
+- Members start with `claude -n tw_<team>_<role> --session-id <uuid>
   --permission-mode bypassPermissions --append-system-prompt-file
   contract/<role>.md --settings members/<role>/settings.json --mcp-config
   members/<role>/mcp.json [--model ...] [--effort ...]`. teamwire chooses the
@@ -339,6 +339,11 @@ What makes side-by-side running safe:
   manifest that lists the member's pane or session.
 - Separate lines: teamwire's wake-up and watch lines start with
   `[teamwire:<team>]`; Python's start with `[team:<team>]`.
+- Separate names (INV-32): teamwire names its agents `tw_<team>_<role>`,
+  with no hyphen; every Python agent name is `<team>-<role>` and has one, so
+  `team-msg.py` can never type into a teamwire member, and teamwire can never
+  take a Python name. Launch also refuses a name that is already live in
+  herdr, whoever owns it.
 - Separate commands: the contract text given to teamwire members names only
   `teamwire` commands and MCP tools.
 

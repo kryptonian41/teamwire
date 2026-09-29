@@ -159,7 +159,7 @@ documented in the crate's README. The fakes pass their own contract suites.
 error envelope mapped to `HostErrorCode` by `error.code`; `agent start` with
 the bounded retry on `agent_pane_busy` and `agent_not_ready`; `occupant` from
 `agent get` (`agent_session.value`); one workspace per team and one tab per
-member, labels set once. Capabilities: `sets_env_at_spawn = false`,
+member, labels set once; `live_agent_names` from `herdr agent list`. Capabilities: `sets_env_at_spawn = false`,
 `guards_dialogs = true`.
 Passes `host_contract` against `fake-herdr`.
 Required test: `crates/teamwire-host-herdr/tests/errors.rs::pane_busy_retried_by_code`.
@@ -201,7 +201,8 @@ locator property.
 Spec parsing and whole-spec validation (LCH-2, LCH-5, LCH-6, LCH-7,
 LCH-9, LCH-10, LCH-18, LCH-20, LCH-23), including the choice of each
 member's identity channel from its adapters' capabilities and the refusal
-`no_identity_channel`; member records written before each
+`no_identity_channel`, and the name check of LCH-6 and LCH-25 (refuse an
+address already in `Host::live_agent_names`); member records written before each
 irreversible step (LCH-3); `git worktree add` with `base_sha`; setup with the
 `TEAMWIRE_*` variables, timeout, log and undo; contract text as data files in
 `crates/teamwire-launch/contracts/` (one per kind, plus the shared "talking to

@@ -49,7 +49,9 @@ running team. `--dry-run` validates and prints the plan, touching nothing.
 
 Refuses (exit 1, nothing created): a background lead session; any spec error;
 a reused role (except one whose earlier launch failed before it started,
-LCH-5); a title over 28 characters or repeated; an implementer in
+LCH-5); a team or role name outside LCH-6 (no hyphens); an address
+`tw_<team>_<role>` already live in the host (LCH-25); a title over 28
+characters or repeated; an implementer in
 `pane` mode; a home-directory `cwd`; less than 200 MB free.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default

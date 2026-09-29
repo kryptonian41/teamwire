@@ -310,6 +310,8 @@ A Python version of this tooling runs the user's real agent teams. So:
   Never create, edit, move or delete anything under ~/.claude/ or ~/.claude.json.
 - Never register a hook, MCP server, skill or launch agent outside this repo.
   Example configs live in examples/ as files.
+- teamwire agent names are tw_<team>_<role> and never contain a hyphen, so
+  they can never equal a Python team's <team>-<role>. Do not change that.
 - teamwire's state lives in $TEAMWIRE_HOME (default ~/.teamwire).
   Tests set it to a temp dir with teamwire_fakes::TestHome.
 - Tests never type into a real herdr pane or start a real Claude session.

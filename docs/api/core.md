@@ -11,11 +11,13 @@ the data model in `ARCHITECTURE.md`.
 ## 1. Names and ids
 
 ```rust
-/// `^[a-z][a-z0-9_-]{0,31}$`. Checked by `TeamName::parse`.
+/// `^[a-z][a-z0-9]{0,11}$`: no hyphen, no underscore. Checked by `TeamName::parse`.
 pub struct TeamName(String);
-/// Same pattern as TeamName. `"lead"` is reserved and refused as a role.
+/// `^[a-z][a-z0-9_]{0,15}$`: no hyphen. `"lead"` is reserved and refused.
 pub struct Role(String);
-/// `<team>-<role>`, the member's address in hosts and harnesses.
+/// `tw_<team>_<role>`, at most 32 characters: the member's name in hosts and
+/// harnesses. It never contains a hyphen, and every name the Python tooling
+/// makes (`<team>-<role>`) does, so the two can never collide (INV-32).
 pub struct Address(String);
 
 pub struct Ulid(ulid::Ulid);          // identity of messages, completions, events, teams
@@ -181,6 +183,8 @@ pub trait Host: Send + Sync {
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError>;
     fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError>;
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError>;
+    /// Names of every live agent the host knows, from any tool (for LCH-25).
+    fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, HostError>;
     /// The environment variable a process uses to name its own place, if any
     /// (herdr: "HERDR_PANE_ID").
     fn place_env_var(&self) -> Option<&'static str>;
