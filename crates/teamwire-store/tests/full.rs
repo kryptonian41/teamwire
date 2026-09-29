@@ -1,5 +1,9 @@
-//! A full disk: a low `max_page_count` makes SQLite answer SQLITE_FULL the
+//! A full disk: a low `max_page_count` makes `SQLite` answer `SQLITE_FULL` the
 //! way a full volume does.
+#![expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 
 use teamwire_core::TeamName;
 use teamwire_fakes::TestHome;

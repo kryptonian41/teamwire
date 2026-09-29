@@ -213,3 +213,40 @@ pub(crate) fn ulid_col(row: &Row<'_>, i: usize) -> Result<Ulid, String> {
     let text: String = col(row, i)?;
     Ulid::parse(&text).map_err(|e| bad("ulid", e))
 }
+
+/// Fails with a constraint error when an UPDATE that had to hit one row hit none.
+pub(crate) fn exactly_one(rows: usize, what: impl Display) -> Result<(), StoreError> {
+    if rows == 1 {
+        Ok(())
+    } else {
+        Err(StoreError::Constraint(format!("no such {what}")))
+    }
+}
+
+/// Parses a stored string with a core parser, naming the field on failure.
+pub(crate) fn parsed<T, E: Display>(
+    row: &Row<'_>,
+    i: usize,
+    what: &str,
+    parse: impl Fn(&str) -> Result<T, E>,
+) -> Result<T, String> {
+    let text: String = col(row, i)?;
+    parse(&text).map_err(|e| bad(what, e))
+}
+
+pub(crate) fn parsed_opt<T, E: Display>(
+    row: &Row<'_>,
+    i: usize,
+    what: &str,
+    parse: impl Fn(&str) -> Result<T, E>,
+) -> Result<Option<T>, String> {
+    let text: Option<String> = col(row, i)?;
+    text.map(|t| parse(&t).map_err(|e| bad(what, e)))
+        .transpose()
+}
+
+/// The 32-byte SHA-256 of `bytes`.
+pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).into()
+}

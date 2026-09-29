@@ -25,24 +25,32 @@ pub enum StoreError {
 
 impl From<rusqlite::Error> for StoreError {
     fn from(e: rusqlite::Error) -> Self {
-        let code = match &e {
-            rusqlite::Error::SqliteFailure(err, _) => Some(err.code),
-            _ => None,
-        };
-        match code {
-            Some(ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked) => Self::Busy,
-            Some(ErrorCode::DiskFull) => Self::Full,
-            Some(ErrorCode::ConstraintViolation) => Self::Constraint(e.to_string()),
-            Some(ErrorCode::DatabaseCorrupt | ErrorCode::NotADatabase) => {
-                Self::Corrupt(e.to_string())
+        if let rusqlite::Error::SqliteFailure(err, _) = &e {
+            let code = err.code;
+            if code == ErrorCode::DatabaseBusy || code == ErrorCode::DatabaseLocked {
+                return Self::Busy;
             }
-            _ => match e {
-                rusqlite::Error::FromSqlConversionFailure(..)
-                | rusqlite::Error::InvalidColumnType(..)
-                | rusqlite::Error::IntegralValueOutOfRange(..) => Self::Corrupt(e.to_string()),
-                _ => Self::Io(e.to_string()),
-            },
+            if code == ErrorCode::DiskFull {
+                return Self::Full;
+            }
+            if code == ErrorCode::ConstraintViolation {
+                return Self::Constraint(e.to_string());
+            }
+            if code == ErrorCode::DatabaseCorrupt || code == ErrorCode::NotADatabase {
+                return Self::Corrupt(e.to_string());
+            }
         }
+        // A value that does not convert to the type the column holds is a
+        // damaged row, not a caller mistake.
+        if matches!(
+            e,
+            rusqlite::Error::FromSqlConversionFailure(..)
+                | rusqlite::Error::InvalidColumnType(..)
+                | rusqlite::Error::IntegralValueOutOfRange(..)
+        ) {
+            return Self::Corrupt(e.to_string());
+        }
+        Self::Io(e.to_string())
     }
 }
 

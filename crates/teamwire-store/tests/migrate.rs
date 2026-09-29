@@ -1,5 +1,10 @@
 //! Opening, pragmas, migration and the refusal of files that are not ours.
+#![expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 
+use std::io::Write as _;
 use std::path::PathBuf;
 
 use rusqlite::Connection;
@@ -13,24 +18,27 @@ fn team() -> TeamName {
     TeamName::parse("alpha").unwrap()
 }
 
-fn pragma_text(store: &Store, name: &str) -> String {
+fn pragma_int(store: &Store, name: &str) -> i64 {
     store
         .read(|tx| {
             Ok(tx
                 .connection()
-                .query_row(&format!("PRAGMA {name}"), [], |r| {
-                    r.get::<_, rusqlite::types::Value>(0)
-                })?)
-        })
-        .map(|v| match v {
-            rusqlite::types::Value::Integer(i) => i.to_string(),
-            rusqlite::types::Value::Text(t) => t,
-            other => format!("{other:?}"),
+                .query_row(&format!("PRAGMA {name}"), [], |r| r.get(0))?)
         })
         .unwrap()
 }
 
-/// Every table and index, as the text SQLite keeps: two databases with the
+fn journal_mode(store: &Store) -> String {
+    store
+        .read(|tx| {
+            Ok(tx
+                .connection()
+                .query_row("PRAGMA journal_mode", [], |r| r.get(0))?)
+        })
+        .unwrap()
+}
+
+/// Every table and index, as the text `SQLite` keeps: two databases with the
 /// same list have the same schema.
 fn schema_dump(path: &PathBuf) -> Vec<String> {
     let conn = Connection::open(path).unwrap();
@@ -51,24 +59,24 @@ fn file_bytes(path: &PathBuf) -> Vec<u8> {
 fn every_connection_has_the_required_pragmas() {
     let home = TestHome::new().unwrap();
     let store = Store::open(home.path(), &team()).unwrap();
-    assert_eq!(pragma_text(&store, "journal_mode"), "wal");
-    assert_eq!(pragma_text(&store, "synchronous"), "2"); // FULL
-    assert_eq!(pragma_text(&store, "foreign_keys"), "1");
-    let busy: i64 = pragma_text(&store, "busy_timeout").parse().unwrap();
+    assert_eq!(journal_mode(&store), "wal");
+    assert_eq!(pragma_int(&store, "synchronous"), 2); // FULL
+    assert_eq!(pragma_int(&store, "foreign_keys"), 1);
+    let busy = pragma_int(&store, "busy_timeout");
     assert!(busy >= 5000, "busy_timeout is {busy}");
     assert_eq!(
-        pragma_text(&store, "application_id"),
-        APPLICATION_ID.to_string()
+        pragma_int(&store, "application_id"),
+        i64::from(APPLICATION_ID)
     );
     assert_eq!(
-        pragma_text(&store, "user_version"),
-        SCHEMA_VERSION.to_string()
+        pragma_int(&store, "user_version"),
+        i64::from(SCHEMA_VERSION)
     );
     // A second open of the same file gets the same settings.
     drop(store);
     let again = Store::open_existing(home.path(), &team()).unwrap();
-    assert_eq!(pragma_text(&again, "synchronous"), "2");
-    assert_eq!(pragma_text(&again, "foreign_keys"), "1");
+    assert_eq!(pragma_int(&again, "synchronous"), 2);
+    assert_eq!(pragma_int(&again, "foreign_keys"), 1);
     assert_eq!(again.schema_version().unwrap(), SCHEMA_VERSION);
 }
 
@@ -199,11 +207,14 @@ fn foreign_database_refused_untouched() {
     assert_eq!(file_bytes(&path), before);
 
     // A file that is not SQLite at all.
-    std::fs::write(
-        &path,
-        b"this is not a database, just some text padded out\n".repeat(40),
-    )
-    .unwrap();
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .unwrap();
+    file.write_all(&b"this is not a database, just some text padded out\n".repeat(40))
+        .unwrap();
+    drop(file);
     assert_eq!(
         Store::open(home.path(), &team()).unwrap_err(),
         StoreError::NotTeamwire

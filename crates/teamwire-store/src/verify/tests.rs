@@ -1,0 +1,109 @@
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
+)]
+
+use teamwire_core::EventType;
+
+use crate::testkit::{at, count_events, last_event, role, with_members};
+use crate::{NewVerifyRecord, Waiver};
+
+fn record() -> NewVerifyRecord {
+    NewVerifyRecord {
+        role: role("api"),
+        head_sha: "abc1234".to_owned(),
+        verdict: "flagged".to_owned(),
+        exit_code: Some(0),
+        seconds: Some(12),
+        flags: vec!["ignore_added".to_owned()],
+        log_sha256: Some([3; 32]),
+    }
+}
+
+fn waiver(flag: &str, head: &str) -> Waiver {
+    Waiver {
+        role: role("api"),
+        flag_id: flag.to_owned(),
+        head_sha: head.to_owned(),
+        reason: "fixture".to_owned(),
+        created_at: at(0),
+    }
+}
+
+#[test]
+fn a_verify_record_is_stored_with_its_event() {
+    let mut f = with_members(&["api"]);
+    let id = f
+        .store
+        .write(|tx| tx.insert_verify_record(at(50), &record()))
+        .unwrap();
+    let rows = f
+        .store
+        .read(|tx| tx.verify_records(&role("api")))
+        .unwrap()
+        .items;
+    assert_eq!(rows.len(), 1);
+    assert_eq!((rows[0].id, rows[0].recorded_at), (id, at(50)));
+    assert_eq!(rows[0].record, record());
+    let e = last_event(&f.store);
+    assert_eq!(e.kind, EventType::VerifyRecorded);
+    assert_eq!(e.role, Some(role("api")));
+    assert_eq!(e.data["verdict"], "flagged");
+    assert_eq!(e.data["flags"], serde_json::json!(["ignore_added"]));
+    assert_eq!(e.data["exit"], 0);
+    assert_eq!(e.data["seconds"], 12);
+}
+
+#[test]
+fn a_record_for_an_unknown_member_is_refused() {
+    let mut f = with_members(&["web"]);
+    assert!(
+        f.store
+            .write(|tx| tx.insert_verify_record(at(1), &record()))
+            .is_err()
+    );
+    assert_eq!(count_events(&f.store, EventType::VerifyRecorded), 0);
+}
+
+#[test]
+fn a_waiver_binds_to_a_head_and_is_written_once() {
+    let mut f = with_members(&["api"]);
+    assert!(
+        f.store
+            .write(|tx| tx.insert_waiver(at(60), &waiver("ignore_added", "abc1234")))
+            .unwrap()
+    );
+    let e = last_event(&f.store);
+    assert_eq!(e.kind, EventType::VerifyWaived);
+    assert_eq!(e.data["flags"], serde_json::json!(["ignore_added"]));
+    assert!(
+        !f.store
+            .write(|tx| tx.insert_waiver(at(61), &waiver("ignore_added", "abc1234")))
+            .unwrap()
+    );
+    assert_eq!(count_events(&f.store, EventType::VerifyWaived), 1);
+    // Another head, another waiver.
+    assert!(
+        f.store
+            .write(|tx| tx.insert_waiver(at(62), &waiver("ignore_added", "def5678")))
+            .unwrap()
+    );
+    let here = f
+        .store
+        .read(|tx| tx.waivers(&role("api"), "abc1234"))
+        .unwrap()
+        .items;
+    assert_eq!(here.len(), 1);
+    assert_eq!(
+        here[0].created_at,
+        at(60),
+        "the waiver kept the caller's time, not the input's"
+    );
+    assert!(
+        f.store
+            .read(|tx| tx.waivers(&role("api"), "zzz"))
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}
