@@ -1,8 +1,9 @@
 //! The crate layer rule of `docs/conventions.md` section 5, read from
 //! `cargo metadata --no-deps`.
 //!
-//! Never: look at dev-dependencies (every crate may use `teamwire-fakes` in
-//! its tests). Invariants: a crate under `crates/` missing from the table
+//! Never: let a dev-dependency name a crate that normal dependencies could
+//! not, except `teamwire-fakes`, which every crate may use in its tests.
+//! Invariants: a crate under `crates/` missing from the table
 //! below is itself a problem, so a new crate cannot skip the rule.
 
 use std::path::Path;
@@ -117,7 +118,8 @@ pub(crate) fn check_layers(metadata: &Value, problems: &mut Vec<String>) {
                 continue;
             };
             let is_dev = dep.get("kind").and_then(Value::as_str) == Some("dev");
-            if is_dev || !dep_name.starts_with("teamwire-") || rule.contains(&dep_name) {
+            let fakes_in_tests = is_dev && dep_name == FAKES;
+            if fakes_in_tests || !dep_name.starts_with("teamwire-") || rule.contains(&dep_name) {
                 continue;
             }
             problems.push(format!(
@@ -180,6 +182,14 @@ mod tests {
             &[("teamwire-host-herdr", Some("build"))],
         );
         assert_eq!(run(&m).len(), 1);
+    }
+
+    #[test]
+    fn dev_dependency_on_a_higher_layer_fails() {
+        let m = metadata("teamwire-store", &[("teamwire-msg", Some("dev"))]);
+        assert_eq!(run(&m).len(), 1);
+        let ok = metadata("teamwire-msg", &[("teamwire-store", Some("dev"))]);
+        assert_eq!(run(&ok), Vec::<String>::new());
     }
 
     #[test]
