@@ -111,11 +111,12 @@ impl World {
             .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
             .unwrap_or_else(|| panic!("no lead pane: {ws:?}"));
         self.lead_pane = pane;
-        self.start_lead_session(LEAD_SESSION);
+        self.start_lead_session("lead", LEAD_SESSION);
     }
 
-    /// Starts a `fake-claude` session named `session` in the lead's pane.
-    pub fn start_lead_session(&self, session: &str) {
+    /// Starts a `fake-claude` session with id `session` in the lead's pane,
+    /// as the herdr agent `agent`.
+    pub fn start_lead_session(&self, agent: &str, session: &str) {
         let script = self
             .herdr
             .write_file("lead-script.json", r#"{"turns": [[]]}"#)
@@ -130,7 +131,7 @@ impl World {
                 &[
                     "agent",
                     "start",
-                    "lead",
+                    agent,
                     "--kind",
                     "claude",
                     "--pane",
@@ -139,7 +140,7 @@ impl World {
                     "20000",
                     "--",
                     "-n",
-                    "lead",
+                    agent,
                     "--session-id",
                     session,
                     "--settings",
@@ -149,6 +150,21 @@ impl World {
             )
             .unwrap();
         assert!(out.code == Some(0), "the lead did not start: {out:?}");
+    }
+
+    /// Ends the lead's session with `/exit` and starts another session, with
+    /// id `session`, in the same pane: the pane is taken over.
+    pub fn take_over_lead_pane(&self, session: &str) {
+        let out = self
+            .herdr
+            .run(&["agent", "prompt", "lead", "/exit"])
+            .unwrap();
+        assert!(out.code == Some(0), "/exit was not accepted: {out:?}");
+        let gone = wait_until(Duration::from_secs(10), || {
+            self.herdr.run(&["agent", "get", "lead"]).unwrap().code != Some(0)
+        });
+        assert!(gone, "the lead's session did not end");
+        self.start_lead_session("lead2", session);
     }
 
     pub fn lead_pane(&self) -> &str {
@@ -265,6 +281,18 @@ impl World {
     /// The text on the lead's screen.
     pub fn lead_screen(&self) -> String {
         self.screen("lead")
+    }
+
+    /// The text on the screen of the herdr agent `agent` (`lead2` after a
+    /// take-over).
+    pub fn screen_of(&self, agent: &str) -> String {
+        self.screen(agent)
+    }
+
+    /// Waits until the lead's screen holds `needle`.
+    pub fn wait_lead_screen(&self, needle: &str, within: Duration) {
+        let ok = wait_until(within, || self.lead_screen().contains(needle));
+        assert!(ok, "the lead never saw {needle:?}: {}", self.lead_screen());
     }
 
     fn screen(&self, agent: &str) -> String {

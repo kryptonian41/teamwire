@@ -17,6 +17,7 @@
 )]
 
 mod bin;
+pub mod sh;
 mod watch;
 mod world;
 
