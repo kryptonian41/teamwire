@@ -14,29 +14,33 @@ use std::process::{Child, Command, Stdio};
 use teamwire_core::{Pid, PlatformErrorCode};
 use teamwire_platform::native;
 
-/// A copy of `sleep` in a temporary directory. macOS hides the environment of
-/// Apple-signed system binaries such as `/bin/sleep`, so a test that reads a
-/// child's environment must run a binary that is not one of them.
-fn unrestricted_sleep(dir: &std::path::Path) -> std::path::PathBuf {
-    let copy = dir.join("tw_sleep");
-    std::fs::copy("/bin/sleep", &copy).unwrap();
-    copy
+/// Set in a child to make `sleeper_entry` sleep instead of returning.
+const SLEEP_VAR: &str = "TW_T03_SLEEP";
+
+/// Not a real test. When a child runs this test binary with `SLEEP_VAR` set,
+/// this is the process the test reads and signals; otherwise it returns at
+/// once. macOS hides the environment of Apple-signed binaries such as
+/// `/bin/sleep`, and a copy of one is killed by the kernel within
+/// milliseconds, so the probe is this binary, which the linker signed.
+#[test]
+fn sleeper_entry() {
+    if std::env::var_os(SLEEP_VAR).is_some() {
+        std::thread::sleep(std::time::Duration::from_secs(60));
+    }
 }
 
 /// Kills and reaps its child on every path, including a failed assertion.
-struct Sleeper(
-    Child,
-    #[expect(dead_code, reason = "keeps the copied binary until the child is gone")]
-    tempfile::TempDir,
-);
+struct Sleeper(Child);
 
 impl Sleeper {
     fn start(setup: impl FnOnce(&mut Command)) -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let mut cmd = Command::new(unrestricted_sleep(dir.path()));
-        cmd.arg("60").stdout(Stdio::null()).stderr(Stdio::null());
+        let mut cmd = Command::new(std::env::current_exe().unwrap());
+        cmd.args(["--exact", "sleeper_entry", "--test-threads=1"])
+            .env(SLEEP_VAR, "1")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         setup(&mut cmd);
-        Self(cmd.spawn().unwrap(), dir)
+        Self(cmd.spawn().unwrap())
     }
 
     fn pid(&self) -> Pid {
@@ -97,7 +101,7 @@ fn env_of_reports_an_unset_variable_as_none() {
 #[test]
 fn env_of_a_cleared_environment_is_none() {
     let child = Sleeper::start(|cmd| {
-        cmd.env_clear();
+        cmd.env_clear().env(SLEEP_VAR, "1");
     });
     assert_eq!(native().env_of(child.pid(), "HOME").unwrap(), None);
 }
@@ -126,4 +130,15 @@ fn env_of_a_gone_process_is_not_found() {
     child.0.wait().unwrap();
     let err = native().env_of(pid, "HOME").unwrap_err();
     assert_eq!(err.code, PlatformErrorCode::NotFound);
+}
+
+#[test]
+fn the_probe_is_still_alive_after_two_seconds() {
+    let child = Sleeper::start(|_| {});
+    std::thread::sleep(std::time::Duration::from_secs(2));
+    assert!(native().pid_alive(child.pid()));
+    assert_eq!(
+        native().env_of(child.pid(), SLEEP_VAR).unwrap().as_deref(),
+        Some("1")
+    );
 }
