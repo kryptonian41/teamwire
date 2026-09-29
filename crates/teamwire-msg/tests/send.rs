@@ -732,3 +732,29 @@ fn a_token_hash_matches_what_launch_stores() {
         .unwrap();
     assert_eq!(stored, hash_of(&token_of("api")));
 }
+
+#[test]
+fn a_question_to_the_lead_tells_the_lead_how_to_answer_and_where_the_text_is() {
+    let mut rig = team_rig();
+    // Rig::new makes the lead's place first, and the fake host numbers
+    // places from p1.
+    let lead_place = teamwire_core::Place {
+        host: teamwire_core::HostId::from_static("fake"),
+        id: "p1".to_owned(),
+    };
+    let req = rig.request(
+        "web",
+        &["lead"],
+        MessageType::Question,
+        "which schema version?",
+    );
+    send(&mut rig.ctx(), req).unwrap();
+    let typed = rig.host.submitted(&lead_place);
+    let line = typed.last().expect("a line typed into the lead's place");
+    assert!(
+        line.contains("--from lead --to web --type answer --re m"),
+        "{line}"
+    );
+    assert!(line.contains("/comms/m"), "{line}");
+    assert!(!line.contains("teamwire inbox"), "{line}");
+}
