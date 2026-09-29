@@ -17,14 +17,37 @@ use teamwire_core::{
 
 use crate::calls::{CallKind, CallLog, lock};
 
-/// The words on `fake-claude`'s plain trust dialog. `screen_state` and
-/// `answer_startup` recognise them, and `fake-claude` prints them.
-pub const PLAIN_TRUST_TEXT: &str = "Do you trust the files in this folder?";
-/// The words on the escalated dialog, which asks for more than folder trust.
-/// A harness must never answer it.
-pub const ESCALATED_TRUST_TEXT: &str = "This folder wants to run hooks and MCP servers.";
+/// The title of Claude Code's plain folder-trust dialog, as in Claude Code
+/// 2.1.x. The dialog lists "No, exit" (preselected) and "Yes, I trust this
+/// folder"; trusting takes Down, then Enter.
+pub const PLAIN_TRUST_TEXT: &str =
+    "Quick safety check: Is this a project you created or one you trust?";
+/// The line naming the option that trusts the folder.
+pub const TRUST_OPTION_TEXT: &str = "Yes, I trust this folder";
+/// The extra text on the stronger dialog, which also grants what the folder's
+/// own settings declare. It holds every escalation marker below. A harness
+/// must never answer this dialog.
+pub const ESCALATED_TRUST_TEXT: &str = "This folder adds a headersHelper that runs commands to mint credentials, and pre-approves hooks and extra directories. These will apply without asking.";
+/// Markers of the plain dialog (`team-launch.py` `TRUST_MARKERS`).
+pub const TRUST_MARKERS: [&str; 2] = ["Yes, I trust this folder", "Is this a project you created"];
+/// Markers of the stronger dialog (`team-launch.py` `TRUST_ESCALATION_MARKERS`,
+/// plus "pre-approves").
+pub const TRUST_ESCALATION_MARKERS: [&str; 5] = [
+    "will apply without asking",
+    "runs commands to mint",
+    "headersHelper",
+    "This folder adds",
+    "pre-approves",
+];
 /// What `fake-claude` prints when it is ready for input.
 pub const PROMPT_TEXT: &str = "> ";
+
+fn shows_trust_dialog(tail: &str) -> bool {
+    TRUST_MARKERS
+        .iter()
+        .chain(&TRUST_ESCALATION_MARKERS)
+        .any(|m| tail.contains(m))
+}
 
 #[derive(Debug, Clone)]
 struct SessionRec {
@@ -291,7 +314,7 @@ impl Harness for FakeHarness {
 
     fn screen_state(&self, tail: &str) -> ScreenState {
         self.log.record("screen_state", CallKind::Read, "");
-        if tail.contains(PLAIN_TRUST_TEXT) || tail.contains(ESCALATED_TRUST_TEXT) {
+        if shows_trust_dialog(tail) {
             ScreenState::Dialog
         } else if tail.trim_end().ends_with('>') {
             ScreenState::InputPrompt
@@ -310,10 +333,10 @@ impl Harness for FakeHarness {
             .record("answer_startup", CallKind::Write, place.id.as_str());
         let timeout = Duration::from_secs(5);
         let tail = host.read_tail(place, 40, timeout)?;
-        if tail.contains(ESCALATED_TRUST_TEXT) {
+        if TRUST_ESCALATION_MARKERS.iter().any(|m| tail.contains(m)) {
             return Ok(StartupOutcome::RefusedEscalated);
         }
-        if !tail.contains(PLAIN_TRUST_TEXT) {
+        if !shows_trust_dialog(&tail) {
             return Ok(StartupOutcome::NoDialog);
         }
         match policy {
@@ -322,7 +345,8 @@ impl Harness for FakeHarness {
                 "the spec does not accept the trust dialog",
             )),
             TrustPolicy::Accept => {
-                host.send_keys(place, &[Key::Char('1'), Key::Enter], timeout)?;
+                // "No, exit" is preselected: Down moves to the trusting line.
+                host.send_keys(place, &[Key::Down, Key::Enter], timeout)?;
                 Ok(StartupOutcome::AnsweredPlainTrust)
             }
         }

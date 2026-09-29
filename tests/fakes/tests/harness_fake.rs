@@ -142,7 +142,7 @@ fn hold_reply_is_json_carrying_the_note() {
 fn screens_are_classified() {
     let h = FakeHarness::new();
     assert_eq!(
-        h.screen_state(&format!("x\n{PLAIN_TRUST_TEXT}\n1. Yes")),
+        h.screen_state(&format!("x\n{PLAIN_TRUST_TEXT}\n  No, exit")),
         ScreenState::Dialog
     );
     assert_eq!(h.screen_state(ESCALATED_TRUST_TEXT), ScreenState::Dialog);

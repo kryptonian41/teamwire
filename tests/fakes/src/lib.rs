@@ -26,7 +26,10 @@ pub use calls::{Call, CallKind, CallLog};
 pub use claude_bin::{Fault as ClaudeFault, Script as ClaudeScript, Startup, Step};
 pub use clock::FakeClock;
 pub use fixture::{CliOutput, FakeHerdrEnv, HerdrFaults, LoggedCall};
-pub use harness::{ESCALATED_TRUST_TEXT, FakeHarness, PLAIN_TRUST_TEXT, PROMPT_TEXT};
+pub use harness::{
+    ESCALATED_TRUST_TEXT, FakeHarness, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_ESCALATION_MARKERS,
+    TRUST_MARKERS, TRUST_OPTION_TEXT,
+};
 pub use host::{FakeHost, Fault, SpawnedWith};
 pub use platform::{FakePlatform, FakeSleepHold, HoldEvent};
 

@@ -21,7 +21,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::fsutil;
-use crate::harness::{ESCALATED_TRUST_TEXT, PLAIN_TRUST_TEXT, PROMPT_TEXT};
+use crate::harness::{ESCALATED_TRUST_TEXT, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT};
 use settings::{Settings, hold_reason, run_shell};
 
 /// How many times a Stop hook may hold one turn before the turn ends anyway.
@@ -270,28 +270,33 @@ impl Session {
     }
 
     /// The startup dialog. Returns false when the answer was "No, exit".
+    /// As in Claude Code, "No, exit" is preselected and only Down then Enter
+    /// trusts the folder; digits and a bare Enter do not.
     fn dialog(&mut self, input: &mut Input, escalated: bool) -> bool {
+        say(PLAIN_TRUST_TEXT);
         if escalated {
             say(ESCALATED_TRUST_TEXT);
         }
-        say(PLAIN_TRUST_TEXT);
-        say(" 1. Yes, I trust this folder");
-        say(" 2. No, exit");
+        let render = |cursor: usize| {
+            let mark = |i: usize| if i == cursor { "\u{276f}" } else { " " };
+            say(&format!("{} No, exit", mark(0)));
+            say(&format!("{} {TRUST_OPTION_TEXT}", mark(1)));
+        };
+        render(0);
         self.set_status("blocked");
-        // "No, exit" is the preselected line, as in Claude Code.
-        let mut cursor = 1_usize;
+        let mut cursor = 0_usize;
         loop {
             let Some(Event::Key(key)) = input.next(true) else {
                 return false;
             };
             match key.as_str() {
-                "down" | "up" | "tab" => cursor = 1 - cursor,
-                "1" => cursor = 0,
-                "2" => cursor = 1,
+                "down" => cursor = 1,
+                "up" => cursor = 0,
                 "esc" | "ctrl+c" => return false,
-                "enter" => return cursor == 0,
-                _ => {}
+                "enter" => return cursor == 1,
+                _ => continue,
             }
+            render(cursor);
         }
     }
 }

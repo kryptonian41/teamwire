@@ -336,7 +336,7 @@ fn the_escalated_trust_dialog_blocks_start_and_prompts_until_answered() {
         .unwrap();
     assert_eq!(bad.error_code().as_deref(), Some("invalid_key"));
     assert_eq!(
-        env.run(&["agent", "send-keys", "tw_demo_api", "1", "enter"])
+        env.run(&["agent", "send-keys", "tw_demo_api", "down", "enter"])
             .unwrap()
             .code,
         Some(0)

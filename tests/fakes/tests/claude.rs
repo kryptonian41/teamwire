@@ -380,8 +380,8 @@ fn the_plain_trust_dialog_is_answered_with_down_and_enter() {
         .unwrap()
         .to_owned();
     assert!(text.contains(teamwire_fakes::PLAIN_TRUST_TEXT));
-    assert!(!text.contains(teamwire_fakes::ESCALATED_TRUST_TEXT));
-    // Enter alone takes the preselected "No, exit", which ends the session.
+    assert!(text.contains(teamwire_fakes::TRUST_OPTION_TEXT));
+    assert!(!text.contains("pre-approves"));
     env.run(&["agent", "send-keys", "tw_demo_api", "down"])
         .unwrap();
     env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
@@ -491,4 +491,96 @@ fn fake_claude_reads_prompts_from_stdin_when_not_in_a_pane() {
             .next()
             .is_none()
     );
+}
+
+fn blocked_at_dialog(startup: Startup) -> FakeHerdrEnv {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        startup,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    let pane_id = pane(&env);
+    env.run(&[
+        "agent",
+        "start",
+        "tw_demo_api",
+        "--kind",
+        "claude",
+        "--pane",
+        &pane_id,
+        "--",
+        "--settings",
+        &settings,
+    ])
+    .unwrap();
+    env
+}
+
+fn agent_status(env: &FakeHerdrEnv) -> Option<String> {
+    let get = env.run(&["agent", "get", "tw_demo_api"]).unwrap();
+    get.result()?
+        .pointer("/agent/agent_status")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+#[test]
+fn the_digit_one_does_not_trust_the_folder() {
+    let env = blocked_at_dialog(Startup::Trust);
+    env.run(&["agent", "send-keys", "tw_demo_api", "1"])
+        .unwrap();
+    std::thread::sleep(Duration::from_millis(300));
+    // Still waiting at the dialog: a digit is not an answer.
+    assert_eq!(agent_status(&env).as_deref(), Some("blocked"));
+    // And Enter now takes the preselected "No, exit".
+    env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
+        .unwrap();
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the session never ended"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn enter_alone_takes_no_exit_and_never_trusts() {
+    let env = blocked_at_dialog(Startup::Trust);
+    env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
+        .unwrap();
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the session never ended"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_ne!(agent_status(&env).as_deref(), Some("idle"));
+}
+
+#[test]
+fn the_escalated_dialog_prints_every_escalation_marker_and_the_plain_ones() {
+    let env = blocked_at_dialog(Startup::EscalatedTrust);
+    let screen = env
+        .run(&["agent", "read", "tw_demo_api", "--lines", "30"])
+        .unwrap();
+    let text = screen
+        .result()
+        .unwrap()
+        .pointer("/text")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned();
+    for marker in teamwire_fakes::TRUST_ESCALATION_MARKERS {
+        assert!(text.contains(marker), "{marker} missing from {text}");
+    }
+    for marker in teamwire_fakes::TRUST_MARKERS {
+        assert!(text.contains(marker), "{marker} missing from {text}");
+    }
 }

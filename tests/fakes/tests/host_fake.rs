@@ -244,7 +244,7 @@ fn answer_startup_types_into_the_place_only_for_the_plain_dialog() {
     h.set_screen(&p, PLAIN_TRUST_TEXT);
     let out = harness.answer_startup(&h, &p, TrustPolicy::Accept).unwrap();
     assert_eq!(out, StartupOutcome::AnsweredPlainTrust);
-    assert_eq!(h.keys_sent(&p), [Key::Char('1'), Key::Enter]);
+    assert_eq!(h.keys_sent(&p), [Key::Down, Key::Enter]);
     h.set_screen(&p, ESCALATED_TRUST_TEXT);
     let out = harness.answer_startup(&h, &p, TrustPolicy::Accept).unwrap();
     assert_eq!(out, StartupOutcome::RefusedEscalated);
