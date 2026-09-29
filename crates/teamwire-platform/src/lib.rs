@@ -20,6 +20,7 @@ use teamwire_core::{
 };
 use time::OffsetDateTime;
 
+mod files;
 mod process;
 mod run;
 
@@ -37,13 +38,6 @@ pub(crate) fn io_error(what: &str, err: &std::io::Error) -> PlatformError {
         PlatformErrorCode::Io
     };
     PlatformError::new(code, format!("{what}: {err}"))
-}
-
-fn not_built() -> PlatformError {
-    PlatformError::new(
-        PlatformErrorCode::Other,
-        "teamwire-platform is not built yet",
-    )
 }
 
 /// macOS: every call, including the `caffeinate` sleep hold.
@@ -69,20 +63,20 @@ macro_rules! not_built_platform {
                 run::run_command(cmd, timeout)
             }
 
-            fn write_atomic(&self, _path: &Path, _bytes: &[u8]) -> Result<(), PlatformError> {
-                Err(not_built())
+            fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+                files::write_atomic(path, bytes)
             }
 
             fn sleep_hold(&self) -> Option<&dyn SleepHold> {
                 None
             }
 
-            fn free_bytes(&self, _path: &Path) -> Result<u64, PlatformError> {
-                Err(not_built())
+            fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError> {
+                files::free_bytes(path)
             }
 
-            fn on_network_fs(&self, _path: &Path) -> Result<bool, PlatformError> {
-                Err(not_built())
+            fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError> {
+                files::on_network_fs(path)
             }
         }
     };
