@@ -40,6 +40,10 @@ struct HoldState {
     records: Vec<HoldRecord>,
     events: Vec<HoldEvent>,
     start_fault: Option<PlatformError>,
+    /// `find_existing` says `owned: false` for every hold, as `MacOs` does.
+    report_unowned: bool,
+    /// `find_existing` reports this pid instead of the hold's own.
+    misreport_pid: Option<Pid>,
 }
 
 const FIRST_HOLD_PID: u32 = 900_000;
@@ -56,13 +60,14 @@ impl SleepHold for FakeSleepHold {
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo> {
         self.log
             .record("hold_find_existing", CallKind::Read, lead_pid.to_string());
-        lock(&self.state)
+        let state = lock(&self.state);
+        state
             .records
             .iter()
             .find(|r| r.lead == lead_pid && r.running && r.is_hold)
             .map(|r| HoldInfo {
-                pid: r.pid,
-                owned: r.owned,
+                pid: state.misreport_pid.unwrap_or(r.pid),
+                owned: r.owned && !state.report_unowned,
             })
     }
 
@@ -276,6 +281,21 @@ impl FakePlatform {
     pub fn fail_hold_start(&self, err: Option<PlatformError>) {
         if let Some(h) = &self.hold {
             lock(&h.state).start_fault = err;
+        }
+    }
+
+    /// From now on `find_existing` says `owned: false` for every hold, as the
+    /// real macOS platform does (a process list cannot say who started it).
+    pub fn report_holds_as_unowned(&self, yes: bool) {
+        if let Some(h) = &self.hold {
+            lock(&h.state).report_unowned = yes;
+        }
+    }
+
+    /// From now on `find_existing` reports `pid` for the hold it finds.
+    pub fn misreport_hold_pid(&self, pid: Option<Pid>) {
+        if let Some(h) = &self.hold {
+            lock(&h.state).misreport_pid = pid;
         }
     }
 

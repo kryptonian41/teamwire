@@ -220,3 +220,42 @@ fn platform_contract_fails_when_free_space_reads_zero() {
     platform.set_free_bytes(0);
     platform_contract(&platform_setup(&platform, dir.path(), Vec::new()));
 }
+
+#[test]
+fn platform_contract_accepts_a_platform_that_reports_holds_as_unowned() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    platform.report_holds_as_unowned(true);
+    platform_contract(&platform_setup(&platform, dir.path(), Vec::new()));
+}
+
+#[test]
+#[should_panic(expected = "find_existing finds the hold just started")]
+fn platform_contract_fails_when_find_existing_names_another_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    platform.misreport_hold_pid(Some(Pid::new(1)));
+    platform_contract(&platform_setup(&platform, dir.path(), Vec::new()));
+}
+
+#[test]
+fn a_failing_platform_contract_still_releases_the_hold_it_started() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    platform.misreport_hold_pid(Some(Pid::new(1)));
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    let failed =
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| platform_contract(&setup)));
+    assert!(failed.is_err());
+    let events = platform.hold_events();
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            teamwire_fakes::HoldEvent::Released {
+                outcome: teamwire_core::ReleaseOutcome::Released,
+                ..
+            }
+        )),
+        "{events:?}"
+    );
+}

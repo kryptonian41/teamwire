@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use teamwire_core::{Command, Pid, Platform, ReleaseOutcome, RunOutput};
+use teamwire_core::{Command, HoldInfo, Pid, Platform, ReleaseOutcome, RunOutput, SleepHold};
 
 use super::{fail, ok, require};
 
@@ -121,6 +121,9 @@ pub struct PlatformSetup<'a> {
     /// Processes to run. Empty skips `run`.
     pub run_cases: Vec<RunCase>,
     /// The pid a sleep hold protects. Used only when the platform has a hold.
+    /// It must be a process the caller started and keeps alive until the
+    /// suite returns (a child running `sleep`), never a pid the test does not
+    /// own: a real hold watches this process and ends with it.
     pub hold_lead: Pid,
 }
 
@@ -178,34 +181,77 @@ pub fn platform_contract(setup: &PlatformSetup<'_>) {
     ok("on_network_fs", p.on_network_fs(setup.dir));
 
     if let Some(hold) = p.sleep_hold() {
-        let lead = setup.hold_lead;
-        require(
-            "no hold exists before the suite starts one",
-            hold.find_existing(lead).is_none(),
-        );
-        let info = ok("SleepHold::start", hold.start(lead));
-        require("a hold the platform starts is owned", info.owned);
-        require(
-            "find_existing finds the hold just started",
-            hold.find_existing(lead) == Some(info),
-        );
-        match ok("SleepHold::release", hold.release(&info, lead)) {
-            ReleaseOutcome::Released => {}
-            other @ (ReleaseOutcome::NotOwned
-            | ReleaseOutcome::AlreadyGone
-            | ReleaseOutcome::NotAHold) => fail("releasing an owned hold releases it", other),
+        hold_rules(hold, setup.hold_lead);
+    }
+}
+
+/// Releases a hold the suite started, also when a rule fails first, so a
+/// failing suite never leaves a `caffeinate` running.
+struct HoldGuard<'a> {
+    hold: &'a dyn SleepHold,
+    info: HoldInfo,
+    lead: Pid,
+    armed: bool,
+}
+
+impl Drop for HoldGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.hold.release(&self.info, self.lead).ok();
         }
-        require(
-            "find_existing finds nothing after release",
-            hold.find_existing(lead).is_none(),
-        );
-        match ok("SleepHold::release", hold.release(&info, lead)) {
-            ReleaseOutcome::AlreadyGone | ReleaseOutcome::NotAHold => {}
-            other @ (ReleaseOutcome::Released | ReleaseOutcome::NotOwned) => fail(
-                "releasing twice finds the hold gone or someone else's",
-                other,
-            ),
+    }
+}
+
+/// True when `find_existing` reports no hold on `lead`, waiting a moment:
+/// `release` may signal the process and return before it is gone.
+fn hold_gone(hold: &dyn SleepHold, lead: Pid) -> bool {
+    for _ in 0..40 {
+        if hold.find_existing(lead).is_none() {
+            return true;
         }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+/// The suite compares pids, not `owned`: a platform reads a hold from the
+/// process list, which cannot say who started it, so the service sets
+/// ownership from team records (SLP-1).
+fn hold_rules(hold: &dyn SleepHold, lead: Pid) {
+    require(
+        "no hold exists before the suite starts one",
+        hold.find_existing(lead).is_none(),
+    );
+    let info = ok("SleepHold::start", hold.start(lead));
+    let mut guard = HoldGuard {
+        hold,
+        info,
+        lead,
+        armed: true,
+    };
+    require("a hold the platform starts is owned", info.owned);
+    require(
+        "find_existing finds the hold just started",
+        hold.find_existing(lead).map(|h| h.pid) == Some(info.pid),
+    );
+    let released = ok("SleepHold::release", hold.release(&info, lead));
+    guard.armed = false;
+    match released {
+        ReleaseOutcome::Released => {}
+        other @ (ReleaseOutcome::NotOwned
+        | ReleaseOutcome::AlreadyGone
+        | ReleaseOutcome::NotAHold) => fail("releasing an owned hold releases it", other),
+    }
+    require(
+        "find_existing finds nothing after release",
+        hold_gone(hold, lead),
+    );
+    match ok("SleepHold::release", hold.release(&info, lead)) {
+        ReleaseOutcome::AlreadyGone | ReleaseOutcome::NotAHold => {}
+        other @ (ReleaseOutcome::Released | ReleaseOutcome::NotOwned) => fail(
+            "releasing twice finds the hold gone or someone else's",
+            other,
+        ),
     }
 }
 
