@@ -9,6 +9,7 @@
 //! (`PROTECTED-CHANGED`, `WEAKENED`, a file over 400 lines) are printed but
 //! never fail the command: the lead reads them at each integration.
 
+mod base;
 mod crates;
 #[cfg(test)]
 mod fixture;
@@ -73,11 +74,9 @@ fn run(args: Vec<String>) -> Result<Findings> {
     }
     let root = repo_root()?;
     let metadata = layers::cargo_metadata(&root)?;
-    let found = tidy(&root, &metadata)?;
+    let mut found = tidy(&root, &metadata)?;
     if let Some(base) = base {
-        say(&format!(
-            "tidy: --base {base}: the protected-file and weakened-test checks are not built yet"
-        ));
+        base::check_base(&root, &base, &mut found)?;
     }
     Ok(found)
 }
