@@ -9,6 +9,15 @@
 //! the export mark; trace and span ids are derived from the team and event
 //! ids, so a resend produces the same ids.
 
+mod config;
+mod defs;
+mod export;
+mod history;
+mod local;
+mod observe;
+mod otlp;
+mod spans;
+
 use std::fmt;
 use std::time::Duration;
 
@@ -16,8 +25,6 @@ use serde::{Deserialize, Serialize};
 use teamwire_core::TeamName;
 use teamwire_store::{Ctx, StoreError};
 use thiserror::Error;
-
-const NOT_BUILT: &str = "teamwire-otel is not built yet";
 
 /// Which events `metrics` reads.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -88,20 +95,20 @@ pub enum ExportError {
     Internal(String),
 }
 
-pub fn metrics(_ctx: &Ctx<'_>, _q: MetricsQuery) -> MetricsView {
-    MetricsView {
-        metrics: Vec::new(),
-        errors: vec![NOT_BUILT.to_owned()],
-    }
+pub use local::metrics_at;
+
+/// The metrics for `q`. With a team named, `ctx.store` is that team's
+/// database; without one, every team and archive under `ctx.home` is read.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "docs/api/core.md fixes the signature: the query is passed by value"
+)]
+pub fn metrics(ctx: &Ctx<'_>, q: MetricsQuery) -> MetricsView {
+    local::metrics_with(ctx.home, ctx.store, ctx.clock.now(), &q)
 }
 
-/// Sends the events after the export mark, then moves the mark.
-pub fn export_once(
-    _ctx: &mut Ctx<'_>,
-    _exporter: &OtlpConfig,
-) -> Result<ExportReport, ExportError> {
-    Err(ExportError::Internal(NOT_BUILT.to_owned()))
-}
+pub use config::load_otlp_config;
+pub use export::export_once;
 
 #[cfg(test)]
 mod tests {
