@@ -108,13 +108,13 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
                 &[("type", kind), ("reason", reason)],
             );
         }
-        EventType::DeliveryHandedOff
-        | EventType::DeliveryUnconfirmed
-        | EventType::DeliveryUndelivered => delivery(h, &mut o),
+        EventType::DeliveryHandedOff => delivery(h, &mut o, "handed_off"),
+        EventType::DeliveryUnconfirmed => delivery(h, &mut o, "unconfirmed"),
+        EventType::DeliveryUndelivered => delivery(h, &mut o, "undelivered"),
         EventType::DeliveryAcked => acked(h, &mut o),
-        EventType::ResultDelivered
-        | EventType::ResultUndelivered
-        | EventType::ResultUnconfirmed => result(&mut o),
+        EventType::ResultDelivered => result(&mut o, "delivered"),
+        EventType::ResultUnconfirmed => result(&mut o, "unconfirmed"),
+        EventType::ResultUndelivered => result(&mut o, "undelivered"),
         EventType::WatchLine => watch_line(&mut o, d),
         EventType::VerifyRecorded => verify(&mut o, d),
         EventType::TeamClosed => {
@@ -137,7 +137,21 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
                 false,
             );
         }
-        _ => {}
+        EventType::TeamCreated
+        | EventType::TeamClosing
+        | EventType::TeamLeadAdopted
+        | EventType::MemberCreating
+        | EventType::MemberReplaced
+        | EventType::MemberRemoved
+        | EventType::MemberReprompted
+        | EventType::DeliveryReminded
+        | EventType::DeliveryResent
+        | EventType::ResultDelivering
+        | EventType::WatchStarted
+        | EventType::WatchStopped
+        | EventType::VerifyWaived
+        | EventType::CloseStep
+        | EventType::CloseRefused => {}
     }
     if let Some(ms) = number(d, "hook_ms") {
         let hook = text(d, "hook").unwrap_or("unknown");
@@ -216,13 +230,8 @@ fn held(o: &mut Out<'_>, d: &Value) {
     }
 }
 
-fn delivery(h: &History, o: &mut Out<'_>) {
+fn delivery(h: &History, o: &mut Out<'_>, outcome: &str) {
     let d = &o.event.data;
-    let outcome = match o.event.kind {
-        EventType::DeliveryHandedOff => "handed_off",
-        EventType::DeliveryUnconfirmed => "unconfirmed",
-        _ => "undelivered",
-    };
     let route = text(d, "route").unwrap_or("none");
     o.count(&defs::DELIVERIES, &[("route", route), ("outcome", outcome)]);
     if let Some(seconds) = number(d, "seconds") {
@@ -268,13 +277,8 @@ fn acked(h: &History, o: &mut Out<'_>) {
     }
 }
 
-fn result(o: &mut Out<'_>) {
+fn result(o: &mut Out<'_>, outcome: &str) {
     let d = &o.event.data;
-    let outcome = match o.event.kind {
-        EventType::ResultDelivered => "delivered",
-        EventType::ResultUnconfirmed => "unconfirmed",
-        _ => "undelivered",
-    };
     let route = text(d, "route").unwrap_or("none");
     o.count(&defs::RESULTS, &[("route", route), ("outcome", outcome)]);
     if let Some(seconds) = number(d, "seconds") {
@@ -333,16 +337,7 @@ pub(crate) fn gauges(h: &History, upto_seq: u64, at: Timestamp, team: &str) -> V
 
     let mut state: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
     for e in h.events().iter().take_while(|e| e.seq <= upto_seq) {
-        let (Some(role), Some(s)) = (
-            e.role.as_ref(),
-            match e.kind {
-                EventType::MemberCreating => Some("creating"),
-                EventType::MemberStarted => Some("started"),
-                EventType::MemberFailed => Some("failed"),
-                EventType::MemberRemoved => Some("removed"),
-                _ => None,
-            },
-        ) else {
+        let (Some(role), Some(s)) = (e.role.as_ref(), member_state(e.kind)) else {
             continue;
         };
         state.insert(role.as_str(), s);
@@ -365,6 +360,45 @@ pub(crate) fn gauges(h: &History, upto_seq: u64, at: Timestamp, team: &str) -> V
         gauge(&defs::MESSAGES_UNREAD, &[("recipient_kind", kind)], unread);
     }
     list
+}
+
+/// The state a member event moves its role to.
+fn member_state(kind: EventType) -> Option<&'static str> {
+    match kind {
+        EventType::MemberCreating => Some("creating"),
+        EventType::MemberStarted => Some("started"),
+        EventType::MemberFailed => Some("failed"),
+        EventType::MemberRemoved => Some("removed"),
+        EventType::TeamCreated
+        | EventType::TeamClosing
+        | EventType::TeamClosed
+        | EventType::TeamLeadAdopted
+        | EventType::MemberReplaced
+        | EventType::MemberReprompted
+        | EventType::MemberCompleted
+        | EventType::MemberCompletionRefused
+        | EventType::MemberHeld
+        | EventType::MessageSent
+        | EventType::MessageRefused
+        | EventType::DeliveryHandedOff
+        | EventType::DeliveryUnconfirmed
+        | EventType::DeliveryUndelivered
+        | EventType::DeliveryAcked
+        | EventType::DeliveryReminded
+        | EventType::DeliveryResent
+        | EventType::ResultDelivering
+        | EventType::ResultDelivered
+        | EventType::ResultUndelivered
+        | EventType::ResultUnconfirmed
+        | EventType::WatchStarted
+        | EventType::WatchLine
+        | EventType::WatchStopped
+        | EventType::VerifyRecorded
+        | EventType::VerifyWaived
+        | EventType::CloseStep
+        | EventType::CloseRefused
+        | EventType::StoreError => None,
+    }
 }
 
 /// The deliveries handed off, as (recipient kind, message and recipient), and
@@ -390,14 +424,10 @@ pub(crate) fn read_state(
     let mut seen = std::collections::HashSet::new();
     let mut acked = std::collections::HashSet::new();
     for e in h.events().iter().take_while(|e| e.seq <= upto_seq) {
-        match e.kind {
-            EventType::DeliveryHandedOff if seen.insert(key(e)) => {
-                handed.push((e.role.as_ref().map_or("lead", |_| "member"), key(e)));
-            }
-            EventType::DeliveryAcked => {
-                acked.insert(key(e));
-            }
-            _ => {}
+        if e.kind == EventType::DeliveryHandedOff && seen.insert(key(e)) {
+            handed.push((e.role.as_ref().map_or("lead", |_| "member"), key(e)));
+        } else if e.kind == EventType::DeliveryAcked {
+            acked.insert(key(e));
         }
     }
     (handed, acked)

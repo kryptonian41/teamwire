@@ -8,7 +8,6 @@ use teamwire_core::{Event, EventType};
 
 pub(crate) struct History {
     events: Vec<Event>,
-    by_ulid: HashMap<String, usize>,
     about: HashMap<String, Vec<usize>>,
     by_role: HashMap<String, Vec<usize>>,
 }
@@ -16,11 +15,9 @@ pub(crate) struct History {
 impl History {
     /// `events` must be oldest first, as the store returns them.
     pub(crate) fn new(events: Vec<Event>) -> Self {
-        let mut by_ulid = HashMap::new();
         let mut about: HashMap<String, Vec<usize>> = HashMap::new();
         let mut by_role: HashMap<String, Vec<usize>> = HashMap::new();
         for (i, e) in events.iter().enumerate() {
-            by_ulid.insert(e.ulid.to_string(), i);
             if let Some(subject) = &e.subject {
                 about.entry(subject.to_string()).or_default().push(i);
             }
@@ -30,7 +27,6 @@ impl History {
         }
         Self {
             events,
-            by_ulid,
             about,
             by_role,
         }
@@ -38,11 +34,6 @@ impl History {
 
     pub(crate) fn events(&self) -> &[Event] {
         &self.events
-    }
-
-    /// One event by its ULID: how a span's start is found from its end.
-    pub(crate) fn get(&self, ulid: &str) -> Option<&Event> {
-        self.by_ulid.get(ulid).map(|&i| &self.events[i])
     }
 
     /// The events whose subject is `subject`, oldest first.
@@ -57,7 +48,7 @@ impl History {
 
     fn indexed<'a>(&'a self, list: Option<&'a Vec<usize>>) -> impl Iterator<Item = &'a Event> {
         list.into_iter()
-            .flat_map(|list| list.iter().map(|&i| &self.events[i]))
+            .flat_map(|list| list.iter().filter_map(|&i| self.events.get(i)))
     }
 
     /// The `type` the message was sent with, from its `message.sent` event.
@@ -84,10 +75,9 @@ impl History {
         let role = end.role.as_ref()?;
         self.of_role(role.as_str())
             .take_while(|e| e.seq < end.seq)
-            .filter(|e| match e.kind {
-                EventType::MemberStarted => true,
-                EventType::MemberReprompted => !flag(&e.data, "undone"),
-                _ => false,
+            .filter(|e| {
+                e.kind == EventType::MemberStarted
+                    || (e.kind == EventType::MemberReprompted && !flag(&e.data, "undone"))
             })
             .last()
     }

@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_methods,
+    reason = "the test writes a file that is not a database into an archive directory"
+)]
+
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -701,7 +706,11 @@ fn an_unreadable_archive_is_reported_and_the_rest_still_shows() {
         Some(1.0)
     );
     assert_eq!(v.errors.len(), 1, "{:?}", v.errors);
-    assert!(v.errors[0].contains("junk-2026-09-30"), "{:?}", v.errors);
+    assert!(
+        v.errors.iter().all(|e| e.contains("junk-2026-09-30")),
+        "{:?}",
+        v.errors
+    );
 }
 
 #[test]

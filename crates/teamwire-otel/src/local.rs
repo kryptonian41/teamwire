@@ -156,10 +156,8 @@ fn analyze(
     let mut first_try = HashSet::new();
     let mut roles = HashSet::new();
     for e in history.events() {
-        if e.kind == EventType::MemberCreating {
-            if let Some(role) = &e.role {
-                roles.insert(role.as_str());
-            }
+        if let (EventType::MemberCreating, Some(role)) = (e.kind, &e.role) {
+            roles.insert(role.as_str());
         }
         if cutoff.is_some_and(|c| e.time < c) {
             continue;
