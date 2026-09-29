@@ -5,8 +5,8 @@
 //! Never: match on error text (map `error.code` to `HostErrorCode`); run
 //! herdr except through `Platform::run` with a timeout.
 //!
-//! Invariants: `agent start` is retried only on `agent_pane_busy` and
-//! `agent_not_ready`, a bounded number of times; labels are set once.
+//! Invariants: `agent start` is retried only on `agent_pane_busy`, a bounded
+//! number of times; `agent_not_ready` counts as started; labels are set once.
 
 mod cli;
 mod errors;
@@ -23,7 +23,7 @@ use teamwire_core::{
 };
 
 /// How often `agent start` tries, and how long it waits between tries,
-/// when herdr says the pane is busy or not ready (LCH-13).
+/// when herdr says the pane is busy (LCH-13).
 const START_TRIES: u32 = 8;
 const START_RETRY_DELAY: Duration = Duration::from_millis(1500);
 

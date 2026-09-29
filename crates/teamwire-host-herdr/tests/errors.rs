@@ -71,14 +71,14 @@ fn pane_busy_forever_gives_up_after_the_bound_with_busy() {
 }
 
 #[test]
-fn not_ready_is_retried_and_reported_as_not_ready() {
+fn not_ready_returns_the_place_without_retry() {
     let world = failing("agent start", "agent_not_ready");
-    let e = world
+    let placed = world
         .herdr
         .spawn(&world.request("tw_errs_a1", "one"), T)
-        .expect_err("never ready");
-    assert_eq!(e.code, HostErrorCode::NotReady);
-    assert_eq!(world.calls_of("agent start").len(), 8);
+        .expect("a not-ready agent is started and waits at a dialog");
+    assert!(!placed.id.is_empty());
+    assert_eq!(world.calls_of("agent start").len(), 1);
 }
 
 #[test]

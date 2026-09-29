@@ -92,12 +92,12 @@ fn make_tab(host: &Herdr, req: &SpawnRequest) -> Result<NewTab, HostError> {
     Ok(tab)
 }
 
-/// Runs `agent start`, trying again while the pane is busy or not ready.
-/// A not-ready agent keeps running in its pane, so if the tries run out
-/// after one, that error is the one reported.
+/// Runs `agent start`, trying again while the pane is busy (not yet at its
+/// shell prompt). `agent_not_ready` means the agent started and waits at a
+/// dialog: it stays in the pane, so that is a started member, and the caller
+/// answers the dialog. Retrying would only meet `agent_pane_busy`.
 fn start(host: &Herdr, args: &[String], run_for: Duration) -> Result<(), HostError> {
     let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let mut not_ready: Option<HostError> = None;
     let mut last: Option<HostError> = None;
     for attempt in 0..host.start_tries {
         if attempt > 0 {
@@ -105,18 +105,12 @@ fn start(host: &Herdr, args: &[String], run_for: Duration) -> Result<(), HostErr
         }
         match host.call(&refs, run_for) {
             Ok(_) => return Ok(()),
-            Err(e) if matches!(e.code, HostErrorCode::Busy | HostErrorCode::NotReady) => {
-                if e.code == HostErrorCode::NotReady {
-                    not_ready = Some(e.clone());
-                }
-                last = Some(e);
-            }
-            Err(e) => return Err(not_ready.unwrap_or(e)),
+            Err(e) if e.code == HostErrorCode::NotReady => return Ok(()),
+            Err(e) if e.code == HostErrorCode::Busy => last = Some(e),
+            Err(e) => return Err(e),
         }
     }
-    Err(not_ready
-        .or(last)
-        .unwrap_or_else(|| HostError::new(HostErrorCode::Other, "agent start made no attempt")))
+    Err(last.unwrap_or_else(|| HostError::new(HostErrorCode::Other, "agent start made no attempt")))
 }
 
 pub(crate) fn spawn(
