@@ -80,7 +80,7 @@ T16, the tmux adapter against a real tmux on a private socket:
 
 ```rust
 let socket = format!("teamwire-test-{}", std::process::id());
-let tmux = Tmux::new(platform, /* -L */ &socket);
+let tmux = Tmux::new(platform).with_socket(&socket); // tmux -L <socket>
 let request = |name: &Address| SpawnRequest {
     name: name.clone(), title: "contract".into(), cwd: dir.path().into(),
     argv: vec!["cat".into()], env: vec![],
