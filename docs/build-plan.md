@@ -159,7 +159,8 @@ documented in the crate's README. The fakes pass their own contract suites.
 error envelope mapped to `HostErrorCode` by `error.code`; `agent start` with
 the bounded retry on `agent_pane_busy` and `agent_not_ready`; `occupant` from
 `agent get` (`agent_session.value`); one workspace per team and one tab per
-member, labels set once. Capabilities: `sets_env_at_spawn = false`.
+member, labels set once. Capabilities: `sets_env_at_spawn = false`,
+`guards_dialogs = true`.
 Passes `host_contract` against `fake-herdr`.
 Required test: `crates/teamwire-host-herdr/tests/errors.rs::pane_busy_retried_by_code`.
 Adds `examples/live_check.rs` (read-only calls only).
@@ -187,6 +188,8 @@ hand (`docs/test-strategy.md` §6).
 ### T07 Locator and delivery (wave 3)
 
 `locate` (ADR 0006 decision table), the second host check before submit,
+the dialog check of ADR 0006 point 3a (state, then screen tail through
+`Harness::screen_state` when the host has no `guards_dialogs`),
 `deliver_line` with the retry rules of ADR 0003 and the `HandedOff`,
 `Unconfirmed`, `Undelivered` outcomes, and the typed-line formats for
 messages and results. Required tests: every
@@ -287,10 +290,13 @@ one refusal per tool, and a check that a refused call stores nothing.
 
 ### T16 tmux host adapter (wave 5)
 
-`Tmux` implements `Host` with `new-window`, `load-buffer` plus
-`paste-buffer -p` plus `send-keys Enter`, `capture-pane`, `display-message`
-for the pane's pid, and the pid tree for `occupant`. `reports_state` is
-false. Passes `host_contract` against a real tmux on a private socket
+`Tmux` implements `Host` with `new-window` (with `-e` for identity:
+`sets_env_at_spawn = true`), `load-buffer` plus `paste-buffer -p` plus
+`send-keys Enter`, `capture-pane`, `display-message` for the pane's pid, and
+the pid tree for `occupant`. `reports_state` and `guards_dialogs` are false,
+so delivery through tmux always passes the screen check of ADR 0006 point 3a
+first; T16 adds a test that a pane showing a dialog receives no paste and no
+Enter. Passes `host_contract` against a real tmux on a private socket
 (`tmux -L teamwire-test-<pid>`), killed at the end of each test.
 
 ### T17 End-to-end tests (wave 5)

@@ -49,6 +49,8 @@ Open points from the reports:
    | `two_places` | S is confirmed by the host in more than one place |
    | `single_source` | Only one view is available for this harness and host |
    | `background_session` | The lead was recorded as a background session |
+   | `session_blocked` | The session is showing a dialog (point 3a) |
+   | `not_at_input_prompt` | The screen does not show the harness's input prompt, on a host that does not guard dialogs (point 3a) |
 
    Two processes that claim S where the host confirms only one place go to
    that place (specmsg A4). One source is never enough (specmsg Q1 decided:
@@ -63,6 +65,18 @@ Open points from the reports:
    second `occupant` call and the `submit` call, a few milliseconds with
    herdr. herdr cannot address by session id, so the window cannot be closed
    from our side. We record this in the architecture.
+3a. **Never type into a dialog.** Right before `Host::submit`, teamwire
+   checks that the session is at its input prompt, because an Enter pressed
+   into a permission dialog would let a peer message approve it (DEL-15):
+   - When the host or the harness listing reports state, a `Blocked` session
+     is refused with `session_blocked`.
+   - When the host does not refuse blocked sessions itself (capability
+     `guards_dialogs`: herdr yes, it returns `agent_blocked`; tmux no),
+     teamwire reads the screen tail and asks the harness
+     (`Harness::screen_state`). Only `InputPrompt` goes ahead; `Dialog` and
+     `Unknown` are refused with `not_at_input_prompt`.
+   Both refusals are `undelivered`: nothing was typed. The window between
+   this check and the Enter is the same few milliseconds as point 3.
 4. **The lookup never uses the pid or place recorded at launch as evidence.**
    Following a resumed lead works because the lookup starts from the session
    id.

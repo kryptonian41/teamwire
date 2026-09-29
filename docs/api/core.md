@@ -94,7 +94,7 @@ pub struct DeliveryError { pub code: DeliveryErrorCode, pub detail: String }
 pub enum DeliveryErrorCode {
     // from the locator (ADR 0006)
     NoLiveProcess, NoPlace, HostOtherSession, HostNoSession, HostListingFailed,
-    TwoPlaces, SingleSource, BackgroundSession,
+    TwoPlaces, SingleSource, BackgroundSession, SessionBlocked, NotAtInputPrompt,
     // from the registry: a recorded adapter id this binary does not have
     UnknownAdapter,
     // from the host
@@ -190,7 +190,10 @@ pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
                       pub knows_session_of_place: bool, pub submit_ack: SubmitAck,
                       /// The host can give the started program environment
                       /// variables (tmux `new-window -e`). herdr cannot.
-                      pub sets_env_at_spawn: bool }
+                      pub sets_env_at_spawn: bool,
+                      /// The host itself refuses to type into a session that
+                      /// shows a dialog (herdr `agent_blocked`). tmux does not.
+                      pub guards_dialogs: bool }
 pub enum PlaceState { Idle, Working, Blocked, Gone, Unknown }
 pub struct Occupant { pub session: Option<SessionId>, pub pids: Vec<Pid> }
 pub struct HostError { pub code: HostErrorCode, pub detail: String }
@@ -211,6 +214,8 @@ pub trait Harness: Send + Sync {
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
     /// Handle a startup dialog on the member's screen, if the harness has one.
+    /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
+    fn screen_state(&self, tail: &str) -> ScreenState;
     fn answer_startup(&self, host: &dyn Host, place: &Place, policy: TrustPolicy)
         -> Result<StartupOutcome, HarnessError>;
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)>;
@@ -231,6 +236,7 @@ pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      pub transcript: Option<PathBuf> }
 pub enum Liveness { Alive(PlaceState), Dead, Unknown }
+pub enum ScreenState { InputPrompt, Dialog, Unknown }
 pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated, RefusedHome }
 
 pub trait Platform: Send + Sync {

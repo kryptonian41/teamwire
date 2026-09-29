@@ -63,6 +63,7 @@ The full signatures are in `docs/api/core.md`. Rules that go with them:
    | `can_push` (harness puts text in its own session) | no in v1 | n/a | n/a | configurable |
    | `session_env_via_config` (identity through a config file) | yes (`settings.json` `env`) | n/a | n/a | configurable |
    | `sets_env_at_spawn` (host passes environment) | n/a | no | yes (`new-window -e`) | configurable; `fake-herdr` never |
+   | `guards_dialogs` (host refuses to type into a dialog) | n/a | yes (`agent_blocked`) | no; teamwire checks the screen first (ADR 0006 point 3a) | configurable |
    | `submit_ack` | none | "submitted", `--wait` sees a state change | none | configurable |
 
    The core picks routes from these fields, never from product names.
