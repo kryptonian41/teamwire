@@ -45,6 +45,11 @@ impl TestPlatform {
         self.runs.lock().unwrap().clone()
     }
 
+    /// Paths `write_atomic` wrote, in order.
+    pub fn written(&self) -> Vec<PathBuf> {
+        self.inner.written()
+    }
+
     /// Answers the next `run` of `program` with `out` instead of starting it.
     pub fn script_next(&self, program: &str, out: RunOutput) {
         self.scripted

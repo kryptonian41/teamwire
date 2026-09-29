@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use teamwire_core::DisplayId;
-use teamwire_store::{Ctx, MessageFilter};
+use teamwire_store::{Ctx, StoreError};
 
 use crate::VerifyError;
 use crate::report::team_dir;
@@ -56,19 +56,47 @@ struct Mirror {
     rewrite_differing: bool,
 }
 
-fn copies(ctx: &Ctx<'_>, team_dir: &Path) -> Result<Vec<Mirror>, VerifyError> {
-    let messages = ctx
-        .store
-        .read(|tx| tx.messages(&MessageFilter::default())?.all_or_corrupt())?;
-    let mut out: Vec<Mirror> = messages
-        .into_iter()
-        .map(|m| Mirror {
-            path: team_dir.join("comms").join(format!("{}.md", m.display_id)),
-            sha256: m.body_sha256,
-            bytes: Some(m.body.into_bytes()),
-            rewrite_differing: true,
+/// Every message with its body and the hash the store kept. Read straight
+/// from the table: the store's own listing refuses a row whose body fails its
+/// hash, and that is exactly the row these checks must still see.
+fn stored_messages(ctx: &Ctx<'_>) -> Result<Vec<(DisplayId, String, Vec<u8>)>, VerifyError> {
+    let rows = ctx.store.read(|tx| {
+        let mut stmt = tx
+            .connection()
+            .prepare("SELECT display_id, body, body_sha256 FROM messages ORDER BY rowid")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<(String, String, Vec<u8>)>, _>>()?;
+        Ok(rows)
+    })?;
+    rows.into_iter()
+        .map(|(id, body, sha)| {
+            let id = DisplayId::parse(&id)
+                .map_err(|e| VerifyError::Internal(format!("message id {id}: {e}")))?;
+            Ok((id, body, sha))
         })
-        .collect();
+        .collect()
+}
+
+fn hash_of(bytes: &[u8]) -> [u8; 32] {
+    Sha256::digest(bytes).into()
+}
+
+fn copies(ctx: &Ctx<'_>, team_dir: &Path) -> Result<Vec<Mirror>, VerifyError> {
+    let mut out = Vec::new();
+    for (id, body, sha) in stored_messages(ctx)? {
+        let Ok(sha256) = <[u8; 32]>::try_from(sha.as_slice()) else {
+            continue;
+        };
+        // The store's copy is the source only while it still matches its hash.
+        let intact = hash_of(body.as_bytes()) == sha256;
+        out.push(Mirror {
+            path: team_dir.join("comms").join(format!("{id}.md")),
+            sha256,
+            bytes: intact.then(|| body.into_bytes()),
+            rewrite_differing: true,
+        });
+    }
     let members = ctx.store.read(|tx| tx.members()?.all_or_corrupt())?;
     for member in members {
         let latest = ctx.store.read(|tx| tx.latest_completion(&member.role))?;
@@ -90,7 +118,7 @@ fn copies(ctx: &Ctx<'_>, team_dir: &Path) -> Result<Vec<Mirror>, VerifyError> {
 
 fn problem(copy: &Mirror) -> Option<FileProblem> {
     match std::fs::read(&copy.path) {
-        Ok(bytes) if <[u8; 32]>::from(Sha256::digest(&bytes)) == copy.sha256 => None,
+        Ok(bytes) if hash_of(&bytes) == copy.sha256 => None,
         Ok(_) => Some(FileProblem::Differs),
         Err(_) => Some(FileProblem::Missing),
     }
@@ -143,14 +171,29 @@ pub fn repair_copies(ctx: &Ctx<'_>) -> Result<Vec<PathBuf>, VerifyError> {
 
 /// `PRAGMA integrity_check`, and every message body against its hash.
 pub fn deep_check(ctx: &Ctx<'_>) -> Result<DeepReport, VerifyError> {
-    let integrity = ctx.store.integrity_check()?;
-    let messages = ctx
-        .store
-        .read(|tx| tx.messages(&MessageFilter::default())?.all_or_corrupt())?;
-    let bad_hashes = messages
+    // A damaged file may fail the check outright. Its own words are the report.
+    let integrity = match ctx.store.integrity_check() {
+        Ok(text) => text,
+        Err(StoreError::Corrupt(text)) => {
+            return Ok(DeepReport {
+                integrity: text,
+                bad_hashes: Vec::new(),
+            });
+        }
+        Err(e) => return Err(e.into()),
+    };
+    if integrity != "ok" {
+        // The rows cannot be trusted, and reading them may fail. The check's
+        // own output is the report.
+        return Ok(DeepReport {
+            integrity,
+            bad_hashes: Vec::new(),
+        });
+    }
+    let bad_hashes = stored_messages(ctx)?
         .into_iter()
-        .filter(|m| <[u8; 32]>::from(Sha256::digest(m.body.as_bytes())) != m.body_sha256)
-        .map(|m| m.display_id)
+        .filter(|(_, body, sha)| hash_of(body.as_bytes()).as_slice() != sha.as_slice())
+        .map(|(id, _, _)| id)
         .collect();
     Ok(DeepReport {
         integrity,
