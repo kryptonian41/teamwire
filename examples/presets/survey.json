@@ -1,0 +1,24 @@
+{
+  "_shape": "Investigation. Read-only fan-out across several areas.",
+  "_why_this_works": "Breadth-first search over independent directions is the case where several agents beat one. Nothing is written, so there are no conflicting decisions to compare and no merge step.",
+  "_rules": [
+    "Use mode pane, not worktree. A member that writes nothing needs no isolation and leaves no branch to clean up.",
+    "Demand file:line evidence for every claim. Opinions from a member you cannot cross-examine are worth little.",
+    "Set short deadlines. A survey still running after 15 minutes has gone wrong.",
+    "sonnet is enough. This is reading, not designing."
+  ],
+  "team": "myteam",
+  "title": "Survey: CHANGEME",
+  "children": [
+    {
+      "role": "area1",
+      "title": "Map CHANGEME",
+      "kind": "investigator",
+      "mode": "pane",
+      "cwd": "/abs/path/repo",
+      "model": "sonnet",
+      "deadline_s": 900,
+      "task": "Investigate <question> in <area>. Do NOT modify any file in the repository. Give file:line evidence for every claim. Say plainly when something is NOT the cause, because ruling things out is as useful as finding the cause. End with the three findings most worth acting on."
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "_shape": "Tickets that block each other. Launched in waves by dependency, merged blockers first.",
+  "_why_this_works": "parallel-tickets is the better shape and has no integration step at all. Use it whenever the tickets are independent. This shape is for the case it refuses: tickets whose blocking edges are real. The edges do the scheduling, so every member starts against code its blockers already finished.",
+  "_input": "Tickets, not a spec and not a plan. Each ticket is a thin vertical slice that names the tickets that block it. Given a spec or a bare conversation instead, stop and ask the user to write tickets first.",
+  "_rules": [
+    "Read every ticket IN FULL before scheduling. Titles and blocking edges alone will mis-schedule the waves.",
+    "Work out each ticket's file ownership by reading the codebase, never by paraphrasing the ticket. That footprint goes in the brief under 'Files you own' and is the hard boundary.",
+    "Wave 1 is every ticket whose blockers are all done. Cap a wave at five members. More than that and the lead spends its whole context on reports.",
+    "Two tickets in one wave that touch the same files go in DIFFERENT waves. Worktrees remove the write race, not the merge conflict.",
+    "Settle open questions before wave 1. Every question you answer yourself later becomes a guess made in several fresh contexts at once.",
+    "Run one wave at a time. Let a wave finish, then recompute what is unblocked. A member that finished may have changed what its dependents need.",
+    "Later waves join the SAME team with `teamwire launch --add` and new role names. One team, one archive, one report path. Never run wave 1 and wave 2 as separate teams.",
+    "A dependent member's base is its blocker's branch, not main, so it starts on the code it depends on. Launch it only after the blocker reported and `teamwire verify` passed. Merge blockers first, so each merge lands on the code it was written against.",
+    "On the merged result run the full gate once and review the whole change. Each member reviewed its own slice alone, so the merge is still unreviewed.",
+    "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
+    "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest.",
+    "One coherent change per branch. A ticket that touches more than one module is two members, or one member with two units."
+  ],
+  "team": "myteam",
+  "title": "CHANGEME ticket chain",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "children": [
+    {
+      "_wave": 1,
+      "_blocked_by": [],
+      "role": "ticket_a",
+      "title": "TICKET-A: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ticket-a",
+      "base": "main",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/a/"
+      ],
+      "task_file": "/abs/path/briefs/ticket_a.md"
+    },
+    {
+      "_wave": 1,
+      "_blocked_by": [],
+      "_note": "No file overlap with ticket_a. Check this by reading the code, not the tickets.",
+      "role": "ticket_b",
+      "title": "TICKET-B: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ticket-b",
+      "base": "main",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/b/"
+      ],
+      "task_file": "/abs/path/briefs/ticket_b.md"
+    },
+    {
+      "_wave": 2,
+      "_blocked_by": [
+        "ticket_a"
+      ],
+      "_launch": "teamwire launch --add, once ticket_a has reported AND passed `teamwire verify`. Its base is ticket_a's branch, so it starts on the code it depends on. Merge ticket_a before this branch at the end.",
+      "role": "ticket_c",
+      "title": "TICKET-C: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/ticket-c",
+      "base": "myteam/ticket-a",
+      "model": "sonnet",
+      "deadline_s": 3600,
+      "check": "CHANGEME targeted test command",
+      "owns": [
+        "CHANGEME/c/"
+      ],
+      "task_file": "/abs/path/briefs/ticket_c.md"
+    }
+  ]
+}
