@@ -1,0 +1,494 @@
+//! `fake-claude` started by `fake-herdr` (so with a cleared environment), and
+//! started directly: its session file, its settings `env`, its Stop hook and
+//! its faults.
+
+#![expect(
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::disallowed_methods,
+    reason = "test helpers build fixtures from literals and fail the test with a message; one test starts fake-claude directly"
+)]
+
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+use teamwire_fakes::{ClaudeFault, ClaudeScript, FakeBins, FakeHerdrEnv, Startup, Step};
+
+/// Logs each Stop hook's input line, and the role and token the hook saw.
+const LOGGING_HOOK: &str = r#"cat >> "$TMPDIR/hook-inputs.jsonl"; printf '\n' >> "$TMPDIR/hook-inputs.jsonl"; printf '%s/%s\n' "$TEAMWIRE_ROLE" "$TEAMWIRE_TOKEN" >> "$TMPDIR/hook-env.txt""#;
+
+fn settings_with(env: &FakeHerdrEnv, hook: &str, vars: &Value) -> String {
+    let doc = json!({
+        "env": vars,
+        "hooks": { "Stop": [{ "hooks": [{ "type": "command", "command": hook }] }] },
+    });
+    env.write_file("member-settings.json", &doc.to_string())
+        .unwrap()
+        .display()
+        .to_string()
+}
+
+fn identity() -> Value {
+    json!({ "TEAMWIRE_ROLE": "api", "TEAMWIRE_TOKEN": "tok-from-settings" })
+}
+
+fn pane(env: &FakeHerdrEnv) -> String {
+    let out = env
+        .run(&["workspace", "create", "--cwd", "/tmp", "--no-focus"])
+        .unwrap();
+    out.result()
+        .unwrap()
+        .pointer("/root_pane/pane_id")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn start(env: &FakeHerdrEnv, settings: &str, session: &str) -> String {
+    let pane_id = pane(env);
+    let out = env
+        .run(&[
+            "agent",
+            "start",
+            "tw_demo_api",
+            "--kind",
+            "claude",
+            "--pane",
+            &pane_id,
+            "--timeout",
+            "20000",
+            "--",
+            "-n",
+            "tw_demo_api",
+            "--session-id",
+            session,
+            "--settings",
+            settings,
+        ])
+        .unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    pane_id
+}
+
+fn prompt(env: &FakeHerdrEnv, text: &str) {
+    let out = env
+        .run(&[
+            "agent",
+            "prompt",
+            "tw_demo_api",
+            text,
+            "--wait",
+            "--timeout",
+            "20000",
+        ])
+        .unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+}
+
+fn tmp(env: &FakeHerdrEnv, name: &str) -> std::path::PathBuf {
+    env.root().join("tmp").join(name)
+}
+
+fn wait_for_file(path: &Path) -> String {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(10) {
+        if let Ok(text) = std::fs::read_to_string(path)
+            && !text.is_empty()
+        {
+            return text;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    panic!("{} never appeared", path.display());
+}
+
+fn hook_inputs(env: &FakeHerdrEnv) -> Vec<Value> {
+    std::fs::read_to_string(tmp(env, "hook-inputs.jsonl"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect()
+}
+
+fn script(turn: Vec<Step>) -> ClaudeScript {
+    ClaudeScript {
+        turns: vec![turn],
+        ..ClaudeScript::default()
+    }
+}
+
+#[test]
+fn settings_env_reaches_shell_steps_and_hooks_although_fake_herdr_cleared_the_environment() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![Step::Run(
+        r#"printf '%s/%s' "$TEAMWIRE_ROLE" "$TEAMWIRE_TOKEN" > "$TMPDIR/step-env.txt""#.into(),
+    )]))
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    // fake-herdr itself is started with the variables in its environment.
+    let pane_id = pane(&env);
+    let started = env
+        .run_with(
+            &[
+                "agent",
+                "start",
+                "tw_demo_api",
+                "--kind",
+                "claude",
+                "--pane",
+                &pane_id,
+                "--",
+                "--settings",
+                &settings,
+            ],
+            &[("TEAMWIRE_ROLE", "wrong"), ("TEAMWIRE_TOKEN", "leaked")],
+        )
+        .unwrap();
+    assert_eq!(started.code, Some(0), "{started:?}");
+    prompt(&env, "do the step");
+
+    assert_eq!(
+        std::fs::read_to_string(tmp(&env, "step-env.txt")).unwrap(),
+        "api/tok-from-settings"
+    );
+    assert_eq!(
+        wait_for_file(&tmp(&env, "hook-env.txt")).trim(),
+        "api/tok-from-settings"
+    );
+}
+
+#[test]
+fn the_stop_hook_gets_the_json_claude_code_sends() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![Step::Print("thinking".into())]],
+        final_message: Some("All done. See the report.".into()),
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-hook");
+    prompt(&env, "go");
+    wait_for_file(&tmp(&env, "hook-env.txt"));
+    let inputs = hook_inputs(&env);
+    assert_eq!(inputs.len(), 1);
+    let input = inputs.first().unwrap();
+    assert_eq!(input.get("session_id").unwrap(), "sess-hook");
+    assert_eq!(input.get("stop_hook_active").unwrap(), false);
+    assert_eq!(input.get("hook_event_name").unwrap(), "Stop");
+    assert_eq!(
+        input.get("last_assistant_message").unwrap(),
+        "All done. See the report."
+    );
+    let transcript = input.get("transcript_path").unwrap().as_str().unwrap();
+    assert!(transcript.ends_with("sess-hook.jsonl"), "{transcript}");
+    assert!(input.get("agent_id").is_none());
+    assert!(Path::new(transcript).is_file());
+}
+
+#[test]
+fn the_session_file_is_written_and_removed_on_exit() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-file");
+    let files = env.session_files();
+    assert_eq!(files.len(), 1);
+    let doc: Value =
+        serde_json::from_str(&std::fs::read_to_string(files.first().unwrap()).unwrap()).unwrap();
+    assert_eq!(doc.get("sessionId").unwrap(), "sess-file");
+    assert_eq!(doc.get("name").unwrap(), "tw_demo_api");
+    assert_eq!(doc.get("kind").unwrap(), "interactive");
+    assert_eq!(doc.get("status").unwrap(), "idle");
+    let pid = files
+        .first()
+        .unwrap()
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert_eq!(doc.get("pid").unwrap().to_string(), pid);
+
+    let out = env
+        .run(&["agent", "prompt", "tw_demo_api", "/exit"])
+        .unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the session file was never removed"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn a_hook_that_holds_the_turn_runs_the_hold_steps_and_stops_again() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        on_hold: vec![Step::Run(r#"echo added > "$TMPDIR/hold-step""#.into())],
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let hook = format!(
+        r#"{LOGGING_HOOK}; if [ ! -f "$TMPDIR/held" ]; then touch "$TMPDIR/held"; echo '{{"decision":"block","reason":"add your progress line"}}'; fi"#
+    );
+    let settings = settings_with(&env, &hook, &identity());
+    start(&env, &settings, "sess-hold");
+    prompt(&env, "finish");
+    let inputs = hook_inputs(&env);
+    let active: Vec<bool> = inputs
+        .iter()
+        .map(|i| i.get("stop_hook_active").unwrap().as_bool().unwrap())
+        .collect();
+    assert_eq!(active, [false, true]);
+    assert!(tmp(&env, "hold-step").is_file());
+    let screen = env
+        .run(&["agent", "read", "tw_demo_api", "--lines", "30"])
+        .unwrap();
+    assert!(
+        screen
+            .result()
+            .unwrap()
+            .pointer("/text")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("Stop hook feedback: add your progress line")
+    );
+}
+
+fn run_fault(fault: ClaudeFault) -> FakeHerdrEnv {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        fault,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-fault");
+    env
+}
+
+#[test]
+fn stop_twice_runs_the_hook_twice_for_one_turn() {
+    let env = run_fault(ClaudeFault::StopTwice);
+    prompt(&env, "go");
+    assert_eq!(hook_inputs(&env).len(), 2);
+}
+
+#[test]
+fn a_wrong_session_id_reaches_the_hook() {
+    let env = run_fault(ClaudeFault::WrongSession);
+    prompt(&env, "go");
+    let inputs = hook_inputs(&env);
+    assert_eq!(
+        inputs.first().unwrap().get("session_id").unwrap(),
+        "not-sess-fault"
+    );
+}
+
+#[test]
+fn exit_without_stop_never_runs_the_hook_and_ends_the_session() {
+    let env = run_fault(ClaudeFault::ExitWithoutStop);
+    let out = env.run(&["agent", "prompt", "tw_demo_api", "go"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the session never ended"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(hook_inputs(&env).is_empty());
+}
+
+#[test]
+fn never_stop_leaves_the_agent_working_with_no_hook() {
+    let env = run_fault(ClaudeFault::NeverStop);
+    let out = env.run(&["agent", "prompt", "tw_demo_api", "go"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    std::thread::sleep(Duration::from_millis(300));
+    let get = env.run(&["agent", "get", "tw_demo_api"]).unwrap();
+    let status = get
+        .result()
+        .unwrap()
+        .pointer("/agent/agent_status")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(status, "working");
+    assert!(hook_inputs(&env).is_empty());
+}
+
+#[test]
+fn a_harness_without_a_turn_end_hook_never_runs_it() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        no_hook: true,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-nohook");
+    prompt(&env, "go");
+    assert!(hook_inputs(&env).is_empty());
+}
+
+#[test]
+fn the_plain_trust_dialog_is_answered_with_down_and_enter() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        startup: Startup::Trust,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    let pane_id = pane(&env);
+    let out = env
+        .run(&[
+            "agent",
+            "start",
+            "tw_demo_api",
+            "--kind",
+            "claude",
+            "--pane",
+            &pane_id,
+            "--",
+            "--settings",
+            &settings,
+        ])
+        .unwrap();
+    assert_eq!(out.error_code().as_deref(), Some("agent_not_ready"));
+    let screen = env
+        .run(&["agent", "read", "tw_demo_api", "--lines", "20"])
+        .unwrap();
+    let text = screen
+        .result()
+        .unwrap()
+        .pointer("/text")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(text.contains(teamwire_fakes::PLAIN_TRUST_TEXT));
+    assert!(!text.contains(teamwire_fakes::ESCALATED_TRUST_TEXT));
+    // Enter alone takes the preselected "No, exit", which ends the session.
+    env.run(&["agent", "send-keys", "tw_demo_api", "down"])
+        .unwrap();
+    env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
+        .unwrap();
+    let begun = Instant::now();
+    loop {
+        let get = env.run(&["agent", "get", "tw_demo_api"]).unwrap();
+        if get.result().is_some_and(|r| {
+            r.pointer("/agent/agent_status").and_then(Value::as_str) == Some("idle")
+        }) {
+            break;
+        }
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "never became idle"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn saying_no_to_the_dialog_ends_the_session() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        startup: Startup::Trust,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    let pane_id = pane(&env);
+    env.run(&[
+        "agent",
+        "start",
+        "tw_demo_api",
+        "--kind",
+        "claude",
+        "--pane",
+        &pane_id,
+        "--",
+        "--settings",
+        &settings,
+    ])
+    .unwrap();
+    env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
+        .unwrap();
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the session never ended"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn run_direct(env_vars: &[(&str, &str)], stdin: &str) -> std::process::Output {
+    use std::io::Write as _;
+    let bins = FakeBins::ensure().unwrap();
+    let mut child = std::process::Command::new(bins.claude())
+        .env_clear()
+        .envs(env_vars.iter().copied())
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(stdin.as_bytes())
+        .unwrap();
+    child.wait_with_output().unwrap()
+}
+
+#[test]
+fn fake_claude_refuses_to_run_without_a_directory_for_its_session_file() {
+    let out = run_direct(
+        &[("PATH", "/usr/bin:/bin"), ("HOME", "/nonexistent-home")],
+        "hello\n",
+    );
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("never uses ~/.claude"));
+    assert!(!Path::new("/nonexistent-home/.claude").exists());
+}
+
+#[test]
+fn fake_claude_reads_prompts_from_stdin_when_not_in_a_pane() {
+    let dir = tempfile::tempdir().unwrap();
+    let claude_dir = dir.path().display().to_string();
+    let out = run_direct(
+        &[
+            ("PATH", "/usr/bin:/bin"),
+            ("TEAMWIRE_CLAUDE_DIR", &claude_dir),
+        ],
+        "first\nsecond\n",
+    );
+    assert_eq!(out.status.code(), Some(0));
+    let screen = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        screen.contains("> first") && screen.contains("> second"),
+        "{screen}"
+    );
+    assert!(
+        std::fs::read_dir(dir.path().join("sessions"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+}

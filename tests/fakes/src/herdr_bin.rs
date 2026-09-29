@@ -9,6 +9,7 @@ mod agent;
 mod args;
 mod faults;
 mod layout;
+mod pane_files;
 mod state;
 
 pub use faults::{Action, ErrorBody, Rule};

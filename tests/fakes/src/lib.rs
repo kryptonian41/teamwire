@@ -1,5 +1,7 @@
-//! Test doubles for every adapter trait, the fake `herdr` and `claude`
-//! binaries, and the contract suites every adapter must pass.
+//! Test doubles for every adapter trait (`FakeHost`, `FakeHarness`,
+//! `FakePlatform`, `FakeClock`), the fake `herdr` and `claude` binaries with
+//! the fixtures that run them, and the contract suites every adapter must
+//! pass. `README.md` in this directory is the guide.
 //!
 //! Never: touch the real `~/.claude/`, `~/.claude.json` or `~/.teamwire`;
 //! start a real herdr or Claude session; set process-wide environment.
