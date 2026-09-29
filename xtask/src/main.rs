@@ -81,12 +81,24 @@ fn run(args: Vec<String>) -> Result<Findings> {
     Ok(found)
 }
 
+/// The workspace the command runs in, found from the current directory. A
+/// compile-time path would make a binary built in another checkout (a
+/// worktree's `target/` is cloned from the main one) check the wrong tree.
 fn repo_root() -> Result<PathBuf> {
-    let xtask_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    xtask_dir
-        .parent()
-        .map(Path::to_path_buf)
-        .context("xtask has no parent directory")
+    let cwd = std::env::current_dir().context("reading the current directory")?;
+    workspace_root(&cwd)
+}
+
+/// The nearest directory at or above `start` whose `Cargo.toml` has a
+/// `[workspace]` table.
+fn workspace_root(start: &Path) -> Result<PathBuf> {
+    for dir in start.ancestors() {
+        let manifest = dir.join("Cargo.toml");
+        if manifest.is_file() && read_toml(&manifest)?.contains_key("workspace") {
+            return Ok(dir.to_path_buf());
+        }
+    }
+    bail!("no workspace Cargo.toml at or above {}", start.display())
 }
 
 /// Every rule but `--base`, over the repository at `root`. `metadata` is the
@@ -286,6 +298,24 @@ mod tests {
         write(dir.path(), "CLAUDE.md", "# teamwire\n");
         let problems = tidy_problems(dir.path());
         assert_eq!(problems, ["CLAUDE.md: the first line must be `@AGENTS.md`"]);
+    }
+
+    #[test]
+    fn workspace_root_is_found_from_a_nested_directory_of_the_tree_being_checked() {
+        let dir = clean_workspace();
+        let nested = dir.path().join("crates/teamwire-a/src");
+        assert_eq!(workspace_root(&nested).unwrap(), dir.path());
+        assert_eq!(workspace_root(dir.path()).unwrap(), dir.path());
+    }
+
+    #[test]
+    fn workspace_root_skips_a_member_manifest_and_fails_outside_a_workspace() {
+        let dir = clean_workspace();
+        // crates/teamwire-a/Cargo.toml has no [workspace] table.
+        let member = dir.path().join("crates/teamwire-a");
+        assert_eq!(workspace_root(&member).unwrap(), dir.path());
+        let outside = tempfile::tempdir().unwrap();
+        assert!(workspace_root(outside.path()).is_err());
     }
 
     #[test]
