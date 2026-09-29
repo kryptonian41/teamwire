@@ -12,10 +12,18 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use teamwire_core::Role;
+use teamwire_core::{EventType, Role};
 use teamwire_store::Ctx;
 
-const NOT_BUILT: &str = "teamwire-close is not built yet";
+mod archive;
+mod facts;
+mod git;
+mod hold;
+mod plan;
+mod remove;
+mod team_close;
+
+pub use plan::plan_close_with;
 
 /// The whole team, or one member.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,23 +80,59 @@ pub struct CloseReport {
     pub steps: Vec<StepOutcome>,
     /// The step the close stopped at, if it did not finish.
     pub stopped_at: Option<String>,
+    /// Why nothing was done: a rule refused before any step ran (exit 1).
+    pub refusals: Vec<String>,
     pub archive: Option<PathBuf>,
     pub branches_kept: Vec<String>,
     /// Commits on kept branches that are not pushed anywhere.
     pub unpushed: Vec<String>,
 }
 
-/// The plan for `--dry-run`. Changes nothing.
-pub fn plan_close(_ctx: &Ctx<'_>, _target: CloseTarget) -> ClosePlan {
-    ClosePlan {
-        steps: Vec::new(),
-        refusals: vec![NOT_BUILT.to_owned()],
+/// The plan for `--dry-run`, with no flag given. Changes nothing.
+pub fn plan_close(ctx: &Ctx<'_>, target: CloseTarget) -> ClosePlan {
+    plan_close_with(ctx, target, &CloseOpts::default())
+}
+
+pub fn close(ctx: &mut Ctx<'_>, target: CloseTarget, opts: CloseOpts) -> CloseReport {
+    close_observed(ctx, target, opts, &|_| {})
+}
+
+/// `close`, calling `observer` with each step's name right before the step
+/// runs and before its re-check. Tests use it to change the world between
+/// two steps, which is the only way to reach the re-checks of CLS-3.
+pub fn close_observed(
+    ctx: &mut Ctx<'_>,
+    target: CloseTarget,
+    opts: CloseOpts,
+    observer: &dyn Fn(&str),
+) -> CloseReport {
+    if opts.clear_stale_lock {
+        return team_close::clear_stale_lock(ctx);
+    }
+    let plan = plan_close_with(ctx, target.clone(), &opts);
+    if !plan.refusals.is_empty() {
+        record_refusal(ctx, &plan.refusals);
+        return CloseReport {
+            refusals: plan.refusals,
+            ..CloseReport::default()
+        };
+    }
+    match target {
+        CloseTarget::Team => team_close::run(ctx, opts, observer),
+        CloseTarget::Member(role) => remove::run(ctx, &role, &opts, observer),
     }
 }
 
-pub fn close(_ctx: &mut Ctx<'_>, _target: CloseTarget, _opts: CloseOpts) -> CloseReport {
-    CloseReport {
-        stopped_at: Some(NOT_BUILT.to_owned()),
-        ..CloseReport::default()
+/// `close.refused`, so the metrics can count where closes stop. A refusal
+/// changes nothing else; a store that cannot take the event does not turn a
+/// refusal into a failure.
+fn record_refusal(ctx: &mut Ctx<'_>, reasons: &[String]) {
+    let now = ctx.clock.now();
+    let data = serde_json::json!({ "reason": reasons.join("; ") });
+    if let Err(e) = ctx
+        .store
+        .write(|tx| tx.record_event(now, EventType::CloseRefused, None, None, &data))
+    {
+        tracing::warn!(error = %e, "close.refused could not be recorded");
     }
 }
