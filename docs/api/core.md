@@ -289,6 +289,11 @@ impl Registry {
 }
 
 pub enum RegistryError { Duplicate(String), UnknownHarness(HarnessId), UnknownHost(HostId) }
+
+/// The host for "no multiplexer" (id "none"). Every capability false; every
+/// writing call returns HostError { code: NotFound, .. } and does nothing.
+pub struct NoHost;
+impl Host for NoHost { /* … */ }
 ```
 
 The harness and host belong to each member and to the lead, never to the team

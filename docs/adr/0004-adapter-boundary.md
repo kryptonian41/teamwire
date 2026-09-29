@@ -85,11 +85,22 @@ The full signatures are in `docs/api/core.md`. Rules that go with them:
 9. **One contract-test suite per trait**, in `teamwire-fakes`, runs against
    the fake and against each real adapter (the herdr adapter against the fake
    `herdr` binary, the tmux adapter against a real tmux on a private socket).
-10. **No host is a valid configuration.** A member may have no place (ADP-9).
-   It then has no typed wake-up. It reads through `inbox`, its completions
-   reach the lead through the watch (ADR 0007), and undelivered items are
-   still shown (DEL-17). In v1 the only way to start such a member is outside
-   teamwire; a headless host that spawns `claude -p` is not built (ADR 0010).
+10. **No host is a valid configuration, built as a real adapter.**
+   `teamwire-core` ships `NoHost` (id `none`): every capability is false,
+   `list` and `live_agent_names` return empty, `occupant` and `state` return
+   `NotFound`, and every writing call (`spawn`, `submit`, `send_keys`,
+   `close`) returns `NotFound` without doing anything. Wiring always registers
+   it and picks it for the lead when neither herdr nor tmux is detected.
+   What still works with it (DEL-17):
+   - A lead whose host is `none` gets route B for results (the watch prints
+     them) and its questions are `undelivered` with `no_host`, so the watch
+     prints `QUESTION-UNDELIVERED`.
+   - A message to a member whose host is `none` is stored, marked
+     `undelivered` with `no_host`, and still readable with `inbox`.
+   - `status`, `log`, `verify`, `metrics` and `close` need no host.
+   - `launch` refuses members whose host is `none` (`no_host`): v1 cannot
+     start them, because a headless host that spawns `claude -p` is not built
+     (ADR 0010).
 
 ## Consequences
 

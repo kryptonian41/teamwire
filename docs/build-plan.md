@@ -75,7 +75,8 @@ Builds:
   `tracing-subscriber`, `globset`, `toml`, `sysinfo`, `nix` (process, signal),
   `tempfile`, `proptest`.
 - `crates/teamwire-core`: every type and trait in `docs/api/core.md` §1-6a,
-  including the `Registry` (adapter ids are strings; no enum of products),
+  including the `Registry` (adapter ids are strings; no enum of products)
+  and `NoHost`, the do-nothing host for "no multiplexer" (ADR 0004 point 10),
   `sanitize::one_line`, `OneLine`, the event type enum with its string forms,
   the capability records. Unit tests for name parsing, sanitising
   (`crates/teamwire-core/tests/sanitize.rs::forged_event_line_is_flattened`

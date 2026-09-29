@@ -117,7 +117,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | DEL-14 | MUST | Every call to an external program has a timeout. | harness R14; speclife F4, LC-5 |
 | DEL-15 | MUST | A peer message never approves a permission prompt and never counts as user consent. teamwire relays no permission decision between members, and never submits text into a session that is blocked or not at its input prompt. | protocols R26; archrev 4 |
 | DEL-16 | MUST | The watch never sends anything into a session. Its only output is its own event stream. | specmsg R37, E4; speclife LC-27; INV-8 |
-| DEL-17 | MUST | With no host at all, every completion and message is still recorded, and undelivered ones are still reported. | specmsg R45, L15 |
+| DEL-17 | MUST | With no host at all, every completion and message is still recorded, and undelivered ones are still reported. A do-nothing host adapter (`none`) makes this configuration real and testable. | specmsg R45, L15; archrev 9 |
 
 ### Completions and results (REP)
 
