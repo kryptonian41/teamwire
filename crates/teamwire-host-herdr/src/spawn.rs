@@ -6,7 +6,7 @@ use std::time::Duration;
 use teamwire_core::{HostError, HostErrorCode, Place, SpawnRequest};
 
 use crate::Herdr;
-use crate::shapes::{NewTab, new_tab, workspaces};
+use crate::shapes::{NewTab, new_tab};
 use teamwire_core::Host;
 
 /// The slack `agent start` gets on top of herdr's own `--timeout`, so herdr
@@ -49,22 +49,31 @@ fn place_for(host: &Herdr, tab: &NewTab) -> Place {
     }
 }
 
-/// The tab for a new member: a new workspace labelled with the team on the
-/// first member, a new tab labelled with the member's title after that.
-/// Labels are set here and never changed.
+/// The workspace a live member of the team is in. A label match would pick a
+/// user's workspace or a leftover one, so the live agents named
+/// `tw_<team>_*` decide.
+fn team_workspace(host: &Herdr, team: &str) -> Result<Option<String>, HostError> {
+    let prefix = format!("tw_{team}_");
+    Ok(host
+        .agents(LAYOUT_TIMEOUT)?
+        .iter()
+        .find(|a| a.name.as_deref().is_some_and(|n| n.starts_with(&prefix)))
+        .and_then(|a| a.workspace().map(str::to_owned)))
+}
+
+/// The tab for a new member: a new workspace labelled with the team when no
+/// member of the team is live, a new tab labelled with the member's title
+/// after that. Labels are set here and never changed.
 fn make_tab(host: &Herdr, req: &SpawnRequest) -> Result<NewTab, HostError> {
     let team = team_of(req.name.as_str());
     let cwd = req.cwd.display().to_string();
-    let existing = workspaces(host.call(&["workspace", "list"], LAYOUT_TIMEOUT)?)?
-        .into_iter()
-        .find(|w| w.label.as_deref() == Some(team));
-    if let Some(ws) = existing {
+    if let Some(ws) = team_workspace(host, team)? {
         let result = host.call(
             &[
                 "tab",
                 "create",
                 "--workspace",
-                &ws.workspace_id,
+                &ws,
                 "--cwd",
                 &cwd,
                 "--label",

@@ -234,3 +234,22 @@ fn a_missing_place_is_not_found_for_reads_and_gone_for_state() {
     );
     assert_eq!(world.herdr.state(&missing, T).unwrap(), PlaceState::Gone);
 }
+
+#[test]
+fn a_foreign_workspace_with_the_team_label_gets_no_tabs() {
+    let world = World::new();
+    let out = world
+        .env
+        .run(&["workspace", "create", "--label", "demo"])
+        .unwrap();
+    let foreign = out.result().unwrap()["workspace"]["workspace_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let first = started(&world, "tw_demo_api", "API");
+    let own = first.id.split(':').next().unwrap().to_owned();
+    assert_ne!(own, foreign, "the first member gets a workspace of its own");
+    let second = started(&world, "tw_demo_web", "Web");
+    assert_eq!(second.id.split(':').next().unwrap(), own);
+    assert_eq!(world.calls_of("tab create").len(), 1);
+}

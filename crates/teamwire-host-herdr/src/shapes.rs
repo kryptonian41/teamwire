@@ -19,6 +19,8 @@ pub(crate) struct AgentInfo {
     #[serde(default)]
     pub pane_id: Option<String>,
     #[serde(default)]
+    pub workspace_id: Option<String>,
+    #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
     pub agent_status: Option<String>,
@@ -36,6 +38,14 @@ impl AgentInfo {
             Some("blocked") => PlaceState::Blocked,
             _ => PlaceState::Unknown,
         }
+    }
+
+    /// The workspace the agent's pane is in: its own field, else the part
+    /// of the pane id before the colon (`w44:p6`).
+    pub(crate) fn workspace(&self) -> Option<&str> {
+        self.workspace_id
+            .as_deref()
+            .or_else(|| self.pane_id.as_deref()?.split_once(':').map(|(w, _)| w))
     }
 
     pub(crate) fn session_value(&self) -> Option<&str> {
@@ -66,19 +76,6 @@ struct Read {
 #[derive(Debug, Deserialize)]
 struct ReadEnvelope {
     read: Read,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct WorkspaceInfo {
-    pub workspace_id: String,
-    #[serde(default)]
-    pub label: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct WorkspaceListEnvelope {
-    #[serde(default)]
-    workspaces: Vec<WorkspaceInfo>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -125,10 +122,6 @@ pub(crate) fn agent_list(result: Value) -> Result<Vec<AgentInfo>, HostError> {
 /// `.result.read.text` of a `pane_read` result.
 pub(crate) fn read_text(result: Value) -> Result<String, HostError> {
     parse::<ReadEnvelope>("read", result).map(|e| e.read.text)
-}
-
-pub(crate) fn workspaces(result: Value) -> Result<Vec<WorkspaceInfo>, HostError> {
-    parse::<WorkspaceListEnvelope>("workspace list", result).map(|e| e.workspaces)
 }
 
 pub(crate) fn new_tab(result: Value) -> Result<NewTab, HostError> {
