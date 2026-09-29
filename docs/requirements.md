@@ -190,7 +190,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | LCH-2 | MUST | Validate the whole spec, and every path the launch will touch, before creating anything. | speclife LC-2, L2 |
 | LCH-3 | MUST | Record each resource (worktree, place, agent) with a state such as `creating` or `started` before the next step that cannot be undone. A crash leaves a resource close can find. | speclife LC-4, F3, L18 |
 | LCH-4 | MUST | A host timeout during launch is a failure of that member, with the same cleanup as any other, never an abort of the team. | speclife LC-5, F4 |
-| LCH-5 | MUST | A role name is never reused in a team, including a removed member's. | speclife LC-6, L4 |
+| LCH-5 | MUST | A role name is never reused in a team, including a removed member's. One exception: a member whose launch failed before it reached `started` (for example a failed setup) may be launched again under the same role with `--add`; the failed attempt stays in the event log as `member.replaced`. | speclife LC-6, LC-12, L4, L13; archrev 6 |
 | LCH-6 | MUST | Team and role names match `^[a-z][a-z0-9_-]{0,31}$`; the address `<team>-<role>` is unique across live teams. | speclife LC-7, L3 |
 | LCH-7 | MUST | An implementer gets its own checkout. | speclife LC-8, L6 |
 | LCH-8 | MUST | Worktrees are made with `git worktree add` under `<repo>/.worktrees/<slug>` by default, and the start commit (`base_sha`) is recorded. | speclife LC-9, L9, L11; INV-23 |
@@ -209,6 +209,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | LCH-21 | MUST | Per-member harness configuration (hooks, MCP server) is passed per run through files in the team directory. teamwire never registers anything in the user's global configuration. | harness R7; `CLAUDE.md` |
 | LCH-22 | SHOULD | teamwire chooses the member's session id before launch where the harness allows it (Claude: `--session-id`). | harness 1.3 |
 | LCH-23 | SHOULD | Titles are required, at most 28 characters, unique per team ignoring case. | speclife L5 |
+| LCH-24 | MUST | A worktree member's brief is also copied to `<worktree>/TASK.md`, and `TASK.md` is added to the repository's `info/exclude`, so the member reads its brief where it works and never commits it. Close and verify ignore that one path. | speclife L7; archrev 8 |
 
 ### Verify (VER)
 

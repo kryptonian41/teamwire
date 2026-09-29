@@ -49,7 +49,9 @@ under test uses.
 | INV-21: the liveness listing fails for ten polls | Listing error | No `DIED`; watch continues | `crates/teamwire-watch/tests/poll.rs::failed_listing_is_not_death` |
 | INV-22: a multi-line contract | Contract rendered to a file | argv holds only the path | `crates/teamwire-harness-claude/tests/launch_spec.rs::contract_passed_as_file` |
 | INV-23: host worktree command | Never called | Worktree made with `git worktree add` | `crates/teamwire-launch/tests/worktree.rs::worktree_made_with_git_and_base_sha_recorded` |
-| INV-24: setup fails | Non-zero exit | Member refused; place closed; worktree removed without force; log kept; role reusable | `crates/teamwire-launch/tests/setup.rs::failed_setup_undoes_and_role_reusable` |
+| INV-24: setup fails | Non-zero exit | Member refused; place closed; worktree removed without force; log kept; member row `failed`; the same role can be launched again with `--add` | `crates/teamwire-launch/tests/setup.rs::failed_setup_undoes_and_role_reusable` |
+| A removed member's role is launched again | Member row `removed` | Refused; nothing touched | `crates/teamwire-launch/tests/refusals.rs::removed_role_never_reused` |
+| A member runs `git add -A` in its worktree | `TASK.md` is in `info/exclude` | The brief is never committed, so verify raises no out-of-scope flag for it | `crates/teamwire-launch/tests/worktree.rs::task_md_written_and_excluded_from_git` |
 | INV-25: the trust dialog also grants folder commands | Escalation markers on screen | Refused; lead told to answer it | `crates/teamwire-harness-claude/tests/trust.rs::escalated_trust_refused` |
 | INV-26: last team on a lead closes | Hold record `owned` | Released only if owned and no other live team uses it | `crates/teamwire-platform/tests/sleephold.rs::release_only_last_owned` |
 | INV-27: launcher's parent is a throwaway shell | Walk to the lead's harness process | Hold waits on the harness pid; none found means "no hold" said loudly | `crates/teamwire-launch/tests/sleephold.rs::hold_targets_harness_pid` |

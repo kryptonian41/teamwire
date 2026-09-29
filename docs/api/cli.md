@@ -41,13 +41,15 @@ every subcommand. `--json` prints machine-readable output where listed.
 
 Reads a team spec (JSON) from stdin or `--spec`. Validates everything first
 (LCH-2), then per member: records it as `creating`, makes the worktree, runs
-setup, writes contract, brief and per-run config, spawns it through the host,
+setup, writes contract, brief (also as `<worktree>/TASK.md`, excluded from
+git) and per-run config, spawns it through the host,
 answers a plain trust dialog, records it as `started`, and sends the task as
 its first message. Starts or reuses the sleep hold. `--add` adds members to a
 running team. `--dry-run` validates and prints the plan, touching nothing.
 
 Refuses (exit 1, nothing created): a background lead session; any spec error;
-a reused role; a title over 28 characters or repeated; an implementer in
+a reused role (except one whose earlier launch failed before it started,
+LCH-5); a title over 28 characters or repeated; an implementer in
 `pane` mode; a home-directory `cwd`; less than 200 MB free.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default

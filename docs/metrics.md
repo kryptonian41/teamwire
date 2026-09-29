@@ -12,6 +12,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` |
 | `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `reason`, `seconds` |
+| `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |

@@ -209,7 +209,9 @@ the team", "your scope" and finishing parts), adapted from
 `~/.claude/team/bin/team-launch.py:319-569` (read-only) with teamwire's own
 commands, and a test that each rule listed in speclife §1.2 is present; spawn
 through the host; trust through the harness; dispatch sent once; member
-tokens; the sleep hold; `--add`; exit codes 1 and 2. Required tests: every
+tokens; the sleep hold; `--add`, including relaunching a role whose row is
+`failed` (LCH-5); the brief copied to `<worktree>/TASK.md` with `TASK.md` added
+to `info/exclude` (LCH-24); exit codes 1 and 2. Required tests: every
 `crates/teamwire-launch/tests/...` row in `docs/failure-modes.md`.
 
 ### T09 Verify and the report check (wave 3)

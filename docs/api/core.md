@@ -150,7 +150,7 @@ names in `docs/metrics.md` section 1:
 
 ```
 team.created team.closing team.closed team.lead_adopted
-member.creating member.started member.failed member.removed member.reprompted
+member.creating member.started member.failed member.replaced member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
 delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent
