@@ -266,7 +266,7 @@ fn the_started_agent_gets_a_cleared_environment() {
             &[
                 ("TEAMWIRE_TOKEN", "leak"),
                 ("TEAMWIRE_ROLE", "api"),
-                ("HERDR_PANE_ID", "w1:p1"),
+                ("HERDR_PANE_ID", "caller-pane"),
                 ("FAKE_KEEP", "yes"),
             ],
         )
@@ -297,11 +297,16 @@ fn the_started_agent_gets_a_cleared_environment() {
     for absent in [
         "TEAMWIRE_TOKEN",
         "TEAMWIRE_ROLE",
-        "HERDR_PANE_ID",
+        "caller-pane",
         "TEAMWIRE_CLAUDE_DIR",
     ] {
         assert!(!dump.contains(absent), "{absent} leaked into {dump}");
     }
+    // The agent gets its own pane's variable, as real herdr sets it.
+    assert!(
+        dump.contains(&format!("HERDR_PANE_ID={pane_id}")),
+        "own pane id missing from {dump}"
+    );
 }
 
 #[test]

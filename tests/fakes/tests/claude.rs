@@ -724,3 +724,34 @@ fn agents_json_lists_both_row_shapes_and_starts_no_session() {
         "listing must start no session"
     );
 }
+
+#[test]
+fn the_agent_gets_its_panes_herdr_variables() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![Step::Run(
+        r#"printf '%s|%s' "$HERDR_ENV" "$HERDR_PANE_ID" > "$TMPDIR/herdr-env.txt""#.into(),
+    )]))
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    let pane_id = pane(&env);
+    let started = env
+        .run(&[
+            "agent",
+            "start",
+            "tw_demo_api",
+            "--kind",
+            "claude",
+            "--pane",
+            &pane_id,
+            "--",
+            "--settings",
+            &settings,
+        ])
+        .unwrap();
+    assert_eq!(started.code, Some(0), "{started:?}");
+    prompt(&env, "do the step");
+    assert_eq!(
+        wait_for_file(&tmp(&env, "herdr-env.txt")),
+        format!("1|{pane_id}")
+    );
+}

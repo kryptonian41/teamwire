@@ -69,8 +69,8 @@ fn spawn_agent(dir: &Path, pane: &Pane, tail: &[String]) -> Result<u32, CliError
         .map_err(|e| fail("internal_error", e.to_string()))?;
     let mut cmd = std::process::Command::new(claude_program());
     cmd.args(tail).env_clear();
-    // A cleared environment. A real pane has the login environment plus
-    // HERDR_* variables, so this is stricter on purpose: a member's identity
+    // A cleared environment plus the pane's HERDR_* variables. A real pane
+    // also has the login environment, so this is stricter on purpose: a member's identity
     // must arrive through its own config, and a test fails if it does not.
     for name in ["PATH", "HOME", "TMPDIR"] {
         if let Some(value) = std::env::var_os(name) {
@@ -86,7 +86,13 @@ fn spawn_agent(dir: &Path, pane: &Pane, tail: &[String]) -> Result<u32, CliError
         cmd.env("FAKE_CLAUDE_DIR", dir);
     }
     cmd.env("FAKE_PANE_DIR", dir)
-        .env("FAKE_PANE_ID", &pane.pane_id);
+        .env("FAKE_PANE_ID", &pane.pane_id)
+        // Real herdr gives every pane these, and the locator reads
+        // HERDR_PANE_ID from the session's process to find its place.
+        .env("HERDR_ENV", "1")
+        .env("HERDR_PANE_ID", &pane.pane_id)
+        .env("HERDR_TAB_ID", &pane.tab_id)
+        .env("HERDR_WORKSPACE_ID", &pane.workspace_id);
     if Path::new(&pane.cwd).is_dir() {
         cmd.current_dir(&pane.cwd);
     }

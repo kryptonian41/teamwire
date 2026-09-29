@@ -213,9 +213,11 @@ means the fake itself is broken (no `FAKE_HERDR_STATE`).
 starts `fake-claude` (or `$FAKE_CLAUDE_BIN`) in the pane with a **cleared
 environment**: only `PATH`, `HOME`, `TMPDIR`, every `FAKE_*` variable, plus
 `FAKE_PANE_DIR`, `FAKE_PANE_ID` and `FAKE_CLAUDE_DIR` (its own
-`TEAMWIRE_CLAUDE_DIR`, renamed). No `TEAMWIRE_*` and no `HERDR_*` variable
-reaches the agent, so a member gets its identity only through its
-`settings.json` `env`. Like herdr it waits until the agent is ready:
+`TEAMWIRE_CLAUDE_DIR`, renamed), and the pane's own `HERDR_ENV=1`,
+`HERDR_PANE_ID`, `HERDR_TAB_ID` and `HERDR_WORKSPACE_ID`, as real herdr sets
+them (the locator reads `HERDR_PANE_ID` from the session's process). No
+`TEAMWIRE_*` variable from the caller reaches the agent, so a member gets its
+identity only through its `settings.json` `env`. Like herdr it waits until the agent is ready:
 `agent_not_ready` (the agent stays running) when the agent shows a startup
 dialog, `timeout` when it never becomes ready. It refuses a newline in an
 argument (`invalid_agent_argument`), a second agent in a pane
