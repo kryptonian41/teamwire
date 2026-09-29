@@ -8,24 +8,29 @@
 //! key carries its generation or episode number; `TEAM-COMPLETE` is printed
 //! once, when every live member is settled.
 
+mod apply;
+mod lease;
+mod memory;
+mod observe;
+mod plan;
+mod poll;
+mod snapshot;
+mod text;
+
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
-    Actor, DeliveryState, DisplayId, Liveness, MessageType, OneLine, Recipient, ReportState, Role,
+    Actor, DeliveryState, DisplayId, Liveness, MessageType, Recipient, ReportState, Role,
     SessionId, TeamName, TeamState, Timestamp,
 };
 use teamwire_store::Ctx;
 
-const NOT_BUILT: &str = "teamwire-watch is not built yet";
+pub use lease::{WatchError, start, stop};
+pub use memory::{WatchEnd, WatchMemory};
+pub use poll::poll;
 
-/// What the watch remembers from one poll to the next, in this process.
-/// Everything that must outlive the process is in the store.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct WatchMemory {
-    pub polls: u64,
-    pub last_poll: Option<Timestamp>,
-}
+const NOT_BUILT: &str = "teamwire-watch is not built yet";
 
 /// The lead as `status` shows it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -98,11 +103,6 @@ pub struct StatusView {
     pub undelivered_results: Vec<UndeliveredResult>,
     /// Why part of the view could not be read.
     pub errors: Vec<String>,
-}
-
-/// One poll: at most one line, announcements stored before it is returned.
-pub fn poll(_ctx: &mut Ctx<'_>, _state: &mut WatchMemory) -> Option<OneLine> {
-    None
 }
 
 /// The status view. Reads only.
