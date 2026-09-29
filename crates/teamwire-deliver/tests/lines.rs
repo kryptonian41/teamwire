@@ -6,8 +6,8 @@
 
 use std::path::Path;
 
-use teamwire_core::{Actor, CompletionStatus, DisplayId, MessageType, Role, TeamName};
-use teamwire_deliver::{message_line, result_line};
+use teamwire_core::{Actor, CompletionStatus, DisplayId, MessageType, Recipient, Role, TeamName};
+use teamwire_deliver::{message_line, message_line_to, result_line};
 
 fn team() -> TeamName {
     TeamName::parse("tw").unwrap()
@@ -132,7 +132,7 @@ fn result_line_has_the_documented_shape() {
     );
     assert_eq!(
         line.as_str(),
-        "[teamwire:tw] api finished (done). fixed the parser Full result: /home/u/.teamwire/teams/tw/outbox/api.md"
+        "[teamwire:tw] api finished (done). fixed the parser. Full result: /home/u/.teamwire/teams/tw/outbox/api.md"
     );
 }
 
@@ -184,4 +184,66 @@ fn path_with_a_line_break_stays_on_one_line() {
         Path::new("/out/a\nb.md"),
     );
     assert!(!line.as_str().contains('\n'));
+}
+
+#[test]
+fn a_question_to_the_lead_names_the_team_from_lead_and_the_stored_copy() {
+    let comms = Path::new("/home/u/.teamwire/teams/tw/comms/m014.md");
+    let line = message_line_to(
+        &team(),
+        &id(),
+        MessageType::Question,
+        &member("api"),
+        "which schema version?",
+        &Recipient::Lead,
+        comms,
+    );
+    let text = line.as_str();
+    assert!(
+        text.contains("Full text: /home/u/.teamwire/teams/tw/comms/m014.md"),
+        "{text}"
+    );
+    assert!(!text.contains("teamwire inbox"), "{text}");
+    assert!(
+        text.contains("Answer with: teamwire send tw --from lead --to api --type answer --re m014"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_member_reader_gets_the_member_line() {
+    let comms = Path::new("/x/comms/m014.md");
+    let for_member = message_line_to(
+        &team(),
+        &id(),
+        MessageType::Question,
+        &member("api"),
+        "which schema version?",
+        &Recipient::Member(Role::parse("rust").unwrap()),
+        comms,
+    );
+    let plain = message_line(
+        &team(),
+        &id(),
+        MessageType::Question,
+        &member("api"),
+        "which schema version?",
+    );
+    assert_eq!(for_member.as_str(), plain.as_str());
+}
+
+#[test]
+fn a_summary_that_already_ends_a_sentence_gets_no_second_stop() {
+    let line = result_line(
+        &team(),
+        &Role::parse("api").unwrap(),
+        CompletionStatus::Done,
+        "Fixed the parser!",
+        Path::new("/o/api.md"),
+    );
+    assert!(
+        line.as_str().contains("Fixed the parser! Full result"),
+        "{}",
+        line.as_str()
+    );
 }
