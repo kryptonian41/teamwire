@@ -19,11 +19,30 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 pub(crate) struct Git<'a> {
     platform: &'a dyn Platform,
     dir: &'a Path,
+    timeout: Duration,
 }
 
 impl<'a> Git<'a> {
     pub(crate) fn new(platform: &'a dyn Platform, dir: &'a Path) -> Self {
-        Self { platform, dir }
+        Self {
+            platform,
+            dir,
+            timeout: GIT_TIMEOUT,
+        }
+    }
+
+    /// The same, with a shorter bound on each call. The report check runs
+    /// inside a Stop hook that has seconds, not minutes.
+    pub(crate) fn with_timeout(
+        platform: &'a dyn Platform,
+        dir: &'a Path,
+        timeout: Duration,
+    ) -> Self {
+        Self {
+            platform,
+            dir,
+            timeout,
+        }
     }
 
     /// Runs git and returns its output whatever the exit code was.
@@ -35,7 +54,7 @@ impl<'a> Git<'a> {
             .env("GIT_OPTIONAL_LOCKS", "0")
             .env("GIT_TERMINAL_PROMPT", "0");
         self.platform
-            .run(&cmd, GIT_TIMEOUT)
+            .run(&cmd, self.timeout)
             .map_err(|e| VerifyError::Git(format!("git {}: {e}", args.join(" "))))
     }
 

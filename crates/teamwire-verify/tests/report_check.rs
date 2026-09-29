@@ -9,7 +9,7 @@
 pub mod fixture;
 
 use fixture::{Fixture, Repo, implementer, start_secs};
-use teamwire_core::{MemberKind, Mode, ReportGaps};
+use teamwire_core::{MemberKind, Mode, ReportGaps, RunOutput};
 use teamwire_verify::{VerifyError, report_check};
 
 fn short(sha: &str) -> String {
@@ -180,4 +180,41 @@ fn a_git_failure_is_an_error_the_caller_turns_into_no_gaps() {
     let member = fx.member("api");
     let err = report_check(&fx.ctx(), &member).unwrap_err();
     assert!(matches!(err, VerifyError::Git(_)), "{err:?}");
+}
+
+#[test]
+fn every_git_call_of_the_check_has_a_ten_second_bound_and_a_hang_is_an_error() {
+    let repo = repo();
+    repo.commit(&[("src/a.rs", "")], "own", start_secs() + 5);
+    let mut fx = member_of(&repo);
+    fx.write_report("api", DECISIONS);
+    // A git that hangs: the platform reports the timeout, as `run` does.
+    fx.platform.script_next(
+        "git",
+        RunOutput {
+            exit_code: RunOutput::TIMEOUT_EXIT,
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            timed_out: true,
+        },
+    );
+    let member = fx.member("api");
+    let err = report_check(&fx.ctx(), &member).unwrap_err();
+    assert!(matches!(err, VerifyError::Git(_)), "{err:?}");
+    let commands = fx.platform.commands();
+    assert!(!commands.is_empty());
+    for (cmd, timeout) in commands {
+        assert_eq!(cmd.program, "git");
+        assert_eq!(timeout, std::time::Duration::from_secs(10), "{cmd:?}");
+    }
+}
+
+#[test]
+fn the_report_path_helper_names_the_file_the_check_reads() {
+    let repo = repo();
+    let fx = member_of(&repo);
+    fx.write_report("api", "x");
+    let path = teamwire_verify::report_path(&fx.team_dir(), &fx.member("api").role);
+    assert_eq!(path, fx.team_dir().join("reports").join("api.md"));
+    assert!(path.is_file());
 }

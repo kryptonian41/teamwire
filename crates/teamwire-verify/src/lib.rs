@@ -27,7 +27,7 @@ mod report;
 mod rules;
 
 pub use files::{DeepReport, FileFinding, FileProblem, check_copies, deep_check, repair_copies};
-pub use report::report_check;
+pub use report::{report_check, report_path};
 
 use git::Git;
 use inspect::{RawFlag, inspect_diff};
