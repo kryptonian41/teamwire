@@ -8,7 +8,7 @@ use teamwire_core::{
     Actor, DisplayId, EventType, Message, MessageType, Recipient, Timestamp, Ulid,
 };
 
-use crate::delivery::DeliveryRecord;
+use crate::delivery::{DELIVERY_COLS, DeliveryRecord, delivery_from_row_at};
 use crate::error::StoreError;
 use crate::tx::{
     Listing, ReadTx, Tx, bad, col, listing, one, parsed, parsed_opt, sha256, ts, ulid_col,
@@ -46,7 +46,24 @@ pub struct MessageFilter {
     pub kind: Option<MessageType>,
     /// Only messages created at or after this time.
     pub since: Option<Timestamp>,
+    /// Messages sent by or delivered to this party (`log --role`). Combines
+    /// with the other fields by AND.
+    pub involving: Option<Actor>,
     pub limit: Option<u32>,
+    /// With `limit`, keep the newest messages instead of the oldest. The
+    /// result is still oldest first.
+    pub newest: bool,
+}
+
+/// One message in a recipient's inbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboxEntry {
+    /// The message, body included even when it fails its hash.
+    pub message: Message,
+    /// False when the body no longer matches `message.body_sha256`. The
+    /// service reports it and records a `store.error` event.
+    pub hash_ok: bool,
+    pub delivery: DeliveryRecord,
 }
 
 /// A message this sender sent to one recipient, and how that delivery stands.
@@ -60,14 +77,25 @@ pub(crate) const MESSAGE_COLS: &str = "m.ulid, m.display_id, m.sender, m.seq, m.
      m.commit_sha, m.body, m.body_sha256, m.created_at";
 
 pub(crate) fn message_from_row(row: &Row<'_>) -> Result<Message, String> {
+    let (message, hash_ok) = message_and_hash_ok(row)?;
+    if hash_ok {
+        Ok(message)
+    } else {
+        Err("the body does not match its stored hash".to_owned())
+    }
+}
+
+/// Parses a message row without refusing a body that fails its hash. The
+/// message carries the hash that was stored; the flag says whether the body
+/// still matches it.
+fn message_and_hash_ok(row: &Row<'_>) -> Result<(Message, bool), String> {
     let seq: i64 = col(row, 3)?;
     let body: String = col(row, 7)?;
     let stored: Vec<u8> = col(row, 8)?;
-    let hash = sha256(body.as_bytes());
-    if stored != hash {
-        return Err("the body does not match its stored hash".to_owned());
-    }
-    Ok(Message {
+    let stored: [u8; 32] =
+        <[u8; 32]>::try_from(stored).map_err(|v| format!("stored hash of {} bytes", v.len()))?;
+    let hash_ok = stored == sha256(body.as_bytes());
+    let message = Message {
         ulid: ulid_col(row, 0)?,
         display_id: parsed(row, 1, "display id", DisplayId::parse)?,
         sender: parsed(row, 2, "sender", Actor::parse)?,
@@ -76,9 +104,10 @@ pub(crate) fn message_from_row(row: &Row<'_>) -> Result<Message, String> {
         re: parsed_opt(row, 5, "re", Ulid::parse)?,
         commit: col(row, 6)?,
         body,
-        body_sha256: hash,
+        body_sha256: stored,
         created_at: ts(row, 9)?,
-    })
+    };
+    Ok((message, hash_ok))
 }
 
 impl Tx<'_> {
@@ -231,19 +260,65 @@ impl ReadTx<'_> {
                 recipient.as_str().to_owned(),
             );
         }
+        if let Some(who) = &filter.involving {
+            bind(
+                "(m.sender = ? OR EXISTS (SELECT 1 FROM deliveries d2
+                   WHERE d2.message_ulid = m.ulid AND d2.recipient = ?))",
+                who.as_str().to_owned(),
+            );
+        }
         let limit = filter
             .limit
             .map_or_else(String::new, |n| format!(" LIMIT {n}"));
+        let order = if filter.newest && filter.limit.is_some() {
+            "DESC"
+        } else {
+            "ASC"
+        };
         let mut stmt = self.connection().prepare(&format!(
-            "SELECT {MESSAGE_COLS} FROM messages m WHERE {} ORDER BY m.rowid{limit}",
+            "SELECT {MESSAGE_COLS} FROM messages m WHERE {} ORDER BY m.rowid {order}{limit}",
             conditions.join(" AND ")
         ))?;
-        listing(
+        let mut found = listing(
             "messages",
             &mut stmt,
             rusqlite::params_from_iter(args),
             message_from_row,
-        )
+        )?;
+        if order == "DESC" {
+            found.items.reverse();
+            found.bad.reverse();
+        }
+        Ok(found)
+    }
+
+    /// The deliveries to `recipient` in any of `states`, each with its message
+    /// body and whether the body still matches its hash. A body that fails
+    /// its hash is returned, not skipped, so the recipient can be told. Rows
+    /// that do not parse otherwise are reported in `bad`.
+    pub fn inbox(
+        &self,
+        recipient: &Recipient,
+        states: &[teamwire_core::DeliveryState],
+    ) -> Result<Listing<InboxEntry>, StoreError> {
+        let list = states
+            .iter()
+            .map(|s| format!("'{}'", s.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {MESSAGE_COLS}, {DELIVERY_COLS} FROM messages m
+             JOIN deliveries d ON d.message_ulid = m.ulid
+             WHERE d.recipient = ?1 AND d.state IN ({list}) ORDER BY m.rowid"
+        ))?;
+        listing("messages", &mut stmt, [recipient.as_str()], |row| {
+            let (message, hash_ok) = message_and_hash_ok(row)?;
+            Ok(InboxEntry {
+                message,
+                hash_ok,
+                delivery: delivery_from_row_at(row, 10)?,
+            })
+        })
     }
 
     /// What `sender` sent to `recipient` at or after `since`, with each

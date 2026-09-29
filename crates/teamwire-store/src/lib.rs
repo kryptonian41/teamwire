@@ -41,7 +41,7 @@ pub use delivery::{DeliveryRecord, DeliveryUpdate};
 pub use error::StoreError;
 pub use export::{ExportClaim, ExportMark};
 pub use member::NewMember;
-pub use message::{MessageFilter, NewMessage, SentRecord, StoredMessage};
+pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};
 pub use store::{APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path};
 pub use team::{CloseEnd, NewTeam, TeamRow};
 pub use tx::{BadRow, Listing, ReadTx, Tx};

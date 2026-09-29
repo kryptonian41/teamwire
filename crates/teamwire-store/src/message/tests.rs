@@ -261,3 +261,91 @@ fn counters_are_readable() {
     );
     assert_eq!(f.store.read(|tx| tx.counter("seq:api")).unwrap(), Some(1));
 }
+
+#[test]
+fn inbox_returns_a_tampered_body_with_hash_ok_false() {
+    let mut f = with_members(&["api", "web"]);
+    for body in ["one", "two"] {
+        f.store
+            .write(|tx| tx.insert_message(at(5), &note(from("api"), &[member("web")], body, None)))
+            .unwrap();
+    }
+    f.store
+        .write(|tx| {
+            tx.connection().execute(
+                "UPDATE messages SET body = 'edited' WHERE display_id = 'm001'",
+                [],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let states = [DeliveryState::Pending, DeliveryState::HandedOff];
+    let inbox = f
+        .store
+        .read(|tx| tx.inbox(&member("web"), &states))
+        .unwrap();
+    assert!(inbox.bad.is_empty());
+    let got: Vec<(&str, bool)> = inbox
+        .items
+        .iter()
+        .map(|e| (e.message.body.as_str(), e.hash_ok))
+        .collect();
+    assert_eq!(got, [("edited", false), ("two", true)]);
+    assert_eq!(
+        inbox.items[0].delivery.delivery.state,
+        DeliveryState::Pending
+    );
+    // The other reads still refuse the damaged message.
+    let all = f
+        .store
+        .read(|tx| tx.messages(&MessageFilter::default()))
+        .unwrap();
+    assert_eq!((all.items.len(), all.bad.len()), (1, 1));
+}
+
+#[test]
+fn messages_to_or_from_a_role_and_the_newest_n() {
+    let mut f = with_members(&["api", "web", "doc"]);
+    for (s, to, body) in [
+        ("api", "web", "a>w"),
+        ("web", "doc", "w>d"),
+        ("doc", "api", "d>a"),
+        ("api", "doc", "a>d"),
+    ] {
+        f.store
+            .write(|tx| tx.insert_message(at(5), &note(from(s), &[member(to)], body, None)))
+            .unwrap();
+    }
+    let bodies = |f: &crate::testkit::Fixture, filter: MessageFilter| -> Vec<String> {
+        f.store
+            .read(|tx| tx.messages(&filter))
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|m| m.body)
+            .collect()
+    };
+    let web = MessageFilter {
+        involving: Some(from("web")),
+        ..MessageFilter::default()
+    };
+    assert_eq!(bodies(&f, web), ["a>w", "w>d"]);
+    let last_two = MessageFilter {
+        limit: Some(2),
+        newest: true,
+        ..MessageFilter::default()
+    };
+    assert_eq!(bodies(&f, last_two), ["d>a", "a>d"]);
+    let oldest_two = MessageFilter {
+        limit: Some(2),
+        ..MessageFilter::default()
+    };
+    assert_eq!(bodies(&f, oldest_two), ["a>w", "w>d"]);
+    let api_last = MessageFilter {
+        involving: Some(from("api")),
+        limit: Some(1),
+        newest: true,
+        ..MessageFilter::default()
+    };
+    assert_eq!(bodies(&f, api_last), ["a>d"]);
+}

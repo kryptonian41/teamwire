@@ -33,9 +33,15 @@ pub(crate) const DELIVERY_COLS: &str = "d.message_ulid, d.recipient, d.state, d.
      d.error_code, d.error_detail, d.reminded_at, d.acked_at";
 
 pub(crate) fn delivery_from_row(row: &Row<'_>) -> Result<DeliveryRecord, String> {
-    let attempts: i64 = col(row, 3)?;
-    let code: Option<String> = col(row, 5)?;
-    let detail: Option<String> = col(row, 6)?;
+    delivery_from_row_at(row, 0)
+}
+
+/// Parses the `DELIVERY_COLS` that start at column `o`, for queries that
+/// select other columns first.
+pub(crate) fn delivery_from_row_at(row: &Row<'_>, o: usize) -> Result<DeliveryRecord, String> {
+    let attempts: i64 = col(row, o + 3)?;
+    let code: Option<String> = col(row, o + 5)?;
+    let detail: Option<String> = col(row, o + 6)?;
     let error = match code {
         Some(code) => Some(DeliveryError {
             code: DeliveryErrorCode::parse(&code).map_err(|e| bad("error code", e))?,
@@ -45,15 +51,15 @@ pub(crate) fn delivery_from_row(row: &Row<'_>) -> Result<DeliveryRecord, String>
     };
     Ok(DeliveryRecord {
         delivery: Delivery {
-            message: ulid_col(row, 0)?,
-            recipient: parsed(row, 1, "recipient", Recipient::parse)?,
-            state: parsed(row, 2, "state", DeliveryState::parse)?,
+            message: ulid_col(row, o)?,
+            recipient: parsed(row, o + 1, "recipient", Recipient::parse)?,
+            state: parsed(row, o + 2, "state", DeliveryState::parse)?,
             attempts: u32::try_from(attempts).map_err(|e| bad("attempts", e))?,
-            route: parsed_opt(row, 4, "route", Route::parse)?,
+            route: parsed_opt(row, o + 4, "route", Route::parse)?,
             error,
-            acked_at: ts_opt(row, 8)?,
+            acked_at: ts_opt(row, o + 8)?,
         },
-        reminded_at: ts_opt(row, 7)?,
+        reminded_at: ts_opt(row, o + 7)?,
     })
 }
 
