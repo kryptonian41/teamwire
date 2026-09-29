@@ -20,11 +20,10 @@ mod facts;
 mod git;
 mod hold;
 mod plan;
+mod remove;
 mod team_close;
 
 pub use plan::plan_close_with;
-
-const NOT_BUILT: &str = "teamwire-close is not built yet";
 
 /// The whole team, or one member.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,10 +119,7 @@ pub fn close_observed(
     }
     match target {
         CloseTarget::Team => team_close::run(ctx, opts, observer),
-        CloseTarget::Member(role) => CloseReport {
-            stopped_at: Some(format!("{NOT_BUILT} ({role})")),
-            ..CloseReport::default()
-        },
+        CloseTarget::Member(role) => remove::run(ctx, &role, &opts, observer),
     }
 }
 

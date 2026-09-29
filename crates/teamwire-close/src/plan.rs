@@ -4,8 +4,8 @@
 use teamwire_core::{Member, Role, TeamState};
 use teamwire_store::{Ctx, TeamRow};
 
-use crate::facts::{self, busy_refusal, dirty_refusal, live};
-use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive};
+use crate::facts::{self, live};
+use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, remove};
 
 fn step(name: &str, detail: impl Into<String>) -> CloseStep {
     CloseStep {
@@ -160,6 +160,11 @@ fn member_plan(
         plan.refusals.push(facts::no_such_member(role, team));
         return plan;
     };
+    if member.state == teamwire_core::MemberState::Removed {
+        plan.steps
+            .push(step("mark_removed", format!("{role} was already removed")));
+        return plan;
+    }
     if team.state != TeamState::Open {
         plan.refusals.push(format!(
             "team {} is {}: a member cannot be removed now",
@@ -167,8 +172,14 @@ fn member_plan(
         ));
         return plan;
     }
-    plan.refusals.extend(busy_refusal(ctx, member, opts.stop));
-    plan.refusals.extend(dirty_refusal(ctx, member));
+    let gate = remove::gate(ctx, team, members, member, opts);
+    plan.refusals = gate.refusals;
+    plan.steps.extend(gate.overridden.into_iter().map(|why| {
+        step(
+            "unverified",
+            format!("removing anyway (--unverified): {why}"),
+        )
+    }));
     plan.steps
         .push(step("close_place", format!("close {role}'s own place")));
     plan.steps.push(step(

@@ -39,3 +39,16 @@ pub(crate) fn failure_text(out: &RunOutput) -> String {
         text.to_owned()
     }
 }
+
+/// The trimmed standard output of a call that must succeed.
+pub(crate) fn stdout_of(
+    platform: &dyn Platform,
+    dir: &Path,
+    args: &[&str],
+) -> Result<String, String> {
+    let out = run(platform, dir, args)?;
+    if !out.success() {
+        return Err(format!("git {}: {}", args.join(" "), failure_text(&out)));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+}

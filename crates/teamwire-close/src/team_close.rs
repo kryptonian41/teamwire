@@ -436,7 +436,7 @@ fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<String>, String>
 
 /// What a kept branch has that no remote has (CLS-8): commits ahead of its
 /// upstream, or, with no upstream, every commit since the member started.
-fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<String> {
+pub(crate) fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<String> {
     if member.state == MemberState::Failed || !member.cwd.is_dir() {
         return Vec::new();
     }
