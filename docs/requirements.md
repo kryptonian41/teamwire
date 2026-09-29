@@ -282,7 +282,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | OBS-2 | MUST | OpenTelemetry export is a separate step that reads the store after an exported-up-to mark. A missing or slow collector never changes a command's exit code or timing. | rust 21, 22 |
 | OBS-3 | MUST | `teamwire metrics` shows the local metrics with no collector configured. | brief |
 | OBS-4 | MUST | Each member's environment gets `OTEL_RESOURCE_ATTRIBUTES` with `teamwire.team` and `teamwire.role` appended, and the harness session id is recorded on teamwire's own spans. Per-message and per-run ids never go into resource attributes. | harness R18 |
-| OBS-5 | SHOULD | Pin `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` (0.33.x) and `tracing-opentelemetry` (0.34.x) together. | rust 25 |
+| OBS-5 | SHOULD | Pin `opentelemetry-proto` to one exact 0.33.x and build OTLP requests from stored events (delta points at event time, spans from event pairs); a second exporter running at the same time never sends a batch twice. | rust 25; archrev 10 |
 
 ### Security and trust (SEC)
 

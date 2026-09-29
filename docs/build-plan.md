@@ -66,9 +66,10 @@ Builds:
   `docs/conventions.md` §3 and §4. `[workspace.dependencies]` declares every
   crate any ticket will use, at the newest version on crates.io at build
   time except these exact pins: `rmcp = "=3.5.0"` (features `server`,
-  `transport-io`, `macros`, `schemars`); `opentelemetry`, `opentelemetry_sdk`,
-  `opentelemetry-otlp` pinned to one `=0.33.x` (OTLP with `http-proto` and
-  `reqwest-blocking-client`). The others: `rusqlite` (feature `bundled`),
+  `transport-io`, `macros`, `schemars`); `opentelemetry-proto` pinned to one
+  `=0.33.x` (metrics and traces, generated protobuf types) with the matching
+  `prost`, and `ureq` as the blocking HTTP client for OTLP (ADR 0005 point 8).
+  The others: `rusqlite` (feature `bundled`),
   `serde`, `serde_json`, `thiserror`, `ulid`, `uuid` (v4), `time`
   (formatting, parsing), `sha2`, `hex`, `getrandom`, `clap` (derive),
   `tokio` (only for `teamwire-mcp`), `schemars`, `tracing`,
@@ -247,8 +248,10 @@ property. Port the scripted poll sequences of
 ### T11 Metrics and OpenTelemetry export (wave 4)
 
 `teamwire metrics` queries for every metric in `docs/metrics.md`, per team and
-across teams and archives; `export_once` with the export mark, deterministic
-trace and span ids, spans from event pairs; `teamwire export` as JSON lines.
+across teams and archives; `export_once` with the claim-send-commit steps of
+ADR 0005 point 3, delta points in 60 s event-time buckets, deterministic
+trace and span ids, spans sent with their end event and their start looked
+up by id; `teamwire export` as JSON lines.
 Tests use an in-process OTLP receiver stub over HTTP on localhost. Required
 tests: every `crates/teamwire-otel/tests/...` row in `docs/failure-modes.md`.
 

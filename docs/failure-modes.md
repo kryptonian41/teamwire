@@ -97,7 +97,10 @@ under test uses.
 | Disk nearly full at launch | Free bytes under 200 MB | Launch refused | `crates/teamwire-launch/tests/refusals.rs::low_disk_refused` |
 | The state directory is on a network filesystem | Platform check | `doctor` warns | `crates/teamwire-cli/tests/doctor.rs::network_fs_warned` |
 | The OTel collector is down | Export error | Mark not moved; commands unaffected; export retried on the next run | `crates/teamwire-otel/tests/export.rs::collector_down_keeps_mark` |
-| The exporter crashes after flush, before the mark | Mark unchanged | That batch is exported again once | `crates/teamwire-otel/tests/export.rs::crash_before_mark_reexports_once` |
+| The exporter crashes after flush, before the mark | Claim left with a dead pid | After 5 minutes the claim is taken over and that batch is exported again once | `crates/teamwire-otel/tests/export.rs::crash_before_mark_reexports_once` |
+| The watch's exporter and `teamwire metrics export` run at once | Conditional claim update | One sends the batch; the other sends nothing; no counter doubles | `crates/teamwire-otel/tests/export.rs::two_exporters_never_send_one_batch_twice` |
+| A span's start and end events fall in different batches | Start looked up by id | The span is sent whole, once, with the batch that holds its end | `crates/teamwire-otel/tests/export.rs::span_across_batches_is_whole` |
+| A backlog is exported after a collector outage | Points bucketed by event time | Each point carries its bucket's real time; deltas, no counter reset | `crates/teamwire-otel/tests/export.rs::backlog_keeps_event_times_as_deltas` |
 | A hook is given garbage on stdin | Parse error | Exit 0, nothing changed | `crates/teamwire-cli/tests/hook.rs::garbage_stdin_exits_zero` |
 | A hook runs in a session that is not a member | `TEAMWIRE_TEAM` unset | Exit 0 before opening any file | `crates/teamwire-cli/tests/hook.rs::non_member_returns_immediately` |
 | A different session runs in a member's old place | Hook `session_id` differs from the member's | Exit 0, not treated as the member | `crates/teamwire-report/tests/turn_end.rs::other_session_is_not_member` |

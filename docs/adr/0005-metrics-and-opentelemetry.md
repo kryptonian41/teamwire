@@ -38,20 +38,37 @@ Options:
    change (OBS-1). Event types are listed in `docs/metrics.md`.
 2. `teamwire metrics` computes counts, rates and durations from the event rows
    with SQL, per team or across every team and archive, with no collector.
-3. `teamwire metrics export` reads events after the `metric_export` mark,
-   records them into OTel instruments, force-flushes, and only then advances
-   the mark in a transaction. `teamwire watch` runs the same step on a
-   background thread every 60 s when an endpoint is set, so a slow collector
-   never delays a watch line. A crash between flush and mark re-exports that
-   batch once. We accept rare duplicates over loss.
-4. Export is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (or the same key
+3. `teamwire metrics export` and the watch's background thread (every 60 s
+   when an endpoint is set, so a slow collector never delays a watch line)
+   run the same step, and two of them may run at once. Each export:
+   1. **Claims** a batch with one conditional update:
+      `UPDATE metric_export SET claimed_to = :to, claimed_by = :pid,
+      claimed_at = :now WHERE last_event_seq = :mark AND claimed_to IS NULL`.
+      Zero rows changed means another exporter holds the batch; this one
+      exits with nothing sent. A claim older than 5 minutes whose pid is dead
+      may be taken over.
+   2. Sends the batch.
+   3. Commits `last_event_seq = claimed_to, claimed_to = NULL` in one
+      transaction. A crash between 2 and 3 re-exports that batch once, after
+      the claim expires. Two live exporters never send the same batch.
+4. **Metric points carry event times, as deltas.** Events are grouped into
+   60-second buckets by their own `time`, per metric and label set, and each
+   bucket is sent as one delta data point (`start_time` and `time` are the
+   bucket bounds). A backlog sent after a collector outage therefore keeps
+   its real times, and an exporter process that starts fresh never looks like
+   a counter reset. Cumulative totals are the backend's job.
+4a. Export is off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (or the same key
    in `$TEAMWIRE_HOME/config.toml`). A missing collector never changes an exit
    code (OBS-2).
 5. Traces are rebuilt from events with their recorded start and end times.
    The trace id for a team is the first 16 bytes of SHA-256 of the team's
    ULID, so every export run produces the same trace id for the same team.
-   Span ids come from the event ULIDs the same way. Spans are listed in
-   `docs/metrics.md`.
+   Span ids come from the event ULIDs the same way. A span is sent when its
+   **end** event is in the batch; its start event is looked up by id in the
+   whole events table, not only in the batch, so a span whose start went out
+   in an earlier batch is still whole. A span whose end has not happened yet
+   is not sent. Parent span ids are computed, so a child can be sent before
+   its parent. Spans are listed in `docs/metrics.md`.
 6. Labels on metrics are low-cardinality only: team, role, kind, type,
    state, route, reason, harness, host. Message ids and session ids go on
    spans and events, never on metric labels.
@@ -62,9 +79,13 @@ Options:
    that with the harness's own switch (for Claude,
    `CLAUDE_CODE_ENABLE_TELEMETRY=1`). The member's harness session id is
    stored on teamwire's spans, so the two can be joined (OBS-4).
-8. Crates: `opentelemetry`, `opentelemetry_sdk`, `opentelemetry-otlp` pinned
-   to one 0.33.x, with the HTTP/protobuf exporter and a blocking client, so
-   export needs no async runtime. `tracing` is used for teamwire's own logs,
+8. Crates: the exporter builds OTLP/HTTP protobuf requests itself with
+   `opentelemetry-proto` (pinned to the same 0.33.x family, features for
+   metrics and traces) and `prost`, and posts them with a blocking HTTP client
+   (`ureq`), so export needs no async runtime. The SDK's in-process
+   instruments are not used: they stamp points with the export time and keep
+   cumulative state per process, which is the wrong shape for points rebuilt
+   from stored events. `tracing` is used for teamwire's own logs,
    written to stderr. `tracing-opentelemetry` is not needed in v1, because
    spans are built from events, not from live `tracing` spans.
 
