@@ -54,7 +54,12 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
             return ExitCode::from(REFUSED);
         }
     };
-    let config = Config::default();
+    // Members get the OTLP export settings in their environment (OBS-4).
+    let mut config = Config::default();
+    if let Some(otlp) = teamwire_otel::load_otlp_config(&home, &|key| std::env::var(key).ok()) {
+        config.otel.endpoint = Some(otlp.endpoint);
+        config.otel.headers = otlp.headers;
+    }
     let env = ValidateEnv {
         home: &home,
         registry: &wiring.registry,

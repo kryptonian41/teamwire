@@ -22,7 +22,6 @@ const STORE_ERROR: u8 = 6;
 const EXPORT_EVERY: Duration = Duration::from_secs(60);
 /// How long the exporter thread sleeps between looks at the stop flag.
 const EXPORT_SLICE: Duration = Duration::from_millis(200);
-const EXPORT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
 fn state_home(global: &Global) -> Option<PathBuf> {
@@ -33,23 +32,11 @@ fn state_home(global: &Global) -> Option<PathBuf> {
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
 }
 
-/// The exporter's target, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
-/// `OTEL_EXPORTER_OTLP_HEADERS` is `name=value,name=value`.
-fn otlp_from_env() -> Option<OtlpConfig> {
-    let endpoint = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT")
-        .ok()
-        .filter(|e| !e.is_empty())?;
-    let headers = std::env::var("OTEL_EXPORTER_OTLP_HEADERS")
-        .unwrap_or_default()
-        .split(',')
-        .filter_map(|pair| pair.split_once('='))
-        .map(|(k, v)| (k.trim().to_owned(), v.trim().to_owned()))
-        .collect();
-    Some(OtlpConfig {
-        endpoint,
-        headers,
-        timeout: EXPORT_TIMEOUT,
-    })
+/// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
+/// the same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a), read
+/// the same way `teamwire metrics export` reads them.
+fn otlp_settings(home: &Path) -> Option<OtlpConfig> {
+    teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok())
 }
 
 /// Sends the export mark's batch every minute until `stop` is set. It has
@@ -169,7 +156,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
 
     let stop = AtomicBool::new(false);
-    let exporter = if *once { None } else { otlp_from_env() };
+    let exporter = if *once { None } else { otlp_settings(&home) };
     let code = std::thread::scope(|scope| {
         if let Some(target) = &exporter {
             scope.spawn(|| export_loop(&home, &team, wiring, &config, target, &stop));

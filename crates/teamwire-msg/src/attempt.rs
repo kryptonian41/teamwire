@@ -6,7 +6,7 @@ use teamwire_core::{
     DeliveryError, DeliveryState, DisplayId, Message, MessageType, Recipient, Refusal, Route,
     TeamName, Timestamp,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, message_line};
+use teamwire_deliver::{DeliveryOutcome, deliver_line, message_line_to};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
 use crate::{RecipientReport, SendError};
@@ -81,12 +81,21 @@ pub(crate) fn deliver_one(
     attempts: u32,
     bump: Option<&Bumped>,
 ) -> Result<RecipientReport, SendError> {
-    let line = message_line(
+    // The lead has no inbox, so its line points at the stored copy.
+    let comms_path = ctx
+        .home
+        .join("teams")
+        .join(team.as_str())
+        .join("comms")
+        .join(format!("{}.md", message.display_id));
+    let line = message_line_to(
         team,
         &message.display_id,
         message.kind,
         &message.sender,
         &message.body,
+        recipient,
+        &comms_path,
     );
     let party = match recipient {
         Recipient::Lead => Party::Lead,
