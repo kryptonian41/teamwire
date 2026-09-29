@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use rusqlite::Row;
-use serde_json::json;
+use serde_json::{Value, json};
 use teamwire_core::{
     Completion, CompletionStatus, DeliveryError, DeliveryErrorCode, EventType, FinalSource,
     ReportState, Role, Route, Timestamp, Ulid,
@@ -237,6 +237,19 @@ impl Tx<'_> {
         completion: &Ulid,
         outcome: &ResultOutcome,
     ) -> Result<bool, StoreError> {
+        self.finish_completion_delivery_with(at, completion, outcome, &Value::Null)
+    }
+
+    /// `finish_completion_delivery`, with `extra` (a JSON object) merged into
+    /// the `result.*` event's data, such as a hook run's `hook` and `hook_ms`
+    /// (`docs/metrics.md` section 5). The fields this method writes win.
+    pub fn finish_completion_delivery_with(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+        outcome: &ResultOutcome,
+        extra: &Value,
+    ) -> Result<bool, StoreError> {
         let event = match outcome.state {
             ReportState::Delivered => EventType::ResultDelivered,
             ReportState::Undelivered => EventType::ResultUndelivered,
@@ -268,16 +281,22 @@ impl Tx<'_> {
             return Ok(false);
         }
         let c = &current.completion;
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("route".to_owned(), json!(outcome.route.map(Route::as_str)));
+        data.insert(
+            "code".to_owned(),
+            json!(outcome.error.as_ref().map(|e| e.code.as_str())),
+        );
+        data.insert(
+            "seconds".to_owned(),
+            json!(seconds_between(c.created_at, at)),
+        );
         self.record_event(
             at,
             event,
             Some(&c.role),
             Some(completion),
-            &json!({
-                "route": outcome.route.map(Route::as_str),
-                "code": outcome.error.as_ref().map(|e| e.code.as_str()),
-                "seconds": seconds_between(c.created_at, at),
-            }),
+            &Value::Object(data),
         )?;
         Ok(true)
     }

@@ -397,3 +397,33 @@ fn route_b_moves_pending_straight_to_delivered_with_one_event() {
     );
     assert_eq!(count_events(&f.store, EventType::ResultDelivered), 1);
 }
+
+#[test]
+fn a_hook_run_puts_its_duration_on_the_outcome_event() {
+    let mut f = with_members(&["api"]);
+    let c = done(&mut f, 10);
+    f.store
+        .write(|tx| tx.claim_completion_for_delivery(at(12), &c, STALE))
+        .unwrap();
+    let extra = serde_json::json!({ "hook": "claude-stop", "hook_ms": 850, "seconds": -1 });
+    assert!(
+        f.store
+            .write(|tx| {
+                tx.finish_completion_delivery_with(
+                    at(13),
+                    &c,
+                    &delivered(Route::HostTyping),
+                    &extra,
+                )
+            })
+            .unwrap()
+    );
+    let e = last_event(&f.store);
+    assert_eq!(e.kind, EventType::ResultDelivered);
+    assert_eq!(
+        (&e.data["hook"], &e.data["hook_ms"]),
+        (&serde_json::json!("claude-stop"), &serde_json::json!(850))
+    );
+    // The method's own fields win over the caller's.
+    assert_eq!(e.data["seconds"], 3.0);
+}
