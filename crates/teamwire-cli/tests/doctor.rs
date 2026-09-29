@@ -42,13 +42,14 @@ mod wiring {
 #[path = "../src/cmd/doctor.rs"]
 mod doctor;
 
-use doctor::{Check, Inputs, Level, diagnose, exit_code};
+use doctor::{Check, Host, Inputs, Level, diagnose, exit_code};
 
 struct Bed {
     home: TestHome,
     claude: TestHome,
     bin: TestHome,
     platform: FakePlatform,
+    host: Host,
 }
 
 impl Bed {
@@ -59,6 +60,7 @@ impl Bed {
             claude: TestHome::new().unwrap(),
             bin: TestHome::new().unwrap(),
             platform: FakePlatform::new(),
+            host: Host::Herdr,
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -73,6 +75,7 @@ impl Bed {
 
     fn checks(&self) -> Vec<Check> {
         diagnose(&Inputs {
+            host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
@@ -259,13 +262,13 @@ fn outside_a_repository_the_ignore_check_passes() {
 }
 
 #[test]
-fn a_missing_harness_or_host_binary_fails_and_tmux_is_optional() {
+fn a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about() {
     let bed = Bed::healthy();
     std::fs::remove_file(bed.bin.path().join("herdr")).unwrap();
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "herdr on PATH"), Level::Fail);
     assert_eq!(level_of(&checks, "claude on PATH"), Level::Pass);
-    assert_eq!(level_of(&checks, "tmux on PATH"), Level::Pass);
+    assert!(!names(&checks).contains(&"tmux on PATH"));
 }
 
 #[test]
@@ -305,7 +308,8 @@ fn teamwire(bed: &Bed, path: &str, cwd: &Path) -> Run {
         .arg(bed.home.path())
         .arg("doctor")
         .current_dir(cwd)
-        .env_remove("HERDR_ENV")
+        .env("HERDR_ENV", "1")
+        .env_remove("TMUX")
         .env("PATH", path)
         .env("TEAMWIRE_CLAUDE_DIR", bed.claude.path())
         .output()
@@ -353,4 +357,53 @@ fn the_binary_exits_zero_when_all_pass_and_two_when_one_fails() {
         "{}",
         no_binaries.out
     );
+}
+
+fn names(checks: &[Check]) -> Vec<&str> {
+    checks.iter().map(|c| c.name.as_str()).collect()
+}
+
+#[test]
+fn the_host_in_use_comes_from_the_environment() {
+    assert_eq!(Host::detect(Some("1"), Some("/tmp/tmux")), Host::Herdr);
+    assert_eq!(
+        Host::detect(None, Some("/tmp/tmux-1/default,1,0")),
+        Host::Tmux
+    );
+    assert_eq!(Host::detect(Some("0"), Some("/tmp/tmux")), Host::Tmux);
+    assert_eq!(Host::detect(None, Some("")), Host::None);
+    assert_eq!(Host::detect(None, None), Host::None);
+}
+
+#[test]
+fn a_tmux_only_setup_passes_without_herdr_or_its_hook() {
+    let mut bed = Bed::healthy();
+    bed.host = Host::Tmux;
+    std::fs::remove_file(bed.bin.path().join("herdr")).unwrap();
+    std::fs::write(bed.bin.path().join("tmux"), "#!/bin/sh\n").unwrap();
+    std::fs::write(bed.claude.path().join("settings.json"), "{}").unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
+    assert!(!names(&checks).contains(&"herdr session hook"));
+    assert!(!names(&checks).contains(&"herdr on PATH"));
+    assert_eq!(exit_code(&checks), 0);
+}
+
+#[test]
+fn a_tmux_setup_without_tmux_on_path_fails() {
+    let mut bed = Bed::healthy();
+    bed.host = Host::Tmux;
+    assert_eq!(level_of(&bed.checks(), "tmux on PATH"), Level::Fail);
+}
+
+#[test]
+fn with_no_host_doctor_says_so_and_requires_neither_host_tool() {
+    let mut bed = Bed::healthy();
+    bed.host = Host::None;
+    std::fs::remove_file(bed.bin.path().join("herdr")).unwrap();
+    std::fs::write(bed.claude.path().join("settings.json"), "{}").unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
+    assert_eq!(level_of(&checks, "host"), Level::Pass);
+    assert!(!names(&checks).contains(&"herdr session hook"));
 }
