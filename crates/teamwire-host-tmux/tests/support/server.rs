@@ -42,10 +42,26 @@ impl PrivateServer {
     }
 }
 
+/// The file tmux keeps for `-L <socket>`: `<TMUX_TMPDIR or /tmp>/tmux-<uid>/<socket>`.
+/// Killing a server leaves it behind, so `Drop` removes it. Only the socket
+/// this value made is ever named.
+fn socket_file(platform: &dyn Platform, socket: &str) -> Option<std::path::PathBuf> {
+    let out = platform
+        .run(&Command::new("id").arg("-u"), Duration::from_secs(10))
+        .ok()?;
+    let uid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+    let base =
+        std::env::var_os("TMUX_TMPDIR").map_or_else(|| "/tmp".into(), std::path::PathBuf::from);
+    Some(base.join(format!("tmux-{uid}")).join(socket))
+}
+
 impl Drop for PrivateServer {
     fn drop(&mut self) {
         let cmd = Command::new("tmux").args(["-L", &self.socket, "kill-server"]);
         drop(self.platform.run(&cmd, Duration::from_secs(10)));
+        if let Some(file) = socket_file(self.platform.as_ref(), &self.socket) {
+            drop(std::fs::remove_file(file));
+        }
     }
 }
 
