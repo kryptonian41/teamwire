@@ -162,6 +162,20 @@ pub(crate) fn answer_startup(
     ))
 }
 
+/// The screen below the last line of the trust dialog. The dialog's text can
+/// stay in the scrollback above the prompt that follows it, and the
+/// classifier reads any dialog text near the end as an open dialog, so the
+/// confirmation looks only at what the dialog left below it.
+fn after_dialog(screen: &str) -> String {
+    let lines: Vec<&str> = screen.lines().collect();
+    let last = lines.iter().rposition(|l| {
+        let l = squash(l);
+        has_any(&l, &PLAIN_TRUST_MARKERS) || has_any(&l, &ESCALATION_MARKERS)
+    });
+    let below = last.map_or(&lines[..], |i| lines.get(i + 1..).unwrap_or_default());
+    below.join("\n")
+}
+
 fn timeout(what: &str) -> HarnessError {
     HarnessError::new(HarnessErrorCode::Timeout, what)
 }
@@ -176,7 +190,7 @@ fn accept(
     host.send_keys(place, &[Key::Down], HOST_TIMEOUT)?;
     host.send_keys(place, &[Key::Enter], HOST_TIMEOUT)?;
     for _ in 0..poll.steps {
-        if classify(&read(host, place)?) == ScreenState::InputPrompt {
+        if classify(&after_dialog(&read(host, place)?)) == ScreenState::InputPrompt {
             return Ok(StartupOutcome::AnsweredPlainTrust);
         }
         std::thread::sleep(poll.step);

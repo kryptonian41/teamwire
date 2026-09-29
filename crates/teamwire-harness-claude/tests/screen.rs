@@ -57,9 +57,42 @@ fn a_permission_prompt_is_a_dialog() {
 }
 
 #[test]
-fn a_dialog_scrolled_above_a_live_prompt_is_a_prompt() {
-    let screen = format!("{PLAIN_TRUST_TEXT}\n{TRUST_OPTION_TEXT}\nwelcome\n{BOX}");
+fn a_dialog_scrolled_far_above_a_live_prompt_is_a_prompt() {
+    // More than eight non-empty lines separate the old dialog from the box.
+    let output = "output line
+"
+    .repeat(9);
+    let screen = format!("{PLAIN_TRUST_TEXT}\n{TRUST_OPTION_TEXT}\n{output}{BOX}");
     assert_eq!(state(&screen), ScreenState::InputPrompt);
+}
+
+#[test]
+fn a_permission_dialog_over_the_input_box_and_footer_is_a_dialog() {
+    // Claude keeps the box and the footer on screen under a live dialog.
+    let screen =
+        format!("Bash command\n  rm -rf x\n Do you want to proceed?\n ❯ 1. Yes\n   2. No\n{BOX}");
+    assert_eq!(state(&screen), ScreenState::Dialog);
+}
+
+#[test]
+fn a_numbered_option_list_near_the_end_is_a_dialog_without_any_marker_text() {
+    let screen = format!("Pick one\n ❯ 1. Yes\n   2. No\n{BOX}");
+    assert_eq!(state(&screen), ScreenState::Dialog);
+}
+
+#[test]
+fn each_dialog_marker_near_a_prompt_gives_dialog() {
+    for marker in [
+        TRUST_OPTION_TEXT,
+        "Is this a project you created",
+        "Do you want to proceed?",
+        "Enter to confirm",
+        "Esc to cancel",
+        "These will apply without asking",
+    ] {
+        let screen = format!("{marker}\n{BOX}");
+        assert_eq!(state(&screen), ScreenState::Dialog, "{marker}");
+    }
 }
 
 #[test]

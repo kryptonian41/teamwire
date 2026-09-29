@@ -20,12 +20,13 @@ pub(crate) const ESCALATION_MARKERS: [&str; 5] = [
 ];
 
 /// Text a permission or confirmation dialog shows.
-const OTHER_DIALOG_MARKERS: [&str; 5] = [
+const OTHER_DIALOG_MARKERS: [&str; 6] = [
     "Do you want to proceed?",
     "Do you want to make this edit",
     "Do you want to create",
     "Do you want to allow",
     "Enter to confirm",
+    "Esc to cancel",
 ];
 
 /// Lines under the input box that only an idle session prints.
@@ -64,10 +65,39 @@ fn pointer_rest(line: &str) -> Option<&str> {
         .map(str::trim)
 }
 
-fn at_input_prompt(tail: &str) -> bool {
+/// The non-empty lines at the end of the screen that can belong to the
+/// input box, its footer, or a dialog drawn over them.
+fn last_lines(tail: &str) -> Vec<&str> {
     let lines: Vec<&str> = tail.lines().filter(|l| !inner(l).is_empty()).collect();
     let start = lines.len().saturating_sub(BOX_LINES);
-    let last = lines.get(start..).unwrap_or_default();
+    lines.get(start..).unwrap_or_default().to_vec()
+}
+
+/// A numbered choice such as `❯ 1. Yes` or `2. No`.
+fn is_numbered_option(line: &str) -> bool {
+    let line = inner(line);
+    let line = line
+        .strip_prefix('❯')
+        .or_else(|| line.strip_prefix('>'))
+        .unwrap_or(line)
+        .trim_start();
+    let digits = line.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && line.get(digits..).is_some_and(|r| r.starts_with(". "))
+}
+
+/// Claude keeps its input box and footer on screen while a dialog is open,
+/// so a pointer line and a footer prove nothing when a dialog marker sits in
+/// the same few lines. A false `Dialog` only delays a delivery; a false
+/// `InputPrompt` types into a dialog.
+fn dialog_near_the_end(last: &[&str]) -> bool {
+    let text = squash(&last.join("\n"));
+    has_any(&text, &PLAIN_TRUST_MARKERS)
+        || has_any(&text, &ESCALATION_MARKERS)
+        || has_any(&text, &OTHER_DIALOG_MARKERS)
+        || last.iter().any(|l| is_numbered_option(l))
+}
+
+fn at_input_prompt(last: &[&str]) -> bool {
     // An empty pointer line as the last thing on screen.
     if last.last().and_then(|l| pointer_rest(l)) == Some("") {
         return true;
@@ -84,7 +114,11 @@ fn at_input_prompt(tail: &str) -> bool {
 }
 
 pub(crate) fn classify(tail: &str) -> ScreenState {
-    if at_input_prompt(tail) {
+    let last = last_lines(tail);
+    if dialog_near_the_end(&last) {
+        return ScreenState::Dialog;
+    }
+    if at_input_prompt(&last) {
         return ScreenState::InputPrompt;
     }
     let squashed = squash(tail);
