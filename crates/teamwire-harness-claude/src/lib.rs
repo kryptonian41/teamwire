@@ -11,6 +11,7 @@
 //! them at a temporary directory; the member's identity travels in the
 //! `env` key of its own `settings.json`.
 
+mod hook;
 mod launch;
 mod session;
 
@@ -134,12 +135,12 @@ impl Harness for ClaudeCode {
         ))
     }
 
-    fn parse_turn_end(&self, _stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
-        Err(not_built())
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        hook::parse_turn_end(stdin)
     }
 
-    fn hold_reply(&self, _note: &str) -> Vec<u8> {
-        Vec::new()
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        hook::hold_reply(note)
     }
 
     fn screen_state(&self, _tail: &str) -> ScreenState {
