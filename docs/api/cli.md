@@ -74,9 +74,9 @@ Events, each announced once per occurrence:
 | Event | When |
 | --- | --- |
 | `WATCHING n members` | First poll |
-| `SILENT <role>` | 3 quiet polls, no completion, after the 90 s grace |
+| `SILENT <role>` | 3 quiet polls, no completion, after the 90 s grace. Once per episode: a new episode starts when the member is seen working again |
 | `DIED <role>` | 3 consecutive polls absent from a non-empty liveness listing |
-| `BLOCKED <role>` | The host reports a dialog |
+| `BLOCKED <role>` | The host reports a dialog. Once per episode: a new episode starts when the dialog is gone |
 | `LATE <role> <age>` | Past its deadline, once per generation |
 | `DECLARED <role>` | A completion recorded but not reported for 2 polls |
 | `COMPLETED <role> (<status>) <summary> Result: <path>` | Watch route only (ADR 0007) |
@@ -86,7 +86,7 @@ Events, each announced once per occurrence:
 | `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
 | `STORE-ERROR <code>` | The store could not be read; once per code |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |
-| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live member has a completion in its current generation that was reported (by the hook or the watch); the watch exits |
+| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
 
 ### `teamwire status [<team>] [--json]`
 

@@ -114,7 +114,7 @@ crate and listed in `docs/api/core.md`):
 | `verify_records` | verify run per member | `role`, `head_sha`, `verdict`, `exit_code`, `seconds`, `flags`, `log_sha256` |
 | `waivers` | waived flag | `role`, `flag_id`, `head_sha`, `reason` |
 | `watch_lease` | team (single row) | `pid`, `host`, `started_at`, `heartbeat_at` |
-| `announcements` | thing the watch said | `key` (such as `LATE:api:2`), `at` |
+| `announcements` | thing the watch said | `key` (such as `LATE:api:2`, generation 2; `SILENT:api:2:3`, episode 3), `at` |
 | `counters` | named counter | `name` (`display_id`, `seq:<sender>`), `value` |
 | `events` | state change | `seq` (autoincrement), `ulid`, `time`, `type`, `role`, `subject`, `data` (JSON), `writer_version` |
 | `metric_export` | exporter | `last_event_seq` |

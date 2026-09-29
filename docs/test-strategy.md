@@ -58,7 +58,7 @@ rules, spec validation, the close plan.
 | `one_line(s, n)` has no control characters, no newline, at most `n` characters, and `one_line(one_line(s, n), n) == one_line(s, n)` | core | Arbitrary strings, including ESC sequences and fake event lines |
 | The locator returns a place only when the harness view and the host view name exactly one common place for the session | deliver | Random evidence sets |
 | Delivery states only move forward; `acked` is final; a `pending` row is never set back to `pending` | msg | Random sequences of outcomes and acks |
-| The watch prints at most one line per poll, and each announcement key appears at most once across a run | watch | Random observation sequences, including listing failures, clock jumps, added and removed members, reprompts |
+| The watch prints at most one line per poll; each announcement key (which carries a generation or episode number) appears at most once across a run; once every live member is settled, `TEAM-COMPLETE` is printed exactly once | watch | Random observation sequences, including listing failures, clock jumps, added and removed members, reprompts |
 | `owns` matching agrees with a reference implementation for `dir/`, `*` and `**` | verify | Random paths and patterns |
 
 ### 3. Crash tests (`tests/crash`, crate `teamwire-crash-tests`)

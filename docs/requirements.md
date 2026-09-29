@@ -166,11 +166,11 @@ Each one has a test named in `docs/failure-modes.md`.
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
 | WAT-1 | MUST | The watch prints at most one line per poll, joining events with ` \| `. A normal completion adds no watch line, because the completion already woke the lead. | specmsg R32, E1, E2; speclife LC-20; INV-9 |
-| WAT-2 | MUST | Each event is announced once per occurrence. "Already announced" and "stuck now" are separate state. An overdue member that is working is not stalled. `TEAM-STALLED` re-arms when something moves. | specmsg R33, E8; speclife LC-21; INV-9 |
+| WAT-2 | MUST | Each event is announced once per occurrence. "Already announced" and "stuck now" are separate state. An overdue member that is working is not stalled. `TEAM-STALLED` re-arms when something moves. `SILENT` and `BLOCKED` carry an episode number in their key and re-arm when the member works again or the dialog closes; `LATE` carries the generation. | specmsg R33, E8; speclife LC-21; INV-9 |
 | WAT-3 | MUST | No quiet counting for the first 90 s of a member's run, or until it has been seen working. | specmsg R34, E6; speclife LC-22; INV-10 |
 | WAT-4 | MUST | A failed liveness listing is not evidence of death. `DIED` needs three consecutive absent polls and a non-empty listing. | specmsg R35, E7; speclife LC-23; INV-21 |
 | WAT-5 | MUST | Completion comes from teamwire's records and process liveness, never from the host's or harness's idle or done flag. | specmsg R36, E11; speclife LC-24; harness R11; INV-11 |
-| WAT-6 | MUST | `TEAM-COMPLETE n/m` counts only `done` and names each member that is failed, blocked, invalid or died. | specmsg R38, E12; speclife LC-25; INV-12 |
+| WAT-6 | MUST | `TEAM-COMPLETE n/m` counts only `done` and names each member that is failed, blocked, invalid or died. A member announced `DIED`, or whose result was announced `UNDELIVERED` or `UNCONFIRMED`, is settled, so one dead member does not keep the team open forever. | specmsg R38, E12; speclife LC-25; INV-12 |
 | WAT-7 | MUST | Membership is re-read every poll. Added members are watched, removed members are ignored, and a closed or missing team ends the watch with no output. | specmsg R39, E13; speclife LC-28; INV-13 |
 | WAT-8 | MUST | A reprompt resets that member's counters and timers. A prompt that reached a finished member outside teamwire is shown in status as "prompted outside teamwire". | specmsg R40, E14, L14; INV-14 |
 | WAT-9 | SHOULD | `SILENT` after 3 quiet polls, `LATE` at a per-member deadline (default 1800 s), poll interval 20 s. All are configurable and tested. | specmsg R41, E15 |

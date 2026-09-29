@@ -226,7 +226,10 @@ Required tests: every `crates/teamwire-verify/tests/...` row in
 
 ### T10 Watch and status (wave 4)
 
-`poll` with the rules of WAT-1 to WAT-16: one line per poll, announcements
+`poll` with the rules of WAT-1 to WAT-16: `TEAM-COMPLETE` when every live
+member is settled (a delivered result, an announced `UNDELIVERED` or
+`UNCONFIRMED` result, or an announced `DIED`), episode numbers in the keys of
+`SILENT` and `BLOCKED`, one line per poll, announcements
 persisted, startup grace, listing failure, sleep gap, reprompt re-arm, watch
 route `COMPLETED`, `UNDELIVERED` (including `delivery_interrupted` after
 90 s in `delivering`, set by a conditional update), `UNCONFIRMED`,
