@@ -320,8 +320,20 @@ fn mcp_json_starts_the_teamwire_server_with_the_token_in_argv() {
         .collect();
     assert_eq!(
         args,
-        ["mcp", "--team", "demo", "--role", "api", "--token", TOKEN]
+        [
+            "--home", "/home/tw", "mcp", "--team", "demo", "--role", "api", "--token", TOKEN
+        ]
     );
+}
+
+#[test]
+fn mcp_json_derives_the_home_when_identity_lacks_it() {
+    let mut m = member();
+    m.identity.retain(|(k, _)| k != "TEAMWIRE_HOME");
+    let spec = claude().launch_spec(&m).unwrap();
+    let args = &file_json(&spec, "mcp.json")["mcpServers"]["teamwire"]["args"];
+    assert_eq!(args[0], "--home");
+    assert_eq!(args[1], "/home/tw");
 }
 
 #[test]
