@@ -14,6 +14,37 @@ use crate::error::StoreError;
 /// A write transaction, open inside `Store::write`. Every method that
 /// changes a row takes the event time `at` from the caller, who got it from
 /// `Clock::now`: the store never reads the clock.
+///
+/// The methods, by the file that holds them. Each writes its event row in the
+/// same transaction, except the bookkeeping writes named below.
+/// - team: `create_team`, `begin_close`, `finish_close`,
+///   `clear_stale_close_lock`, `adopt_lead`.
+/// - member: `insert_member`, `relaunch_failed_member`, `set_member_state`,
+///   `remove_member`, `bump_generation`, `restore_generation`, `hold_member`,
+///   `hold_member_unread`.
+/// - message and delivery: `insert_message`, `set_delivery_state` (forward
+///   moves only), `ack_delivery`, `begin_resend`, `mark_reminded`.
+/// - completion: `insert_completion`, `claim_completion_for_delivery`,
+///   `finish_completion_delivery`, `deliver_completion_via_watch`,
+///   `interrupt_stale_delivery`.
+/// - verify and watch: `insert_verify_record`, `insert_waiver`,
+///   `take_watch_lease`, `release_watch_lease`.
+/// - `record_event` writes any other event, `record_store_error` a
+///   `store.error`; `next_counter` and `new_ulid` serve services that number
+///   their own rows.
+///
+/// Bookkeeping writes that write no event, because the closed event list has
+/// no type for them and none of them is a lifecycle or message change:
+/// `set_sleep_hold`, `set_member_place`, `set_member_session`,
+/// `set_member_token_hash`, `set_gate_told_generation`, `set_completion_final`,
+/// `announce_once`, `heartbeat_watch_lease`, and the metric-export
+/// `claim_metric_export`, `commit_metric_export`, `release_metric_claim`
+/// (an event there would feed the export its own tail).
+///
+/// Data a hook or a launch adds to events, with no new event type: a hook
+/// puts `hook_ms` in the data of the events it writes (the source of
+/// `teamwire.hook.duration`); launch puts a launch id and the requested count
+/// in the data of `member.creating`, `member.started` and `member.failed`.
 #[derive(Debug)]
 pub struct Tx<'a> {
     conn: &'a Connection,
@@ -21,6 +52,18 @@ pub struct Tx<'a> {
 }
 
 /// A read transaction, open inside `Store::read`.
+///
+/// The reads, by the file that holds them: `team`; `member`, `members`,
+/// `member_token_hash`; `message`, `message_by_display_id`,
+/// `message_by_client_key`, `messages` (filter by sender, recipient, either,
+/// type, time, newest N), `sent_to_since`, `inbox` (bodies with a hash flag),
+/// `counter`; `delivery`, `deliveries_of`, `deliveries_for`,
+/// `deliveries_in_states`; `completion`, `completions_of`,
+/// `latest_completion`, `completions_in_states`; `verify_records`, `waivers`,
+/// `all_waivers`; `watch_lease`, `was_announced`, `announcements`,
+/// `announcements_with_prefix`; `export_mark`, `last_event_seq`,
+/// `events_after`, `events_since`, `events_of_role`, `event`,
+/// `events_of_type`, `events_about`.
 #[derive(Debug)]
 pub struct ReadTx<'a> {
     conn: &'a Connection,

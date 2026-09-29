@@ -11,46 +11,12 @@
 //! from counting rows.
 //!
 //! Time comes from the caller: every `Tx` method that writes an event takes
-//! `at: Timestamp`, which the service gets from `Clock::now`. The store never
-//! reads the clock. `application_id` is `APPLICATION_ID` (`tWIR`);
-//! `user_version` is `SCHEMA_VERSION`; each event records `writer_version`.
+//! `at: Timestamp` from `Clock::now`; the store never reads the clock.
+//! `application_id` is `APPLICATION_ID` (`tWIR`), `user_version` is
+//! `SCHEMA_VERSION`, and each event records its `writer_version`.
 //!
-//! The typed methods, by file (each changing method writes its event in the
-//! same transaction, except where noted):
-//! - `team`: `create_team`, `begin_close`, `finish_close`,
-//!   `clear_stale_close_lock`, `adopt_lead`, `set_sleep_hold` (no event: the
-//!   closed event list has none), and `ReadTx::team`.
-//! - `member`: `insert_member`, `relaunch_failed_member`, `set_member_state`,
-//!   `remove_member`, `bump_generation`, `restore_generation`, `hold_member`,
-//!   plus `set_member_place`, `set_member_session`, `set_member_token_hash`
-//!   and `set_gate_told_generation` (no event of their own), and the reads
-//!   `member`, `members`, `member_token_hash`.
-//! - `message`: `insert_message` (display id and per-sender `seq` from
-//!   `counters`, idempotent on `(sender, client_key)`), and the reads
-//!   `message`, `message_by_display_id`, `message_by_client_key`, `messages`,
-//!   `sent_to_since`, `counter`.
-//! - `delivery`: `set_delivery_state` (forward moves only), `ack_delivery`,
-//!   `begin_resend`, `mark_reminded`, and the reads `delivery`,
-//!   `deliveries_of`, `deliveries_for`, `deliveries_in_states`.
-//! - `completion`: `insert_completion`, `claim_completion_for_delivery`,
-//!   `finish_completion_delivery`, `interrupt_stale_delivery`, and the reads
-//!   `completion`, `completions_of`, `latest_completion`,
-//!   `completions_in_states`.
-//! - `verify`: `insert_verify_record`, `insert_waiver`, and the reads
-//!   `verify_records`, `waivers`.
-//! - `watch`: `take_watch_lease`, `heartbeat_watch_lease`,
-//!   `release_watch_lease`, `announce_once` (no event: the line is a
-//!   `watch.line` event the watch writes), and `watch_lease`, `was_announced`.
-//! - `export`: `claim_metric_export`, `commit_metric_export`,
-//!   `release_metric_claim` (no event: it would feed the export itself),
-//!   `record_store_error`, and the reads `export_mark`, `last_event_seq`,
-//!   `events_after`, `event`, `events_of_type`, `events_about`.
-//! - `Tx::record_event` writes any other event; `Tx::next_counter` and
-//!   `Tx::new_ulid` serve the services that number their own rows.
-//!
-//! A read that returns many rows gives a `Listing`: the rows that parsed and
-//! the `BadRow`s that did not. A damaged row is reported and skipped, never
-//! read as success. A single-row read of a damaged row is `Corrupt`.
+//! The typed methods are listed on `Tx` and `ReadTx`. A read of many rows
+//! gives a `Listing`: the rows that parsed and the `BadRow`s that did not.
 //!
 //! This crate also holds `Ctx`, the handle every service call takes.
 
