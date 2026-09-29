@@ -46,7 +46,10 @@ teamwire is **one binary, `teamwire`, with subcommands, and no daemon**.
   watch notices the gap and resets its quiet counters (WAT-14).
 - Upgrading means replacing the binary. A running `watch` or `mcp` from the
   old binary keeps working until the schema moves past what it knows; then it
-  refuses cleanly and exits (ADR 0002).
+  refuses cleanly and exits (ADR 0002). The watch reads `PRAGMA
+  user_version` on every poll, because it keeps one connection open; a newer
+  version makes it print `STORE-ERROR schema_newer` once and exit. The MCP
+  server opens the store per call, so it checks on every call anyway.
 - There is nothing to retry delivery later. That is deliberate: a delayed
   typing into a pane is the failure INV-8 forbids. A message left `pending` by
   a crashed sender is shown by `status` and can be resumed by the sender with

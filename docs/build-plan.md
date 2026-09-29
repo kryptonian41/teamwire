@@ -179,7 +179,9 @@ teamwire, per-run `settings.json` with the Stop and PostToolUse hooks (their
 commands carry `--team` and `--role`) and an `env` key holding the member's
 `TEAMWIRE_*` identity and token, `mcp.json` with the token in the server's
 argv, both mode 0600 under `$TEAMWIRE_HOME`, `OTEL_RESOURCE_ATTRIBUTES`
-appended; capability `session_env_via_config = true`);
+appended and, when export is on, the `OTEL_EXPORTER_OTLP_*` values, all in
+the same `env` key, with a test that checks each variable; capability
+`session_env_via_config = true`);
 `current_session` from `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CODE_SESSION_KIND`;
 liveness from session files, then `claude agents --json` with both row shapes
 and a 5 s bound; `parse_turn_end` and `hold_reply`; the trust step (read
@@ -228,7 +230,9 @@ matching with `globset` (ADR 0009 semantics), the per-language rule files in
 `crates/teamwire-verify/rules/` (Rust, Python, JS/TS, Go, Java), the five
 verdicts, waivers bound to a HEAD, `--deep` and `--repair-files`, and a public
 `report_check(member) -> ReportGaps` used by T13 (progress lines for own
-first-parent non-merge commits since start minus 120 s; decisions list).
+first-parent non-merge commits since start minus 120 s; decisions list). All
+tests of what counts as a gap live here (`tests/report_check.rs`, including
+the INV-19 cases); T13 tests only when the gap check holds a member.
 Required tests: every `crates/teamwire-verify/tests/...` row in
 `docs/failure-modes.md`, a Rust fixture branch that adds `#[ignore]`, and the
 `owns` property.
@@ -243,7 +247,8 @@ persisted, startup grace, listing failure, sleep gap, reprompt re-arm, watch
 route `COMPLETED`, `UNDELIVERED` (including `delivery_interrupted` after
 90 s in `delivering`, set by a conditional update), `UNCONFIRMED`,
 `QUESTION-UNDELIVERED`, `QUESTION-UNCONFIRMED` (ADR 0007 point 6a), `TEAM-STALLED`,
-`TEAM-COMPLETE`; the watch lease; the watch never calls a writing host
+`TEAM-COMPLETE`; the watch lease; the `user_version` check on every poll
+(ADR 0001); the watch never calls a writing host
 method. `status` as in `docs/api/cli.md`, read-only. Required tests: every
 `crates/teamwire-watch/tests/...` row in `docs/failure-modes.md` and the watch
 property. Port the scripted poll sequences of

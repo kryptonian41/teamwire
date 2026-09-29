@@ -230,7 +230,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| CLS-1 | MUST | Close order is fixed: refuse if any member is busy or busy state is unknown; refuse over uncommitted work; archive and verify the archive; remove worktrees without force and keep branches; close places; delete the team state only if every step succeeded; release the sleep hold last. Each failing step stops the sequence with state intact. | speclife LC-45, C1-C7; INV-31 |
+| CLS-1 | MUST | Close order is fixed: refuse if any member is busy or busy state is unknown; refuse over uncommitted work; archive and verify the archive; remove worktrees without force and keep branches; close places; release the sleep hold (only if every earlier step succeeded); delete the team state last. Each failing step stops the sequence with state intact. The hold is released before the state that records it is deleted, so a crash between the two leaves a record of a released hold, never a running hold with no record. | speclife LC-45, C1-C7; INV-31 |
 | CLS-2 | MUST | The archive is verified by content (a hash per file), not by count and size. An existing archive path is never overwritten. | speclife LC-46, F8, C10 |
 | CLS-3 | MUST | A close lock stops launch, reprompt and removal from running during a close. Busy and dirty state are re-checked under the lock right before each destructive step. | speclife LC-47, F2, F9 |
 | CLS-4 | MUST | Removing one member runs the same checks for that member; `--stop` is the only way to remove a busy member. | speclife C8 |
@@ -281,7 +281,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | OBS-1 | MUST | Every lifecycle and message event is written to the store in the same transaction as the change it records. Metrics are computed from these rows. | rust 21; protocols R13 |
 | OBS-2 | MUST | OpenTelemetry export is a separate step that reads the store after an exported-up-to mark. A missing or slow collector never changes a command's exit code or timing. | rust 21, 22 |
 | OBS-3 | MUST | `teamwire metrics` shows the local metrics with no collector configured. | brief |
-| OBS-4 | MUST | Each member's environment gets `OTEL_RESOURCE_ATTRIBUTES` with `teamwire.team` and `teamwire.role` appended, and the harness session id is recorded on teamwire's own spans. Per-message and per-run ids never go into resource attributes. | harness R18 |
+| OBS-4 | MUST | Each member's environment gets `OTEL_RESOURCE_ATTRIBUTES` with `teamwire.team` and `teamwire.role` appended and, when export is on, the `OTEL_EXPORTER_OTLP_*` values teamwire uses; the harness session id is recorded on teamwire's own spans. Per-message and per-run ids never go into resource attributes. | harness R18 |
 | OBS-5 | SHOULD | Pin `opentelemetry-proto` to one exact 0.33.x and build OTLP requests from stored events (delta points at event time, spans from event pairs); a second exporter running at the same time never sends a batch twice. | rust 25; archrev 10 |
 
 ### Security and trust (SEC)

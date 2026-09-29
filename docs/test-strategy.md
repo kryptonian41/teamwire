@@ -121,6 +121,10 @@ user, never in `cargo test`:
 - `crates/teamwire-host-herdr/examples/live_check.rs`: read-only herdr calls
   (`agent list`, `agent get` on the caller's own pane) to confirm the JSON
   shapes still match the adapter's parser.
+- The lead's MCP server (`teamwire mcp --lead`, registered by the user from
+  `examples/mcp/lead.json`): confirm it sees `CLAUDE_CODE_SESSION_ID` in its
+  environment, so the lead's calls are accepted (harness Q4). Until this is
+  confirmed the lead uses the CLI, which reads the variable in the Bash tool.
 
 These are examples, not ignored tests, so nothing in the test suite is ever
 skipped.

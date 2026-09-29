@@ -336,7 +336,10 @@ What makes side-by-side running safe:
 - Separate hooks: teamwire's hooks are per member, passed with `--settings`.
   The Python Stop hook still runs for teamwire members, because it is
   registered globally, but it exits at its first check: it finds no Python
-  manifest that lists the member's pane or session.
+  manifest that lists the member's pane or session. herdr never reuses a
+  closed pane id ("Closed tab and pane IDs are not reused", `herdr --skill`,
+  read 2026-09-29), so a leftover Python manifest cannot name a teamwire
+  member's pane.
 - Separate lines: teamwire's wake-up and watch lines start with
   `[teamwire:<team>]`; Python's start with `[team:<team>]`.
 - Separate names (INV-32): teamwire names its agents `tw_<team>_<role>`,

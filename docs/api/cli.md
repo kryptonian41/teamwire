@@ -93,7 +93,7 @@ Events, each announced once per occurrence:
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |
 | `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
 
-### `teamwire status [<team>] [--json]`
+### `teamwire status [<team>] [--role R] [--json]`
 
 Reads only (WAT-11). Without a team, lists every team with its state and
 member counts. With a team: the lead's session and liveness; per member: state
@@ -101,7 +101,11 @@ member counts. With a team: the lead's session and liveness; per member: state
 `quiet`, `late`, `prompted outside teamwire`), generation, age against
 deadline, delivery state of its newest result, branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
-`undelivered`, and undelivered results.
+`undelivered`, and undelivered results. `--role R` adds the exact command
+to restart that member's session with its per-run configuration (for Claude
+Code: `claude --resume <session-id> --settings ... --mcp-config ...
+--append-system-prompt-file ...`), because a session resumed without them has
+no Stop hook, no identity and no MCP tools.
 
 ### `teamwire verify <team> [--role R] [--waive FLAG --reason TEXT] [--deep] [--repair-files]`
 

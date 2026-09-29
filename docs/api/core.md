@@ -209,6 +209,9 @@ pub trait Harness: Send + Sync {
     /// argv, env and files to start one member. Files are written by launch
     /// under the team directory before spawn; nothing outside it.
     fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError>;
+    /// argv to resume an existing member session with the same per-run
+    /// configuration (shown by `status --role`, never run by teamwire).
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;   // id + kind (interactive | background)
     fn processes_for_session(&self, s: &SessionId, timeout: Duration) -> Result<Vec<Pid>, HarnessError>;
@@ -306,6 +309,63 @@ type-checks and routes per member; with no `codex` adapter registered, that
 member's deliveries are `undelivered` with `unknown_adapter` and its launch is
 refused.
 
+## 6b. Supporting types
+
+The shapes T01 must write, so that T06 (which produces `LaunchSpec`) and T08
+(which consumes it) agree in wave 3. Field lists are complete; types not
+shown are defined above.
+
+```rust
+pub enum Recipient { Lead, Member(Role) }
+pub enum SessionKind { Interactive, Background }
+pub struct CallerSession { pub id: SessionId, pub kind: SessionKind }
+pub enum SubmitAck { None, Submitted, StateChange }   // what Ok(()) from submit proves
+pub enum TrustPolicy { Accept, Refuse }               // from the spec's accept_trust
+
+pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<String>,
+                      pub harness: Option<HarnessId>, pub host: Option<HostId>,
+                      pub children: Vec<MemberSpec> }
+pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
+                        pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
+                        pub branch: Option<String>, pub base: Option<String>, pub cwd: Option<PathBuf>,
+                        pub model: Option<String>, pub effort: Option<String>,
+                        pub check: Option<String>, pub owns: Vec<String>,
+                        pub task: Option<String>, pub task_file: Option<PathBuf>,
+                        pub deadline_s: Option<u64>, pub setup: Option<String>,
+                        pub dispatch: bool, pub accept_trust: bool }
+
+/// Everything a harness needs to build one member's start.
+pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Address,
+                          pub kind: MemberKind, pub cwd: PathBuf, pub session_id: SessionId,
+                          pub model: Option<String>, pub effort: Option<String>,
+                          pub member_dir: PathBuf,           // $TEAMWIRE_HOME/teams/<team>/members/<role>
+                          pub contract_path: PathBuf, pub identity: Vec<(String, String)>,
+                          pub otel: OtelConfig, pub teamwire_bin: PathBuf }
+/// What the harness returns. Files are written by launch (mode given) before spawn.
+pub struct LaunchSpec { pub argv: Vec<String>,
+                        /// Honoured only when the host has `sets_env_at_spawn`.
+                        pub env: Vec<(String, String)>,
+                        pub files: Vec<LaunchFile>,        // e.g. settings.json, mcp.json
+                        pub identity_channel: IdentityChannel }
+pub struct LaunchFile { pub path: PathBuf, pub bytes: Vec<u8>, pub mode: u32 }
+pub enum IdentityChannel { HarnessConfig, HostEnv }
+pub struct SpawnRequest { pub name: Address, pub title: String, pub cwd: PathBuf,
+                          pub argv: Vec<String>, pub env: Vec<(String, String)> }
+
+pub enum TurnEndReply { Continue, Hold(String) }   // Hold carries the note
+pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s: u64,
+                    pub default_deadline_s: u64, pub hook_budget_s: u64,  // 40
+                    pub hook_timeout_s: u64,                              // 60
+                    pub delivering_stale_s: u64,                          // 90
+                    pub min_free_bytes: u64, pub otel: OtelConfig }
+pub struct OtelConfig { pub endpoint: Option<String>, pub headers: Vec<(String, String)> }
+```
+
+Result types of the service calls (`SendReport`, `InboxItem`, `DoneReport`,
+`StatusView`, `LaunchReport`, `VerifyRecord`, `ClosePlan`, `CloseReport`,
+`MetricsView`, `ExportReport`) carry exactly the fields of the matching JSON
+outputs in `docs/api/mcp.md` and `docs/api/cli.md`.
+
 ## 7. Store (`teamwire-store`)
 
 ```rust
@@ -388,7 +448,7 @@ pub fn log(ctx: &Ctx, filter: LogFilter) -> Result<Vec<LogRow>, SendError>;
 
 // teamwire-report
 pub fn done(ctx: &mut Ctx, me: &Role, status: CompletionStatus, summary: &str) -> Result<DoneReport, DoneError>;
-pub fn report_gaps(ctx: &Ctx, member: &Member) -> ReportGaps;   // errors → empty gaps
+pub fn report_gaps(ctx: &Ctx, member: &Member) -> ReportGaps;   // calls teamwire_verify::report_check; errors → empty gaps
 pub fn on_turn_end(ctx: &mut Ctx, me: &Role, t: &TurnEnd) -> TurnEndReply; // Continue | Hold(note)
 pub fn on_tool_use(ctx: &mut Ctx, me: &Role) -> Option<String>;            // reminder text
 
