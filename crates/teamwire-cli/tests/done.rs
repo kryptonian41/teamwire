@@ -86,6 +86,11 @@ fn invalid_status_refused() {
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
     assert!(run.err.contains("status"), "{}", run.err);
     assert_eq!(stored(&fx), 0, "a refused call stores nothing");
+    let refused = fx
+        .store
+        .read(|tx| tx.events_of_type(teamwire_core::EventType::MemberCompletionRefused))
+        .unwrap();
+    assert_eq!(refused.items.len(), 1, "the refusal is recorded");
 }
 
 #[test]

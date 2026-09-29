@@ -4,7 +4,7 @@
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use teamwire_core::{
-    CompletionStatus, FinalSource, MemberState, ReportGaps, Role, TeamName, TeamState,
+    CompletionStatus, EventType, FinalSource, MemberState, ReportGaps, Role, TeamName, TeamState,
 };
 use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
 
@@ -20,6 +20,58 @@ pub fn parse_status(text: &str) -> Result<CompletionStatus, DoneError> {
         field: "status".to_owned(),
         message: format!("{text:?} is not one of done, blocked, failed"),
     })
+}
+
+/// `done` for a caller that has the status as text: an unknown status is
+/// refused, recorded as `member.completion_refused`, and nothing is stored.
+pub fn done_with_status(
+    ctx: &mut Ctx<'_>,
+    me: &Role,
+    status: &str,
+    summary: &str,
+) -> Result<DoneReport, DoneError> {
+    match parse_status(status) {
+        Ok(status) => done(ctx, me, status, summary),
+        Err(e) => {
+            record_refusal(ctx, me, &e, &json!({}));
+            Err(e)
+        }
+    }
+}
+
+/// Writes `member.completion_refused` for a member that exists. The event is
+/// a record for the metrics: a failure to write it changes nothing else.
+fn record_refusal(ctx: &mut Ctx<'_>, me: &Role, why: &DoneError, extra: &serde_json::Value) {
+    let DoneError::Invalid { field, message } = why else {
+        return;
+    };
+    let live = ctx
+        .store
+        .read(|tx| tx.member(me))
+        .ok()
+        .flatten()
+        .is_some_and(|m| m.state != MemberState::Removed);
+    if !live {
+        return;
+    }
+    let at = ctx.clock.now();
+    let mut data = json!({ "reason": format!("invalid.{field}"), "message": message });
+    if let (Some(data), Some(extra)) = (data.as_object_mut(), extra.as_object()) {
+        data.extend(extra.clone());
+    }
+    let written = ctx.store.write(|tx| {
+        tx.record_event(
+            at,
+            EventType::MemberCompletionRefused,
+            Some(me),
+            None,
+            &data,
+        )
+        .map(|_| ())
+    });
+    if let Err(e) = written {
+        tracing::warn!(error = %e, "could not record the refused completion");
+    }
 }
 
 /// The SHA-256 the store keeps of a member's token (ADR 0008 point 1).
@@ -78,22 +130,16 @@ pub fn done(
     summary: &str,
 ) -> Result<DoneReport, DoneError> {
     let summary = summary.trim();
-    if summary.is_empty() {
-        return Err(invalid("summary", "the summary is empty"));
-    }
-    if summary.chars().count() > SUMMARY_MAX {
-        return Err(invalid(
-            "summary",
-            &format!("the summary is over {SUMMARY_MAX} characters"),
-        ));
-    }
-    let summary = teamwire_core::one_line(summary, SUMMARY_MAX).into_string();
-
     let member = ctx
         .store
         .read(|tx| tx.member(me))?
         .filter(|m| m.state != MemberState::Removed)
         .ok_or_else(|| DoneError::UnknownRole(me.clone()))?;
+    if let Err(e) = check_summary(summary) {
+        record_refusal(ctx, me, &e, &json!({}));
+        return Err(e);
+    }
+    let summary = teamwire_core::one_line(summary, SUMMARY_MAX).into_string();
 
     // A harness with no turn-end hook has nothing to report at stop time, so
     // the gap check runs here, once per generation. A harness this binary
@@ -125,11 +171,13 @@ pub fn done(
         }
         if !has_hook && !gaps.is_empty() && current.gate_told_generation != Some(current.generation)
         {
-            tx.hold_member(
+            tx.set_gate_told_generation(me, current.generation)?;
+            tx.record_event(
                 at,
-                me,
-                current.generation,
-                &json!({ "gaps": &gaps, "unread": [], "via": "done" }),
+                EventType::MemberCompletionRefused,
+                Some(me),
+                None,
+                &json!({ "reason": "report_gaps", "gaps": &gaps }),
             )?;
             return Ok(Stored::Done(DoneReport::NotStored {
                 stored: false,
@@ -167,6 +215,19 @@ pub fn done(
         Stored::Refused(e) => Err(e),
         Stored::Done(report) => Ok(report),
     }
+}
+
+fn check_summary(summary: &str) -> Result<(), DoneError> {
+    if summary.is_empty() {
+        return Err(invalid("summary", "the summary is empty"));
+    }
+    if summary.chars().count() > SUMMARY_MAX {
+        return Err(invalid(
+            "summary",
+            &format!("the summary is over {SUMMARY_MAX} characters"),
+        ));
+    }
+    Ok(())
 }
 
 fn invalid(field: &str, message: &str) -> DoneError {

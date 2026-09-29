@@ -35,10 +35,6 @@ impl Caller {
 
 pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let DoneArgs { status, summary } = args;
-    let status = match teamwire_report::parse_status(status) {
-        Ok(status) => status,
-        Err(e) => return fail(&e.to_string(), REFUSED),
-    };
     let caller = Caller::from_process();
     let (Some(team), Some(role), Some(token)) = (caller.team, caller.role, caller.token) else {
         return fail(
@@ -76,7 +72,7 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
             REFUSED,
         );
     }
-    match teamwire_report::done(&mut ctx, &role, status, summary) {
+    match teamwire_report::done_with_status(&mut ctx, &role, status, summary) {
         Ok(DoneReport::Stored {
             completion,
             n,

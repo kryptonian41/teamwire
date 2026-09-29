@@ -16,7 +16,7 @@ mod members;
 mod rig;
 
 use teamwire_core::{CompletionStatus, EventType, ReportState, TeamName};
-use teamwire_report::{DoneError, DoneReport, done, parse_status};
+use teamwire_report::{DoneError, DoneReport, done, done_with_status, parse_status};
 
 use kit::{at, team};
 use members::role;
@@ -33,6 +33,29 @@ fn invalid_status_refused() {
     }
     // Case matters: the words are the stored values.
     assert!(parse_status("Done").is_err());
+}
+
+#[test]
+fn a_refused_status_is_recorded_for_the_metrics() {
+    let (mut rig, api) = team();
+    let err = done_with_status(&mut rig.ctx(), &api, "finished", "x").unwrap_err();
+    assert!(matches!(err, DoneError::Invalid { .. }));
+    assert_eq!(rig.completions(&api), 0);
+    let refused = rig.events(EventType::MemberCompletionRefused);
+    assert_eq!(refused.len(), 1);
+    assert_eq!(
+        refused.first().and_then(|e| kit::data_str(e, "reason")),
+        Some("invalid.status")
+    );
+    // A caller that is not a member leaves no event.
+    let ghost = role("ghost");
+    assert!(done_with_status(&mut rig.ctx(), &ghost, "finished", "x").is_err());
+    assert_eq!(rig.events(EventType::MemberCompletionRefused).len(), 1);
+    // A good status is stored.
+    assert!(matches!(
+        done_with_status(&mut rig.ctx(), &api, "done", "x").unwrap(),
+        DoneReport::Stored { .. }
+    ));
 }
 
 #[test]
@@ -66,6 +89,12 @@ fn bad_summaries_are_refused_and_store_nothing() {
         assert!(matches!(&err, DoneError::Invalid { field, .. } if field == "summary"));
     }
     assert_eq!(rig.completions(&api), 0);
+    let reasons: Vec<_> = rig
+        .events(EventType::MemberCompletionRefused)
+        .iter()
+        .map(|e| kit::data_str(e, "reason").map(str::to_owned))
+        .collect();
+    assert_eq!(reasons, vec![Some("invalid.summary".to_owned()); 3]);
     let ok = "y".repeat(2000);
     assert!(done(&mut rig.ctx(), &api, CompletionStatus::Done, &ok).is_ok());
 }

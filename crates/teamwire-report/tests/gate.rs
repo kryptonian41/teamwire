@@ -43,7 +43,9 @@ fn no_hook_harness_told_once() {
     assert!(gaps.report_missing);
     assert!(report.contains("reports/api.md"), "{report}");
     assert_eq!(rig.completions(&api), 0);
-    assert_eq!(rig.events(EventType::MemberHeld).len(), 1);
+    let refused = rig.events(EventType::MemberCompletionRefused);
+    assert_eq!(refused.len(), 1);
+    assert_eq!(data_str(&refused[0], "reason"), Some("report_gaps"));
 
     // The second call stores whatever the report says.
     let second = done(&mut rig.ctx(), &api, CompletionStatus::Done, "finished").unwrap();
