@@ -31,7 +31,7 @@ use thiserror::Error;
 pub use inbox::{ack, inbox};
 pub use lead::{AdoptReport, adopt_lead};
 pub use log::log;
-pub use prove::prove_actor;
+pub use prove::{prove_actor, token_hash};
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
 pub use send::{Stored, record_refusal, send, send_with, watch_running};

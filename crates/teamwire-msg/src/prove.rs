@@ -57,8 +57,7 @@ fn prove_member(ctx: &Ctx<'_>, env: &CallerEnv, token: &str) -> Result<Actor, Re
     if env.team.as_deref() != Some(team.as_str()) || member.state == MemberState::Removed {
         return Err(Refusal::Identity);
     }
-    let given: [u8; 32] = Sha256::digest(token.as_bytes()).into();
-    if same_bytes(&given, &stored) {
+    if same_bytes(&token_hash(token), &stored) {
         Ok(Actor::Member(role))
     } else {
         Err(Refusal::Identity)
@@ -83,6 +82,12 @@ fn prove_lead(ctx: &Ctx<'_>, env: &CallerEnv) -> Result<Actor, Refusal> {
     } else {
         Err(Refusal::Identity)
     }
+}
+
+/// The SHA-256 of a token's text, which is what launch stores for a member
+/// and what a caller's token is checked against (ADR 0008).
+pub fn token_hash(token: &str) -> [u8; 32] {
+    Sha256::digest(token.as_bytes()).into()
 }
 
 /// Compares two hashes without stopping at the first difference.
