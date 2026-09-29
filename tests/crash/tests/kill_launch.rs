@@ -19,7 +19,7 @@ pub mod rig;
 
 use std::time::{Duration, Instant};
 
-use rig::{Identity, Rig, assert_integrity, team_name, wait_idle};
+use rig::{Identity, Rig, assert_integrity, stop_agents, team_name, wait_idle};
 use teamwire_core::{MemberState, Role};
 use teamwire_store::Store;
 
@@ -84,10 +84,11 @@ fn kill9_after_the_agent_started_and_was_recorded_is_closed_by_close() {
         !rig.home.path().join("teams/alpha").exists(),
         "the state directory was not deleted"
     );
+    stop_agents(&rig);
 }
 
 #[test]
-fn kill9_inside_the_agent_start_call_leaves_the_member_creating_without_a_place() {
+fn kill9_inside_the_agent_start_call_is_refused_by_close_until_the_agent_stops() {
     let mut rig = Rig::bare();
     let work = tempfile::tempdir().unwrap();
     let signal = rig.pause_after("agent start");
@@ -98,17 +99,30 @@ fn kill9_inside_the_agent_start_call_leaves_the_member_creating_without_a_place(
     rig.path_prefix = None;
 
     // The host started the agent; teamwire died before it heard the place.
-    // The store is whole and names the member as half-made. `close` cannot
-    // close a place it never recorded (reported to the lead, not hidden).
+    // The store is whole and names the member as half-made.
     let store = rig.store();
     assert_integrity(&store);
     let member = scout(&store).unwrap();
     assert_eq!(member.state, MemberState::Creating);
     assert!(member.place.is_none());
     assert_eq!(agents(&rig), [AGENT]);
-    wait_idle(&rig);
+    drop(store);
+
+    // Close has no place to close, so it refuses by name and keeps the state.
+    let refused = rig.run(&["close", "alpha"], &Identity::Nobody);
+    assert_eq!(refused.code, Some(1), "{refused:?}");
+    assert!(refused.stderr.contains(AGENT), "{refused:?}");
+    assert!(
+        rig.home.path().join("teams/alpha").exists(),
+        "the state directory was deleted while an agent runs"
+    );
+
+    // Once the agent is stopped, close finishes and nothing is left running.
+    stop_agents(&rig);
     let out = rig.run(&["close", "alpha"], &Identity::Nobody);
     assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(!rig.home.path().join("teams/alpha").exists());
+    assert!(agents(&rig).is_empty());
 }
 
 #[test]
@@ -125,6 +139,8 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
     // A launch sometimes takes far longer under load; kills past the usual
     // length add nothing, so the window is capped.
     let window = (started.elapsed() * 12 / 10).min(Duration::from_secs(3));
+    stop_agents(&probe);
+    let seed = rng.seed();
     eprintln!("kill window {window:?}");
 
     for i in 0..5 {
@@ -147,8 +163,28 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
         assert_integrity(&store);
         drop(store);
         wait_idle(&rig);
-        let out = rig.run(&["close", "alpha"], &Identity::Nobody);
-        assert_eq!(out.code, Some(0), "run {i}, killed at {delay:?}: {out:?}");
-        assert!(!rig.home.path().join("teams/alpha").exists(), "run {i}");
+        // A kill inside the start call leaves a live agent that close cannot
+        // find: it refuses by name, the agent is stopped, and close runs again.
+        let mut out = rig.run(&["close", "alpha"], &Identity::Nobody);
+        let mut refused = false;
+        if out.code != Some(0) {
+            refused = true;
+            assert!(
+                out.stderr.contains(AGENT),
+                "seed {seed}, run {i}, killed at {delay:?}: close refused for another reason: {out:?}"
+            );
+            stop_agents(&rig);
+            out = rig.run(&["close", "alpha"], &Identity::Nobody);
+        }
+        assert_eq!(
+            out.code,
+            Some(0),
+            "seed {seed}, run {i}, killed at {delay:?}, refused first {refused}: {out:?}"
+        );
+        assert!(
+            !rig.home.path().join("teams/alpha").exists(),
+            "seed {seed}, run {i}, killed at {delay:?}: the state directory is still there"
+        );
+        stop_agents(&rig);
     }
 }
