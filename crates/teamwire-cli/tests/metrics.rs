@@ -272,6 +272,7 @@ fn without_a_team_every_team_and_archive_is_read() {
     let dir = home.path().join("archive").join("gamma-2026-09-30");
     std::fs::create_dir_all(&dir).unwrap();
     gamma.backup_to(&dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
     let run = teamwire(&home, &[], &["metrics"]);
     assert_eq!(run.code, 0, "{}", run.err);
     for team in ["alpha", "beta", "gamma"] {

@@ -15,12 +15,18 @@ use crate::{MetricValue, MetricsQuery, MetricsView};
 /// What one database contributes.
 struct Analysis {
     team: String,
+    /// The team row's ULID: two copies of one team share it, whatever the
+    /// directory is called.
+    identity: String,
+    live: bool,
+    /// For an archive: when its `SHA256SUMS` was written, and where it is.
+    rank: Option<(std::time::SystemTime, PathBuf)>,
     observations: Vec<Observation>,
     derived: Derived,
 }
 
 /// The counts behind the three derived lines. They are summed per team name
-/// before the ratios are taken, so a live team and its archive combine.
+/// before the ratios are taken.
 #[derive(Default, Clone, Copy)]
 struct Derived {
     wakeups: f64,
@@ -45,7 +51,28 @@ pub fn metrics_at(home: &Path, now: Timestamp, q: &MetricsQuery) -> MetricsView 
             Err(e) => errors.push(format!("{}: {e}", source.path.display())),
         }
     }
-    finish(analyses, errors)
+    finish(one_copy_of_each_team(analyses), errors)
+}
+
+/// An archive is a full copy of a team's database, so a team seen live and
+/// archived, or archived twice after a failed close, would count its events
+/// two or three times. Each team (by its ULID) is kept once: the live copy
+/// if there is one, else the newest archive.
+fn one_copy_of_each_team(analyses: Vec<Analysis>) -> Vec<Analysis> {
+    let mut best: BTreeMap<String, Analysis> = BTreeMap::new();
+    for a in analyses {
+        let key = a.identity.clone();
+        let better = match best.get(&key) {
+            None => true,
+            Some(kept) if kept.live => false,
+            Some(_) if a.live => true,
+            Some(kept) => a.rank > kept.rank,
+        };
+        if better {
+            best.insert(key, a);
+        }
+    }
+    best.into_values().collect()
 }
 
 /// Metrics read through the caller's own store handle when `q.team` is set
@@ -64,6 +91,7 @@ pub(crate) fn metrics_with(
         path: database_path(home, team),
         team: Some(team.as_str().to_owned()),
         live: true,
+        rank: None,
     };
     match analyze(store, &source, now, q) {
         Ok(a) => finish(vec![a], Vec::new()),
@@ -78,6 +106,8 @@ struct Source {
     /// A running team, not an archive: only it has an export mark that means
     /// anything.
     live: bool,
+    /// For an archive: when its `SHA256SUMS` was written.
+    rank: Option<std::time::SystemTime>,
 }
 
 fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Source> {
@@ -86,6 +116,7 @@ fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Sourc
             path: database_path(home, team),
             team: Some(team.as_str().to_owned()),
             live: true,
+            rank: None,
         }];
     }
     let mut list = Vec::new();
@@ -102,16 +133,25 @@ fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Sourc
             }
         }
         paths.sort();
-        list.extend(
-            paths
-                .into_iter()
-                .filter(|p| p.is_file())
-                .map(|path| Source {
-                    path,
-                    team: None,
-                    live,
-                }),
-        );
+        for path in paths.into_iter().filter(|p| p.is_file()) {
+            // An archive without its checksum file is a copy that was cut
+            // short; the team it holds is counted from elsewhere.
+            let rank = if live {
+                None
+            } else {
+                let sums = path.with_file_name("SHA256SUMS");
+                match std::fs::metadata(&sums).and_then(|m| m.modified()) {
+                    Ok(time) => Some(time),
+                    Err(_) => continue,
+                }
+            };
+            list.push(Source {
+                path,
+                team: None,
+                live,
+                rank,
+            });
+        }
     }
     list
 }
@@ -122,8 +162,10 @@ fn analyze(
     now: Timestamp,
     q: &MetricsQuery,
 ) -> Result<Analysis, StoreError> {
-    let (name, listing, lag) = store.read(|tx| {
-        let name = tx.team()?.map(|t| t.name.as_str().to_owned());
+    let (name, identity, listing, lag) = store.read(|tx| {
+        let row = tx.team()?;
+        let identity = row.as_ref().map(|t| t.ulid.to_string());
+        let name = row.map(|t| t.name.as_str().to_owned());
         let listing = tx.events_after(0, None, None)?;
         let lag = if source.live {
             Some(
@@ -133,7 +175,7 @@ fn analyze(
         } else {
             None
         };
-        Ok((name, listing, lag))
+        Ok((name, identity, listing, lag))
     })?;
     let team = name
         .or_else(|| source.team.clone())
@@ -196,6 +238,9 @@ fn analyze(
         });
     }
     Ok(Analysis {
+        identity: identity.unwrap_or_else(|| format!("unknown:{}", source.path.display())),
+        live: source.live,
+        rank: source.rank.map(|t| (t, source.path.clone())),
         team,
         observations,
         derived,

@@ -718,6 +718,7 @@ fn every_team_and_archive_is_read_when_no_team_is_named() {
     let mut g = open(&TestHome::new().unwrap(), "gamma");
     ev(&mut g, 5, EventType::WatchLine, None, None, &json!({}));
     g.backup_to(&archived.join("team.db")).unwrap();
+    std::fs::write(archived.join("SHA256SUMS"), b"").unwrap();
     let v = view(&home, &query(None), 100);
     assert_eq!(
         value(&v, "teamwire.watch.lines", &[("team", "alpha")]),
@@ -742,6 +743,7 @@ fn an_unreadable_archive_is_reported_and_the_rest_still_shows() {
     let bad = home.path().join("archive").join("junk-2026-09-30");
     std::fs::create_dir_all(&bad).unwrap();
     std::fs::write(bad.join("team.db"), b"not a database at all").unwrap();
+    std::fs::write(bad.join("SHA256SUMS"), b"").unwrap();
     let v = view(&home, &query(None), 100);
     assert_eq!(
         value(&v, "teamwire.watch.lines", &[("team", "alpha")]),
@@ -763,4 +765,69 @@ fn the_export_lag_counts_events_after_the_mark() {
     let v = view(&home, &query(Some("alpha")), 100);
     // team.created and the watch line are both unexported.
     assert_eq!(value(&v, "teamwire.export.lag", &[]), Some(2.0));
+}
+
+/// Copies `store` to `archive/<name>/team.db`, with a `SHA256SUMS` file
+/// written `age_secs` seconds before now unless `sums` is false.
+fn archive(home: &TestHome, store: &Store, name: &str, sums: bool, age_secs: u64) {
+    let dir = home.path().join("archive").join(name);
+    std::fs::create_dir_all(&dir).unwrap();
+    store.backup_to(&dir.join("team.db")).unwrap();
+    if sums {
+        let file = std::fs::File::create(dir.join("SHA256SUMS")).unwrap();
+        let when = std::time::SystemTime::now() - Duration::from_secs(age_secs);
+        file.set_modified(when).unwrap();
+    }
+}
+
+#[test]
+fn a_live_team_and_its_archive_count_once() {
+    let home = TestHome::new().unwrap();
+    let mut a = open(&home, "alpha");
+    ev(&mut a, 5, EventType::WatchLine, None, None, &json!({}));
+    archive(&home, &a, "alpha-2026-09-30", true, 10);
+    let v = view(&home, &query(None), 100);
+    assert_eq!(
+        value(&v, "teamwire.watch.lines", &[("team", "alpha")]),
+        Some(1.0)
+    );
+    assert_eq!(
+        value(&v, "teamwire.export.lag", &[]),
+        Some(2.0),
+        "the live copy wins"
+    );
+}
+
+#[test]
+fn of_several_archives_of_one_team_the_newest_counts() {
+    let home = TestHome::new().unwrap();
+    let mut a = open(&home, "alpha");
+    ev(&mut a, 5, EventType::WatchLine, None, None, &json!({}));
+    archive(&home, &a, "alpha-2026-09-29", true, 7200);
+    ev(&mut a, 6, EventType::WatchLine, None, None, &json!({}));
+    archive(&home, &a, "alpha-2026-09-30", true, 60);
+    // The live directory is gone, as after a completed close.
+    std::fs::remove_dir_all(home.path().join("teams")).unwrap();
+    let v = view(&home, &query(None), 100);
+    assert_eq!(
+        value(&v, "teamwire.watch.lines", &[("team", "alpha")]),
+        Some(2.0)
+    );
+}
+
+#[test]
+fn an_archive_without_sha256sums_is_skipped() {
+    let home = TestHome::new().unwrap();
+    let mut a = open(&home, "alpha");
+    ev(&mut a, 5, EventType::WatchLine, None, None, &json!({}));
+    archive(&home, &a, "alpha-2026-09-29", true, 7200);
+    ev(&mut a, 6, EventType::WatchLine, None, None, &json!({}));
+    archive(&home, &a, "alpha-2026-09-30", false, 0);
+    std::fs::remove_dir_all(home.path().join("teams")).unwrap();
+    let v = view(&home, &query(None), 100);
+    assert_eq!(
+        value(&v, "teamwire.watch.lines", &[("team", "alpha")]),
+        Some(1.0)
+    );
+    assert!(v.errors.is_empty(), "{:?}", v.errors);
 }
