@@ -1,7 +1,7 @@
 //! The archive must check out at every instant of the second backup.
 #![expect(
-    clippy::unwrap_used,
-    reason = "tests unwrap; a failure there fails the test"
+    clippy::disallowed_methods,
+    reason = "a test writes files as a stand-in for a crash or a bad disk"
 )]
 
 use std::cell::RefCell;
@@ -11,6 +11,9 @@ use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
 use teamwire_store::{CloseEnd, Ctx, NewTeam, Store};
 
 use super::*;
+
+/// A stage, whether the archive verified there, and whether `team.db` was new.
+type Seen = (String, Result<(), String>, bool);
 
 #[test]
 fn every_state_of_the_second_backup_verifies() {
@@ -41,7 +44,7 @@ fn every_state_of_the_second_backup_verifies() {
     let team_dir = home.path().join("teams").join("alpha");
     std::fs::write(team_dir.join("note.md"), "x\n").unwrap();
     let dest = home.path().join("archive").join("alpha-1");
-    let mut ctx = Ctx {
+    let ctx = Ctx {
         home: home.path(),
         store: &mut store,
         registry: &registry,
@@ -56,7 +59,7 @@ fn every_state_of_the_second_backup_verifies() {
     ctx.store
         .write(|tx| tx.finish_close(now, &CloseEnd::Completed))
         .unwrap();
-    let seen: RefCell<Vec<(String, Result<(), String>, bool)>> = RefCell::new(Vec::new());
+    let seen: RefCell<Vec<Seen>> = RefCell::new(Vec::new());
     refresh_db_observed(&ctx, &dest, &|stage| {
         let changed = std::fs::read(dest.join("team.db")).unwrap() != old_db;
         seen.borrow_mut()
