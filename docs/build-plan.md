@@ -75,7 +75,7 @@ Builds:
   `tokio` (only for `teamwire-mcp`), `schemars`, `tracing`,
   `tracing-subscriber`, `globset`, `toml`, `sysinfo`, `nix` (process, signal),
   `tempfile`, `proptest`.
-- `crates/teamwire-core`: every type and trait in `docs/api/core.md` §1-6a,
+- `crates/teamwire-core`: every type and trait in `docs/api/core.md` §1-6b (types, traits, registry and supporting types),
   including the `Registry` (adapter ids are strings; no enum of products)
   and `NoHost`, the do-nothing host for "no multiplexer" (ADR 0004 point 10),
   `sanitize::one_line`, `OneLine`, the event type enum with its string forms,
