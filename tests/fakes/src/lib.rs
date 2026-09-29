@@ -1,12 +1,23 @@
 //! Test doubles for every adapter trait, the fake `herdr` and `claude`
-//! binaries, and the contract suites every adapter must pass. Today it
-//! holds `TestHome` only; the rest follows.
+//! binaries, and the contract suites every adapter must pass.
 //!
 //! Never: touch the real `~/.claude/`, `~/.claude.json` or `~/.teamwire`;
 //! start a real herdr or Claude session; set process-wide environment.
 //!
 //! Invariants: every test's `TEAMWIRE_HOME` is a fresh temporary directory,
 //! removed when the `TestHome` is dropped.
+
+mod calls;
+mod clock;
+mod harness;
+mod host;
+mod platform;
+
+pub use calls::{Call, CallKind, CallLog};
+pub use clock::FakeClock;
+pub use harness::{ESCALATED_TRUST_TEXT, FakeHarness, PLAIN_TRUST_TEXT, PROMPT_TEXT};
+pub use host::{FakeHost, Fault, SpawnedWith};
+pub use platform::{FakePlatform, FakeSleepHold, HoldEvent};
 
 use std::path::Path;
 
