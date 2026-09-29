@@ -13,11 +13,9 @@ use crate::worktree;
 use crate::{PlannedMember, ValidPlan};
 
 const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const SPAWN_TIMEOUT: Duration = Duration::from_secs(150);
 const SUBMIT_TIMEOUT: Duration = Duration::from_secs(60);
-/// LCH-13: tries at starting an agent while the host says "not ready".
-const SPAWN_TRIES: u32 = 8;
-const SPAWN_PAUSE: Duration = Duration::from_millis(1500);
 /// The longest first message.
 const FIRST_MESSAGE_MAX: usize = 600;
 
@@ -37,26 +35,51 @@ impl Stop {
     }
 }
 
-/// Starts the agent, retrying only while the host says "not ready" (LCH-13).
+/// Starts the agent with one call. The host adapter owns any retry: a second
+/// `spawn` after "not ready" would start the same name in a new place.
 pub(crate) fn spawn(
     host: &dyn teamwire_core::Host,
     request: &teamwire_core::SpawnRequest,
 ) -> Result<Place, Stop> {
-    let mut last = None;
-    for attempt in 0..SPAWN_TRIES {
-        if attempt > 0 {
-            std::thread::sleep(SPAWN_PAUSE);
+    host.spawn(request, SPAWN_TIMEOUT).map_err(|e| {
+        let mut stop = spawn_stop(&e);
+        if e.code == HostErrorCode::Timeout {
+            stop.reason.push_str(&orphan_note(host, request));
         }
-        match host.spawn(request, SPAWN_TIMEOUT) {
-            Ok(place) => return Ok(place),
-            Err(e) if e.code == HostErrorCode::NotReady => last = Some(e),
-            Err(e) => return Err(spawn_stop(&e)),
-        }
+        stop
+    })
+}
+
+/// After a spawn timeout the host may have started the agent, and launch has
+/// no place to close. Say whether the agent is there, and what to do.
+fn orphan_note(host: &dyn teamwire_core::Host, request: &teamwire_core::SpawnRequest) -> String {
+    let name = request.name.as_str();
+    match host.live_agent_names(LIST_TIMEOUT) {
+        Ok(names) if names.iter().any(|n| n == name) => format!(
+            "; WARNING: the host started an agent named {name} anyway and it is still running. \
+             Launch has no place to close, so close that agent by hand in {} before launching \
+             this role again",
+            host.id()
+        ),
+        Ok(_) => format!("; the host's agent list does not show {name}"),
+        Err(e) => format!(
+            "; the host's agent list could not be read ({e}), so an agent named {name} may still \
+             be running: check {} and close it by hand",
+            host.id()
+        ),
     }
-    Err(last.map_or_else(
-        || Stop::fail("the host never started the agent"),
-        |e| spawn_stop(&e),
-    ))
+}
+
+/// What the lead is told when the folder-trust dialog also grants what the
+/// folder declares. The pane is closed by the undo, so the lead must trust
+/// the repository itself first.
+pub(crate) fn escalated_trust_message(repo: &Path) -> String {
+    format!(
+        "the repository's own settings ask for extra permissions, so the trust dialog was not \
+         answered; open Claude Code yourself in {}, review and accept that dialog there, then \
+         launch the member again with --add (the role is reusable because it never started)",
+        repo.display()
+    )
 }
 
 pub(crate) fn spawn_stop(e: &HostError) -> Stop {
@@ -239,5 +262,18 @@ pub(crate) fn dispatch(
              Send it yourself: teamwire send {} --to {} --type note --text \"{}\"",
             m.spec.role, plan.spec.team, m.spec.role, line
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn escalated_message_names_the_main_checkout_and_add() {
+        let text = escalated_trust_message(Path::new("/work/proj"));
+        assert!(text.contains("open Claude Code yourself in /work/proj"));
+        assert!(text.contains("--add") && text.contains("never started"));
+        assert!(!text.contains("answer it yourself"));
     }
 }

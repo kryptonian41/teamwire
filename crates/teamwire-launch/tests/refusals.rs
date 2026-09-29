@@ -227,23 +227,28 @@ fn hanging_agent_start_fails_one_member_only() {
 }
 
 #[test]
-fn a_host_that_is_not_ready_is_retried_and_a_taken_name_refuses_the_member() {
+fn a_not_ready_host_is_asked_once_and_a_taken_name_refuses_the_member() {
     use teamwire_core::{HostError, HostErrorCode};
     use teamwire_fakes::Fault;
     use teamwire_launch::LaunchOutcome;
+    // The host adapter owns any retry: a second spawn would start the same
+    // name again in a new place.
     let rig = Rig::new();
     rig.host.inject(
         "spawn",
         Fault::Fail(HostError::new(HostErrorCode::NotReady, "agent_not_ready")),
         1,
     );
-    let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
-    let (report, _store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
-    assert_eq!(
+    let (report, _store) = rig.launch("demo", rig.validate(&spec_for(&rig), false).unwrap());
+    assert!(matches!(
         report.members.first().unwrap().outcome,
-        LaunchOutcome::Started
+        LaunchOutcome::Failed(_)
+    ));
+    assert_eq!(
+        rig.host.log().count_named("spawn"),
+        1,
+        "one spawn call only"
     );
-    assert_eq!(rig.host.log().count_named("spawn"), 2);
 
     let rig = Rig::new();
     rig.host.inject(
@@ -264,6 +269,37 @@ fn a_host_that_is_not_ready_is_retried_and_a_taken_name_refuses_the_member() {
         common::member_row(&store, "a").unwrap().state,
         teamwire_core::MemberState::Failed
     );
+}
+
+#[test]
+fn a_spawn_timeout_that_started_the_agent_says_so_loudly() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    use teamwire_launch::LaunchOutcome;
+    let rig = Rig::new();
+    // The host starts the agent, then reports a timeout.
+    rig.host.inject(
+        "spawn",
+        Fault::AcceptedButFail(HostError::new(HostErrorCode::Timeout, "too slow")),
+        1,
+    );
+    let (report, _store) = rig.launch("demo", rig.validate(&spec_for(&rig), false).unwrap());
+    let outcome = &report.members.first().unwrap().outcome;
+    assert!(matches!(outcome, LaunchOutcome::Failed(_)), "{report:?}");
+    let reason = format!("{outcome:?}");
+    assert!(
+        reason.contains("WARNING") && reason.contains("tw_demo_a"),
+        "{reason}"
+    );
+    assert!(reason.contains("by hand"), "{reason}");
+    assert_eq!(rig.host.log().count_named("spawn"), 1);
+
+    // A timeout that left nothing behind says so too.
+    let rig = Rig::new();
+    rig.host.inject("spawn", Fault::Hang, 1);
+    let (report, _store) = rig.launch("demo", rig.validate(&spec_for(&rig), false).unwrap());
+    let text = format!("{:?}", report.members.first().unwrap().outcome);
+    assert!(text.contains("does not show tw_demo_a"), "{text}");
 }
 
 fn spec_for(rig: &Rig) -> serde_json::Value {

@@ -14,7 +14,9 @@ use teamwire_core::{
 };
 use teamwire_store::{Ctx, NewMember, NewTeam};
 
-use crate::member_steps::{Stop, dispatch, run_setup, spawn, write_member_files};
+use crate::member_steps::{
+    Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
+};
 use crate::worktree::{self, Made};
 use crate::{
     LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
@@ -400,10 +402,8 @@ fn run_member(
     match harness.answer_startup(host, &place, policy) {
         Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => {}
         Ok(StartupOutcome::RefusedEscalated) => {
-            return Err(Stop::fail(
-                "the folder-trust dialog also grants what the folder declares, so it was not answered; \
-                 answer it yourself, then launch the member again",
-            ));
+            let repo = m.worktree.as_ref().map_or(&m.cwd, |w| &w.repo);
+            return Err(Stop::fail(escalated_trust_message(repo)));
         }
         Ok(StartupOutcome::RefusedHome) => {
             return Err(Stop::fail(
