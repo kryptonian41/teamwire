@@ -9,11 +9,19 @@
 //! Invariants: the store is opened for each call and closed after it; a
 //! refused call stores nothing.
 
-use std::fmt;
-use std::path::Path;
+mod failure;
+mod server;
+mod tools;
 
+use std::fmt;
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use rmcp::ServiceExt;
 use teamwire_core::{Clock, Config, Platform, Registry, Role, TeamName};
 use thiserror::Error;
+
+pub use server::McpServer;
 
 /// Who the server speaks for: one member, proven by its token on every
 /// call, or the lead, proven by its harness session.
@@ -49,17 +57,18 @@ pub enum McpError {
     Internal(String),
 }
 
-/// What the server needs to build a `Ctx` for each call.
-#[derive(Clone, Copy)]
-pub struct ServerEnv<'a> {
-    pub home: &'a Path,
-    pub registry: &'a Registry,
-    pub platform: &'a dyn Platform,
-    pub clock: &'a dyn Clock,
-    pub config: &'a Config,
+/// What the server needs to build a `Ctx` for each call. It owns its parts
+/// because `rmcp` runs each call on its own task.
+#[derive(Clone)]
+pub struct ServerEnv {
+    pub home: PathBuf,
+    pub registry: Arc<Registry>,
+    pub platform: Arc<dyn Platform>,
+    pub clock: Arc<dyn Clock>,
+    pub config: Config,
 }
 
-impl fmt::Debug for ServerEnv<'_> {
+impl fmt::Debug for ServerEnv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ServerEnv")
             .field("home", &self.home)
@@ -70,10 +79,23 @@ impl fmt::Debug for ServerEnv<'_> {
 }
 
 /// Serves MCP on stdin and stdout until the client closes the stream.
-pub fn serve_stdio(_env: ServerEnv<'_>, _caller: McpCaller) -> Result<(), McpError> {
-    Err(McpError::Internal(
-        "teamwire-mcp is not built yet".to_owned(),
-    ))
+/// Stdout carries the protocol, so nothing else may print to it.
+pub fn serve_stdio(env: ServerEnv, caller: McpCaller) -> Result<(), McpError> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| McpError::Internal(format!("could not start the runtime: {e}")))?;
+    runtime.block_on(async {
+        let running = McpServer::new(env, caller)
+            .serve(rmcp::transport::stdio())
+            .await
+            .map_err(|e| McpError::Transport(e.to_string()))?;
+        running
+            .waiting()
+            .await
+            .map(|_| ())
+            .map_err(|e| McpError::Transport(e.to_string()))
+    })
 }
 
 #[cfg(test)]
