@@ -122,6 +122,11 @@ impl Rng {
         Self(seed)
     }
 
+    /// The seed, for a failure message that says how to replay the run.
+    pub fn seed(&self) -> u64 {
+        self.0
+    }
+
     pub fn next_u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
@@ -553,4 +558,42 @@ pub fn archive_verifies(dir: &Path) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|s| s.success())
+}
+
+/// The Stop-hook input of member `api`, with a hold already active so the
+/// hook goes straight to delivery.
+pub const STOP: &str =
+    r#"{"session_id":"session-api","hook_event_name":"Stop","stop_hook_active":true}"#;
+
+pub fn hook_args() -> Vec<&'static str> {
+    vec!["hook", "claude-stop", "--team", "alpha", "--role", "api"]
+}
+
+/// Runs the Stop hook of member `api` to the end: "one more turn end".
+pub fn stop_hook(rig: &Rig) -> Ended {
+    let me = Identity::Member("api".to_owned());
+    let out = rig.start_with_stdin(&hook_args(), &me, STOP).finish();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    out
+}
+
+/// Stops every agent the fake host still lists, then asserts none is left.
+pub fn stop_agents(rig: &Rig) {
+    let list = rig.herdr.run(&["agent", "list"]).unwrap();
+    let panes: Vec<String> = list
+        .result()
+        .and_then(|r| r.get("agents")?.as_array().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|a| a.get("pane_id")?.as_str().map(str::to_owned))
+        .collect();
+    for pane in &panes {
+        rig.herdr.run(&["pane", "close", pane]).unwrap();
+    }
+    let after = rig.herdr.run(&["agent", "list"]).unwrap();
+    let left = after
+        .result()
+        .and_then(|r| r.get("agents")?.as_array().map(Vec::len))
+        .unwrap_or(0);
+    assert_eq!(left, 0, "agents are still running: {after:?}");
 }

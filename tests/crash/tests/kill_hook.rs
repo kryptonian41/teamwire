@@ -19,7 +19,7 @@ pub mod rig;
 
 use std::time::{Duration, Instant};
 
-use rig::{Ended, Identity, Rig, assert_integrity};
+use rig::{Identity, Rig, STOP, assert_integrity, hook_args, stop_agents, stop_hook};
 use teamwire_core::{MemberKind, ReportState, Role};
 
 const KILL_POINTS: usize = 40;
@@ -36,19 +36,6 @@ fn team() -> Rig {
 
 fn me() -> Identity {
     Identity::Member("api".to_owned())
-}
-
-const STOP: &str =
-    r#"{"session_id":"session-api","hook_event_name":"Stop","stop_hook_active":true}"#;
-
-fn hook_args() -> Vec<&'static str> {
-    vec!["hook", "claude-stop", "--team", "alpha", "--role", "api"]
-}
-
-fn stop_hook(rig: &Rig) -> Ended {
-    let out = rig.start_with_stdin(&hook_args(), &me(), STOP).finish();
-    assert_eq!(out.code, Some(0), "{out:?}");
-    out
 }
 
 fn record_done(rig: &Rig, summary: &str) {
@@ -104,6 +91,7 @@ fn kill9_between_delivering_and_outcome_delivers_once_more() {
     stop_hook(&rig);
     assert_eq!(rig.typed_count("between-claim-and-outcome"), 2);
     assert_integrity(&rig.store());
+    stop_agents(&rig);
 }
 
 #[test]
@@ -147,4 +135,5 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         let typed = rig.typed_count(&summary);
         assert!((1..=2).contains(&typed), "{summary} typed {typed} times");
     }
+    stop_agents(&rig);
 }

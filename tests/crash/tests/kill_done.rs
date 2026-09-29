@@ -20,8 +20,8 @@ pub mod rig;
 
 use std::time::{Duration, Instant};
 
-use rig::{Identity, Rig, assert_integrity};
-use teamwire_core::{MemberKind, Role};
+use rig::{Identity, Rig, assert_integrity, stop_agents, stop_hook};
+use teamwire_core::{MemberKind, ReportState, Role};
 
 const KILL_POINTS: usize = 60;
 
@@ -43,6 +43,7 @@ fn numbers(rig: &Rig) -> Vec<u64> {
 fn kill9_during_done_stores_whole_or_nothing() {
     let mut rng = rig::Rng::from_env("kill9_during_done_stores_whole_or_nothing");
     let rig = Rig::new();
+    rig.start_lead();
     rig.add_member("api", MemberKind::Implementer, false);
     let me = Identity::Member("api".to_owned());
 
@@ -84,6 +85,23 @@ fn kill9_during_done_stores_whole_or_nothing() {
             told += 1;
             assert_eq!(after.len(), before.len() + 1, "{out:?}");
         }
+
+        // One more turn end settles the newest completion and leaves nothing
+        // in `delivering`, whether or not the killed `done` stored one.
+        stop_hook(&rig);
+        let states: Vec<ReportState> = rig
+            .store()
+            .read(|tx| tx.completions_of(&Role::parse("api").unwrap()))
+            .unwrap()
+            .items
+            .iter()
+            .map(|c| c.completion.report_state)
+            .collect();
+        assert!(
+            !states.contains(&ReportState::Delivering),
+            "{summary}: {states:?}"
+        );
+        assert_eq!(states.last(), Some(&ReportState::Delivered), "{summary}");
     }
     eprintln!("{told} of {KILL_POINTS} runs printed their completion before the kill");
 
@@ -98,4 +116,5 @@ fn kill9_during_done_stores_whole_or_nothing() {
     );
     assert_eq!(numbers(&rig).len(), count + 1);
     assert_integrity(&rig.store());
+    stop_agents(&rig);
 }

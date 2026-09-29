@@ -21,7 +21,10 @@ pub mod rig;
 
 use std::time::{Duration, Instant};
 
-use rig::{Identity, Rig, archive_verifies, archives, assert_integrity, launch_scout, team_name};
+use rig::{
+    Identity, Rig, archive_verifies, archives, assert_integrity, launch_scout, stop_agents,
+    team_name,
+};
 use teamwire_core::TeamState;
 use teamwire_store::Store;
 
@@ -102,6 +105,7 @@ fn kill9_during_close_after_the_archive_is_cleared_and_rerun() {
     assert_eq!(close_until_done(&rig), 2);
     assert_eq!(agents(&rig), 0, "the agent was left running");
     assert_closed_for_good(&rig);
+    stop_agents(&rig);
 }
 
 #[test]
@@ -163,6 +167,7 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
         );
         assert_eq!(agents(&rig), 0, "run {i}: the agent was left running");
         assert_closed_for_good(&rig);
+        stop_agents(&rig);
     }
     eprintln!("{caught_closed} of 8 runs saw the team closed before the kill");
 }

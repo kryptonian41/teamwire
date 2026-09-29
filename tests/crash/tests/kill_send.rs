@@ -19,7 +19,7 @@ pub mod rig;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
-use rig::{Identity, Rig, all_messages, assert_integrity, count_with_body, recipient};
+use rig::{Identity, Rig, all_messages, assert_integrity, count_with_body, recipient, stop_agents};
 use teamwire_core::{DeliveryState, MemberKind};
 
 const KILL_POINTS: usize = 200;
@@ -188,6 +188,7 @@ fn kill9_during_send_keeps_integrity() {
     ids.sort_unstable();
     ids.dedup();
     assert_eq!(ids.len(), after.len(), "two rows share a display id");
+    stop_agents(&rig);
 }
 
 #[test]
@@ -243,4 +244,5 @@ fn kill_after_submit_at_most_one_duplicate() {
         "{inbox:?}"
     );
     assert_eq!(count_with_body(&rig.store(), key), 1);
+    stop_agents(&rig);
 }
