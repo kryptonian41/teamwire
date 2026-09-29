@@ -7,7 +7,8 @@ use std::time::Duration;
 use teamwire_core::{Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, Timestamp};
 use teamwire_store::{Ctx, DeliveryRecord};
 
-use crate::send::{bump_again, deliver_one, record_refusal, report_of, team_name};
+use crate::attempt::{bump_again, deliver_one, report_of};
+use crate::send::{record_refusal, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
 /// A `pending` row is resendable only after this long: a crash left it, and

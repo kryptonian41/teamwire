@@ -9,6 +9,7 @@
 //! display ids come from counters inside the insert transaction; delivery
 //! states only move forward and `acked` is final.
 
+mod attempt;
 mod inbox;
 mod lead;
 mod log;

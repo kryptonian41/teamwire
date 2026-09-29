@@ -3,7 +3,7 @@
 use teamwire_core::{Actor, Message, Recipient, one_line};
 use teamwire_store::{Ctx, MessageFilter};
 
-use crate::send::report_of;
+use crate::attempt::report_of;
 use crate::{LogFilter, LogRow, RecipientReport, SendError};
 
 /// The longest excerpt a row carries.
