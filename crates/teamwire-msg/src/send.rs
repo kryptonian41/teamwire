@@ -213,6 +213,7 @@ pub fn record_refusal(
     };
     let data = json!({
         "code": refusal.code(),
+        "reason": refusal.code(),
         "type": kind.map(MessageType::as_str),
         "sender": actor.map(Actor::as_str),
         "to": to.iter().map(Recipient::as_str).collect::<Vec<_>>(),
@@ -236,4 +237,28 @@ pub fn watch_running(ctx: &Ctx<'_>) -> Result<Option<Pid>, SendError> {
     Ok(lease
         .map(|l| l.pid)
         .filter(|pid| ctx.platform.pid_alive(*pid)))
+}
+
+/// `prove_actor`, and a refusal is recorded as `message.refused` (MSG-15).
+/// Every front end (the CLI, the MCP server) calls this one, so a refused
+/// identity is logged the same way whoever asked.
+pub fn prove_actor_logged(ctx: &mut Ctx<'_>, env: &crate::CallerEnv) -> Result<Actor, Refusal> {
+    crate::prove_actor(ctx, env).inspect_err(|refusal| {
+        record_refusal(ctx, None, refusal, None, &[]);
+    })
+}
+
+/// Reads a message type from text. A type outside the closed set is
+/// `type_not_allowed`, recorded as `message.refused` for the proven sender.
+pub fn parse_type_logged(
+    ctx: &mut Ctx<'_>,
+    actor: &Actor,
+    text: &str,
+    to: &[Recipient],
+) -> Result<MessageType, Refusal> {
+    MessageType::parse(text).map_err(|_| {
+        let refusal = Refusal::TypeNotAllowed;
+        record_refusal(ctx, Some(actor), &refusal, None, to);
+        refusal
+    })
 }

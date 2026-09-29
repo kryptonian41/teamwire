@@ -35,7 +35,9 @@ pub use log::log;
 pub use prove::{prove_actor, token_hash};
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
-pub use send::{Stored, record_refusal, send, send_with, watch_running};
+pub use send::{
+    Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with, watch_running,
+};
 
 /// What the calling process says about itself, read from its environment
 /// and arguments. `prove_actor` turns it into a proven `Actor` (ADR 0008).

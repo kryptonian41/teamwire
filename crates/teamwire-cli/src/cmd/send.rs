@@ -7,8 +7,8 @@ use std::process::ExitCode;
 
 use teamwire_core::{Config, DisplayId, MessageType, Recipient, SendRequest, TeamName};
 use teamwire_msg::{
-    CallerEnv, RecipientState, SendError, SendReport, prove_actor, record_refusal, send_with,
-    watch_running,
+    CallerEnv, RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged,
+    send_with, watch_running,
 };
 use teamwire_store::{Ctx, Store, StoreError};
 
@@ -58,21 +58,11 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
     };
     let outcome = with_ctx(global, wiring, &team, |ctx| {
         let env = caller_env(from.clone());
-        let actor = match prove_actor(ctx, &env) {
+        let actor = match prove_actor_logged(ctx, &env) {
             Ok(actor) => actor,
-            Err(refusal) => {
-                record_refusal(ctx, None, &refusal, None, &[]);
-                return Outcome::Failed(SendError::Refused(refusal));
-            }
+            Err(refusal) => return Outcome::Failed(SendError::Refused(refusal)),
         };
-        let Ok(kind) = MessageType::parse(kind) else {
-            record_refusal(
-                ctx,
-                Some(&actor),
-                &teamwire_core::Refusal::TypeNotAllowed,
-                None,
-                &to,
-            );
+        let Ok(kind) = parse_type_logged(ctx, &actor, kind, &to) else {
             return Outcome::Unknown(format!("unknown type {kind:?}"));
         };
         let request = SendRequest {

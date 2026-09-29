@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use teamwire_core::{DisplayId, Recipient, TeamName};
-use teamwire_msg::{SendError, prove_actor, record_refusal, resend};
+use teamwire_msg::{SendError, prove_actor_logged, resend};
 
 use crate::cmd::send::{caller_env, error_code, exit_of, fail, print_report, with_ctx};
 use crate::wiring::Wiring;
@@ -36,12 +36,9 @@ pub(crate) fn run(args: &ResendArgs, global: &Global, wiring: &Wiring) -> ExitCo
         let from = std::env::var_os("TEAMWIRE_TOKEN")
             .is_none()
             .then(|| "lead".to_owned());
-        let actor = match prove_actor(ctx, &caller_env(from)) {
+        let actor = match prove_actor_logged(ctx, &caller_env(from)) {
             Ok(actor) => actor,
-            Err(refusal) => {
-                record_refusal(ctx, None, &refusal, None, &[]);
-                return Err(SendError::Refused(refusal));
-            }
+            Err(refusal) => return Err(SendError::Refused(refusal)),
         };
         resend(ctx, &actor, &id, to.as_deref())
     });

@@ -154,3 +154,37 @@ fn a_refused_identity_is_logged_and_stores_no_message() {
     );
     assert!(rig.events(EventType::MessageSent).is_empty());
 }
+
+#[test]
+fn a_library_level_identity_refusal_writes_the_event_with_code_and_reason() {
+    let mut rig = rig_with_members();
+    let env = member_env("api", "wrong-token");
+    let refusal = teamwire_msg::prove_actor_logged(&mut rig.ctx(), &env).unwrap_err();
+    assert_eq!(refusal, Refusal::Identity);
+    let events = rig.events(EventType::MessageRefused);
+    assert_eq!(events.len(), 1);
+    let data = &events.first().unwrap().data;
+    assert_eq!(data.get("code"), Some(&json!("identity")));
+    assert_eq!(data.get("reason"), Some(&json!("identity")));
+    // A proven caller writes nothing.
+    let ok = member_env("api", &token_of("api"));
+    assert!(teamwire_msg::prove_actor_logged(&mut rig.ctx(), &ok).is_ok());
+    assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
+}
+
+#[test]
+fn an_unknown_type_is_refused_and_logged_by_the_library() {
+    let mut rig = rig_with_members();
+    let actor = Actor::Member(role("api"));
+    let to = [rig::to("web")];
+    let parsed = teamwire_msg::parse_type_logged(&mut rig.ctx(), &actor, "gossip", &to);
+    assert_eq!(parsed, Err(Refusal::TypeNotAllowed));
+    let events = rig.events(EventType::MessageRefused);
+    assert_eq!(events.len(), 1);
+    let data = &events.first().unwrap().data;
+    assert_eq!(data.get("reason"), Some(&json!("type_not_allowed")));
+    assert_eq!(data.get("sender"), Some(&json!("api")));
+    let known = teamwire_msg::parse_type_logged(&mut rig.ctx(), &actor, "finding", &to);
+    assert_eq!(known, Ok(teamwire_core::MessageType::Finding));
+    assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
+}
