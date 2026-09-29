@@ -139,10 +139,13 @@ fn junk_is_bad_input() {
 }
 
 #[test]
-fn the_hold_reply_is_a_block_decision_with_the_note() {
+fn the_hold_reply_is_stop_additional_context_with_the_note() {
     let note = "add a progress line for abc1234\nthen stop again \"once\"";
     let reply: Value = serde_json::from_slice(&claude().hold_reply(note)).unwrap();
-    assert_eq!(reply, json!({ "decision": "block", "reason": note }));
+    assert_eq!(
+        reply,
+        json!({ "hookSpecificOutput": { "hookEventName": "Stop", "additionalContext": note } })
+    );
 }
 
 /// Polls for at most about 20 s. A count of sleeps stands in for a clock, which

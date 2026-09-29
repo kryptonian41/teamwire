@@ -52,8 +52,13 @@ pub(crate) fn parse_turn_end(stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
     })
 }
 
-/// The JSON Claude Code honours on exit 0 to keep a session going: the
-/// reason is shown to the model, which then acts on it.
+/// The JSON Claude Code honours on exit 0 to keep a session going: the note
+/// is handed to the model as added context and the turn continues. This is
+/// the form the Python Stop hook has run in production, and the one ADR 0007
+/// names.
 pub(crate) fn hold_reply(note: &str) -> Vec<u8> {
-    serde_json::to_vec(&json!({ "decision": "block", "reason": note })).unwrap_or_default()
+    serde_json::to_vec(&json!({
+        "hookSpecificOutput": { "hookEventName": "Stop", "additionalContext": note }
+    }))
+    .unwrap_or_default()
 }
