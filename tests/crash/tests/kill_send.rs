@@ -9,16 +9,14 @@
     reason = "the kill window and the counts are printed so a failing run can be read"
 )]
 #![expect(
-    clippy::unwrap_used,
     clippy::indexing_slicing,
-    reason = "helper functions in an integration-test file unwrap and index; a failure there fails the test"
+    reason = "helper functions in an integration-test file index; a failure there fails the test"
 )]
 
 #[path = "support/rig.rs"]
 pub mod rig;
 
 use std::collections::BTreeMap;
-use std::os::unix::fs::PermissionsExt as _;
 use std::time::{Duration, Instant};
 
 use rig::{Identity, Rig, all_messages, assert_integrity, count_with_body, recipient};
@@ -192,37 +190,11 @@ fn kill9_during_send_keeps_integrity() {
     assert_eq!(ids.len(), after.len(), "two rows share a display id");
 }
 
-/// A `herdr` wrapper that runs the fake, and after an `agent prompt` has
-/// typed the text creates `signal` and waits, so the caller is stuck between
-/// the host call and the recording of its outcome.
-fn slow_prompt_wrapper(rig: &Rig, signal: &std::path::Path) -> std::path::PathBuf {
-    std::fs::create_dir_all(rig.herdr.root().join("slow")).unwrap();
-    let path = rig.herdr.write_file("slow/herdr", &script(signal)).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    path.parent().unwrap().to_path_buf()
-}
-
-fn script(signal: &std::path::Path) -> String {
-    format!(
-        "#!/bin/sh\nfake-herdr \"$@\"\nrc=$?\nif [ \"$1 $2\" = \"agent prompt\" ]; then\n  : > '{}'\n  sleep 6\nfi\nexit $rc\n",
-        signal.display()
-    )
-}
-
-fn typed_count(rig: &Rig, text: &str) -> usize {
-    rig.herdr
-        .calls()
-        .iter()
-        .filter(|c| c.command() == "agent prompt" && c.argv.iter().any(|a| a.contains(text)))
-        .count()
-}
-
 #[test]
 fn kill_after_submit_at_most_one_duplicate() {
     let mut rig = Rig::new();
     rig.add_member("api", MemberKind::Implementer, true);
-    let signal = rig.herdr.root().join("typed");
-    rig.path_prefix = Some(slow_prompt_wrapper(&rig, &signal));
+    let signal = rig.pause_after("agent prompt");
 
     let key = "after-submit";
     let to_api = Pair {
@@ -230,21 +202,13 @@ fn kill_after_submit_at_most_one_duplicate() {
         to: "api".to_owned(),
     };
     let mut running = rig.start(&send_args(&to_api, key), &Identity::Lead);
-    let waited = Instant::now();
-    while !signal.exists() {
-        assert!(
-            waited.elapsed() < Duration::from_secs(20),
-            "the prompt was never typed: {}",
-            running.stderr_so_far()
-        );
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    Rig::wait_for(&signal, &mut running);
     running.kill9();
     let out = running.finish();
     let id = printed_id(&out.stderr, key).expect("the id was printed before the host call");
 
     // The text reached the pane once, and the outcome was never recorded.
-    assert_eq!(typed_count(&rig, key), 1);
+    assert_eq!(rig.typed_count(key), 1);
     let store = rig.store();
     assert_integrity(&store);
     assert_eq!(count_with_body(&store, key), 1);
@@ -264,13 +228,13 @@ fn kill_after_submit_at_most_one_duplicate() {
     rig.path_prefix = None;
     let out = rig.run(&send_args(&to_api, key), &Identity::Lead);
     assert!(out.stdout.starts_with(&format!("{id}\n")), "{out:?}");
-    assert_eq!(typed_count(&rig, key), 2);
+    assert_eq!(rig.typed_count(key), 2);
     assert_eq!(state(&rig), DeliveryState::HandedOff);
 
     // Nothing more is typed, and the member's inbox holds it once.
     let out = rig.run(&send_args(&to_api, key), &Identity::Lead);
     assert!(out.stdout.starts_with(&format!("{id}\n")), "{out:?}");
-    assert_eq!(typed_count(&rig, key), 2, "a third typing");
+    assert_eq!(rig.typed_count(key), 2, "a third typing");
     let inbox = rig.run(&["inbox", "--json"], &Identity::Member("api".to_owned()));
     assert_eq!(inbox.code, Some(0), "{inbox:?}");
     assert_eq!(

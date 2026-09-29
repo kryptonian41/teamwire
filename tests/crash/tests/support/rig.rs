@@ -244,60 +244,67 @@ impl Rig {
         Store::open(self.home.path(), &team_name()).unwrap()
     }
 
+    /// Starts a `fake-claude` session named `name` with session id `session`
+    /// in a new herdr pane, and returns the pane.
+    pub fn start_agent(&self, name: &str, session: &str) -> Place {
+        let ws = self
+            .herdr
+            .run(&[
+                "workspace",
+                "create",
+                "--cwd",
+                "/tmp",
+                "--label",
+                name,
+                "--no-focus",
+            ])
+            .unwrap();
+        let pane = ws
+            .result()
+            .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
+            .unwrap();
+        let settings = self
+            .herdr
+            .write_file(&format!("{name}-settings.json"), r#"{"env":{},"hooks":{}}"#)
+            .unwrap();
+        let started = self
+            .herdr
+            .run(&[
+                "agent",
+                "start",
+                name,
+                "--kind",
+                "claude",
+                "--pane",
+                &pane,
+                "--timeout",
+                "20000",
+                "--",
+                "-n",
+                name,
+                "--session-id",
+                session,
+                "--settings",
+                &settings.display().to_string(),
+            ])
+            .unwrap();
+        assert_eq!(started.code, Some(0), "{started:?}");
+        Place {
+            host: HostId::from_static("herdr"),
+            id: pane,
+        }
+    }
+
+    /// The lead's live session, so a result can be typed into it.
+    pub fn start_lead(&self) {
+        self.start_agent("lead-agent", LEAD_SESSION);
+    }
+
     /// A member. `live` starts a `fake-claude` session in its own herdr pane;
     /// otherwise the member is recorded and no process stands behind it.
     pub fn add_member(&self, role: &str, kind: MemberKind, live: bool) {
         let session = format!("session-{role}");
-        let mut place = None;
-        if live {
-            let ws = self
-                .herdr
-                .run(&[
-                    "workspace",
-                    "create",
-                    "--cwd",
-                    "/tmp",
-                    "--label",
-                    role,
-                    "--no-focus",
-                ])
-                .unwrap();
-            let pane = ws
-                .result()
-                .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
-                .unwrap();
-            let settings = self
-                .herdr
-                .write_file(&format!("{role}-settings.json"), r#"{"env":{},"hooks":{}}"#)
-                .unwrap();
-            let name = format!("tw_{TEAM}_{role}");
-            let started = self
-                .herdr
-                .run(&[
-                    "agent",
-                    "start",
-                    &name,
-                    "--kind",
-                    "claude",
-                    "--pane",
-                    &pane,
-                    "--timeout",
-                    "20000",
-                    "--",
-                    "-n",
-                    &name,
-                    "--session-id",
-                    &session,
-                    "--settings",
-                    &settings.display().to_string(),
-                ])
-                .unwrap();
-            assert_eq!(started.code, Some(0), "{started:?}");
-            place = Some(Place {
-                host: HostId::from_static("herdr"),
-                id: pane,
-            });
-        }
+        let place = live.then(|| self.start_agent(&format!("tw_{TEAM}_{role}"), &session));
         let r = Role::parse(role).unwrap();
         let hash = sha256(&token_of(role));
         let mut store = self.store();
@@ -376,6 +383,64 @@ impl Rig {
             out,
             err,
         }
+    }
+
+    /// Like `start`, with `stdin` as the child's standard input.
+    pub fn start_with_stdin(&self, args: &[&str], identity: &Identity, stdin: &str) -> Running {
+        use std::io::Write as _;
+        let mut input = tempfile::tempfile().unwrap();
+        input.write_all(stdin.as_bytes()).unwrap();
+        input.seek(SeekFrom::Start(0)).unwrap();
+        let out = tempfile::tempfile().unwrap();
+        let err = tempfile::tempfile().unwrap();
+        let mut cmd = self.command(args, identity);
+        cmd.stdin(Stdio::from(input))
+            .stdout(Stdio::from(out.try_clone().unwrap()))
+            .stderr(Stdio::from(err.try_clone().unwrap()));
+        Running {
+            child: cmd.spawn().unwrap(),
+            out,
+            err,
+        }
+    }
+
+    /// From now on, a `herdr <words>` call runs the fake, then creates the
+    /// returned signal file and waits six seconds before it returns. A caller
+    /// stuck there is between the host call and whatever it records next.
+    pub fn pause_after(&mut self, words: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt as _;
+        let signal = self.herdr.root().join("paused");
+        let script = format!(
+            "#!/bin/sh\nfake-herdr \"$@\"\nrc=$?\nif [ \"$1 $2\" = '{words}' ]; then\n  : > '{}'\n  sleep 6\nfi\nexit $rc\n",
+            signal.display()
+        );
+        std::fs::create_dir_all(self.herdr.root().join("slow")).unwrap();
+        let path = self.herdr.write_file("slow/herdr", &script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        self.path_prefix = Some(path.parent().unwrap().to_path_buf());
+        signal
+    }
+
+    /// Waits until `signal` exists, failing after 20 seconds.
+    pub fn wait_for(signal: &Path, running: &mut Running) {
+        let waited = Instant::now();
+        while !signal.exists() {
+            assert!(
+                waited.elapsed() < Duration::from_secs(20),
+                "the pause point was never reached: {}",
+                running.stderr_so_far()
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    /// How many times a text was typed into a pane by `agent prompt`.
+    pub fn typed_count(&self, text: &str) -> usize {
+        self.herdr
+            .calls()
+            .iter()
+            .filter(|c| c.command() == "agent prompt" && c.argv.iter().any(|a| a.contains(text)))
+            .count()
     }
 
     pub fn run(&self, args: &[&str], identity: &Identity) -> Ended {
