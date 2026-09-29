@@ -1,6 +1,10 @@
 //! `verify`: the real exit code of the check, the diff base, the flags of the
 //! diff rules, the five verdicts and waivers bound to a HEAD.
 #![expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
+)]
+#![expect(
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
@@ -11,7 +15,7 @@ mod fixture;
 use fixture::{Fixture, Repo, implementer, start_secs};
 use sha2::{Digest, Sha256};
 use teamwire_core::{Role, RunOutput};
-use teamwire_verify::{Verdict, VerifyOpts, VerifyRecord, verify};
+use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, verify, waive};
 
 const T0: i64 = 0;
 
@@ -445,4 +449,252 @@ fn verify_changes_no_worktree() {
             );
         }
     }
+}
+
+// ---- U3: verdicts, records, waivers ----
+
+fn stored(fx: &Fixture, name: &str) -> Vec<teamwire_store::VerifyRow> {
+    fx.store
+        .read(|tx| tx.verify_records(&role(name)))
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap()
+}
+
+/// A member that deleted its only test and whose check exits 0.
+fn deleted_test() -> (Fixture, Repo) {
+    let (fx, repo) = rust_member(&["src/", "tests/"], &[]);
+    repo.remove("tests/a.rs");
+    repo.commit(
+        &[("src/lib.rs", "fn a() {}\n")],
+        "green build",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    (fx, repo)
+}
+
+#[test]
+fn flags_with_exit_zero_is_flagged_not_pass() {
+    let (mut fx, repo) = deleted_test();
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.exit_code, Some(0));
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert_eq!(flag_ids(&record), ["test-deleted:tests/a.rs"]);
+    let rows = stored(&fx, "api");
+    let row = rows.first().unwrap();
+    assert_eq!(row.record.verdict, "FLAGGED");
+    assert_eq!(row.record.head_sha, repo.head());
+    assert_eq!(row.record.flags, ["test-deleted:tests/a.rs"]);
+}
+
+#[test]
+fn a_waiver_makes_the_flagged_pass_a_pass_for_that_head_only() {
+    let (mut fx, repo) = deleted_test();
+    let flag = FlagId::new("test-deleted:tests/a.rs");
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &flag,
+        "the suite moved to src/",
+    )
+    .unwrap();
+
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Pass, "{record:?}");
+    assert!(record.flags.first().unwrap().waived);
+    assert_eq!(stored(&fx, "api").last().unwrap().record.verdict, "PASS");
+    let waivers = fx
+        .store
+        .read(|tx| tx.all_waivers())
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap();
+    let waiver = waivers.first().unwrap();
+    assert_eq!(waiver.flag_id, "test-deleted:tests/a.rs");
+    assert_eq!(waiver.head_sha, repo.head());
+    assert_eq!(waiver.reason, "the suite moved to src/");
+
+    // One more commit moves HEAD: the waiver does not carry over.
+    repo.commit(&[("src/more.rs", "fn m() {}\n")], "more", start_secs() + 9);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert!(!record.flags.first().unwrap().waived);
+}
+
+#[test]
+fn a_waiver_names_one_flag_and_one_flag_only() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    repo.commit(
+        &[(
+            "src/lib.rs",
+            "#[allow(dead_code)]\nfn a() {}\n#[allow(unused)]\nfn b() {}\n",
+        )],
+        "add",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("weakened:src/lib.rs:1"),
+        "dead code is on purpose",
+    )
+    .unwrap();
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged);
+    let waived: Vec<(&str, bool)> = record
+        .flags
+        .iter()
+        .map(|f| (f.id.as_str(), f.waived))
+        .collect();
+    assert_eq!(
+        waived,
+        [
+            ("weakened:src/lib.rs:1", true),
+            ("weakened:src/lib.rs:3", false)
+        ]
+    );
+}
+
+#[test]
+fn waiving_a_flag_the_member_does_not_have_is_refused() {
+    let (mut fx, _repo) = deleted_test();
+    let ghost = FlagId::new("test-deleted:tests/b.rs");
+    let err = waive(&mut fx.ctx(), &role("api"), &ghost, "why").unwrap_err();
+    assert_eq!(err, VerifyError::UnknownFlag(ghost));
+    let err = waive(&mut fx.ctx(), &role("nobody"), &FlagId::new("x"), "why").unwrap_err();
+    assert_eq!(err, VerifyError::UnknownRole(role("nobody")));
+    let err = waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("test-deleted:tests/a.rs"),
+        "  ",
+    )
+    .unwrap_err();
+    assert!(matches!(err, VerifyError::Internal(_)), "{err:?}");
+    assert!(
+        fx.store
+            .read(|tx| tx.all_waivers())
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}
+
+#[test]
+fn a_failing_check_stays_fail_even_when_every_flag_is_waived() {
+    let (mut fx, _repo) = deleted_test();
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("test-deleted:tests/a.rs"),
+        "ok",
+    )
+    .unwrap();
+    fx.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE members SET check_cmd = 'exit 1'", [])
+                .map(|_| ())
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Fail);
+    assert_eq!(record.exit_code, Some(1));
+}
+
+#[test]
+fn a_worktree_member_with_no_check_is_no_check_and_never_clean() {
+    let repo = repo_on_work(&[("src/a.rs", "")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, None, &["src/"]));
+    fx.write_report("api", "Decisions I made: none\n");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::NoCheck);
+    assert_eq!(record.exit_code, None);
+    assert_eq!(
+        stored(&fx, "api").last().unwrap().record.verdict,
+        "NO-CHECK"
+    );
+}
+
+#[test]
+fn removed_unstarted_and_checkless_pane_members_are_skipped() {
+    let repo = repo_on_work(&[("src/a.rs", "")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("gone", &repo, Some("true"), &["src/"]));
+    let now = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| tx.remove_member(now, &role("gone"), Some("done"), &serde_json::json!({})))
+        .unwrap();
+    let mut pane = implementer("pane", &repo, None, &[]);
+    pane.mode = teamwire_core::Mode::Pane;
+    pane.kind = teamwire_core::MemberKind::Reviewer;
+    fx.add_member(&pane);
+    let records = verify(&mut fx.ctx(), None, VerifyOpts::default());
+    let verdicts: Vec<(&str, Verdict)> = records
+        .iter()
+        .map(|r| (r.role.as_str(), r.verdict))
+        .collect();
+    assert_eq!(
+        verdicts,
+        [("gone", Verdict::Skipped), ("pane", Verdict::Skipped)]
+    );
+    assert!(
+        records
+            .iter()
+            .all(|r| r.note.is_some() && r.head_sha.is_none())
+    );
+    assert!(stored(&fx, "gone").is_empty());
+    assert!(
+        fx.platform.commands().is_empty(),
+        "a skipped member runs nothing"
+    );
+}
+
+#[test]
+fn a_pane_member_with_a_check_is_checked_without_the_diff_rules() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repo_on_work(&[("src/a.rs", "")]);
+    let mut fx = Fixture::new();
+    let mut pane = implementer("pane", &repo, Some("true"), &["src/"]);
+    pane.mode = teamwire_core::Mode::Pane;
+    pane.kind = teamwire_core::MemberKind::Reviewer;
+    pane.cwd = dir.path().to_path_buf();
+    fx.add_member(&pane);
+    let record = run_one(&mut fx, "pane");
+    assert_eq!(record.verdict, Verdict::Pass);
+    assert!(record.flags.is_empty());
+    assert_eq!(record.head_sha, None);
+    assert_eq!(stored(&fx, "pane").last().unwrap().record.head_sha, "none");
+}
+
+#[test]
+fn an_unknown_role_is_an_error_and_records_nothing() {
+    let mut fx = Fixture::new();
+    let err = run(&mut fx.ctx(), Some(&role("nobody")), VerifyOpts::default()).unwrap_err();
+    assert_eq!(err, VerifyError::UnknownRole(role("nobody")));
+}
+
+#[test]
+fn the_report_is_clean_only_when_every_checked_member_passes() {
+    let repo = repo_on_work(&[("src/a.rs", "")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    fx.write_report("api", "Decisions I made: none\n");
+    let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
+    assert!(report.is_clean(false));
+    fx.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE members SET check_cmd = 'exit 2'", [])
+                .map(|_| ())
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
+    assert!(!report.is_clean(false));
 }
