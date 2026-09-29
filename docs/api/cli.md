@@ -128,6 +128,13 @@ Sends one message (ADR 0003). `--to` takes roles separated by commas, or
 exits 4. `--type reprompt` (lead only) starts the member's next generation
 and says whether a watch is running.
 
+### `teamwire resend <team> <ID> [--to ROLES]`
+
+Retries one stored message, by display id, to its `undelivered`,
+`unconfirmed` or stale `pending` recipients (ADR 0003 point 2a). Same message
+id, a new delivery attempt, no burst or repeat check. The sender or the lead
+only. Exit codes as for `send`.
+
 ### `teamwire log <team> [--role ROLE] [--json]`
 
 Every message with its time, type, sender, recipients, a 300-character

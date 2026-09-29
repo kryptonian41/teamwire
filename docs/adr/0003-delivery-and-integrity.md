@@ -49,9 +49,22 @@ and the lead all use short ids such as `m014` in text.
 
 **2. Idempotent sends.** The sender may pass a client key (`--key`). The
 pair (sender, key) is unique. A second send with the same key returns the
-first message and delivers only to recipients still `pending`. It never
-re-sends to a recipient in any other state. With no key given, teamwire makes
-one from the ULID, so plain retries are new messages.
+first message and delivers only to recipients that are still `pending` or
+are `undelivered` (teamwire knows nothing was typed to them). It never
+re-sends to a recipient that is `handed_off`, `unconfirmed` or `acked`. With
+no key given, teamwire makes one from the ULID. The CLI prints the display id
+and the key on stderr right after the commit, before any host call, so a
+sender killed mid-delivery can still name its message.
+
+**2a. Explicit resend of the same message.** `teamwire resend <team> <id>
+[--to ROLES]` and the MCP tool `team_resend` retry one stored message, by its
+display id, to the recipients whose delivery is `undelivered`, `unconfirmed`,
+or `pending` for more than 60 s (left by a crash). Only the original sender or
+the lead may resend. A resend never creates a message: it adds a delivery
+attempt to the existing rows (`attempts + 1`, event `delivery.resent`), runs
+the same locator and retry rules, and is exempt from the burst and repeat
+checks of point 12. `unconfirmed` is resent only this way, by an explicit
+decision, never automatically (INV-5).
 
 **3. Ids.** The ULID is the identity and the dedup key. The display id
 (`m001`, `m002`, ...) comes from a counter row incremented in the same
@@ -121,7 +134,11 @@ milliseconds. It is never held during a host call (MSG-8, STO-4).
 
 **12. Burst limit.** At most 5 messages per sender to one recipient per
 minute, and an identical body to the same recipient within 10 minutes is
-refused. Both refusals are logged (MSG-14).
+refused. Both refusals are logged (MSG-14). The repeat check ignores an
+earlier identical message whose delivery to that recipient ended
+`undelivered` or never finished (`pending`), so a sender whose first try
+failed is never blocked from trying again. Resends (point 2a) are not new
+messages and are not counted.
 
 ## Consequences
 

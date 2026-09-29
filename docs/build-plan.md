@@ -37,7 +37,7 @@ How the waves run:
 | T09 Verify and the report check | 3 | T02, T03, T04 | `crates/teamwire-verify/`, `cli/src/cmd/verify.rs`, `cli/tests/verify.rs` | `cargo test -p teamwire-verify --locked && cargo test -p teamwire-cli --test verify --locked` | L |
 | T10 Watch and status | 4 | T02, T04 | `crates/teamwire-watch/`, `cli/src/cmd/watch.rs`, `cli/src/cmd/status.rs`, `cli/tests/watch.rs`, `cli/tests/status.rs` | `cargo test -p teamwire-watch --locked && cargo test -p teamwire-cli --test watch --test status --locked` | L |
 | T11 Metrics and OpenTelemetry export | 4 | T02, T04 | `crates/teamwire-otel/`, `cli/src/cmd/metrics.rs`, `cli/src/cmd/export.rs`, `cli/tests/metrics.rs` | `cargo test -p teamwire-otel --locked && cargo test -p teamwire-cli --test metrics --locked` | M |
-| T12 Messages | 4 | T07 | `crates/teamwire-msg/`, `cli/src/cmd/send.rs`, `cli/src/cmd/log.rs`, `cli/src/cmd/inbox.rs`, `cli/src/cmd/ack.rs`, `cli/src/cmd/members.rs`, `cli/src/cmd/lead.rs`, `cli/tests/send.rs`, `cli/tests/inbox.rs` | `cargo test -p teamwire-msg --locked && cargo test -p teamwire-cli --test send --test inbox --locked` | M |
+| T12 Messages | 4 | T07 | `crates/teamwire-msg/`, `cli/src/cmd/send.rs`, `cli/src/cmd/log.rs`, `cli/src/cmd/inbox.rs`, `cli/src/cmd/ack.rs`, `cli/src/cmd/members.rs`, `cli/src/cmd/lead.rs`, `cli/src/cmd/resend.rs`, `cli/tests/send.rs`, `cli/tests/inbox.rs` | `cargo test -p teamwire-msg --locked && cargo test -p teamwire-cli --test send --test inbox --locked` | M |
 | T13 Completions, results and hooks | 4 | T06, T07, T09 | `crates/teamwire-report/`, `cli/src/cmd/done.rs`, `cli/src/cmd/hook.rs`, `cli/tests/done.rs`, `cli/tests/hook.rs` | `cargo test -p teamwire-report --locked && cargo test -p teamwire-cli --test done --test hook --locked` | L |
 | T14 Close, removal and archive | 4 | T03, T08, T09 | `crates/teamwire-close/`, `cli/src/cmd/close.rs`, `cli/tests/close.rs` | `cargo test -p teamwire-close --locked && cargo test -p teamwire-cli --test close --locked` | L |
 | T15 MCP server | 5 | T10, T12, T13 | `crates/teamwire-mcp/`, `cli/src/cmd/mcp.rs` | `cargo test -p teamwire-mcp --locked` | M |
@@ -245,7 +245,9 @@ tests: every `crates/teamwire-otel/tests/...` row in `docs/failure-modes.md`.
 ### T12 Messages (wave 4)
 
 `prove_actor` (ADR 0008), the six types and their rules (MSG-1 to MSG-3,
-MSG-9, MSG-14, MSG-15), `send` with the outbox order, idempotent keys and
+MSG-9, MSG-14, MSG-15, MSG-19), `send` with the outbox order, idempotent keys
+(printed before any host call), `resend` of the same message id (ADR 0003
+point 2a, `cli/src/cmd/resend.rs`) and
 `comms/` copies, `inbox` with hash checks, `ack`, `log`, reprompt generation
 changes with undo on a known failure and keep on unconfirmed, and `teamwire
 lead --adopt`. Port every refusal case of
@@ -278,7 +280,7 @@ tests: every `crates/teamwire-close/tests/...` row in `docs/failure-modes.md`.
 
 ### T15 MCP server (wave 5)
 
-`teamwire mcp` over stdio with `rmcp`: the seven tools of `docs/api/mcp.md`,
+`teamwire mcp` over stdio with `rmcp`: the eight tools of `docs/api/mcp.md`,
 member and lead identity, structured results and error codes. Tests drive the
 server with an in-process `rmcp` client: tool list snapshot, one success and
 one refusal per tool, and a check that a refused call stores nothing.

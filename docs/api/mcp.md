@@ -40,7 +40,8 @@ refused or failed call returns `isError: true` with:
 | `refused.not_a_question` | `re` is not a question | no |
 | `refused.not_asked_of_you` | `re` is a question to someone else | no |
 | `refused.rate_limited` | More than 5 messages to one recipient in a minute | yes, later |
-| `refused.repeat` | Same body to the same recipient within 10 minutes | no |
+| `refused.repeat` | Same body to the same recipient within 10 minutes, and that earlier copy was delivered | no; use `team_resend` for a copy that failed |
+| `refused.not_resendable` | `team_resend` on a message you did not send (and you are not the lead), or with no recipient in a resendable state | no |
 | `refused.team_closed` | The team is closing or closed | no |
 | `invalid.status` | `team_done` status is not `done`, `blocked` or `failed` | no |
 | `invalid.argument` | A field is missing or malformed | no |
@@ -88,8 +89,20 @@ Output:
 ```
 
 With a `key` already used by this sender, the output is the first message's,
-with `duplicate_of_key: true`, and only recipients still `pending` are tried
-again.
+with `duplicate_of_key: true`, and only recipients still `pending` or
+`undelivered` are tried again.
+
+## `team_resend`
+
+Retry one stored message to the recipients it did not reach (ADR 0003 point
+2a). The sender or the lead only.
+
+Input: `{"id": "m014", "to": ["rust"]}` (`to` optional; default every
+resendable recipient).
+
+Output: the same shape as `team_send`, for the same message id, with each
+retried recipient's new state and `attempts`. Recipients that are
+`handed_off` or `acked` are listed as `skipped`. No new message is created.
 
 ## `team_inbox`
 

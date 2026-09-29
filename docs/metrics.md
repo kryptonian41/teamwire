@@ -20,6 +20,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `message.sent`, `message.refused` | send stores or refuses | `type`, `sender_kind`, `recipients`, `chars`; `reason` |
 | `delivery.handed_off`, `.unconfirmed`, `.undelivered` | outcome per recipient | `route`, `attempts`, `code`, `seconds` since `message.sent` |
 | `delivery.acked`, `delivery.reminded` | the recipient reads; a hook reminds | `seconds` since `message.sent` |
+| `delivery.resent` | an explicit resend starts a new attempt | `attempt`, `previous_state` |
 | `result.delivering`, `.delivered`, `.undelivered`, `.unconfirmed` | a result's delivery steps | `route`, `code`, `seconds` since `member.completed` |
 | `watch.started`, `watch.line`, `watch.stopped` | the watch starts, prints, exits | `events` (list of event names in the line) |
 | `verify.recorded`, `verify.waived` | a verify record; a waiver | `verdict`, `flags`, `exit`, `seconds` |

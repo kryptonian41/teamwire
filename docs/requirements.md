@@ -154,7 +154,8 @@ Each one has a test named in `docs/failure-modes.md`.
 | MSG-11 | MUST | Each recipient has its own delivery state. teamwire never claims a message was read unless the recipient acknowledged it. | rust 9; protocols R4, R5 |
 | MSG-12 | MUST | Undelivered messages stay in the store with attempt count and reason, and status lists them. Nothing is deleted on failure. | rust 10; protocols R8 |
 | MSG-13 | SHOULD | Messages between members do not wake the lead. A `question` to the lead does. | specmsg D7, Q4 |
-| MSG-14 | SHOULD | The sender side refuses bursts and identical repeats to one recipient, and logs the refusal. | protocols R28 |
+| MSG-14 | SHOULD | The sender side refuses bursts and identical repeats to one recipient, and logs the refusal. An earlier copy that was never delivered does not count as a repeat. | protocols R28; archrev 3 |
+| MSG-19 | MUST | A stored message can be resent explicitly, by its id, to its `undelivered`, `unconfirmed` or stale `pending` recipients only. A resend is a new delivery attempt on the same message, never a new message, and is exempt from the burst and repeat checks. Only the sender or the lead may resend. | archrev 3; lead's triage m016 |
 | MSG-15 | MUST | The type set is closed and checked before anything is stored. Refused sends are logged as refusals. | protocols R10 |
 | MSG-16 | SHOULD | Field names follow CloudEvents where one fits (`id`, `source`, `type`, `time`, `subject`). | protocols R12 |
 | MSG-17 | SHOULD | Causal links use `re` (the id being answered). No vector clocks. | protocols R7 |
@@ -264,7 +265,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| MCP-1 | MUST | teamwire ships a stdio MCP server that exposes send, inbox, ack, done, status, members and log, with the same rules and refusals as the CLI. | specmsg R31; harness R8, R17; protocols R21 |
+| MCP-1 | MUST | teamwire ships a stdio MCP server that exposes send, resend, inbox, ack, done, status, members and log, with the same rules and refusals as the CLI. | specmsg R31; harness R8, R17; protocols R21 |
 | MCP-2 | MUST | Tool results state what happened: the ids created and each recipient's delivery state. A refused call creates no record other than the refusal. | harness R8 |
 | MCP-3 | SHOULD | The inbox is also a resource, whose update notification is only a hint. Dropping every notification loses nothing. | protocols R24 |
 | MCP-4 | SHOULD | Use `rmcp` pinned to an exact 3.x version. | rust 24; protocols R23 |

@@ -153,7 +153,7 @@ team.created team.closing team.closed team.lead_adopted
 member.creating member.started member.failed member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
-delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded
+delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent
 result.delivering result.delivered result.undelivered result.unconfirmed
 watch.started watch.line watch.stopped
 verify.recorded verify.waived
@@ -363,6 +363,7 @@ pub fn prove_actor(ctx: &Ctx, env: &CallerEnv) -> Result<Actor, Refusal>;
 pub fn send(ctx: &mut Ctx, req: SendRequest) -> Result<SendReport, SendError>;
 pub fn inbox(ctx: &mut Ctx, me: &Role, all: bool) -> Result<Vec<InboxItem>, SendError>;
 pub fn ack(ctx: &mut Ctx, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckResult>, SendError>;
+pub fn resend(ctx: &mut Ctx, actor: &Actor, id: &DisplayId, to: Option<&[Recipient]>) -> Result<SendReport, SendError>;
 pub fn log(ctx: &Ctx, filter: LogFilter) -> Result<Vec<LogRow>, SendError>;
 
 // teamwire-report
