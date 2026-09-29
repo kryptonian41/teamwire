@@ -9,14 +9,18 @@ use std::time::Duration;
 
 use nix::sys::signal::{Signal, kill};
 use teamwire_core::{
-    Command, HoldInfo, Pid, PlatformError, PlatformErrorCode, ReleaseOutcome, SleepHold,
+    Clock, Command, HoldInfo, Pid, PlatformError, PlatformErrorCode, ReleaseOutcome, SleepHold,
 };
 
 use crate::run::run_command;
-use crate::{MacOs, io_error, process};
+use crate::{MacOs, SystemClock, io_error, process};
 
 /// Bound on the `ps` calls (DEL-14).
 const PS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// How long `release` waits for a killed hold to exit, and how often it looks.
+const EXIT_WAIT: Duration = Duration::from_secs(2);
+const EXIT_POLL: Duration = Duration::from_millis(10);
 
 /// What `parse_caffeinate` read from one command line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,7 +148,7 @@ impl SleepHold for MacOs {
             .map(nix::unistd::Pid::from_raw)
             .map_err(|_| PlatformError::new(PlatformErrorCode::Other, "pid out of range"))?;
         match kill(raw, Signal::SIGTERM) {
-            Ok(()) => Ok(ReleaseOutcome::Released),
+            Ok(()) => wait_gone(hold.pid),
             Err(nix::errno::Errno::ESRCH) => Ok(ReleaseOutcome::AlreadyGone),
             Err(errno) => Err(io_error(
                 &format!("releasing caffeinate {}", hold.pid),
@@ -152,6 +156,24 @@ impl SleepHold for MacOs {
             )),
         }
     }
+}
+
+/// SIGTERM is asynchronous. Return `Released` only once the process is gone,
+/// so a `find_existing` right after `release` cannot see the hold. A hold
+/// that ignores SIGTERM for `EXIT_WAIT` is an error, not a success.
+fn wait_gone(pid: Pid) -> Result<ReleaseOutcome, PlatformError> {
+    let clock = SystemClock;
+    let deadline = clock.monotonic() + EXIT_WAIT;
+    while process::pid_alive(pid) {
+        if clock.monotonic() >= deadline {
+            return Err(PlatformError::new(
+                PlatformErrorCode::Other,
+                format!("caffeinate {pid} was sent SIGTERM but is still running"),
+            ));
+        }
+        std::thread::sleep(EXIT_POLL);
+    }
+    Ok(ReleaseOutcome::Released)
 }
 
 #[expect(

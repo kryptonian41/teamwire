@@ -147,7 +147,8 @@ fn release_only_last_owned() {
         holds.release(&hold, lead.pid()).unwrap(),
         ReleaseOutcome::Released
     );
-    assert!(gone(hold.pid));
+    // No waiting: `release` returns only once the hold is gone.
+    assert!(!native().pid_alive(hold.pid));
     assert_eq!(holds.find_existing(lead.pid()), None);
     assert_eq!(
         holds.release(&hold, lead.pid()).unwrap(),
