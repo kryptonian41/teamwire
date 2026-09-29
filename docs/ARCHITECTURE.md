@@ -125,7 +125,11 @@ Rules that hold across the model:
   `counters` table inside the insert transaction, never from counting rows.
 - Nothing is deleted while the team is open. A removed member keeps its row.
   An undelivered message keeps its row with the reason.
-- Every write transaction also writes the event row for its change (OBS-1).
+- Every write transaction that changes lifecycle or message state also
+  writes the event row for its change (OBS-1). Bookkeeping writes write no
+  event: a member's place, session and token hash, the sleep-hold record,
+  announcements, the watch lease heartbeat, and the metric export mark
+  (an event for the mark would feed the export its own tail).
 - Times are stored as UTC RFC 3339 strings with milliseconds. Timeouts
   inside one process use a monotonic clock.
 

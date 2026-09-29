@@ -56,14 +56,14 @@ paths never appear as labels.
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
 | `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `refused`, `failed`), `reason` | Why do launches fail? |
-| `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? |
+| `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started` and `member.failed`. |
 | `teamwire.locator.refusals` | counter | `{refusal}` | `team`, `code` | Is the wrong-session check firing, and why? |
 | `teamwire.verify.runs` | counter | `{run}` | `team`, `verdict` | How often does verify pass, flag or fail? |
 | `teamwire.verify.flags` | counter | `{flag}` | `team`, `flag` | Which weakening or scope flags appear? |
 | `teamwire.verify.check.duration` | histogram | `s` | `team`, `verdict` | How long do member checks take? |
 | `teamwire.close.runs` | counter | `{run}` | `outcome`, `failed_step` | Where do closes stop? |
 | `teamwire.store.errors` | counter | `{error}` | `op`, `code` | Is the store healthy (busy, full, corrupt)? |
-| `teamwire.hook.duration` | histogram | `s` | `hook` | What does a hook cost each member turn? |
+| `teamwire.hook.duration` | histogram | `s` | `hook` | What does a hook cost each member turn? Read from the `hook_ms` field that a hook run puts in the `data` of every event it writes; a hook run that writes no event is not measured. |
 | `teamwire.export.lag` | gauge | `{event}` | none | How far behind is the OTLP export? |
 
 `teamwire metrics` prints these per team, plus three derived lines the lead
@@ -79,7 +79,7 @@ after the fact, with their recorded start and end times.
 | Span | Parent | Starts at | Ends at | Attributes |
 | --- | --- | --- | --- | --- |
 | `teamwire.team` | none | `team.created` | `team.closed` (open while the team lives) | `teamwire.team`, `teamwire.harness`, `teamwire.host` |
-| `teamwire.launch` | `teamwire.team` | launch start | launch end | `teamwire.members.requested`, `.started` |
+| `teamwire.launch` | `teamwire.team` | first event with a given `data.launch` | last event with that `data.launch` | `teamwire.members.requested`, `.started` |
 | `teamwire.launch.member` | `teamwire.launch` | `member.creating` | `member.started` or `member.failed` | `teamwire.role`, `teamwire.kind`, `error.type` |
 | `teamwire.member.generation` | `teamwire.team` | `member.started` or `member.reprompted` | `member.completed` | `teamwire.role`, `teamwire.generation`, `teamwire.status`, `session.id` |
 | `teamwire.message` | `teamwire.team` | `message.sent` | last recipient's final delivery event | `teamwire.message.id`, `teamwire.message.type`, `teamwire.from` |
@@ -99,3 +99,24 @@ On teamwire's own export: `service.name=teamwire`, `service.version`,
 In each member's environment (OBS-4), appended to any existing value:
 `OTEL_RESOURCE_ATTRIBUTES=...,teamwire.team=<team>,teamwire.role=<role>`.
 Nothing per run or per message goes there.
+
+## 5. Fields the event data carries for derived metrics
+
+Decided by the lead on 2026-09-29, so that no event type was added after the
+wave-1 contract:
+
+- Every `member.creating`, `member.started` and `member.failed` written by one
+  `teamwire launch` run carries `data.launch` (a ULID made once per run) and
+  `data.requested` (the number of members in the spec). The
+  `teamwire.launch` span runs from the first to the last event with that id.
+- `member.started` and `member.failed` carry `data.steps`, the milliseconds
+  each launch step took. `member.started` also carries `data.session_id`, the
+  harness session id for the `session.id` attribute.
+- A whole-spec refusal (exit 1) creates nothing, so it is not counted under
+  `teamwire.launch.members` `outcome=refused`; only refusals of single
+  members inside a launch that also stored something are.
+- Every event a hook run writes carries `data.hook` (`claude-stop`,
+  `claude-post-tool`) and `data.hook_ms`.
+- A `member.reprompted` event with `data.undone: true` records an undone
+  reprompt and is not counted as a reprompt. A `team.closed` event carries
+  `data.outcome`; only `completed` closes the team.

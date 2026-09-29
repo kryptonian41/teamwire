@@ -35,8 +35,10 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
 | `fake-claude` | binary | Started by `fake-herdr agent start` in a fake pane. Writes a session file into `TEAMWIRE_CLAUDE_DIR/sessions/`, reads its `--settings` file and applies its `env` key to every shell step and hook it runs (as Claude Code does), and plays a script (`FAKE_CLAUDE_SCRIPT`) of steps: run a shell command (for example `teamwire send ...`, `teamwire done ...`), then end the turn by running the Stop hook from its settings with the JSON Claude Code would send | Never stop, stop twice, send a wrong session id, exit without stopping, print the trust dialog or the escalated trust dialog |
 
 Each trait has a **contract suite** in `teamwire_fakes::contract`
-(`host_contract(&dyn Host)`, `harness_contract(&dyn Harness)`,
-`platform_contract(&dyn Platform)`). The fake passes it in `tests/fakes`, and
+(`host_contract(&HostSetup)`, `harness_contract(&HarnessSetup)`,
+`platform_contract(&PlatformSetup)`; each setup record carries the adapter
+and what the suite needs to make its own places, sessions or processes;
+`tests/fakes/README.md` has one example per caller). The fake passes it in `tests/fakes`, and
 every real adapter crate calls it from its own tests: herdr against
 `fake-herdr`, tmux against a real tmux on a private socket (`tmux -L
 teamwire-test-<pid>`), macOS and Linux platforms against the real OS.

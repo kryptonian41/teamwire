@@ -77,7 +77,10 @@ Layout rules, each checked by `cargo xtask tidy`:
 | The crate dependency graph follows the layers in section 5 | repopract R22 |
 | With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`, a new `#[ignore]` or a new `#[expect(` prints `WEAKENED <path>:<line>` | repopract R17, R18 |
 
-Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file.
+Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file, or,
+when the file would pass 400 lines, in a sibling file declared with
+`#[cfg(test)] mod tests;` (`src/<file>/tests.rs`), which keeps access to
+private items. tidy counts `src/**/tests.rs` as test code.
 Integration tests go in `crates/<crate>/tests/<topic>.rs` and use only the
 crate's public API. CLI tests go in `crates/teamwire-cli/tests/`.
 
