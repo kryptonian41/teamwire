@@ -84,3 +84,6 @@ impl fmt::Debug for Ctx<'_> {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests;

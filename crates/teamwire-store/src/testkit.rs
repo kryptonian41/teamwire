@@ -9,14 +9,14 @@ use teamwire_fakes::TestHome;
 use crate::{NewMember, NewTeam, Store};
 
 pub(crate) struct Fixture {
-    pub(crate) _home: TestHome,
+    pub(crate) home: TestHome,
     pub(crate) store: Store,
 }
 
 pub(crate) fn fixture() -> Fixture {
     let home = TestHome::new().unwrap();
     let store = Store::open(home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
-    Fixture { _home: home, store }
+    Fixture { home, store }
 }
 
 /// A fixed time `secs` seconds after an arbitrary start.
