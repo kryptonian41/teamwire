@@ -45,8 +45,15 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
         Ok(owned) => owned,
         Err(e) => return fail("mcp", &e.to_string(), REFUSED),
     };
+    let Some(home) = state_home(global) else {
+        return fail(
+            "mcp",
+            "no state directory: set --home, TEAMWIRE_HOME or HOME",
+            REFUSED,
+        );
+    };
     let env = ServerEnv {
-        home: state_home(global),
+        home,
         registry: Arc::new(owned.registry),
         platform: owned.platform,
         clock: Arc::new(owned.clock),
@@ -58,11 +65,10 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
     }
 }
 
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
+/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`; none when none is set.
+fn state_home(global: &Global) -> Option<PathBuf> {
     let Global { home } = global;
     home.clone()
         .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }

@@ -8,7 +8,7 @@ use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use teamwire_core::{Actor, DisplayId, MessageType, Recipient, Role, SendRequest, TeamName};
 use teamwire_msg::{
-    AckOutcome, CallerEnv, LogFilter, RecipientState, SendReport, parse_type_logged,
+    AckOutcome, CallerEnv, LogFilter, RecipientState, SendReport, parse_type_logged, prove_actor,
     prove_actor_logged, resend, roster, send, watch_running,
 };
 use teamwire_report::DoneReport;
@@ -180,7 +180,16 @@ pub(crate) fn call(
         return Err(ToolFailure::invalid(format!("no tool named {tool}")));
     }
     let team = team_of(caller, &args)?;
-    let mut store = match Store::open_existing(&env.home, &team) {
+    // A read never creates, migrates or writes (WAT-11), not even the
+    // refusal of a caller it cannot prove. A tool that changes state opens
+    // the store for writing and records that refusal.
+    let reads = matches!(tool, "team_status" | "team_members" | "team_log");
+    let opened = if reads {
+        Store::open_read_only(&env.home, &team)
+    } else {
+        Store::open_existing(&env.home, &team)
+    };
+    let mut store = match opened {
         Ok(store) => store,
         // Nothing is proven yet, so a missing team is not told apart from a
         // wrong token.
@@ -197,8 +206,13 @@ pub(crate) fn call(
         clock: env.clock.as_ref(),
         config: &env.config,
     };
-    let actor = prove_actor_logged(&mut ctx, &caller_env(caller, &team))
-        .map_err(|refusal| ToolFailure::from(teamwire_msg::SendError::Refused(refusal)))?;
+    let proof = if reads {
+        prove_actor(&ctx, &caller_env(caller, &team))
+    } else {
+        prove_actor_logged(&mut ctx, &caller_env(caller, &team))
+    };
+    let actor =
+        proof.map_err(|refusal| ToolFailure::from(teamwire_msg::SendError::Refused(refusal)))?;
     run(&mut ctx, &team, &actor, tool, args)
 }
 

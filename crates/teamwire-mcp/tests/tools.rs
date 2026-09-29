@@ -374,7 +374,9 @@ async fn a_wrong_token_is_refused_for_every_tool_and_stores_only_refusals() {
             .filter(|e| **e == EventType::MessageRefused)
             .count()
     };
-    assert_eq!(refusals(&after.0), refusals(&before.0) + 8);
+    // The five tools that change state record the refusal; the three reads
+    // write nothing, not even that.
+    assert_eq!(refusals(&after.0), refusals(&before.0) + 5);
     let others = |events: &[EventType]| {
         events
             .iter()
@@ -637,4 +639,38 @@ async fn the_lead_sends_a_note_to_the_team_it_names() {
         out.get("watch").is_none(),
         "only a reprompt reports the watch"
     );
+}
+
+#[tokio::test]
+async fn a_read_tool_on_an_older_database_fails_and_leaves_the_file_alone() {
+    let rig = Rig::new();
+    let dir = rig.home.path().join("teams").join("old");
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("team.db");
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&file)
+        .unwrap();
+    let lead = rig.client(McpCaller::Lead).await;
+    for tool in ["team_status", "team_members", "team_log"] {
+        let result = call(&lead, tool, json!({"team": "old"})).await;
+        assert_ne!(refused(&result), "refused.identity", "{tool}");
+        assert_eq!(
+            std::fs::read(&file).unwrap(),
+            b"",
+            "{tool} changed the file"
+        );
+        let names: Vec<_> = std::fs::read_dir(&dir).unwrap().collect();
+        assert_eq!(names.len(), 1, "{tool} created a file beside team.db");
+    }
+}
+
+#[tokio::test]
+async fn the_server_names_itself_teamwire() {
+    let rig = Rig::new();
+    let client = rig.client(McpCaller::Lead).await;
+    let info = client.peer_info().unwrap().server_info.clone().unwrap();
+    assert_eq!(info.name, "teamwire");
+    assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
 }
