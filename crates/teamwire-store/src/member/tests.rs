@@ -290,3 +290,44 @@ fn members_come_back_in_insert_order_including_removed() {
     assert_eq!(roles, ["zed", "api", "mid"]);
     assert!(listing.bad.is_empty());
 }
+
+#[test]
+fn an_unread_hold_leaves_the_report_gap_hold_unused() {
+    let mut f = with_members(&["api"]);
+    let r = role("api");
+    f.store
+        .write(|tx| tx.hold_member_unread(at(5), &r, &json!({ "unread": 2 })))
+        .unwrap();
+    let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
+    assert_eq!(m.gate_told_generation, None);
+    let e = last_event(&f.store);
+    assert_eq!(
+        (e.kind, e.data["unread"].clone()),
+        (EventType::MemberHeld, json!(2))
+    );
+    let ghost = f
+        .store
+        .write(|tx| tx.hold_member_unread(at(6), &role("ghost"), &json!({})));
+    assert!(matches!(ghost, Err(StoreError::Constraint(_))));
+}
+
+#[test]
+fn a_role_that_reached_started_is_not_relaunched() {
+    let mut f = with_members(&["api"]);
+    let r = role("api");
+    f.store
+        .write(|tx| {
+            tx.set_member_state(at(2), &r, MemberState::Started, &json!({}))?;
+            tx.set_member_state(at(3), &r, MemberState::Failed, &json!({}))
+        })
+        .unwrap();
+    let refused = f
+        .store
+        .write(|tx| tx.relaunch_failed_member(at(4), &new_member("api")));
+    assert!(
+        matches!(refused, Err(StoreError::Constraint(_))),
+        "{refused:?}"
+    );
+    assert_eq!(state_of(&f, "api"), MemberState::Failed);
+    assert_eq!(count_events(&f.store, EventType::MemberReplaced), 0);
+}

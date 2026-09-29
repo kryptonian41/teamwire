@@ -134,6 +134,58 @@ impl Tx<'_> {
             .ok_or_else(|| StoreError::Corrupt(format!("completion {ulid} vanished")))
     }
 
+    /// Records the member's final message and where it came from (`hook` or
+    /// `transcript`) on a completion stored earlier, at stop time (REP-7).
+    /// False when there is no such completion. No event: `member.completed`
+    /// was written when the completion was stored.
+    pub fn set_completion_final(
+        &self,
+        completion: &Ulid,
+        final_message: Option<&str>,
+        source: FinalSource,
+    ) -> Result<bool, StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE completions SET final_message = ?2, final_source = ?3 WHERE ulid = ?1",
+            rusqlite::params![completion.to_string(), final_message, source.as_str()],
+        )?;
+        Ok(rows == 1)
+    }
+
+    /// Route B (ADR 0007): the watch reports a `pending` completion, so it goes
+    /// straight to `delivered` with route `watch`. Writes one
+    /// `result.delivered` event and no `result.delivering`. False when the
+    /// completion is not `pending`.
+    pub fn deliver_completion_via_watch(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+    ) -> Result<bool, StoreError> {
+        let Some(current) = self.reader().completion(completion)? else {
+            return Ok(false);
+        };
+        let rows = self.connection().execute(
+            "UPDATE completions SET report_state = 'delivered', route = 'watch'
+             WHERE ulid = ?1 AND report_state = 'pending'",
+            [completion.to_string()],
+        )?;
+        if rows == 0 {
+            return Ok(false);
+        }
+        let c = &current.completion;
+        self.record_event(
+            at,
+            EventType::ResultDelivered,
+            Some(&c.role),
+            Some(completion),
+            &json!({
+                "route": Route::Watch.as_str(),
+                "code": null,
+                "seconds": seconds_between(c.created_at, at),
+            }),
+        )?;
+        Ok(true)
+    }
+
     /// Takes a result for delivery: one conditional update into `delivering`
     /// that records `delivering_since`, and writes `result.delivering`.
     /// Takes a `pending` or `undelivered` result, and a `delivering` one

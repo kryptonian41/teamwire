@@ -1,4 +1,8 @@
 #![expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
+)]
+#![expect(
     clippy::indexing_slicing,
     reason = "a test that indexes past the end panics and fails, which is the intended outcome"
 )]
@@ -106,4 +110,17 @@ fn a_waiver_binds_to_a_head_and_is_written_once() {
             .items
             .is_empty()
     );
+}
+
+#[test]
+fn all_waivers_are_listed_across_roles_and_heads() {
+    let mut f = with_members(&["api", "web"]);
+    let mut other = waiver("a", "h1");
+    other.role = role("web");
+    for w in [waiver("a", "h1"), waiver("b", "h2"), other] {
+        f.store.write(|tx| tx.insert_waiver(at(1), &w)).unwrap();
+    }
+    let all = f.store.read(|tx| tx.all_waivers()).unwrap().items;
+    assert_eq!(all.len(), 3);
+    assert_eq!(all[2].role, role("web"));
 }

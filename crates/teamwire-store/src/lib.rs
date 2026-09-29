@@ -1,24 +1,17 @@
 //! The team's `SQLite` database: opening it with the required settings,
-//! migrating it, and one typed transaction method per operation.
+//! migrating it, and one typed transaction method per operation (listed on
+//! `Tx` and `ReadTx`). It also holds `Ctx`, the handle every service takes.
 //!
-//! Never: hold a write transaction open during an external call (host,
-//! harness, git, network); write outside `Store::write`; create or migrate
-//! a database from `open_read_only`.
+//! Never: hold a write transaction open during an external call; write
+//! outside `Store::write`; create or migrate from `open_read_only`; read
+//! the clock (event methods take `at: Timestamp` from `Clock::now`).
 //!
-//! Invariants: every write runs inside BEGIN IMMEDIATE; every `Tx` method
-//! that changes a row also records its event row in the same transaction;
-//! display ids and per-sender `seq` come from the `counters` table, never
-//! from counting rows.
-//!
-//! Time comes from the caller: every `Tx` method that writes an event takes
-//! `at: Timestamp` from `Clock::now`; the store never reads the clock.
-//! `application_id` is `APPLICATION_ID` (`tWIR`), `user_version` is
-//! `SCHEMA_VERSION`, and each event records its `writer_version`.
-//!
-//! The typed methods are listed on `Tx` and `ReadTx`. A read of many rows
-//! gives a `Listing`: the rows that parsed and the `BadRow`s that did not.
-//!
-//! This crate also holds `Ctx`, the handle every service call takes.
+//! Invariants: every write runs inside BEGIN IMMEDIATE; a `Tx` method that
+//! changes a row also writes its event row in the same transaction, except
+//! the bookkeeping writes named on `Tx`; display ids and per-sender `seq`
+//! come from `counters`, never from counting rows; `application_id` is
+//! `APPLICATION_ID`, `user_version` is `SCHEMA_VERSION`; a damaged row is
+//! reported in a `Listing`, never read as success.
 
 mod completion;
 mod ctx;
@@ -46,7 +39,7 @@ pub use store::{APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database
 pub use team::{CloseEnd, NewTeam, TeamRow};
 pub use tx::{BadRow, Listing, ReadTx, Tx};
 pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
-pub use watch::{LeaseOutcome, WatchLease};
+pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
 pub const SCHEMA_VERSION: u32 = 1;

@@ -32,6 +32,45 @@ pub struct Store {
     conn: Connection,
     writer_version: String,
     read_only: bool,
+    /// Set when a read-only open found no `-wal` or `-shm` file, so that
+    /// opening created them: closing the store then removes them again.
+    cleanup: Option<PathBuf>,
+}
+
+/// The `-wal` and `-shm` files `SQLite` keeps beside a WAL database.
+fn side_files(path: &Path) -> [PathBuf; 2] {
+    ["-wal", "-shm"].map(|suffix| {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        PathBuf::from(name)
+    })
+}
+
+impl Drop for Store {
+    /// A read-only connection cannot remove the `-wal` and `-shm` files that
+    /// opening a WAL database created, and a status run must leave the
+    /// directory as it found it. Once this connection is closed, a short
+    /// read-write open and close makes `SQLite` do what it does for any last
+    /// connection: check the (empty) log and delete both files. It changes no
+    /// page, and does nothing while another process still has the database open.
+    fn drop(&mut self) {
+        let Some(path) = self.cleanup.take() else {
+            return;
+        };
+        if let Ok(placeholder) = Connection::open_in_memory() {
+            drop(std::mem::replace(&mut self.conn, placeholder));
+        }
+        if let Ok(conn) = Connection::open_with_flags(
+            &path,
+            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        ) {
+            // The connection only opens the log when it reads, and only a
+            // connection that opened it cleans up on close.
+            let _version: Option<i64> =
+                conn.query_row("PRAGMA user_version", [], |r| r.get(0)).ok();
+            drop(conn);
+        }
+    }
 }
 
 /// What a database file is, judged from its header and table list alone.
@@ -77,15 +116,18 @@ impl Store {
     /// schema version differs from the binary's is refused with `SchemaNewer` or
     /// `SchemaOlder`, and nothing on disk changes (WAT-11).
     pub fn open_read_only(home: &Path, team: &TeamName) -> Result<Self, StoreError> {
-        let path = database_path(home, team);
+        Self::open_read_only_at(&database_path(home, team))
+    }
+
+    /// `open_read_only` for a database file named by its path, such as an
+    /// archived team's `team.db` (cross-archive metrics, the archive check).
+    pub fn open_read_only_at(path: &Path) -> Result<Self, StoreError> {
         if !path.is_file() {
-            return Err(StoreError::Io(format!(
-                "no database for team {team} at {}",
-                path.display()
-            )));
+            return Err(StoreError::Io(format!("no database at {}", path.display())));
         }
+        let no_side_files = side_files(path).iter().all(|p| !p.exists());
         let conn = Connection::open_with_flags(
-            &path,
+            path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
         conn.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
@@ -104,6 +146,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: true,
+            cleanup: no_side_files.then(|| path.to_path_buf()),
         })
     }
 
@@ -131,6 +174,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: false,
+            cleanup: None,
         })
     }
 

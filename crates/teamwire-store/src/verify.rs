@@ -150,6 +150,14 @@ impl ReadTx<'_> {
         )
     }
 
+    /// Every waiver, oldest first (`teamwire export`).
+    pub fn all_waivers(&self) -> Result<Listing<Waiver>, StoreError> {
+        let mut stmt = self.connection().prepare(
+            "SELECT role, flag_id, head_sha, reason, created_at FROM waivers ORDER BY rowid",
+        )?;
+        listing("waivers", &mut stmt, [], waiver_from_row)
+    }
+
     /// The waivers on `head_sha` for one member.
     pub fn waivers(&self, role: &Role, head_sha: &str) -> Result<Listing<Waiver>, StoreError> {
         let mut stmt = self.connection().prepare(

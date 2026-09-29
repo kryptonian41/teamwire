@@ -222,6 +222,22 @@ impl ReadTx<'_> {
         )
     }
 
+    /// Events at or after `since`, oldest first (`metrics --since`).
+    pub fn events_since(&self, since: Timestamp) -> Result<Listing<Event>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {EVENT_COLS} FROM events WHERE time >= ?1 ORDER BY seq"
+        ))?;
+        listing("events", &mut stmt, [since.to_string()], event_from_row)
+    }
+
+    /// The events written for one role, oldest first.
+    pub fn events_of_role(&self, role: &Role) -> Result<Listing<Event>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {EVENT_COLS} FROM events WHERE role = ?1 ORDER BY seq"
+        ))?;
+        listing("events", &mut stmt, [role.as_str()], event_from_row)
+    }
+
     /// One event by its ULID: how a span's start is found from its end.
     pub fn event(&self, ulid: &Ulid) -> Result<Option<Event>, StoreError> {
         let mut stmt = self

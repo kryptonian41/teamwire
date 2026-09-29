@@ -146,7 +146,8 @@ impl Tx<'_> {
         Ok(())
     }
 
-    /// Launches a role again whose row is `failed` (LCH-5): the row takes the
+    /// Launches a role again whose row is `failed` and never reached
+    /// `started` (LCH-5; a role that started is refused with a constraint error): the row takes the
     /// new fields, loses its place, session and token, and is `creating`
     /// again. Writes `member.replaced` (with the failed attempt's times)
     /// and `member.creating`. False, and nothing changes, when the role's row
@@ -157,6 +158,18 @@ impl Tx<'_> {
         };
         if old.state != MemberState::Failed {
             return Ok(false);
+        }
+        // LCH-5: only a role that failed before it started may be launched again.
+        let started: i64 = self.connection().query_row(
+            "SELECT count(*) FROM events WHERE type = 'member.started' AND role = ?1",
+            [m.role.as_str()],
+            |r| r.get(0),
+        )?;
+        if started > 0 {
+            return Err(StoreError::Constraint(format!(
+                "member {} reached started and cannot be launched again",
+                m.role
+            )));
         }
         let rows = self.connection().execute(
             "UPDATE members SET title = ?2, kind = ?3, mode = ?4, harness = ?5, host = ?6,
@@ -348,6 +361,22 @@ impl Tx<'_> {
             rusqlite::params![role.as_str(), generation],
         )?;
         exactly_one(rows, format!("member {role}"))
+    }
+
+    /// Unread messages held the member: writes `member.held` with `data`
+    /// and leaves `gate_told_generation` alone, so the once-per-generation
+    /// report-gap hold is not used up (ADR 0003 point 8).
+    pub fn hold_member_unread(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        data: &Value,
+    ) -> Result<(), StoreError> {
+        if self.reader().member(role)?.is_none() {
+            return Err(StoreError::Constraint(format!("no such member {role}")));
+        }
+        self.record_event(at, EventType::MemberHeld, Some(role), None, data)?;
+        Ok(())
     }
 
     /// The report check held the member: records `told_generation` and writes

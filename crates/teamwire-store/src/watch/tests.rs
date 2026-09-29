@@ -138,3 +138,34 @@ fn announce_once_says_yes_exactly_once_per_key() {
     assert!(f.store.read(|tx| tx.was_announced("LATE:api:2")).unwrap());
     assert!(!f.store.read(|tx| tx.was_announced("DIED:api:1")).unwrap());
 }
+
+#[test]
+fn announcements_are_listed_all_and_by_key_prefix() {
+    let mut f = fixture();
+    for (t, key) in [
+        (1, "SILENT:api:1:1"),
+        (2, "LATE:api:1"),
+        (3, "SILENT:api:2:1"),
+        (4, "SILENT:web:1:1"),
+    ] {
+        f.store.write(|tx| tx.announce_once(at(t), key)).unwrap();
+    }
+    let all = f.store.read(|tx| tx.announcements()).unwrap().items;
+    assert_eq!(all.len(), 4);
+    assert_eq!((all[0].key.as_str(), all[0].at), ("SILENT:api:1:1", at(1)));
+    let silent_api = f
+        .store
+        .read(|tx| tx.announcements_with_prefix("SILENT:api:"))
+        .unwrap()
+        .items;
+    let keys: Vec<&str> = silent_api.iter().map(|a| a.key.as_str()).collect();
+    assert_eq!(keys, ["SILENT:api:1:1", "SILENT:api:2:1"]);
+    // A prefix with SQL wildcard characters matches literally.
+    assert!(
+        f.store
+            .read(|tx| tx.announcements_with_prefix("%"))
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}

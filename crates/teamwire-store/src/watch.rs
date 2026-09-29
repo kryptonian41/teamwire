@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use teamwire_core::{EventType, Pid, Timestamp};
 
 use crate::error::StoreError;
-use crate::tx::{ReadTx, Tx, bad, col, listing, one, ts};
+use crate::tx::{Listing, ReadTx, Tx, bad, col, listing, one, ts};
 
 /// The `watch_lease` row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -15,6 +15,14 @@ pub struct WatchLease {
     pub host: String,
     pub started_at: Timestamp,
     pub heartbeat_at: Timestamp,
+}
+
+/// One thing the watch said: its key (which carries a generation or episode
+/// number) and when.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Announcement {
+    pub key: String,
+    pub at: Timestamp,
 }
 
 /// The answer to `take_watch_lease`.
@@ -117,6 +125,41 @@ impl ReadTx<'_> {
             .connection()
             .prepare("SELECT pid, host, started_at, heartbeat_at FROM watch_lease WHERE id = 1")?;
         one(listing("watch_lease", &mut stmt, [], lease_from_row)?)
+    }
+
+    /// Every announcement, oldest first (`teamwire export`).
+    pub fn announcements(&self) -> Result<Listing<Announcement>, StoreError> {
+        self.announcements_where("1 = 1", &[])
+    }
+
+    /// The announcements whose key starts with `prefix`, such as `SILENT:api:`,
+    /// so a restarted watch finds the current episode number.
+    pub fn announcements_with_prefix(
+        &self,
+        prefix: &str,
+    ) -> Result<Listing<Announcement>, StoreError> {
+        self.announcements_where("substr(key, 1, length(?1)) = ?1", &[prefix])
+    }
+
+    fn announcements_where(
+        &self,
+        condition: &str,
+        args: &[&str],
+    ) -> Result<Listing<Announcement>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT key, at FROM announcements WHERE {condition} ORDER BY rowid"
+        ))?;
+        listing(
+            "announcements",
+            &mut stmt,
+            rusqlite::params_from_iter(args),
+            |row| {
+                Ok(Announcement {
+                    key: col(row, 0)?,
+                    at: ts(row, 1)?,
+                })
+            },
+        )
     }
 
     /// Whether the watch already announced `key`.

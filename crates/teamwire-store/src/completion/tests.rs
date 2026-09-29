@@ -323,3 +323,77 @@ fn reads_by_member_latest_and_state() {
         None
     );
 }
+
+#[test]
+fn the_final_message_is_recorded_on_an_existing_completion() {
+    let mut f = with_members(&["api"]);
+    let c = f
+        .store
+        .write(|tx| {
+            tx.insert_completion(
+                at(10),
+                &NewCompletion {
+                    role: role("api"),
+                    generation: 1,
+                    status: CompletionStatus::Done,
+                    summary: "s".to_owned(),
+                    final_message: None,
+                    final_source: FinalSource::None,
+                },
+            )
+        })
+        .unwrap()
+        .ulid;
+    let events = crate::testkit::event_types(&f.store).len();
+    assert!(
+        f.store
+            .write(|tx| tx.set_completion_final(&c, Some("all done"), FinalSource::Hook))
+            .unwrap()
+    );
+    let r = record(&f, &c);
+    assert_eq!(r.completion.final_message.as_deref(), Some("all done"));
+    assert_eq!(r.completion.final_source, FinalSource::Hook);
+    assert_eq!(r.completion.report_state, ReportState::Pending);
+    assert_eq!(crate::testkit::event_types(&f.store).len(), events);
+    let missing = crate::testkit::fixture()
+        .store
+        .write(|tx| tx.set_completion_final(&c, None, FinalSource::None))
+        .unwrap();
+    assert!(!missing);
+}
+
+#[test]
+fn route_b_moves_pending_straight_to_delivered_with_one_event() {
+    let mut f = with_members(&["api"]);
+    let first = done(&mut f, 10);
+    assert!(
+        f.store
+            .write(|tx| tx.deliver_completion_via_watch(at(15), &first))
+            .unwrap()
+    );
+    let r = record(&f, &first);
+    assert_eq!(
+        (r.completion.report_state, r.completion.route),
+        (ReportState::Delivered, Some(Route::Watch))
+    );
+    let e = last_event(&f.store);
+    assert_eq!(e.kind, EventType::ResultDelivered);
+    assert_eq!(e.data["seconds"], 5.0);
+    assert_eq!(count_events(&f.store, EventType::ResultDelivering), 0);
+    // Only a pending completion moves this way.
+    assert!(
+        !f.store
+            .write(|tx| tx.deliver_completion_via_watch(at(16), &first))
+            .unwrap()
+    );
+    let second = done(&mut f, 20);
+    f.store
+        .write(|tx| tx.claim_completion_for_delivery(at(21), &second, STALE))
+        .unwrap();
+    assert!(
+        !f.store
+            .write(|tx| tx.deliver_completion_via_watch(at(22), &second))
+            .unwrap()
+    );
+    assert_eq!(count_events(&f.store, EventType::ResultDelivered), 1);
+}

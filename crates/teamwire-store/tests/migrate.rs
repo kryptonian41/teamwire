@@ -290,3 +290,90 @@ fn migration_from_every_older_version_ends_in_the_same_schema() {
         assert_eq!(schema_dump(&path), reference, "from version {start}");
     }
 }
+
+/// Every file in the team directory with a hash of its bytes.
+fn directory_state(dir: &std::path::Path) -> Vec<(String, u64, Vec<u8>)> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            let e = e.unwrap();
+            let bytes = std::fs::read(e.path()).unwrap();
+            (
+                e.file_name().to_string_lossy().into_owned(),
+                bytes.len() as u64,
+                bytes,
+            )
+        })
+        .collect();
+    files.sort();
+    files
+}
+
+#[test]
+fn read_only_open_creates_changes_and_deletes_no_file() {
+    let home = TestHome::new().unwrap();
+    let path = database_path(home.path(), &team());
+    let dir = path.parent().unwrap().to_path_buf();
+    // The last connection to close checkpoints the WAL and removes -wal and
+    // -shm, leaving only team.db: the case a status run meets on a quiet team.
+    drop(Store::open(home.path(), &team()).unwrap());
+    let names: Vec<String> = directory_state(&dir).into_iter().map(|f| f.0).collect();
+    assert_eq!(names, ["team.db"], "the setup left WAL side files behind");
+    let before = directory_state(&dir);
+
+    let ro = Store::open_read_only(home.path(), &team()).unwrap();
+    assert_eq!(ro.quick_check().unwrap(), "ok");
+    ro.read(|tx| tx.members().map(|_| ())).unwrap();
+    drop(ro);
+    assert_eq!(
+        directory_state(&dir),
+        before,
+        "closing a read-only store changed the directory"
+    );
+
+    // The same by path, as archives are opened.
+    let by_path = Store::open_read_only_at(&path).unwrap();
+    by_path
+        .read(|tx| tx.events_after(0, None, None).map(|_| ()))
+        .unwrap();
+    drop(by_path);
+    assert_eq!(directory_state(&dir), before);
+}
+
+#[test]
+fn read_only_open_by_path_refuses_a_missing_file() {
+    let home = TestHome::new().unwrap();
+    let missing = home.path().join("nothing.db");
+    assert!(matches!(
+        Store::open_read_only_at(&missing),
+        Err(StoreError::Io(_))
+    ));
+    assert!(!missing.exists());
+}
+
+#[test]
+fn closing_a_read_only_store_leaves_a_live_writers_files_alone() {
+    let home = TestHome::new().unwrap();
+    let mut writer = Store::open(home.path(), &team()).unwrap();
+    let dir = database_path(home.path(), &team())
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    let names = |dir: &std::path::Path| -> Vec<String> {
+        directory_state(dir).into_iter().map(|f| f.0).collect()
+    };
+    let with_writer = names(&dir);
+    assert!(
+        with_writer.contains(&"team.db-wal".to_owned()),
+        "{with_writer:?}"
+    );
+    drop(Store::open_read_only(home.path(), &team()).unwrap());
+    assert_eq!(names(&dir), with_writer);
+    writer
+        .write(|tx| {
+            tx.connection()
+                .execute("INSERT INTO announcements (key, at) VALUES ('k', 't')", [])?;
+            Ok(())
+        })
+        .unwrap();
+}

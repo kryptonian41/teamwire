@@ -272,3 +272,40 @@ fn a_failed_send_releases_the_claim_and_the_mark_stays() {
     assert!(again.is_some(), "a released claim blocked the retry");
     assert_eq!(count_events(&f.store, EventType::StoreError), 0);
 }
+
+#[test]
+fn events_by_time_and_by_role() {
+    let mut f = with_members(&[]);
+    f.store
+        .write(|tx| {
+            tx.record_event(
+                at(100),
+                EventType::MemberHeld,
+                Some(&role("api")),
+                None,
+                &json!({}),
+            )?;
+            tx.record_event(
+                at(200),
+                EventType::MemberHeld,
+                Some(&role("web")),
+                None,
+                &json!({}),
+            )?;
+            tx.record_event(at(300), EventType::WatchLine, None, None, &json!({}))?;
+            Ok(())
+        })
+        .unwrap();
+    let since = f.store.read(|tx| tx.events_since(at(200))).unwrap().items;
+    assert_eq!(
+        since.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [EventType::MemberHeld, EventType::WatchLine]
+    );
+    let api = f
+        .store
+        .read(|tx| tx.events_of_role(&role("api")))
+        .unwrap()
+        .items;
+    assert!(api.iter().all(|e| e.role == Some(role("api"))));
+    assert!(api.iter().any(|e| e.kind == EventType::MemberHeld));
+}
