@@ -11,6 +11,8 @@
 //! them at a temporary directory; the member's identity travels in the
 //! `env` key of its own `settings.json`.
 
+mod launch;
+
 use std::fmt;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -87,12 +89,12 @@ impl Harness for ClaudeCode {
         }
     }
 
-    fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
-        Err(not_built())
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.claude_bin, m, &launch::SessionArg::New)
     }
 
-    fn resume_spec(&self, _m: &MemberLaunch, _s: &SessionId) -> Result<LaunchSpec, HarnessError> {
-        Err(not_built())
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.claude_bin, m, &launch::SessionArg::Resume(s))
     }
 
     fn current_session(&self) -> Option<CallerSession> {
@@ -132,12 +134,9 @@ impl Harness for ClaudeCode {
         Err(not_built())
     }
 
-    fn otel_env(
-        &self,
-        _team: &TeamName,
-        _role: &Role,
-        _base: &OtelConfig,
-    ) -> Vec<(String, String)> {
-        Vec::new()
+    fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
+        // The launcher's own attributes are kept and ours are appended.
+        let existing = std::env::var("OTEL_RESOURCE_ATTRIBUTES").ok();
+        launch::otel_vars(team, role, base, existing.as_deref())
     }
 }
