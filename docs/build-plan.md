@@ -74,7 +74,8 @@ Builds:
   `tokio` (only for `teamwire-mcp`), `schemars`, `tracing`,
   `tracing-subscriber`, `globset`, `toml`, `sysinfo`, `nix` (process, signal),
   `tempfile`, `proptest`.
-- `crates/teamwire-core`: every type and trait in `docs/api/core.md` §1-6,
+- `crates/teamwire-core`: every type and trait in `docs/api/core.md` §1-6a,
+  including the `Registry` (adapter ids are strings; no enum of products),
   `sanitize::one_line`, `OneLine`, the event type enum with its string forms,
   the capability records. Unit tests for name parsing, sanitising
   (`crates/teamwire-core/tests/sanitize.rs::forged_event_line_is_flattened`
@@ -89,8 +90,9 @@ Builds:
   `ARCHITECTURE.md`, with the constraints of `docs/api/core.md` §7.
 - `cli/src/main.rs`: clap definitions for every subcommand and flag in
   `docs/api/cli.md`; each dispatches to `cmd::<name>::run`, whose stub prints
-  "not built yet" and exits 3. `cli/src/wiring.rs` builds the concrete host,
-  harness and platform from config and environment.
+  "not built yet" and exits 3. `cli/src/wiring.rs` fills the `Registry` with every
+  adapter the binary has and picks the lead's harness and host from the
+  environment.
 - `scripts/gate.sh`: the six gates of `docs/conventions.md` §2 in order, one
   line per step with its time, and `fast` mode for steps 1-3.
 - `clippy.toml`, `.cargo/config.toml` (the `xtask` alias), the lint table and

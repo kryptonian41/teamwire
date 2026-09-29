@@ -94,4 +94,6 @@ under test uses.
 | A completion with an unknown status | Validation | Refused; nothing stored | `crates/teamwire-report/tests/done.rs::invalid_status_refused` |
 | A message body changed on disk | Hash differs | `inbox` returns `hash_ok: false`; `verify --deep` flags it | `crates/teamwire-msg/tests/inbox.rs::hash_mismatch_reported` |
 | An id counter row is damaged | Unique constraint on display id | Insert fails, transaction rolls back, exit 6; no id is reused | `crates/teamwire-store/tests/corrupt.rs::counter_damage_never_reuses_id` |
+| A lead and a member use different harnesses | Adapters looked up per party in the registry | Lead proven and located with the lead's harness; member reached with its own | `crates/teamwire-deliver/tests/mixed.rs::lead_and_member_on_different_harnesses_route_per_party` (two `FakeHarness` instances registered as `fake-a` and `fake-b`) |
+| A recorded adapter id is not in this binary | Registry lookup fails | Delivery `undelivered` with `unknown_adapter`; launch refused | `crates/teamwire-core/tests/registry.rs::unknown_and_duplicate_ids_refused`; `crates/teamwire-deliver/tests/mixed.rs::unknown_member_harness_is_undelivered` |
 | A burst of sends to one recipient | Rate limit | Later sends refused with `rate_limited` and logged | `crates/teamwire-msg/tests/send.rs::burst_refused_and_logged` |

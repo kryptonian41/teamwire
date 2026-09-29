@@ -32,14 +32,24 @@ product, and a fake for each under `tests/fakes/`:
 
 The full signatures are in `docs/api/core.md`. Rules that go with them:
 
-1. **The core crate depends on no adapter crate.** The CLI's wiring module is
-   the only code that names a concrete adapter.
-2. **Sink, locator and liveness are roles, not traits.** The sink is
+1. **The core crate depends on no adapter crate, and has no closed list of
+   products.** Adapters are identified by string ids (`HarnessId`, `HostId`)
+   and looked up in a `Registry` that the CLI's wiring fills. The wiring
+   module is the only code that names a concrete adapter. Adding Codex CLI is
+   a new crate plus one `add_harness` call; no core type changes.
+2. **The harness and host belong to each party.** The lead's are recorded on
+   the team, each member's on its own row. A Claude Code lead can lead a
+   member on another harness; every lookup (proving the lead, locating the
+   lead, delivering to a member) uses that party's adapters (ADP-12).
+3. **A harness may deliver text itself.** `Harness::push` with the capability
+   `can_push`, and the route `HarnessPush`, leave room for opencode's
+   `prompt_async` and Claude Channels. v1 adapters do not use it.
+4. **Sink, locator and liveness are roles, not traits.** The sink is
    `Host::submit`. The locator is a function in `teamwire-deliver` that
    combines `Harness::processes_for_session`, `Platform::env_of` and
    `Host::occupant` (ADR 0006). Liveness is `Harness::is_alive` plus
    `Host::state`.
-3. **Each adapter declares a capability record** (ADP-6):
+5. **Each adapter declares a capability record** (ADP-6):
 
    | Field | Claude Code | herdr | tmux | Fake |
    | --- | --- | --- | --- | --- |
@@ -50,10 +60,11 @@ The full signatures are in `docs/api/core.md`. Rules that go with them:
    | `in_turn_hook` | yes (PostToolUse) | n/a | n/a | configurable |
    | `mcp_client` | yes | n/a | n/a | yes |
    | `choose_session_id` | yes (`--session-id`) | n/a | n/a | yes |
+   | `can_push` (harness puts text in its own session) | no in v1 | n/a | n/a | configurable |
    | `submit_ack` | none | "submitted", `--wait` sees a state change | none | configurable |
 
    The core picks routes from these fields, never from product names.
-4. **Per-member configuration is per run.** For Claude Code, launch writes
+6. **Per-member configuration is per run.** For Claude Code, launch writes
    `members/<role>/settings.json` (the Stop and PostToolUse hooks, pointing at
    `teamwire hook claude-stop` and `teamwire hook claude-post-tool`) and
    `members/<role>/mcp.json` (the `teamwire mcp` server with the member's team
@@ -62,16 +73,16 @@ The full signatures are in `docs/api/core.md`. Rules that go with them:
    (LCH-21, SEC-3). This also means the Python Stop hook and teamwire's hook
    never both act on one member: the Python hook finds no Python manifest for
    a teamwire member and exits at its first check.
-5. **Host error handling uses codes.** Each host adapter maps its product's
+7. **Host error handling uses codes.** Each host adapter maps its product's
    errors into `HostError { code: HostErrorCode, detail }`, where the code is
    one of `NotReady`, `Busy`, `Blocked`, `NotFound`, `Stalled`, `Timeout`,
-   `BadArgument`, `Other`. The herdr adapter reads `error.code` from herdr's
+   `BadArgument`, `Unsupported`, `Other`. The herdr adapter reads `error.code` from herdr's
    JSON (ADP-5). Retry rules in ADR 0003 are written against these codes.
-6. **Every adapter call has a timeout** (DEL-14), set by the caller.
-7. **One contract-test suite per trait**, in `teamwire-fakes`, runs against
+8. **Every adapter call has a timeout** (DEL-14), set by the caller.
+9. **One contract-test suite per trait**, in `teamwire-fakes`, runs against
    the fake and against each real adapter (the herdr adapter against the fake
    `herdr` binary, the tmux adapter against a real tmux on a private socket).
-8. **No host is a valid configuration.** A member may have no place (ADP-9).
+10. **No host is a valid configuration.** A member may have no place (ADP-9).
    It then has no typed wake-up. It reads through `inbox`, its completions
    reach the lead through the watch (ADR 0007), and undelivered items are
    still shown (DEL-17). In v1 the only way to start such a member is outside

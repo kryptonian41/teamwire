@@ -45,7 +45,7 @@ and no host (ADP-1).
 
 | Crate | What it does |
 | --- | --- |
-| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `Host`, `Platform` and `Clock` traits, the capability record, and the text sanitiser. No I/O. |
+| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `Host`, `Platform` and `Clock` traits, the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
 | `teamwire-store` | Opens a team's SQLite database with the required settings, runs migrations, and offers typed transactions for every table. The only code that writes state. |
 | `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, and the sleep hold (`caffeinate` on macOS). |
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
@@ -257,6 +257,12 @@ Three traits keep the core free of product names (ADR 0004):
 - **Host**: where the program runs. herdr is the v1 implementation; tmux
   follows in wave 5. No host at all is a valid configuration.
 - **Platform**: the operating system. macOS and Linux.
+
+Adapters are identified by string ids (`claude-code`, `herdr`, `tmux`,
+`none`) and looked up in a registry that the CLI fills; the core has no list
+of products. The harness and host belong to each member and to the lead, so a
+Claude Code lead can lead a member on another harness once that harness has
+an adapter (ADR 0004, ADP-12).
 
 The core chooses routes from each adapter's capability record, never from
 its name:

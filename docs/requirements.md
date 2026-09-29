@@ -246,7 +246,8 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| ADP-1 | MUST | The core knows teams, members, sessions, messages, completions and deliveries. It names no harness and no host. Harness, host and platform facts sit behind traits. The core crate depends on no adapter crate. | harness R1; specmsg R44 |
+| ADP-1 | MUST | The core knows teams, members, sessions, messages, completions and deliveries. It names no harness and no host: adapters are identified by string ids looked up in a registry, and the core has no closed list of products. Harness, host and platform facts sit behind traits. The core crate depends on no adapter crate. | harness R1; specmsg R44; archrev B2 |
+| ADP-12 | MUST | The harness and host belong to each member and to the lead, not to the team. A team whose lead and members use different harnesses type-checks, and every lookup uses the adapters of the party it concerns. | brief (other harnesses fit without changing the core); archrev B2 |
 | ADP-2 | MUST | The host trait covers: spawn, submit text, status, read the screen tail, send keys, close, list, and locate a session. | harness R2; specmsg R44 |
 | ADP-3 | MUST | The harness trait covers: launch spec (argv, env, files), session identity, liveness, background-session detection, per-run hook and MCP configuration, trust handling, and OpenTelemetry environment. | harness R3 |
 | ADP-4 | MUST | The Claude adapter reads liveness from the session files and `claude agents --json`, handling both row shapes (`status` and `state`), with a 5 s bound. | harness R10, Q7 |
