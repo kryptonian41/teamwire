@@ -84,6 +84,25 @@ fn state_home(global: &Global) -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
+/// What state a stopped close leaves. Once the `finish` step is done the team
+/// is `closed`, so "the state is intact" would be wrong: the team is closed and
+/// only the archive or the deletion is left.
+fn stopped_message(report: &CloseReport, step: &str, team: &TeamName) -> String {
+    let finished = report.steps.iter().any(|s| s.step == "finish" && s.ok);
+    if finished {
+        format!(
+            "close stopped at {step}: the team is already marked closed and its state \
+             directory is still there; fix that, then run `teamwire close {team}` again to \
+             archive it afresh and delete it"
+        )
+    } else {
+        format!(
+            "close stopped at {step}: the team is open again with its state intact; fix \
+             that, then run the close again"
+        )
+    }
+}
+
 fn show_plan(plan: &ClosePlan) -> ExitCode {
     for CloseStep { step, detail } in &plan.steps {
         say(&format!("[dry-run] {step}: {detail}"));
@@ -125,9 +144,7 @@ fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> E
         if let Some(archive) = &report.archive {
             warn(&format!("archive so far: {}", archive.display()));
         }
-        warn(&format!(
-            "close stopped at {step}: the state is intact; fix that, then run the close again"
-        ));
+        warn(&stopped_message(report, step, team));
         return ExitCode::from(STOPPED);
     }
     match target {
@@ -159,4 +176,37 @@ fn warn(text: &str) {
 fn fail(message: &str, code: u8) -> ExitCode {
     warn(&format!("teamwire close: {message}"));
     ExitCode::from(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn report(steps: &[(&str, bool)]) -> CloseReport {
+        CloseReport {
+            steps: steps
+                .iter()
+                .map(|(step, ok)| StepOutcome {
+                    step: (*step).to_owned(),
+                    ok: *ok,
+                    detail: String::new(),
+                })
+                .collect(),
+            ..CloseReport::default()
+        }
+    }
+
+    #[test]
+    fn a_stop_after_finish_says_the_team_is_closed() {
+        let team = TeamName::parse("alpha").unwrap();
+        let after = report(&[("lock", true), ("finish", true), ("delete_state", false)]);
+        let text = stopped_message(&after, "delete_state", &team);
+        assert!(text.contains("already marked closed"), "{text}");
+        assert!(!text.contains("state intact"), "{text}");
+        let before = report(&[("lock", true), ("close_places", false)]);
+        let text = stopped_message(&before, "close_places", &team);
+        assert!(text.contains("open again with its state intact"), "{text}");
+        let failed_finish = report(&[("lock", true), ("finish", false)]);
+        assert!(stopped_message(&failed_finish, "finish", &team).contains("state intact"));
+    }
 }
