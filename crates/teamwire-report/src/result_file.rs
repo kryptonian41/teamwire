@@ -6,11 +6,20 @@
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
-use teamwire_core::{FinalSource, Member, Timestamp, one_line};
-use teamwire_store::{CompletionRecord, Ctx};
+use teamwire_core::{FinalSource, Member, Timestamp, Ulid, one_line};
+use teamwire_store::{CompletionRecord, Ctx, TeamRow};
+
+use crate::paths::report_file;
 
 const MARKER_PREFIX: &str = "<!-- teamwire:generated";
 const TASK_CHARS: usize = 300;
+
+/// A harness with no turn-end hook never hands over a final message.
+pub(crate) const MISSING_FROM_HARNESS: &str =
+    "(the final message was not available from this harness)";
+/// A watch-route completion is reported before the member's turn ends.
+pub(crate) const MISSING_YET: &str =
+    "(the final message is not available yet: it is recorded when the member's turn ends)";
 
 /// What was written.
 pub(crate) struct Written {
@@ -27,6 +36,8 @@ pub(crate) struct Rendered<'a> {
     pub(crate) final_message: Option<&'a str>,
     pub(crate) final_source: FinalSource,
     pub(crate) report: &'a Path,
+    /// What the file says when there is no final message.
+    pub(crate) final_missing: &'a str,
     pub(crate) now: Timestamp,
 }
 
@@ -89,7 +100,7 @@ fn render(r: &Rendered<'_>, rescued: Option<&Path>) -> String {
     );
     let final_text = match (r.final_message, r.final_source) {
         (Some(text), _) => text.to_owned(),
-        (None, _) => "(the final message was not available from this harness)".to_owned(),
+        (None, _) => r.final_missing.to_owned(),
     };
     let moved = rescued.map_or_else(String::new, |path| {
         format!(
@@ -115,4 +126,47 @@ fn render(r: &Rendered<'_>, rescued: Option<&Path>) -> String {
         r.report.display(),
         one_line(&c.summary, 2000),
     )
+}
+
+/// Writes the result file for a stored completion from what the store holds
+/// now: its final message, if one was recorded, else `missing`.
+pub(crate) fn write_current(
+    ctx: &Ctx<'_>,
+    member: &Member,
+    completion: &Ulid,
+    missing: &str,
+) -> std::result::Result<Written, String> {
+    let record = ctx
+        .store
+        .read(|tx| tx.completion(completion))
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("completion {completion} is not stored"))?;
+    let team = read_team(ctx)?;
+    let dir = ctx.home.join("teams").join(team.name.as_str());
+    let report = report_file(ctx, &member.role);
+    write(
+        ctx,
+        &Rendered {
+            team: team.name.as_str(),
+            team_dir: &dir,
+            member,
+            record: &record,
+            final_message: record.completion.final_message.as_deref(),
+            final_source: record.completion.final_source,
+            report: &report,
+            final_missing: missing,
+            now: ctx.clock.now(),
+        },
+    )
+}
+
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+fn read_team(ctx: &Ctx<'_>) -> std::result::Result<TeamRow, String> {
+    ctx.store
+        .read(|tx| tx.team())
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "the store has no team row".to_owned())
 }

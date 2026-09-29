@@ -265,3 +265,21 @@ fn no_hold_at_all_when_the_stop_was_already_held() {
     );
     assert!(rig.events(EventType::MemberHeld).is_empty());
 }
+
+#[test]
+fn a_hookless_harness_gets_its_result_file_from_done() {
+    let (mut rig, api) = team();
+    rig.no_turn_end_hook();
+    rig.write_report(&api, "Decisions I made: none\n");
+    rig.complete_now(&api);
+    let text = std::fs::read_to_string(rig.team_dir().join("outbox/api.md")).unwrap();
+    assert!(text.contains("teamwire:generated"), "{text}");
+    assert!(text.contains("not available from this harness"), "{text}");
+}
+
+#[test]
+fn a_hooked_member_gets_its_result_file_from_the_stop_hook_not_from_done() {
+    let (mut rig, api) = team();
+    rig.complete_now(&api);
+    assert!(!rig.team_dir().join("outbox/api.md").exists());
+}

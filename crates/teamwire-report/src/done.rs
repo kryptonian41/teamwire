@@ -4,11 +4,13 @@
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use teamwire_core::{
-    CompletionStatus, EventType, FinalSource, MemberState, ReportGaps, Role, TeamName, TeamState,
+    CompletionStatus, EventType, FinalSource, LeadRoute, MemberState, ReportGaps, Role, TeamName,
+    TeamState,
 };
 use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
 
 use crate::note::gap_note;
+use crate::result_file::{MISSING_FROM_HARNESS, MISSING_YET, write_current};
 use crate::{DoneError, DoneReport, report_gaps};
 
 const SUMMARY_MAX: usize = 2000;
@@ -213,7 +215,44 @@ pub fn done(
     })?;
     match stored {
         Stored::Refused(e) => Err(e),
-        Stored::Done(report) => Ok(report),
+        Stored::Done(report) => {
+            write_route_b_file(ctx, &member, &report, has_hook);
+            Ok(report)
+        }
+    }
+}
+
+/// A completion that goes by route B (a harness with no turn-end hook, or a
+/// lead the watch reports to) is announced with `Result: outbox/<role>.md`
+/// before any hook can write that file, so it is written now. It says the
+/// final message is not available yet (ADR 0007 point 4).
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+fn write_route_b_file(
+    ctx: &Ctx<'_>,
+    member: &teamwire_core::Member,
+    report: &DoneReport,
+    has_hook: bool,
+) {
+    let DoneReport::Stored { completion, .. } = report else {
+        return;
+    };
+    let watch_route = matches!(
+        ctx.store.read(|tx| tx.team()),
+        Ok(Some(t)) if t.lead_route == LeadRoute::Watch
+    );
+    if has_hook && !watch_route {
+        return;
+    }
+    let missing = if has_hook {
+        MISSING_YET
+    } else {
+        MISSING_FROM_HARNESS
+    };
+    if let Err(e) = write_current(ctx, member, completion, missing) {
+        tracing::warn!(error = %e, role = %member.role, "could not write the result file");
     }
 }
 

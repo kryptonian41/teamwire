@@ -12,7 +12,7 @@ use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 use crate::note::{gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
-use crate::result_file::{Rendered, write};
+use crate::result_file::{MISSING_FROM_HARNESS, write_current};
 use crate::{final_message, report_gaps};
 
 /// The name a hook run gives its events (`docs/metrics.md` section 5).
@@ -80,15 +80,45 @@ fn run(
 
     // Only a completion nobody delivered yet is delivered. `delivering` is a
     // crash left over: it is delivered once more (REP-2).
-    if let Some(record) = latest
-        && matches!(
-            record.completion.report_state,
-            ReportState::Pending | ReportState::Delivering
-        )
-    {
-        deliver(ctx, &member, record, t, started)?;
+    if let Some(record) = latest {
+        match record.completion.report_state {
+            ReportState::Pending | ReportState::Delivering => {
+                deliver(ctx, &member, record, t, started)?;
+            }
+            ReportState::Delivered
+                if record.completion.route == Some(Route::Watch)
+                    && record.completion.final_message.is_none() =>
+            {
+                late_final(ctx, &member, &record, t)?;
+            }
+            ReportState::Delivered | ReportState::Undelivered | ReportState::Unconfirmed => {}
+        }
     }
     Ok(TurnEndReply::Continue)
+}
+
+/// A completion the watch already reported (route B) has no final message
+/// yet. When the member's turn ends, record it and rewrite the result file.
+/// Nothing is typed: the watch printed its line.
+fn late_final(
+    ctx: &mut Ctx<'_>,
+    member: &Member,
+    record: &CompletionRecord,
+    t: &TurnEnd,
+) -> Result<(), StoreError> {
+    let (text, source) = final_message::pick(t);
+    if text.is_none() {
+        return Ok(());
+    }
+    let ulid = record.completion.ulid;
+    ctx.store.write(|tx| {
+        tx.set_completion_final(&ulid, text.as_deref(), source)
+            .map(|_| ())
+    })?;
+    if let Err(e) = write_current(ctx, member, &ulid, MISSING_FROM_HARNESS) {
+        tracing::warn!(error = %e, role = %member.role, "could not rewrite the result file");
+    }
+    Ok(())
 }
 
 /// The one hold a stop may get: report gaps (once per generation) and unread
@@ -179,22 +209,7 @@ fn deliver(
     let Some(dir) = team_dir(ctx) else {
         return Ok(());
     };
-    let report = report_file(ctx, &member.role);
-    let now = ctx.clock.now();
-    let written = write(
-        ctx,
-        &Rendered {
-            team: team.name.as_str(),
-            team_dir: &dir,
-            member,
-            record: &record,
-            final_message: text.as_deref(),
-            final_source: source,
-            report: &report,
-            now,
-        },
-    );
-    let written = match written {
+    let written = match write_current(ctx, member, &ulid, MISSING_FROM_HARNESS) {
         Ok(w) => Some(w),
         Err(e) => {
             // The lead still hears about the result; the summary is in the line.
