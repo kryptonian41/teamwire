@@ -69,8 +69,9 @@ fn spawn_agent(dir: &Path, pane: &Pane, tail: &[String]) -> Result<u32, CliError
         .map_err(|e| fail("internal_error", e.to_string()))?;
     let mut cmd = std::process::Command::new(claude_program());
     cmd.args(tail).env_clear();
-    // A cleared environment, as herdr gives an agent in effect: the identity
-    // of a member must arrive through its own config, not from here.
+    // A cleared environment. A real pane has the login environment plus
+    // HERDR_* variables, so this is stricter on purpose: a member's identity
+    // must arrive through its own config, and a test fails if it does not.
     for name in ["PATH", "HOME", "TMPDIR"] {
         if let Some(value) = std::env::var_os(name) {
             cmd.env(name, value);

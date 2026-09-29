@@ -91,6 +91,13 @@ setup.lists_agent_names = false;    // if the adapter has no agent names
 host_contract(&setup);
 ```
 
+Caller notes. herdr picks the program by `--kind`, so the herdr adapter
+passes only `argv[1..]` after `--` (`FakeHarness::launch_spec` puts
+`fake-claude` at `argv[0]`; the README request above leaves the program word
+out for that reason). With tmux 3.7c, `display-message -p -t <unknown>` exits 0
+with empty output, so map it to `NotFound`; closing the last window of a
+private server stops the server, so `list` then reports "no server running".
+
 ### `harness_contract(&HarnessSetup)`
 
 The caller builds the harness with its files and directories in a temporary
@@ -106,15 +113,19 @@ liveness rules), `unknown_session`, `timeout`.
 T06, the Claude adapter with its paths in a temporary directory:
 
 ```rust
-let dir = tempfile::tempdir()?;
-let claude = ClaudeCode::new(ClaudePaths::under(dir.path()), platform);
+let mut env = FakeHerdrEnv::new()?;                  // owns a temporary home and claude dir
+// Point the adapter's session directory at env.claude_dir() (its `sessions/`
+// holds the files fake-claude writes), and give it a platform that runs
+// `herdr` with env.env(). Start a member with fake-herdr (`env.run(&["agent",
+// "start", ..])`) and read its id from env.session_files().
+let claude = ClaudeCode::new(/* sessions dir: */ env.claude_dir().join("sessions"), platform);
 let setup = HarnessSetup {
     harness: &claude,
-    member: member_launch(dir.path()),               // identity has TEAMWIRE_TOKEN
+    member: member_launch(&member_dir),              // identity has TEAMWIRE_TOKEN
     turn_end_stdin: br#"{"session_id":"member-1","stop_hook_active":false}"#.to_vec(),
     turn_end_session: SessionId::parse("member-1")?,
     prompt_screen: "ready\n> ".into(),               // what real Claude shows at its prompt
-    dialog_screen: "Do you trust the files in this folder?".into(),
+    dialog_screen: PLAIN_TRUST_TEXT.into(),           // the real dialog title
     live_session: Some(session_started_by_fake_claude),
     unknown_session: SessionId::parse("never-heard-of")?,
     timeout: Duration::from_secs(5),
@@ -125,31 +136,42 @@ harness_contract(&setup);
 `fake-claude` (started with `TEAMWIRE_CLAUDE_DIR` set to the same directory the
 adapter reads) writes the session file `live_session` refers to.
 
+`harness_contract` requires every file in `launch_spec().files` to be under
+`member.member_dir` (`settings.json` and `mcp.json` go there). The contract
+and brief files are not in `files`: launch writes them itself.
+
 ### `platform_contract(&PlatformSetup)`
 
 Fields: `platform`, `dir` (an empty scratch directory), `live_pid` (a running
 process; the test's own pid is fine), `dead_pid` (a reaped child, or `None`),
-`env_probe` (`EnvProbe { pid, var, value }` for a child you started with that
-variable set, or `None`), `run_cases` (`RunCase::unix_standard()` for a real
+`env_probe` (`EnvProbe { pid, var, value }`: a process and a variable it was started with; the test's own pid and `PATH` work everywhere), `run_cases` (`RunCase::unix_standard()` for a real
 Unix platform, or empty), `hold_lead` (the pid a sleep hold protects; used
-only when the platform has a hold).
+only when the platform has a hold). `hold_lead` must be a process the caller
+started and keeps alive until the suite returns (a child running `sleep`):
+a real hold watches it and ends with it. The suite compares the hold's pid,
+not `owned` (a process list cannot say who started a hold, so `MacOs` reports
+`owned: false`), and it releases the hold it started on every path, also when
+a rule fails first.
 
 T03, the macOS platform against the real OS:
 
 ```rust
 let dir = tempfile::tempdir()?;
-let mut child = std::process::Command::new("sleep").arg("30")
-    .env("TEAMWIRE_CONTRACT_PROBE", "probe-value").spawn()?;
+// The hold's lead: a child the test started and keeps alive.
+let mut child = std::process::Command::new("sleep").arg("30").spawn()?;
 let mut dead = std::process::Command::new("true").spawn()?;
 dead.wait()?;
-let platform = MacOs::new();
+// Probe the test's own pid. Do not probe `sleep`, `sh` or another Apple-signed
+// binary: MacOs::env_of refuses those with PermissionDenied. PATH is set.
+let own = Pid::new(std::process::id());
+let platform = MacOs;                                // a unit struct
 platform_contract(&PlatformSetup {
     platform: &platform,
     dir: dir.path(),
     live_pid: Pid::new(std::process::id()),
     dead_pid: Some(Pid::new(dead.id())),
-    env_probe: Some(EnvProbe { pid: Pid::new(child.id()), var: "TEAMWIRE_CONTRACT_PROBE".into(),
-                               value: "probe-value".into() }),
+    env_probe: Some(EnvProbe { pid: own, var: "PATH".into(),
+                               value: std::env::var("PATH")? }),
     run_cases: RunCase::unix_standard(),
     hold_lead: Pid::new(child.id()),
 });
@@ -171,11 +193,21 @@ binaries once per process, so any crate's tests can use them. `FakeBinDir`
 refuses to build a `PATH` that could reach a real `herdr` or `claude`.
 
 Commands (herdr's own names and flags): `agent start|prompt|get|list|read|send-keys`,
-`pane close|list|get`, `workspace create|get|rename`, `tab create|rename`.
-Anything else fails with `unknown_command`. Output is herdr's envelope:
-success is `{"id":"cli:agent:get","result":{..,"type":"agent_info"}}` on
-stdout, exit 0; failure is `{"error":{"code":..,"message":..}}` on stderr,
-exit 1. Exit 2 means the fake itself is misconfigured (no `FAKE_HERDR_STATE`).
+`pane close|list|get|rename`, `workspace create|get|list|rename`,
+`tab create|rename`. Output is herdr's envelope: success is
+`{"id":"cli:agent:get","result":{..,"type":"agent_info"}}` on stdout, exit 0;
+failure is `{"error":{"code":..,"message":..},"id":"cli:agent:get"}` on stderr,
+exit 1. A syntax error (wrong number of operands, `--kind` or `--pane` missing
+on `agent start`, an unknown command) prints herdr's usage text
+(`usage: herdr agent get <target>`, `missing required --kind`,
+`unknown command: ..`) on stderr and exits 2, before the call reaches the
+state or the log. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
+`WorkspaceInfo`) carry the fields of `herdr api schema --json` (protocol 22).
+Result types: `agent_started` (with `argv`), `agent_info`, `agent_list`,
+`agent_prompted`, `pane_read` (text at `result.read.text`), `pane_info`,
+`pane_list`, `workspace_created|info|list`, `tab_created|info`, and `ok` for
+`send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
+means the fake itself is broken (no `FAKE_HERDR_STATE`).
 
 `agent start <name> --kind claude --pane <pane> [--timeout ms] -- <claude args>`
 starts `fake-claude` (or `$FAKE_CLAUDE_BIN`) in the pane with a **cleared
@@ -187,16 +219,25 @@ reaches the agent, so a member gets its identity only through its
 `agent_not_ready` (the agent stays running) when the agent shows a startup
 dialog, `timeout` when it never becomes ready. It refuses a newline in an
 argument (`invalid_agent_argument`), a second agent in a pane
-(`agent_pane_busy`), a used name (`agent_name_in_use`, a name only the fake
-uses) and any kind but `claude` (`agent_kind_unsupported`, also the fake's).
+(`agent_pane_busy`), a used name (`agent_name_taken`), a missing pane
+(`agent_pane_not_found`), a `--timeout` of 3000 or less or above 300000
+(`invalid_timeout`), and any kind but `claude` (`unsupported_agent_kind`).
+`agent list` includes agents that have no name; the JSON then has no `name`
+key. A test makes one with `FakeHerdrEnv::add_unnamed_agent()` (or
+`herdr fake add-unnamed-agent`).
 
-`agent prompt` refuses a blocked agent with `agent_blocked` before typing. With
+`agent prompt` refuses empty text with `empty_agent_prompt` first, and a
+blocked agent with `agent_blocked` before typing. With
 `--wait` it needs a state change (`working` or `blocked`) within
 `FAKE_HERDR_WAIT_MS` (default 5000) or fails with `agent_prompt_stalled`, and
 respects `--timeout` (`timeout`). `agent read --lines N` returns the last
-lines of the agent's screen as `result.text`. `agent send-keys` accepts
+lines of the agent's screen as `result.read.text`. `agent send-keys` accepts
 `enter esc tab backspace up down left right ctrl+c` and single characters and
-refuses others with `invalid_key`. `agent get` reports `agent_session.value`
+refuses others with `invalid_key`. After a turn the agent's `agent_status` is
+`done` (not `idle`) until the next turn; `interactive_ready` is true for
+`idle`, `working` and `done`, false for `blocked` and `unknown`. Pane JSON
+carries `agent`, `agent_session` and `agent_status` of the pane's agent, as
+`team_parent.py` reads `pane list[].agent_session`. `agent get` reports `agent_session.value`
 from the session file `fake-claude` wrote (else the id on its command line).
 `pane close` ends the agent and, as herdr does, closes an emptied tab and an
 emptied workspace.
@@ -243,24 +284,35 @@ names a directory, so it can never write into the real `~/.claude`.
 - It writes `<dir>/sessions/<pid>.json` with the keys the real file has
   (`pid`, `sessionId`, `cwd`, `startedAt`, `version`, `kind`, `entrypoint`,
   `name`, `status`, `updatedAt`, ..) and removes it when it exits cleanly.
+  `status` takes the values Claude Code writes: `idle`, `busy` (during a turn)
+  and `waiting` with `waitingFor: "input needed"` (at a dialog).
 - It reads the `--settings` file: the `env` object is applied to every shell
   step and every hook it runs, as Claude Code does; `hooks.Stop[].hooks[].command`
   entries are the Stop hooks.
 - Prompts arrive in `$FAKE_PANE_DIR/inbox` (when `fake-herdr` started it) or as
   lines on standard input. Each prompt is one turn: it echoes `> <prompt>`,
   runs the turn's steps, then runs each Stop hook with this JSON on stdin:
-  `{"session_id","transcript_path","cwd","permission_mode":"bypassPermissions","hook_event_name":"Stop","stop_hook_active","last_assistant_message"}`.
-  A hook that exits 2 (reason on stderr), or prints
-  `{"decision":"block","reason":..}`, holds the turn: the reason is shown as
-  `Stop hook feedback: ..`, the script's `on_hold` steps run, and the hooks run
-  again with `stop_hook_active: true` (at most three holds).
+  `{"session_id","transcript_path","cwd","permission_mode":"bypassPermissions","hook_event_name":"Stop","stop_hook_active","prompt_id","background_tasks","last_assistant_message"}`.
+  `background_tasks` is `[]` unless a script step sets tasks (see below); a
+  non-empty list means the session is paused, not finished. A hook that exits
+  2 (reason on stderr), prints `{"decision":"block","reason":..}`, or prints
+  `{"hookSpecificOutput":{"additionalContext":..}}`, holds the turn: the reason
+  is shown as `Stop hook feedback: ..`, the script's `on_hold` steps run, and
+  the hooks run again with `stop_hook_active: true` (at most eight holds, as in
+  Claude Code).
+- `fake-claude agents --json` (also reached as `claude agents --json` through
+  the installed `claude` link) prints a JSON array of the session files in
+  `<dir>/sessions` and starts no session. An interactive row carries its state
+  under `status`, a background row (`"kind": "bg"` in its file) under `state`;
+  add a background row with `FakeHerdrEnv::add_session_file`.
 - The prompt `/exit` ends the session.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 
 ```json
 {
-  "turns": [[{"run": "teamwire send lead 'hello'"}, {"print": "some text"}, {"sleep_ms": 50}]],
+  "turns": [[{"run": "teamwire send lead 'hello'"}, {"print": "some text"}, {"sleep_ms": 50},
+             {"background_tasks": ["build"]}]],
   "on_hold": [{"run": "teamwire done --summary 'fixed'"}],
   "startup": "none | trust | escalated_trust",
   "fault": "none | never_stop | stop_twice | wrong_session | exit_without_stop",
@@ -276,8 +328,61 @@ does, the agent stays `working`), `stop_twice` (the hook runs twice for one
 turn), `wrong_session` (the hook input names another session), 
 `exit_without_stop` (the process ends after the steps without the hook),
 `no_hook` (a harness without a turn-end hook). `startup: trust` prints the
-plain folder-trust dialog (`PLAIN_TRUST_TEXT`); `escalated_trust` prints the
-one that also asks to run hooks and MCP servers (`ESCALATED_TRUST_TEXT` first).
-While a dialog is open the agent is `blocked`. The cursor starts on "No, exit"
-(as in Claude Code); `down`, `up`, `1` and `2` move it, `enter` confirms.
-Answering "No, exit", `esc` or `ctrl+c` ends the session.
+plain folder-trust dialog (`PLAIN_TRUST_TEXT`, "Quick safety check: Is this a
+project you created or one you trust?", then "No, exit" and "Yes, I trust this
+folder"); `escalated_trust` adds `ESCALATED_TRUST_TEXT`, which holds every
+escalation marker ("will apply without asking", "runs commands to mint",
+"headersHelper", "This folder adds", "pre-approves"; `TRUST_MARKERS` and
+`TRUST_ESCALATION_MARKERS` list them). While a dialog is open the agent is
+`blocked`. The cursor starts on "No, exit" (as in Claude Code): **only `down`
+then `enter` trusts the folder.** `1`, `2` and other keys do nothing, and a
+bare `enter` takes "No, exit", which ends the session, as do `esc` and
+`ctrl+c`. An adapter must send `Down`, `Enter`, and only for the plain dialog.
+
+## Where the fakes still differ from the real tools
+
+Checked against `herdr --skill`, `herdr api schema --json` (protocol 22),
+read-only real calls (`agent list`, `agent get`, error and usage output of
+`agent start/get/prompt/read/send-keys`), the Python launcher, and 82 real
+`~/.claude/sessions/*.json` files.
+
+herdr:
+
+- A real pane runs the login shell environment plus `HERDR_*` variables. The
+  fake starts agents with a **cleared** environment on purpose: stricter, so a
+  member that relies on inherited variables fails in a test.
+- The fake runs only `--kind claude` (`fake-claude`). Real herdr detects and
+  starts codex, gemini and others.
+- `agent start` has no shell in between: the agent is started directly with
+  the arguments after `--`. Real herdr types a command into the pane's shell
+  and rejects arguments it cannot quote (the fake rejects only a newline).
+- The names of some codes and result types are not confirmed by a real call and
+  are the fake's best reading of the schema: `invalid_timeout` (the schema
+  gives only the limits), `invalid_key`, `pane_not_found`, `tab_not_found`,
+  `fake_misconfigured`; `workspace rename`, `tab rename` and `pane rename`
+  answer `workspace_info`, `tab_info` and `pane_info`; `send-keys` and
+  `pane close` answer `ok`. The `pane_read` `revision` is the agent's change
+  counter. The usage lines for commands other than `agent start|get|prompt`
+  are written by hand.
+- `agent_status` is `done` after a turn and stays `done` until the next turn.
+  Real herdr turns `done` into `idle` once a client has looked at the agent.
+  There is no `agent focus`, `agent wait`, `agent rename` or `agent explain`.
+- `--env` on `workspace create`, `tab create` and `pane split` is not
+  implemented. Real herdr has it (see the lead's note on `sets_env_at_spawn`).
+- `pane split`, `worktree`, `workspace close`, `tab list`, events and the socket
+  API do not exist in the fake. Tab and workspace `focused` is always false.
+- `agent read` ignores `--source`, `--format` and `--strip-ansi`; the screen
+  is the agent's captured output.
+- `agent prompt --until` is parsed and ignored.
+
+Claude Code:
+
+- Session files hold the keys the real file has, but `procStart`,
+  `messagingSocketPath`, `peerFeatures` and `nameSource` are absent, and the
+  `shell` status is never written.
+- The shape of one `background_tasks` entry (`{"id","status":"running"}`) and
+  the transcript file contents are guesses; only the key names are known.
+- `claude agents --json` reads the session files only. The real command also
+  lists finished background sessions with `--all`, which the fake ignores.
+- There is no MCP client, no PostToolUse hook run, no permission prompt and no
+  model: the script decides everything.
