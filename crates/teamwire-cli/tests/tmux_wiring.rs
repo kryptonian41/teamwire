@@ -242,3 +242,89 @@ fn a_pane_at_its_input_prompt_receives_the_line_and_an_enter() {
     assert!(got.starts_with("hello lead"), "{got:?}");
     assert!(got.ends_with('\n'), "an Enter followed the paste: {got:?}");
 }
+
+// The choice of the lead's host, through the real binary. A member runs on
+// the team's host, so `launch` starts its member there: on herdr the fake
+// does it, on none launch refuses, and on tmux the start fails because `PATH`
+// holds only the fakes and no test here may reach a real tmux. The host the
+// store recorded for the lead, or the refusal, shows which host wiring chose.
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "these tests run the real teamwire binary"
+)]
+fn teamwire() -> std::process::Command {
+    std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+}
+
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+/// Launches a one-member team with the given `HERDR_ENV` and `TMUX`. Returns
+/// the output and the host the store recorded for the lead, if a team was
+/// created.
+fn launch_with(
+    herdr_env: Option<&str>,
+    tmux: Option<&str>,
+) -> (std::process::Output, Option<String>) {
+    let herdr = teamwire_fakes::FakeHerdrEnv::new().unwrap();
+    let home = TestHome::new().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let spec = serde_json::json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "a", "title": "Alpha", "mode": "pane", "cwd": work.path(), "task": "look around"}]});
+    let spec_path = work.path().join("spec.json");
+    write_file(&spec_path, &spec.to_string());
+    let mut cmd = teamwire();
+    cmd.args(["launch", "--spec"])
+        .arg(&spec_path)
+        .env_clear()
+        .envs(herdr.env())
+        .env("TEAMWIRE_HOME", home.path());
+    if let Some(v) = herdr_env {
+        cmd.env("HERDR_ENV", v);
+    }
+    if let Some(v) = tmux {
+        cmd.env("TMUX", v);
+    }
+    let out = cmd.output().unwrap();
+    let recorded = Store::open_read_only(home.path(), &TeamName::parse("demo").unwrap())
+        .ok()
+        .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
+        .map(|team| team.lead_host.as_str().to_owned());
+    (out, recorded)
+}
+
+fn text(bytes: &[u8]) -> String {
+    String::from_utf8_lossy(bytes).into_owned()
+}
+
+#[test]
+fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
+    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"));
+    assert_eq!(recorded.as_deref(), Some("tmux"), "{}", text(&out.stderr));
+    // The member was to start in tmux, which is not on `PATH` here.
+    assert_eq!(out.status.code(), Some(2));
+    assert!(
+        text(&out.stdout).contains("could not run tmux"),
+        "{}",
+        text(&out.stdout)
+    );
+}
+
+#[test]
+fn herdr_env_wins_over_tmux() {
+    let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"));
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(recorded.as_deref(), Some("herdr"));
+}
+
+#[test]
+fn neither_herdr_nor_tmux_leaves_the_lead_with_no_host() {
+    for tmux in [None, Some("")] {
+        let (out, recorded) = launch_with(None, tmux);
+        assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
+        assert!(text(&out.stderr).contains("host none cannot start a member"));
+        assert_eq!(recorded, None, "nothing was created");
+    }
+}

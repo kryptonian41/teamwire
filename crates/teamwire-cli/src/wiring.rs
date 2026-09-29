@@ -8,6 +8,7 @@ use std::sync::Arc;
 use teamwire_core::{HarnessId, HostId, NoHost, Platform, Registry, RegistryError};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 use teamwire_host_herdr::Herdr;
+use teamwire_host_tmux::Tmux;
 use teamwire_platform::SystemClock;
 
 /// The adapters and the platform one command runs with.
@@ -24,6 +25,8 @@ pub(crate) struct Wiring {
 pub(crate) struct WiringEnv {
     /// `HERDR_ENV`: `1` inside a herdr pane.
     pub(crate) herdr_env: Option<String>,
+    /// `TMUX`: set inside a tmux client, to the server's socket path.
+    pub(crate) tmux: Option<String>,
     /// `HOME`.
     pub(crate) user_home: Option<PathBuf>,
     /// `TEAMWIRE_CLAUDE_DIR`: where tests put Claude's files.
@@ -34,6 +37,7 @@ impl WiringEnv {
     pub(crate) fn from_process() -> Self {
         Self {
             herdr_env: std::env::var("HERDR_ENV").ok(),
+            tmux: std::env::var("TMUX").ok(),
             user_home: std::env::var_os("HOME").map(PathBuf::from),
             claude_dir: std::env::var_os("TEAMWIRE_CLAUDE_DIR").map(PathBuf::from),
         }
@@ -48,6 +52,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         claude_config(env),
     )))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
+    registry.add_host(Arc::new(Tmux::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(NoHost))?;
     Ok(Wiring {
         registry,
@@ -58,10 +63,14 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     })
 }
 
-/// `herdr` inside a herdr pane (`HERDR_ENV=1`), otherwise `none`.
+/// `herdr` inside a herdr pane (`HERDR_ENV=1`), else `tmux` inside a tmux
+/// client (`TMUX` set), otherwise `none`. herdr wins when both are set,
+/// because a herdr pane can itself be started from a tmux session.
 fn lead_host(env: &WiringEnv) -> HostId {
     if env.herdr_env.as_deref() == Some("1") {
         HostId::from_static(Herdr::ID)
+    } else if env.tmux.as_deref().is_some_and(|t| !t.is_empty()) {
+        HostId::from_static(Tmux::ID)
     } else {
         HostId::from_static(NoHost::ID)
     }
@@ -89,6 +98,7 @@ mod tests {
     fn env(herdr: Option<&str>) -> WiringEnv {
         WiringEnv {
             herdr_env: herdr.map(str::to_owned),
+            tmux: None,
             user_home: Some(PathBuf::from("/home/u")),
             claude_dir: None,
         }
@@ -101,11 +111,44 @@ mod tests {
         assert_eq!(wire(&env(Some("0"))).unwrap().lead_host.as_str(), "none");
     }
 
+    fn env_in_tmux(herdr: Option<&str>, tmux: Option<&str>) -> WiringEnv {
+        WiringEnv {
+            tmux: tmux.map(str::to_owned),
+            ..env(herdr)
+        }
+    }
+
+    fn lead_of(env: &WiringEnv) -> String {
+        wire(env).unwrap().lead_host.as_str().to_owned()
+    }
+
+    #[test]
+    fn tmux_set_and_herdr_not_picks_tmux_for_the_lead() {
+        assert_eq!(
+            lead_of(&env_in_tmux(None, Some("/tmp/tmux-1/default,42,0"))),
+            "tmux"
+        );
+        assert_eq!(
+            lead_of(&env_in_tmux(Some("0"), Some("/tmp/tmux-1/default,42,0"))),
+            "tmux"
+        );
+    }
+
+    #[test]
+    fn herdr_wins_over_tmux_and_an_empty_tmux_is_not_tmux() {
+        assert_eq!(
+            lead_of(&env_in_tmux(Some("1"), Some("/tmp/tmux-1/default,42,0"))),
+            "herdr"
+        );
+        assert_eq!(lead_of(&env_in_tmux(None, Some(""))), "none");
+        assert_eq!(lead_of(&env_in_tmux(None, None)), "none");
+    }
+
     #[test]
     fn registry_holds_every_adapter_of_this_binary() {
         let wiring = wire(&env(None)).unwrap();
         assert_eq!(wiring.registry.harness_ids(), ["claude-code"]);
-        assert_eq!(wiring.registry.host_ids(), ["herdr", "none"]);
+        assert_eq!(wiring.registry.host_ids(), ["herdr", "none", "tmux"]);
         assert!(wiring.registry.harness(&wiring.lead_harness).is_ok());
         assert!(wiring.registry.host(&wiring.lead_host).is_ok());
     }
