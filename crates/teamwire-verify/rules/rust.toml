@@ -1,0 +1,53 @@
+# Rules for Rust. `weakening` patterns run on added lines of files with one of
+# `extensions`; a line that starts with a `comment_prefixes` entry is prose and
+# is skipped. `test_markers` are counted per file: more removed than added is
+# a deleted test. `test_paths` and `config_files` are globs on the repo-relative
+# path.
+language = "rust"
+extensions = ["rs"]
+comment_prefixes = ["//"]
+test_paths = ["**/tests/**", "**/tests.rs", "**/*_test.rs"]
+test_markers = ["#[test]", "#[tokio::test", "#[proptest", "proptest!"]
+config_files = [
+  "**/clippy.toml",
+  "**/.clippy.toml",
+  "**/rustfmt.toml",
+  "**/.rustfmt.toml",
+  "**/deny.toml",
+  "**/rust-toolchain.toml",
+  "**/rust-toolchain",
+  "**/.cargo/config.toml",
+  "**/.cargo/config",
+]
+
+# Lines added to, or removed from, these sections of a manifest change what the
+# compiler and clippy enforce.
+[lint_tables]
+files = ["Cargo.toml"]
+sections = ["lints", "workspace.lints"]
+
+[[weakening]]
+id = "ignore"
+contains = "#[ignore"
+
+[[weakening]]
+id = "should-panic"
+contains = "#[should_panic"
+
+[[weakening]]
+id = "allow"
+contains = "#[allow("
+
+[[weakening]]
+id = "inner-allow"
+contains = "#![allow("
+
+# A new `expect` may have a real reason. It is flagged so the lead reads the
+# reason and waives it, or has it removed.
+[[weakening]]
+id = "expect"
+contains = "#[expect("
+
+[[weakening]]
+id = "inner-expect"
+contains = "#![expect("

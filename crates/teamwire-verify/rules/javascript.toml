@@ -1,0 +1,99 @@
+# JavaScript and TypeScript.
+language = "javascript"
+extensions = ["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"]
+test_paths = [
+  "**/__tests__/**",
+  "**/tests/**",
+  "**/test/**",
+  "**/*.test.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+  "**/*.spec.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
+]
+test_markers = ["it(", "test("]
+config_files = [
+  "**/.eslintrc",
+  "**/.eslintrc.*",
+  "**/eslint.config.*",
+  "**/tsconfig.json",
+  "**/tsconfig.*.json",
+  "**/jest.config.*",
+  "**/vitest.config.*",
+  "**/playwright.config.*",
+  "**/.prettierrc",
+  "**/.prettierrc.*",
+]
+
+[[weakening]]
+id = "it-skip"
+contains = "it.skip("
+word_start = true
+
+[[weakening]]
+id = "it-only"
+contains = "it.only("
+word_start = true
+
+[[weakening]]
+id = "it-todo"
+contains = "it.todo("
+word_start = true
+
+[[weakening]]
+id = "test-skip"
+contains = "test.skip("
+word_start = true
+
+[[weakening]]
+id = "test-only"
+contains = "test.only("
+word_start = true
+
+[[weakening]]
+id = "test-todo"
+contains = "test.todo("
+word_start = true
+
+[[weakening]]
+id = "describe-skip"
+contains = "describe.skip("
+word_start = true
+
+[[weakening]]
+id = "describe-only"
+contains = "describe.only("
+word_start = true
+
+[[weakening]]
+id = "describe-todo"
+contains = "describe.todo("
+word_start = true
+
+[[weakening]]
+id = "xit"
+contains = "xit("
+word_start = true
+
+[[weakening]]
+id = "xdescribe"
+contains = "xdescribe("
+word_start = true
+
+[[weakening]]
+id = "xtest"
+contains = "xtest("
+word_start = true
+
+[[weakening]]
+id = "eslint-disable"
+contains = "eslint-disable"
+
+[[weakening]]
+id = "ts-ignore"
+contains = "@ts-ignore"
+
+[[weakening]]
+id = "ts-expect-error"
+contains = "@ts-expect-error"
+
+[[weakening]]
+id = "ts-nocheck"
+contains = "@ts-nocheck"

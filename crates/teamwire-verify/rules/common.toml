@@ -1,0 +1,3 @@
+# Applies to every repository, whatever its language.
+language = "common"
+config_files = ["**/.github/workflows/**"]

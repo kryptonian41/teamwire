@@ -1,0 +1,49 @@
+language = "python"
+extensions = ["py", "pyi"]
+test_paths = ["**/tests/**", "**/test/**", "**/test_*.py", "**/*_test.py"]
+test_markers = ["def test_", "async def test_"]
+config_files = [
+  "**/pyproject.toml",
+  "**/setup.cfg",
+  "**/mypy.ini",
+  "**/pytest.ini",
+  "**/tox.ini",
+  "**/ruff.toml",
+  "**/.ruff.toml",
+  "**/.flake8",
+  "**/.pre-commit-config.yaml",
+  "**/.pre-commit-config.yml",
+]
+
+[[weakening]]
+id = "pytest-mark"
+contains = "@pytest.mark.skip"
+
+[[weakening]]
+id = "pytest-xfail"
+contains = "@pytest.mark.xfail"
+
+[[weakening]]
+id = "unittest-skip"
+contains = "@unittest.skip"
+
+[[weakening]]
+id = "unittest-expected-failure"
+contains = "@unittest.expectedFailure"
+
+[[weakening]]
+id = "pytest-skip-call"
+contains = "pytest.skip("
+word_start = true
+
+[[weakening]]
+id = "type-ignore"
+contains = "# type: ignore"
+
+[[weakening]]
+id = "noqa"
+contains = "# noqa"
+
+[[weakening]]
+id = "no-cover"
+contains = "# pragma: no cover"
