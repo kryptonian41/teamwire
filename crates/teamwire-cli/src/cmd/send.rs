@@ -247,6 +247,45 @@ pub(crate) fn with_ctx<T>(
     Ok(f(&mut ctx))
 }
 
+/// `with_ctx` for a command that only reads (`log`, `members`): the store is
+/// opened read-only, never created or migrated, and a database of another
+/// schema version is refused (WAT-11). A read never writes, not even a
+/// refusal.
+pub(crate) fn with_read_ctx<T>(
+    global: &Global,
+    wiring: &Wiring,
+    team: &TeamName,
+    f: impl FnOnce(&mut Ctx<'_>) -> T,
+) -> Result<T, ExitCode> {
+    let home = state_home(global);
+    if !home
+        .join("teams")
+        .join(team.as_str())
+        .join("team.db")
+        .is_file()
+    {
+        return Err(fail(
+            "",
+            &format!("no database for team {team} under {}", home.display()),
+            REFUSED,
+        ));
+    }
+    let mut store = match Store::open_read_only(&home, team) {
+        Ok(store) => store,
+        Err(e) => return Err(fail("", &e.to_string(), STORE)),
+    };
+    let config = Config::default();
+    let mut ctx = Ctx {
+        home: &home,
+        store: &mut store,
+        registry: &wiring.registry,
+        platform: wiring.platform.as_ref(),
+        clock: &wiring.clock,
+        config: &config,
+    };
+    Ok(f(&mut ctx))
+}
+
 #[expect(clippy::print_stdout, reason = "the command's result is its output")]
 pub(crate) fn say(text: &str) {
     print!("{text}");

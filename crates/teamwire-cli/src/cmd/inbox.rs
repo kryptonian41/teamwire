@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use serde_json::json;
 use teamwire_core::{Actor, TeamName};
-use teamwire_msg::{InboxItem, SendError, inbox, prove_actor};
+use teamwire_msg::{InboxItem, SendError, inbox, prove_actor_logged};
 
 use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
 use crate::wiring::Wiring;
@@ -23,7 +23,7 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
         return fail("inbox", "TEAMWIRE_TEAM does not name a team", USAGE);
     };
     let outcome = with_ctx(global, wiring, &team, |ctx| {
-        match prove_actor(ctx, &caller_env(None)).map_err(SendError::Refused)? {
+        match prove_actor_logged(ctx, &caller_env(None)).map_err(SendError::Refused)? {
             Actor::Member(role) => inbox(ctx, &role, *all),
             Actor::Lead => Err(SendError::InvalidArgument(
                 "the lead has no inbox; its messages are typed into its session".to_owned(),

@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use teamwire_core::{Actor, DisplayId, TeamName};
-use teamwire_msg::{AckOutcome, SendError, ack, prove_actor};
+use teamwire_msg::{AckOutcome, SendError, ack, prove_actor_logged};
 
 use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
 use crate::wiring::Wiring;
@@ -26,7 +26,7 @@ pub(crate) fn run(args: &AckArgs, global: &Global, wiring: &Wiring) -> ExitCode 
         return fail("ack", "TEAMWIRE_TEAM does not name a team", USAGE);
     };
     let outcome = with_ctx(global, wiring, &team, |ctx| {
-        match prove_actor(ctx, &caller_env(None)).map_err(SendError::Refused)? {
+        match prove_actor_logged(ctx, &caller_env(None)).map_err(SendError::Refused)? {
             Actor::Member(role) => ack(ctx, &role, &ids),
             Actor::Lead => Err(SendError::InvalidArgument(
                 "the lead has no inbox to acknowledge".to_owned(),

@@ -6,7 +6,7 @@ use serde_json::json;
 use teamwire_core::TeamName;
 use teamwire_msg::{RosterEntry, roster};
 
-use crate::cmd::send::{error_code, fail, say, with_ctx};
+use crate::cmd::send::{error_code, fail, say, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, MembersArgs, USAGE};
 
@@ -17,7 +17,7 @@ pub(crate) fn run(args: &MembersArgs, global: &Global, wiring: &Wiring) -> ExitC
         return fail("members", "name a team, or set TEAMWIRE_TEAM", USAGE);
     };
     // The roster holds no place, token or session id, so reading it needs no proof.
-    match with_ctx(global, wiring, &team, |ctx| roster(ctx)) {
+    match with_read_ctx(global, wiring, &team, |ctx| roster(ctx)) {
         Err(code) => code,
         Ok(Err(e)) => fail("members", &e.to_string(), error_code(&e)),
         Ok(Ok(entries)) => {
