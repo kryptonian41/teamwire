@@ -1,6 +1,8 @@
 //! Every git call verify makes. Each one runs through `Platform::run`, and
-//! each one only reads: `GIT_OPTIONAL_LOCKS=0` stops `git status` from
-//! refreshing the index, so verify changes no worktree (VER-8).
+//! each one only reads. `git diff` and `git status` refresh the index when a
+//! file looks changed, which writes `.git/index`. Verify uses `diff-tree`,
+//! which never reads the index, and `GIT_OPTIONAL_LOCKS=0` for `status`, so it
+//! changes no worktree (VER-8).
 
 use std::path::Path;
 use std::time::Duration;
@@ -87,7 +89,15 @@ impl<'a> Git<'a> {
 
     /// Paths changed between `base` and `HEAD`, with git's one-letter status.
     pub(crate) fn changed_paths(&self, base: &str) -> Result<Vec<(char, String)>, VerifyError> {
-        let out = self.stdout(&["diff", "--name-status", "--no-renames", "-z", base, "HEAD"])?;
+        let out = self.stdout(&[
+            "diff-tree",
+            "-r",
+            "--name-status",
+            "--no-renames",
+            "-z",
+            base,
+            "HEAD",
+        ])?;
         let mut fields = out.split('\0').filter(|f| !f.is_empty());
         let mut paths = Vec::new();
         while let (Some(status), Some(path)) = (fields.next(), fields.next()) {
@@ -99,7 +109,9 @@ impl<'a> Git<'a> {
     /// The whole patch between `base` and `HEAD`, with no context lines.
     pub(crate) fn patch(&self, base: &str) -> Result<String, VerifyError> {
         self.stdout(&[
-            "diff",
+            "diff-tree",
+            "-r",
+            "-p",
             "--unified=0",
             "--no-color",
             "--no-ext-diff",

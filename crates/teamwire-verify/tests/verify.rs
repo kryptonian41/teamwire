@@ -428,7 +428,15 @@ fn verify_changes_no_worktree() {
                 .next()
                 .unwrap_or("");
             assert!(
-                ["rev-parse", "merge-base", "diff", "status", "log", "show"].contains(&sub),
+                [
+                    "rev-parse",
+                    "merge-base",
+                    "diff-tree",
+                    "status",
+                    "log",
+                    "show"
+                ]
+                .contains(&sub),
                 "verify ran a git command that may write: {cmd:?}"
             );
             assert!(
