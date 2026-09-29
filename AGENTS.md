@@ -1,0 +1,63 @@
+# teamwire
+
+Rust tool that runs teams of coding agents. Map: docs/ARCHITECTURE.md.
+Your ticket: docs/build-plan.md. Interfaces: docs/api/. Conventions: docs/conventions.md.
+
+## Separate project: never touch the running setup
+
+A Python version of this tooling runs the user's real agent teams. So:
+- Write only inside this repository and temporary directories you create.
+  Never create, edit, move or delete anything under ~/.claude/ or ~/.claude.json.
+- Never register a hook, MCP server, skill or launch agent outside this repo.
+  Example configs live in examples/ as files.
+- teamwire agent names are tw_<team>_<role> and never contain a hyphen, so
+  they can never equal a Python team's <team>-<role>. Do not change that.
+- teamwire's state lives in $TEAMWIRE_HOME (default ~/.teamwire).
+  Tests set it to a temp dir with teamwire_fakes::TestHome.
+- Tests never type into a real herdr pane or start a real Claude session.
+  Use the fakes in tests/fakes/. (clippy: Command::new is disallowed
+  outside teamwire-platform and the test crates)
+- Reading the Python tooling to learn its behaviour is fine:
+  ~/.claude/team/bin/, ~/.claude/hooks/team-report.sh,
+  ~/.claude/skills/agent-team/SKILL.md.
+
+## Commands (from the repo root)
+
+- While working: cargo test -p <your crate> --locked, then scripts/gate.sh fast
+- Your ticket's check: the Check column of your row in docs/build-plan.md
+- Full gate (the lead, after each wave): scripts/gate.sh
+- GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.
+  Plain sed -i is BSD sed.
+
+## Hard rules (the program that enforces each is in brackets)
+
+- Every store write runs inside Store::write, which starts BEGIN IMMEDIATE.
+  No write transaction stays open during an external call. [review; crash tests]
+- Files outside SQLite are written with Platform::write_atomic. [clippy]
+- Time comes from the Clock trait. [clippy]
+- Host::submit takes a OneLine, built with sanitize::one_line. [type system]
+- Only teamwire-cli prints or exits. Libraries return thiserror errors;
+  anyhow only in teamwire-cli and xtask. [clippy; tidy]
+- No unwrap, expect, panic or todo outside tests. [clippy]
+- Suppress a lint only with #[expect(lint, reason = "...")]. [clippy]
+- A crate depends only on lower layers (docs/conventions.md section 5). [tidy]
+- Do not add dependencies or touch Cargo.lock; ask the lead. [--locked]
+- Do not edit protected files unless your ticket owns them: root Cargo.toml,
+  clippy.toml, rustfmt.toml, rust-toolchain.toml, scripts/, xtask/,
+  tests/fakes/, docs/adr/. [tidy --base prints PROTECTED-CHANGED]
+- Never delete, #[ignore] or loosen a test to get green. Fix the code.
+  [tidy --base prints WEAKENED; teamwire verify flags it]
+
+## Where things go
+
+- One crate per concern under crates/. Each lib.rs starts with a short //!
+  note: purpose, what it must never do, invariants. Read it first.
+- No mod.rs. Split a source file past 400 lines; tidy fails past 800.
+- Unit tests at the bottom of the file; integration tests in crates/<crate>/tests/.
+- Extend the nearest existing helper instead of adding a parallel one.
+
+## Comments
+
+- Explain why, not what, for a reader who never saw this session.
+- No conversation or ticket history in code. Change an ADR only by adding one
+  that supersedes it.
