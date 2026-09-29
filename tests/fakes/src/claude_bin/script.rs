@@ -17,6 +17,10 @@ pub enum Step {
     Print(String),
     /// Wait this many milliseconds.
     SleepMs(u64),
+    /// Leave these background tasks running: the Stop hook input lists them
+    /// in `background_tasks`, and a non-empty list means the session is
+    /// paused, not finished. Cleared at the next prompt.
+    BackgroundTasks(Vec<String>),
 }
 
 /// What happens at the start, before the first prompt.

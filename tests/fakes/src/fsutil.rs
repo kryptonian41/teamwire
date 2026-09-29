@@ -54,12 +54,14 @@ pub(crate) fn read_text(path: &Path) -> Option<String> {
     reason = "the fake binaries check a child's liveness with kill(1); this crate may start processes"
 )]
 pub(crate) fn pid_alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .args(["-0", &pid.to_string()])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+    // kill(1) with pid 0 means the whole process group.
+    pid != 0
+        && std::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
 }
 
 /// Sends SIGTERM to a process. Best effort: an error means it was gone.
@@ -68,6 +70,9 @@ pub(crate) fn pid_alive(pid: u32) -> bool {
     reason = "the fake binaries end a child with kill(1); this crate may start processes"
 )]
 pub(crate) fn terminate(pid: u32) {
+    if pid == 0 {
+        return;
+    }
     std::process::Command::new("kill")
         .arg(pid.to_string())
         .stdout(std::process::Stdio::null())

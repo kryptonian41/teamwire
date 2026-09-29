@@ -100,7 +100,8 @@ pub(crate) fn run_shell(command: &str, env: &[(String, String)], stdin: Option<&
 }
 
 /// The reason a Stop hook holds the agent, if it does: exit code 2 with the
-/// reason on stderr, or JSON `{"decision":"block","reason":...}` on stdout.
+/// reason on stderr, JSON `{"decision":"block","reason":...}` on stdout, or
+/// JSON with `hookSpecificOutput.additionalContext`.
 pub(crate) fn hold_reason(ran: &Ran) -> Option<String> {
     if ran.code == 2 {
         return Some(ran.stderr.trim().to_owned());
@@ -114,7 +115,10 @@ pub(crate) fn hold_reason(ran: &Ran) -> Option<String> {
                 .to_owned(),
         );
     }
-    None
+    // `hookSpecificOutput.additionalContext` also keeps the agent going.
+    doc.pointer("/hookSpecificOutput/additionalContext")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
 }
 
 #[cfg(test)]

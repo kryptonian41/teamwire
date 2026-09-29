@@ -151,7 +151,7 @@ fn closing_the_last_pane_closes_its_tab_and_workspace() {
     let ws = pane_id.split(':').next().unwrap().to_owned();
     assert_eq!(env.run(&["workspace", "get", &ws]).unwrap().code, Some(0));
     let closed = env.run(&["pane", "close", &pane_id]).unwrap();
-    assert_eq!(s(&json(&closed), "/pane_id"), pane_id);
+    assert_eq!(s(&json(&closed), "/type"), "ok");
     assert_eq!(
         env.run(&["workspace", "get", &ws])
             .unwrap()
@@ -208,12 +208,17 @@ fn agent_lifecycle_start_prompt_read_list_get_close() {
             "40",
         ])
         .unwrap();
-    let text = s(&json(&read), "/text");
+    let text = s(&json(&read), "/read/text");
     assert!(text.contains("> hello agent"), "{text}");
     assert!(text.contains("worked on it"), "{text}");
 
+    // After a turn real herdr shows `done` (ready for input, not yet seen).
     let get = env.run(&["agent", "get", &pane_id]).unwrap();
-    assert_eq!(s(&json(&get), "/agent/agent_status"), "idle");
+    assert_eq!(s(&json(&get), "/agent/agent_status"), "done");
+    assert_eq!(
+        json(&get).pointer("/agent/interactive_ready").unwrap(),
+        true
+    );
     let list = json(&env.run(&["agent", "list"]).unwrap());
     assert_eq!(
         list.pointer("/agents").unwrap().as_array().unwrap().len(),
@@ -321,7 +326,7 @@ fn the_escalated_trust_dialog_blocks_start_and_prompts_until_answered() {
             &env.run(&["agent", "read", "tw_demo_api", "--lines", "20"])
                 .unwrap(),
         ),
-        "/text",
+        "/read/text",
     );
     assert!(
         screen.contains(teamwire_fakes::ESCALATED_TRUST_TEXT),
@@ -393,7 +398,7 @@ fn a_stalled_prompt_fails_but_the_text_was_typed() {
     for _ in 0..200 {
         let text = s(
             &json(&env.run(&["agent", "read", "tw_demo_api"]).unwrap()),
-            "/text",
+            "/read/text",
         );
         if text.contains("> did this arrive") {
             return;
@@ -490,16 +495,17 @@ fn agent_start_refuses_bad_input_like_herdr() {
         Some("invalid_agent_argument")
     );
     let no_pane = start(&env, "tw_demo_api", "w9:p9", "s");
-    assert_eq!(no_pane.error_code().as_deref(), Some("pane_not_found"));
+    assert_eq!(
+        no_pane.error_code().as_deref(),
+        Some("agent_pane_not_found")
+    );
     let codex = env
         .run(&["agent", "start", "x", "--kind", "codex", "--pane", &pane_id])
         .unwrap();
     assert_eq!(
         codex.error_code().as_deref(),
-        Some("agent_kind_unsupported")
+        Some("unsupported_agent_kind")
     );
-    let unknown = env.run(&["frobnicate", "now"]).unwrap();
-    assert_eq!(unknown.error_code().as_deref(), Some("unknown_command"));
 }
 
 #[test]
@@ -518,7 +524,7 @@ fn a_busy_pane_and_a_taken_name_are_refused() {
     let b = s(&json(&tab), "/root_pane/pane_id");
     assert_eq!(
         start(&env, "tw_demo_api", &b, "s3").error_code().as_deref(),
-        Some("agent_name_in_use")
+        Some("agent_name_taken")
     );
 }
 
@@ -544,4 +550,312 @@ fn every_call_is_logged_with_its_kind() {
         ]
     );
     assert_eq!(calls.first().unwrap().argv.first().unwrap(), "workspace");
+}
+
+fn run_ok(env: &FakeHerdrEnv, args: &[&str]) -> Value {
+    let out = env.run(args).unwrap();
+    assert_eq!(out.code, Some(0), "{args:?}: {out:?}");
+    json(&out)
+}
+
+#[test]
+fn result_types_and_fields_follow_herdrs_schema() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let ws = run_ok(
+        &env,
+        &[
+            "workspace",
+            "create",
+            "--cwd",
+            "/tmp",
+            "--label",
+            "T",
+            "--no-focus",
+        ],
+    );
+    for key in [
+        "workspace_id",
+        "number",
+        "label",
+        "focused",
+        "pane_count",
+        "tab_count",
+        "active_tab_id",
+        "agent_status",
+    ] {
+        assert!(
+            ws.pointer(&format!("/workspace/{key}")).is_some(),
+            "workspace.{key}"
+        );
+    }
+    for key in [
+        "tab_id",
+        "workspace_id",
+        "number",
+        "label",
+        "focused",
+        "pane_count",
+        "agent_status",
+    ] {
+        assert!(ws.pointer(&format!("/tab/{key}")).is_some(), "tab.{key}");
+    }
+    for key in [
+        "pane_id",
+        "terminal_id",
+        "workspace_id",
+        "tab_id",
+        "focused",
+        "agent_status",
+        "revision",
+    ] {
+        assert!(
+            ws.pointer(&format!("/root_pane/{key}")).is_some(),
+            "root_pane.{key}"
+        );
+    }
+    let pane_id = s(&ws, "/root_pane/pane_id");
+    let ws_id = s(&ws, "/workspace/workspace_id");
+    let tab_id = s(&ws, "/tab/tab_id");
+
+    let list = run_ok(&env, &["workspace", "list"]);
+    assert_eq!(s(&list, "/type"), "workspace_list");
+    assert_eq!(
+        list.pointer("/workspaces")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(
+        s(
+            &run_ok(&env, &["workspace", "rename", &ws_id, "New"]),
+            "/type"
+        ),
+        "workspace_info"
+    );
+    assert_eq!(
+        s(&run_ok(&env, &["tab", "rename", &tab_id, "Tab"]), "/type"),
+        "tab_info"
+    );
+    let renamed = run_ok(&env, &["pane", "rename", &pane_id, "my pane"]);
+    assert_eq!(s(&renamed, "/type"), "pane_info");
+    assert_eq!(s(&renamed, "/pane/label"), "my pane");
+    assert_eq!(
+        s(&run_ok(&env, &["pane", "close", &pane_id]), "/type"),
+        "ok"
+    );
+}
+
+#[test]
+fn agent_results_use_herdrs_type_names_shapes_and_ids() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript::default()).unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let started = start(&env, "tw_demo_api", &pane_id, "sess-9");
+    let result = json(&started);
+    assert_eq!(s(&result, "/type"), "agent_started");
+    assert!(result.pointer("/argv").unwrap().as_array().unwrap().len() >= 3);
+    let doc: Value = serde_json::from_str(started.stdout.trim()).unwrap();
+    assert_eq!(doc.pointer("/id").unwrap(), "cli:agent:start");
+
+    let prompted = run_ok(
+        &env,
+        &[
+            "agent",
+            "prompt",
+            "tw_demo_api",
+            "hi",
+            "--wait",
+            "--timeout",
+            "20000",
+        ],
+    );
+    assert_eq!(s(&prompted, "/type"), "agent_prompted");
+    let read = run_ok(
+        &env,
+        &[
+            "agent",
+            "read",
+            "tw_demo_api",
+            "--source",
+            "recent",
+            "--lines",
+            "5",
+        ],
+    );
+    assert_eq!(s(&read, "/type"), "pane_read");
+    for key in [
+        "pane_id",
+        "workspace_id",
+        "tab_id",
+        "source",
+        "format",
+        "text",
+        "revision",
+        "truncated",
+    ] {
+        assert!(
+            read.pointer(&format!("/read/{key}")).is_some(),
+            "read.{key}"
+        );
+    }
+    assert_eq!(
+        s(
+            &run_ok(&env, &["agent", "send-keys", "tw_demo_api", "esc"]),
+            "/type"
+        ),
+        "ok"
+    );
+
+    // The pane list carries the agent's session, as team_parent.py reads it.
+    let panes = run_ok(&env, &["pane", "list"]);
+    let first = panes.pointer("/panes/0").unwrap();
+    assert_eq!(first.pointer("/agent_session/value").unwrap(), "sess-9");
+    assert_eq!(first.pointer("/agent").unwrap(), "claude");
+
+    // Errors carry the command id.
+    let missing = env.run(&["agent", "get", "nobody"]).unwrap();
+    let err: Value = serde_json::from_str(missing.stderr.trim()).unwrap();
+    assert_eq!(err.pointer("/id").unwrap(), "cli:agent:get");
+    assert_eq!(err.pointer("/error/code").unwrap(), "agent_not_found");
+}
+
+#[test]
+fn an_agent_without_a_name_is_listed_without_a_name_key() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript::default()).unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    let unnamed = env.add_unnamed_agent().unwrap();
+    let list = run_ok(&env, &["agent", "list"]);
+    let agents = list.pointer("/agents").unwrap().as_array().unwrap();
+    assert_eq!(agents.len(), 2);
+    let bare = agents
+        .iter()
+        .find(|a| a.pointer("/pane_id").unwrap() == unnamed.as_str())
+        .unwrap();
+    assert!(bare.get("name").is_none());
+    assert_eq!(bare.pointer("/agent_status").unwrap(), "idle");
+    assert!(agents.iter().any(|a| a.get("name").is_some()));
+}
+
+#[test]
+fn interactive_ready_is_true_for_idle_working_and_done_and_false_when_blocked() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        startup: Startup::Trust,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let _ = start(&env, "tw_demo_api", &pane_id, "s");
+    let blocked = run_ok(&env, &["agent", "get", "tw_demo_api"]);
+    assert_eq!(s(&blocked, "/agent/agent_status"), "blocked");
+    assert_eq!(blocked.pointer("/agent/interactive_ready").unwrap(), false);
+    // Idle: an agent with no dialog.
+    let other = FakeHerdrEnv::new().unwrap();
+    let pane2 = pane(&other, "/tmp");
+    assert_eq!(start(&other, "tw_demo_api", &pane2, "s").code, Some(0));
+    let idle = run_ok(&other, &["agent", "get", "tw_demo_api"]);
+    assert_eq!(s(&idle, "/agent/agent_status"), "idle");
+    assert_eq!(idle.pointer("/agent/interactive_ready").unwrap(), true);
+}
+
+#[test]
+fn agent_start_checks_kind_and_timeout_like_herdr() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let no_kind = env
+        .run(&["agent", "start", "x", "--pane", &pane_id])
+        .unwrap();
+    assert_eq!(no_kind.code, Some(2));
+    assert_eq!(no_kind.stderr.trim(), "missing required --kind");
+    for bad in ["3000", "100", "300001"] {
+        let out = env
+            .run(&[
+                "agent",
+                "start",
+                "x",
+                "--kind",
+                "claude",
+                "--pane",
+                &pane_id,
+                "--timeout",
+                bad,
+            ])
+            .unwrap();
+        assert_eq!(
+            out.error_code().as_deref(),
+            Some("invalid_timeout"),
+            "{bad}"
+        );
+    }
+    // The pane is looked up before the timeout is checked, as in herdr.
+    let out = env
+        .run(&[
+            "agent",
+            "start",
+            "x",
+            "--kind",
+            "claude",
+            "--pane",
+            "w9:p9",
+            "--timeout",
+            "100",
+        ])
+        .unwrap();
+    assert_eq!(out.error_code().as_deref(), Some("agent_pane_not_found"));
+}
+
+#[test]
+fn syntax_errors_print_usage_and_exit_two() {
+    let env = FakeHerdrEnv::new().unwrap();
+    for (args, text) in [
+        (
+            &["agent", "start"][..],
+            "usage: herdr agent start <name> --kind KIND --pane ID [--timeout MS] [-- <agent-args...>]",
+        ),
+        (&["agent", "get"][..], "usage: herdr agent get <target>"),
+        (
+            &["agent", "prompt", "x"][..],
+            "usage: herdr agent prompt <target> <text> [--wait] [--until STATUS]... [--timeout MS]",
+        ),
+    ] {
+        let out = env.run(args).unwrap();
+        assert_eq!(out.code, Some(2), "{args:?}");
+        assert_eq!(out.stderr.trim(), text);
+        assert!(out.stdout.is_empty());
+    }
+    let unknown = env.run(&["frobnicate", "now"]).unwrap();
+    assert_eq!(unknown.code, Some(2));
+    assert!(unknown.stderr.contains("unknown command: frobnicate now"));
+    // A syntax error never reaches the server, so it is not in the call log.
+    assert!(env.calls().is_empty());
+}
+
+#[test]
+fn an_empty_prompt_is_refused_before_the_agent_is_looked_up() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let out = env.run(&["agent", "prompt", "nobody", ""]).unwrap();
+    assert_eq!(out.error_code().as_deref(), Some("empty_agent_prompt"));
+}
+
+#[test]
+fn agent_not_found_fault_answers_prompt_and_get_on_a_live_agent() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    env.set_faults(&HerdrFaults::new().agent_not_found("agent get", "tw_demo_api"))
+        .unwrap();
+    let out = env.run(&["agent", "get", "tw_demo_api"]).unwrap();
+    assert_eq!(out.code, Some(1));
+    assert_eq!(out.error_code().as_deref(), Some("agent_not_found"));
+    assert_eq!(
+        env.calls().last().unwrap().fault.as_deref(),
+        Some("error:agent_not_found")
+    );
+    // The agent is still there: another command and another target are untouched.
+    assert_eq!(env.run(&["agent", "list"]).unwrap().code, Some(0));
+    assert_eq!(env.run(&["agent", "get", &pane_id]).unwrap().code, Some(0));
 }

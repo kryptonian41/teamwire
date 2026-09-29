@@ -13,6 +13,12 @@ use crate::fsutil;
 /// The states `status.json` holds, as `fake-claude` writes them.
 pub(super) const SETTLED: [&str; 3] = ["idle", "done", "blocked"];
 
+/// An agent the fake started is alive while its process is; one it did not
+/// start (`fixed`) always is.
+pub(super) fn alive(agent: &AgentRec) -> bool {
+    agent.fixed || fsutil::pid_alive(agent.pid)
+}
+
 pub(super) fn env_millis(name: &str, default: u64) -> u64 {
     std::env::var(name)
         .ok()

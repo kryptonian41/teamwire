@@ -10,7 +10,9 @@ mod args;
 mod faults;
 mod layout;
 mod pane_files;
+mod shapes;
 mod state;
+mod syntax;
 
 pub use faults::{Action, ErrorBody, Rule};
 
@@ -62,8 +64,9 @@ fn print_ok(command: &str, mut result: Value) {
     );
 }
 
-fn print_err(e: &CliError) {
-    let body = json!({ "error": { "code": e.code, "message": e.message } });
+fn print_err(command: &str, e: &CliError) {
+    let id = format!("cli:{}", command.replace(' ', ":"));
+    let body = json!({ "error": { "code": e.code, "message": e.message }, "id": id });
     say(&mut std::io::stderr().lock(), &body.to_string());
 }
 
@@ -71,7 +74,13 @@ fn print_err(e: &CliError) {
 fn is_read(command: &str) -> bool {
     matches!(
         command,
-        "agent get" | "agent list" | "agent read" | "pane list" | "pane get" | "workspace get"
+        "agent get"
+            | "agent list"
+            | "agent read"
+            | "pane list"
+            | "pane get"
+            | "workspace get"
+            | "workspace list"
     )
 }
 
@@ -115,33 +124,40 @@ fn dispatch(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliE
         "workspace rename" => layout::workspace_rename(ctx, args),
         "tab create" => layout::tab_create(ctx, args),
         "tab rename" => layout::tab_rename(ctx, args),
-        other => Err(fail(
-            "unknown_command",
-            format!("fake-herdr does not implement `{other}`"),
-        )),
+        "workspace list" => Ok(layout::workspace_list(ctx)),
+        "pane rename" => layout::pane_rename(ctx, args),
+        "fake add-unnamed-agent" => Ok(agent::add_unnamed_agent(ctx)),
+        other => Err(fail("unknown_command", format!("no command `{other}`"))),
     }
 }
 
 /// Runs one call. The exit code is 0 for a result, 1 for an error envelope,
 /// and 2 when the fake itself is misconfigured.
 pub fn run(argv: &[String]) -> ExitCode {
-    let Some(state_path) = env_path("FAKE_HERDR_STATE") else {
-        print_err(&fail("fake_misconfigured", "FAKE_HERDR_STATE is not set"));
-        return ExitCode::from(2);
-    };
     let args = Args::parse(argv);
     let command = args.command();
+    if let Err(text) = syntax::check(&args) {
+        say(&mut std::io::stderr().lock(), &text);
+        return ExitCode::from(2);
+    }
+    let Some(state_path) = env_path("FAKE_HERDR_STATE") else {
+        print_err(
+            &command,
+            &fail("fake_misconfigured", "FAKE_HERDR_STATE is not set"),
+        );
+        return ExitCode::from(2);
+    };
     let guard = match state::lock(&state_path) {
         Ok(l) => l,
         Err(e) => {
-            print_err(&fail("fake_misconfigured", e));
+            print_err(&command, &fail("fake_misconfigured", e));
             return ExitCode::from(2);
         }
     };
     let mut state = match state::load(&state_path) {
         Ok(s) => s,
         Err(e) => {
-            print_err(&fail("fake_misconfigured", e));
+            print_err(&command, &fail("fake_misconfigured", e));
             return ExitCode::from(2);
         }
     };
@@ -161,7 +177,7 @@ pub fn run(argv: &[String]) -> ExitCode {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30_000);
             std::thread::sleep(Duration::from_millis(ms));
-            print_err(&fail("timeout", "fake-herdr hung and gave up"));
+            print_err(&command, &fail("timeout", "fake-herdr hung and gave up"));
             return ExitCode::from(1);
         }
         Some(Action::Garbage) => {
@@ -174,7 +190,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         }
         Some(Action::Error(e)) => {
             state::save(&state_path, &state).ok();
-            print_err(&fail(&e.code, e.message.clone()));
+            print_err(&command, &fail(&e.code, e.message.clone()));
             return ExitCode::from(1);
         }
         Some(Action::Stalled) => stalled = true,
@@ -187,7 +203,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     };
     let outcome = dispatch(&mut ctx, &args, stalled);
     if let Err(e) = state::save(&state_path, &state) {
-        print_err(&fail("fake_misconfigured", e));
+        print_err(&command, &fail("fake_misconfigured", e));
         return ExitCode::from(2);
     }
     match outcome {
@@ -196,7 +212,7 @@ pub fn run(argv: &[String]) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(e) => {
-            print_err(&e);
+            print_err(&command, &e);
             ExitCode::from(1)
         }
     }

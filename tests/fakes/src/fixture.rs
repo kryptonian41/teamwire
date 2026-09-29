@@ -232,12 +232,26 @@ impl FakeHerdrEnv {
     /// Like `run`, with `extra` variables on top of `env()`. A variable in
     /// `extra` that `fake-herdr` must not pass on (`TEAMWIRE_TOKEN`) tests
     /// the cleared environment.
+    pub fn run_with(&self, args: &[&str], extra: &[(&str, &str)]) -> std::io::Result<CliOutput> {
+        self.run_program("herdr", args, extra)
+    }
+
+    /// Runs `claude <args>` (the fake) with `env()`: for `claude agents --json`.
+    pub fn run_claude(&self, args: &[&str]) -> std::io::Result<CliOutput> {
+        self.run_program("claude", args, &[])
+    }
+
     #[expect(
         clippy::disallowed_methods,
-        reason = "tests drive fake-herdr as a process; this crate may start processes"
+        reason = "tests drive the fake programs as processes; this crate may start processes"
     )]
-    pub fn run_with(&self, args: &[&str], extra: &[(&str, &str)]) -> std::io::Result<CliOutput> {
-        let out = std::process::Command::new(self.bins.dir().join("herdr"))
+    fn run_program(
+        &self,
+        program: &str,
+        args: &[&str],
+        extra: &[(&str, &str)],
+    ) -> std::io::Result<CliOutput> {
+        let out = std::process::Command::new(self.bins.dir().join(program))
             .args(args)
             .env_clear()
             .envs(self.env())
@@ -265,6 +279,29 @@ impl FakeHerdrEnv {
         let path = self.root.path().join(name);
         fsutil::write_atomic(&path, text.as_bytes())?;
         Ok(path)
+    }
+
+    /// Adds a session file, as a Claude Code session that is not a
+    /// `fake-claude` process would leave (`"kind": "bg"` for a background
+    /// session, whose state `claude agents --json` shows under `state`).
+    /// Returns the file's path.
+    pub fn add_session_file(&self, pid: u32, doc: &Value) -> std::io::Result<PathBuf> {
+        let dir = self.claude_dir().join("sessions");
+        std::fs::create_dir_all(&dir)?;
+        let path = dir.join(format!("{pid}.json"));
+        fsutil::write_atomic(&path, doc.to_string().as_bytes())?;
+        Ok(path)
+    }
+
+    /// Adds an agent that has no name, as real herdr lists agents it
+    /// detected in a pane it did not start (25 of 38 in a live list). It has
+    /// its own workspace and pane, no process, and status `idle`. Returns
+    /// its `pane_id`.
+    pub fn add_unnamed_agent(&self) -> std::io::Result<String> {
+        let out = self.run(&["fake", "add-unnamed-agent"])?;
+        out.result()
+            .and_then(|r| r.pointer("/agent/pane_id")?.as_str().map(str::to_owned))
+            .ok_or_else(|| std::io::Error::other(format!("no unnamed agent made: {out:?}")))
     }
 
     /// The session files `fake-claude` processes have written and not yet

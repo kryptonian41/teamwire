@@ -24,8 +24,9 @@ use crate::fsutil;
 use crate::harness::{ESCALATED_TRUST_TEXT, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT};
 use settings::{Settings, hold_reason, run_shell};
 
-/// How many times a Stop hook may hold one turn before the turn ends anyway.
-const MAX_HOLDS: usize = 3;
+/// How many times a Stop hook may hold one turn before the turn ends anyway
+/// (Claude Code allows eight).
+const MAX_HOLDS: usize = 8;
 
 /// Where prompts and keys come from: files in a pane directory when
 /// `fake-herdr` started the process, standard input otherwise.
@@ -113,6 +114,9 @@ struct Session {
     settings: Settings,
     script: Script,
     transcript: PathBuf,
+    /// Set by a script step; the Stop hook input lists them, and a non-empty
+    /// list means the session is paused, not finished.
+    background_tasks: Vec<String>,
 }
 
 fn say(text: &str) {
@@ -120,6 +124,17 @@ fn say(text: &str) {
     // The screen is a file or a terminal; a write error has nowhere to go.
     writeln!(out, "{text}").ok();
     out.flush().ok();
+}
+
+/// The `status` Claude Code writes in its session file: `idle`, `busy`, or
+/// `waiting` (with `waitingFor`). `fake-herdr` gets the finer status through
+/// the pane directory, so `done` is idle here.
+fn session_status(status: &str) -> &'static str {
+    match status {
+        "working" => "busy",
+        "blocked" => "waiting",
+        _ => "idle",
+    }
 }
 
 fn refuse(message: &str) -> ExitCode {
@@ -149,9 +164,15 @@ impl Session {
             "kind": "interactive",
             "entrypoint": "cli",
             "name": self.name,
-            "status": status,
+            "status": session_status(status),
             "updatedAt": now_millis(),
         });
+        let mut doc = doc;
+        if status == "blocked"
+            && let Some(map) = doc.as_object_mut()
+        {
+            map.insert("waitingFor".to_owned(), json!("input needed"));
+        }
         if let Some(parent) = self.file.parent() {
             std::fs::create_dir_all(parent).ok();
         }
@@ -174,8 +195,9 @@ impl Session {
         ExitCode::SUCCESS
     }
 
-    fn run_step(&self, step: &Step) {
+    fn run_step(&mut self, step: &Step) {
         match step {
+            Step::BackgroundTasks(tasks) => self.background_tasks.clone_from(tasks),
             Step::Print(text) => say(text),
             Step::SleepMs(ms) => std::thread::sleep(Duration::from_millis(*ms)),
             Step::Run(command) => {
@@ -214,6 +236,10 @@ impl Session {
             "permission_mode": "bypassPermissions",
             "hook_event_name": "Stop",
             "stop_hook_active": hold_active,
+            "prompt_id": format!("prompt-{turn}"),
+            "background_tasks": self.background_tasks.iter()
+                .map(|t| json!({ "id": t, "status": "running" }))
+                .collect::<Vec<_>>(),
             "last_assistant_message": final_message,
         })
         .to_string();
@@ -237,6 +263,7 @@ impl Session {
             return Some(self.exit());
         }
         self.set_status("working");
+        self.background_tasks.clear();
         for step in self.script.turn(n).to_vec() {
             self.run_step(&step);
         }
@@ -265,7 +292,8 @@ impl Session {
             }
         }
         say(PROMPT_TEXT);
-        self.set_status("idle");
+        // herdr shows `done` after a turn, until someone looks at the agent.
+        self.set_status("done");
         None
     }
 
@@ -301,6 +329,48 @@ impl Session {
     }
 }
 
+/// `claude agents --json`: a JSON array of the sessions whose files are in
+/// `<dir>/sessions`. Starts no session. As in Claude Code, an interactive row
+/// carries its state under `status` and a background row (`kind` `bg`) under
+/// `state`. A test adds a background row by writing a session file with
+/// `"kind": "bg"` (see `FakeHerdrEnv::add_session_file`).
+fn agents(claude_dir: &Path, argv: &[String]) -> ExitCode {
+    if !argv.iter().any(|a| a == "--json") {
+        return refuse("only `agents --json` is implemented");
+    }
+    let mut rows = Vec::new();
+    let entries = std::fs::read_dir(claude_dir.join("sessions"))
+        .into_iter()
+        .flatten();
+    for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+        let Some(doc) = fsutil::read_text(&path)
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        else {
+            continue;
+        };
+        let text = |k: &str| doc.get(k).cloned().unwrap_or(serde_json::Value::Null);
+        let background = doc.get("kind").and_then(serde_json::Value::as_str) == Some("bg");
+        let mut row = json!({
+            "id": doc.get("jobId").cloned().unwrap_or_else(|| text("sessionId")),
+            "pid": text("pid"),
+            "cwd": text("cwd"),
+            "kind": text("kind"),
+            "startedAt": text("startedAt"),
+            "sessionId": text("sessionId"),
+            "name": text("name"),
+        });
+        if let Some(map) = row.as_object_mut() {
+            map.insert(
+                if background { "state" } else { "status" }.to_owned(),
+                text("status"),
+            );
+        }
+        rows.push(row);
+    }
+    say(&serde_json::Value::Array(rows).to_string());
+    ExitCode::SUCCESS
+}
+
 /// The value after `flag` on the command line.
 fn flag_value<'a>(argv: &'a [String], flags: &[&str]) -> Option<&'a str> {
     argv.windows(2)
@@ -322,6 +392,9 @@ pub fn run(argv: &[String]) -> ExitCode {
             "set TEAMWIRE_CLAUDE_DIR (or FAKE_CLAUDE_DIR); fake-claude never uses ~/.claude",
         );
     };
+    if argv.first().map(String::as_str) == Some("agents") {
+        return agents(&claude_dir, argv);
+    }
     let settings = match flag_value(argv, &["--settings"]) {
         Some(path) => match Settings::load(Path::new(path)) {
             Ok(s) => s,
@@ -347,6 +420,7 @@ pub fn run(argv: &[String]) -> ExitCode {
             .unwrap_or_default(),
         file: claude_dir.join("sessions").join(format!("{pid}.json")),
         transcript: claude_dir.join("projects").join(format!("{id}.jsonl")),
+        background_tasks: Vec::new(),
         pane_dir,
         seq: 0,
         settings,

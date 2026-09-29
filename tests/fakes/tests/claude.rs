@@ -254,7 +254,7 @@ fn a_hook_that_holds_the_turn_runs_the_hold_steps_and_stops_again() {
         screen
             .result()
             .unwrap()
-            .pointer("/text")
+            .pointer("/read/text")
             .unwrap()
             .as_str()
             .unwrap()
@@ -374,7 +374,7 @@ fn the_plain_trust_dialog_is_answered_with_down_and_enter() {
     let text = screen
         .result()
         .unwrap()
-        .pointer("/text")
+        .pointer("/read/text")
         .unwrap()
         .as_str()
         .unwrap()
@@ -572,7 +572,7 @@ fn the_escalated_dialog_prints_every_escalation_marker_and_the_plain_ones() {
     let text = screen
         .result()
         .unwrap()
-        .pointer("/text")
+        .pointer("/read/text")
         .unwrap()
         .as_str()
         .unwrap()
@@ -583,4 +583,144 @@ fn the_escalated_dialog_prints_every_escalation_marker_and_the_plain_ones() {
     for marker in teamwire_fakes::TRUST_MARKERS {
         assert!(text.contains(marker), "{marker} missing from {text}");
     }
+}
+
+fn session_doc(env: &FakeHerdrEnv) -> Value {
+    let file = env.session_files().pop().unwrap();
+    serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap()
+}
+
+#[test]
+fn session_file_status_values_are_the_ones_claude_code_writes() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![Step::SleepMs(1500)])).unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-status");
+    assert_eq!(session_doc(&env).get("status").unwrap(), "idle");
+    env.run(&["agent", "prompt", "tw_demo_api", "work"])
+        .unwrap();
+    let begun = Instant::now();
+    while session_doc(&env).get("status").unwrap() != "busy" {
+        assert!(begun.elapsed() < Duration::from_secs(5), "never busy");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    while session_doc(&env).get("status").unwrap() != "idle" {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "never idle again"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_dialog_shows_as_waiting_with_waiting_for() {
+    let env = blocked_at_dialog(Startup::Trust);
+    let doc = session_doc(&env);
+    assert_eq!(doc.get("status").unwrap(), "waiting");
+    assert_eq!(doc.get("waitingFor").unwrap(), "input needed");
+}
+
+#[test]
+fn the_stop_hook_input_has_prompt_id_and_background_tasks() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![Step::BackgroundTasks(vec!["build".into()])], vec![]],
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-bg");
+    prompt(&env, "first");
+    prompt(&env, "second");
+    let inputs = hook_inputs(&env);
+    assert_eq!(inputs.len(), 2);
+    let first = inputs.first().unwrap();
+    assert_eq!(first.get("prompt_id").unwrap(), "prompt-0");
+    let tasks = first.get("background_tasks").unwrap().as_array().unwrap();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(tasks.first().unwrap().get("id").unwrap(), "build");
+    let second = inputs.last().unwrap();
+    assert_eq!(second.get("prompt_id").unwrap(), "prompt-1");
+    assert!(
+        second
+            .get("background_tasks")
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn additional_context_from_a_stop_hook_holds_the_turn_like_a_block() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let hook = format!(
+        r#"{LOGGING_HOOK}; if [ ! -f "$TMPDIR/held" ]; then touch "$TMPDIR/held"; echo '{{"hookSpecificOutput":{{"hookEventName":"Stop","additionalContext":"read the note"}}}}'; fi"#
+    );
+    let settings = settings_with(&env, &hook, &identity());
+    start(&env, &settings, "sess-ctx");
+    prompt(&env, "finish");
+    let active: Vec<bool> = hook_inputs(&env)
+        .iter()
+        .map(|i| i.get("stop_hook_active").unwrap().as_bool().unwrap())
+        .collect();
+    assert_eq!(active, [false, true]);
+}
+
+#[test]
+fn a_hook_that_always_holds_runs_eight_times_and_then_the_turn_ends() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let hook = format!(r#"{LOGGING_HOOK}; echo '{{"decision":"block","reason":"again"}}'"#);
+    let settings = settings_with(&env, &hook, &identity());
+    start(&env, &settings, "sess-eight");
+    prompt(&env, "finish");
+    assert_eq!(hook_inputs(&env).len(), 8);
+}
+
+#[test]
+fn agents_json_lists_both_row_shapes_and_starts_no_session() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&ClaudeScript::default()).unwrap();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    start(&env, &settings, "sess-list");
+    env.add_session_file(
+        4242,
+        &json!({"pid": 4242, "sessionId": "bg-1", "cwd": "/tmp", "startedAt": 1, "kind": "bg",
+                "name": "background job", "status": "blocked", "jobId": "job1"}),
+    )
+    .unwrap();
+    let before = env.session_files().len();
+    let out = env.run_claude(&["agents", "--json"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let rows: Vec<Value> = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(rows.len(), 2);
+    let interactive = rows
+        .iter()
+        .find(|r| r.get("sessionId").unwrap() == "sess-list")
+        .unwrap();
+    assert_eq!(interactive.get("status").unwrap(), "idle");
+    assert!(interactive.get("state").is_none());
+    let background = rows
+        .iter()
+        .find(|r| r.get("sessionId").unwrap() == "bg-1")
+        .unwrap();
+    assert_eq!(background.get("state").unwrap(), "blocked");
+    assert!(background.get("status").is_none());
+    assert_eq!(background.get("id").unwrap(), "job1");
+    assert_eq!(
+        env.session_files().len(),
+        before,
+        "listing must start no session"
+    );
 }

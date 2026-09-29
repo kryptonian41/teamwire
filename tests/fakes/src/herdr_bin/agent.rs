@@ -8,7 +8,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::args::Args;
-use super::pane_files::{claude_dir, env_millis, read_status, session_of, wait_for_turn};
+use super::pane_files::{alive, claude_dir, env_millis, read_status, wait_for_turn};
+use super::shapes::{agent_info, live_agent as running};
 use super::state::{AgentRec, Pane, pane_dir};
 use super::{CliError, Ctx, fail};
 use crate::fsutil;
@@ -24,41 +25,6 @@ const KEY_NAMES: [&str; 8] = [
     "left",
     "right",
 ];
-
-fn alive(agent: &AgentRec) -> bool {
-    fsutil::pid_alive(agent.pid)
-}
-
-fn agent_json(ctx: &Ctx<'_>, pane: &Pane, agent: &AgentRec) -> Value {
-    let (status, seq) = read_status(&pane_dir(ctx.state_path, &pane.pane_id));
-    let mut doc = json!({
-        "agent": agent.kind,
-        "agent_status": status,
-        "cwd": pane.cwd,
-        "focused": false,
-        "foreground_cwd": pane.cwd,
-        "interactive_ready": status == "idle",
-        "name": agent.name,
-        "pane_id": pane.pane_id,
-        "revision": seq,
-        "state_change_seq": seq,
-        "tab_id": pane.tab_id,
-        "terminal_id": format!("term_{}", pane.pane_id.replace(':', "")),
-        "workspace_id": pane.workspace_id,
-    });
-    if let (Some(session), Some(map)) = (session_of(agent), doc.as_object_mut()) {
-        map.insert(
-            "agent_session".to_owned(),
-            json!({
-                "agent": agent.kind,
-                "kind": "id",
-                "source": "herdr:claude",
-                "value": session,
-            }),
-        );
-    }
-    doc
-}
 
 /// The pane and agent for a name or pane id, if the agent is still running.
 fn live_agent(ctx: &Ctx<'_>, target: &str) -> Result<(Pane, AgentRec), CliError> {
@@ -140,7 +106,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     let kind = args.value("kind").unwrap_or("claude");
     if kind != "claude" {
         return Err(fail(
-            "agent_kind_unsupported",
+            "unsupported_agent_kind",
             format!("fake-herdr starts only claude, not {kind}"),
         ));
     }
@@ -154,11 +120,20 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
             "argument cannot be encoded safely for the target shell",
         ));
     }
-    let pane = ctx
-        .state
-        .pane(&pane_id)
-        .cloned()
-        .ok_or_else(|| fail("pane_not_found", format!("no pane {pane_id}")))?;
+    let pane = ctx.state.pane(&pane_id).cloned().ok_or_else(|| {
+        fail(
+            "agent_pane_not_found",
+            format!("agent target pane {pane_id} not found"),
+        )
+    })?;
+    if let Some(ms) = args.millis("timeout")
+        && !(3_001..=300_000).contains(&ms)
+    {
+        return Err(fail(
+            "invalid_timeout",
+            "timeout must be greater than 3000 and at most 300000 milliseconds",
+        ));
+    }
     if pane.agent.as_ref().is_some_and(alive) {
         return Err(fail("agent_pane_busy", "the pane already runs an agent"));
     }
@@ -167,7 +142,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     });
     if name_taken {
         return Err(fail(
-            "agent_name_in_use",
+            "agent_name_taken",
             format!("an agent named {name} is already live"),
         ));
     }
@@ -189,6 +164,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         kind: kind.to_owned(),
         pid,
         session_hint: hint,
+        fixed: false,
     };
     if let Some(p) = ctx.state.panes.iter_mut().find(|p| p.pane_id == pane_id) {
         p.agent = Some(rec.clone());
@@ -217,7 +193,13 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         std::thread::sleep(Duration::from_millis(20));
     }
     let pane = pane_now(ctx, &pane_id)?;
-    Ok(json!({ "type": "agent_started", "agent": agent_json(ctx, &pane, &rec) }))
+    let mut argv = vec![claude_program().display().to_string()];
+    argv.extend(args.tail.iter().cloned());
+    Ok(json!({
+        "type": "agent_started",
+        "agent": agent_info(ctx, &pane, &rec),
+        "argv": argv,
+    }))
 }
 
 fn pane_now(ctx: &Ctx<'_>, pane_id: &str) -> Result<Pane, CliError> {
@@ -230,7 +212,7 @@ fn pane_now(ctx: &Ctx<'_>, pane_id: &str) -> Result<Pane, CliError> {
 pub(super) fn get(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     let target = args.operand(0).unwrap_or_default();
     let (pane, agent) = live_agent(ctx, target)?;
-    Ok(json!({ "type": "agent_info", "agent": agent_json(ctx, &pane, &agent) }))
+    Ok(json!({ "type": "agent_info", "agent": agent_info(ctx, &pane, &agent) }))
 }
 
 pub(super) fn list(ctx: &Ctx<'_>) -> Value {
@@ -238,10 +220,7 @@ pub(super) fn list(ctx: &Ctx<'_>) -> Value {
         .state
         .panes
         .iter()
-        .filter_map(|p| {
-            let a = p.agent.as_ref().filter(|a| alive(a))?;
-            Some(agent_json(ctx, p, a))
-        })
+        .filter_map(|p| Some(agent_info(ctx, p, running(p)?)))
         .collect();
     json!({ "type": "agent_list", "agents": agents })
 }
@@ -266,10 +245,19 @@ pub(super) fn read(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         .skip(total.saturating_sub(lines))
         .collect::<Vec<_>>()
         .join("\n");
+    // herdr answers with a `pane_read` result, whose `read` object names the pane.
     Ok(json!({
-        "type": "agent_read",
-        "source": args.value("source").unwrap_or("recent"),
-        "text": text,
+        "type": "pane_read",
+        "read": {
+            "pane_id": pane.pane_id,
+            "workspace_id": pane.workspace_id,
+            "tab_id": pane.tab_id,
+            "source": args.value("source").unwrap_or("recent"),
+            "format": "text",
+            "text": text,
+            "revision": read_status(&pane_dir(ctx.state_path, &pane.pane_id)).1,
+            "truncated": false,
+        },
     }))
 }
 
@@ -297,7 +285,7 @@ pub(super) fn send_keys(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliErro
     }
     fsutil::append(&dir.join("keys"), queued.as_bytes())
         .map_err(|e| fail("internal_error", e.to_string()))?;
-    Ok(json!({ "type": "agent_keys_sent", "keys": keys }))
+    Ok(json!({ "type": "ok" }))
 }
 
 /// Types the prompt into the agent. With `stalled`, does everything but
@@ -306,6 +294,9 @@ pub(super) fn send_keys(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliErro
 pub(super) fn prompt(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliError> {
     let target = args.operand(0).unwrap_or_default();
     let text = args.operand(1).unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err(fail("empty_agent_prompt", "agent prompt must not be empty"));
+    }
     let (pane, agent) = live_agent(ctx, target)?;
     let dir = pane_dir(ctx.state_path, &pane.pane_id);
     let (before_status, before_seq) = read_status(&dir);
@@ -328,7 +319,45 @@ pub(super) fn prompt(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Va
         wait_for_turn(&dir, before_seq, args.millis("timeout"))?;
     }
     Ok(json!({
-        "type": "agent_prompt_submitted",
-        "agent": agent_json(ctx, &pane, &agent),
+        "type": "agent_prompted",
+        "agent": agent_info(ctx, &pane, &agent),
     }))
+}
+
+/// Fake-only: makes a workspace with one pane that runs an agent with no
+/// name and no process, `idle`, as real herdr lists agents it detected
+/// itself. Returns the agent's info.
+pub(super) fn add_unnamed_agent(ctx: &mut Ctx<'_>) -> Value {
+    let ws = format!("w{}", ctx.state.next_id());
+    let tab = format!("{ws}:t{}", ctx.state.next_id());
+    let pane_id = format!("{ws}:p{}", ctx.state.next_id());
+    ctx.state.workspaces.push(super::state::Workspace {
+        workspace_id: ws.clone(),
+        label: String::new(),
+    });
+    ctx.state.tabs.push(super::state::Tab {
+        tab_id: tab.clone(),
+        workspace_id: ws.clone(),
+        label: String::new(),
+    });
+    let agent = AgentRec {
+        name: String::new(),
+        kind: "claude".to_owned(),
+        pid: 0,
+        session_hint: Some("unnamed-session".to_owned()),
+        fixed: true,
+    };
+    let pane = Pane {
+        pane_id: pane_id.clone(),
+        tab_id: tab,
+        workspace_id: ws,
+        cwd: "/tmp".to_owned(),
+        label: None,
+        agent: Some(agent.clone()),
+    };
+    ctx.state.panes.push(pane.clone());
+    let dir = pane_dir(ctx.state_path, &pane_id);
+    std::fs::create_dir_all(&dir).ok();
+    fsutil::write_atomic(&dir.join("status.json"), br#"{"status":"idle","seq":1}"#).ok();
+    json!({ "type": "agent_info", "agent": agent_info(ctx, &pane, &agent) })
 }

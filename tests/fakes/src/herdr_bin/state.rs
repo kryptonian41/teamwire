@@ -35,6 +35,10 @@ pub(crate) struct AgentRec {
     /// The session id named on the agent's command line, if any. The
     /// session file the agent writes wins when it exists.
     pub(crate) session_hint: Option<String>,
+    /// An agent the fake did not start (see `add-unnamed-agent`): no process,
+    /// always alive, and its `name` is empty, so it has none in the JSON.
+    #[serde(default)]
+    pub(crate) fixed: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -47,6 +51,8 @@ pub(crate) struct Pane {
     pub(crate) tab_id: String,
     pub(crate) workspace_id: String,
     pub(crate) cwd: String,
+    #[serde(default)]
+    pub(crate) label: Option<String>,
     pub(crate) agent: Option<AgentRec>,
 }
 
