@@ -9,6 +9,7 @@
 //! Invariants: every typed line is a `OneLine`; a "not submitted" host code
 //! is retried at most 3 times in about 5 seconds, then `Undelivered`.
 
+mod budget;
 mod deliver;
 mod lines;
 mod locate;
@@ -16,7 +17,7 @@ mod locate;
 use serde::{Deserialize, Serialize};
 use teamwire_core::DeliveryError;
 
-pub use deliver::deliver_line;
+pub use deliver::{deliver_line, deliver_line_within};
 pub use lines::{message_line, result_line};
 pub use locate::locate;
 

@@ -1,7 +1,7 @@
 //! Typing one line into a located session.
 
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use teamwire_core::{
     DeliveryError, DeliveryErrorCode, Harness, Host, HostError, HostErrorCode, Liveness, OneLine,
@@ -10,7 +10,8 @@ use teamwire_core::{
 use teamwire_store::{Ctx, Party};
 
 use crate::DeliveryOutcome;
-use crate::locate::{CALL_TIMEOUT, locate_with, recheck};
+use crate::budget::Budget;
+use crate::locate::{locate_with, recheck};
 
 /// A submit is tried at most this many times (ADR 0003 point 7).
 const MAX_TRIES: u32 = 3;
@@ -28,7 +29,27 @@ const TAIL_LINES: u16 = 40;
 /// proves nothing was submitted is retried, at most 3 tries in about 5
 /// seconds. A stall or timeout is `Unconfirmed` and never retried.
 pub fn deliver_line(ctx: &Ctx<'_>, party: &Party, line: &OneLine) -> DeliveryOutcome {
-    match try_deliver(ctx, party, line) {
+    run(ctx, party, line, None)
+}
+
+/// Like `deliver_line`, for a caller with a time limit (the turn-end hook's
+/// 40 s, ADR 0007 point 6a). Every harness and host call gets the smaller of
+/// its own bound and the time left before `deadline`, measured with
+/// `ctx.clock.monotonic()`. A call that cannot start before the deadline
+/// gives `Undelivered` with `budget_exhausted`: nothing was typed by then. A
+/// submit cut short by the deadline is `Unconfirmed`, as any timeout is.
+pub fn deliver_line_within(
+    ctx: &Ctx<'_>,
+    party: &Party,
+    line: &OneLine,
+    deadline: Instant,
+) -> DeliveryOutcome {
+    run(ctx, party, line, Some(deadline))
+}
+
+fn run(ctx: &Ctx<'_>, party: &Party, line: &OneLine, deadline: Option<Instant>) -> DeliveryOutcome {
+    let budget = Budget::new(ctx.clock, deadline);
+    match try_deliver(ctx, party, line, &budget) {
         Ok(outcome) => outcome,
         Err(e) => DeliveryOutcome::Undelivered(e),
     }
@@ -38,6 +59,7 @@ fn try_deliver(
     ctx: &Ctx<'_>,
     party: &Party,
     line: &OneLine,
+    budget: &Budget<'_>,
 ) -> Result<DeliveryOutcome, DeliveryError> {
     let (harness, host) = ctx.adapters(party)?;
     if !host.capabilities().can_type {
@@ -53,10 +75,10 @@ fn try_deliver(
             "there is nothing to type",
         ));
     }
-    let found = locate_with(ctx, party, harness, host)?;
-    recheck(host, &found)?;
-    check_input_ready(harness, host, &found.place, &found.session)?;
-    Ok(submit_with_retries(ctx, host, &found.place, line))
+    let found = locate_with(ctx, party, harness, host, budget)?;
+    recheck(host, &found, budget)?;
+    check_input_ready(harness, host, &found.place, &found.session, budget)?;
+    Ok(submit_with_retries(ctx, host, &found.place, line, budget))
 }
 
 /// ADR 0006 point 3a: never type into a dialog.
@@ -65,6 +87,7 @@ fn check_input_ready(
     host: &dyn Host,
     place: &Place,
     session: &teamwire_core::SessionId,
+    budget: &Budget<'_>,
 ) -> Result<(), DeliveryError> {
     let blocked = |source: &str| {
         DeliveryError::new(
@@ -73,7 +96,7 @@ fn check_input_ready(
         )
     };
     if host
-        .state(place, CALL_TIMEOUT)
+        .state(place, budget.call()?)
         .map_err(DeliveryError::from)?
         == PlaceState::Blocked
     {
@@ -81,14 +104,14 @@ fn check_input_ready(
     }
     // The harness listing may report the state too. A failed listing is not
     // a reason to refuse: the host view already confirmed the place.
-    if harness.is_alive(session, CALL_TIMEOUT) == Ok(Liveness::Alive(PlaceState::Blocked)) {
+    if harness.is_alive(session, budget.call()?) == Ok(Liveness::Alive(PlaceState::Blocked)) {
         return Err(blocked("the harness"));
     }
     if host.capabilities().guards_dialogs {
         return Ok(());
     }
     let tail = host
-        .read_tail(place, TAIL_LINES, CALL_TIMEOUT)
+        .read_tail(place, TAIL_LINES, budget.call()?)
         .map_err(DeliveryError::from)?;
     match harness.screen_state(&tail) {
         ScreenState::InputPrompt => Ok(()),
@@ -104,12 +127,17 @@ fn submit_with_retries(
     host: &dyn Host,
     place: &Place,
     line: &OneLine,
+    budget: &Budget<'_>,
 ) -> DeliveryOutcome {
     let started = ctx.clock.monotonic();
     let mut tries = 0;
     loop {
         tries += 1;
-        let err = match host.submit(place, line, CALL_TIMEOUT) {
+        let timeout = match budget.call() {
+            Ok(t) => t,
+            Err(e) => return DeliveryOutcome::Undelivered(e),
+        };
+        let err = match host.submit(place, line, timeout) {
             Ok(()) => return DeliveryOutcome::HandedOff,
             Err(e) => e,
         };
@@ -121,7 +149,8 @@ fn submit_with_retries(
                 if tries >= MAX_TRIES || !in_time {
                     return DeliveryOutcome::Undelivered(err.into());
                 }
-                thread::sleep(RETRY_PAUSE * tries);
+                let pause = RETRY_PAUSE * tries;
+                thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
             }
             // The text may be on screen: never send it again (INV-5).
             HostErrorCode::Stalled | HostErrorCode::Timeout => {

@@ -8,8 +8,7 @@ use teamwire_core::{
 };
 use teamwire_store::{Ctx, Party, StoreError};
 
-/// Every host and harness call in a lookup gets this long (DEL-14).
-pub(crate) const CALL_TIMEOUT: Duration = Duration::from_secs(5);
+use crate::budget::Budget;
 
 /// The place two views agreed on, with the evidence the second check needs.
 pub(crate) struct Located {
@@ -35,7 +34,8 @@ enum HostView {
 /// No store transaction is open while the adapters are called.
 pub fn locate(ctx: &Ctx<'_>, party: &Party) -> Result<Place, DeliveryError> {
     let (harness, host) = ctx.adapters(party)?;
-    locate_with(ctx, party, harness, host).map(|found| found.place)
+    let budget = Budget::new(ctx.clock, None);
+    locate_with(ctx, party, harness, host, &budget).map(|found| found.place)
 }
 
 pub(crate) fn locate_with(
@@ -43,6 +43,7 @@ pub(crate) fn locate_with(
     party: &Party,
     harness: &dyn Harness,
     host: &dyn Host,
+    budget: &Budget<'_>,
 ) -> Result<Located, DeliveryError> {
     let session = recorded_session(ctx, party)?;
     let Some(place_var) = host.place_env_var() else {
@@ -55,7 +56,7 @@ pub(crate) fn locate_with(
         ));
     };
     let pids = harness
-        .processes_for_session(&session, CALL_TIMEOUT)
+        .processes_for_session(&session, budget.call()?)
         .map_err(|e| {
             DeliveryError::new(
                 DeliveryErrorCode::NoLiveProcess,
@@ -75,7 +76,7 @@ pub(crate) fn locate_with(
     let mut nothing = None;
     let mut failed = None;
     for place in candidates {
-        match host_view(host, &place, &session, &pids) {
+        match host_view(host, &place, &session, &pids, budget.call()?) {
             HostView::Confirms => confirmed.push(place),
             HostView::OtherSession(d) => other = other.or(Some(d)),
             HostView::Nothing(d) => nothing = nothing.or(Some(d)),
@@ -113,8 +114,18 @@ pub(crate) fn locate_with(
 }
 
 /// The second host check, right before the send (ADR 0006 point 3).
-pub(crate) fn recheck(host: &dyn Host, found: &Located) -> Result<(), DeliveryError> {
-    match host_view(host, &found.place, &found.session, &found.pids) {
+pub(crate) fn recheck(
+    host: &dyn Host,
+    found: &Located,
+    budget: &Budget<'_>,
+) -> Result<(), DeliveryError> {
+    match host_view(
+        host,
+        &found.place,
+        &found.session,
+        &found.pids,
+        budget.call()?,
+    ) {
         HostView::Confirms => Ok(()),
         HostView::OtherSession(d) => Err(DeliveryError::new(
             DeliveryErrorCode::HostOtherSession,
@@ -217,8 +228,14 @@ fn candidate_places(
     Ok(places)
 }
 
-fn host_view(host: &dyn Host, place: &Place, session: &SessionId, pids: &[Pid]) -> HostView {
-    match host.occupant(place, CALL_TIMEOUT) {
+fn host_view(
+    host: &dyn Host,
+    place: &Place,
+    session: &SessionId,
+    pids: &[Pid],
+    timeout: Duration,
+) -> HostView {
+    match host.occupant(place, timeout) {
         Ok(occupant) => match occupant.session {
             Some(held) if held == *session => HostView::Confirms,
             Some(held) => {

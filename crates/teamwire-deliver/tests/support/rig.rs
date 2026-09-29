@@ -14,7 +14,7 @@ pub(crate) struct Rig {
     pub(crate) store: Store,
     pub(crate) registry: Registry,
     pub(crate) platform: FakePlatform,
-    pub(crate) clock: FakeClock,
+    pub(crate) clock: Arc<FakeClock>,
     pub(crate) config: Config,
     pub(crate) harness: Arc<FakeHarness>,
     pub(crate) host: Arc<FakeHost>,
@@ -69,7 +69,7 @@ impl Rig {
             store,
             registry,
             platform: FakePlatform::new(),
-            clock: FakeClock::new(),
+            clock: Arc::new(FakeClock::new()),
             config: Config::default(),
             harness,
             host,
@@ -82,7 +82,7 @@ impl Rig {
             store: &mut self.store,
             registry: &self.registry,
             platform: &self.platform,
-            clock: &self.clock,
+            clock: &*self.clock,
             config: &self.config,
         }
     }
