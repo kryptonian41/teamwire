@@ -11,11 +11,21 @@
 //! the hook's delivery ends inside `Config::hook_budget_s`.
 
 use serde::{Deserialize, Serialize};
-use teamwire_core::{CompletionStatus, Member, ReportGaps, Role, TurnEnd, TurnEndReply, Ulid};
+use teamwire_core::{CompletionStatus, Member, ReportGaps, Role, Ulid};
 use teamwire_store::{Ctx, StoreError};
 use thiserror::Error;
 
-const NOT_BUILT: &str = "teamwire-report is not built yet";
+mod done;
+mod final_message;
+mod note;
+mod paths;
+mod reminder;
+mod result_file;
+mod turn_end;
+
+pub use done::{done, parse_status};
+pub use reminder::on_tool_use;
+pub use turn_end::on_turn_end;
 
 /// The output of `teamwire done` and `team_done` (`docs/api/mcp.md`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,28 +63,7 @@ pub enum DoneError {
     Internal(String),
 }
 
-/// Records a completion for `me`.
-pub fn done(
-    _ctx: &mut Ctx<'_>,
-    _me: &Role,
-    _status: CompletionStatus,
-    _summary: &str,
-) -> Result<DoneReport, DoneError> {
-    Err(DoneError::Internal(NOT_BUILT.to_owned()))
-}
-
 /// Calls `teamwire_verify::report_check`; errors → empty gaps.
 pub fn report_gaps(ctx: &Ctx<'_>, member: &Member) -> ReportGaps {
     teamwire_verify::report_check(ctx, member).unwrap_or_default()
-}
-
-/// Route A of ADR 0007: hold once for gaps or unread messages, else write
-/// the result and deliver it.
-pub fn on_turn_end(_ctx: &mut Ctx<'_>, _me: &Role, _t: &TurnEnd) -> TurnEndReply {
-    TurnEndReply::Continue
-}
-
-/// The reminder of unread message ids for the in-turn hook, once per id.
-pub fn on_tool_use(_ctx: &mut Ctx<'_>, _me: &Role) -> Option<String> {
-    None
 }
