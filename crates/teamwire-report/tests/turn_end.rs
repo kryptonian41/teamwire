@@ -217,11 +217,8 @@ fn delivering_left_by_crash_delivered_once_more() {
         ReportState::Delivering
     );
 
-    // Inside the hook's own timeout the first hook may still be typing.
-    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
-    assert!(rig.typed_to_lead().is_empty());
-
-    rig.clock.advance(Duration::from_secs(61));
+    // The next turn end delivers it, with no waiting period.
+    rig.clock.advance(Duration::from_millis(1));
     assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
     assert_eq!(rig.typed_to_lead().len(), 1, "delivered once more");
     assert_eq!(

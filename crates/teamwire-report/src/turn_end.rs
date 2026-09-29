@@ -209,7 +209,10 @@ fn deliver(
     }
 
     // Take the delivery. No write transaction is open while the host works.
-    let stale = Duration::from_secs(ctx.config.hook_timeout_s);
+    // A Stop hook blocks the next stop of the same session, so two hooks of
+    // one member never overlap: a `delivering` row seen here is a crash left
+    // over, at any age, and is delivered once more (REP-2).
+    let stale = Duration::ZERO;
     let claimed = ctx
         .store
         .write(|tx| tx.claim_completion_for_delivery(ctx.clock.now(), &ulid, stale))?;
