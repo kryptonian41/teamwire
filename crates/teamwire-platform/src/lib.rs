@@ -20,6 +20,7 @@ use teamwire_core::{
 };
 use time::OffsetDateTime;
 
+mod process;
 mod run;
 
 /// Map an I/O error to the platform error code a caller can act on.
@@ -56,12 +57,12 @@ pub struct Linux;
 macro_rules! not_built_platform {
     ($name:ident) => {
         impl Platform for $name {
-            fn pid_alive(&self, _pid: Pid) -> bool {
-                false
+            fn pid_alive(&self, pid: Pid) -> bool {
+                process::pid_alive(pid)
             }
 
-            fn env_of(&self, _pid: Pid, _var: &str) -> Result<Option<String>, PlatformError> {
-                Err(not_built())
+            fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
+                process::env_of(pid, var)
             }
 
             fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
