@@ -95,7 +95,7 @@ pub fn git(dir: &Path, args: &[&str]) -> String {
 pub struct Rig {
     pub home: TestHome,
     pub store: Store,
-    pub platform: GitPlatform,
+    pub platform: Arc<GitPlatform>,
     pub clock: FakeClock,
     pub registry: Registry,
     pub config: Config,
@@ -156,7 +156,7 @@ impl Rig {
         Self {
             home,
             store,
-            platform: GitPlatform::default(),
+            platform: Arc::new(GitPlatform::default()),
             clock,
             registry,
             config: Config::default(),
@@ -172,7 +172,7 @@ impl Rig {
             home: self.home.path(),
             store: &mut self.store,
             registry: &self.registry,
-            platform: &self.platform,
+            platform: &*self.platform,
             clock: &self.clock,
             config: &self.config,
         }
@@ -195,6 +195,10 @@ impl Rig {
         std::fs::write(path, text).unwrap();
     }
 
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+    )]
     pub fn team(&self) -> TeamRow {
         self.store.read(|tx| tx.team()).unwrap().unwrap()
     }
@@ -316,4 +320,14 @@ impl Rig {
             .read(|tx| tx.events_of_type(kind)?.all_or_corrupt())
             .unwrap()
     }
+}
+
+/// Every entry of `dir`, sorted; empty when it does not exist.
+pub fn entries(dir: &Path) -> Vec<PathBuf> {
+    let Ok(read) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut all: Vec<PathBuf> = read.map(|e| e.unwrap().path()).collect();
+    all.sort();
+    all
 }

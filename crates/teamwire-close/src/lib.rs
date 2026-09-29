@@ -18,7 +18,9 @@ use teamwire_store::Ctx;
 mod archive;
 mod facts;
 mod git;
+mod hold;
 mod plan;
+mod team_close;
 
 pub use plan::plan_close_with;
 
@@ -103,9 +105,12 @@ pub fn close_observed(
     ctx: &mut Ctx<'_>,
     target: CloseTarget,
     opts: CloseOpts,
-    _observer: &dyn Fn(&str),
+    observer: &dyn Fn(&str),
 ) -> CloseReport {
-    let plan = plan_close_with(ctx, target, &opts);
+    if opts.clear_stale_lock {
+        return team_close::clear_stale_lock(ctx);
+    }
+    let plan = plan_close_with(ctx, target.clone(), &opts);
     if !plan.refusals.is_empty() {
         record_refusal(ctx, &plan.refusals);
         return CloseReport {
@@ -113,10 +118,12 @@ pub fn close_observed(
             ..CloseReport::default()
         };
     }
-    CloseReport {
-        stopped_at: Some(NOT_BUILT.to_owned()),
-        archive: opts.archive_to,
-        ..CloseReport::default()
+    match target {
+        CloseTarget::Team => team_close::run(ctx, opts, observer),
+        CloseTarget::Member(role) => CloseReport {
+            stopped_at: Some(format!("{NOT_BUILT} ({role})")),
+            ..CloseReport::default()
+        },
     }
 }
 
