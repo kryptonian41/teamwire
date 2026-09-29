@@ -9,6 +9,11 @@
 //! the export mark; trace and span ids are derived from the team and event
 //! ids, so a resend produces the same ids.
 
+mod defs;
+mod history;
+mod local;
+mod observe;
+
 use std::fmt;
 use std::time::Duration;
 
@@ -88,11 +93,12 @@ pub enum ExportError {
     Internal(String),
 }
 
-pub fn metrics(_ctx: &Ctx<'_>, _q: MetricsQuery) -> MetricsView {
-    MetricsView {
-        metrics: Vec::new(),
-        errors: vec![NOT_BUILT.to_owned()],
-    }
+pub use local::metrics_at;
+
+/// The metrics for `q`. With a team named, `ctx.store` is that team's
+/// database; without one, every team and archive under `ctx.home` is read.
+pub fn metrics(ctx: &Ctx<'_>, q: MetricsQuery) -> MetricsView {
+    local::metrics_with(ctx.home, ctx.store, ctx.clock.now(), &q)
 }
 
 /// Sends the events after the export mark, then moves the mark.
