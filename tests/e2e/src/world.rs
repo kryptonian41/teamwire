@@ -329,9 +329,7 @@ impl World {
             .herdr
             .run(&["agent", "read", agent, "--lines", "200"])
             .unwrap();
-        out.result()
-            .and_then(|r| r.pointer("/read/text")?.as_str().map(str::to_owned))
-            .unwrap_or_default()
+        out.stdout
     }
 
     /// Waits until every named member is `started` in the store.

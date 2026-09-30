@@ -261,8 +261,7 @@ fn fake_claude_honours_the_hold_reply_and_the_adapter_parses_its_inputs() {
     let screen = env
         .run(&["agent", "read", "tw_demo_api", "--lines", "30"])
         .unwrap();
-    let screen = screen.result().unwrap();
-    let screen = screen.pointer("/read/text").unwrap().as_str().unwrap();
+    let screen = screen.stdout;
     assert!(
         screen.contains(&format!("Stop hook feedback: {note}")),
         "{screen}"

@@ -204,9 +204,8 @@ on `agent start`, an unknown command) prints herdr's usage text
 state or the log. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
 `WorkspaceInfo`) carry the fields of `herdr api schema --json` (protocol 22).
 Result types: `agent_started` (with `argv`), `agent_info`, `agent_list`,
-`agent_prompted`, `pane_read` (text at `result.read.text`), `pane_info`,
-`pane_list`, `workspace_created|info|list`, `tab_created|info`, and `ok` for
-`send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
+`agent_prompted`, `pane_info`, `pane_list`, `workspace_created|info|list`,
+`tab_created|info`, and `ok` for `send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
 means the fake itself is broken (no `FAKE_HERDR_STATE`).
 
 `agent start <name> --kind claude --pane <pane> [--timeout ms] -- <claude args>`
@@ -232,8 +231,10 @@ key. A test makes one with `FakeHerdrEnv::add_unnamed_agent()` (or
 blocked agent with `agent_blocked` before typing. With
 `--wait` it needs a state change (`working` or `blocked`) within
 `FAKE_HERDR_WAIT_MS` (default 5000) or fails with `agent_prompt_stalled`, and
-respects `--timeout` (`timeout`). `agent read --lines N` returns the last
-lines of the agent's screen as `result.read.text`. `agent send-keys` accepts
+respects `--timeout` (`timeout`). `agent read --lines N` prints the last
+lines of the agent's screen as plain text on stdout, with no JSON envelope
+and no final newline. Real herdr 0.9.0 does the same: `agent read` is the one
+command it answers without JSON. `agent send-keys` accepts
 `enter esc tab backspace up down left right ctrl+c` and single characters and
 refuses others with `invalid_key`. After a turn the agent's `agent_status` is
 `done` (not `idle`) until the next turn; `interactive_ready` is true for
@@ -362,10 +363,9 @@ herdr:
   are the fake's best reading of the schema: `invalid_timeout` (the schema
   gives only the limits), `invalid_key`, `pane_not_found`, `tab_not_found`,
   `fake_misconfigured`; `workspace rename`, `tab rename` and `pane rename`
-  answer `workspace_info`, `tab_info` and `pane_info`; `send-keys` and
-  `pane close` answer `ok`. The `pane_read` `revision` is the agent's change
-  counter. The usage lines for commands other than `agent start|get|prompt`
-  are written by hand.
+  answer `workspace_info`, `tab_info` and `pane_info`; `pane close` answers
+  `ok`. The usage lines for commands other than `agent start|get|prompt` are
+  written by hand.
 - `agent_status` is `done` after a turn and stays `done` until the next turn.
   Real herdr turns `done` into `idle` once a client has looked at the agent.
   There is no `agent focus`, `agent wait`, `agent rename` or `agent explain`.

@@ -140,27 +140,24 @@ fn occupant_reports_the_session_from_agent_get() {
 }
 
 #[test]
-fn read_tail_reads_the_pane_read_text() {
+fn read_tail_returns_the_screen_lines() {
     let world = World::new();
     let place = started(&world, "tw_demo_api", "API");
     world
         .herdr
         .submit(&place, &one_line("hello there", 40), T)
         .unwrap();
+    // A whole screen line, so text wrapped in a JSON envelope does not pass.
     let mut seen = false;
     for _ in 0..100 {
-        if world
-            .herdr
-            .read_tail(&place, 50, T)
-            .unwrap()
-            .contains("hello there")
-        {
+        let tail = world.herdr.read_tail(&place, 50, T).unwrap();
+        if tail.lines().any(|l| l.trim() == "> hello there") {
             seen = true;
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
-    assert!(seen, "the typed text shows in the tail");
+    assert!(seen, "the typed text shows as its own line in the tail");
 }
 
 #[test]
