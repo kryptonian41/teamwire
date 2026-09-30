@@ -207,6 +207,11 @@ pub fn run(argv: &[String]) -> ExitCode {
         return ExitCode::from(2);
     }
     match outcome {
+        Ok(Value::String(screen)) if command == "agent read" => {
+            // herdr 0.9.0 prints the screen with no envelope and no final newline.
+            std::io::Write::write_all(&mut std::io::stdout().lock(), screen.as_bytes()).ok();
+            ExitCode::SUCCESS
+        }
         Ok(result) => {
             print_ok(&command, result);
             ExitCode::SUCCESS

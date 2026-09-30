@@ -252,20 +252,9 @@ pub(super) fn read(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         .skip(total.saturating_sub(lines))
         .collect::<Vec<_>>()
         .join("\n");
-    // herdr answers with a `pane_read` result, whose `read` object names the pane.
-    Ok(json!({
-        "type": "pane_read",
-        "read": {
-            "pane_id": pane.pane_id,
-            "workspace_id": pane.workspace_id,
-            "tab_id": pane.tab_id,
-            "source": args.value("source").unwrap_or("recent"),
-            "format": "text",
-            "text": text,
-            "revision": read_status(&pane_dir(ctx.state_path, &pane.pane_id)).1,
-            "truncated": false,
-        },
-    }))
+    // Real herdr prints the screen itself, not a JSON result; `run` prints
+    // this string as it is.
+    Ok(Value::String(text))
 }
 
 pub(super) fn send_keys(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {

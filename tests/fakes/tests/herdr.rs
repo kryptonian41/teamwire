@@ -208,7 +208,7 @@ fn agent_lifecycle_start_prompt_read_list_get_close() {
             "40",
         ])
         .unwrap();
-    let text = s(&json(&read), "/read/text");
+    let text = read.stdout.clone();
     assert!(text.contains("> hello agent"), "{text}");
     assert!(text.contains("worked on it"), "{text}");
 
@@ -326,13 +326,10 @@ fn the_escalated_trust_dialog_blocks_start_and_prompts_until_answered() {
     );
     let get = env.run(&["agent", "get", "tw_demo_api"]).unwrap();
     assert_eq!(s(&json(&get), "/agent/agent_status"), "blocked");
-    let screen = s(
-        &json(
-            &env.run(&["agent", "read", "tw_demo_api", "--lines", "20"])
-                .unwrap(),
-        ),
-        "/read/text",
-    );
+    let screen = env
+        .run(&["agent", "read", "tw_demo_api", "--lines", "20"])
+        .unwrap()
+        .stdout;
     assert!(
         screen.contains(teamwire_fakes::ESCALATED_TRUST_TEXT),
         "{screen}"
@@ -401,10 +398,7 @@ fn a_stalled_prompt_fails_but_the_text_was_typed() {
         .unwrap();
     assert_eq!(out.error_code().as_deref(), Some("agent_prompt_stalled"));
     for _ in 0..200 {
-        let text = s(
-            &json(&env.run(&["agent", "read", "tw_demo_api"]).unwrap()),
-            "/read/text",
-        );
+        let text = env.run(&["agent", "read", "tw_demo_api"]).unwrap().stdout;
         if text.contains("> did this arrive") {
             return;
         }
@@ -677,9 +671,10 @@ fn agent_results_use_herdrs_type_names_shapes_and_ids() {
         ],
     );
     assert_eq!(s(&prompted, "/type"), "agent_prompted");
-    let read = run_ok(
-        &env,
-        &[
+    // `agent read` is the one command whose success is not a JSON envelope:
+    // herdr 0.9.0 prints the screen lines as they are, with no final newline.
+    let read = env
+        .run(&[
             "agent",
             "read",
             "tw_demo_api",
@@ -687,24 +682,13 @@ fn agent_results_use_herdrs_type_names_shapes_and_ids() {
             "recent",
             "--lines",
             "5",
-        ],
-    );
-    assert_eq!(s(&read, "/type"), "pane_read");
-    for key in [
-        "pane_id",
-        "workspace_id",
-        "tab_id",
-        "source",
-        "format",
-        "text",
-        "revision",
-        "truncated",
-    ] {
-        assert!(
-            read.pointer(&format!("/read/{key}")).is_some(),
-            "read.{key}"
-        );
-    }
+        ])
+        .unwrap();
+    assert_eq!(read.code, Some(0), "{read:?}");
+    assert!(read.result().is_none(), "no envelope: {read:?}");
+    assert!(!read.stdout.ends_with('\n'), "{read:?}");
+    assert!(read.stdout.lines().count() <= 5, "{read:?}");
+    assert!(read.stdout.lines().any(|l| l.trim() == "> hi"), "{read:?}");
     assert_eq!(
         s(
             &run_ok(&env, &["agent", "send-keys", "tw_demo_api", "esc"]),

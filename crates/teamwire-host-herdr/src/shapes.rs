@@ -68,17 +68,6 @@ struct AgentListEnvelope {
 }
 
 #[derive(Debug, Deserialize)]
-struct Read {
-    #[serde(default)]
-    text: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReadEnvelope {
-    read: Read,
-}
-
-#[derive(Debug, Deserialize)]
 struct TabRef {
     tab_id: String,
 }
@@ -117,11 +106,6 @@ pub(crate) fn agent_info(result: Value) -> Result<AgentInfo, HostError> {
 
 pub(crate) fn agent_list(result: Value) -> Result<Vec<AgentInfo>, HostError> {
     parse::<AgentListEnvelope>("agent list", result).map(|e| e.agents)
-}
-
-/// `.result.read.text` of a `pane_read` result.
-pub(crate) fn read_text(result: Value) -> Result<String, HostError> {
-    parse::<ReadEnvelope>("read", result).map(|e| e.read.text)
 }
 
 pub(crate) fn new_tab(result: Value) -> Result<NewTab, HostError> {
