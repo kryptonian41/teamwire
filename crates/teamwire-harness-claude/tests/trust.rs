@@ -330,10 +330,7 @@ impl Host for HerdrCli<'_> {
                 &lines.to_string(),
             ])
             .map_err(|_| Self::unsupported())?;
-        Ok(out
-            .result()
-            .and_then(|r| r.pointer("/read/text")?.as_str().map(str::to_owned))
-            .unwrap_or_default())
+        Ok(out.stdout)
     }
     fn send_keys(&self, _p: &Place, keys: &[Key], _t: Duration) -> Result<(), HostError> {
         for key in keys {

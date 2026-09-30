@@ -50,3 +50,32 @@ fn a_timeout_is_timeout() {
     o.timed_out = true;
     assert_eq!(interpret(&o).unwrap_err().code, HostErrorCode::Timeout);
 }
+
+#[test]
+fn a_read_returns_herdrs_plain_text() {
+    // Real herdr 0.9.0 prints the screen with no envelope and no final newline.
+    let screen = " ❯ No, exit\n   Yes, I trust this folder\n\n Enter to confirm · Esc to cancel";
+    assert_eq!(interpret_text(&out(0, screen, "")).unwrap(), screen);
+}
+
+#[test]
+fn a_read_of_a_screen_showing_json_is_still_text() {
+    let screen = r#"{"error":{"code":"agent_not_found","message":"x"},"id":"y"}"#;
+    assert_eq!(interpret_text(&out(0, screen, "")).unwrap(), screen);
+}
+
+#[test]
+fn a_failed_read_is_mapped_like_any_other_call() {
+    let e = interpret_text(&out(
+        1,
+        "",
+        r#"{"error":{"code":"agent_not_found","message":"gone"},"id":"cli:agent:read"}"#,
+    ))
+    .unwrap_err();
+    assert_eq!(e.code, HostErrorCode::NotFound);
+    let e = interpret_text(&out(2, "", "usage: herdr agent read <TARGET>")).unwrap_err();
+    assert_eq!(e.code, HostErrorCode::BadArgument);
+    let mut o = out(124, "", "");
+    o.timed_out = true;
+    assert_eq!(interpret_text(&o).unwrap_err().code, HostErrorCode::Timeout);
+}

@@ -1,6 +1,7 @@
 //! The `Host` trait for herdr, through herdr's JSON CLI: spawn with
 //! `agent start`, type with `agent prompt`, the session in a pane from
-//! `agent get`, one workspace per team and one tab per member.
+//! `agent get`, the screen from `agent read` (the one command that prints
+//! plain text, not JSON), one workspace per team and one tab per member.
 //!
 //! Never: match on error text (map `error.code` to `HostErrorCode`); run
 //! herdr except through `Platform::run` with a timeout.
@@ -82,6 +83,11 @@ impl Herdr {
         cli::call(self.platform.as_ref(), &args, timeout)
     }
 
+    fn call_text(&self, args: &[&str], timeout: Duration) -> Result<String, HostError> {
+        let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+        cli::call_text(self.platform.as_ref(), &args, timeout)
+    }
+
     fn agent(&self, place: &Place, timeout: Duration) -> Result<shapes::AgentInfo, HostError> {
         shapes::agent_info(self.call(&["agent", "get", &place.id], timeout)?)
     }
@@ -160,7 +166,7 @@ impl Host for Herdr {
 
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError> {
         let lines = lines.to_string();
-        let result = self.call(
+        self.call_text(
             &[
                 "agent",
                 "read",
@@ -171,8 +177,7 @@ impl Host for Herdr {
                 &lines,
             ],
             timeout,
-        )?;
-        shapes::read_text(result)
+        )
     }
 
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError> {

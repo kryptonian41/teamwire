@@ -252,12 +252,7 @@ fn a_hook_that_holds_the_turn_runs_the_hold_steps_and_stops_again() {
         .unwrap();
     assert!(
         screen
-            .result()
-            .unwrap()
-            .pointer("/read/text")
-            .unwrap()
-            .as_str()
-            .unwrap()
+            .stdout
             .contains("Stop hook feedback: add your progress line")
     );
 }
@@ -371,14 +366,7 @@ fn the_plain_trust_dialog_is_answered_with_down_and_enter() {
     let screen = env
         .run(&["agent", "read", "tw_demo_api", "--lines", "20"])
         .unwrap();
-    let text = screen
-        .result()
-        .unwrap()
-        .pointer("/read/text")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let text = screen.stdout;
     assert!(text.contains(teamwire_fakes::PLAIN_TRUST_TEXT));
     assert!(text.contains(teamwire_fakes::TRUST_OPTION_TEXT));
     assert!(!text.contains("pre-approves"));
@@ -569,14 +557,7 @@ fn the_escalated_dialog_prints_every_escalation_marker_and_the_plain_ones() {
     let screen = env
         .run(&["agent", "read", "tw_demo_api", "--lines", "30"])
         .unwrap();
-    let text = screen
-        .result()
-        .unwrap()
-        .pointer("/read/text")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_owned();
+    let text = screen.stdout;
     for marker in teamwire_fakes::TRUST_ESCALATION_MARKERS {
         assert!(text.contains(marker), "{marker} missing from {text}");
     }
