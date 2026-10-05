@@ -1,13 +1,12 @@
 //! `teamwire mcp`: the stdio MCP server.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_mcp::{McpCaller, ServerEnv, serve_stdio};
 
-use crate::cmd::send::{REFUSED, fail};
+use crate::cmd::send::{REFUSED, fail, home_or_refuse};
 use crate::wiring::{Wiring, WiringEnv, wire};
 use crate::{Global, McpArgs, USAGE};
 
@@ -45,12 +44,9 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
         Ok(owned) => owned,
         Err(e) => return fail("mcp", &e.to_string(), REFUSED),
     };
-    let Some(home) = state_home(global) else {
-        return fail(
-            "mcp",
-            "no state directory: set --home, TEAMWIRE_HOME or HOME",
-            REFUSED,
-        );
+    let home = match home_or_refuse("mcp", global) {
+        Ok(home) => home,
+        Err(code) => return code,
     };
     let env = ServerEnv {
         home,
@@ -63,12 +59,4 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => fail("mcp", &e.to_string(), REFUSED),
     }
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`; none when none is set.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
 }

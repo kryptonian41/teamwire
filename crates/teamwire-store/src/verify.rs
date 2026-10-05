@@ -137,6 +137,14 @@ impl Tx<'_> {
 }
 
 impl ReadTx<'_> {
+    /// Every verify record of every role, oldest first (`teamwire export`).
+    pub fn all_verify_records(&self) -> Result<Listing<VerifyRow>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {VERIFY_COLS} FROM verify_records ORDER BY id"
+        ))?;
+        listing("verify_records", &mut stmt, [], verify_from_row)
+    }
+
     /// A member's verify records, oldest first.
     pub fn verify_records(&self, role: &Role) -> Result<Listing<VerifyRow>, StoreError> {
         let mut stmt = self.connection().prepare(&format!(

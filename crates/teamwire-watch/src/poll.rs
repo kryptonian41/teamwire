@@ -19,6 +19,7 @@ fn code(e: &StoreError) -> &'static str {
         StoreError::NotTeamwire => "not_teamwire",
         StoreError::Corrupt(_) => "corrupt",
         StoreError::Constraint(_) => "constraint",
+        StoreError::NoDatabase { .. } => "no_database",
         StoreError::Io(_) => "io",
     }
 }

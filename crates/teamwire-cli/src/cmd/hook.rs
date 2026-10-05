@@ -1,7 +1,6 @@
 //! `teamwire hook`: the per-member Stop and `PostToolUse` hooks; always exits 0.
 
 use std::io::{Read, Write};
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde_json::json;
@@ -9,6 +8,7 @@ use teamwire_core::{Config, HarnessId, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_harness_claude::ClaudeCode;
 use teamwire_store::{Ctx, Store};
 
+use crate::cmd::send::state_home;
 use crate::wiring::Wiring;
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
@@ -63,7 +63,7 @@ fn member_hook(
         .ok()?;
     let turn = harness.parse_turn_end(&input).ok()?;
 
-    let home = state_home(global);
+    let home = state_home(global)?;
     let mut store = Store::open_existing(&home, &team).ok()?;
     let config = Config::default();
     let mut ctx = Ctx {
@@ -98,15 +98,6 @@ fn post_tool_reply(ctx: &mut Ctx<'_>, role: &Role, turn: &TurnEnd) -> Option<Vec
         "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": note }
     }))
     .ok()
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 fn write_stdout(bytes: &[u8]) {

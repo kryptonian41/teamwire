@@ -14,6 +14,7 @@ use teamwire_core::{Command, Platform, TeamName, TeamState};
 use teamwire_store::{SCHEMA_VERSION, Store};
 
 use crate::Global;
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 
 /// Exit code of a doctor run that found a problem (`docs/api/cli.md`).
@@ -330,15 +331,6 @@ pub(crate) fn render(checks: &[Check]) -> String {
     checks.iter().map(|c| c.line() + "\n").collect()
 }
 
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    global
-        .home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-}
-
 /// `$TEAMWIRE_CLAUDE_DIR`, else `~/.claude`.
 fn claude_dir() -> Option<PathBuf> {
     std::env::var_os("TEAMWIRE_CLAUDE_DIR")
@@ -361,7 +353,11 @@ fn refuse(message: &str) -> ExitCode {
 }
 
 pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
-    let (Some(home), Some(claude_dir)) = (state_home(global), claude_dir()) else {
+    let home = match home_or_refuse("doctor", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
+    let Some(claude_dir) = claude_dir() else {
         return refuse("no state directory: set --home, TEAMWIRE_HOME or HOME");
     };
     let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));

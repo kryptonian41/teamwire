@@ -103,10 +103,7 @@ impl Store {
     pub fn open_existing(home: &Path, team: &TeamName) -> Result<Self, StoreError> {
         let path = database_path(home, team);
         if !path.is_file() {
-            return Err(StoreError::Io(format!(
-                "no database for team {team} at {}",
-                path.display()
-            )));
+            return Err(StoreError::NoDatabase { path });
         }
         Self::open_read_write(&path, OpenFlags::empty())
     }
@@ -123,7 +120,9 @@ impl Store {
     /// archived team's `team.db` (cross-archive metrics, the archive check).
     pub fn open_read_only_at(path: &Path) -> Result<Self, StoreError> {
         if !path.is_file() {
-            return Err(StoreError::Io(format!("no database at {}", path.display())));
+            return Err(StoreError::NoDatabase {
+                path: path.to_path_buf(),
+            });
         }
         let no_side_files = side_files(path).iter().all(|p| !p.exists());
         let conn = Connection::open_with_flags(

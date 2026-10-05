@@ -1,6 +1,6 @@
 //! `teamwire metrics`: local metrics, and `metrics export` to OpenTelemetry.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
@@ -8,6 +8,7 @@ use teamwire_core::{Clock, Config, TeamName};
 use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView};
 use teamwire_store::{Ctx, Store, database_path};
 
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 use crate::{Global, MetricsArgs, MetricsCommand, USAGE};
 
@@ -23,20 +24,14 @@ pub(crate) fn run(args: &MetricsArgs, global: &Global, wiring: &Wiring) -> ExitC
         json,
         action,
     } = args;
-    let home = state_home(global);
+    let home = match home_or_refuse("metrics", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     match action {
         Some(MetricsCommand::Export { once: _ }) => export(&home, wiring),
         None => show(&home, wiring, team.as_deref(), since.as_deref(), *json),
     }
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 fn show(

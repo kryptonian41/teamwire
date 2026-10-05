@@ -68,6 +68,26 @@ fn render(item: &InboxItem) -> String {
     };
     format!(
         "{} {} from {} at {}{re}{commit}\n{warning}{}\n\n",
-        item.display_id, item.kind, item.from, item.time, item.text
+        item.display_id,
+        item.kind,
+        item.from,
+        item.time,
+        quote_body(&item.text)
     )
+}
+
+/// The body with every line behind `  | `, so no line of it can be read as
+/// the header of another message (INV-20), and without control characters
+/// other than the newline and the tab, so it cannot move the cursor or
+/// recolour the terminal. The text is kept whole.
+fn quote_body(text: &str) -> String {
+    let clean: String = text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect();
+    clean
+        .split('\n')
+        .map(|line| format!("  | {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

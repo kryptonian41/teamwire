@@ -1,27 +1,19 @@
 //! `teamwire status`: the read-only team view.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_watch::StatusView;
 
+use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 
 /// Exit codes of `docs/api/cli.md`.
 const REFUSED: u8 = 1;
 const STORE_ERROR: u8 = 6;
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    global
-        .home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-}
 
 /// The view of one team, from its database opened read-only.
 fn view_of(
@@ -186,9 +178,7 @@ fn fail(message: &str, code: u8) -> ExitCode {
 }
 
 fn store_failure(team: &TeamName, e: &StoreError) -> ExitCode {
-    if let StoreError::Io(message) = e
-        && message.starts_with("no database")
-    {
+    if matches!(e, StoreError::NoDatabase { .. }) {
         return fail(&format!("no team {team}"), REFUSED);
     }
     fail(&e.to_string(), STORE_ERROR)
@@ -206,11 +196,9 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(role) => role,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let Some(home) = state_home(global) else {
-        return fail(
-            "no state directory: set --home, TEAMWIRE_HOME or HOME",
-            REFUSED,
-        );
+    let home = match home_or_refuse("status", global) {
+        Ok(home) => home,
+        Err(code) => return code,
     };
     let Some(team) = team else {
         if role.is_some() {
@@ -222,10 +210,11 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let view = match view_of(&home, &team, role.as_ref(), wiring) {
+    let mut view = match view_of(&home, &team, role.as_ref(), wiring) {
         Ok(view) => view,
         Err(e) => return store_failure(&team, &e),
     };
+    hide_lead_from_members(&mut view);
     let text = if *json {
         match json_text(&view) {
             Ok(text) => text,
@@ -235,6 +224,9 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         render(&view)
     };
     say(&text);
+    if unreadable(&view) {
+        return ExitCode::from(STORE_ERROR);
+    }
     let missing_role = role
         .as_ref()
         .is_some_and(|r| !view.members.iter().any(|m| &m.role == r));
@@ -243,6 +235,20 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// The lead's session id is the one value a member needs to speak as the
+/// lead, so a caller inside a member's session never sees it.
+fn hide_lead_from_members(view: &mut StatusView) {
+    if carries_member_identity() {
+        view.lead = None;
+    }
+}
+
+/// `status_with` turns a failed read into a view with the errors and no
+/// state; that is a store error, not a team to describe.
+fn unreadable(view: &StatusView) -> bool {
+    view.state.is_none() && !view.errors.is_empty()
 }
 
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
@@ -255,12 +261,20 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
         });
         views.push((name, view));
     }
+    for (_, view) in &mut views {
+        hide_lead_from_members(view);
+    }
+    let code = if views.iter().any(|(_, view)| unreadable(view)) {
+        ExitCode::from(STORE_ERROR)
+    } else {
+        ExitCode::SUCCESS
+    };
     if json {
         let only: Vec<&StatusView> = views.iter().map(|(_, v)| v).collect();
         return match json_text(&only) {
             Ok(text) => {
                 say(&text);
-                ExitCode::SUCCESS
+                code
             }
             Err(code) => code,
         };
@@ -271,5 +285,5 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     for (name, view) in &views {
         say(&(summary_line(name, view) + "\n"));
     }
-    ExitCode::SUCCESS
+    code
 }

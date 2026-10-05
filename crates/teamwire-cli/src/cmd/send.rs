@@ -90,12 +90,8 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         });
         match sent {
             Ok(report) => {
-                let watching = (kind == MessageType::Reprompt).then(|| {
-                    watch_running(ctx)
-                        .ok()
-                        .flatten()
-                        .map_or(Watch::NotRunning, Watch::Running)
-                });
+                let watching =
+                    (kind == MessageType::Reprompt).then(|| watch_state(watch_running(ctx)));
                 Outcome::Sent(Box::new(report), watching)
             }
             Err(e) => Outcome::Failed(e),
@@ -110,12 +106,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(Outcome::Sent(report, watching)) => {
             print_report(&report);
             if let Some(watching) = watching {
-                match watching {
-                    Watch::Running(pid) => say(&format!("a watch is running (pid {pid})\n")),
-                    Watch::NotRunning => say(&format!(
-                        "no watch is running: start one with `teamwire watch {team}`\n"
-                    )),
-                }
+                say(&watch_line(&team, &watching));
             }
             ExitCode::from(exit_of(&report))
         }
@@ -126,6 +117,28 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
 enum Watch {
     Running(teamwire_core::Pid),
     NotRunning,
+    /// The lease could not be read; carries the error text.
+    Unknown(String),
+}
+
+/// What a failed lease read says: the lead is not told "no watch" about
+/// something the code could not read.
+fn watch_state(lease: Result<Option<teamwire_core::Pid>, SendError>) -> Watch {
+    match lease {
+        Ok(Some(pid)) => Watch::Running(pid),
+        Ok(None) => Watch::NotRunning,
+        Err(e) => Watch::Unknown(e.to_string()),
+    }
+}
+
+fn watch_line(team: &TeamName, watching: &Watch) -> String {
+    match watching {
+        Watch::Running(pid) => format!("a watch is running (pid {pid})\n"),
+        Watch::NotRunning => {
+            format!("no watch is running: start one with `teamwire watch {team}`\n")
+        }
+        Watch::Unknown(why) => format!("could not tell whether a watch is running: {why}\n"),
+    }
 }
 
 enum Outcome {
@@ -179,10 +192,14 @@ fn state_word(state: RecipientState) -> &'static str {
     }
 }
 
-/// 4 when any recipient is undelivered, else 5 when any is unconfirmed.
+/// 6 when any recipient is still pending, because its delivery record could
+/// not be written; else 4 when any is undelivered, else 5 when any is
+/// unconfirmed.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
     let any = |s| report.deliveries.iter().any(|d| d.state == s);
-    if any(RecipientState::Undelivered) {
+    if any(RecipientState::Pending) {
+        STORE
+    } else if any(RecipientState::Undelivered) {
         NOT_DELIVERED
     } else if any(RecipientState::Unconfirmed) {
         UNCONFIRMED
@@ -210,13 +227,56 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
     }
 }
 
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
+/// Whether the process runs inside a member's session. A member's environment
+/// carries `TEAMWIRE_TOKEN`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM`; the lead's
+/// carries none of them (ADR 0008). Unsetting only the token must not turn a
+/// member into the lead, so any one of them counts.
+pub(crate) fn carries_member_identity() -> bool {
+    ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some())
+}
+
+/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
+/// session is refused.
+pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
+    carries_member_identity().then(|| {
+        fail(
+            command,
+            "refused.identity: this command is for the lead; a member session cannot run it",
+            REFUSED,
+        )
+    })
+}
+
+/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`, made absolute. A
+/// relative path is handed on to members, whose working directory is not
+/// this one, so it must not stay relative. None when nothing names a
+/// directory.
+pub(crate) fn state_home(global: &Global) -> Option<PathBuf> {
     let Global { home } = global;
-    home.clone()
+    let chosen = home
+        .clone()
         .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))?;
+    std::path::absolute(chosen).ok()
+}
+
+/// `state_home`, or the refusal to print and exit with when nothing names
+/// the state directory.
+pub(crate) fn home_or_refuse(command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
+    state_home(global).ok_or_else(|| {
+        fail(
+            command,
+            "no state directory: set --home, TEAMWIRE_HOME or HOME",
+            REFUSED,
+        )
+    })
+}
+
+/// The refusal text for a team whose database file is missing.
+pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> String {
+    format!("no database for team {team} at {}", path.display())
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
@@ -227,10 +287,11 @@ pub(crate) fn with_ctx<T>(
     team: &TeamName,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
-    let home = state_home(global);
+    let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
         Ok(store) => store,
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { path }) => {
+            let message = no_database_text(team, &path);
             return Err(fail("", &message, REFUSED));
         }
         Err(e) => return Err(fail("", &e.to_string(), STORE)),
@@ -257,7 +318,7 @@ pub(crate) fn with_read_ctx<T>(
     team: &TeamName,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
-    let home = state_home(global);
+    let home = home_or_refuse("", global)?;
     if !home
         .join("teams")
         .join(team.as_str())
@@ -307,4 +368,64 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
         eprintln!("teamwire {command}: {message}");
     }
     ExitCode::from(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn team() -> TeamName {
+        TeamName::parse("alpha").unwrap()
+    }
+
+    fn report(states: &[RecipientState]) -> SendReport {
+        SendReport {
+            id: teamwire_core::Ulid::parse("01M466HBGM3C8KG2XPMZWRQCH4").unwrap(),
+            display_id: DisplayId::parse("m001").unwrap(),
+            seq: 1,
+            deliveries: states
+                .iter()
+                .map(|state| teamwire_msg::RecipientReport {
+                    to: Recipient::parse("api").unwrap(),
+                    state: *state,
+                    reason: None,
+                    attempts: None,
+                })
+                .collect(),
+            duplicate_of_key: false,
+        }
+    }
+
+    #[test]
+    fn a_pending_recipient_exits_6() {
+        assert_eq!(exit_of(&report(&[RecipientState::Pending])), STORE);
+        assert_eq!(
+            exit_of(&report(&[
+                RecipientState::HandedOff,
+                RecipientState::Pending
+            ])),
+            STORE
+        );
+        assert_eq!(
+            exit_of(&report(&[RecipientState::Undelivered])),
+            NOT_DELIVERED
+        );
+        assert_eq!(exit_of(&report(&[RecipientState::HandedOff])), 0);
+    }
+
+    #[test]
+    fn an_unreadable_lease_is_not_reported_as_no_watch() {
+        let unreadable = watch_state(Err(SendError::Store(StoreError::Corrupt(
+            "bad lease row".to_owned(),
+        ))));
+        let line = watch_line(&team(), &unreadable);
+        assert!(
+            line.starts_with("could not tell whether a watch is running:"),
+            "{line}"
+        );
+        assert!(line.contains("bad lease row"), "{line}");
+        assert!(!line.contains("no watch is running"), "{line}");
+        let none = watch_line(&team(), &watch_state(Ok(None)));
+        assert!(none.starts_with("no watch is running"), "{none}");
+    }
 }

@@ -32,6 +32,9 @@ fn teamwire(bed: &Bed, args: &[&str]) -> Run {
         .arg(bed.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TEAM")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -79,7 +82,9 @@ fn a_second_watch_is_refused_and_names_the_first() {
     bed.add("api");
     // This test process holds the lease, and it is alive.
     let me = Pid::new(std::process::id());
-    let at = bed.clock.now();
+    // The binary reads the real clock, and a lease whose heartbeat is old is
+    // taken over, so the lease is stamped with the real time.
+    let at = teamwire_platform::SystemClock.now();
     bed.store
         .write(|tx| {
             tx.take_watch_lease(at, me, "otherhost", |_| false)
@@ -172,6 +177,9 @@ fn an_export_endpoint_does_not_change_the_output() {
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1")
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TEAM")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));

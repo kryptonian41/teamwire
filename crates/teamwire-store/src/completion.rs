@@ -355,6 +355,16 @@ impl ReadTx<'_> {
         )?)
     }
 
+    /// Every completion of every role, by role then number
+    /// (`teamwire export`). A damaged member row cannot hide a completion,
+    /// because no member row is read.
+    pub fn completions(&self) -> Result<Listing<CompletionRecord>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {COMPLETION_COLS} FROM completions ORDER BY role, n"
+        ))?;
+        listing("completions", &mut stmt, [], completion_from_row)
+    }
+
     /// A member's completions, oldest first.
     pub fn completions_of(&self, role: &Role) -> Result<Listing<CompletionRecord>, StoreError> {
         let mut stmt = self.connection().prepare(&format!(

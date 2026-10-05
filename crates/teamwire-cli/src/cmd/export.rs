@@ -1,6 +1,5 @@
 //! `teamwire export`: every record of a team as JSON lines.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::Serialize;
@@ -8,6 +7,7 @@ use serde_json::{Value, json};
 use teamwire_core::{TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
 
@@ -42,7 +42,10 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let home = state_home(global);
+    let home = match home_or_refuse("export", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     if !database_path(&home, &team).is_file() {
         return fail(&format!("no database for team {team}"), REFUSED);
     }
@@ -65,15 +68,6 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
     }
     say(&text);
     ExitCode::SUCCESS
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 /// Every event, message with its deliveries, member, completion, waiver and
@@ -153,18 +147,97 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
                 json!(m),
             )
         });
-        for c in keep(&mut skipped, tx.completions_of(&m.role)?) {
-            out.push(Record {
-                role: Some(m.role.as_str().to_owned()),
-                ..record(
-                    c.completion.ulid.to_string(),
-                    "completion",
-                    c.completion.created_at,
-                    None,
-                    json!({ "completion": c.completion }),
-                )
-            });
+    }
+    // Read for every role, not through the member rows above: a damaged
+    // member row is skipped and must not hide its completions.
+    for c in keep(&mut skipped, tx.completions()?) {
+        out.push(Record {
+            role: Some(c.completion.role.as_str().to_owned()),
+            ..record(
+                c.completion.ulid.to_string(),
+                "completion",
+                c.completion.created_at,
+                None,
+                json!({ "completion": c.completion }),
+            )
+        });
+    }
+    for v in keep(&mut skipped, tx.all_verify_records()?) {
+        let r = &v.record;
+        out.push(Record {
+            role: Some(r.role.as_str().to_owned()),
+            ..record(
+                format!("verify:{}", v.id),
+                "verify",
+                v.recorded_at,
+                None,
+                json!({
+                    "head_sha": r.head_sha,
+                    "verdict": r.verdict,
+                    "exit_code": r.exit_code,
+                    "seconds": r.seconds,
+                    "flags": r.flags,
+                    "log_sha256": r.log_sha256.map(|h| hex(&h)),
+                }),
+            )
+        });
+    }
+    if let Some(lease) = tx.watch_lease()? {
+        out.push(record(
+            "watch_lease".to_owned(),
+            "watch_lease",
+            lease.heartbeat_at,
+            None,
+            json!({
+                "pid": lease.pid,
+                "host": lease.host,
+                "started_at": lease.started_at.to_string(),
+                "heartbeat_at": lease.heartbeat_at.to_string(),
+            }),
+        ));
+    }
+    if let Some(team) = tx.team()? {
+        out.push(record(
+            format!("team:{}", team.name),
+            "team",
+            team.created_at,
+            None,
+            json!({
+                "ulid": team.ulid.to_string(),
+                "name": team.name.as_str(),
+                "title": team.title,
+                "state": team.state.as_str(),
+                "closing_pid": team.closing_pid,
+                "lead_session": team.lead_session.as_ref().map(ToString::to_string),
+                "lead_kind": team.lead_kind.map(|k| k.as_str().to_owned()),
+                "lead_harness": team.lead_harness.to_string(),
+                "lead_host": team.lead_host.to_string(),
+                "lead_route": team.lead_route.to_string(),
+                "sleep_hold": team.sleep_hold.as_ref().map(|h| json!({ "pid": h.pid, "owned": h.owned })),
+            }),
+        ));
+        for (name, value) in keep(&mut skipped, tx.counters()?) {
+            out.push(record(
+                format!("counter:{name}"),
+                "counter",
+                team.created_at,
+                None,
+                json!({ "name": name, "value": value }),
+            ));
         }
+        let mark = tx.export_mark()?;
+        out.push(record(
+            "metric_export".to_owned(),
+            "metric_export",
+            mark.claimed_at.unwrap_or(team.created_at),
+            None,
+            json!({
+                "last_event_seq": mark.last_event_seq,
+                "claimed_to": mark.claimed_to,
+                "claimed_by": mark.claimed_by,
+                "claimed_at": mark.claimed_at.map(|t| t.to_string()),
+            }),
+        ));
     }
     for w in keep(&mut skipped, tx.all_waivers()?) {
         out.push(Record {
@@ -188,6 +261,15 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
         ));
     }
     Ok((out, skipped))
+}
+
+/// Lower-case hex, the form a checksum is written in.
+fn hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .flat_map(|b| [b >> 4, b & 0x0f])
+        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
+        .collect()
 }
 
 #[expect(clippy::print_stdout, reason = "the records are the command's output")]

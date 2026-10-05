@@ -181,6 +181,9 @@ impl Rig {
                     .env("TEAMWIRE_ROLE", role)
                     .env("TEAMWIRE_TOKEN", "not-the-token");
             }
+            Identity::TokenlessMember(role) => {
+                cmd.env("TEAMWIRE_TEAM", "alpha").env("TEAMWIRE_ROLE", role);
+            }
             Identity::Lead(session) => {
                 cmd.env("CLAUDE_CODE_SESSION_ID", session);
             }
@@ -197,6 +200,8 @@ impl Rig {
 enum Identity {
     Member(&'static str),
     WrongToken(&'static str),
+    /// A member's session after `env -u TEAMWIRE_TOKEN`.
+    TokenlessMember(&'static str),
     Lead(&'static str),
     Nobody,
 }
@@ -555,6 +560,21 @@ fn the_text_can_come_from_a_file() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.body, "long text from a file");
+}
+
+#[test]
+fn a_member_session_without_its_token_cannot_read_the_whole_log() {
+    let rig = live_rig();
+    rig.run(
+        &[
+            "send", "alpha", "--to", "api", "--type", "finding", "--text", "to api",
+        ],
+        &Identity::Member("scout"),
+    );
+    let out = rig.run(&["log", "alpha"], &Identity::TokenlessMember("api"));
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stdout));
+    assert!(!text(&out.stdout).contains("m001"), "{}", text(&out.stdout));
+    assert!(text(&out.stderr).contains("refused.identity"));
 }
 
 #[test]

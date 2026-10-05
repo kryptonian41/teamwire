@@ -6,7 +6,7 @@ use serde_json::json;
 use teamwire_core::{Actor, Role, TeamName};
 use teamwire_msg::{LogFilter, LogRow, SendError, prove_actor};
 
-use crate::cmd::send::{caller_env, error_code, fail, say, with_read_ctx};
+use crate::cmd::send::{caller_env, carries_member_identity, error_code, fail, say, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, LogArgs, USAGE};
 
@@ -26,10 +26,11 @@ pub(crate) fn run(args: &LogArgs, global: &Global, wiring: &Wiring) -> ExitCode 
         Err(e) => return fail("log", &e, USAGE),
     };
     let outcome = with_read_ctx(global, wiring, &team, |ctx| {
-        // A member (it holds a token) sees only its own messages. Reading is
-        // not speaking: a caller with no token is the person at the
+        // A member sees only its own messages, and must prove who it is. A
+        // member that unset its token is still a member. Reading is not
+        // speaking: a caller with no member identity is the person at the
         // terminal, who owns the state directory and sees everything.
-        let viewer = if std::env::var_os("TEAMWIRE_TOKEN").is_some() {
+        let viewer = if carries_member_identity() {
             prove_actor(ctx, &caller_env(None)).map_err(SendError::Refused)?
         } else {
             Actor::Lead

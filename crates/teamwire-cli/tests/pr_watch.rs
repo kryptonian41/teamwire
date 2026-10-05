@@ -63,14 +63,14 @@ impl Bed {
             .collect()
     }
 
-    /// Runs `pr-watch -R o/r -i 0 <prs>`, killing it after 30 seconds so a
+    /// Runs `pr-watch -R o/r -i 1 <prs>`, killing it after 30 seconds so a
     /// watch that never ends fails the test instead of hanging it.
     fn watch(&self, prs: &[&str]) -> Run {
         let home = tempfile::tempdir().unwrap();
         let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
             .arg("--home")
             .arg(home.path())
-            .args(["pr-watch", "-R", "o/r", "-i", "0"])
+            .args(["pr-watch", "-R", "o/r", "-i", "1"])
             .args(prs)
             .env(
                 "PATH",
@@ -128,7 +128,7 @@ fn all_checks_passing_prints_one_done_line_and_exits_zero() {
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#7 (poll 0s)",
+            "WATCHING o/r#7 (poll 1s)",
             "o/r#7 DONE: 2 passed, 0 failed, 0 skipped"
         ]
     );
@@ -169,7 +169,7 @@ fn a_failure_is_said_once_and_the_run_exits_one() {
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#7 (poll 0s)",
+            "WATCHING o/r#7 (poll 1s)",
             "o/r#7 FAIL: lint",
             "o/r#7 DONE: 1 passed, 1 failed, 0 skipped [lint]"
         ]
@@ -191,7 +191,7 @@ fn skipped_checks_are_counted_and_pending_ones_keep_the_watch_going() {
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#7 (poll 0s)",
+            "WATCHING o/r#7 (poll 1s)",
             "o/r#7 DONE: 2 passed, 0 failed, 1 skipped"
         ]
     );
@@ -211,7 +211,7 @@ fn a_change_of_mergeability_is_said_but_the_first_clean_verdict_is_not() {
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#7 (poll 0s)",
+            "WATCHING o/r#7 (poll 1s)",
             "o/r#7 MERGEABLE: CONFLICTING/DIRTY",
             "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
         ]
@@ -241,7 +241,7 @@ fn a_call_that_prints_no_json_is_skipped_and_tried_again() {
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#7 (poll 0s)",
+            "WATCHING o/r#7 (poll 1s)",
             "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
         ]
     );
@@ -255,7 +255,7 @@ fn a_merged_pull_request_is_done_without_checks() {
     bed.answer("checks", 7, 1, &checks(&[("a", "fail")]));
     let run = bed.watch(&["7"]);
     assert_eq!(run.code, 0);
-    assert_eq!(run.lines, ["WATCHING o/r#7 (poll 0s)", "o/r#7 MERGED"]);
+    assert_eq!(run.lines, ["WATCHING o/r#7 (poll 1s)", "o/r#7 MERGED"]);
 }
 
 #[test]
@@ -269,7 +269,7 @@ fn several_pull_requests_share_one_line_per_poll_and_a_done_one_is_not_asked_aga
     assert_eq!(
         run.lines,
         [
-            "WATCHING o/r#1, o/r#2 (poll 0s)",
+            "WATCHING o/r#1, o/r#2 (poll 1s)",
             "o/r#1 DONE: 1 passed, 0 failed, 0 skipped",
             "o/r#2 FAIL: a | o/r#2 DONE: 0 passed, 1 failed, 0 skipped [a]"
         ]
@@ -300,4 +300,59 @@ fn the_default_interval_is_forty_five_seconds() {
             .unwrap()
             .starts_with("WATCHING o/r#7 (poll 45s)\n")
     );
+}
+
+#[test]
+fn no_checks_is_done() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, "[]");
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 0 passed, 0 failed, 0 skipped"
+        ]
+    );
+}
+
+#[test]
+fn a_failure_before_merge_still_exits_1() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("a", "fail"), ("b", "pending")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("view", 7, 2, &view("MERGED", "UNKNOWN", "UNKNOWN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 1, "{:?}", run.lines);
+    assert!(
+        run.lines.contains(&"o/r#7 FAIL: a".to_owned()),
+        "{:?}",
+        run.lines
+    );
+    assert!(
+        run.lines.contains(&"o/r#7 MERGED".to_owned()),
+        "{:?}",
+        run.lines
+    );
+}
+
+#[test]
+fn interval_zero_is_a_usage_error() {
+    let bed = Bed::new();
+    let home = tempfile::tempdir().unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["pr-watch", "-R", "o/r", "-i", "0", "7"])
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", bed.dir.path().display()),
+        )
+        .env("FAKE_GH_DIR", bed.dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3));
+    assert!(!bed.dir.path().join("calls.log").exists(), "gh was called");
 }

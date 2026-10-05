@@ -2,8 +2,6 @@
 //! call the same service function the CLI calls, and shape the result.
 
 use rmcp::model::JsonObject;
-use schemars::JsonSchema;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
 use teamwire_core::{Actor, DisplayId, MessageType, Recipient, Role, SendRequest, TeamName};
@@ -15,6 +13,7 @@ use teamwire_report::DoneReport;
 use teamwire_store::{Ctx, Store, StoreError};
 
 use crate::failure::ToolFailure;
+use crate::inputs::{AckInput, DoneInput, InboxInput, LogInput, ResendInput, SendInput};
 use crate::{McpCaller, ServerEnv};
 
 /// The reminder every inbox ends with (DEL-12), the CLI's own text.
@@ -57,117 +56,6 @@ pub(crate) const TOOLS: [(&str, &str); 8] = [
     ),
 ];
 
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct SendInput {
-    /// The team. The lead names it; a member's own team is implied.
-    team: Option<String>,
-    /// Roles, or "lead".
-    to: Vec<String>,
-    /// notice, finding, question, answer; the lead may also send reprompt and note.
-    #[serde(rename = "type")]
-    kind: String,
-    text: String,
-    /// Required for a notice: the commit the notice is about.
-    commit: Option<String>,
-    /// Required for an answer: the display id of the question.
-    re: Option<String>,
-    /// An idempotency key: the same key never makes a second message.
-    key: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct ResendInput {
-    team: Option<String>,
-    /// The display id of the message, such as m014.
-    id: String,
-    /// Roles to retry; default is every resendable recipient.
-    to: Option<Vec<String>>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct InboxInput {
-    team: Option<String>,
-    /// Also return read messages, and mark nothing.
-    #[serde(default)]
-    all: bool,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct AckInput {
-    team: Option<String>,
-    /// Display ids, such as m014.
-    ids: Vec<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct DoneInput {
-    team: Option<String>,
-    /// done, blocked or failed.
-    status: String,
-    /// One line, up to 2000 characters.
-    summary: String,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct TeamOnly {
-    /// The team. The lead names it; a member's own team is implied.
-    team: Option<String>,
-}
-
-#[derive(Deserialize, JsonSchema)]
-#[expect(
-    dead_code,
-    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
-)]
-pub(crate) struct LogInput {
-    team: Option<String>,
-    /// Only messages to or from this role.
-    role: Option<String>,
-    /// At most this many rows; default 50.
-    limit: Option<usize>,
-}
-
-/// The input schema of a tool, for `tools/list`.
-pub(crate) fn input_schema(tool: &str) -> Option<JsonObject> {
-    fn of<T: JsonSchema>() -> Option<JsonObject> {
-        schemars::schema_for!(T).as_object().cloned()
-    }
-    match tool {
-        "team_send" => of::<SendInput>(),
-        "team_resend" => of::<ResendInput>(),
-        "team_inbox" => of::<InboxInput>(),
-        "team_ack" => of::<AckInput>(),
-        "team_done" => of::<DoneInput>(),
-        "team_status" | "team_members" => of::<TeamOnly>(),
-        "team_log" => of::<LogInput>(),
-        _ => None,
-    }
-}
-
 /// Runs one call: opens the team's store, proves the caller, runs the tool
 /// and closes the store. Nothing is kept for the next call.
 pub(crate) fn call(
@@ -193,7 +81,7 @@ pub(crate) fn call(
         Ok(store) => store,
         // Nothing is proven yet, so a missing team is not told apart from a
         // wrong token.
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { .. }) => {
             return Err(ToolFailure::identity("no such team, or not yours"));
         }
         Err(e) => return Err(e.into()),
@@ -353,7 +241,12 @@ fn run(
             })
         }
         "team_status" => {
-            let view = teamwire_watch::status_with(ctx, None);
+            let mut view = teamwire_watch::status_with(ctx, None);
+            // The lead session id is what a member would need to speak as the
+            // lead, so a member's view of the team leaves it out.
+            if matches!(actor, Actor::Member(_)) {
+                view.lead = None;
+            }
             Ok(Reply {
                 summary: format!("team {team}: {} member(s)", view.members.len()),
                 value: to_value(&view)?,
@@ -412,11 +305,10 @@ fn send_tool(
     };
     let report = send(ctx, request)?;
     // The lead is told after a reprompt whether anything is watching.
-    let watch = (kind == MessageType::Reprompt).then(|| {
-        watch_running(ctx).ok().flatten().map_or(
-            json!({ "running": false }),
-            |pid| json!({ "running": true, "pid": pid }),
-        )
+    let watch = (kind == MessageType::Reprompt).then(|| match watch_running(ctx) {
+        Ok(Some(pid)) => json!({ "running": true, "pid": pid }),
+        Ok(None) => json!({ "running": false }),
+        Err(e) => json!({ "running": null, "error": e.to_string() }),
     });
     report_reply(&report, watch)
 }

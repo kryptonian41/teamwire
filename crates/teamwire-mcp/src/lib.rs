@@ -10,6 +10,7 @@
 //! refused call stores nothing.
 
 mod failure;
+mod inputs;
 mod server;
 mod tools;
 

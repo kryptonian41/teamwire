@@ -30,6 +30,9 @@ fn teamwire(bed: &Bed, args: &[&str]) -> Run {
         .arg(bed.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TEAM")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .output()
@@ -95,6 +98,31 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
 }
 
 #[test]
+fn a_member_caller_never_sees_the_lead_session() {
+    let bed = team();
+    let member = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .arg("--home")
+            .arg(bed.home.path())
+            .args(args)
+            .env_remove("HERDR_ENV")
+            .env("TEAMWIRE_HOME", bed.home.path())
+            .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
+            .env("TEAMWIRE_TEAM", "alpha")
+            .env("TEAMWIRE_ROLE", "api")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let lead = teamwire(&bed, &["status", "alpha"]);
+    assert!(lead.out.contains("lead: session"), "{}", lead.out);
+    assert!(!member(&["status", "alpha"]).contains("lead: session"));
+    let json: serde_json::Value = serde_json::from_str(&member(&["status", "--json"])).unwrap();
+    assert!(json[0]["lead"].is_null(), "{json}");
+}
+
+#[test]
 fn json_is_the_view() {
     let bed = team();
     let run = teamwire(&bed, &["status", "alpha", "--json"]);
@@ -115,6 +143,26 @@ fn without_a_team_every_team_is_listed() {
     let json = teamwire(&bed, &["status", "--json"]);
     let all: serde_json::Value = serde_json::from_str(&json.out).unwrap();
     assert_eq!(all.as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn an_unreadable_database_exits_6() {
+    let bed = team();
+    let db = bed.home.path().join("teams").join("alpha").join("team.db");
+    let mut bytes = std::fs::read(&db).unwrap();
+    for byte in &mut bytes[100..] {
+        *byte = 0xA5;
+    }
+    std::fs::write(&db, bytes).unwrap();
+    for suffix in ["-wal", "-shm"] {
+        let mut side = db.clone().into_os_string();
+        side.push(suffix);
+        std::fs::remove_file(side).ok();
+    }
+    for args in [&["status", "alpha"][..], &["status"], &["status", "--json"]] {
+        let run = teamwire(&bed, args);
+        assert_eq!(run.code, 6, "{args:?}: {}{}", run.out, run.err);
+    }
 }
 
 #[test]

@@ -1,12 +1,12 @@
 //! `teamwire close`: close the team or remove one member.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, StepOutcome};
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 
+use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
 
@@ -44,7 +44,13 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         archive_to: archive_to.clone(),
         clear_stale_lock: *clear_stale_lock,
     };
-    let home = state_home(global);
+    if !*dry_run && let Some(code) = refuse_member("close") {
+        return code;
+    }
+    let home = match home_or_refuse("close", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     // A dry run opens the database read-only, so it cannot change anything.
     let opened = if *dry_run {
         Store::open_read_only(&home, &team)
@@ -53,7 +59,8 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
     };
     let mut store = match opened {
         Ok(store) => store,
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { path }) => {
+            let message = no_database_text(&team, &path);
             return fail(&message, REFUSED);
         }
         Err(e) => return fail(&e.to_string(), STORE),
@@ -73,15 +80,6 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
     let report = teamwire_close::close(&mut ctx, target.clone(), opts);
     show_report(&report, &target, &team)
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 /// What state a stopped close leaves. Once the `finish` step is done the team

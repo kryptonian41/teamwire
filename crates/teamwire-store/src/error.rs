@@ -19,6 +19,10 @@ pub enum StoreError {
     Corrupt(String),
     #[error("a constraint failed: {0}")]
     Constraint(String),
+    /// The team has no database file. The one failure a command treats as
+    /// "no such team" rather than as a broken store.
+    #[error("no database at {}", path.display())]
+    NoDatabase { path: std::path::PathBuf },
     #[error("{0}")]
     Io(String),
 }

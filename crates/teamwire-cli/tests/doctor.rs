@@ -22,8 +22,8 @@ use teamwire_core::{
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_store::{NewTeam, Store};
 
-/// The command file is compiled here with the two crate-level items it names
-/// (`Global`, `wiring::Wiring`), so the checks run against a fake platform.
+/// The command file is compiled here with the crate-level items it names
+/// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`), so the checks run against a fake platform.
 #[derive(Debug)]
 pub(crate) struct Global {
     pub(crate) home: Option<PathBuf>,
@@ -36,6 +36,20 @@ mod wiring {
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
+    }
+}
+
+mod cmd {
+    pub(crate) mod send {
+        use std::path::PathBuf;
+        use std::process::ExitCode;
+
+        use crate::Global;
+
+        /// The state directory the test names; the real helper is not compiled here.
+        pub(crate) fn home_or_refuse(_command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
+            global.home.clone().ok_or(ExitCode::from(1))
+        }
     }
 }
 

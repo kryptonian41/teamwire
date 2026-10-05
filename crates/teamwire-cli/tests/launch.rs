@@ -3,6 +3,10 @@
 //! The exit codes are those of `docs/api/cli.md`.
 
 #![cfg(test)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
+)]
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Output;
@@ -231,5 +235,71 @@ fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     assert_eq!(member.state, MemberState::Failed);
     for stream in [&out.stdout, &out.stderr] {
         assert!(!text(stream).contains("TEAMWIRE_TOKEN"));
+    }
+}
+
+/// Every file under `dir` whose name ends with `suffix`.
+fn files_ending(dir: &Path, suffix: &str) -> Vec<PathBuf> {
+    let mut found = Vec::new();
+    for entry in std::fs::read_dir(dir).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            found.extend(files_ending(&path, suffix));
+        } else if path.to_string_lossy().ends_with(suffix) {
+            found.push(path);
+        }
+    }
+    found
+}
+
+#[test]
+fn a_relative_home_reaches_members_as_an_absolute_path() {
+    let rig = Rig::new();
+    let cwd = tempfile::tempdir().unwrap();
+    let spec = pane_spec("rel", rig.work.path());
+    let mut cmd = command(env!("CARGO_BIN_EXE_teamwire"));
+    cmd.args(["--home", "rel-home", "launch"])
+        .current_dir(cwd.path())
+        .env_clear()
+        .envs(rig.herdr.env())
+        .env("HERDR_ENV", "1")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = cmd.spawn().unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(spec.to_string().as_bytes())
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let home = cwd.path().join("rel-home");
+    let settings = files_ending(&home, "settings.json");
+    let mcp = files_ending(&home, "mcp.json");
+    assert!(
+        !settings.is_empty() && !mcp.is_empty(),
+        "{settings:?} {mcp:?}"
+    );
+    for file in &settings {
+        let value: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        let shown = value["env"]["TEAMWIRE_HOME"].as_str().unwrap_or_default();
+        assert!(Path::new(shown).is_absolute(), "{file:?}: {shown:?}");
+    }
+    for file in &mcp {
+        let value: Value = serde_json::from_str(&std::fs::read_to_string(file).unwrap()).unwrap();
+        let args = value.to_string();
+        assert!(!args.contains("\"rel-home\""), "{file:?}: {args}");
+        assert!(
+            args.contains(
+                &cwd.path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            ),
+            "{args}"
+        );
     }
 }
