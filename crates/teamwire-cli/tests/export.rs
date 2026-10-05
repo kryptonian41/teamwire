@@ -8,6 +8,10 @@
     clippy::indexing_slicing,
     reason = "a test that indexes past the end panics and fails, which is the intended outcome"
 )]
+#![expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 
 #[path = "../../teamwire-watch/tests/support/fixture.rs"]
 pub mod fixture;
