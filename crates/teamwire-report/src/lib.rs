@@ -63,7 +63,22 @@ pub enum DoneError {
     Internal(String),
 }
 
-/// Calls `teamwire_verify::report_check`; errors → empty gaps.
+/// Calls `teamwire_verify::report_check`. A check that errors gives no gaps,
+/// so the member is not held for a failure it did not cause (INV-17), and the
+/// cause is logged.
 pub fn report_gaps(ctx: &Ctx<'_>, member: &Member) -> ReportGaps {
-    teamwire_verify::report_check(ctx, member).unwrap_or_default()
+    check_report(ctx, member).0
+}
+
+/// `report_gaps`, and the error's text when the check itself failed. A
+/// caller that records an event puts the text in its data, so a broken check
+/// is not read as "no gaps".
+pub(crate) fn check_report(ctx: &Ctx<'_>, member: &Member) -> (ReportGaps, Option<String>) {
+    match teamwire_verify::report_check(ctx, member) {
+        Ok(gaps) => (gaps, None),
+        Err(e) => {
+            tracing::warn!(error = %e, role = %member.role, "the report check could not run");
+            (ReportGaps::default(), Some(e.to_string()))
+        }
+    }
 }

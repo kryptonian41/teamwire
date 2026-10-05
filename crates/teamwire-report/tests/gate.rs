@@ -283,3 +283,22 @@ fn a_hooked_member_gets_its_result_file_from_the_stop_hook_not_from_done() {
     rig.complete_now(&api);
     assert!(!rig.team_dir().join("outbox/api.md").exists());
 }
+
+#[test]
+fn a_failing_report_check_is_recorded() {
+    let mut rig = rig::Rig::new();
+    rig.healthy("lead-1", 100);
+    let api = rig.add_worktree_member("api", "api-1", "0123456789abcdef");
+    rig.write_report(&api, "notes only\n");
+    rig.complete_now(&api);
+    rig.platform.queue_run(Err(PlatformError::new(
+        PlatformErrorCode::Io,
+        "git is not installed",
+    )));
+    // Delivered anyway (INV-17), with the cause on the result event.
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    let delivered = rig.events(EventType::ResultDelivered);
+    let error = data_str(&delivered[0], "report_check_error").unwrap();
+    assert!(error.contains("git is not installed"), "{error}");
+}

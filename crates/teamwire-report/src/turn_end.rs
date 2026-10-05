@@ -9,11 +9,11 @@ use teamwire_core::{
 use teamwire_deliver::{DeliveryOutcome, deliver_line_within, result_line};
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
+use crate::final_message;
 use crate::note::{gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
 use crate::result_file::{MISSING_FROM_HARNESS, write_current};
-use crate::{final_message, report_gaps};
 
 /// The name a hook run gives its events (`docs/metrics.md` section 5).
 const HOOK: &str = "claude-stop";
@@ -72,10 +72,13 @@ fn run(
         .read(|tx| tx.latest_completion(me))?
         .filter(|r| r.completion.generation == member.generation);
 
-    if !t.hold_already_active
-        && let Some(note) = hold(ctx, &member, latest.as_ref(), started)?
-    {
-        return Ok(TurnEndReply::Hold(note));
+    let mut check_error = None;
+    if !t.hold_already_active {
+        let (note, error) = hold(ctx, &member, latest.as_ref(), started)?;
+        if let Some(note) = note {
+            return Ok(TurnEndReply::Hold(note));
+        }
+        check_error = error;
     }
 
     // Only a completion nobody delivered yet is delivered. `delivering` is a
@@ -83,7 +86,7 @@ fn run(
     if let Some(record) = latest {
         match record.completion.report_state {
             ReportState::Pending | ReportState::Delivering => {
-                deliver(ctx, &member, record, t, started)?;
+                deliver(ctx, &member, record, t, started, check_error.as_deref())?;
             }
             ReportState::Delivered
                 if record.completion.route == Some(Route::Watch)
@@ -128,19 +131,19 @@ fn hold(
     member: &Member,
     latest: Option<&CompletionRecord>,
     started: std::time::Instant,
-) -> Result<Option<String>, StoreError> {
+) -> Result<(Option<String>, Option<String>), StoreError> {
     // A `delivering` completion already passed the check before the crash.
     let check_report = latest.is_some_and(|r| r.completion.report_state == ReportState::Pending)
         && member.gate_told_generation != Some(member.generation);
-    let gaps = if check_report {
-        report_gaps(ctx, member)
+    let (gaps, check_error) = if check_report {
+        crate::check_report(ctx, member)
     } else {
-        teamwire_core::ReportGaps::default()
+        (teamwire_core::ReportGaps::default(), None)
     };
     let told = !gaps.is_empty();
     let unread = unread(ctx, &member.role)?;
     if !told && unread.is_empty() {
-        return Ok(None);
+        return Ok((None, check_error));
     }
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
     let mut parts = Vec::new();
@@ -151,12 +154,15 @@ fn hold(
         parts.push(unread_note(&ids));
     }
     let at = ctx.clock.now();
-    let data = json!({
+    let mut data = json!({
         "hook": HOOK,
         "hook_ms": hook_ms(ctx, started),
         "gaps": gaps,
         "unread": ids,
     });
+    if let (Some(error), Some(fields)) = (&check_error, data.as_object_mut()) {
+        fields.insert("report_check_error".to_owned(), json!(error));
+    }
     let recipient = teamwire_core::Recipient::Member(member.role.clone());
     ctx.store.write(|tx| {
         if told {
@@ -170,7 +176,7 @@ fn hold(
         }
         Ok(())
     })?;
-    Ok(Some(parts.join(" ")))
+    Ok((Some(parts.join(" ")), check_error))
 }
 
 fn deliver(
@@ -179,6 +185,7 @@ fn deliver(
     record: CompletionRecord,
     t: &TurnEnd,
     started: std::time::Instant,
+    check_error: Option<&str>,
 ) -> Result<(), StoreError> {
     let ulid = record.completion.ulid;
     // The final message is recorded at stop time, from the hook first. A
@@ -262,7 +269,10 @@ fn deliver(
             result_sha256: written.as_ref().map(|w| w.sha256),
         },
     };
-    let extra = hook_data(ctx, started);
+    let mut extra = hook_data(ctx, started);
+    if let (Some(error), Some(data)) = (check_error, extra.as_object_mut()) {
+        data.insert("report_check_error".to_owned(), json!(error));
+    }
     let at = ctx.clock.now();
     ctx.store.write(|tx| {
         tx.finish_completion_delivery_with(at, &ulid, &result, &extra)
