@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{Pid, Timestamp};
+use teamwire_core::Pid;
 use teamwire_store::{Ctx, ExportClaim};
 
 use crate::history::History;
@@ -48,19 +48,8 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
             }),
         };
     };
-    match send_batch(ctx, exporter, &claim, now) {
-        Ok(None) => {
-            // The batch reaches into a minute that is still open. Sending it
-            // would put a second delta point on that minute's window later.
-            release(ctx, &me);
-            Ok(ExportReport {
-                from_seq: claim.from_seq,
-                to_seq: claim.from_seq,
-                metric_points: 0,
-                spans: 0,
-            })
-        }
-        Ok(Some(report)) => {
+    match send_batch(ctx, exporter, &claim) {
+        Ok(report) => {
             match ctx
                 .store
                 .write(|tx| tx.commit_metric_export(&me, claim.to_seq))
@@ -93,8 +82,7 @@ fn send_batch(
     ctx: &Ctx<'_>,
     exporter: &OtlpConfig,
     claim: &ExportClaim,
-    now: Timestamp,
-) -> Result<Option<ExportReport>, ExportError> {
+) -> Result<ExportReport, ExportError> {
     let (team, listing) = ctx
         .store
         .read(|tx| Ok((tx.team()?, tx.events_after(0, None, None)?)))?;
@@ -111,15 +99,6 @@ fn send_batch(
         .iter()
         .filter(|e| e.seq > claim.from_seq && e.seq <= claim.to_seq)
         .collect();
-
-    // A counter or histogram bucket is one 60-second window sent as one
-    // delta point (ADR 0005 point 4). A batch with an event in the minute
-    // that is still open waits for the next run, because a later batch
-    // would add a second point for a window already sent.
-    let open_from = now.unix_millis().div_euclid(otlp::BUCKET_MS) * otlp::BUCKET_MS;
-    if batch.iter().any(|e| e.time.unix_millis() >= open_from) {
-        return Ok(None);
-    }
 
     let mut observations: Vec<Observation> = Vec::new();
     let mut spans = Vec::new();
@@ -147,12 +126,12 @@ fn send_batch(
     if points > 0 {
         otlp::post(exporter, "v1/metrics", &request)?;
     }
-    Ok(Some(ExportReport {
+    Ok(ExportReport {
         from_seq: claim.from_seq,
         to_seq: claim.to_seq,
         metric_points: points,
         spans: spans.len() as u64,
-    }))
+    })
 }
 
 fn release(ctx: &mut Ctx<'_>, me: &str) {
