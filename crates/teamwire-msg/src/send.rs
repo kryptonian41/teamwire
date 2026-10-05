@@ -9,6 +9,7 @@ use teamwire_core::{
     Actor, DeliveryState, DisplayId, EventType, Message, MessageType, Pid, Recipient, Refusal,
     SendRequest, TeamName, Timestamp, Ulid,
 };
+use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
 use crate::attempt::{Bumped, bump, bump_again, deliver_one, earlier_bump, report_of};
@@ -281,9 +282,10 @@ pub fn watch_running(ctx: &Ctx<'_>) -> Result<Option<Pid>, SendError> {
         reason = "`ReadTx::watch_lease` as a path does not infer the transaction's lifetime for `Store::read`"
     )]
     let lease = ctx.store.read(|tx| tx.watch_lease())?;
+    let now = ctx.clock.now();
     Ok(lease
-        .map(|l| l.pid)
-        .filter(|pid| ctx.platform.pid_alive(*pid)))
+        .filter(|l| !watch_lease_is_dead(l, ctx.platform, now, ctx.config.poll_s))
+        .map(|l| l.pid))
 }
 
 /// `prove_actor`, and a refusal is recorded as `message.refused` (MSG-15).
