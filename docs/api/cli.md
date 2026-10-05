@@ -103,7 +103,9 @@ Events, each announced once per occurrence:
 ### `teamwire status [<team>] [--role R] [--json]`
 
 Reads only (WAT-11). Without a team, lists every team with its state and
-member counts. With a team: the lead's session and liveness; per member: state
+member counts; a `teams/<x>/` directory with no database is skipped. With a
+team: the lead's session and liveness (left out for a caller that carries a
+member identity); per member: state
 (`done(<status>)`, `unreported`, `undelivered`, `died?`, `blocked`, `working`,
 `quiet`, `late`, `prompted outside teamwire`), generation, age against
 deadline, delivery state of its newest result, branch, title; then the last
@@ -141,8 +143,10 @@ Sends one message (ADR 0003). `--to` takes roles separated by commas, or
 `lead`. For a member, `--team` and `--from` default to `TEAMWIRE_TEAM` and
 `TEAMWIRE_ROLE`. Prints the display id and one line per recipient. On
 `undelivered` it also prints `NOT DELIVERED to <role>: <reason>` on stderr and
-exits 4. `--type reprompt` (lead only) starts the member's next generation
-and says whether a watch is running.
+exits 4. A recipient whose delivery record could not be written is left
+`pending`, named on stderr as `NOT RECORDED for <role>`, and exits 6; retry
+it with `resend`. `--type reprompt` (lead only) starts the member's next
+generation and says whether a watch is running, or that it could not tell.
 
 ### `teamwire resend <team> <ID> [--to ROLES]`
 
