@@ -193,7 +193,7 @@ pub(crate) fn call(
         Ok(store) => store,
         // Nothing is proven yet, so a missing team is not told apart from a
         // wrong token.
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { .. }) => {
             return Err(ToolFailure::identity("no such team, or not yours"));
         }
         Err(e) => return Err(e.into()),

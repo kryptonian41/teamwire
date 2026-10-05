@@ -95,7 +95,7 @@ fn another_team_records(
         let store = match Store::open_read_only(ctx.home, &name) {
             Ok(store) => store,
             // A directory with no database is not a team that needs a hold.
-            Err(StoreError::Io(why)) if why.starts_with("no database") => continue,
+            Err(StoreError::NoDatabase { .. }) => continue,
             Err(e) => return Err(format!("team {name} could not be read ({e})")),
         };
         let team = read_team(&store).map_err(|e| format!("team {name} could not be read ({e})"))?;

@@ -47,6 +47,7 @@ impl From<StoreError> for ToolFailure {
             | StoreError::NotTeamwire
             | StoreError::Corrupt(_)
             | StoreError::Constraint(_)
+            | StoreError::NoDatabase { .. }
             | StoreError::Io(_) => ("internal", false),
         };
         Self {

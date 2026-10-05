@@ -6,7 +6,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::home_or_refuse;
+use crate::cmd::send::{home_or_refuse, no_database_text};
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
 
@@ -55,7 +55,8 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
     };
     let mut store = match Store::open_existing(&home, &team) {
         Ok(store) => store,
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { path }) => {
+            let message = no_database_text(&team, &path);
             return fail(&format!("refused.identity: {message}"), REFUSED);
         }
         Err(e) => return fail(&e.to_string(), STORE),

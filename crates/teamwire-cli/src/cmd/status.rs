@@ -178,9 +178,7 @@ fn fail(message: &str, code: u8) -> ExitCode {
 }
 
 fn store_failure(team: &TeamName, e: &StoreError) -> ExitCode {
-    if let StoreError::Io(message) = e
-        && message.starts_with("no database")
-    {
+    if matches!(e, StoreError::NoDatabase { .. }) {
         return fail(&format!("no team {team}"), REFUSED);
     }
     fail(&e.to_string(), STORE_ERROR)

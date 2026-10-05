@@ -270,6 +270,11 @@ pub(crate) fn home_or_refuse(command: &str, global: &Global) -> Result<PathBuf, 
     })
 }
 
+/// The refusal text for a team whose database file is missing.
+pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> String {
+    format!("no database for team {team} at {}", path.display())
+}
+
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
 /// cannot be opened is reported and turned into the exit code to return.
 pub(crate) fn with_ctx<T>(
@@ -281,7 +286,8 @@ pub(crate) fn with_ctx<T>(
     let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
         Ok(store) => store,
-        Err(StoreError::Io(message)) if message.starts_with("no database") => {
+        Err(StoreError::NoDatabase { path }) => {
+            let message = no_database_text(&team, &path);
             return Err(fail("", &message, REFUSED));
         }
         Err(e) => return Err(fail("", &e.to_string(), STORE)),

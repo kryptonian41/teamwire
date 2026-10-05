@@ -162,7 +162,7 @@ impl Tx<'_> {
             StoreError::NotTeamwire => "not_teamwire",
             StoreError::Corrupt(_) => "corrupt",
             StoreError::Constraint(_) => "constraint",
-            StoreError::Io(_) => "io",
+            StoreError::NoDatabase { .. } | StoreError::Io(_) => "io",
         };
         self.record_event(
             at,
