@@ -63,3 +63,39 @@ fn a_read_message_is_not_reminded() {
         .unwrap();
     assert_eq!(on_tool_use(&mut rig.ctx(), &api), None);
 }
+
+#[test]
+fn a_pending_delivery_older_than_a_minute_is_reminded_once() {
+    let (mut rig, api) = team();
+    // A sender that crashed after the commit left the row pending.
+    let at = teamwire_core::Clock::now(&*rig.clock);
+    let recipient = teamwire_core::Recipient::Member(api.clone());
+    let display = rig
+        .store
+        .write(|tx| {
+            let stored = tx.insert_message(
+                at,
+                &teamwire_store::NewMessage {
+                    sender: teamwire_core::Actor::Lead,
+                    kind: teamwire_core::MessageType::Note,
+                    re: None,
+                    commit: None,
+                    body: "left pending".to_owned(),
+                    client_key: None,
+                    recipients: vec![recipient],
+                },
+            )?;
+            Ok(stored.message.display_id.to_string())
+        })
+        .unwrap();
+    rig.clock.advance(std::time::Duration::from_secs(30));
+    assert_eq!(
+        on_tool_use(&mut rig.ctx(), &api),
+        None,
+        "its sender may still be delivering"
+    );
+    rig.clock.advance(std::time::Duration::from_secs(31));
+    let note = on_tool_use(&mut rig.ctx(), &api).unwrap();
+    assert!(note.contains(&display), "{note}");
+    assert_eq!(on_tool_use(&mut rig.ctx(), &api), None, "each id once");
+}
