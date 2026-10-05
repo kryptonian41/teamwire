@@ -90,7 +90,7 @@ pub fn resend(
             });
             continue;
         }
-        let result = retry(ctx, &team, &message, row);
+        let result = retry(ctx, actor, &team, &message, row);
         deliveries.push(survive_store_error(
             result,
             &row.delivery.recipient,
@@ -128,6 +128,7 @@ fn resendable(
 /// `delivery.resent` first, then the line is delivered.
 fn retry(
     ctx: &mut Ctx<'_>,
+    actor: &Actor,
     team: &teamwire_core::TeamName,
     message: &Message,
     row: &DeliveryRecord,
@@ -137,20 +138,27 @@ fn retry(
     let now = ctx.clock.now();
     // The team can start closing after the first check, so the attempt is
     // counted only inside a transaction that sees it still open.
-    let attempts = ctx
-        .store
-        .write(|tx| {
-            let open = tx
-                .reader()
-                .team()?
-                .is_some_and(|t| t.state == TeamState::Open);
-            if open {
-                tx.begin_resend(now, &message.ulid, recipient).map(Some)
-            } else {
-                Ok(None)
-            }
-        })?
-        .ok_or(Refusal::TeamClosed)?;
+    let attempts = ctx.store.write(|tx| {
+        let open = tx
+            .reader()
+            .team()?
+            .is_some_and(|t| t.state == TeamState::Open);
+        if open {
+            tx.begin_resend(now, &message.ulid, recipient).map(Some)
+        } else {
+            Ok(None)
+        }
+    })?;
+    let Some(attempts) = attempts else {
+        record_refusal(
+            ctx,
+            Some(actor),
+            &Refusal::TeamClosed,
+            Some(message.kind),
+            std::slice::from_ref(recipient),
+        );
+        return Err(Refusal::TeamClosed.into());
+    };
     // A reprompt that failed cleanly was undone, so its next try starts the
     // generation again. One that may have arrived kept its generation. One
     // left `pending` by a dead sender kept a bump that nothing has undone.
