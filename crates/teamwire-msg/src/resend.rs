@@ -4,11 +4,13 @@
 
 use std::time::Duration;
 
-use teamwire_core::{Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, Timestamp};
+use teamwire_core::{
+    Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, TeamState, Timestamp,
+};
 use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, deliver_one, report_of};
-use crate::send::{record_refusal, team_name};
+use crate::send::{read_team, record_refusal, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
 /// A `pending` row is resendable only after this long: a crash left it, and
@@ -52,6 +54,19 @@ pub fn resend(
         return Err(SendError::InvalidArgument(format!(
             "{stranger} is not a recipient of {id}"
         )));
+    }
+    // A closing or closed team types nothing, as for `send` (CLS-3).
+    if !team_is_open(ctx)? {
+        let recipients: Vec<Recipient> =
+            rows.iter().map(|r| r.delivery.recipient.clone()).collect();
+        record_refusal(
+            ctx,
+            Some(actor),
+            &Refusal::TeamClosed,
+            Some(message.kind),
+            &recipients,
+        );
+        return Err(Refusal::TeamClosed.into());
     }
     let now = ctx.clock.now();
     let wanted =
@@ -115,9 +130,22 @@ fn retry(
         None
     };
     let now = ctx.clock.now();
+    // The team can start closing after the first check, so the attempt is
+    // counted only inside a transaction that sees it still open.
     let attempts = ctx
         .store
-        .write(|tx| tx.begin_resend(now, &message.ulid, recipient))?;
+        .write(|tx| {
+            let open = tx
+                .reader()
+                .team()?
+                .is_some_and(|t| t.state == TeamState::Open);
+            if open {
+                tx.begin_resend(now, &message.ulid, recipient).map(Some)
+            } else {
+                Ok(None)
+            }
+        })?
+        .ok_or(Refusal::TeamClosed)?;
     deliver_one(
         ctx,
         team,
@@ -127,4 +155,8 @@ fn retry(
         attempts,
         bump.as_ref(),
     )
+}
+
+fn team_is_open(ctx: &Ctx<'_>) -> Result<bool, SendError> {
+    Ok(read_team(ctx)?.is_some_and(|t| t.state == TeamState::Open))
 }

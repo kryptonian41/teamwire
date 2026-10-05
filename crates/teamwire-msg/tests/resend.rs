@@ -332,3 +332,27 @@ fn delivery_updates_keep_forward_only_moves_in_the_store_too() {
     });
     assert!(back.is_err());
 }
+
+#[test]
+fn resend_is_refused_while_the_team_is_closing() {
+    let mut rig = team_rig();
+    rig.set_reachable("web", false);
+    let req = rig.request("lead", &["web"], MessageType::Reprompt, "fix it");
+    let first = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(state_of(&first, "web"), RecipientState::Undelivered);
+    rig.set_reachable("web", true);
+    let now = rig.now();
+    rig.store
+        .write(|tx| {
+            tx.begin_close(now, teamwire_core::Pid::new(4242))
+                .map(|_| ())
+        })
+        .unwrap();
+    let refused = resend(&mut rig.ctx(), &Actor::Lead, &first.display_id, None);
+    assert_eq!(
+        refused.unwrap_err().to_string(),
+        SendError::from(Refusal::TeamClosed).to_string()
+    );
+    assert_eq!(submits(&rig), 0);
+    assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
+}
