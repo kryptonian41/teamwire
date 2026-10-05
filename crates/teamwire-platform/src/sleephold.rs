@@ -138,14 +138,14 @@ impl SleepHold for MacOs {
     }
 
     fn release(&self, hold: &HoldInfo, lead_pid: Pid) -> Result<ReleaseOutcome, PlatformError> {
-        release_with(hold, lead_pid, "ps")
+        release_with(*hold, lead_pid, "ps")
     }
 }
 
 /// `release`, with the program that reads the process list as a parameter so
 /// a test can make that read fail.
 fn release_with(
-    hold: &HoldInfo,
+    hold: HoldInfo,
     lead_pid: Pid,
     ps_program: &str,
 ) -> Result<ReleaseOutcome, PlatformError> {
@@ -226,6 +226,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test needs a live process that Platform::run would wait for"
+    )]
     fn release_reports_error_when_ps_fails() {
         let mut child = std::process::Command::new("/bin/sleep")
             .arg("30")
@@ -235,7 +239,7 @@ mod tests {
             pid: Pid::new(child.id()),
             owned: true,
         };
-        let outcome = release_with(&hold, Pid::new(1), "/nonexistent/ps");
+        let outcome = release_with(hold, Pid::new(1), "/nonexistent/ps");
         let alive = process::pid_alive(hold.pid);
         drop(child.kill());
         drop(child.wait());
