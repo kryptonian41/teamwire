@@ -43,12 +43,18 @@ impl Rig {
     /// Runs `teamwire <args>` with a cleared environment: the fakes' `PATH`, a
     /// temporary home, and `HERDR_ENV=1`.
     fn teamwire(&self, args: &[&str], stdin: Option<&str>) -> Run {
+        self.teamwire_with(args, stdin, &[])
+    }
+
+    /// `teamwire` with extra variables, such as a member's identity.
+    fn teamwire_with(&self, args: &[&str], stdin: Option<&str>, extra: &[(&str, &str)]) -> Run {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
         cmd.args(args)
             .env_clear()
             .envs(self.herdr.env())
             .env("TEAMWIRE_HOME", self.home.path())
             .env("HERDR_ENV", "1")
+            .envs(extra.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -516,4 +522,45 @@ fn usage_and_missing_state_have_their_own_exit_codes() {
         "{}",
         nobody.err
     );
+}
+
+#[test]
+fn a_member_cannot_remove_a_peer() {
+    let rig = Rig::new();
+    let repo = rig.repo();
+    rig.launch(&api_spec(&repo));
+    let member = [("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")];
+    let run = rig.teamwire_with(
+        &["close", "alpha", "--role", "scout", "--stop", "--unverified"],
+        None,
+        &member,
+    );
+    assert_eq!(run.code, 1, "{}{}", run.out, run.err);
+    assert!(run.err.contains("refused.identity"), "{}", run.err);
+    let state = rig
+        .store()
+        .read(|tx| tx.member(&teamwire_core::Role::parse("scout").unwrap()))
+        .unwrap()
+        .unwrap()
+        .state;
+    assert_eq!(state, teamwire_core::MemberState::Started);
+    // A dry run reads only, so a member may ask for the plan.
+    let dry = rig.teamwire_with(&["close", "alpha", "--dry-run"], None, &member);
+    assert_eq!(dry.code, 0, "{}{}", dry.out, dry.err);
+}
+
+#[test]
+fn a_member_cannot_watch_or_add_members() {
+    let rig = Rig::new();
+    rig.launch(&pane_spec(rig.work.path()));
+    let token = [("TEAMWIRE_TOKEN", "not-a-real-token")];
+    let watch = rig.teamwire_with(&["watch", "alpha"], None, &token);
+    assert_eq!(watch.code, 1, "{}{}", watch.out, watch.err);
+    assert!(watch.err.contains("refused.identity"), "{}", watch.err);
+    let add = rig.teamwire_with(&["launch", "--add"], Some("{}"), &token);
+    assert_eq!(add.code, 1, "{}{}", add.out, add.err);
+    assert!(add.err.contains("refused.identity"), "{}", add.err);
+    // The refused watch took no lease.
+    let lease = rig.store().read(|tx| tx.watch_lease()).unwrap();
+    assert!(lease.is_none());
 }

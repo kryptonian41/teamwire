@@ -32,6 +32,8 @@ fn teamwire(bed: &Bed, args: &[&str]) -> Run {
         .arg(bed.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
@@ -172,6 +174,8 @@ fn an_export_endpoint_does_not_change_the_output() {
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1")
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));

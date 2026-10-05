@@ -7,6 +7,7 @@ use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 
+use crate::cmd::send::refuse_member;
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
 
@@ -44,6 +45,11 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         archive_to: archive_to.clone(),
         clear_stale_lock: *clear_stale_lock,
     };
+    if !*dry_run {
+        if let Some(code) = refuse_member("close") {
+            return code;
+        }
+    }
     let home = state_home(global);
     // A dry run opens the database read-only, so it cannot change anything.
     let opened = if *dry_run {

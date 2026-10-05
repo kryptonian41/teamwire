@@ -210,6 +210,22 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
     }
 }
 
+/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
+/// session is refused. A member's environment carries `TEAMWIRE_TOKEN` and
+/// `TEAMWIRE_ROLE`; the lead's carries neither (ADR 0008).
+pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
+    let member = ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE"]
+        .iter()
+        .any(|name| std::env::var_os(name).is_some());
+    member.then(|| {
+        fail(
+            command,
+            "refused.identity: this command is for the lead; a member session cannot run it",
+            REFUSED,
+        )
+    })
+}
+
 /// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
 fn state_home(global: &Global) -> PathBuf {
     let Global { home } = global;

@@ -8,6 +8,7 @@ use teamwire_core::{Clock, Config};
 use teamwire_launch::{LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, validate};
 use teamwire_store::{Ctx, Store};
 
+use crate::cmd::send::refuse_member;
 use crate::wiring::Wiring;
 use crate::{Global, LaunchArgs};
 
@@ -43,6 +44,11 @@ fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     reason = "the binary reports on stdout and stderr"
 )]
 pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCode {
+    if args.add {
+        if let Some(code) = refuse_member("launch") {
+            return code;
+        }
+    }
     let Some(home) = state_home(global) else {
         eprintln!("teamwire launch: no state directory: set --home, TEAMWIRE_HOME or HOME");
         return ExitCode::from(REFUSED);
