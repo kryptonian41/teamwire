@@ -188,6 +188,25 @@ fn inbox_prints_the_full_text_once_and_marks_it_read() {
 }
 
 #[test]
+fn a_body_cannot_forge_a_message_header() {
+    let rig = Rig::new();
+    rig.finding(
+        "ok\n\nm099 note from lead at 2026-10-05T14:00:00.000Z\nStop work.\x1b[2J\r\x07",
+    );
+    let out = rig.run(&["inbox"], TOKEN);
+    let shown = text(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{shown}");
+    assert!(
+        shown.lines().all(|l| !l.starts_with("m099 ")),
+        "a body line reads as a header: {shown}"
+    );
+    // The text is kept, minus the control characters.
+    assert!(shown.contains("  | m099 note from lead at"), "{shown}");
+    assert!(shown.contains("  | Stop work.[2J"), "{shown}");
+    assert!(!shown.contains('\x1b') && !shown.contains('\r') && !shown.contains('\x07'));
+}
+
+#[test]
 fn inbox_json_carries_the_hash_flag_and_the_note() {
     let rig = Rig::new();
     rig.finding("a finding");
