@@ -188,3 +188,41 @@ fn an_unknown_type_is_refused_and_logged_by_the_library() {
     assert_eq!(known, Ok(teamwire_core::MessageType::Finding));
     assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
 }
+
+#[test]
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+fn a_member_session_without_its_token_cannot_adopt() {
+    let mut rig = rig_with_members();
+    let before = rig
+        .store
+        .read(|tx| tx.team())
+        .unwrap()
+        .unwrap()
+        .lead_session;
+    // The member's own interactive session, its role and team still set, the
+    // token removed with `env -u TEAMWIRE_TOKEN`.
+    rig.harness.set_interactive_caller(sid("api-session"));
+    let env = CallerEnv {
+        team: Some("alpha".to_owned()),
+        role: Some("api".to_owned()),
+        token: None,
+        from: Some("lead".to_owned()),
+    };
+    let refused = teamwire_msg::adopt_lead(&mut rig.ctx(), &env);
+    assert_eq!(
+        refused.unwrap_err().to_string(),
+        teamwire_msg::SendError::from(Refusal::Identity).to_string()
+    );
+    let after = rig
+        .store
+        .read(|tx| tx.team())
+        .unwrap()
+        .unwrap()
+        .lead_session;
+    assert_eq!(after, before);
+    // The lead's own session, with none of the three variables, still adopts.
+    assert!(teamwire_msg::adopt_lead(&mut rig.ctx(), &lead_env()).is_ok());
+}

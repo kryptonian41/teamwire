@@ -8,14 +8,14 @@ use teamwire_core::{
     Address, DeliveryState, Liveness, Member, MemberState, OtelConfig, Recipient, ReportState,
     Role, SessionId, Timestamp, one_line,
 };
+use teamwire_deliver::{PENDING_STALE, attempt_started};
 use teamwire_store::{CompletionRecord, Ctx, Party, ReadTx, StoreError, database_path};
 
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::text::result_path;
 use crate::{LeadView, MemberView, MessageView, StatusView, StuckDelivery, UndeliveredResult};
 
-/// How long a `pending` delivery may wait before status calls it stuck.
-const PENDING_STUCK: Duration = Duration::from_secs(60);
+/// The longest message excerpt status shows.
 const EXCERPT: usize = 80;
 
 /// The rows status shows, read in one transaction.
@@ -106,8 +106,8 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let age = now.saturating_since(message.created_at);
-        if d.state == DeliveryState::Pending && age <= PENDING_STUCK {
+        let age = now.saturating_since(attempt_started(tx, &message, &d.recipient)?);
+        if d.state == DeliveryState::Pending && age <= PENDING_STALE {
             continue;
         }
         view.stuck_deliveries.push(StuckDelivery {

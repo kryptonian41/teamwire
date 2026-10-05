@@ -10,7 +10,7 @@ use teamwire_core::{
 };
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
-use crate::text::{blocked_prefix, silent_prefix};
+use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
 
 pub(crate) struct Snapshot {
     pub team: TeamRow,
@@ -20,6 +20,9 @@ pub(crate) struct Snapshot {
     pub questions: Vec<Question>,
     /// Every key the watch has announced, in this or an earlier process.
     pub announced: HashSet<String>,
+    /// How many `TEAM-STALLED` episodes have ended. Episodes are numbered in
+    /// order, so the latest one is open when its number is above this.
+    pub stalls_ended: u64,
 }
 
 pub(crate) struct MemberInfo {
@@ -131,6 +134,7 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
             members,
             questions: questions(tx)?,
             announced,
+            stalls_ended: tx.counter(STALLS_ENDED)?.unwrap_or(0),
         }))
     })
 }

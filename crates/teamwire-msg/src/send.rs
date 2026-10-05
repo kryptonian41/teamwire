@@ -9,10 +9,11 @@ use teamwire_core::{
     Actor, DeliveryState, DisplayId, EventType, Message, MessageType, Pid, Recipient, Refusal,
     SendRequest, TeamName, Timestamp, Ulid,
 };
-use teamwire_store::{Ctx, NewMessage, StoreError, TeamRow, Tx};
+use teamwire_deliver::watch_lease_is_dead;
+use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
-use crate::attempt::{Bumped, bump, bump_again, deliver_one, report_of};
-use crate::{SendError, SendReport, rules};
+use crate::attempt::{Bumped, bump, bump_again, deliver_one, earlier_bump, report_of};
+use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
 
 /// A message that is committed and about to be delivered. The CLI prints
 /// it, id and key, before any host call, so a sender killed in the middle of
@@ -50,9 +51,13 @@ pub fn send(ctx: &mut Ctx<'_>, req: SendRequest) -> Result<SendReport, SendError
 /// recipients still `pending` or `undelivered` are tried again.
 pub fn send_with(
     ctx: &mut Ctx<'_>,
-    req: SendRequest,
+    mut req: SendRequest,
     on_stored: &mut dyn FnMut(&Stored),
 ) -> Result<SendReport, SendError> {
+    // A file written on Windows has a byte-order mark and CRLF line ends,
+    // which are not text the sender chose. Checks, the stored copy and its
+    // hash all see the plain body.
+    req.body = normalise_body(&req.body);
     let checked = match rules::check(ctx, &req) {
         Ok(checked) => checked,
         Err(SendError::Refused(refusal)) => {
@@ -104,26 +109,12 @@ pub fn send_with(
             deliveries.push(report_of(record));
             continue;
         }
-        // A reprompt that was undone after a known failure starts its
-        // generation again when the resume tries it again.
-        let again = if stored.duplicate && state == DeliveryState::Undelivered {
-            bump_again(ctx, &message, &record.delivery.recipient)?
-        } else {
-            None
-        };
         let attempts = record.delivery.attempts + 1;
-        let bump = bumped
-            .iter()
-            .find(|b| b.recipient == record.delivery.recipient)
-            .or(again.as_ref());
-        deliveries.push(deliver_one(
-            ctx,
-            &team,
-            &message,
+        let result = try_recipient(ctx, &team, &message, record, stored.duplicate, &bumped);
+        deliveries.push(survive_store_error(
+            result,
             &record.delivery.recipient,
-            state,
             attempts,
-            bump,
         )?);
     }
     Ok(SendReport {
@@ -133,6 +124,74 @@ pub fn send_with(
         deliveries,
         duplicate_of_key: stored.duplicate,
     })
+}
+
+/// The body without a leading byte-order mark and with `\r\n` as `\n`.
+fn normalise_body(body: &str) -> String {
+    body.strip_prefix('\u{feff}')
+        .unwrap_or(body)
+        .replace("\r\n", "\n")
+}
+
+/// Delivers to one recipient of a stored message.
+fn try_recipient(
+    ctx: &mut Ctx<'_>,
+    team: &TeamName,
+    message: &Message,
+    record: &DeliveryRecord,
+    duplicate: bool,
+    bumped: &[Bumped],
+) -> Result<RecipientReport, SendError> {
+    let state = record.delivery.state;
+    // A reprompt that was undone after a known failure starts its
+    // generation again when the resume tries it again.
+    let again = if duplicate && state == DeliveryState::Undelivered {
+        bump_again(ctx, message, &record.delivery.recipient)?
+    } else if duplicate {
+        // Still pending: an earlier run bumped the generation and died
+        // before it could say whether the line arrived.
+        earlier_bump(ctx, message, &record.delivery.recipient)?
+    } else {
+        None
+    };
+    let attempts = record.delivery.attempts + 1;
+    let bump = bumped
+        .iter()
+        .find(|b| b.recipient == record.delivery.recipient)
+        .or(again.as_ref());
+    deliver_one(
+        ctx,
+        team,
+        message,
+        &record.delivery.recipient,
+        state,
+        attempts,
+        bump,
+    )
+}
+
+/// One recipient's store error is that recipient's report, `pending`, so the
+/// recipients after it are still tried and the caller still gets every
+/// report. The delivery may or may not have been typed, which is what
+/// `pending` says; the command exits non-zero for it. Any other error ends
+/// the whole command.
+pub(crate) fn survive_store_error(
+    result: Result<RecipientReport, SendError>,
+    recipient: &Recipient,
+    attempts: u32,
+) -> Result<RecipientReport, SendError> {
+    match result {
+        Err(SendError::Store(e)) => {
+            tracing::warn!(%recipient, error = %e, "could not record a delivery");
+            Ok(RecipientReport {
+                to: recipient.clone(),
+                state: RecipientState::Pending,
+                reason: None,
+                attempts: Some(attempts),
+            })
+        }
+        other => other,
+    }
 }
 
 /// The one write transaction of a send: the message, its deliveries, its
@@ -234,9 +293,10 @@ pub fn watch_running(ctx: &Ctx<'_>) -> Result<Option<Pid>, SendError> {
         reason = "`ReadTx::watch_lease` as a path does not infer the transaction's lifetime for `Store::read`"
     )]
     let lease = ctx.store.read(|tx| tx.watch_lease())?;
+    let now = ctx.clock.now();
     Ok(lease
-        .map(|l| l.pid)
-        .filter(|pid| ctx.platform.pid_alive(*pid)))
+        .filter(|l| !watch_lease_is_dead(l, ctx.platform, now, ctx.config.poll_s))
+        .map(|l| l.pid))
 }
 
 /// `prove_actor`, and a refusal is recorded as `message.refused` (MSG-15).

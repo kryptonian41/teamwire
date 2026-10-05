@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use teamwire_core::{Role, Ulid, one_line};
 
+pub(crate) use teamwire_deliver::agent_text;
+
 /// The longest one event may be. A poll joins several, so each is cut alone
 /// and a long summary cannot push a later event out of the line.
 const EVENT_MAX: usize = 300;
@@ -27,6 +29,16 @@ pub(crate) fn blocked_prefix(role: &Role, generation: u32) -> String {
 
 pub(crate) fn blocked_key(role: &Role, generation: u32, episode: u32) -> String {
     format!("{}{episode}", blocked_prefix(role, generation))
+}
+
+/// An announcement key `TEAM-STALLED:<n>` names the stall episode `n`.
+pub(crate) const STALLED_PREFIX: &str = "TEAM-STALLED:";
+/// The counter of ended stall episodes. It is a counter and not an
+/// announcement because the end of an episode is never printed.
+pub(crate) const STALLS_ENDED: &str = "watch.stalls_ended";
+
+pub(crate) fn stalled_key(episode: u32) -> String {
+    format!("{STALLED_PREFIX}{episode}")
 }
 
 pub(crate) fn late_key(role: &Role, generation: u32) -> String {
@@ -55,11 +67,6 @@ pub(crate) fn age(span: Duration) -> String {
     } else {
         format!("{s}s")
     }
-}
-
-/// Text an agent wrote, cut to one printable line for the event stream.
-pub(crate) fn agent_text(text: &str, max: usize) -> String {
-    one_line(text, max).into_string()
 }
 
 /// The path of a member's result file, printed in the event.

@@ -2,9 +2,10 @@
 //! transaction, record the outcome in a short one, and keep a reprompt's
 //! generation in step with what is known about its delivery.
 
+use serde_json::json;
 use teamwire_core::{
-    DeliveryError, DeliveryState, DisplayId, Message, MessageType, Recipient, Refusal, Route,
-    TeamName, Timestamp,
+    DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient, Refusal,
+    Route, TeamName, Timestamp,
 };
 use teamwire_deliver::{DeliveryOutcome, deliver_line, message_line_to};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
@@ -37,6 +38,68 @@ pub(crate) fn bump(
         recipient: recipient.clone(),
         generation: member.generation,
         started_at: member.gen_started_at,
+    }))
+}
+
+/// The bump an earlier, interrupted attempt of this reprompt left behind: the
+/// row is still `pending`, so no failure of that attempt was ever undone. The
+/// member's own event history says which generation and start time the bump
+/// replaced. `None` when this reprompt's bump is not the member's latest, so
+/// that giving it back would undo a later one.
+pub(crate) fn earlier_bump(
+    ctx: &Ctx<'_>,
+    message: &Message,
+    recipient: &Recipient,
+) -> Result<Option<Bumped>, SendError> {
+    let Recipient::Member(role) = recipient else {
+        return Ok(None);
+    };
+    if message.kind != MessageType::Reprompt {
+        return Ok(None);
+    }
+    let (events, member) = ctx
+        .store
+        .read(|tx| Ok((tx.events_of_role(role)?.all_or_corrupt()?, tx.member(role)?)))?;
+    let Some(member) = member else {
+        return Ok(None);
+    };
+    // Each generation with the time it started and the message that started
+    // it. A `member.creating` event starts generation 1, a bump pushes the
+    // next one, and its undo pops it again.
+    let mut starts: Vec<(u32, Timestamp, Option<String>)> = Vec::new();
+    for e in &events {
+        if e.kind == EventType::MemberCreating {
+            starts = vec![(1, e.time, None)];
+        } else if e.kind == EventType::MemberReprompted {
+            if e.data.get("undone") == Some(&json!(true)) {
+                if starts.len() > 1 {
+                    starts.pop();
+                }
+            } else if let Some(g) = e
+                .data
+                .get("generation")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|g| u32::try_from(g).ok())
+            {
+                let by = e
+                    .data
+                    .get("message")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned);
+                starts.push((g, e.time, by));
+            }
+        }
+    }
+    let [.., (before, started_at, _), (now, _, by)] = starts.as_slice() else {
+        return Ok(None);
+    };
+    if by.as_deref() != Some(message.display_id.as_str()) || *now != member.generation {
+        return Ok(None);
+    }
+    Ok(Some(Bumped {
+        recipient: recipient.clone(),
+        generation: *before,
+        started_at: *started_at,
     }))
 }
 

@@ -17,6 +17,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::Fault;
 use teamwire_msg::{RecipientState, SendError, resend, send, watch_running};
+use teamwire_store::NewMessage;
 
 use rig::{Rig, role};
 
@@ -216,4 +217,62 @@ fn watch_running_reports_a_live_lease_holder_only() {
     assert_eq!(watch_running(&rig.ctx()).unwrap(), None);
     rig.platform.set_alive(Pid::new(777), true);
     assert_eq!(watch_running(&rig.ctx()).unwrap(), Some(Pid::new(777)));
+}
+
+/// A reprompt whose sender died after the commit: the row is `pending` and
+/// the member's generation is already bumped. Returns the stored message's
+/// display id.
+fn crashed_after_the_bump(rig: &mut Rig, key: &str) -> teamwire_core::DisplayId {
+    let at = rig.now();
+    let new = NewMessage {
+        sender: Actor::Lead,
+        kind: MessageType::Reprompt,
+        re: None,
+        commit: None,
+        body: "fix the two findings".to_owned(),
+        client_key: Some(key.to_owned()),
+        recipients: vec![teamwire_core::Recipient::Member(role("api"))],
+    };
+    rig.store
+        .write(|tx| {
+            let stored = tx.insert_message(at, &new)?;
+            tx.bump_generation(at, &role("api"), stored.message.display_id.as_str())?;
+            Ok(stored.message.display_id)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_resumed_pending_reprompt_that_fails_gives_the_generation_back() {
+    let mut rig = team_rig();
+    let before = generation(&rig, "api");
+    rig.clock.advance(Duration::from_secs(5));
+    crashed_after_the_bump(&mut rig, "k");
+    assert_eq!(generation(&rig, "api").0, before.0 + 1);
+    rig.set_reachable("api", false);
+    let mut req = reprompt(&rig, &["api"]);
+    req.client_key = Some("k".to_owned());
+    let report = send(&mut rig.ctx(), req).unwrap();
+    assert!(report.duplicate_of_key);
+    assert_eq!(
+        report.deliveries.first().unwrap().state,
+        RecipientState::Undelivered
+    );
+    assert_eq!(generation(&rig, "api"), before);
+}
+
+#[test]
+fn a_resent_pending_reprompt_that_fails_gives_the_generation_back() {
+    let mut rig = team_rig();
+    let before = generation(&rig, "api");
+    rig.clock.advance(Duration::from_secs(5));
+    let display = crashed_after_the_bump(&mut rig, "k");
+    rig.clock.advance(Duration::from_secs(61));
+    rig.set_reachable("api", false);
+    let report = resend(&mut rig.ctx(), &Actor::Lead, &display, None).unwrap();
+    assert_eq!(
+        report.deliveries.first().unwrap().state,
+        RecipientState::Undelivered
+    );
+    assert_eq!(generation(&rig, "api"), before);
 }

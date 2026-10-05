@@ -11,7 +11,7 @@ use teamwire_store::{Ctx, Party};
 
 use crate::DeliveryOutcome;
 use crate::budget::Budget;
-use crate::locate::{locate_with, recheck};
+use crate::locate::{Located, locate_with, recheck};
 
 /// A submit is tried at most this many times (ADR 0003 point 7).
 const MAX_TRIES: u32 = 3;
@@ -76,9 +76,11 @@ fn try_deliver(
         ));
     }
     let found = locate_with(ctx, party, harness, host, budget)?;
-    recheck(host, &found, budget)?;
+    // The dialog and readiness checks make several adapter calls, so they run
+    // first. The occupant recheck comes last, with only the submit after it
+    // (ADR 0006 point 3); a retry repeats it.
     check_input_ready(harness, host, &found.place, &found.session, budget)?;
-    Ok(submit_with_retries(ctx, host, &found.place, line, budget))
+    submit_with_retries(ctx, host, &found, line, budget)
 }
 
 /// ADR 0006 point 3a: never type into a dialog.
@@ -125,20 +127,24 @@ fn check_input_ready(
 fn submit_with_retries(
     ctx: &Ctx<'_>,
     host: &dyn Host,
-    place: &Place,
+    found: &Located,
     line: &OneLine,
     budget: &Budget<'_>,
-) -> DeliveryOutcome {
+) -> Result<DeliveryOutcome, DeliveryError> {
+    let place = &found.place;
     let started = ctx.clock.monotonic();
     let mut tries = 0;
     loop {
         tries += 1;
+        // A failed recheck proves nothing was typed, so it is a refusal
+        // with its own reason, also between retries.
+        recheck(host, found, budget)?;
         let timeout = match budget.call() {
             Ok(t) => t,
-            Err(e) => return DeliveryOutcome::Undelivered(e),
+            Err(e) => return Ok(DeliveryOutcome::Undelivered(e)),
         };
         let err = match host.submit(place, line, timeout) {
-            Ok(()) => return DeliveryOutcome::HandedOff,
+            Ok(()) => return Ok(DeliveryOutcome::HandedOff),
             Err(e) => e,
         };
         match err.code {
@@ -147,20 +153,20 @@ fn submit_with_retries(
                 let in_time =
                     ctx.clock.monotonic().saturating_duration_since(started) < RETRY_WINDOW;
                 if tries >= MAX_TRIES || !in_time {
-                    return DeliveryOutcome::Undelivered(err.into());
+                    return Ok(DeliveryOutcome::Undelivered(err.into()));
                 }
                 let pause = RETRY_PAUSE * tries;
                 thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
             }
             // The text may be on screen: never send it again (INV-5).
             HostErrorCode::Stalled | HostErrorCode::Timeout => {
-                return DeliveryOutcome::Unconfirmed(err.into());
+                return Ok(DeliveryOutcome::Unconfirmed(err.into()));
             }
             HostErrorCode::Blocked
             | HostErrorCode::NotFound
             | HostErrorCode::BadArgument
             | HostErrorCode::Unsupported
-            | HostErrorCode::Other => return DeliveryOutcome::Undelivered(refused(err)),
+            | HostErrorCode::Other => return Ok(DeliveryOutcome::Undelivered(refused(err))),
         }
     }
 }

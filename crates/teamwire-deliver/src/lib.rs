@@ -11,15 +11,19 @@
 
 mod budget;
 mod deliver;
+mod lease;
 mod lines;
 mod locate;
+mod pending;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::DeliveryError;
 
 pub use deliver::{deliver_line, deliver_line_within};
-pub use lines::{message_line, message_line_to, result_line};
+pub use lease::watch_lease_is_dead;
+pub use lines::{agent_text, message_line, message_line_to, result_line};
 pub use locate::locate;
+pub use pending::{PENDING_STALE, attempt_started, is_pending_stale};
 
 /// What happened to one typed line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

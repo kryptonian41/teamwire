@@ -66,7 +66,7 @@ fn prove_member(ctx: &Ctx<'_>, env: &CallerEnv, token: &str) -> Result<Actor, Re
 
 fn prove_lead(ctx: &Ctx<'_>, env: &CallerEnv) -> Result<Actor, Refusal> {
     // A member's environment names a role. Without its token it proves nothing.
-    if env.from.as_deref() != Some("lead") || env.role.is_some() {
+    if env.from.as_deref() != Some("lead") || env.is_member_session() {
         return Err(Refusal::Identity);
     }
     let team = read_team(ctx)

@@ -8,6 +8,8 @@
 #[path = "support/fixture.rs"]
 pub mod fixture;
 
+use std::time::Duration;
+
 use fixture::Bed;
 use teamwire_core::Pid;
 use teamwire_watch::{WatchError, WatchMemory};
@@ -90,4 +92,27 @@ fn the_lease_is_released_and_the_old_watch_stops_when_taken_over() {
     stop(&mut bed, &mut second);
     let lease = bed.store.read(|tx| tx.watch_lease()).unwrap_or_default();
     assert!(lease.is_none());
+}
+
+#[test]
+fn a_live_pid_with_an_old_heartbeat_is_taken_over() {
+    let mut bed = Bed::new();
+    // The pid is alive, but only because the system gave it to someone else.
+    bed.platform.set_alive(Pid::new(111), true);
+    let mut first = WatchMemory::default();
+    start(&mut bed, &mut first, 111).unwrap_or_else(|e| unreachable!("{e}"));
+
+    let poll = bed.config.poll_s;
+    bed.clock.advance(Duration::from_secs(poll * 2));
+    let mut refused = WatchMemory::default();
+    assert!(matches!(
+        start(&mut bed, &mut refused, 222),
+        Err(WatchError::Held { .. })
+    ));
+
+    bed.clock.advance(Duration::from_secs(poll * 2));
+    let mut second = WatchMemory::default();
+    start(&mut bed, &mut second, 222).unwrap_or_else(|e| unreachable!("{e}"));
+    let lease = bed.store.read(|tx| tx.watch_lease()).unwrap_or_default();
+    assert_eq!(lease.map(|l| l.pid), Some(Pid::new(222)));
 }

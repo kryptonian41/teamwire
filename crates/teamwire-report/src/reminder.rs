@@ -2,6 +2,7 @@
 //! its hold note. Each message id is reminded at most once (ADR 0003 point 8).
 
 use teamwire_core::{DeliveryState, Recipient, Role, Ulid};
+use teamwire_deliver::is_pending_stale;
 use teamwire_store::{Ctx, StoreError};
 
 use crate::note::unread_note;
@@ -13,21 +14,30 @@ pub(crate) struct Unread {
 }
 
 /// Deliveries to `me` that are not read (`acked`) and whose reminder has not
-/// been sent. A `pending` delivery is still being sent by its sender.
+/// been sent. A `pending` delivery is still being sent by its sender, so it
+/// counts only once it is stale: a sender that crashed after the commit
+/// would otherwise leave the message unnamed for good (ADR 0003 point 8).
 pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError> {
     ctx.store.read(|tx| {
         let recipient = Recipient::Member(me.clone());
         let deliveries = tx.deliveries_for(
             &recipient,
             &[
+                DeliveryState::Pending,
                 DeliveryState::HandedOff,
                 DeliveryState::Unconfirmed,
                 DeliveryState::Undelivered,
             ],
         )?;
+        let now = ctx.clock.now();
         let mut out = Vec::new();
         for d in deliveries.items.iter().filter(|d| d.reminded_at.is_none()) {
             if let Some(message) = tx.message(&d.delivery.message)? {
+                if d.delivery.state == DeliveryState::Pending
+                    && !is_pending_stale(tx, &message, &recipient, now)?
+                {
+                    continue;
+                }
                 out.push(Unread {
                     message: message.ulid,
                     display_id: message.display_id.to_string(),

@@ -3,6 +3,7 @@
 
 use serde_json::json;
 use teamwire_core::Pid;
+use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, LeaseOutcome, StoreError};
 use thiserror::Error;
 
@@ -16,8 +17,9 @@ pub enum WatchError {
     Store(#[from] StoreError),
 }
 
-/// Takes the team's watch lease for `pid`. A lease held by a live process
-/// refuses; one held by a dead process is taken over. Every later poll
+/// Takes the team's watch lease for `pid`. A lease held by a live, recently
+/// beating process refuses; one whose process is gone or whose heartbeat is
+/// over three polls old is taken over. Every later poll
 /// refreshes the lease's heartbeat.
 pub fn start(
     ctx: &mut Ctx<'_>,
@@ -27,9 +29,12 @@ pub fn start(
 ) -> Result<(), WatchError> {
     let at = ctx.clock.now();
     let platform = ctx.platform;
-    let outcome = ctx
-        .store
-        .write(|tx| tx.take_watch_lease(at, pid, host, |held| !platform.pid_alive(held.pid)))?;
+    let poll_s = ctx.config.poll_s;
+    let outcome = ctx.store.write(|tx| {
+        tx.take_watch_lease(at, pid, host, |held| {
+            watch_lease_is_dead(held, platform, at, poll_s)
+        })
+    })?;
     match outcome {
         LeaseOutcome::Taken => {
             memory.lease_pid = Some(pid);

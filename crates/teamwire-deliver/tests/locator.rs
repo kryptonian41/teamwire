@@ -94,6 +94,56 @@ fn session_in_two_places_refuses() {
 }
 
 #[test]
+fn place_changing_hands_during_the_dialog_check_is_refused() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    rig.host.inject(
+        "occupant",
+        Fault::ChangeOccupantAfter(holds("intruder", &[])),
+        1,
+    );
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
+    assert!(rig.host.submitted(&place).is_empty());
+    // The occupant check is the last read before the submit, never the
+    // state or screen reads that precede it.
+    let names = rig.host.log().names();
+    let last_occupant = names.iter().rposition(|n| *n == "occupant").unwrap();
+    let last_other_read = names
+        .iter()
+        .rposition(|n| matches!(*n, "state" | "read_tail"))
+        .unwrap();
+    assert!(last_other_read < last_occupant, "{names:?}");
+}
+
+#[test]
+fn place_changing_hands_between_retries_is_refused() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    // The first fault changes nothing and uses up the locate call; the
+    // second lets the first recheck pass and then hands the place over.
+    rig.host.inject(
+        "occupant",
+        Fault::ChangeOccupantAfter(holds("lead-1", &[])),
+        1,
+    );
+    rig.host.inject(
+        "occupant",
+        Fault::ChangeOccupantAfter(holds("intruder", &[])),
+        1,
+    );
+    rig.host.inject(
+        "submit",
+        Fault::Fail(HostError::new(HostErrorCode::Busy, "scripted")),
+        1,
+    );
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
+    assert_eq!(rig.host.log().count_named("submit"), 1);
+    assert!(rig.host.submitted(&place).is_empty());
+}
+
+#[test]
 fn occupant_changes_before_submit_refuses() {
     let mut rig = Rig::new();
     let place = rig.healthy("lead-1", 100);

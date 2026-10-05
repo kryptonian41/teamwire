@@ -758,3 +758,59 @@ fn a_question_to_the_lead_tells_the_lead_how_to_answer_and_where_the_text_is() {
     assert!(line.contains("/comms/m"), "{line}");
     assert!(!line.contains("teamwire inbox"), "{line}");
 }
+
+#[test]
+fn a_failed_record_for_one_recipient_still_delivers_to_the_rest() {
+    let mut rig = team_rig();
+    // Recording the outcome for `api` fails; `web` is untouched.
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_api BEFORE UPDATE ON deliveries
+                     WHEN NEW.recipient = 'api' BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let req = rig.request(
+        "scout",
+        &["api", "web"],
+        MessageType::Finding,
+        "the finding",
+    );
+    let report = send(&mut rig.ctx(), req).unwrap();
+    let state = |name: &str| {
+        report
+            .deliveries
+            .iter()
+            .find(|d| d.to == to(name))
+            .unwrap()
+            .state
+    };
+    assert_eq!(state("api"), RecipientState::Pending);
+    assert_eq!(state("web"), RecipientState::HandedOff);
+}
+
+#[test]
+fn crlf_and_bom_do_not_count_toward_the_limit() {
+    let mut rig = team_rig();
+    // 16 lines of 790 characters with plain line ends; a Windows file adds
+    // a byte-order mark and a carriage return per line end.
+    let lines: Vec<String> = (0..16)
+        .map(|i| "x".repeat(if i < 15 { 48 } else { 55 }))
+        .collect();
+    let plain = lines.join("\n");
+    assert_eq!(plain.chars().count(), 790);
+    let windows = format!("\u{feff}{}", lines.join("\r\n"));
+    assert_eq!(windows.chars().count(), 806);
+    let req = rig.request("scout", &["api"], MessageType::Finding, &windows);
+    let report = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    let stored = rig
+        .store
+        .read(|tx| tx.message_by_display_id(&report.display_id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.body, plain);
+}

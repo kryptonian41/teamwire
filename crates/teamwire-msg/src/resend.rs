@@ -2,18 +2,15 @@
 //! MSG-19). It never makes a message. It adds a delivery attempt to the
 //! existing rows and skips the burst and repeat limits.
 
-use std::time::Duration;
-
-use teamwire_core::{Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, Timestamp};
+use teamwire_core::{
+    Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, TeamState, Timestamp,
+};
+use teamwire_deliver::is_pending_stale;
 use teamwire_store::{Ctx, DeliveryRecord};
 
-use crate::attempt::{bump_again, deliver_one, report_of};
-use crate::send::{record_refusal, team_name};
+use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
+use crate::send::{read_team, record_refusal, survive_store_error, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
-
-/// A `pending` row is resendable only after this long: a crash left it, and
-/// a send that is still delivering must not be typed a second time.
-const PENDING_STALE: Duration = Duration::from_secs(60);
 
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
 /// recipients, or only to those named in `to`. Only the sender or the lead
@@ -53,13 +50,28 @@ pub fn resend(
             "{stranger} is not a recipient of {id}"
         )));
     }
+    // A closing or closed team types nothing, as for `send` (CLS-3).
+    if !team_is_open(ctx)? {
+        let recipients: Vec<Recipient> =
+            rows.iter().map(|r| r.delivery.recipient.clone()).collect();
+        record_refusal(
+            ctx,
+            Some(actor),
+            &Refusal::TeamClosed,
+            Some(message.kind),
+            &recipients,
+        );
+        return Err(Refusal::TeamClosed.into());
+    }
     let now = ctx.clock.now();
     let wanted =
         |row: &DeliveryRecord| to.is_none_or(|named| named.contains(&row.delivery.recipient));
-    let chosen: Vec<&DeliveryRecord> = rows
-        .iter()
-        .filter(|r| wanted(r) && resendable(r, &message, now))
-        .collect();
+    let mut chosen: Vec<&DeliveryRecord> = Vec::new();
+    for row in rows.iter().filter(|r| wanted(r)) {
+        if resendable(ctx, row, &message, now)? {
+            chosen.push(row);
+        }
+    }
     if chosen.is_empty() {
         return Err(SendError::NotResendable(format!(
             "no recipient of {id} is undelivered, unconfirmed or pending for over 60 seconds"
@@ -78,7 +90,12 @@ pub fn resend(
             });
             continue;
         }
-        deliveries.push(retry(ctx, &team, &message, row)?);
+        let result = retry(ctx, &team, &message, row);
+        deliveries.push(survive_store_error(
+            result,
+            &row.delivery.recipient,
+            row.delivery.attempts + 1,
+        )?);
     }
     Ok(SendReport {
         id: message.ulid,
@@ -89,12 +106,22 @@ pub fn resend(
     })
 }
 
-fn resendable(row: &DeliveryRecord, message: &Message, now: Timestamp) -> bool {
-    match row.delivery.state {
+/// A `pending` row is resendable only after its latest attempt began over
+/// `PENDING_STALE` ago: a crash left it, and a send that is still delivering
+/// must not be typed a second time.
+fn resendable(
+    ctx: &Ctx<'_>,
+    row: &DeliveryRecord,
+    message: &Message,
+    now: Timestamp,
+) -> Result<bool, SendError> {
+    Ok(match row.delivery.state {
         DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
-        DeliveryState::Pending => now.saturating_since(message.created_at) > PENDING_STALE,
+        DeliveryState::Pending => ctx
+            .store
+            .read(|tx| is_pending_stale(tx, message, &row.delivery.recipient, now))?,
         DeliveryState::HandedOff | DeliveryState::Acked => false,
-    }
+    })
 }
 
 /// One more attempt for one row: the attempt is counted and written as
@@ -107,17 +134,33 @@ fn retry(
 ) -> Result<RecipientReport, SendError> {
     let recipient = &row.delivery.recipient;
     let before = row.delivery.state;
-    // A reprompt that failed cleanly was undone, so its next try starts the
-    // generation again. One that may have arrived kept its generation.
-    let bump = if before == DeliveryState::Undelivered {
-        bump_again(ctx, message, recipient)?
-    } else {
-        None
-    };
     let now = ctx.clock.now();
+    // The team can start closing after the first check, so the attempt is
+    // counted only inside a transaction that sees it still open.
     let attempts = ctx
         .store
-        .write(|tx| tx.begin_resend(now, &message.ulid, recipient))?;
+        .write(|tx| {
+            let open = tx
+                .reader()
+                .team()?
+                .is_some_and(|t| t.state == TeamState::Open);
+            if open {
+                tx.begin_resend(now, &message.ulid, recipient).map(Some)
+            } else {
+                Ok(None)
+            }
+        })?
+        .ok_or(Refusal::TeamClosed)?;
+    // A reprompt that failed cleanly was undone, so its next try starts the
+    // generation again. One that may have arrived kept its generation. One
+    // left `pending` by a dead sender kept a bump that nothing has undone.
+    // The bump comes after the attempt is counted, so a failed count leaves
+    // the generation alone.
+    let bump = match before {
+        DeliveryState::Undelivered => bump_again(ctx, message, recipient)?,
+        DeliveryState::Pending => earlier_bump(ctx, message, recipient)?,
+        DeliveryState::HandedOff | DeliveryState::Unconfirmed | DeliveryState::Acked => None,
+    };
     deliver_one(
         ctx,
         team,
@@ -127,4 +170,8 @@ fn retry(
         attempts,
         bump.as_ref(),
     )
+}
+
+fn team_is_open(ctx: &Ctx<'_>) -> Result<bool, SendError> {
+    Ok(read_team(ctx)?.is_some_and(|t| t.state == TeamState::Open))
 }
