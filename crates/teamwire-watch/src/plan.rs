@@ -359,7 +359,7 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
                 mm.silent_open = false;
             }
         }
-        Seen::Absent | Seen::NoInfo => mm.absent = 0,
+        Seen::Absent | Seen::NoInfo => {}
     }
 
     let mut stuck = false;
