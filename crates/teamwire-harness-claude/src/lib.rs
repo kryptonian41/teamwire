@@ -71,11 +71,12 @@ impl ClaudeCode {
     }
 
     /// The caller's session, read through `get` instead of the process
-    /// environment: `CLAUDE_CODE_SESSION_ID`, and `CLAUDE_CODE_SESSION_KIND`
-    /// (`bg` is a background session). `current_session` calls this with the
-    /// real environment.
+    /// environment: `CLAUDE_CODE_SESSION_ID`, and the kind from the session
+    /// file of `CLAUDE_PID` (`bg` is a background session), else from
+    /// `CLAUDE_CODE_SESSION_KIND` or `CLAUDE_CODE_SESSION_ATTENDED=0`.
+    /// `current_session` calls this with the real environment.
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
-        session::caller_from_env(get)
+        session::caller_from_env(&self.config.claude_dir, get)
     }
 
     /// What `.claude.json` says about `cwd`, read-only. Launch calls this

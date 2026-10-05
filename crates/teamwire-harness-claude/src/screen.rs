@@ -73,16 +73,21 @@ fn last_lines(tail: &str) -> Vec<&str> {
     lines.get(start..).unwrap_or_default().to_vec()
 }
 
-/// A numbered choice such as `❯ 1. Yes` or `2. No`.
-fn is_numbered_option(line: &str) -> bool {
-    let line = inner(line);
-    let line = line
-        .strip_prefix('❯')
-        .or_else(|| line.strip_prefix('>'))
-        .unwrap_or(line)
-        .trim_start();
-    let digits = line.chars().take_while(char::is_ascii_digit).count();
-    digits > 0 && line.get(digits..).is_some_and(|r| r.starts_with(". "))
+/// The selected choice of a dialog, such as `❯ 1. Yes`. An unselected choice
+/// (`2. No`) is not counted: a numbered list in Claude's own reply looks the
+/// same, and only the selection pointer is something a reply never prints.
+fn is_selected_option(line: &str) -> bool {
+    let Some(rest) = pointer_rest(line) else {
+        return false;
+    };
+    let digits = rest.chars().take_while(char::is_ascii_digit).count();
+    digits > 0 && rest.get(digits..).is_some_and(|r| r.starts_with(". "))
+}
+
+/// A line of Claude's own reply or tool header, which starts with `⏺`.
+/// Marker text on such a line is something Claude said, not a dialog.
+fn is_transcript_line(line: &str) -> bool {
+    inner(line).starts_with('⏺')
 }
 
 /// Claude keeps its input box and footer on screen while a dialog is open,
@@ -90,11 +95,16 @@ fn is_numbered_option(line: &str) -> bool {
 /// the same few lines. A false `Dialog` only delays a delivery; a false
 /// `InputPrompt` types into a dialog.
 fn dialog_near_the_end(last: &[&str]) -> bool {
-    let text = squash(&last.join("\n"));
+    let drawn: Vec<&str> = last
+        .iter()
+        .copied()
+        .filter(|l| !is_transcript_line(l))
+        .collect();
+    let text = squash(&drawn.join("\n"));
     has_any(&text, &PLAIN_TRUST_MARKERS)
         || has_any(&text, &ESCALATION_MARKERS)
         || has_any(&text, &OTHER_DIALOG_MARKERS)
-        || last.iter().any(|l| is_numbered_option(l))
+        || last.iter().any(|l| is_selected_option(l))
 }
 
 fn at_input_prompt(last: &[&str]) -> bool {

@@ -93,6 +93,16 @@ fn a_paused_session_with_background_tasks_reports_nothing() {
 }
 
 #[test]
+fn a_stop_with_only_finished_background_tasks_is_a_real_stop() {
+    let mut doc = stop_input();
+    doc["background_tasks"] = json!([{ "id": "b1", "status": "completed" }]);
+    assert!(!parse(&doc).unwrap().subagent);
+    doc["background_tasks"] =
+        json!([{ "id": "b1", "status": "completed" }, { "id": "b2", "status": "running" }]);
+    assert!(parse(&doc).unwrap().subagent);
+}
+
+#[test]
 fn the_last_message_and_transcript_are_optional() {
     let mut doc = stop_input();
     let map = doc.as_object_mut().unwrap();

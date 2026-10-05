@@ -2,6 +2,16 @@
 
 use teamwire_core::Key;
 
+/// An argument for a tmux command, safe when it ends in `;`. tmux reads a
+/// trailing `;` on an argument as the end of the command, so it is sent as
+/// `\;`, which tmux turns back into `;`.
+pub(crate) fn escape_arg(arg: &str) -> String {
+    match arg.strip_suffix(';') {
+        Some(head) => format!("{head}\\;"),
+        None => arg.to_owned(),
+    }
+}
+
 /// The `send-keys` arguments (after the pane) for one key. A printable
 /// character is sent literally with `-l`, so `;` or a word tmux knows as a
 /// key name is typed as itself.
@@ -19,8 +29,7 @@ pub(crate) fn send_args(key: Key) -> Vec<String> {
         Key::CtrlC => named("C-c"),
         // tmux reads a lone `;` argument as the end of one command, so it
         // is sent as `\;`, which tmux turns back into `;`.
-        Key::Char(';') => vec!["-l".to_owned(), "--".to_owned(), "\\;".to_owned()],
-        Key::Char(c) => vec!["-l".to_owned(), "--".to_owned(), c.to_string()],
+        Key::Char(c) => vec!["-l".to_owned(), "--".to_owned(), escape_arg(&c.to_string())],
     }
 }
 
@@ -39,6 +48,13 @@ mod tests {
     fn a_character_is_literal_even_when_it_looks_like_an_option() {
         assert_eq!(send_args(Key::Char('-')), ["-l", "--", "-"]);
         assert_eq!(send_args(Key::Char('1')), ["-l", "--", "1"]);
+    }
+
+    #[test]
+    fn only_a_trailing_semicolon_is_escaped() {
+        assert_eq!(escape_arg("x;"), "x\\;");
+        assert_eq!(escape_arg("a;b"), "a;b");
+        assert_eq!(escape_arg("plain"), "plain");
     }
 
     #[test]
