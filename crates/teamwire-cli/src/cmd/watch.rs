@@ -107,10 +107,8 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    if !*once {
-        if let Some(code) = refuse_member("watch") {
-            return code;
-        }
+    if !*once && let Some(code) = refuse_member("watch") {
+        return code;
     }
     if *interval == 0 {
         return fail("--interval must be at least 1 second", USAGE);

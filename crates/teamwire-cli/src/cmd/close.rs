@@ -44,10 +44,8 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         archive_to: archive_to.clone(),
         clear_stale_lock: *clear_stale_lock,
     };
-    if !*dry_run {
-        if let Some(code) = refuse_member("close") {
-            return code;
-        }
+    if !*dry_run && let Some(code) = refuse_member("close") {
+        return code;
     }
     let home = match home_or_refuse("close", global) {
         Ok(home) => home,

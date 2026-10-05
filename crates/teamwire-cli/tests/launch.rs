@@ -3,6 +3,10 @@
 //! The exit codes are those of `docs/api/cli.md`.
 
 #![cfg(test)]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
+)]
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::Output;

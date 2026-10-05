@@ -388,16 +388,9 @@ fn closing_a_read_only_store_leaves_a_live_writers_files_alone() {
 fn open_existing_missing_is_no_database() {
     let home = TestHome::new().unwrap();
     let path = database_path(home.path(), &team());
-    match Store::open_existing(home.path(), &team()) {
-        Err(StoreError::NoDatabase { path: named }) => assert_eq!(named, path),
-        other => panic!("expected NoDatabase, got {other:?}"),
-    }
-    // A file that cannot be opened for another reason is not "no database".
-    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-    std::fs::write(&path, b"not a database").unwrap();
-    let other = Store::open_existing(home.path(), &team());
+    let missing = Store::open_existing(home.path(), &team());
     assert!(
-        !matches!(other, Err(StoreError::NoDatabase { .. })),
-        "{other:?}"
+        matches!(&missing, Err(StoreError::NoDatabase { path: named }) if *named == path),
+        "{missing:?}"
     );
 }

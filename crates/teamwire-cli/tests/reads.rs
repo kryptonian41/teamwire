@@ -8,6 +8,10 @@
     clippy::unwrap_used,
     reason = "a failure in this integration test fails the test"
 )]
+#![expect(
+    clippy::indexing_slicing,
+    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
+)]
 
 use std::process::Command;
 

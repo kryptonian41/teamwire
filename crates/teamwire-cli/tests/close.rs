@@ -9,6 +9,10 @@
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
+#![expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::watch_lease` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
 
 use std::io::Write as _;
 use std::path::{Path, PathBuf};

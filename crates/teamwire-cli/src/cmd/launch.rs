@@ -35,10 +35,10 @@ fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     reason = "the binary reports on stdout and stderr"
 )]
 pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCode {
-    if args.add {
-        if let Some(code) = refuse_member("launch") {
-            return code;
-        }
+    if args.add
+        && let Some(code) = refuse_member("launch")
+    {
+        return code;
     }
     let home = match home_or_refuse("launch", global) {
         Ok(home) => home,

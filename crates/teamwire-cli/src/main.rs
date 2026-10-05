@@ -41,7 +41,12 @@ mod wiring;
 /// Exit code for a usage error.
 const USAGE: u8 = 3;
 
-pub(crate) use args::*;
+pub(crate) use args::{
+    AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
+    HookTarget, InboxArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs,
+    MetricsCommand, PrWatchArgs, PresetArgs, ResendArgs, SendArgs, StatusArgs, VerifyArgs,
+    WatchArgs,
+};
 
 fn main() -> ExitCode {
     let args: Vec<std::ffi::OsString> = std::env::args_os().collect();

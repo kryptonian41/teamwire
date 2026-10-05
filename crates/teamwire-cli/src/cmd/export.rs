@@ -177,7 +177,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
                     "exit_code": r.exit_code,
                     "seconds": r.seconds,
                     "flags": r.flags,
-                    "log_sha256": r.log_sha256.map(|h| h.iter().map(|b| format!("{b:02x}")).collect::<String>()),
+                    "log_sha256": r.log_sha256.map(|h| hex(&h)),
                 }),
             )
         });
@@ -261,6 +261,15 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
         ));
     }
     Ok((out, skipped))
+}
+
+/// Lower-case hex, the form a checksum is written in.
+fn hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .flat_map(|b| [b >> 4, b & 0x0f])
+        .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
+        .collect()
 }
 
 #[expect(clippy::print_stdout, reason = "the records are the command's output")]

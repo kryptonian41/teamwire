@@ -291,7 +291,7 @@ pub(crate) fn with_ctx<T>(
     let mut store = match Store::open_existing(&home, team) {
         Ok(store) => store,
         Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
+            let message = no_database_text(team, &path);
             return Err(fail("", &message, REFUSED));
         }
         Err(e) => return Err(fail("", &e.to_string(), STORE)),
@@ -374,18 +374,10 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
 mod tests {
     use super::*;
 
-    #[expect(
-        clippy::unwrap_used,
-        reason = "a team name literal in a test cannot fail to parse"
-    )]
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()
     }
 
-    #[expect(
-        clippy::unwrap_used,
-        reason = "literals in a test cannot fail to parse"
-    )]
     fn report(states: &[RecipientState]) -> SendReport {
         SendReport {
             id: teamwire_core::Ulid::parse("01M466HBGM3C8KG2XPMZWRQCH4").unwrap(),

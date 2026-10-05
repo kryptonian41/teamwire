@@ -5,8 +5,8 @@
     reason = "the test starts the teamwire binary"
 )]
 #![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+    clippy::indexing_slicing,
+    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
 )]
 
 #[path = "../../teamwire-watch/tests/support/fixture.rs"]
@@ -70,7 +70,7 @@ fn export_covers_every_table() {
         .env_remove("TEAMWIRE_TEAM")
         .output()
         .unwrap();
-    assert_eq!(out.status.code(), Some(0), "{:?}", out);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
     let records: Vec<Value> = String::from_utf8(out.stdout)
         .unwrap()
         .lines()
