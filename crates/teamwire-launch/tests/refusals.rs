@@ -347,3 +347,27 @@ fn add_refused_when_close_lock_taken_after_validate() {
     assert!(common::member_row(&store, "second").is_none());
     assert!(!repo.join(".worktrees/first").exists());
 }
+
+#[test]
+fn branch_git_refuses_is_a_spec_error() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    // `main` is checked out in the repository itself.
+    for branch in ["foo.lock", "a/.b", "a.lock/b", "main"] {
+        let member = common::with(
+            worktree_member("api", "API work", &repo),
+            "branch",
+            json!(branch),
+        );
+        let errors = rig
+            .validate(&team_spec("demo", &[member]), false)
+            .unwrap_err();
+        let expect = if branch == "main" {
+            "branch_checked_out"
+        } else {
+            "bad_branch"
+        };
+        assert_eq!(codes(&errors), [expect], "{branch}");
+    }
+    assert_eq!(rig.host.log().count_named("spawn"), 0);
+}

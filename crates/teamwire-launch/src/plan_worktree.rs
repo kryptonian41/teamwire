@@ -77,10 +77,34 @@ pub(crate) fn worktree_plan(
             return None;
         }
     }
+    // `branch_ok` keeps the name a safe directory name; git has rules of its
+    // own (`foo.lock`, `a/.b`) that only git can check.
+    if !git::run(platform, repo, &["check-ref-format", "--branch", &branch])
+        .is_ok_and(|o| o.success())
+    {
+        bad(
+            "branch",
+            "bad_branch",
+            format!("git does not accept {branch:?} as a branch name"),
+        );
+        return None;
+    }
     let head = format!("refs/heads/{branch}");
     let branch_exists = git::run(platform, repo, &["rev-parse", "--verify", "--quiet", &head])
         .is_ok_and(|o| o.success());
     if branch_exists {
+        if !reuse && checked_out(platform, repo, &head) {
+            bad(
+                "branch",
+                "branch_checked_out",
+                format!(
+                    "branch {branch} is already checked out in another worktree of {}; \
+                     git allows one checkout per branch",
+                    repo.display()
+                ),
+            );
+            return None;
+        }
         let ignored = child
             .base
             .as_ref()
@@ -140,6 +164,13 @@ pub(crate) fn worktree_plan(
         branch_exists,
         reuse,
     })
+}
+
+/// True when `git worktree list` shows `refs/heads/<branch>` checked out.
+fn checked_out(platform: &dyn teamwire_core::Platform, repo: &Path, head: &str) -> bool {
+    let want = format!("branch {head}");
+    git::stdout_of(platform, repo, &["worktree", "list", "--porcelain"])
+        .is_ok_and(|text| text.lines().any(|l| l == want))
 }
 
 /// A relaunch of a member that failed before it started may use the path an
