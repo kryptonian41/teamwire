@@ -1,10 +1,10 @@
 //! The diff rules (VER-3): what a member's branch changed since its start,
 //! and which of those changes are flags.
 
+use crate::VerifyError;
 use crate::git::Git;
 use crate::owns::Owns;
 use crate::rules::Ruleset;
-use crate::{TASK_FILE, VerifyError};
 
 /// A flag before it is checked against the waivers.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,7 +38,7 @@ pub(crate) fn inspect_diff(
         ));
     }
     for (status, path) in git.changed_paths(base)? {
-        if path == TASK_FILE {
+        if crate::is_task_file(&path) {
             continue;
         }
         if status == 'D' && rules.is_test_file(&path) {
@@ -112,7 +112,7 @@ fn scan_patch(patch: &str, rules: &Ruleset) -> (Vec<RawFlag>, Vec<FileState>) {
             // `index`, `new file mode`, `Binary files ... differ`.
         } else if let Some(added) = line.strip_prefix('+') {
             if let Some(path) = file.new_path.clone()
-                && path != TASK_FILE
+                && !crate::is_task_file(&path)
             {
                 if let Some(rule) = rules.weakening(&path, added) {
                     flags.push(RawFlag::new(

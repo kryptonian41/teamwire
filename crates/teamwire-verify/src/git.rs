@@ -176,7 +176,7 @@ impl<'a> Git<'a> {
             {
                 fields.next();
             }
-            if path != crate::TASK_FILE {
+            if !crate::is_task_file(path) {
                 paths.push(path.to_owned());
             }
         }

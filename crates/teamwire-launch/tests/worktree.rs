@@ -147,3 +147,20 @@ fn events_carry_the_launch_id_the_requested_count_steps_and_session() {
     assert!(common::jget(started, "/steps/worktree").is_number());
     assert!(common::jget(started, "/session_id").is_string());
 }
+
+#[test]
+fn tracked_task_md_is_refused() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    common::write(&repo.join("TASK.md"), "the project's own file\n");
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "track TASK.md"]);
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(common::codes(&errors), ["task_md_tracked"]);
+    assert!(errors.first().unwrap().message.contains("TASK.md"));
+    assert_eq!(
+        std::fs::read_to_string(repo.join("TASK.md")).unwrap(),
+        "the project's own file\n",
+        "the tracked file is untouched"
+    );
+}

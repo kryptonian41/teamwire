@@ -37,6 +37,20 @@ use rules::Ruleset;
 /// ignores it wherever it looks (LCH-24).
 pub(crate) const TASK_FILE: &str = "TASK.md";
 
+/// True for the brief's copy: the exact path `TASK.md` at the root of a
+/// worktree, and no other file that happens to end in those letters. Close
+/// and verify both use this one rule.
+#[must_use]
+pub fn is_task_file(path: &str) -> bool {
+    path == TASK_FILE
+}
+
+/// True for a `git status --porcelain` line about the brief's copy alone.
+#[must_use]
+pub fn is_task_file_status(line: &str) -> bool {
+    line.get(3..).is_some_and(is_task_file)
+}
+
 /// What `teamwire verify` was asked to do besides the checks.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerifyOpts {

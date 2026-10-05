@@ -17,10 +17,6 @@ use crate::git;
 /// answer in this long is "unknown", and unknown refuses.
 const HOST_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// The brief's copy in a worktree. Launch keeps it out of git; close ignores
-/// it wherever it looks (LCH-24).
-const TASK_FILE: &str = "TASK.md";
-
 /// How busy a member is, as its own host reports it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Busy {
@@ -102,7 +98,7 @@ pub(crate) fn dirty_paths(ctx: &Ctx<'_>, member: &Member) -> Result<Vec<String>,
     }
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines()
-        .filter(|l| !l.is_empty() && !l.ends_with(TASK_FILE))
+        .filter(|l| !l.is_empty() && !teamwire_verify::is_task_file_status(l))
         .map(str::to_owned)
         .collect())
 }

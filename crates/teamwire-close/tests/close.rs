@@ -972,3 +972,21 @@ fn an_unreadable_agent_listing_refuses_for_an_unplaced_member() {
     );
     assert!(rig.team_dir().exists());
 }
+
+#[test]
+fn untracked_subtask_md_counts_as_dirty() {
+    // Only the root `TASK.md` is the brief's copy. A file that merely ends in
+    // those letters is work, and git would refuse to remove the worktree over it.
+    for name in ["docs/TASK.md", "SUBTASK.md"] {
+        let mut rig = Rig::new();
+        let api = rig.add_worktree_member("api", MemberKind::Implementer);
+        std::fs::create_dir_all(api.cwd.join("docs")).unwrap();
+        std::fs::write(api.cwd.join(name), "notes\n").unwrap();
+        let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+        assert!(
+            asks(&plan.refusals, "api has 1 uncommitted path"),
+            "{name}: {:?}",
+            plan.refusals
+        );
+    }
+}

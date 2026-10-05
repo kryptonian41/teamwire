@@ -101,6 +101,28 @@ pub(crate) fn worktree_plan(
             return None;
         }
     }
+    // The brief is written to `TASK.md` in the worktree. A repository that
+    // tracks that file would have it overwritten, and `info/exclude` does
+    // nothing for a tracked file.
+    let start = if branch_exists {
+        head.clone()
+    } else {
+        child.base.as_deref().unwrap_or("HEAD").to_owned()
+    };
+    let tracked = format!("{start}:TASK.md");
+    if git::run(platform, repo, &["cat-file", "-e", &tracked]).is_ok_and(|o| o.success()) {
+        bad(
+            "branch",
+            "task_md_tracked",
+            format!(
+                "{} tracks a file named TASK.md at {start}; the member's brief is written to \
+                 that name in its worktree. Rename the tracked file, or start the member from a \
+                 commit without it",
+                repo.display()
+            ),
+        );
+        return None;
+    }
     let ignore_path = format!(".worktrees/{slug}/x");
     if git::run(platform, repo, &["check-ignore", "-q", &ignore_path])
         .is_ok_and(|o| o.exit_code == 1)
