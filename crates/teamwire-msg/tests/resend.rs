@@ -356,3 +356,37 @@ fn resend_is_refused_while_the_team_is_closing() {
     assert_eq!(submits(&rig), 0);
     assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
 }
+
+#[test]
+fn a_pending_row_whose_attempt_just_started_is_not_resendable() {
+    let mut rig = team_rig();
+    let at = rig.now();
+    let new = NewMessage {
+        sender: Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "left pending".to_owned(),
+        client_key: None,
+        recipients: vec![to("api")],
+    };
+    let stored = rig.store.write(|tx| tx.insert_message(at, &new)).unwrap();
+    let display = stored.message.display_id.clone();
+    let scout = Actor::parse("scout").unwrap();
+    // The row is old, and a resend begins an attempt whose line is still
+    // being typed: the row stays pending.
+    rig.clock.advance(Duration::from_secs(600));
+    let now = rig.now();
+    rig.store
+        .write(|tx| tx.begin_resend(now, &stored.message.ulid, &to("api")))
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(10));
+    assert!(matches!(
+        resend(&mut rig.ctx(), &scout, &display, None),
+        Err(SendError::NotResendable(_))
+    ));
+    assert_eq!(submits(&rig), 0);
+    rig.clock.advance(Duration::from_secs(51));
+    let report = resend(&mut rig.ctx(), &scout, &display, None).unwrap();
+    assert_eq!(state_of(&report, "api"), RecipientState::HandedOff);
+}

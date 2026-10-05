@@ -2,20 +2,15 @@
 //! MSG-19). It never makes a message. It adds a delivery attempt to the
 //! existing rows and skips the burst and repeat limits.
 
-use std::time::Duration;
-
 use teamwire_core::{
     Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, TeamState, Timestamp,
 };
+use teamwire_deliver::is_pending_stale;
 use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
 use crate::send::{read_team, record_refusal, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
-
-/// A `pending` row is resendable only after this long: a crash left it, and
-/// a send that is still delivering must not be typed a second time.
-const PENDING_STALE: Duration = Duration::from_secs(60);
 
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
 /// recipients, or only to those named in `to`. Only the sender or the lead
@@ -71,10 +66,12 @@ pub fn resend(
     let now = ctx.clock.now();
     let wanted =
         |row: &DeliveryRecord| to.is_none_or(|named| named.contains(&row.delivery.recipient));
-    let chosen: Vec<&DeliveryRecord> = rows
-        .iter()
-        .filter(|r| wanted(r) && resendable(r, &message, now))
-        .collect();
+    let mut chosen: Vec<&DeliveryRecord> = Vec::new();
+    for row in rows.iter().filter(|r| wanted(r)) {
+        if resendable(ctx, row, &message, now)? {
+            chosen.push(row);
+        }
+    }
     if chosen.is_empty() {
         return Err(SendError::NotResendable(format!(
             "no recipient of {id} is undelivered, unconfirmed or pending for over 60 seconds"
@@ -104,12 +101,22 @@ pub fn resend(
     })
 }
 
-fn resendable(row: &DeliveryRecord, message: &Message, now: Timestamp) -> bool {
-    match row.delivery.state {
+/// A `pending` row is resendable only after its latest attempt began over
+/// `PENDING_STALE` ago: a crash left it, and a send that is still delivering
+/// must not be typed a second time.
+fn resendable(
+    ctx: &Ctx<'_>,
+    row: &DeliveryRecord,
+    message: &Message,
+    now: Timestamp,
+) -> Result<bool, SendError> {
+    Ok(match row.delivery.state {
         DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
-        DeliveryState::Pending => now.saturating_since(message.created_at) > PENDING_STALE,
+        DeliveryState::Pending => ctx
+            .store
+            .read(|tx| is_pending_stale(&tx, message, &row.delivery.recipient, now))?,
         DeliveryState::HandedOff | DeliveryState::Acked => false,
-    }
+    })
 }
 
 /// One more attempt for one row: the attempt is counted and written as
