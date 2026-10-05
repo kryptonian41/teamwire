@@ -9,7 +9,7 @@ use teamwire_deliver::is_pending_stale;
 use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
-use crate::send::{read_team, record_refusal, team_name};
+use crate::send::{read_team, record_refusal, survive_store_error, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
@@ -90,7 +90,12 @@ pub fn resend(
             });
             continue;
         }
-        deliveries.push(retry(ctx, &team, &message, row)?);
+        let result = retry(ctx, &team, &message, row);
+        deliveries.push(survive_store_error(
+            result,
+            &row.delivery.recipient,
+            row.delivery.attempts + 1,
+        )?);
     }
     Ok(SendReport {
         id: message.ulid,
