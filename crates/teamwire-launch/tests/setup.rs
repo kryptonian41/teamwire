@@ -169,3 +169,14 @@ fn failed_setup_that_wrote_a_file_reports_leftover_worktree() {
         MemberState::Started
     );
 }
+
+#[test]
+fn a_modified_tracked_file_is_named_in_full() {
+    let rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    let failing = common::with(spec, "setup", json!("echo more >> README.md; exit 3"));
+    let plan = rig.validate(&failing, false).unwrap();
+    let (report, _store) = rig.launch("demo", plan);
+    let reason = format!("{:?}", report.members.first().unwrap().outcome);
+    assert!(reason.contains("still holds README.md"), "{reason}");
+}
