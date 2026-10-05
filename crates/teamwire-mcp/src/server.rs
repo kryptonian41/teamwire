@@ -61,7 +61,7 @@ impl ServerHandler for McpServer {
         let listed = TOOLS
             .iter()
             .filter_map(|(name, description)| {
-                let schema = tools::input_schema(name)?;
+                let schema = crate::inputs::input_schema(name)?;
                 Some(Tool::new(*name, *description, Arc::new(schema)))
             })
             .collect();
