@@ -393,4 +393,18 @@ fn open_existing_missing_is_no_database() {
         matches!(&missing, Err(StoreError::NoDatabase { path: named }) if *named == path),
         "{missing:?}"
     );
+    // A file that is there but is not ours is another failure, never
+    // "no database".
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE other (x INTEGER);")
+            .unwrap();
+    }
+    let foreign = Store::open_existing(home.path(), &team());
+    assert!(
+        !matches!(foreign, Err(StoreError::NoDatabase { .. })),
+        "{foreign:?}"
+    );
+    assert!(foreign.is_err(), "a foreign database must not open");
 }
