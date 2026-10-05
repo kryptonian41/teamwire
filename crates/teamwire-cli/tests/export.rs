@@ -8,6 +8,10 @@
     clippy::indexing_slicing,
     reason = "a test that indexes past the end panics and fails, which is the intended outcome"
 )]
+#![expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 
 #[path = "../../teamwire-watch/tests/support/fixture.rs"]
 pub mod fixture;
@@ -18,6 +22,53 @@ use fixture::{Bed, role};
 use serde_json::Value;
 use teamwire_core::{Clock, CompletionStatus, DeliveryState, HoldInfo, Pid};
 use teamwire_store::{NewVerifyRecord, Waiver};
+
+fn export(bed: &Bed, as_member: bool) -> std::process::Output {
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
+    cmd.arg("--home")
+        .arg(bed.home.path())
+        .args(["export", "alpha"])
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TEAM");
+    if as_member {
+        cmd.env("TEAMWIRE_TEAM", "alpha")
+            .env("TEAMWIRE_ROLE", "api");
+    }
+    cmd.output().unwrap()
+}
+
+#[test]
+fn a_member_s_export_leaves_out_the_lead_session() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    let now = bed.clock.now();
+    bed.store
+        .write(|tx| {
+            tx.adopt_lead(
+                now,
+                &Bed::session("lead"),
+                teamwire_core::SessionKind::Interactive,
+            )
+        })
+        .unwrap();
+    let session_of = |as_member| {
+        let out = export(&bed, as_member);
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        String::from_utf8(out.stdout)
+            .unwrap()
+            .lines()
+            .map(|l| serde_json::from_str::<Value>(l).unwrap())
+            .find(|r| r["type"] == "teamwire.team")
+            .unwrap()["data"]["lead_session"]
+            .clone()
+    };
+    assert!(
+        session_of(false).is_string(),
+        "the lead's own export keeps it"
+    );
+    assert!(session_of(true).is_null());
+}
 
 #[test]
 fn export_covers_every_table() {
@@ -61,15 +112,7 @@ fn export_covers_every_table() {
         })
         .unwrap();
 
-    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
-        .arg("--home")
-        .arg(bed.home.path())
-        .args(["export", "alpha"])
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TEAM")
-        .output()
-        .unwrap();
+    let out = export(&bed, false);
     assert_eq!(out.status.code(), Some(0), "{out:?}");
     let records: Vec<Value> = String::from_utf8(out.stdout)
         .unwrap()

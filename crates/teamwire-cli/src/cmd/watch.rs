@@ -107,7 +107,9 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    if !*once && let Some(code) = refuse_member("watch") {
+    // A member's single poll takes the lease and uses up announcement keys
+    // that the lead's watch would then never print, so `--once` is refused too.
+    if let Some(code) = refuse_member("watch") {
         return code;
     }
     if *interval == 0 {

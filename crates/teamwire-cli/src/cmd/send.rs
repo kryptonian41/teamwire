@@ -104,7 +104,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         }
         Ok(Outcome::Failed(e)) => fail("send", &e.to_string(), error_code(&e)),
         Ok(Outcome::Sent(report, watching)) => {
-            print_report(&report);
+            print_report(&team, &report);
             if let Some(watching) = watching {
                 say(&watch_line(&team, &watching));
             }
@@ -157,7 +157,7 @@ fn read_body(text: Option<&str>, file: Option<&std::path::Path>) -> Option<Strin
 
 /// One line per recipient on stdout. A recipient that was not reached also
 /// gets its reason on stderr, the line a script or an agent looks for.
-pub(crate) fn print_report(report: &SendReport) {
+pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
     say(&format!("{}\n", report.display_id));
     for d in &report.deliveries {
         let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
@@ -173,12 +173,18 @@ pub(crate) fn print_report(report: &SendReport) {
                 d.to,
                 d.reason.map_or("unknown", |r| r.as_str())
             )),
-            RecipientState::Pending
-            | RecipientState::HandedOff
-            | RecipientState::Acked
-            | RecipientState::Skipped => {}
+            RecipientState::Pending => warn(&pending_line(team, &report.display_id, &d.to)),
+            RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => {}
         }
     }
+}
+
+/// A pending recipient after the command ends means its delivery record
+/// could not be written; the exit code is 6 and this says why.
+fn pending_line(team: &TeamName, id: &DisplayId, to: &Recipient) -> String {
+    format!(
+        "NOT RECORDED for {to}: the delivery record could not be written (store error); run teamwire resend {team} {id}"
+    )
 }
 
 fn state_word(state: RecipientState) -> &'static str {
@@ -394,6 +400,19 @@ mod tests {
                 .collect(),
             duplicate_of_key: false,
         }
+    }
+
+    #[test]
+    fn a_pending_recipient_is_explained() {
+        let line = pending_line(
+            &team(),
+            &DisplayId::parse("m007").unwrap(),
+            &Recipient::parse("api").unwrap(),
+        );
+        assert_eq!(
+            line,
+            "NOT RECORDED for api: the delivery record could not be written (store error); run teamwire resend alpha m007"
+        );
     }
 
     #[test]

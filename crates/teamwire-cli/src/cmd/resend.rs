@@ -46,7 +46,7 @@ pub(crate) fn run(args: &ResendArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Err(code) => code,
         Ok(Err(e)) => fail("resend", &e.to_string(), error_code(&e)),
         Ok(Ok(report)) => {
-            print_report(&report);
+            print_report(&team, &report);
             ExitCode::from(exit_of(&report))
         }
     }

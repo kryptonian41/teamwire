@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_store::{Ctx, Store, StoreError, database_path};
 use teamwire_watch::StatusView;
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
@@ -35,7 +35,8 @@ fn view_of(
     Ok(teamwire_watch::status_with(&ctx, role))
 }
 
-/// Every directory under `<home>/teams` that names a valid team.
+/// Every directory under `<home>/teams` that names a valid team and holds a
+/// database. A directory without one is not a team to report on.
 fn team_names(home: &Path) -> Vec<TeamName> {
     let Ok(entries) = std::fs::read_dir(home.join("teams")) else {
         return Vec::new();
@@ -43,6 +44,7 @@ fn team_names(home: &Path) -> Vec<TeamName> {
     let mut names: Vec<TeamName> = entries
         .filter_map(Result::ok)
         .filter_map(|e| e.file_name().to_str().and_then(|n| TeamName::parse(n).ok()))
+        .filter(|name| database_path(home, name).is_file())
         .collect();
     names.sort_by(|a, b| a.as_str().cmp(b.as_str()));
     names
