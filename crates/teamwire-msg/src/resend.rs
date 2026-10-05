@@ -119,7 +119,7 @@ fn resendable(
         DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
         DeliveryState::Pending => ctx
             .store
-            .read(|tx| is_pending_stale(&tx, message, &row.delivery.recipient, now))?,
+            .read(|tx| is_pending_stale(tx, message, &row.delivery.recipient, now))?,
         DeliveryState::HandedOff | DeliveryState::Acked => false,
     })
 }
@@ -159,7 +159,7 @@ fn retry(
     let bump = match before {
         DeliveryState::Undelivered => bump_again(ctx, message, recipient)?,
         DeliveryState::Pending => earlier_bump(ctx, message, recipient)?,
-        _ => None,
+        DeliveryState::HandedOff | DeliveryState::Unconfirmed | DeliveryState::Acked => None,
     };
     deliver_one(
         ctx,

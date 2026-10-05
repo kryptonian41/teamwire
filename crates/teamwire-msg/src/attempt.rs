@@ -68,29 +68,26 @@ pub(crate) fn earlier_bump(
     // next one, and its undo pops it again.
     let mut starts: Vec<(u32, Timestamp, Option<String>)> = Vec::new();
     for e in &events {
-        match e.kind {
-            EventType::MemberCreating => starts = vec![(1, e.time, None)],
-            EventType::MemberReprompted if e.data.get("undone") == Some(&json!(true)) => {
+        if e.kind == EventType::MemberCreating {
+            starts = vec![(1, e.time, None)];
+        } else if e.kind == EventType::MemberReprompted {
+            if e.data.get("undone") == Some(&json!(true)) {
                 if starts.len() > 1 {
                     starts.pop();
                 }
-            }
-            EventType::MemberReprompted => {
-                let generation = e
-                    .data
-                    .get("generation")
-                    .and_then(serde_json::Value::as_u64)
-                    .and_then(|g| u32::try_from(g).ok());
+            } else if let Some(g) = e
+                .data
+                .get("generation")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|g| u32::try_from(g).ok())
+            {
                 let by = e
                     .data
                     .get("message")
                     .and_then(serde_json::Value::as_str)
                     .map(str::to_owned);
-                if let Some(g) = generation {
-                    starts.push((g, e.time, by));
-                }
+                starts.push((g, e.time, by));
             }
-            _ => {}
         }
     }
     let [.., (before, started_at, _), (now, _, by)] = starts.as_slice() else {

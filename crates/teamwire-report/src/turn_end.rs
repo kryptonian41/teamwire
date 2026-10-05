@@ -294,6 +294,10 @@ mod tests {
     use super::*;
 
     #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test needs a real Instant to add a Duration::MAX to"
+    )]
     fn a_budget_too_large_for_the_clock_is_no_deadline() {
         let now = std::time::Instant::now();
         assert_eq!(deadline_after(now, Duration::MAX), None);

@@ -190,6 +190,10 @@ fn an_unknown_type_is_refused_and_logged_by_the_library() {
 }
 
 #[test]
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
 fn a_member_session_without_its_token_cannot_adopt() {
     let mut rig = rig_with_members();
     let before = rig
