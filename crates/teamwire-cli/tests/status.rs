@@ -30,6 +30,9 @@ fn teamwire(bed: &Bed, args: &[&str]) -> Run {
         .arg(bed.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TEAM")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
         .output()
@@ -92,6 +95,31 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
         run.out
     );
     assert_eq!(sizes(&bed), before, "status changed a file");
+}
+
+#[test]
+fn a_member_caller_never_sees_the_lead_session() {
+    let bed = team();
+    let member = |args: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .arg("--home")
+            .arg(bed.home.path())
+            .args(args)
+            .env_remove("HERDR_ENV")
+            .env("TEAMWIRE_HOME", bed.home.path())
+            .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
+            .env("TEAMWIRE_TEAM", "alpha")
+            .env("TEAMWIRE_ROLE", "api")
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0));
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let lead = teamwire(&bed, &["status", "alpha"]);
+    assert!(lead.out.contains("lead: session"), "{}", lead.out);
+    assert!(!member(&["status", "alpha"]).contains("lead: session"));
+    let json: serde_json::Value = serde_json::from_str(&member(&["status", "--json"])).unwrap();
+    assert!(json[0]["lead"].is_null(), "{json}");
 }
 
 #[test]

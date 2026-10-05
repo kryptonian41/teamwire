@@ -7,6 +7,7 @@ use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_watch::StatusView;
 
+use crate::cmd::send::carries_member_identity;
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 
@@ -222,10 +223,11 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let view = match view_of(&home, &team, role.as_ref(), wiring) {
+    let mut view = match view_of(&home, &team, role.as_ref(), wiring) {
         Ok(view) => view,
         Err(e) => return store_failure(&team, &e),
     };
+    hide_lead_from_members(&mut view);
     let text = if *json {
         match json_text(&view) {
             Ok(text) => text,
@@ -245,6 +247,14 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
     }
 }
 
+/// The lead's session id is the one value a member needs to speak as the
+/// lead, so a caller inside a member's session never sees it.
+fn hide_lead_from_members(view: &mut StatusView) {
+    if carries_member_identity() {
+        view.lead = None;
+    }
+}
+
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     let mut views = Vec::new();
     for name in team_names(home) {
@@ -254,6 +264,9 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
             ..StatusView::default()
         });
         views.push((name, view));
+    }
+    for (_, view) in &mut views {
+        hide_lead_from_members(view);
     }
     if json {
         let only: Vec<&StatusView> = views.iter().map(|(_, v)| v).collect();

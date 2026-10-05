@@ -353,7 +353,12 @@ fn run(
             })
         }
         "team_status" => {
-            let view = teamwire_watch::status_with(ctx, None);
+            let mut view = teamwire_watch::status_with(ctx, None);
+            // The lead session id is what a member would need to speak as the
+            // lead, so a member's view of the team leaves it out.
+            if matches!(actor, Actor::Member(_)) {
+                view.lead = None;
+            }
             Ok(Reply {
                 summary: format!("team {team}: {} member(s)", view.members.len()),
                 value: to_value(&view)?,

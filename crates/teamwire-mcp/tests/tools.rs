@@ -512,6 +512,8 @@ async fn status_members_and_log_read_the_team() {
     let out = ok(&status);
     assert_eq!(out["team"], "alpha");
     assert_eq!(out["members"].as_array().unwrap().len(), 2);
+    // The lead session id is what a member would need to speak as the lead.
+    assert!(out["lead"].is_null(), "{out}");
     let members = call(&api, "team_members", json!({})).await;
     let out = ok(&members);
     let entry = &out["members"][0];

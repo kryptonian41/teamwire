@@ -210,14 +210,20 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
     }
 }
 
-/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
-/// session is refused. A member's environment carries `TEAMWIRE_TOKEN` and
-/// `TEAMWIRE_ROLE`; the lead's carries neither (ADR 0008).
-pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
-    let member = ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE"]
+/// Whether the process runs inside a member's session. A member's environment
+/// carries `TEAMWIRE_TOKEN`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM`; the lead's
+/// carries none of them (ADR 0008). Unsetting only the token must not turn a
+/// member into the lead, so any one of them counts.
+pub(crate) fn carries_member_identity() -> bool {
+    ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"]
         .iter()
-        .any(|name| std::env::var_os(name).is_some());
-    member.then(|| {
+        .any(|name| std::env::var_os(name).is_some())
+}
+
+/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
+/// session is refused.
+pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
+    carries_member_identity().then(|| {
         fail(
             command,
             "refused.identity: this command is for the lead; a member session cannot run it",
