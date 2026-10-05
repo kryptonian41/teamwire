@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use teamwire_core::{TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
-use crate::cmd::send::home_or_refuse;
+use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
 
@@ -197,6 +197,11 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
         ));
     }
     if let Some(team) = tx.team()? {
+        // The lead session id is what a member would need to speak as the
+        // lead, so an export taken from a member's session leaves it out.
+        let lead_session = (!carries_member_identity())
+            .then(|| team.lead_session.as_ref().map(ToString::to_string))
+            .flatten();
         out.push(record(
             format!("team:{}", team.name),
             "team",
@@ -208,7 +213,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
                 "title": team.title,
                 "state": team.state.as_str(),
                 "closing_pid": team.closing_pid,
-                "lead_session": team.lead_session.as_ref().map(ToString::to_string),
+                "lead_session": lead_session,
                 "lead_kind": team.lead_kind.map(|k| k.as_str().to_owned()),
                 "lead_harness": team.lead_harness.to_string(),
                 "lead_host": team.lead_host.to_string(),

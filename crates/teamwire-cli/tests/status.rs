@@ -99,7 +99,17 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
 
 #[test]
 fn a_member_caller_never_sees_the_lead_session() {
-    let bed = team();
+    let mut bed = team();
+    let now = teamwire_core::Clock::now(&bed.clock);
+    bed.store
+        .write(|tx| {
+            tx.adopt_lead(
+                now,
+                &Bed::session("lead"),
+                teamwire_core::SessionKind::Interactive,
+            )
+        })
+        .unwrap();
     let member = |args: &[&str]| {
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
             .arg("--home")
@@ -116,8 +126,8 @@ fn a_member_caller_never_sees_the_lead_session() {
         String::from_utf8(out.stdout).unwrap()
     };
     let lead = teamwire(&bed, &["status", "alpha"]);
-    assert!(lead.out.contains("lead: session"), "{}", lead.out);
-    assert!(!member(&["status", "alpha"]).contains("lead: session"));
+    assert!(lead.out.contains("lead: session sess-lead"), "{}", lead.out);
+    assert!(!member(&["status", "alpha"]).contains("sess-lead"));
     let json: serde_json::Value = serde_json::from_str(&member(&["status", "--json"])).unwrap();
     assert!(json[0]["lead"].is_null(), "{json}");
 }
