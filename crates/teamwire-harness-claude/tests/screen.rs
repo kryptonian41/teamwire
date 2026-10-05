@@ -107,3 +107,15 @@ fn a_working_screen_with_no_prompt_is_unknown() {
         ScreenState::Unknown
     );
 }
+
+#[test]
+fn a_numbered_list_in_the_last_reply_above_an_idle_box_is_a_prompt() {
+    let screen = format!("⏺ Done. Summary:\n  1. Fixed the parser\n  2. Added a test\n\n{BOX}");
+    assert_eq!(state(&screen), ScreenState::InputPrompt);
+}
+
+#[test]
+fn marker_text_inside_a_reply_is_a_prompt() {
+    let screen = format!("⏺ Press Esc to cancel a run, then Enter to confirm.\n\n{BOX}");
+    assert_eq!(state(&screen), ScreenState::InputPrompt);
+}
