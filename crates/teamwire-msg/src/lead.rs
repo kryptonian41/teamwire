@@ -14,11 +14,11 @@ pub struct AdoptReport {
 }
 
 /// Records the calling session as the team's lead and writes
-/// `team.lead_adopted`. Refused with `identity` when the caller holds a
-/// member's token, or its harness cannot name an interactive session: a
+/// `team.lead_adopted`. Refused with `identity` when the caller runs in a
+/// member's session (its role, team or token variable is set), or its harness cannot name an interactive session: a
 /// process that cannot say who it is must not become the lead.
 pub fn adopt_lead(ctx: &mut Ctx<'_>, env: &CallerEnv) -> Result<AdoptReport, SendError> {
-    if env.token.is_some() {
+    if env.is_member_session() {
         return Err(Refusal::Identity.into());
     }
     let session = {
