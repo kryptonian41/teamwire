@@ -327,7 +327,9 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     match seen {
         Seen::Alive(_) => mm.absent = 0,
         Seen::Absent => mm.absent += 1,
-        Seen::NoInfo => {}
+        // Death needs three polls in a row that saw the member gone; a poll
+        // that saw nothing breaks the run.
+        Seen::NoInfo => mm.absent = 0,
     }
     if mm.absent >= 3 || env.snap.announced.contains(&died_key(role, generation)) {
         env.announce(died_key(role, generation), "DIED", format!("DIED {role}"));
@@ -357,7 +359,7 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
                 mm.silent_open = false;
             }
         }
-        Seen::Absent | Seen::NoInfo => {}
+        Seen::Absent | Seen::NoInfo => mm.absent = 0,
     }
 
     let mut stuck = false;

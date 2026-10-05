@@ -720,3 +720,27 @@ fn restarted_watch_does_not_repeat_team_stalled() {
     after.extend(bed.ticks(6));
     assert_eq!(count(&after, "TEAM-STALLED"), 0, "{after:?}");
 }
+
+#[test]
+fn absent_polls_split_by_no_info_are_not_three_in_a_row() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.vanish("api");
+    let failing = || {
+        Some(teamwire_core::HarnessError::new(
+            teamwire_core::HarnessErrorCode::Timeout,
+            "listing timed out",
+        ))
+    };
+    let mut lines = Vec::new();
+    for _ in 0..3 {
+        // Gone, then a poll that could not see, then gone again.
+        bed.harness.fail_listing(None);
+        lines.extend(bed.ticks(1));
+        bed.harness.fail_listing(failing());
+        lines.extend(bed.ticks(1));
+    }
+    assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
+}
