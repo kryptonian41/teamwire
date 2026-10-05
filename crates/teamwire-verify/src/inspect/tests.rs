@@ -1,4 +1,8 @@
-use super::{header_path, hunk_start, in_lint_section, section_by_line, sets_nothing};
+use super::{
+    header_path, hunk_start, in_lint_section, scan_patch, section_by_line, sets_nothing,
+    test_removed_flag,
+};
+use crate::rules::Ruleset;
 
 #[test]
 fn a_hunk_header_gives_the_first_old_and_new_line() {
@@ -40,4 +44,55 @@ fn opting_into_the_workspace_table_is_not_a_weakening() {
     assert!(sets_nothing("  workspace=true "));
     assert!(sets_nothing("[lints.clippy]"));
     assert!(!sets_nothing("unsafe_code = \"allow\""));
+}
+
+/// The ids of the flags the patch text raises without reading a repository.
+fn ids_of(patch: &str) -> Vec<String> {
+    #[expect(clippy::unwrap_used, reason = "the shipped rules always load")]
+    let rules = Ruleset::load().unwrap();
+    let (mut flags, files) = scan_patch(patch, &rules);
+    for file in &files {
+        let path = file.new_path.as_deref().or(file.old_path.as_deref());
+        flags.extend(path.and_then(|p| test_removed_flag(file, p, &rules)));
+    }
+    flags.into_iter().map(|f| f.id).collect()
+}
+
+#[test]
+fn commented_test_attribute_is_a_removed_test() {
+    let patch = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n\
+                 @@ -3 +3 @@\n-#[test]\n+// #[test]\n";
+    assert_eq!(ids_of(patch), ["test-removed:src/a.rs"]);
+}
+
+#[test]
+fn deleted_file_with_inline_tests_is_flagged() {
+    let patch = "diff --git a/src/parser.rs b/src/parser.rs\ndeleted file mode 100644\n\
+                 --- a/src/parser.rs\n+++ /dev/null\n@@ -1,4 +0,0 @@\n-fn p() {}\n-#[test]\n-fn t() {}\n";
+    assert_eq!(ids_of(patch), ["test-removed:src/parser.rs"]);
+}
+
+#[test]
+fn a_deleted_test_file_is_the_test_deleted_flag_only() {
+    let patch = "diff --git a/tests/a.rs b/tests/a.rs\ndeleted file mode 100644\n\
+                 --- a/tests/a.rs\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-#[test]\n-fn t() {}\n";
+    assert!(ids_of(patch).is_empty());
+}
+
+#[test]
+fn cfg_attr_ignore_is_weakening() {
+    for line in [
+        "#[cfg_attr(test, ignore)]",
+        "#[cfg_attr(not(ci), ignore = \"slow\")]",
+        "#[cfg(any())]",
+        "#[cfg(FALSE)]",
+        "#[cfg(not(all()))]",
+    ] {
+        let patch = format!(
+            "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,0 +2 @@\n+{line}\n"
+        );
+        assert_eq!(ids_of(&patch), ["weakened:src/a.rs:2"], "{line}");
+    }
+    let fine = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,0 +2 @@\n+#[cfg_attr(test, derive(Debug))]\n";
+    assert!(ids_of(fine).is_empty());
 }

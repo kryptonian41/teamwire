@@ -82,6 +82,15 @@ struct FileState {
 /// a net loss of test markers, and edits to a manifest's lint tables.
 fn inspect_patch(git: &Git<'_>, base: &str, rules: &Ruleset) -> Result<Vec<RawFlag>, VerifyError> {
     let patch = git.patch(base)?;
+    let (mut flags, files) = scan_patch(&patch, rules);
+    for file in files {
+        flags.extend(file_flags(git, base, rules, &file));
+    }
+    Ok(flags)
+}
+
+/// Walks the patch text: the weakened lines it adds, and what each file shows.
+fn scan_patch(patch: &str, rules: &Ruleset) -> (Vec<RawFlag>, Vec<FileState>) {
     let mut flags = Vec::new();
     let mut file = FileState::default();
     let mut in_header = false;
@@ -125,7 +134,7 @@ fn inspect_patch(git: &Git<'_>, base: &str, rules: &Ruleset) -> Result<Vec<RawFl
             file.new_line += 1;
         } else if let Some(removed) = line.strip_prefix('-') {
             if let Some(path) = file.old_path.clone() {
-                if file.new_path.is_some() && rules.is_test_marker(&path, removed) {
+                if rules.is_test_marker(&path, removed) {
                     file.tests_removed += 1;
                 }
                 if rules.lint_sections(&path).is_some() {
@@ -136,10 +145,7 @@ fn inspect_patch(git: &Git<'_>, base: &str, rules: &Ruleset) -> Result<Vec<RawFl
         }
     }
     files.push(file);
-    for file in files {
-        flags.extend(file_flags(git, base, rules, &file));
-    }
-    Ok(flags)
+    (flags, files)
 }
 
 fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> Vec<RawFlag> {
@@ -147,15 +153,7 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
     let Some(path) = file.new_path.as_deref().or(file.old_path.as_deref()) else {
         return flags;
     };
-    if file.new_path.is_some() && file.tests_removed > file.tests_added {
-        flags.push(RawFlag::new(
-            format!("test-removed:{path}"),
-            format!(
-                "{} test marker(s) removed and {} added in {path}",
-                file.tests_removed, file.tests_added
-            ),
-        ));
-    }
+    flags.extend(test_removed_flag(file, path, rules));
     let Some(sections) = rules.lint_sections(path) else {
         return flags;
     };
@@ -190,6 +188,22 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
         }
     }
     flags
+}
+
+/// More test markers removed than added. A deleted file counts too: a source
+/// file with inline tests takes them with it. A deleted test file is already
+/// the `test-deleted` flag.
+fn test_removed_flag(file: &FileState, path: &str, rules: &Ruleset) -> Option<RawFlag> {
+    let deleted_test_file = file.new_path.is_none() && rules.is_test_file(path);
+    (file.tests_removed > file.tests_added && !deleted_test_file).then(|| {
+        RawFlag::new(
+            format!("test-removed:{path}"),
+            format!(
+                "{} test marker(s) removed and {} added in {path}",
+                file.tests_removed, file.tests_added
+            ),
+        )
+    })
 }
 
 /// A table header sets no level, and `workspace = true` opts a new crate into

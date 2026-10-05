@@ -51,3 +51,22 @@ contains = "#[expect("
 [[weakening]]
 id = "inner-expect"
 contains = "#![expect("
+
+# `#[cfg_attr(test, ignore)]` ignores a test without writing `#[ignore`.
+[[weakening]]
+id = "cfg-attr-ignore"
+contains = "cfg_attr("
+and_contains = ["ignore"]
+
+# A cfg that is never true compiles the item out, so a test above it never runs.
+[[weakening]]
+id = "cfg-never"
+contains = "#[cfg(any())]"
+
+[[weakening]]
+id = "cfg-never-false"
+contains = "#[cfg(FALSE)]"
+
+[[weakening]]
+id = "cfg-never-not-all"
+contains = "#[cfg(not(all()))]"

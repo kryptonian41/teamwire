@@ -21,6 +21,9 @@ const FILES: [(&str, &str); 6] = [
 struct Weakening {
     id: String,
     contains: String,
+    /// Every one of these must be on the line too: `cfg_attr(` with `ignore`.
+    #[serde(default)]
+    and_contains: Vec<String>,
     /// The text must not continue an identifier, so `xit(` does not match
     /// inside `exit(`.
     #[serde(default)]
@@ -123,14 +126,23 @@ impl Ruleset {
         language
             .weakening
             .iter()
-            .find(|w| contains(line, &w.contains, w.word_start))
+            .find(|w| {
+                contains(line, &w.contains, w.word_start)
+                    && w.and_contains.iter().all(|c| line.contains(c.as_str()))
+            })
             .map(|w| w.id.as_str())
     }
 
-    /// True when `line` holds a test marker of the file's language.
+    /// True when `line` holds a test marker of the file's language. A comment
+    /// line is prose: `// #[test]` is a test switched off, not a test.
     pub(crate) fn is_test_marker(&self, path: &str, line: &str) -> bool {
-        self.language_of(path)
-            .is_some_and(|l| l.test_markers.iter().any(|m| line.contains(m.as_str())))
+        self.language_of(path).is_some_and(|l| {
+            let trimmed = line.trim_start();
+            !l.comment_prefixes
+                .iter()
+                .any(|p| trimmed.starts_with(p.as_str()))
+                && l.test_markers.iter().any(|m| line.contains(m.as_str()))
+        })
     }
 
     /// The manifest sections to watch when `path` is one of the lint-table
