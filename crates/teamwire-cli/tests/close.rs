@@ -565,9 +565,11 @@ fn a_member_cannot_watch_or_add_members() {
     let rig = Rig::new();
     rig.launch(&pane_spec(rig.work.path()));
     let token = [("TEAMWIRE_TOKEN", "not-a-real-token")];
-    let watch = rig.teamwire_with(&["watch", "alpha"], None, &token);
-    assert_eq!(watch.code, 1, "{}{}", watch.out, watch.err);
-    assert!(watch.err.contains("refused.identity"), "{}", watch.err);
+    for args in [&["watch", "alpha"][..], &["watch", "alpha", "--once"]] {
+        let watch = rig.teamwire_with(args, None, &token);
+        assert_eq!(watch.code, 1, "{args:?}: {}{}", watch.out, watch.err);
+        assert!(watch.err.contains("refused.identity"), "{}", watch.err);
+    }
     let add = rig.teamwire_with(&["launch", "--add"], Some("{}"), &token);
     assert_eq!(add.code, 1, "{}{}", add.out, add.err);
     assert!(add.err.contains("refused.identity"), "{}", add.err);
