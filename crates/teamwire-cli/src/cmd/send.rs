@@ -233,14 +233,11 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
     }
 }
 
-/// Whether the process runs inside a member's session. A member's environment
-/// carries `TEAMWIRE_TOKEN`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM`; the lead's
-/// carries none of them (ADR 0008). Unsetting only the token must not turn a
-/// member into the lead, so any one of them counts.
+/// Whether the process runs inside a member's session. The rule is
+/// `CallerEnv::is_member_session`, the one the message crate's proofs use, so
+/// the CLI and the proofs can never disagree about who is a member.
 pub(crate) fn carries_member_identity() -> bool {
-    ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"]
-        .iter()
-        .any(|name| std::env::var_os(name).is_some())
+    caller_env(None).is_member_session()
 }
 
 /// A lead-only command (`close`, `watch`, `launch --add`) run from a member's

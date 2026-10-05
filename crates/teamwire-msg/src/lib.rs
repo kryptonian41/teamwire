@@ -58,7 +58,7 @@ impl CallerEnv {
     /// session: it names a role or a team, or carries a token. A member can
     /// drop its token with `env -u`, so the token alone proves nothing about
     /// who is not a member. The lead's own session has none of the three.
-    pub(crate) fn is_member_session(&self) -> bool {
+    pub fn is_member_session(&self) -> bool {
         self.token.is_some() || self.role.is_some() || self.team.is_some()
     }
 }
