@@ -297,3 +297,15 @@ fn close_refuses_a_pane_without_the_teamwire_mark() {
             .contains(&id)
     );
 }
+
+#[test]
+fn a_title_ending_in_a_semicolon_still_spawns() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let mut req = request("tw_t_a", dir.path(), &["cat"]);
+    req.title = "x;".to_owned();
+    tmux.spawn(&req, T).unwrap();
+    let names = server.raw(&["list-windows", "-a", "-F", "#{window_name}"]);
+    assert!(names.lines().any(|n| n == "x;"), "{names}");
+}

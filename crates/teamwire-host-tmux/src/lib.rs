@@ -131,7 +131,7 @@ impl Tmux {
         let mut shared: Vec<String> =
             ["-d", "-P", "-F", "#{pane_id}", "-n", &req.title, "-c", &cwd]
                 .iter()
-                .map(|s| (*s).to_owned())
+                .map(|s| keys::escape_arg(s))
                 .collect();
         for (key, value) in &req.env {
             if key.is_empty() || key.contains('=') {
@@ -141,10 +141,10 @@ impl Tmux {
                 ));
             }
             shared.push("-e".to_owned());
-            shared.push(format!("{key}={value}"));
+            shared.push(keys::escape_arg(&format!("{key}={value}")));
         }
         shared.push("--".to_owned());
-        shared.extend(req.argv.iter().cloned());
+        shared.extend(req.argv.iter().map(|a| keys::escape_arg(a)));
 
         let with = |head: &[&str]| -> Vec<String> {
             head.iter()
