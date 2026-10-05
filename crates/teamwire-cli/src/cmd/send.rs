@@ -90,12 +90,8 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         });
         match sent {
             Ok(report) => {
-                let watching = (kind == MessageType::Reprompt).then(|| {
-                    watch_running(ctx)
-                        .ok()
-                        .flatten()
-                        .map_or(Watch::NotRunning, Watch::Running)
-                });
+                let watching =
+                    (kind == MessageType::Reprompt).then(|| watch_state(watch_running(ctx)));
                 Outcome::Sent(Box::new(report), watching)
             }
             Err(e) => Outcome::Failed(e),
@@ -110,12 +106,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(Outcome::Sent(report, watching)) => {
             print_report(&report);
             if let Some(watching) = watching {
-                match watching {
-                    Watch::Running(pid) => say(&format!("a watch is running (pid {pid})\n")),
-                    Watch::NotRunning => say(&format!(
-                        "no watch is running: start one with `teamwire watch {team}`\n"
-                    )),
-                }
+                say(&watch_line(&team, &watching));
             }
             ExitCode::from(exit_of(&report))
         }
@@ -126,6 +117,28 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
 enum Watch {
     Running(teamwire_core::Pid),
     NotRunning,
+    /// The lease could not be read; carries the error text.
+    Unknown(String),
+}
+
+/// What a failed lease read says: the lead is not told "no watch" about
+/// something the code could not read.
+fn watch_state(lease: Result<Option<teamwire_core::Pid>, SendError>) -> Watch {
+    match lease {
+        Ok(Some(pid)) => Watch::Running(pid),
+        Ok(None) => Watch::NotRunning,
+        Err(e) => Watch::Unknown(e.to_string()),
+    }
+}
+
+fn watch_line(team: &TeamName, watching: &Watch) -> String {
+    match watching {
+        Watch::Running(pid) => format!("a watch is running (pid {pid})\n"),
+        Watch::NotRunning => {
+            format!("no watch is running: start one with `teamwire watch {team}`\n")
+        }
+        Watch::Unknown(why) => format!("could not tell whether a watch is running: {why}\n"),
+    }
 }
 
 enum Outcome {
@@ -345,4 +358,33 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
         eprintln!("teamwire {command}: {message}");
     }
     ExitCode::from(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[expect(
+        clippy::unwrap_used,
+        reason = "a team name literal in a test cannot fail to parse"
+    )]
+    fn team() -> TeamName {
+        TeamName::parse("alpha").unwrap()
+    }
+
+    #[test]
+    fn an_unreadable_lease_is_not_reported_as_no_watch() {
+        let unreadable = watch_state(Err(SendError::Store(StoreError::Corrupt(
+            "bad lease row".to_owned(),
+        ))));
+        let line = watch_line(&team(), &unreadable);
+        assert!(
+            line.starts_with("could not tell whether a watch is running:"),
+            "{line}"
+        );
+        assert!(line.contains("bad lease row"), "{line}");
+        assert!(!line.contains("no watch is running"), "{line}");
+        let none = watch_line(&team(), &watch_state(Ok(None)));
+        assert!(none.starts_with("no watch is running"), "{none}");
+    }
 }

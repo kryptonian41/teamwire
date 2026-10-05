@@ -417,11 +417,10 @@ fn send_tool(
     };
     let report = send(ctx, request)?;
     // The lead is told after a reprompt whether anything is watching.
-    let watch = (kind == MessageType::Reprompt).then(|| {
-        watch_running(ctx).ok().flatten().map_or(
-            json!({ "running": false }),
-            |pid| json!({ "running": true, "pid": pid }),
-        )
+    let watch = (kind == MessageType::Reprompt).then(|| match watch_running(ctx) {
+        Ok(Some(pid)) => json!({ "running": true, "pid": pid }),
+        Ok(None) => json!({ "running": false }),
+        Err(e) => json!({ "running": null, "error": e.to_string() }),
     });
     report_reply(&report, watch)
 }
