@@ -52,7 +52,7 @@ pub fn message_line(
     one_line(
         &format!(
             "[teamwire:{team} msg {id} {kind} from {sender_name}] {} ... Full text: teamwire inbox. {tail}",
-            one_line(body, EXCERPT_CHARS),
+            agent_text(body, EXCERPT_CHARS),
             team = clean(team.as_str()),
             id = clean(id.as_str()),
             kind = clean(kind.as_str()),
@@ -92,7 +92,7 @@ pub fn message_line_to(
     one_line(
         &format!(
             "[teamwire:{team_name} msg {id_text} {kind} from {sender_name}] {} ... Full text: {} {tail}",
-            one_line(body, EXCERPT_CHARS),
+            agent_text(body, EXCERPT_CHARS),
             one_line(&comms_path.display().to_string(), PATH_CHARS),
             kind = clean(kind.as_str()),
         ),
@@ -112,7 +112,7 @@ pub fn result_line(
     one_line(
         &format!(
             "[teamwire:{team}] {role} finished ({status}). {} Full result: {}",
-            with_stop(&one_line(summary, SUMMARY_CHARS).into_string()),
+            with_stop(&agent_text(summary, SUMMARY_CHARS)),
             one_line(&result_path.display().to_string(), PATH_CHARS),
             team = clean(team.as_str()),
             role = clean(role.as_str()),
@@ -120,6 +120,20 @@ pub fn result_line(
         ),
         LINE_CHARS,
     )
+}
+
+/// Text an agent wrote, cut to `max` characters on one line and made unable to
+/// pass as the start of another event. A watch line joins events with ` | `
+/// and starts each with `[teamwire:`, and the typed lines mark their pointer
+/// with `Full result:` or `Full text:`. All of them are rewritten into forms
+/// no reader takes for a boundary or a second pointer.
+pub fn agent_text(text: &str, max: usize) -> String {
+    one_line(text, max)
+        .as_str()
+        .replace(" | ", " / ")
+        .replace("[teamwire:", "[teamwire-")
+        .replace("Full result:", "Full result -")
+        .replace("Full text:", "Full text -")
 }
 
 /// The summary as a sentence, so "Full result:" never runs on from it.

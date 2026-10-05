@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use teamwire_core::{Role, Ulid, one_line};
 
+pub(crate) use teamwire_deliver::agent_text;
+
 /// The longest one event may be. A poll joins several, so each is cut alone
 /// and a long summary cannot push a later event out of the line.
 const EVENT_MAX: usize = 300;
@@ -55,11 +57,6 @@ pub(crate) fn age(span: Duration) -> String {
     } else {
         format!("{s}s")
     }
-}
-
-/// Text an agent wrote, cut to one printable line for the event stream.
-pub(crate) fn agent_text(text: &str, max: usize) -> String {
-    one_line(text, max).into_string()
 }
 
 /// The path of a member's result file, printed in the event.
