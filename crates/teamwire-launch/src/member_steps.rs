@@ -24,6 +24,8 @@ pub(crate) struct Stop {
     pub(crate) reason: String,
     /// The member was refused (by name), as opposed to failing.
     pub(crate) refused: bool,
+    /// What to do next, said only when the undo left nothing behind.
+    pub(crate) advice: Option<&'static str>,
 }
 
 impl Stop {
@@ -31,6 +33,7 @@ impl Stop {
         Self {
             reason: reason.into(),
             refused: false,
+            advice: None,
         }
     }
 
@@ -38,6 +41,7 @@ impl Stop {
         Self {
             reason: reason.into(),
             refused: true,
+            advice: None,
         }
     }
 }
@@ -94,6 +98,7 @@ pub(crate) fn spawn_stop(e: &HostError) -> Stop {
         return Stop {
             reason: format!("the agent name is already live in the host ({})", e.detail),
             refused: true,
+            advice: None,
         };
     }
     let hint = if e.code == HostErrorCode::Timeout {
@@ -158,10 +163,11 @@ pub(crate) fn run_setup(
     if ok {
         Ok(())
     } else {
-        Err(Stop::fail(format!(
-            "{why} (log: {}); fix the setup command, then add the member again with --add",
-            log.display()
-        )))
+        Err(Stop {
+            reason: format!("{why} (log: {})", log.display()),
+            refused: false,
+            advice: Some("fix the setup command, then add the member again with --add"),
+        })
     }
 }
 

@@ -7,6 +7,7 @@ use teamwire_core::MemberSpec;
 use crate::WorktreePlan;
 use crate::git;
 use crate::plan::{Bad, Cx, branch_ok};
+use crate::validate::is_failed;
 
 pub(crate) fn worktree_plan(
     cx: &mut Cx<'_>,
@@ -39,13 +40,23 @@ pub(crate) fn worktree_plan(
         return None;
     }
     let path = repo.join(".worktrees").join(&slug);
+    let mut reuse = false;
     if path.exists() {
-        bad(
-            "branch",
-            "path_exists",
-            format!("{} already exists", path.display()),
-        );
-        return None;
+        if leftover_is_reusable(cx, child, repo, &branch, &path) {
+            reuse = true;
+        } else {
+            bad(
+                "branch",
+                "path_exists",
+                format!(
+                    "{} already exists. If an earlier launch left it, save or delete what it \
+                     holds and run `git worktree remove {}`; otherwise pick another branch",
+                    path.display(),
+                    path.display()
+                ),
+            );
+            return None;
+        }
     }
     match git::run(platform, repo, &["rev-parse", "--git-dir"]) {
         Ok(out) if out.success() => {}
@@ -105,5 +116,48 @@ pub(crate) fn worktree_plan(
         path,
         base: child.base.clone(),
         branch_exists,
+        reuse,
     })
+}
+
+/// A relaunch of a member that failed before it started may use the path an
+/// earlier launch could not take back: it is a registered worktree of the same
+/// branch and still sits on the commit the member started from.
+fn leftover_is_reusable(
+    cx: &Cx<'_>,
+    child: &MemberSpec,
+    repo: &Path,
+    branch: &str,
+    path: &Path,
+) -> bool {
+    let platform = cx.env.platform;
+    let Some(old) = cx
+        .existing
+        .and_then(|e| e.members.iter().find(|m| m.role == child.role))
+    else {
+        return false;
+    };
+    let started = cx
+        .existing
+        .is_some_and(|e| e.ever_started.contains(&child.role));
+    let (true, false, Some(start)) = (is_failed(old), started, old.base_sha.as_deref()) else {
+        return false;
+    };
+    let Ok(listing) = git::stdout_of(platform, repo, &["worktree", "list", "--porcelain"]) else {
+        return false;
+    };
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    let want_branch = format!("branch refs/heads/{branch}");
+    let registered = listing.split("\n\n").any(|entry| {
+        let mut lines = entry.lines();
+        lines
+            .next()
+            .and_then(|l| l.strip_prefix("worktree "))
+            .is_some_and(|p| std::fs::canonicalize(p).is_ok_and(|p| p == real))
+            && entry.lines().any(|l| l == want_branch)
+    });
+    registered
+        && git::stdout_of(platform, path, &["rev-parse", "HEAD"]).is_ok_and(|head| head == start)
 }

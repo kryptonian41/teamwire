@@ -165,12 +165,15 @@ fn launch_member(
     match result {
         Ok(()) => LaunchOutcome::Started,
         Err(stop) => {
-            let undo = undo(ctx, m, &made);
-            let reason = if undo.is_empty() {
+            let (undo, left) = undo(ctx, m, &made);
+            let mut reason = if undo.is_empty() {
                 stop.reason
             } else {
                 format!("{}; undone: {undo}", stop.reason)
             };
+            if let (Some(advice), false) = (stop.advice, left) {
+                reason = format!("{reason}; {advice}");
+            }
             if made.recorded {
                 record_failed(ctx, m, &reason, &extra, &steps);
             }
@@ -220,7 +223,9 @@ impl Steps {
 }
 
 /// Takes back what was made: the place, then the worktree (no force).
-fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> String {
+/// The second value is true when the worktree could not be removed.
+fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
+    let mut left = false;
     let mut notes = Vec::new();
     if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
         match host.close(place, HOST_TIMEOUT) {
@@ -232,9 +237,11 @@ fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> String {
         }
     }
     if let Some(w) = &made.worktree {
-        notes.push(worktree::remove(ctx.platform, w));
+        let (note, still_there) = worktree::remove(ctx.platform, w);
+        left = still_there;
+        notes.push(note);
     }
-    notes.join("; ")
+    (notes.join("; "), left)
 }
 
 /// Sets `key` on a JSON object.

@@ -35,6 +35,13 @@ pub(crate) fn start_commit(platform: &dyn Platform, w: &WorktreePlan) -> Result<
 
 /// `git worktree add`, at the recorded start commit.
 pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Result<Made, String> {
+    if w.reuse {
+        return Ok(Made {
+            repo: w.repo.clone(),
+            path: w.path.clone(),
+            new_branch: None,
+        });
+    }
     if let Some(parent) = w.path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
@@ -57,12 +64,21 @@ pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Resul
 }
 
 /// Takes the worktree back without force, so uncommitted work is never
-/// thrown away. Returns what happened, in words.
-pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> String {
+/// thrown away. Returns what happened, in words, and whether the worktree is
+/// still there.
+pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool) {
     let path = made.path.display().to_string();
+    let mut left = true;
     let mut note = match run(platform, &made.repo, &["worktree", "remove", &path]) {
-        Ok(out) if out.success() => format!("worktree {path} removed"),
-        Ok(out) => format!("could not remove worktree {path}: {}", failure_text(&out)),
+        Ok(out) if out.success() => {
+            left = false;
+            format!("worktree {path} removed")
+        }
+        Ok(out) => format!(
+            "could not remove worktree {path}: {}{}",
+            failure_text(&out),
+            leftovers(platform, &made.path)
+        ),
         Err(e) => format!("could not remove worktree {path}: {e}"),
     };
     if let Some(branch) = &made.new_branch {
@@ -73,7 +89,41 @@ pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> String {
             _ => note = format!("{note}; branch {branch} left in place"),
         }
     }
-    note
+    (note, left)
+}
+
+/// The paths a failed removal left, from `git status`, and the step that
+/// clears them. git refuses to remove a worktree that holds such files, and
+/// launch never forces it.
+fn leftovers(platform: &dyn Platform, path: &Path) -> String {
+    let Ok(text) = stdout_of(
+        platform,
+        path,
+        &["status", "--porcelain", "--untracked-files=all"],
+    ) else {
+        return String::new();
+    };
+    let paths: Vec<&str> = text.lines().filter_map(|l| l.get(3..)).collect();
+    if paths.is_empty() {
+        return String::new();
+    }
+    let shown = paths
+        .iter()
+        .take(10)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = paths.len().saturating_sub(10);
+    let more = if more > 0 {
+        format!(" and {more} more")
+    } else {
+        String::new()
+    };
+    format!(
+        "; it still holds {shown}{more}. Save or delete those files, then run \
+         `git worktree remove {}`",
+        path.display()
+    )
 }
 
 /// The repository's `info/exclude` for this worktree, found by git.
