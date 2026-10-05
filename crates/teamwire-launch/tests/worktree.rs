@@ -164,3 +164,21 @@ fn tracked_task_md_is_refused() {
         "the tracked file is untouched"
     );
 }
+
+#[test]
+fn non_utf8_exclude_is_kept() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let exclude = repo.join(".git/info/exclude");
+    std::fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+    std::fs::write(&exclude, b"caf\xe9\n").unwrap();
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, _store) = rig.launch("demo", plan);
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let bytes = std::fs::read(&exclude).unwrap();
+    assert!(bytes.starts_with(b"caf\xe9\n"), "{bytes:?}");
+    assert!(bytes.ends_with(b"TASK.md\n"), "{bytes:?}");
+}

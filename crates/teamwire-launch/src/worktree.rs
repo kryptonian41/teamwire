@@ -144,22 +144,29 @@ fn exclude_path(platform: &dyn Platform, worktree: &Path) -> Result<PathBuf, Str
 /// Adds `TASK.md` to the repository's `info/exclude` (LCH-24), once.
 pub(crate) fn exclude_task_md(platform: &dyn Platform, worktree: &Path) -> Result<(), String> {
     let path = exclude_path(platform, worktree)?;
-    let mut text = std::fs::read_to_string(&path).unwrap_or_default();
-    if text
-        .lines()
-        .any(|l| matches!(l.trim(), "TASK.md" | "/TASK.md"))
+    // Only a missing file is empty. Any other read error, or text that is not
+    // UTF-8, must not turn into a fresh file that replaces the repository's
+    // shared rules.
+    let mut bytes = match std::fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
+    };
+    if bytes
+        .split(|b| *b == b'\n')
+        .any(|l| matches!(l.trim_ascii(), b"TASK.md" | b"/TASK.md"))
     {
         return Ok(());
     }
-    if !text.is_empty() && !text.ends_with('\n') {
-        text.push('\n');
+    if !bytes.is_empty() && !bytes.ends_with(b"\n") {
+        bytes.push(b'\n');
     }
-    text.push_str("TASK.md\n");
+    bytes.extend_from_slice(b"TASK.md\n");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
     }
     platform
-        .write_atomic(&path, text.as_bytes())
+        .write_atomic(&path, &bytes)
         .map_err(|e| format!("cannot write {}: {e}", path.display()))
 }
