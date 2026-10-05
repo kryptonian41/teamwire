@@ -15,7 +15,7 @@ use serde_json::Value;
 use teamwire_core::{Command, Platform};
 
 use crate::wiring::Wiring;
-use crate::{Global, PrWatchArgs};
+use crate::{Global, PrWatchArgs, USAGE};
 
 const DEFAULT_INTERVAL_S: u64 = 45;
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -58,7 +58,10 @@ impl Memory {
         if let Some(view) = view {
             let state = text(view, "state");
             if state == "MERGED" || state == "CLOSED" {
-                self.done.insert(pr, 0);
+                // A failure already announced still counts: the watch must not
+                // exit 0 because the PR was merged before the DONE line.
+                let failed = self.announced.iter().filter(|(p, _)| *p == pr).count();
+                self.done.insert(pr, failed);
                 events.push(format!("{label} {state}"));
                 return events;
             }
@@ -74,7 +77,8 @@ impl Memory {
                 self.mergeable.insert(pr, verdict);
             }
         }
-        let Some(checks) = checks.and_then(Value::as_array).filter(|c| !c.is_empty()) else {
+        // A PR with no checks has nothing pending: an empty list is done.
+        let Some(checks) = checks.and_then(Value::as_array) else {
             return events;
         };
         let mut buckets: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -133,12 +137,24 @@ fn say(text: &str) {
     println!("{text}");
 }
 
+#[expect(
+    clippy::print_stderr,
+    reason = "the binary reports a refusal on stderr"
+)]
+fn fail(message: &str) -> ExitCode {
+    eprintln!("teamwire pr-watch: {message}");
+    ExitCode::from(USAGE)
+}
+
 pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> ExitCode {
     let PrWatchArgs {
         repo,
         interval,
         prs,
     } = args;
+    if *interval == Some(0) {
+        return fail("--interval must be at least 1 second");
+    }
     let interval = Duration::from_secs(interval.unwrap_or(DEFAULT_INTERVAL_S));
     let names: Vec<String> = prs.iter().map(|pr| label(repo, *pr)).collect();
     say(&format!(
