@@ -10,6 +10,7 @@ use teamwire_core::{EventType, Pid, Timestamp};
 use teamwire_store::{Ctx, StoreError, Tx};
 
 use crate::plan::{Action, Plan};
+use crate::text::STALLS_ENDED;
 
 /// One event that goes into the line.
 pub(crate) struct Emitted {
@@ -62,7 +63,9 @@ fn apply_one(
                 });
             }
         }
-        Action::Say { name, text } => out.push(Emitted { name, text }),
+        Action::EndStall => {
+            tx.next_counter(STALLS_ENDED)?;
+        }
     }
     Ok(())
 }

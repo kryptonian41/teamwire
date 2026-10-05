@@ -705,3 +705,18 @@ fn agent_text_cannot_forge_an_event_with_the_separator() {
     let line = bed.tick().unwrap();
     assert_eq!(names(&line), ["COMPLETED"], "{line}");
 }
+
+#[test]
+fn restarted_watch_does_not_repeat_team_stalled() {
+    let mut bed = Bed::new();
+    bed.add_with_deadline("api", 100);
+    bed.age(secs(120));
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(30));
+    assert_eq!(count(&lines, "TEAM-STALLED"), 1, "{lines:?}");
+
+    bed.memory = teamwire_watch::WatchMemory::default();
+    let mut after: Vec<String> = bed.poll().into_iter().collect();
+    after.extend(bed.ticks(6));
+    assert_eq!(count(&after, "TEAM-STALLED"), 0, "{after:?}");
+}

@@ -15,8 +15,8 @@ use crate::memory::{MemberMemory, WatchMemory};
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
-    age, agent_text, blocked_key, died_key, late_key, question_key, result_key, result_path,
-    silent_key,
+    STALLED_PREFIX, age, agent_text, blocked_key, died_key, late_key, question_key, result_key,
+    result_path, silent_key, stalled_key,
 };
 
 /// One thing the poll will do in its write transaction.
@@ -42,8 +42,8 @@ pub(crate) enum Action {
         key: String,
         text: String,
     },
-    /// Print `text`. The caller's memory already decided it is new.
-    Say { name: &'static str, text: String },
+    /// The open `TEAM-STALLED` episode is over: nothing is printed.
+    EndStall,
 }
 
 pub(crate) struct Plan {
@@ -169,18 +169,28 @@ pub(crate) fn plan(
     }
 
     // Everyone still outstanding is stuck right now: only that is worth a
-    // push. It is said once per stall and re-armed when something moves.
+    // push. It is said once per stall episode, and the episode ends when
+    // something moves. Both facts are announcements in the store, so a
+    // restarted watch finds the open episode and stays quiet.
+    let episode = env
+        .snap
+        .announced
+        .iter()
+        .filter_map(|k| k.strip_prefix(STALLED_PREFIX)?.parse::<u32>().ok())
+        .max()
+        .unwrap_or(0);
+    let open = u64::from(episode) > env.snap.stalls_ended;
     if outstanding > 0 && stuck.len() == outstanding {
-        if !memory.stalled {
-            memory.stalled = true;
+        if !open {
             let roles: Vec<&str> = stuck.iter().map(Role::as_str).collect();
-            env.actions.push(Action::Say {
-                name: "TEAM-STALLED",
-                text: format!("TEAM-STALLED {}", roles.join(", ")),
-            });
+            env.announce(
+                stalled_key(episode + 1),
+                "TEAM-STALLED",
+                format!("TEAM-STALLED {}", roles.join(", ")),
+            );
         }
-    } else {
-        memory.stalled = false;
+    } else if open {
+        env.actions.push(Action::EndStall);
     }
 
     let complete = (outstanding == 0 && !settled.is_empty()).then(|| complete_text(&settled));

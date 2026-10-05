@@ -70,14 +70,7 @@ fn step(
     }
     let decided = plan(ctx, &snap, memory, now);
     let watching = (memory.polls == 0).then_some(snap.members.len());
-    let applied = match apply(ctx, decided, memory.lease_pid, watching, now) {
-        Ok(applied) => applied,
-        Err(e) => {
-            // Nothing was announced, so the stall (if any) was not said.
-            memory.stalled = false;
-            return Err(e);
-        }
-    };
+    let applied = apply(ctx, decided, memory.lease_pid, watching, now)?;
     if applied.lease_lost {
         memory.end = Some(WatchEnd::LeaseLost);
         return Ok(None);

@@ -31,6 +31,16 @@ pub(crate) fn blocked_key(role: &Role, generation: u32, episode: u32) -> String 
     format!("{}{episode}", blocked_prefix(role, generation))
 }
 
+/// An announcement key `TEAM-STALLED:<n>` names the stall episode `n`.
+pub(crate) const STALLED_PREFIX: &str = "TEAM-STALLED:";
+/// The counter of ended stall episodes. It is a counter and not an
+/// announcement because the end of an episode is never printed.
+pub(crate) const STALLS_ENDED: &str = "watch.stalls_ended";
+
+pub(crate) fn stalled_key(episode: u32) -> String {
+    format!("{STALLED_PREFIX}{episode}")
+}
+
 pub(crate) fn late_key(role: &Role, generation: u32) -> String {
     format!("LATE:{role}:{generation}")
 }

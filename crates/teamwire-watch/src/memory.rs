@@ -34,8 +34,6 @@ pub struct WatchMemory {
     pub(crate) lease_pid: Option<teamwire_core::Pid>,
     pub(crate) members: HashMap<Role, MemberMemory>,
     pub(crate) reported_errors: HashSet<&'static str>,
-    /// `TEAM-STALLED` was printed and nothing has moved since.
-    pub(crate) stalled: bool,
     /// After a sleep gap: quiet counting for every member starts again from
     /// here, as if each had just started.
     pub(crate) grace_from: Option<Timestamp>,
