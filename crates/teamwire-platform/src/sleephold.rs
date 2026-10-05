@@ -118,6 +118,9 @@ impl SleepHold for MacOs {
     /// The hold's `owned` flag is false: the process list cannot say who
     /// started it. The caller knows from the team records and sets it.
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo> {
+        // The trait returns an Option, so a `ps` that cannot be read looks the
+        // same as "no hold". The shape stays because launch and the fakes
+        // depend on it.
         let listing = ps("ps", &["-eo", "pid=,args="]).ok()?;
         holds_in(&listing, lead_pid).first().map(|pid| HoldInfo {
             pid: Pid::new(*pid),
