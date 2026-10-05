@@ -6,7 +6,7 @@ use serde_json::json;
 use teamwire_core::{
     LeadRoute, Member, MemberState, ReportState, Role, Route, TurnEnd, TurnEndReply,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line_within, result_line};
+use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_within, result_line};
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
@@ -31,6 +31,12 @@ pub fn on_turn_end(ctx: &mut Ctx<'_>, me: &Role, t: &TurnEnd) -> TurnEndReply {
             TurnEndReply::Continue
         }
     }
+}
+
+/// `started + budget`, or `None` when that is beyond what an `Instant` can
+/// hold: adding would panic, and a hook must always exit 0.
+fn deadline_after(started: std::time::Instant, budget: Duration) -> Option<std::time::Instant> {
+    started.checked_add(budget)
 }
 
 fn hook_data(ctx: &Ctx<'_>, started: std::time::Instant) -> serde_json::Value {
@@ -247,8 +253,11 @@ fn deliver(
     );
     let c = &record.completion;
     let line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
-    let deadline = started + Duration::from_secs(ctx.config.hook_budget_s);
-    let outcome = deliver_line_within(ctx, &Party::Lead, &line, deadline);
+    let outcome = match deadline_after(started, Duration::from_secs(ctx.config.hook_budget_s)) {
+        Some(deadline) => deliver_line_within(ctx, &Party::Lead, &line, deadline),
+        // A budget too large for the clock is no deadline at all.
+        None => deliver_line(ctx, &Party::Lead, &line),
+    };
     let result = match outcome {
         DeliveryOutcome::HandedOff => ResultOutcome {
             state: ReportState::Delivered,
@@ -278,4 +287,19 @@ fn deliver(
         tx.finish_completion_delivery_with(at, &ulid, &result, &extra)
             .map(|_| ())
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_budget_too_large_for_the_clock_is_no_deadline() {
+        let now = std::time::Instant::now();
+        assert_eq!(deadline_after(now, Duration::MAX), None);
+        assert_eq!(
+            deadline_after(now, Duration::from_secs(40)),
+            Some(now + Duration::from_secs(40))
+        );
+    }
 }
