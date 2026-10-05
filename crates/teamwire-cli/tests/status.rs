@@ -176,6 +176,19 @@ fn an_unreadable_database_exits_6() {
 }
 
 #[test]
+fn a_directory_without_a_database_is_skipped_in_the_listing() {
+    let bed = team();
+    std::fs::create_dir_all(bed.home.path().join("teams").join("ghost")).unwrap();
+    let run = teamwire(&bed, &["status"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(
+        run.out.contains("alpha") && !run.out.contains("ghost"),
+        "{}",
+        run.out
+    );
+}
+
+#[test]
 fn no_teams_says_so() {
     let home = teamwire_fakes::TestHome::new().unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
