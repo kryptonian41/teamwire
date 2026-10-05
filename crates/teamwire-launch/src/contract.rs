@@ -34,6 +34,10 @@ pub struct ContractParts<'a> {
     pub report_file: &'a Path,
     /// The team's `outbox/` directory, which a member must never write into.
     pub outbox_dir: &'a Path,
+    /// The launching `teamwire` binary. A member's shell may have no
+    /// `teamwire` on its PATH, so every command the contract names starts
+    /// with this path.
+    pub teamwire_bin: &'a Path,
     pub check: Option<&'a str>,
     pub owns: &'a [String],
 }
@@ -78,7 +82,7 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         .replace("{role}", p.role.as_str())
         .replace("{report_file}", &p.report_file.display().to_string());
     let finish = FINISH.replace("{outbox_dir}", &p.outbox_dir.display().to_string());
-    [
+    let text = [
         head,
         kind_text(p.kind).to_owned(),
         scope(p.check, p.owns),
@@ -87,7 +91,10 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         HOW_TO_WORK.to_owned(),
         finish,
     ]
-    .concat()
+    .concat();
+    // Last, so a path or a check that holds the placeholder text is not
+    // rewritten.
+    text.replace("{teamwire}", &p.teamwire_bin.display().to_string())
 }
 
 #[cfg(test)]

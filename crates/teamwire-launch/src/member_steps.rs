@@ -214,6 +214,7 @@ pub(crate) fn write_member_files(
         kind: m.kind,
         report_file: &report,
         outbox_dir: &dirs.outbox(),
+        teamwire_bin: &launch.teamwire_bin,
         check: m.spec.check.as_deref(),
         owns: &m.spec.owns,
     });

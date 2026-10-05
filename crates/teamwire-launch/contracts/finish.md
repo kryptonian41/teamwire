@@ -7,14 +7,14 @@ even when your task lists its own steps and does not mention them.
    - every role ends with a 'Decisions I made' list. Write
      'Decisions I made: none' when there were none.
 2. Record your completion, as the LAST thing you do, with:
-     teamwire done --status done|blocked|failed --summary "<one line>"
+     {teamwire} done --status done|blocked|failed --summary "<one line>"
 
 Recording your completion is what tells your parent you are done. Your
 final message is then delivered automatically: you do NOT need to
 message the parent yourself.
 
 If the parent sends you more work after that, do it, then run
-`teamwire done` again as your last act. Running it again is how the
+`{teamwire} done` again as your last act. Running it again is how the
 parent hears about the new result.
 
 NEVER write anything into the team's outbox/ directory ({outbox_dir}).

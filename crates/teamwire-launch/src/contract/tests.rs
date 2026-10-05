@@ -9,6 +9,7 @@ fn render(kind: MemberKind, check: Option<&str>, owns: &[String]) -> String {
         kind,
         report_file: Path::new("/h/teams/demo/reports/api.md"),
         outbox_dir: Path::new("/h/teams/demo/outbox"),
+        teamwire_bin: Path::new("/opt/x/teamwire"),
         check,
         owns,
     })
@@ -94,7 +95,7 @@ fn reviewer_and_closer_send_and_receive_no_messages() {
         assert!(!text.contains("teamwire send"));
     }
     let text = render(MemberKind::Implementer, None, &[]);
-    assert!(text.contains("teamwire send --to <role or lead>"));
+    assert!(text.contains("/opt/x/teamwire send --to <role or lead>"));
 }
 
 #[test]
@@ -134,6 +135,28 @@ fn text_names_only_teamwire_commands() {
         for banned in ["team-msg", ".py", "python", "~/.claude", "herdr", "done/"] {
             assert!(!text.contains(banned), "{kind}: mentions {banned}");
         }
-        assert!(text.contains("teamwire done --status done|blocked|failed"));
+        assert!(text.contains("/opt/x/teamwire done --status done|blocked|failed"));
+    }
+}
+
+#[test]
+fn contract_names_the_launching_binary() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind, Some("true"), &["a/".to_owned()]);
+        let commands: Vec<&str> = text
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.contains(" done ") || l.contains(" send --to"))
+            .collect();
+        assert!(!commands.is_empty(), "{kind}: no command line");
+        for line in commands {
+            assert!(line.starts_with("/opt/x/teamwire "), "{kind}: {line}");
+        }
+        assert!(text.contains("`/opt/x/teamwire done` again"));
+        assert!(
+            !text.contains("{teamwire}"),
+            "{kind}: an unfilled placeholder"
+        );
+        assert!(!text.contains('{'), "{kind}: an unfilled placeholder");
     }
 }
