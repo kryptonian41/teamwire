@@ -11,7 +11,7 @@ use teamwire_core::{
 };
 use teamwire_store::{Ctx, NewMessage, StoreError, TeamRow, Tx};
 
-use crate::attempt::{Bumped, bump, bump_again, deliver_one, report_of};
+use crate::attempt::{Bumped, bump, bump_again, deliver_one, earlier_bump, report_of};
 use crate::{SendError, SendReport, rules};
 
 /// A message that is committed and about to be delivered. The CLI prints
@@ -108,6 +108,10 @@ pub fn send_with(
         // generation again when the resume tries it again.
         let again = if stored.duplicate && state == DeliveryState::Undelivered {
             bump_again(ctx, &message, &record.delivery.recipient)?
+        } else if stored.duplicate {
+            // Still pending: an earlier run bumped the generation and died
+            // before it could say whether the line arrived.
+            earlier_bump(ctx, &message, &record.delivery.recipient)?
         } else {
             None
         };

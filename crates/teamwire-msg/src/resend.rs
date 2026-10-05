@@ -9,7 +9,7 @@ use teamwire_core::{
 };
 use teamwire_store::{Ctx, DeliveryRecord};
 
-use crate::attempt::{bump_again, deliver_one, report_of};
+use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
 use crate::send::{read_team, record_refusal, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
@@ -122,13 +122,6 @@ fn retry(
 ) -> Result<RecipientReport, SendError> {
     let recipient = &row.delivery.recipient;
     let before = row.delivery.state;
-    // A reprompt that failed cleanly was undone, so its next try starts the
-    // generation again. One that may have arrived kept its generation.
-    let bump = if before == DeliveryState::Undelivered {
-        bump_again(ctx, message, recipient)?
-    } else {
-        None
-    };
     let now = ctx.clock.now();
     // The team can start closing after the first check, so the attempt is
     // counted only inside a transaction that sees it still open.
@@ -146,6 +139,16 @@ fn retry(
             }
         })?
         .ok_or(Refusal::TeamClosed)?;
+    // A reprompt that failed cleanly was undone, so its next try starts the
+    // generation again. One that may have arrived kept its generation. One
+    // left `pending` by a dead sender kept a bump that nothing has undone.
+    // The bump comes after the attempt is counted, so a failed count leaves
+    // the generation alone.
+    let bump = match before {
+        DeliveryState::Undelivered => bump_again(ctx, message, recipient)?,
+        DeliveryState::Pending => earlier_bump(ctx, message, recipient)?,
+        _ => None,
+    };
     deliver_one(
         ctx,
         team,
