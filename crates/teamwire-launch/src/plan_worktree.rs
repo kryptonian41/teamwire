@@ -79,15 +79,24 @@ pub(crate) fn worktree_plan(
     }
     // `branch_ok` keeps the name a safe directory name; git has rules of its
     // own (`foo.lock`, `a/.b`) that only git can check.
-    if !git::run(platform, repo, &["check-ref-format", "--branch", &branch])
-        .is_ok_and(|o| o.success())
-    {
-        bad(
-            "branch",
-            "bad_branch",
-            format!("git does not accept {branch:?} as a branch name"),
-        );
-        return None;
+    match git::run(platform, repo, &["check-ref-format", "--branch", &branch]) {
+        Ok(o) if o.success() => {}
+        Ok(_) => {
+            bad(
+                "branch",
+                "bad_branch",
+                format!("git does not accept {branch:?} as a branch name"),
+            );
+            return None;
+        }
+        Err(e) => {
+            bad(
+                "branch",
+                "git_failed",
+                format!("could not check {branch:?}: {e}"),
+            );
+            return None;
+        }
     }
     let head = format!("refs/heads/{branch}");
     let branch_exists = git::run(platform, repo, &["rev-parse", "--verify", "--quiet", &head])

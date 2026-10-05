@@ -232,13 +232,19 @@ pub(crate) fn run(
     reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
 )]
 fn guard(ctx: &Ctx<'_>, member: &Member, stop: bool) -> Result<(), String> {
-    if let Ok(Some(team)) = ctx.store.read(|tx| tx.team())
-        && team.state != TeamState::Open
-    {
-        return Err(format!(
-            "the world changed: team {} is {}: a member cannot be removed now",
-            team.name, team.state
-        ));
+    match ctx.store.read(|tx| tx.team()) {
+        Ok(Some(team)) if team.state != TeamState::Open => {
+            return Err(format!(
+                "the world changed: team {} is {}: a member cannot be removed now",
+                team.name, team.state
+            ));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            return Err(format!(
+                "cannot read the team state ({e}); refusing rather than guess"
+            ));
+        }
     }
     match busy_refusal(ctx, member, stop).or_else(|| dirty_refusal(ctx, member)) {
         Some(why) => Err(format!("the world changed: {why}")),

@@ -52,11 +52,27 @@ contains = "#[expect("
 id = "inner-expect"
 contains = "#![expect("
 
-# `#[cfg_attr(test, ignore)]` ignores a test without writing `#[ignore`.
+# `#[cfg_attr(test, ignore)]` ignores a test without writing `#[ignore`. The
+# attribute must be `ignore` itself, not a lint such as `ignored_unit_patterns`.
 [[weakening]]
 id = "cfg-attr-ignore"
 contains = "cfg_attr("
-and_contains = ["ignore"]
+and_contains = [", ignore)"]
+
+[[weakening]]
+id = "cfg-attr-ignore-eq"
+contains = "cfg_attr("
+and_contains = [", ignore ="]
+
+[[weakening]]
+id = "cfg-attr-ignore-tight"
+contains = "cfg_attr("
+and_contains = [",ignore"]
+
+[[weakening]]
+id = "cfg-attr-ignore-list"
+contains = "cfg_attr("
+and_contains = [", ignore,"]
 
 # A cfg that is never true compiles the item out, so a test above it never runs.
 [[weakening]]
