@@ -37,6 +37,13 @@ every subcommand. `--json` prints machine-readable output where listed.
 
 ## Lead commands
 
+These refuse a caller that carries a member identity (`TEAMWIRE_TOKEN`,
+`TEAMWIRE_ROLE` or `TEAMWIRE_TEAM` set) with `refused.identity`, exit 1,
+before opening the store: `launch --add`, `watch` (except `--once`) and
+`close` (except `--dry-run`). `verify` stays open, because the closer runs
+it. A member must never be able to remove a peer, take the watch lease or
+add members by mistake (ADR 0008).
+
 ### `teamwire launch [--add] [--dry-run] [--spec FILE]`
 
 Reads a team spec (JSON) from stdin or `--spec`. Validates everything first
