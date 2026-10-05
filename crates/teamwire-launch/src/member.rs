@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use teamwire_core::{
     HostErrorCode, IdentityChannel, MemberLaunch, MemberState, Place, Role, SessionId,
-    StartupOutcome, TrustPolicy, Ulid, one_line,
+    StartupOutcome, TeamState, TrustPolicy, Ulid, one_line,
 };
 use teamwire_store::{Ctx, NewMember, NewTeam};
 
@@ -302,20 +302,34 @@ fn run_member(
     };
     let hash = sha256(&token);
     let at = ctx.clock.now();
-    ctx.store
-        .write(|tx| {
-            if m.relaunch {
-                if !tx.relaunch_failed_member_with(at, &new, extra)? {
-                    return Err(teamwire_store::StoreError::Constraint(format!(
-                        "member {role} is not a failed member"
-                    )));
-                }
-            } else {
-                tx.insert_member_with(at, &new, extra)?;
+    // The close lock is read inside the write that records the member, so a
+    // close that took it after validation cannot be missed (CLS-3).
+    let mut closed = None;
+    let recorded = ctx.store.write(|tx| {
+        if let Some(team) = tx.reader().team()?
+            && team.state != TeamState::Open
+        {
+            closed = Some(team.state);
+            return Ok(());
+        }
+        if m.relaunch {
+            if !tx.relaunch_failed_member_with(at, &new, extra)? {
+                return Err(teamwire_store::StoreError::Constraint(format!(
+                    "member {role} is not a failed member"
+                )));
             }
-            tx.set_member_token_hash(role, &hash)
-        })
-        .map_err(|e| Stop::fail(format!("the member could not be recorded: {e}")))?;
+        } else {
+            tx.insert_member_with(at, &new, extra)?;
+        }
+        tx.set_member_token_hash(role, &hash)
+    });
+    if let Some(state) = closed {
+        return Err(Stop::refuse(format!(
+            "team_closed: team {} is {state}; the member was not started",
+            plan.spec.team
+        )));
+    }
+    recorded.map_err(|e| Stop::fail(format!("the member could not be recorded: {e}")))?;
     made.recorded = true;
     steps.mark(ctx, "record");
 

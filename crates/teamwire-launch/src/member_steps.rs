@@ -33,6 +33,13 @@ impl Stop {
             refused: false,
         }
     }
+
+    pub(crate) fn refuse(reason: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            refused: true,
+        }
+    }
 }
 
 /// Starts the agent with one call. The host adapter owns any retry: a second
