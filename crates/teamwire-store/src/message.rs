@@ -348,6 +348,18 @@ impl ReadTx<'_> {
         )
     }
 
+    /// Every counter with its value, by name (`teamwire export`).
+    pub fn counters(&self) -> Result<Listing<(String, u64)>, StoreError> {
+        let mut stmt = self
+            .connection()
+            .prepare("SELECT name, value FROM counters ORDER BY name")?;
+        listing("counters", &mut stmt, [], |row| {
+            let name: String = col(row, 0)?;
+            let v: i64 = col(row, 1)?;
+            Ok((name, u64::try_from(v).map_err(|e| bad("counter", e))?))
+        })
+    }
+
     /// The value of a named counter, or `None` if it was never used.
     pub fn counter(&self, name: &str) -> Result<Option<u64>, StoreError> {
         let mut stmt = self
