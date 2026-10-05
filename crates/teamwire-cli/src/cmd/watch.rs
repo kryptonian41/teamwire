@@ -1,7 +1,7 @@
 //! `teamwire watch`: one line per poll when something needs the lead.
 
 use std::io::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -11,7 +11,7 @@ use teamwire_otel::OtlpConfig;
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::send::refuse_member;
+use crate::cmd::send::{home_or_refuse, refuse_member};
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
 
@@ -23,15 +23,6 @@ const STORE_ERROR: u8 = 6;
 const EXPORT_EVERY: Duration = Duration::from_secs(60);
 /// How long the exporter thread sleeps between looks at the stop flag.
 const EXPORT_SLICE: Duration = Duration::from_millis(200);
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    global
-        .home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-}
 
 /// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
 /// the same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a), read
@@ -124,11 +115,9 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     if *interval == 0 {
         return fail("--interval must be at least 1 second", USAGE);
     }
-    let Some(home) = state_home(global) else {
-        return fail(
-            "no state directory: set --home, TEAMWIRE_HOME or HOME",
-            REFUSED,
-        );
+    let home = match home_or_refuse("watch", global) {
+        Ok(home) => home,
+        Err(code) => return code,
     };
     let mut store = match Store::open_existing(&home, &team) {
         Ok(store) => store,

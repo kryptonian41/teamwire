@@ -232,13 +232,29 @@ pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
     })
 }
 
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
+/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`, made absolute. A
+/// relative path is handed on to members, whose working directory is not
+/// this one, so it must not stay relative. None when nothing names a
+/// directory.
+pub(crate) fn state_home(global: &Global) -> Option<PathBuf> {
     let Global { home } = global;
-    home.clone()
+    let chosen = home
+        .clone()
         .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))?;
+    std::path::absolute(chosen).ok()
+}
+
+/// `state_home`, or the refusal to print and exit with when nothing names
+/// the state directory.
+pub(crate) fn home_or_refuse(command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
+    state_home(global).ok_or_else(|| {
+        fail(
+            command,
+            "no state directory: set --home, TEAMWIRE_HOME or HOME",
+            REFUSED,
+        )
+    })
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
@@ -249,7 +265,7 @@ pub(crate) fn with_ctx<T>(
     team: &TeamName,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
-    let home = state_home(global);
+    let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
         Ok(store) => store,
         Err(StoreError::Io(message)) if message.starts_with("no database") => {
@@ -279,7 +295,7 @@ pub(crate) fn with_read_ctx<T>(
     team: &TeamName,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
-    let home = state_home(global);
+    let home = home_or_refuse("", global)?;
     if !home
         .join("teams")
         .join(team.as_str())

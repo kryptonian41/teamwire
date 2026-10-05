@@ -1,28 +1,19 @@
 //! `teamwire status`: the read-only team view.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_watch::StatusView;
 
-use crate::cmd::send::carries_member_identity;
+use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 
 /// Exit codes of `docs/api/cli.md`.
 const REFUSED: u8 = 1;
 const STORE_ERROR: u8 = 6;
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    global
-        .home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-}
 
 /// The view of one team, from its database opened read-only.
 fn view_of(
@@ -207,11 +198,9 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(role) => role,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let Some(home) = state_home(global) else {
-        return fail(
-            "no state directory: set --home, TEAMWIRE_HOME or HOME",
-            REFUSED,
-        );
+    let home = match home_or_refuse("status", global) {
+        Ok(home) => home,
+        Err(code) => return code,
     };
     let Some(team) = team else {
         if role.is_some() {

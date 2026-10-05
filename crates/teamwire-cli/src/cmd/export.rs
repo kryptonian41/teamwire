@@ -1,6 +1,5 @@
 //! `teamwire export`: every record of a team as JSON lines.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::Serialize;
@@ -8,6 +7,7 @@ use serde_json::{Value, json};
 use teamwire_core::{TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
 
@@ -42,7 +42,10 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(team) => team,
         Err(e) => return fail(&e.to_string(), USAGE),
     };
-    let home = state_home(global);
+    let home = match home_or_refuse("export", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     if !database_path(&home, &team).is_file() {
         return fail(&format!("no database for team {team}"), REFUSED);
     }
@@ -65,15 +68,6 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
     }
     say(&text);
     ExitCode::SUCCESS
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 /// Every event, message with its deliveries, member, completion, waiver and

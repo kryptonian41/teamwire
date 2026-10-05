@@ -1,12 +1,13 @@
 //! `teamwire verify`: each member's check and the diff rules, and waivers.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
 
@@ -34,7 +35,10 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(role) => role,
         Err(e) => return fail(&format!("{e}"), USAGE),
     };
-    let home = state_home(global);
+    let home = match home_or_refuse("verify", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     let mut store = match Store::open_existing(&home, &team) {
         Ok(store) => store,
         Err(StoreError::Io(message)) if message.starts_with("no database") => {
@@ -75,15 +79,6 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         }
         Err(e) => fail(&e.to_string(), error_code(&e)),
     }
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 fn error_code(e: &VerifyError) -> u8 {

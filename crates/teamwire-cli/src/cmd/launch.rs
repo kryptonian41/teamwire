@@ -8,7 +8,7 @@ use teamwire_core::{Clock, Config};
 use teamwire_launch::{LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, validate};
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::refuse_member;
+use crate::cmd::send::{home_or_refuse, refuse_member};
 use crate::wiring::Wiring;
 use crate::{Global, LaunchArgs};
 
@@ -16,15 +16,6 @@ use crate::{Global, LaunchArgs};
 const REFUSED: u8 = 1;
 const PARTIAL: u8 = 2;
 const STORE_ERROR: u8 = 6;
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> Option<PathBuf> {
-    global
-        .home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-}
 
 fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     if let Some(file) = &args.spec {
@@ -49,9 +40,9 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
             return code;
         }
     }
-    let Some(home) = state_home(global) else {
-        eprintln!("teamwire launch: no state directory: set --home, TEAMWIRE_HOME or HOME");
-        return ExitCode::from(REFUSED);
+    let home = match home_or_refuse("launch", global) {
+        Ok(home) => home,
+        Err(code) => return code,
     };
     let text = match read_spec(args) {
         Ok(text) => text,

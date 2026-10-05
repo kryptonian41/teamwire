@@ -531,7 +531,14 @@ fn a_member_cannot_remove_a_peer() {
     rig.launch(&api_spec(&repo));
     let member = [("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")];
     let run = rig.teamwire_with(
-        &["close", "alpha", "--role", "scout", "--stop", "--unverified"],
+        &[
+            "close",
+            "alpha",
+            "--role",
+            "scout",
+            "--stop",
+            "--unverified",
+        ],
         None,
         &member,
     );

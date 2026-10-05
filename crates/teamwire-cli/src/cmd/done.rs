@@ -1,12 +1,12 @@
 //! `teamwire done`: record a member's completion.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
+use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
 
@@ -49,7 +49,10 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
             REFUSED,
         );
     };
-    let home = state_home(global);
+    let home = match home_or_refuse("done", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
     let mut store = match Store::open_existing(&home, &team) {
         Ok(store) => store,
         Err(StoreError::Io(message)) if message.starts_with("no database") => {
@@ -104,15 +107,6 @@ fn error_code(e: &DoneError) -> u8 {
         | DoneError::UnknownRole(_)
         | DoneError::Internal(_) => REFUSED,
     }
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`.
-fn state_home(global: &Global) -> PathBuf {
-    let Global { home } = global;
-    home.clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))
-        .unwrap_or_else(|| PathBuf::from(".teamwire"))
 }
 
 #[expect(
