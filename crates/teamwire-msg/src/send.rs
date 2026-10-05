@@ -295,7 +295,7 @@ pub fn watch_running(ctx: &Ctx<'_>) -> Result<Option<Pid>, SendError> {
     let lease = ctx.store.read(|tx| tx.watch_lease())?;
     let now = ctx.clock.now();
     Ok(lease
-        .filter(|l| !watch_lease_is_dead(l, ctx.platform, now, ctx.config.poll_s))
+        .filter(|l| !watch_lease_is_dead(l, ctx.platform, now))
         .map(|l| l.pid))
 }
 

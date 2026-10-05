@@ -19,7 +19,7 @@ pub enum WatchError {
 
 /// Takes the team's watch lease for `pid`. A lease held by a live, recently
 /// beating process refuses; one whose process is gone or whose heartbeat is
-/// over three polls old is taken over. Every later poll
+/// over ten minutes old is taken over. Every later poll
 /// refreshes the lease's heartbeat.
 pub fn start(
     ctx: &mut Ctx<'_>,
@@ -29,10 +29,9 @@ pub fn start(
 ) -> Result<(), WatchError> {
     let at = ctx.clock.now();
     let platform = ctx.platform;
-    let poll_s = ctx.config.poll_s;
     let outcome = ctx.store.write(|tx| {
         tx.take_watch_lease(at, pid, host, |held| {
-            watch_lease_is_dead(held, platform, at, poll_s)
+            watch_lease_is_dead(held, platform, at)
         })
     })?;
     match outcome {
