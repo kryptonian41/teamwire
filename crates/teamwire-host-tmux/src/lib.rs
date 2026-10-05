@@ -314,6 +314,17 @@ impl Host for Tmux {
 
     fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
         let pane = Self::pane(place)?;
+        // After a tmux server restart the pane ids start again at `%0`, so a
+        // recorded id can name a pane that is not ours. Only a pane this
+        // adapter marked is killed.
+        let format = format!("#{{{NAME_OPTION}}}");
+        let mark = self.run(&["display-message", "-p", "-t", pane, &format], timeout)?;
+        if mark.trim().is_empty() {
+            return Err(HostError::new(
+                HostErrorCode::NotFound,
+                format!("{pane} is not a pane teamwire started"),
+            ));
+        }
         self.run(&["kill-pane", "-t", pane], timeout)?;
         Ok(())
     }
