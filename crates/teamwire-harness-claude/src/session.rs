@@ -24,19 +24,45 @@ pub(crate) struct SessionFile {
     pub(crate) pid: Pid,
     pub(crate) session_id: String,
     pub(crate) status: Option<String>,
+    pub(crate) kind: Option<String>,
 }
 
-/// The caller's own session, from a lookup of environment variables. The
-/// lookup is a parameter so a test never has to change the process's own
-/// environment.
-pub(crate) fn caller_from_env(get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
+/// The caller's own session. The lookup is a parameter so a test never has
+/// to change the process's own environment.
+///
+/// The kind comes from the `kind` field of the caller's own session file
+/// (`CLAUDE_PID`), because Claude Code does not set a kind variable in a
+/// background job's environment. Without that file, a kind variable of `bg`
+/// or an unattended session (`CLAUDE_CODE_SESSION_ATTENDED=0`) is
+/// background, and anything else is interactive.
+pub(crate) fn caller_from_env(
+    claude_dir: &Path,
+    get: impl Fn(&str) -> Option<String>,
+) -> Option<CallerSession> {
     let id = get("CLAUDE_CODE_SESSION_ID")?;
     let id = SessionId::parse(id.trim()).ok()?;
-    // `bg` is a session Claude Code started without a terminal. Any other
-    // value, or none, is an interactive session.
-    let kind = match get("CLAUDE_CODE_SESSION_KIND").as_deref().map(str::trim) {
-        Some("bg") => SessionKind::Background,
-        _ => SessionKind::Interactive,
+    let from_file = get("CLAUDE_PID")
+        .and_then(|p| p.trim().parse::<u32>().ok())
+        .and_then(|pid| {
+            read_session_files(claude_dir)
+                .into_iter()
+                .find(|f| f.pid.get() == pid)
+        })
+        .and_then(|f| f.kind);
+    let background = match from_file.as_deref() {
+        Some(kind) => kind == "bg",
+        None => {
+            get("CLAUDE_CODE_SESSION_KIND").as_deref().map(str::trim) == Some("bg")
+                || get("CLAUDE_CODE_SESSION_ATTENDED")
+                    .as_deref()
+                    .map(str::trim)
+                    == Some("0")
+        }
+    };
+    let kind = if background {
+        SessionKind::Background
+    } else {
+        SessionKind::Interactive
     };
     Some(CallerSession { id, kind })
 }
@@ -65,6 +91,7 @@ fn parse_session_file(bytes: &[u8]) -> Option<SessionFile> {
         pid: Pid::new(pid),
         session_id: doc.get("sessionId")?.as_str()?.to_owned(),
         status: doc.get("status").and_then(Value::as_str).map(str::to_owned),
+        kind: doc.get("kind").and_then(Value::as_str).map(str::to_owned),
     })
 }
 

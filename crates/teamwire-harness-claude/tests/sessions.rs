@@ -369,3 +369,40 @@ fn fake_claude_listing_gives_both_row_shapes() {
     );
     assert_eq!(listed.is_alive(&sid("bg-2"), T).unwrap(), Liveness::Dead);
 }
+
+#[test]
+fn caller_kind_comes_from_session_file() {
+    let env = FakeHerdrEnv::new().unwrap();
+    env.add_session_file(
+        85093,
+        &json!({"pid": 85093, "sessionId": "71318e73-aaaa", "kind": "bg", "jobId": "71318e73", "status": "busy"}),
+    )
+    .unwrap();
+    env.add_session_file(
+        37739,
+        &json!({"pid": 37739, "sessionId": "81d07177-bbbb", "kind": "interactive", "parkedJobId": "71318e73", "status": "idle"}),
+    )
+    .unwrap();
+    let claude = ClaudeCode::new(Arc::new(FakePlatform::new()), config(&env.claude_dir()));
+    let kind_of = |pid: &'static str, attended: &'static str| {
+        let pairs = [
+            ("CLAUDE_CODE_SESSION_ID", "abc-123"),
+            ("CLAUDE_PID", pid),
+            ("CLAUDE_CODE_SESSION_ATTENDED", attended),
+        ];
+        claude
+            .session_from_env(move |name| {
+                pairs
+                    .iter()
+                    .find(|(k, _)| *k == name)
+                    .map(|(_, v)| (*v).to_owned())
+            })
+            .unwrap()
+            .kind
+    };
+    assert_eq!(kind_of("85093", "1"), SessionKind::Background);
+    assert_eq!(kind_of("37739", "1"), SessionKind::Interactive);
+    // No file for this pid: the unattended flag decides.
+    assert_eq!(kind_of("1", "0"), SessionKind::Background);
+    assert_eq!(kind_of("1", "1"), SessionKind::Interactive);
+}
