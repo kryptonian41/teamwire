@@ -333,14 +333,20 @@ fn delivery_updates_keep_forward_only_moves_in_the_store_too() {
     assert!(back.is_err());
 }
 
-#[test]
-fn resend_is_refused_while_the_team_is_closing() {
+/// A message whose delivery is `unconfirmed` (the line may be on screen),
+/// then a team that starts closing. The old code resent it: only an
+/// `undelivered` reprompt was refused, through its generation bump.
+fn closing_team_with_unconfirmed(kind: MessageType) -> (Rig, teamwire_core::DisplayId) {
     let mut rig = team_rig();
-    rig.set_reachable("web", false);
-    let req = rig.request("lead", &["web"], MessageType::Reprompt, "fix it");
+    rig.host.inject(
+        "submit",
+        Fault::Fail(HostError::new(HostErrorCode::Stalled, "stalled")),
+        1,
+    );
+    let (sender, text) = ("lead", "fix it");
+    let req = rig.request(sender, &["web"], kind, text);
     let first = send(&mut rig.ctx(), req).unwrap();
-    assert_eq!(state_of(&first, "web"), RecipientState::Undelivered);
-    rig.set_reachable("web", true);
+    assert_eq!(state_of(&first, "web"), RecipientState::Unconfirmed);
     let now = rig.now();
     rig.store
         .write(|tx| {
@@ -348,13 +354,22 @@ fn resend_is_refused_while_the_team_is_closing() {
                 .map(|_| ())
         })
         .unwrap();
-    let refused = resend(&mut rig.ctx(), &Actor::Lead, &first.display_id, None);
-    assert_eq!(
-        refused.unwrap_err().to_string(),
-        SendError::from(Refusal::TeamClosed).to_string()
-    );
-    assert_eq!(submits(&rig), 0);
-    assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
+    (rig, first.display_id)
+}
+
+#[test]
+fn resend_is_refused_while_the_team_is_closing() {
+    for kind in [MessageType::Reprompt, MessageType::Note] {
+        let (mut rig, display) = closing_team_with_unconfirmed(kind);
+        let before = submits(&rig);
+        let refused = resend(&mut rig.ctx(), &Actor::Lead, &display, None);
+        assert_eq!(
+            refused.unwrap_err().to_string(),
+            SendError::from(Refusal::TeamClosed).to_string()
+        );
+        assert_eq!(submits(&rig), before, "{kind}: nothing was typed");
+        assert_eq!(rig.events(EventType::MessageRefused).len(), 1);
+    }
 }
 
 #[test]
