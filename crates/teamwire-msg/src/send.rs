@@ -51,9 +51,13 @@ pub fn send(ctx: &mut Ctx<'_>, req: SendRequest) -> Result<SendReport, SendError
 /// recipients still `pending` or `undelivered` are tried again.
 pub fn send_with(
     ctx: &mut Ctx<'_>,
-    req: SendRequest,
+    mut req: SendRequest,
     on_stored: &mut dyn FnMut(&Stored),
 ) -> Result<SendReport, SendError> {
+    // A file written on Windows has a byte-order mark and CRLF line ends,
+    // which are not text the sender chose. Checks, the stored copy and its
+    // hash all see the plain body.
+    req.body = normalise_body(&req.body);
     let checked = match rules::check(ctx, &req) {
         Ok(checked) => checked,
         Err(SendError::Refused(refusal)) => {
@@ -120,6 +124,13 @@ pub fn send_with(
         deliveries,
         duplicate_of_key: stored.duplicate,
     })
+}
+
+/// The body without a leading byte-order mark and with `\r\n` as `\n`.
+fn normalise_body(body: &str) -> String {
+    body.strip_prefix('\u{feff}')
+        .unwrap_or(body)
+        .replace("\r\n", "\n")
 }
 
 /// Delivers to one recipient of a stored message.

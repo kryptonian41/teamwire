@@ -791,3 +791,26 @@ fn a_failed_record_for_one_recipient_still_delivers_to_the_rest() {
     assert_eq!(state("api"), RecipientState::Pending);
     assert_eq!(state("web"), RecipientState::HandedOff);
 }
+
+#[test]
+fn crlf_and_bom_do_not_count_toward_the_limit() {
+    let mut rig = team_rig();
+    // 16 lines of 790 characters with plain line ends; a Windows file adds
+    // a byte-order mark and a carriage return per line end.
+    let lines: Vec<String> = (0..16)
+        .map(|i| "x".repeat(if i < 15 { 48 } else { 55 }))
+        .collect();
+    let plain = lines.join("\n");
+    assert_eq!(plain.chars().count(), 790);
+    let windows = format!("\u{feff}{}", lines.join("\r\n"));
+    assert_eq!(windows.chars().count(), 806);
+    let req = rig.request("scout", &["api"], MessageType::Finding, &windows);
+    let report = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    let stored = rig
+        .store
+        .read(|tx| tx.message_by_display_id(&report.display_id))
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.body, plain);
+}
