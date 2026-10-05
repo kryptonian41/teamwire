@@ -561,3 +561,85 @@ fn a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop()
         }
     }
 }
+
+/// A close takes the lock from a second store handle, as another process would.
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn take_the_close_lock(
+    home: &std::path::Path,
+    team: &teamwire_core::TeamName,
+    at: teamwire_core::Timestamp,
+) {
+    let mut other = teamwire_store::Store::open_existing(home, team).unwrap();
+    let taken = other
+        .write(|tx| tx.begin_close(at, teamwire_core::Pid::new(1)))
+        .unwrap();
+    assert!(taken);
+}
+
+#[test]
+fn a_removal_stops_when_a_close_takes_the_lock_after_the_plan() {
+    // The lock is taken after the removal read the team and passed its gate:
+    // the re-check before the place closes refuses (CLS-3).
+    let mut rig = Rig::new();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    let report = {
+        let (home, team, at) = (
+            rig.home.path().to_path_buf(),
+            rig.team().name,
+            rig.clock.now(),
+        );
+        teamwire_close::close_observed(
+            &mut rig.ctx(),
+            CloseTarget::Member(role("scout")),
+            CloseOpts::default(),
+            &|step| {
+                if step == "close_place" {
+                    take_the_close_lock(&home, &team, at);
+                }
+            },
+        )
+    };
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("close_place"),
+        "{report:?}"
+    );
+    assert!(!place_is_closed(&rig, "scout"));
+    assert_eq!(rig.member("scout").state, MemberState::Started);
+}
+
+#[test]
+fn mark_removed_checks_the_lock_inside_its_own_write() {
+    let mut rig = Rig::new();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    let report = {
+        let (home, team, at) = (
+            rig.home.path().to_path_buf(),
+            rig.team().name,
+            rig.clock.now(),
+        );
+        teamwire_close::close_observed(
+            &mut rig.ctx(),
+            CloseTarget::Member(role("scout")),
+            CloseOpts::default(),
+            &|step| {
+                if step == "mark_removed" {
+                    take_the_close_lock(&home, &team, at);
+                }
+            },
+        )
+    };
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("mark_removed"),
+        "{report:?}"
+    );
+    assert_eq!(
+        rig.member("scout").state,
+        MemberState::Started,
+        "the row is kept"
+    );
+}

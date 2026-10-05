@@ -185,9 +185,15 @@ pub(crate) fn run(
         report.branches_kept.push(branch.clone());
         report
             .unpushed
-            .extend(team_close::unpushed(ctx, member, branch));
+            .extend(crate::member_close::unpushed(ctx, member, branch));
     }
     let member = member.clone();
+    // The lock is read inside a write transaction, so a close that took it
+    // after the first read above cannot be missed (CLS-3).
+    if let Err(why) = ensure_open(ctx) {
+        report.refusals.push(why);
+        return report;
+    }
     let mut go = |name: &str,
                   report: &mut CloseReport,
                   work: &dyn Fn(&mut Ctx<'_>) -> Result<String, String>|
@@ -221,7 +227,19 @@ pub(crate) fn run(
 
 /// Busy and dirty state read again right before a destructive step. A
 /// `--stop` stays allowed: the caller already accepted the lost turn.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
+)]
 fn guard(ctx: &Ctx<'_>, member: &Member, stop: bool) -> Result<(), String> {
+    if let Ok(Some(team)) = ctx.store.read(|tx| tx.team())
+        && team.state != TeamState::Open
+    {
+        return Err(format!(
+            "the world changed: team {} is {}: a member cannot be removed now",
+            team.name, team.state
+        ));
+    }
     match busy_refusal(ctx, member, stop).or_else(|| dirty_refusal(ctx, member)) {
         Some(why) => Err(format!("the world changed: {why}")),
         None => Ok(()),
@@ -296,7 +314,30 @@ fn mark_removed(
         "unverified_reasons": overridden,
     });
     ctx.store
-        .write(|tx| tx.remove_member(now, role, Some(note), &data))
+        .write(|tx| {
+            open_or_constraint(tx)?;
+            tx.remove_member(now, role, Some(note), &data)
+        })
         .map(|_| format!("{role} marked removed ({note})"))
         .map_err(|e| format!("{role} could not be marked removed: {e}"))
+}
+
+/// Inside a write transaction: the team is `open`, or the write fails.
+fn open_or_constraint(tx: &teamwire_store::Tx<'_>) -> Result<(), teamwire_store::StoreError> {
+    match tx.reader().team()? {
+        Some(team) if team.state != TeamState::Open => {
+            Err(teamwire_store::StoreError::Constraint(format!(
+                "team {} is {}: a member cannot be removed now",
+                team.name, team.state
+            )))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// The refusal text when a close took the lock since the plan was read.
+fn ensure_open(ctx: &mut Ctx<'_>) -> Result<(), String> {
+    ctx.store
+        .write(open_or_constraint)
+        .map_err(|e| e.to_string())
 }

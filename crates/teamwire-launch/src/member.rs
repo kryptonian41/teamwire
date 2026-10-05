@@ -3,21 +3,21 @@
 //! `started`, and the first message. A failure at any step undoes that
 //! member only, without force, and records it `failed` (LCH-4).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use teamwire_core::{
-    HostErrorCode, IdentityChannel, MemberLaunch, MemberState, Place, Role, SessionId,
-    StartupOutcome, TrustPolicy, Ulid, one_line,
+    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
+    Ulid, one_line,
 };
 use teamwire_store::{Ctx, NewMember, NewTeam};
 
+use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
     Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
 };
-use crate::worktree::{self, Made};
+use crate::worktree;
 use crate::{
     LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
 };
@@ -25,54 +25,6 @@ use crate::{
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest reason kept in an event.
 const REASON_MAX: usize = 300;
-
-/// What has been made for a member so far, for the undo.
-#[derive(Default)]
-struct Progress {
-    recorded: bool,
-    place: Option<Place>,
-    worktree: Option<Made>,
-}
-
-/// The paths of one team's directory.
-pub(crate) struct Dirs {
-    pub(crate) team: PathBuf,
-}
-
-impl Dirs {
-    pub(crate) fn member(&self, role: &Role) -> PathBuf {
-        self.team.join("members").join(role.as_str())
-    }
-    pub(crate) fn contract(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("contract")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn brief(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("briefs")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn report(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("reports")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn setup_log(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("setup")
-            .join(format!("{}.log", role.as_str()))
-    }
-    pub(crate) fn outbox(&self) -> PathBuf {
-        self.team.join("outbox")
-    }
-}
-
-/// Step timings, in milliseconds, for `data.steps`.
-struct Steps {
-    marks: Vec<(&'static str, u128)>,
-    last: std::time::Instant,
-}
 
 pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let mut warnings = plan.warnings.clone();
@@ -165,12 +117,15 @@ fn launch_member(
     match result {
         Ok(()) => LaunchOutcome::Started,
         Err(stop) => {
-            let undo = undo(ctx, m, &made);
-            let reason = if undo.is_empty() {
+            let (undo, left) = undo(ctx, m, &made);
+            let mut reason = if undo.is_empty() {
                 stop.reason
             } else {
                 format!("{}; undone: {undo}", stop.reason)
             };
+            if let (Some(advice), false) = (stop.advice, left) {
+                reason = format!("{reason}; {advice}");
+            }
             if made.recorded {
                 record_failed(ctx, m, &reason, &extra, &steps);
             }
@@ -199,42 +154,6 @@ fn record_failed(ctx: &mut Ctx<'_>, m: &PlannedMember, reason: &str, extra: &Val
     {
         tracing::warn!(role = %m.spec.role, error = %e, "could not record the failed launch");
     }
-}
-
-impl Steps {
-    fn mark(&mut self, ctx: &Ctx<'_>, name: &'static str) {
-        let now = ctx.clock.monotonic();
-        let ms = now.saturating_duration_since(self.last).as_millis();
-        self.marks.push((name, ms));
-        self.last = now;
-    }
-
-    fn json(&self) -> Value {
-        Value::Object(
-            self.marks
-                .iter()
-                .map(|(k, ms)| ((*k).to_owned(), json!(ms)))
-                .collect(),
-        )
-    }
-}
-
-/// Takes back what was made: the place, then the worktree (no force).
-fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> String {
-    let mut notes = Vec::new();
-    if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
-        match host.close(place, HOST_TIMEOUT) {
-            Ok(()) => notes.push(format!("place {} closed", place.id)),
-            Err(e) if e.code == HostErrorCode::NotFound => {
-                notes.push(format!("place {} was already gone", place.id));
-            }
-            Err(e) => notes.push(format!("could not close place {}: {e}", place.id)),
-        }
-    }
-    if let Some(w) = &made.worktree {
-        notes.push(worktree::remove(ctx.platform, w));
-    }
-    notes.join("; ")
 }
 
 /// Sets `key` on a JSON object.
@@ -302,20 +221,34 @@ fn run_member(
     };
     let hash = sha256(&token);
     let at = ctx.clock.now();
-    ctx.store
-        .write(|tx| {
-            if m.relaunch {
-                if !tx.relaunch_failed_member_with(at, &new, extra)? {
-                    return Err(teamwire_store::StoreError::Constraint(format!(
-                        "member {role} is not a failed member"
-                    )));
-                }
-            } else {
-                tx.insert_member_with(at, &new, extra)?;
+    // The close lock is read inside the write that records the member, so a
+    // close that took it after validation cannot be missed (CLS-3).
+    let mut closed = None;
+    let recorded = ctx.store.write(|tx| {
+        if let Some(team) = tx.reader().team()?
+            && team.state != TeamState::Open
+        {
+            closed = Some(team.state);
+            return Ok(());
+        }
+        if m.relaunch {
+            if !tx.relaunch_failed_member_with(at, &new, extra)? {
+                return Err(teamwire_store::StoreError::Constraint(format!(
+                    "member {role} is not a failed member"
+                )));
             }
-            tx.set_member_token_hash(role, &hash)
-        })
-        .map_err(|e| Stop::fail(format!("the member could not be recorded: {e}")))?;
+        } else {
+            tx.insert_member_with(at, &new, extra)?;
+        }
+        tx.set_member_token_hash(role, &hash)
+    });
+    if let Some(state) = closed {
+        return Err(Stop::refuse(format!(
+            "team_closed: team {} is {state}; the member was not started",
+            plan.spec.team
+        )));
+    }
+    recorded.map_err(|e| Stop::fail(format!("the member could not be recorded: {e}")))?;
     made.recorded = true;
     steps.mark(ctx, "record");
 

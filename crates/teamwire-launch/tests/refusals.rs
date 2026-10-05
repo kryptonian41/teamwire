@@ -10,7 +10,7 @@ mod common;
 
 use common::{Rig, codes, pane_member, team_spec, worktree_member};
 use serde_json::json;
-use teamwire_core::SessionId;
+use teamwire_core::{Clock, SessionId};
 use teamwire_fakes::CallKind;
 
 #[test]
@@ -304,4 +304,86 @@ fn a_spawn_timeout_that_started_the_agent_says_so_loudly() {
 
 fn spec_for(rig: &Rig) -> serde_json::Value {
     team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())])
+}
+
+#[test]
+fn add_refused_when_close_lock_taken_after_validate() {
+    use teamwire_launch::LaunchOutcome;
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    common::seed_team(&rig, "demo", |_, _| Ok(()));
+    let spec = team_spec(
+        "demo",
+        &[
+            worktree_member("first", "First", &repo),
+            worktree_member("second", "Second", &repo),
+        ],
+    );
+    let plan = rig.validate(&spec, true).unwrap();
+    let mut other = teamwire_store::Store::open_existing(
+        rig.home.path(),
+        &teamwire_core::TeamName::parse("demo").unwrap(),
+    )
+    .unwrap();
+    other
+        .write(|tx| tx.begin_close(rig.clock.now(), teamwire_core::Pid::new(1)))
+        .unwrap();
+    let (report, store) = rig.launch("demo", plan);
+    for member in &report.members {
+        assert!(
+            matches!(&member.outcome, LaunchOutcome::Refused(why) if why.contains("team_closed")),
+            "{:?}",
+            member.outcome
+        );
+    }
+    assert_eq!(report.members.len(), 2);
+    assert_eq!(rig.host.log().count(CallKind::Write), 0);
+    // The one read is the check for names already alive, made before any member.
+    let calls = rig.host.log().calls();
+    assert!(
+        calls.iter().all(|c| c.name == "live_agent_names"),
+        "no spawn and no close: {calls:?}"
+    );
+    assert!(common::member_row(&store, "first").is_none());
+    assert!(common::member_row(&store, "second").is_none());
+    assert!(!repo.join(".worktrees/first").exists());
+}
+
+#[test]
+fn branch_git_refuses_is_a_spec_error() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    // `main` is checked out in the repository itself.
+    for branch in ["foo.lock", "a/.b", "a.lock/b", "main"] {
+        let member = common::with(
+            worktree_member("api", "API work", &repo),
+            "branch",
+            json!(branch),
+        );
+        let errors = rig
+            .validate(&team_spec("demo", &[member]), false)
+            .unwrap_err();
+        let expect = if branch == "main" {
+            "branch_checked_out"
+        } else {
+            "bad_branch"
+        };
+        assert_eq!(codes(&errors), [expect], "{branch}");
+    }
+    assert_eq!(rig.host.log().count_named("spawn"), 0);
+}
+
+#[test]
+fn add_spec_without_title_uses_team_title() {
+    let rig = Rig::new();
+    common::seed_team(&rig, "demo", |_, _| Ok(()));
+    let mut spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
+    spec.as_object_mut().unwrap().remove("title");
+    let plan = rig.validate(&spec, true).unwrap();
+    assert_eq!(plan.spec.title, "Seed", "the recorded team title is used");
+
+    // A first launch still needs a title.
+    let fresh = Rig::new();
+    let errors = fresh.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["title_missing"]);
 }

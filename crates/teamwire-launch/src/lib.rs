@@ -16,6 +16,7 @@ mod env;
 mod git;
 mod hold;
 mod member;
+mod member_parts;
 mod member_steps;
 mod plan;
 mod plan_rules;
@@ -57,6 +58,10 @@ pub struct WorktreePlan {
     /// The base the spec named. Ignored when the branch already exists.
     pub base: Option<String>,
     pub branch_exists: bool,
+    /// The path is a worktree of this branch that an earlier, failed launch
+    /// left behind with no commits past its start; launch uses it as it is.
+    #[serde(default)]
+    pub reuse: bool,
 }
 
 /// One member of a valid spec, with everything validation worked out.

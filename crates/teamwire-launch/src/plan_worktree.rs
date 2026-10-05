@@ -7,6 +7,7 @@ use teamwire_core::MemberSpec;
 use crate::WorktreePlan;
 use crate::git;
 use crate::plan::{Bad, Cx, branch_ok};
+use crate::validate::is_failed;
 
 pub(crate) fn worktree_plan(
     cx: &mut Cx<'_>,
@@ -39,13 +40,23 @@ pub(crate) fn worktree_plan(
         return None;
     }
     let path = repo.join(".worktrees").join(&slug);
+    let mut reuse = false;
     if path.exists() {
-        bad(
-            "branch",
-            "path_exists",
-            format!("{} already exists", path.display()),
-        );
-        return None;
+        if leftover_is_reusable(cx, child, repo, &branch, &path) {
+            reuse = true;
+        } else {
+            bad(
+                "branch",
+                "path_exists",
+                format!(
+                    "{} already exists. If an earlier launch left it, save or delete what it \
+                     holds and run `git worktree remove {}`; otherwise pick another branch",
+                    path.display(),
+                    path.display()
+                ),
+            );
+            return None;
+        }
     }
     match git::run(platform, repo, &["rev-parse", "--git-dir"]) {
         Ok(out) if out.success() => {}
@@ -66,10 +77,34 @@ pub(crate) fn worktree_plan(
             return None;
         }
     }
+    // `branch_ok` keeps the name a safe directory name; git has rules of its
+    // own (`foo.lock`, `a/.b`) that only git can check.
+    if !git::run(platform, repo, &["check-ref-format", "--branch", &branch])
+        .is_ok_and(|o| o.success())
+    {
+        bad(
+            "branch",
+            "bad_branch",
+            format!("git does not accept {branch:?} as a branch name"),
+        );
+        return None;
+    }
     let head = format!("refs/heads/{branch}");
     let branch_exists = git::run(platform, repo, &["rev-parse", "--verify", "--quiet", &head])
         .is_ok_and(|o| o.success());
     if branch_exists {
+        if !reuse && checked_out(platform, repo, &head) {
+            bad(
+                "branch",
+                "branch_checked_out",
+                format!(
+                    "branch {branch} is already checked out in another worktree of {}; \
+                     git allows one checkout per branch",
+                    repo.display()
+                ),
+            );
+            return None;
+        }
         let ignored = child
             .base
             .as_ref()
@@ -90,6 +125,28 @@ pub(crate) fn worktree_plan(
             return None;
         }
     }
+    // The brief is written to `TASK.md` in the worktree. A repository that
+    // tracks that file would have it overwritten, and `info/exclude` does
+    // nothing for a tracked file.
+    let start = if branch_exists {
+        head.clone()
+    } else {
+        child.base.as_deref().unwrap_or("HEAD").to_owned()
+    };
+    let tracked = format!("{start}:TASK.md");
+    if git::run(platform, repo, &["cat-file", "-e", &tracked]).is_ok_and(|o| o.success()) {
+        bad(
+            "branch",
+            "task_md_tracked",
+            format!(
+                "{} tracks a file named TASK.md at {start}; the member's brief is written to \
+                 that name in its worktree. Rename the tracked file, or start the member from a \
+                 commit without it",
+                repo.display()
+            ),
+        );
+        return None;
+    }
     let ignore_path = format!(".worktrees/{slug}/x");
     if git::run(platform, repo, &["check-ignore", "-q", &ignore_path])
         .is_ok_and(|o| o.exit_code == 1)
@@ -105,5 +162,55 @@ pub(crate) fn worktree_plan(
         path,
         base: child.base.clone(),
         branch_exists,
+        reuse,
     })
+}
+
+/// True when `git worktree list` shows `refs/heads/<branch>` checked out.
+fn checked_out(platform: &dyn teamwire_core::Platform, repo: &Path, head: &str) -> bool {
+    let want = format!("branch {head}");
+    git::stdout_of(platform, repo, &["worktree", "list", "--porcelain"])
+        .is_ok_and(|text| text.lines().any(|l| l == want))
+}
+
+/// A relaunch of a member that failed before it started may use the path an
+/// earlier launch could not take back: it is a registered worktree of the same
+/// branch and still sits on the commit the member started from.
+fn leftover_is_reusable(
+    cx: &Cx<'_>,
+    child: &MemberSpec,
+    repo: &Path,
+    branch: &str,
+    path: &Path,
+) -> bool {
+    let platform = cx.env.platform;
+    let Some(old) = cx
+        .existing
+        .and_then(|e| e.members.iter().find(|m| m.role == child.role))
+    else {
+        return false;
+    };
+    let started = cx
+        .existing
+        .is_some_and(|e| e.ever_started.contains(&child.role));
+    let (true, false, Some(start)) = (is_failed(old), started, old.base_sha.as_deref()) else {
+        return false;
+    };
+    let Ok(listing) = git::stdout_of(platform, repo, &["worktree", "list", "--porcelain"]) else {
+        return false;
+    };
+    let Ok(real) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    let want_branch = format!("branch refs/heads/{branch}");
+    let registered = listing.split("\n\n").any(|entry| {
+        let mut lines = entry.lines();
+        lines
+            .next()
+            .and_then(|l| l.strip_prefix("worktree "))
+            .is_some_and(|p| std::fs::canonicalize(p).is_ok_and(|p| p == real))
+            && entry.lines().any(|l| l == want_branch)
+    });
+    registered
+        && git::stdout_of(platform, path, &["rev-parse", "HEAD"]).is_ok_and(|head| head == start)
 }

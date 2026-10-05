@@ -147,3 +147,42 @@ fn events_carry_the_launch_id_the_requested_count_steps_and_session() {
     assert!(common::jget(started, "/steps/worktree").is_number());
     assert!(common::jget(started, "/session_id").is_string());
 }
+
+#[test]
+fn tracked_task_md_is_refused() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    common::write(&repo.join("TASK.md"), "the project's own file\n");
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "track TASK.md"]);
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(common::codes(&errors), ["task_md_tracked"]);
+    assert!(errors.first().unwrap().message.contains("TASK.md"));
+    assert_eq!(
+        std::fs::read_to_string(repo.join("TASK.md")).unwrap(),
+        "the project's own file\n",
+        "the tracked file is untouched"
+    );
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test seeds the repository's exclude file with bytes that are not UTF-8"
+)]
+fn non_utf8_exclude_is_kept() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let exclude = repo.join(".git/info/exclude");
+    std::fs::create_dir_all(exclude.parent().unwrap()).unwrap();
+    std::fs::write(&exclude, b"caf\xe9\n").unwrap();
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, _store) = rig.launch("demo", plan);
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let bytes = std::fs::read(&exclude).unwrap();
+    assert!(bytes.starts_with(b"caf\xe9\n"), "{bytes:?}");
+    assert!(bytes.ends_with(b"TASK.md\n"), "{bytes:?}");
+}

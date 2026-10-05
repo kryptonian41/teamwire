@@ -15,6 +15,6 @@ both is always required, whatever else your task says.
   Your progress lines, your 'Decisions I made' list, and any long
   result go here. Keep your final chat message short and point at it.
 - Your completion, recorded LAST, once everything else is finished, by
-  running `teamwire done` (see WHEN YOU ARE FINISHED below).
+  running `{teamwire} done` (see WHEN YOU ARE FINISHED below).
 
 YOUR ROLE

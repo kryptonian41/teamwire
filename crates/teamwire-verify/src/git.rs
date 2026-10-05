@@ -85,6 +85,10 @@ impl<'a> Git<'a> {
     /// commits into its history, and those are not its own. The start then
     /// moves forward to the merge base with the base branch, and only when
     /// that commit descends from the recorded start: it never moves back.
+    /// It also never lands on the member's own first-parent history. When the
+    /// lead merges the member's branch into the base, or fast-forwards it,
+    /// the merge base is the member's own commit, and moving there would hide
+    /// every change the member made.
     pub(crate) fn diff_base(&self, base_sha: &str, base_ref: Option<&str>) -> String {
         let Some(base_ref) = base_ref.filter(|r| !r.is_empty()) else {
             return base_sha.to_owned();
@@ -99,10 +103,21 @@ impl<'a> Git<'a> {
         let descends = self
             .run(&["merge-base", "--is-ancestor", base_sha, merge_base])
             .is_ok_and(|out| out.success());
-        if descends {
+        if descends && !self.on_first_parent_chain(base_sha, merge_base) {
             merge_base.to_owned()
         } else {
             base_sha.to_owned()
+        }
+    }
+
+    /// True when `commit` is one of the commits `HEAD` reaches by first
+    /// parents after `base`. A failed call counts as true, so the caller keeps
+    /// the recorded start.
+    fn on_first_parent_chain(&self, base: &str, commit: &str) -> bool {
+        let range = format!("{base}..HEAD");
+        match self.stdout(&["rev-list", "--first-parent", &range]) {
+            Ok(out) => out.lines().any(|l| l.trim() == commit),
+            Err(_) => true,
         }
     }
 
@@ -161,7 +176,7 @@ impl<'a> Git<'a> {
             {
                 fields.next();
             }
-            if path != crate::TASK_FILE {
+            if !crate::is_task_file(path) {
                 paths.push(path.to_owned());
             }
         }

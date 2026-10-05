@@ -698,3 +698,43 @@ fn the_report_is_clean_only_when_every_checked_member_passes() {
     let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
     assert!(!report.is_clean(false));
 }
+
+// ---- the lead merges the member's branch into its base ----
+
+/// A member deletes a test and edits outside its owns, and commits.
+fn member_with_flags() -> (Fixture, Repo) {
+    let (fx, repo) = rust_member(&["src/"], &[]);
+    repo.remove("tests/a.rs");
+    repo.commit(&[("outside.txt", "x\n")], "own work", start_secs() + 5);
+    (fx, repo)
+}
+
+fn assert_flags_kept(fx: &mut Fixture, repo: &Repo) {
+    report_all_commits(fx, repo, "api");
+    let record = run_one(fx, "api");
+    let ids = flag_ids(&record);
+    assert!(ids.contains(&"outside-owns:outside.txt"), "{record:?}");
+    assert!(
+        ids.iter().any(|f| f.starts_with("test-deleted")),
+        "{record:?}"
+    );
+}
+
+#[test]
+fn lead_merge_into_base_does_not_hide_flags() {
+    let (mut fx, repo) = member_with_flags();
+    repo.git(&["checkout", "--quiet", "main"]);
+    repo.git_at(
+        &["merge", "--no-ff", "--quiet", "-m", "integrate", "work"],
+        start_secs() + 50,
+    );
+    repo.git(&["checkout", "--quiet", "work"]);
+    assert_flags_kept(&mut fx, &repo);
+}
+
+#[test]
+fn fast_forward_of_base_does_not_hide_flags() {
+    let (mut fx, repo) = member_with_flags();
+    repo.git(&["branch", "--force", "main", "HEAD"]);
+    assert_flags_kept(&mut fx, &repo);
+}

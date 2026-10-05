@@ -113,3 +113,59 @@ fn a_pane_member_does_not_get_the_team_setup() {
         "setup never ran"
     );
 }
+
+#[test]
+fn failed_setup_that_wrote_a_file_reports_leftover_worktree() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let failing = common::with(spec.clone(), "setup", json!("touch made.txt; exit 3"));
+    let plan = rig.validate(&failing, false).unwrap();
+    let (report, store) = rig.launch("demo", plan);
+
+    let outcome = &report.members.first().unwrap().outcome;
+    let reason = format!("{outcome:?}");
+    assert!(reason.contains("setup exited 3"), "{reason}");
+    assert!(
+        reason.contains("made.txt"),
+        "the leftover path is named: {reason}"
+    );
+    assert!(
+        reason.contains("git worktree remove"),
+        "the manual step: {reason}"
+    );
+    assert!(
+        !reason.contains("--add"),
+        "no advice that cannot work: {reason}"
+    );
+    assert!(
+        repo.join(".worktrees/api/made.txt").is_file(),
+        "nothing was forced"
+    );
+    assert_eq!(
+        member_row(&store, "api").unwrap().state,
+        MemberState::Failed
+    );
+    drop(store);
+
+    // The same role again: the worktree is reused, not refused as `path_exists`.
+    let plan = rig.validate(&spec, true).unwrap();
+    assert!(
+        plan.members
+            .first()
+            .unwrap()
+            .worktree
+            .as_ref()
+            .unwrap()
+            .reuse
+    );
+    let (report, store) = rig.launch("demo", plan);
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started,
+        "{report:?}"
+    );
+    assert_eq!(
+        member_row(&store, "api").unwrap().state,
+        MemberState::Started
+    );
+}
