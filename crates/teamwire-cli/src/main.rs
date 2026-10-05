@@ -414,9 +414,18 @@ fn main() -> ExitCode {
     }
 }
 
-/// True when the first argument after the program is `hook`.
+/// True when the first argument after the program that is not the global
+/// `--home` option or its value is `hook`.
 fn is_hook(args: &[std::ffi::OsString]) -> bool {
-    args.get(1).is_some_and(|a| a == "hook")
+    let mut rest = args.iter().skip(1);
+    while let Some(arg) = rest.next() {
+        if arg == "--home" {
+            rest.next();
+        } else if !arg.to_string_lossy().starts_with("--home=") {
+            return arg == "hook";
+        }
+    }
+    false
 }
 
 /// Help and version go to stdout with exit 0; any other parse error is a
@@ -551,6 +560,14 @@ mod tests {
             line.split_whitespace().map(Into::into).collect()
         };
         assert!(is_hook(&args("teamwire hook claude-stop --bogus")));
+        assert!(is_hook(&args(
+            "teamwire --home /h hook claude-stop --bogus"
+        )));
+        assert!(is_hook(&args(
+            "teamwire --home=/h hook claude-stop --bogus"
+        )));
+        assert!(!is_hook(&args("teamwire --home /h send hook")));
+        assert!(!is_hook(&args("teamwire --home")));
         assert!(!is_hook(&args("teamwire send hook")));
         assert!(!is_hook(&args("teamwire")));
     }
