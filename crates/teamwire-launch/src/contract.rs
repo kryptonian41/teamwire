@@ -77,24 +77,42 @@ fn talking(kind: MemberKind) -> String {
 /// The whole contract for one member. The task is not here: it is the
 /// member's first message (LCH-19).
 pub fn render_contract(p: &ContractParts<'_>) -> String {
+    let bin = shell_word(&p.teamwire_bin.display().to_string());
+    // The placeholder is filled in the fixed text before any path or check
+    // is added, so text from the spec that holds `{teamwire}` stays as written.
     let head = HEAD
+        .replace("{teamwire}", &bin)
         .replace("{team}", p.team.as_str())
         .replace("{role}", p.role.as_str())
         .replace("{report_file}", &p.report_file.display().to_string());
-    let finish = FINISH.replace("{outbox_dir}", &p.outbox_dir.display().to_string());
-    let text = [
+    let finish = FINISH
+        .replace("{teamwire}", &bin)
+        .replace("{outbox_dir}", &p.outbox_dir.display().to_string());
+    [
         head,
         kind_text(p.kind).to_owned(),
         scope(p.check, p.owns),
-        talking(p.kind),
+        talking(p.kind).replace("{teamwire}", &bin),
         TOGETHER.to_owned(),
         HOW_TO_WORK.to_owned(),
         finish,
     ]
-    .concat();
-    // Last, so a path or a check that holds the placeholder text is not
-    // rewritten.
-    text.replace("{teamwire}", &p.teamwire_bin.display().to_string())
+    .concat()
+}
+
+/// The path as one shell word: left alone when it holds only safe characters,
+/// else in single quotes with each `'` written `'\''`.
+fn shell_word(text: &str) -> String {
+    let safe = !text.is_empty()
+        && text.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || matches!(c, '/' | '.' | '_' | '-' | '+' | ':' | '@' | '=' | ',')
+        });
+    if safe {
+        text.to_owned()
+    } else {
+        format!("'{}'", text.replace('\'', "'\\''"))
+    }
 }
 
 #[cfg(test)]

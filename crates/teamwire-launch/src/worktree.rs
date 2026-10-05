@@ -96,13 +96,19 @@ pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool) {
 /// clears them. git refuses to remove a worktree that holds such files, and
 /// launch never forces it.
 fn leftovers(platform: &dyn Platform, path: &Path) -> String {
-    let Ok(text) = stdout_of(
+    // Raw output: a trimmed first line ` M Cargo.lock` would lose its space
+    // and so the first letter of its path.
+    let Ok(out) = run(
         platform,
         path,
         &["status", "--porcelain", "--untracked-files=all"],
     ) else {
         return String::new();
     };
+    if !out.success() {
+        return String::new();
+    }
+    let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let paths: Vec<&str> = text.lines().filter_map(|l| l.get(3..)).collect();
     if paths.is_empty() {
         return String::new();

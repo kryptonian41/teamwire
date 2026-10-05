@@ -94,4 +94,9 @@ fn cfg_attr_ignore_is_weakening() {
     }
     let fine = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,0 +2 @@\n+#[cfg_attr(test, derive(Debug))]\n";
     assert!(ids_of(fine).is_empty());
+    let lint = "diff --git a/src/a.rs b/src/a.rs\n--- a/src/a.rs\n+++ b/src/a.rs\n@@ -1,0 +2 @@\n+#[cfg_attr(test, allow(ignored_unit_patterns))]\n";
+    assert!(
+        ids_of(lint).is_empty(),
+        "a lint named ignored_* is not ignore"
+    );
 }
