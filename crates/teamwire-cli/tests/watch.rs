@@ -82,7 +82,9 @@ fn a_second_watch_is_refused_and_names_the_first() {
     bed.add("api");
     // This test process holds the lease, and it is alive.
     let me = Pid::new(std::process::id());
-    let at = bed.clock.now();
+    // The binary reads the real clock, and a lease whose heartbeat is old is
+    // taken over, so the lease is stamped with the real time.
+    let at = teamwire_platform::SystemClock.now();
     bed.store
         .write(|tx| {
             tx.take_watch_lease(at, me, "otherhost", |_| false)
