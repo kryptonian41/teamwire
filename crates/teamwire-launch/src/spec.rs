@@ -4,11 +4,11 @@ use teamwire_core::{Role, TeamName, TeamSpec};
 
 use crate::SpecError;
 
-/// Parses a spec. Keys that start with `_` are ignored, and so is every
+/// Parses a spec. A missing `title` is an empty one. Keys that start with `_` are ignored, and so is every
 /// other key the spec does not use. A bad team name or role is reported
 /// with the role as written, and every such problem is reported together.
 pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
-    let value: serde_json::Value = serde_json::from_str(text).map_err(|e| {
+    let mut value: serde_json::Value = serde_json::from_str(text).map_err(|e| {
         vec![SpecError::new(
             None,
             None,
@@ -45,6 +45,11 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
     }
     if !errors.is_empty() {
         return Err(errors);
+    }
+    // A missing team title reads as an empty one. `validate` takes the title
+    // from the team row on `--add` and refuses an empty one on a first launch.
+    if let Some(map) = value.as_object_mut() {
+        map.entry("title").or_insert_with(|| serde_json::json!(""));
     }
     serde_json::from_value(value).map_err(|e| {
         vec![SpecError::new(

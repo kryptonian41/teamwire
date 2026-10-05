@@ -113,8 +113,15 @@ pub fn validate(
     if !errors.is_empty() {
         return Err(errors);
     }
+    // `--add` may leave the title out: the team row already holds it.
+    let mut planned = spec.clone();
+    if let Some(e) = &existing
+        && plan::clean(&planned.title).is_empty()
+    {
+        planned.title.clone_from(&e.team.title);
+    }
     Ok(ValidPlan {
-        spec: spec.clone(),
+        spec: planned,
         add,
         warnings,
         lead,

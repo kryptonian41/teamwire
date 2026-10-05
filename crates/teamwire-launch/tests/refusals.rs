@@ -371,3 +371,18 @@ fn branch_git_refuses_is_a_spec_error() {
     }
     assert_eq!(rig.host.log().count_named("spawn"), 0);
 }
+
+#[test]
+fn add_spec_without_title_uses_team_title() {
+    let rig = Rig::new();
+    common::seed_team(&rig, "demo", |_, _| Ok(()));
+    let mut spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
+    spec.as_object_mut().unwrap().remove("title");
+    let plan = rig.validate(&spec, true).unwrap();
+    assert_eq!(plan.spec.title, "Seed", "the recorded team title is used");
+
+    // A first launch still needs a title.
+    let fresh = Rig::new();
+    let errors = fresh.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["title_missing"]);
+}
