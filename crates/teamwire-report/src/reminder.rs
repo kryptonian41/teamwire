@@ -33,8 +33,14 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
         let mut out = Vec::new();
         for d in deliveries.items.iter().filter(|d| d.reminded_at.is_none()) {
             if let Some(message) = tx.message(&d.delivery.message)? {
+                // A damaged event row about the message must not stop the
+                // hook, which also delivers the member's own result: the
+                // message is treated as not stale and left out.
                 if d.delivery.state == DeliveryState::Pending
-                    && !is_pending_stale(tx, &message, &recipient, now)?
+                    && !is_pending_stale(tx, &message, &recipient, now).unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "could not tell whether a pending message is stale");
+                        false
+                    })
                 {
                     continue;
                 }
