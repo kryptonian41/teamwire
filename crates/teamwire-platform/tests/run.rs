@@ -28,6 +28,13 @@ fn captures_stdout_stderr_and_exit_code() {
 }
 
 #[test]
+fn huge_timeout_does_not_panic() {
+    let out = native().run(&sh("true"), Duration::MAX).unwrap();
+    assert_eq!(out.exit_code, 0);
+    assert!(!out.timed_out);
+}
+
+#[test]
 fn success_is_exit_zero() {
     assert!(native().run(&sh("true"), LONG).unwrap().success());
 }

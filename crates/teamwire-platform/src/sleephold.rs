@@ -97,17 +97,31 @@ pub(crate) fn holds_in(ps_text: &str, pid: Pid) -> Vec<u32> {
         .collect()
 }
 
-fn ps(args: &[&str]) -> Option<String> {
-    let out = run_command(&Command::new("ps").args(args.iter().copied()), PS_TIMEOUT).ok()?;
-    out.success()
-        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+/// The text `program args…` printed. An `Err` means the listing could not be
+/// read (not started, timed out, non-zero exit), which is not the same as an
+/// empty listing.
+fn ps(program: &str, args: &[&str]) -> Result<String, PlatformError> {
+    let out = run_command(
+        &Command::new(program).args(args.iter().copied()),
+        PS_TIMEOUT,
+    )?;
+    if out.success() {
+        return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
+    }
+    Err(PlatformError::new(
+        PlatformErrorCode::Other,
+        format!("{program} did not finish cleanly (exit {})", out.exit_code),
+    ))
 }
 
 impl SleepHold for MacOs {
     /// The hold's `owned` flag is false: the process list cannot say who
     /// started it. The caller knows from the team records and sets it.
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo> {
-        let listing = ps(&["-eo", "pid=,args="])?;
+        // The trait returns an Option, so a `ps` that cannot be read looks the
+        // same as "no hold". The shape stays because launch and the fakes
+        // depend on it.
+        let listing = ps("ps", &["-eo", "pid=,args="]).ok()?;
         holds_in(&listing, lead_pid).first().map(|pid| HoldInfo {
             pid: Pid::new(*pid),
             owned: false,
@@ -127,34 +141,51 @@ impl SleepHold for MacOs {
     }
 
     fn release(&self, hold: &HoldInfo, lead_pid: Pid) -> Result<ReleaseOutcome, PlatformError> {
-        if !hold.owned {
-            return Ok(ReleaseOutcome::NotOwned);
-        }
-        if !process::pid_alive(hold.pid) {
-            return Ok(ReleaseOutcome::AlreadyGone);
-        }
-        // Checked right before the kill: if the hold exited and the system
-        // gave its pid to another process, that process must not be killed.
-        let args = ps(&["-o", "args=", "-p", &hold.pid.to_string()]).unwrap_or_default();
-        let words: Vec<&str> = args.split_whitespace().collect();
-        if words.is_empty() {
-            return Ok(ReleaseOutcome::AlreadyGone);
-        }
-        let still_hold = parse_caffeinate(&words).is_some_and(|c| c.is_untimed_hold_on(lead_pid));
-        if !still_hold {
-            return Ok(ReleaseOutcome::NotAHold);
-        }
-        let raw = i32::try_from(hold.pid.get())
-            .map(nix::unistd::Pid::from_raw)
-            .map_err(|_| PlatformError::new(PlatformErrorCode::Other, "pid out of range"))?;
-        match kill(raw, Signal::SIGTERM) {
-            Ok(()) => wait_gone(hold.pid),
-            Err(nix::errno::Errno::ESRCH) => Ok(ReleaseOutcome::AlreadyGone),
-            Err(errno) => Err(io_error(
-                &format!("releasing caffeinate {}", hold.pid),
-                &std::io::Error::from(errno),
-            )),
-        }
+        release_with(*hold, lead_pid, "ps")
+    }
+}
+
+/// `release`, with the program that reads the process list as a parameter so
+/// a test can make that read fail.
+fn release_with(
+    hold: HoldInfo,
+    lead_pid: Pid,
+    ps_program: &str,
+) -> Result<ReleaseOutcome, PlatformError> {
+    if !hold.owned {
+        return Ok(ReleaseOutcome::NotOwned);
+    }
+    if !process::pid_alive(hold.pid) {
+        return Ok(ReleaseOutcome::AlreadyGone);
+    }
+    // Checked right before the kill: if the hold exited and the system
+    // gave its pid to another process, that process must not be killed.
+    let pid_text = hold.pid.to_string();
+    let args = match ps(ps_program, &["-o", "args=", "-p", &pid_text]) {
+        Ok(args) => args,
+        // `ps -p` also fails when the process ended after the check above.
+        Err(_) if !process::pid_alive(hold.pid) => return Ok(ReleaseOutcome::AlreadyGone),
+        // Unknown is not gone: the hold may still be running.
+        Err(err) => return Err(err),
+    };
+    let words: Vec<&str> = args.split_whitespace().collect();
+    if words.is_empty() {
+        return Ok(ReleaseOutcome::AlreadyGone);
+    }
+    let still_hold = parse_caffeinate(&words).is_some_and(|c| c.is_untimed_hold_on(lead_pid));
+    if !still_hold {
+        return Ok(ReleaseOutcome::NotAHold);
+    }
+    let raw = i32::try_from(hold.pid.get())
+        .map(nix::unistd::Pid::from_raw)
+        .map_err(|_| PlatformError::new(PlatformErrorCode::Other, "pid out of range"))?;
+    match kill(raw, Signal::SIGTERM) {
+        Ok(()) => wait_gone(hold.pid),
+        Err(nix::errno::Errno::ESRCH) => Ok(ReleaseOutcome::AlreadyGone),
+        Err(errno) => Err(io_error(
+            &format!("releasing caffeinate {}", hold.pid),
+            &std::io::Error::from(errno),
+        )),
     }
 }
 
@@ -196,6 +227,28 @@ fn spawn_caffeinate(lead_pid: Pid) -> Result<std::process::Child, PlatformError>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test needs a live process that Platform::run would wait for"
+    )]
+    fn release_reports_error_when_ps_fails() {
+        let mut child = std::process::Command::new("/bin/sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let hold = HoldInfo {
+            pid: Pid::new(child.id()),
+            owned: true,
+        };
+        let outcome = release_with(hold, Pid::new(1), "/nonexistent/ps");
+        let alive = process::pid_alive(hold.pid);
+        drop(child.kill());
+        drop(child.wait());
+        assert!(outcome.is_err(), "{outcome:?}");
+        assert!(alive, "a failed check must not kill the process");
+    }
 
     const PS: &str = "  101 /usr/bin/caffeinate -ims -w 500\n  102 caffeinate -i -t 300 -w 500\n  103 caffeinate -imsw500\n  104 caffeinate -i -w5000\n  105 caffeinate -ims claude -w 500\n";
 

@@ -39,7 +39,9 @@ pub(crate) fn run_command(cmd: &Command, timeout: Duration) -> Result<RunOutput,
     let stdout = child.stdout.take().map(reader);
     let stderr = child.stderr.take().map(reader);
 
-    let deadline = clock.monotonic() + timeout;
+    // A timeout too large for `Instant` means "wait as long as the command
+    // takes": adding it would panic.
+    let deadline = clock.monotonic().checked_add(timeout);
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
@@ -51,6 +53,10 @@ pub(crate) fn run_command(cmd: &Command, timeout: Duration) -> Result<RunOutput,
             }
         }
         let now = clock.monotonic();
+        let Some(deadline) = deadline else {
+            thread::sleep(POLL);
+            continue;
+        };
         if now >= deadline {
             kill_group(group);
             // Reap the direct child so it does not stay a zombie.

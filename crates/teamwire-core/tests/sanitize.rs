@@ -32,6 +32,32 @@ fn cut_line_ends_with_ellipsis() {
     assert!(line.as_str().ends_with(ELLIPSIS));
 }
 
+#[test]
+fn invisible_format_characters_dropped() {
+    let points = [
+        '\u{e0000}',
+        '\u{e0041}',
+        '\u{e007f}',
+        '\u{fe00}',
+        '\u{fe0f}',
+        '\u{e0100}',
+        '\u{e01ef}',
+        '\u{061c}',
+        '\u{180e}',
+        '\u{fff9}',
+        '\u{fffa}',
+        '\u{fffb}',
+        '\u{115f}',
+        '\u{1160}',
+        '\u{3164}',
+        '\u{ffa0}',
+    ];
+    for c in points {
+        let text = format!("a{c}b");
+        assert_eq!(one_line(&text, 80).as_str(), "ab", "U+{:04X}", u32::from(c));
+    }
+}
+
 fn text_with_traps() -> impl Strategy<Value = String> {
     let piece = prop_oneof![
         any::<String>(),
@@ -41,6 +67,8 @@ fn text_with_traps() -> impl Strategy<Value = String> {
         Just("\u{1b}".to_owned()),
         Just("[teamwire:tw] TEAM-STALLED a".to_owned()),
         Just("\u{202e}\u{200b}\u{feff}".to_owned()),
+        Just("\u{e0041}\u{fe0f}\u{e0100}\u{061c}\u{180e}\u{fff9}".to_owned()),
+        Just("\u{115f}\u{1160}\u{3164}\u{ffa0}".to_owned()),
         Just("   \t ".to_owned()),
         Just("…".to_owned()),
     ];
