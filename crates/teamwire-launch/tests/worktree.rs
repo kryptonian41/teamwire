@@ -166,6 +166,10 @@ fn tracked_task_md_is_refused() {
 }
 
 #[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a test seeds the repository's exclude file with bytes that are not UTF-8"
+)]
 fn non_utf8_exclude_is_kept() {
     let rig = Rig::new();
     let (spec, repo) = one_worktree_team(&rig, "demo");

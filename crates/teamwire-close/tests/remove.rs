@@ -563,6 +563,10 @@ fn a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop()
 }
 
 /// A close takes the lock from a second store handle, as another process would.
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 fn take_the_close_lock(
     home: &std::path::Path,
     team: &teamwire_core::TeamName,

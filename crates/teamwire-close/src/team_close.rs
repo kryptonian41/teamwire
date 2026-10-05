@@ -1,16 +1,14 @@
 //! Closing the whole team, in the fixed order of CLS-1, under the close lock.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::json;
-use teamwire_core::{EventType, HostErrorCode, Member, MemberState, Mode, Pid, TeamState};
-use teamwire_store::{CloseEnd, Ctx, Party, TeamRow};
+use teamwire_core::{EventType, Member, Mode, Pid, TeamState};
+use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
+use crate::member_close::{close_place, remove_worktree, unpushed};
 use crate::{CloseOpts, CloseReport, StepOutcome, archive, git, hold};
-
-const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
 /// else. A live owner is never cleared.
@@ -384,87 +382,5 @@ impl Seq<'_, '_> {
         } else {
             self.done(step, Err(problems.join("; ")))
         }
-    }
-}
-
-/// `git worktree remove` for one member, without force; the branch stays.
-fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
-    let role = &member.role;
-    let Some(repo) = &member.repo else {
-        return Ok(format!(
-            "{role} has no repository recorded; nothing to remove"
-        ));
-    };
-    if !member.cwd.is_dir() {
-        return Ok(format!(
-            "{role}'s worktree {} was already gone",
-            member.cwd.display()
-        ));
-    }
-    let path = member.cwd.display().to_string();
-    let out = git::run(ctx.platform, repo, &["worktree", "remove", &path])
-        .map_err(|e| format!("{role}: {e}"))?;
-    if out.success() {
-        Ok(format!("{role}'s worktree {path} removed"))
-    } else {
-        Err(format!(
-            "{role}: git worktree remove: {}",
-            git::failure_text(&out)
-        ))
-    }
-}
-
-/// Closes the member's own place through the member's own host (CLS-7).
-/// A place the host no longer knows is closed already.
-fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<String>, String> {
-    let Some(place) = &member.place else {
-        return Ok(None);
-    };
-    let role = &member.role;
-    let (_, host) = ctx
-        .adapters(&Party::Member(role.clone()))
-        .map_err(|e| format!("{role}: {e}"))?;
-    match host.close(place, HOST_TIMEOUT) {
-        Ok(()) => Ok(Some(format!("{role}'s place {} closed", place.id))),
-        Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
-            "{role}'s place {} was already gone",
-            place.id
-        ))),
-        Err(e) => Err(format!("{role}: closing place {}: {e}", place.id)),
-    }
-}
-
-/// What a kept branch has that no remote has (CLS-8): commits ahead of its
-/// upstream, or, with no upstream, every commit since the member started.
-pub(crate) fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<String> {
-    if member.state == MemberState::Failed || !member.cwd.is_dir() {
-        return Vec::new();
-    }
-    let count = |args: &[&str]| -> Option<u64> {
-        let out = git::run(ctx.platform, &member.cwd, args).ok()?;
-        out.success()
-            .then(|| String::from_utf8_lossy(&out.stdout).trim().parse().ok())
-            .flatten()
-    };
-    let role = &member.role;
-    if let Some(ahead) = count(&["rev-list", "--count", "@{upstream}..HEAD"]) {
-        return if ahead > 0 {
-            vec![format!(
-                "{role}: branch {branch} is {ahead} commit(s) ahead of its upstream, not pushed"
-            )]
-        } else {
-            Vec::new()
-        };
-    }
-    let since = member
-        .base_sha
-        .as_ref()
-        .map(|sha| format!("{sha}..HEAD"))
-        .unwrap_or_else(|| "HEAD".to_owned());
-    match count(&["rev-list", "--count", &since]) {
-        Some(n) if n > 0 => vec![format!(
-            "{role}: branch {branch} has no upstream; {n} commit(s) exist only on this machine"
-        )],
-        _ => Vec::new(),
     }
 }

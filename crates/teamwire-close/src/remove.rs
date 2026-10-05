@@ -185,7 +185,7 @@ pub(crate) fn run(
         report.branches_kept.push(branch.clone());
         report
             .unpushed
-            .extend(team_close::unpushed(ctx, member, branch));
+            .extend(crate::member_close::unpushed(ctx, member, branch));
     }
     let member = member.clone();
     // The lock is read inside a write transaction, so a close that took it
@@ -227,6 +227,10 @@ pub(crate) fn run(
 
 /// Busy and dirty state read again right before a destructive step. A
 /// `--stop` stays allowed: the caller already accepted the lost turn.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
+)]
 fn guard(ctx: &Ctx<'_>, member: &Member, stop: bool) -> Result<(), String> {
     if let Ok(Some(team)) = ctx.store.read(|tx| tx.team())
         && team.state != TeamState::Open

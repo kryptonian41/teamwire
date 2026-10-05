@@ -330,10 +330,11 @@ fn add_refused_when_close_lock_taken_after_validate() {
         .unwrap();
     let (report, store) = rig.launch("demo", plan);
     for member in &report.members {
-        let LaunchOutcome::Refused(why) = &member.outcome else {
-            panic!("{:?}", member.outcome);
-        };
-        assert!(why.contains("team_closed"), "{why}");
+        assert!(
+            matches!(&member.outcome, LaunchOutcome::Refused(why) if why.contains("team_closed")),
+            "{:?}",
+            member.outcome
+        );
     }
     assert_eq!(report.members.len(), 2);
     assert_eq!(rig.host.log().count(CallKind::Write), 0);

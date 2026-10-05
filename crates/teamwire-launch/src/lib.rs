@@ -16,6 +16,7 @@ mod env;
 mod git;
 mod hold;
 mod member;
+mod member_parts;
 mod member_steps;
 mod plan;
 mod plan_rules;

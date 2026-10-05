@@ -8,7 +8,7 @@ use teamwire_core::{Command, HostError, HostErrorCode, MemberLaunch, Place, one_
 use teamwire_store::Ctx;
 
 use crate::contract::{ContractParts, render_contract};
-use crate::member::Dirs;
+use crate::member_parts::Dirs;
 use crate::worktree;
 use crate::{PlannedMember, ValidPlan};
 

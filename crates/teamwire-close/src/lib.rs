@@ -19,6 +19,7 @@ mod archive;
 mod facts;
 mod git;
 mod hold;
+mod member_close;
 mod plan;
 mod remove;
 mod team_close;

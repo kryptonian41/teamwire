@@ -3,21 +3,21 @@
 //! `started`, and the first message. A failure at any step undoes that
 //! member only, without force, and records it `failed` (LCH-4).
 
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use teamwire_core::{
-    HostErrorCode, IdentityChannel, MemberLaunch, MemberState, Place, Role, SessionId,
-    StartupOutcome, TeamState, TrustPolicy, Ulid, one_line,
+    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
+    Ulid, one_line,
 };
 use teamwire_store::{Ctx, NewMember, NewTeam};
 
+use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
     Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
 };
-use crate::worktree::{self, Made};
+use crate::worktree;
 use crate::{
     LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
 };
@@ -25,54 +25,6 @@ use crate::{
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest reason kept in an event.
 const REASON_MAX: usize = 300;
-
-/// What has been made for a member so far, for the undo.
-#[derive(Default)]
-struct Progress {
-    recorded: bool,
-    place: Option<Place>,
-    worktree: Option<Made>,
-}
-
-/// The paths of one team's directory.
-pub(crate) struct Dirs {
-    pub(crate) team: PathBuf,
-}
-
-impl Dirs {
-    pub(crate) fn member(&self, role: &Role) -> PathBuf {
-        self.team.join("members").join(role.as_str())
-    }
-    pub(crate) fn contract(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("contract")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn brief(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("briefs")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn report(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("reports")
-            .join(format!("{}.md", role.as_str()))
-    }
-    pub(crate) fn setup_log(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("setup")
-            .join(format!("{}.log", role.as_str()))
-    }
-    pub(crate) fn outbox(&self) -> PathBuf {
-        self.team.join("outbox")
-    }
-}
-
-/// Step timings, in milliseconds, for `data.steps`.
-struct Steps {
-    marks: Vec<(&'static str, u128)>,
-    last: std::time::Instant,
-}
 
 pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let mut warnings = plan.warnings.clone();
@@ -202,46 +154,6 @@ fn record_failed(ctx: &mut Ctx<'_>, m: &PlannedMember, reason: &str, extra: &Val
     {
         tracing::warn!(role = %m.spec.role, error = %e, "could not record the failed launch");
     }
-}
-
-impl Steps {
-    fn mark(&mut self, ctx: &Ctx<'_>, name: &'static str) {
-        let now = ctx.clock.monotonic();
-        let ms = now.saturating_duration_since(self.last).as_millis();
-        self.marks.push((name, ms));
-        self.last = now;
-    }
-
-    fn json(&self) -> Value {
-        Value::Object(
-            self.marks
-                .iter()
-                .map(|(k, ms)| ((*k).to_owned(), json!(ms)))
-                .collect(),
-        )
-    }
-}
-
-/// Takes back what was made: the place, then the worktree (no force).
-/// The second value is true when the worktree could not be removed.
-fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
-    let mut left = false;
-    let mut notes = Vec::new();
-    if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
-        match host.close(place, HOST_TIMEOUT) {
-            Ok(()) => notes.push(format!("place {} closed", place.id)),
-            Err(e) if e.code == HostErrorCode::NotFound => {
-                notes.push(format!("place {} was already gone", place.id));
-            }
-            Err(e) => notes.push(format!("could not close place {}: {e}", place.id)),
-        }
-    }
-    if let Some(w) = &made.worktree {
-        let (note, still_there) = worktree::remove(ctx.platform, w);
-        left = still_there;
-        notes.push(note);
-    }
-    (notes.join("; "), left)
 }
 
 /// Sets `key` on a JSON object.

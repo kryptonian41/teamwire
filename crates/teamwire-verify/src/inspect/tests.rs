@@ -48,7 +48,6 @@ fn opting_into_the_workspace_table_is_not_a_weakening() {
 
 /// The ids of the flags the patch text raises without reading a repository.
 fn ids_of(patch: &str) -> Vec<String> {
-    #[expect(clippy::unwrap_used, reason = "the shipped rules always load")]
     let rules = Ruleset::load().unwrap();
     let (mut flags, files) = scan_patch(patch, &rules);
     for file in &files {
