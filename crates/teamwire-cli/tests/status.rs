@@ -146,6 +146,26 @@ fn without_a_team_every_team_is_listed() {
 }
 
 #[test]
+fn an_unreadable_database_exits_6() {
+    let bed = team();
+    let db = bed.home.path().join("teams").join("alpha").join("team.db");
+    let mut bytes = std::fs::read(&db).unwrap();
+    for byte in &mut bytes[100..] {
+        *byte = 0xA5;
+    }
+    std::fs::write(&db, bytes).unwrap();
+    for suffix in ["-wal", "-shm"] {
+        let mut side = db.clone().into_os_string();
+        side.push(suffix);
+        std::fs::remove_file(side).ok();
+    }
+    for args in [&["status", "alpha"][..], &["status"], &["status", "--json"]] {
+        let run = teamwire(&bed, args);
+        assert_eq!(run.code, 6, "{args:?}: {}{}", run.out, run.err);
+    }
+}
+
+#[test]
 fn no_teams_says_so() {
     let home = teamwire_fakes::TestHome::new().unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))

@@ -226,6 +226,9 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
         render(&view)
     };
     say(&text);
+    if unreadable(&view) {
+        return ExitCode::from(STORE_ERROR);
+    }
     let missing_role = role
         .as_ref()
         .is_some_and(|r| !view.members.iter().any(|m| &m.role == r));
@@ -244,6 +247,12 @@ fn hide_lead_from_members(view: &mut StatusView) {
     }
 }
 
+/// `status_with` turns a failed read into a view with the errors and no
+/// state; that is a store error, not a team to describe.
+fn unreadable(view: &StatusView) -> bool {
+    view.state.is_none() && !view.errors.is_empty()
+}
+
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     let mut views = Vec::new();
     for name in team_names(home) {
@@ -257,12 +266,17 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     for (_, view) in &mut views {
         hide_lead_from_members(view);
     }
+    let code = if views.iter().any(|(_, view)| unreadable(view)) {
+        ExitCode::from(STORE_ERROR)
+    } else {
+        ExitCode::SUCCESS
+    };
     if json {
         let only: Vec<&StatusView> = views.iter().map(|(_, v)| v).collect();
         return match json_text(&only) {
             Ok(text) => {
                 say(&text);
-                ExitCode::SUCCESS
+                code
             }
             Err(code) => code,
         };
@@ -273,5 +287,5 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     for (name, view) in &views {
         say(&(summary_line(name, view) + "\n"));
     }
-    ExitCode::SUCCESS
+    code
 }
