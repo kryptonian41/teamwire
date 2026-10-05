@@ -192,10 +192,14 @@ fn state_word(state: RecipientState) -> &'static str {
     }
 }
 
-/// 4 when any recipient is undelivered, else 5 when any is unconfirmed.
+/// 6 when any recipient is still pending, because its delivery record could
+/// not be written; else 4 when any is undelivered, else 5 when any is
+/// unconfirmed.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
     let any = |s| report.deliveries.iter().any(|d| d.state == s);
-    if any(RecipientState::Undelivered) {
+    if any(RecipientState::Pending) {
+        STORE
+    } else if any(RecipientState::Undelivered) {
         NOT_DELIVERED
     } else if any(RecipientState::Unconfirmed) {
         UNCONFIRMED
@@ -376,6 +380,45 @@ mod tests {
     )]
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()
+    }
+
+    #[expect(
+        clippy::unwrap_used,
+        reason = "literals in a test cannot fail to parse"
+    )]
+    fn report(states: &[RecipientState]) -> SendReport {
+        SendReport {
+            id: teamwire_core::Ulid::parse("01M466HBGM3C8KG2XPMZWRQCH4").unwrap(),
+            display_id: DisplayId::parse("m001").unwrap(),
+            seq: 1,
+            deliveries: states
+                .iter()
+                .map(|state| teamwire_msg::RecipientReport {
+                    to: Recipient::parse("api").unwrap(),
+                    state: *state,
+                    reason: None,
+                    attempts: None,
+                })
+                .collect(),
+            duplicate_of_key: false,
+        }
+    }
+
+    #[test]
+    fn a_pending_recipient_exits_6() {
+        assert_eq!(exit_of(&report(&[RecipientState::Pending])), STORE);
+        assert_eq!(
+            exit_of(&report(&[
+                RecipientState::HandedOff,
+                RecipientState::Pending
+            ])),
+            STORE
+        );
+        assert_eq!(
+            exit_of(&report(&[RecipientState::Undelivered])),
+            NOT_DELIVERED
+        );
+        assert_eq!(exit_of(&report(&[RecipientState::HandedOff])), 0);
     }
 
     #[test]
