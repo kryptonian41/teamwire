@@ -16,5 +16,8 @@ ulid = { workspace = true }
 [dev-dependencies]
 proptest = { workspace = true }
 
+[lib]
+doctest = false
+
 [lints]
 workspace = true
