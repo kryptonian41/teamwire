@@ -147,9 +147,14 @@ impl Repo {
                 .unwrap(),
         };
         repo.git(&["init", "--quiet", "--initial-branch=main"]);
-        repo.git(&["config", "user.name", "Test"]);
-        repo.git(&["config", "user.email", "test@example.com"]);
-        repo.git(&["config", "commit.gpgsign", "false"]);
+        // Appending to the file git itself writes starts no process, where
+        // three `git config` calls start three.
+        let config = repo.path().join(".git").join("config");
+        let mut text = std::fs::read_to_string(&config).unwrap();
+        text.push_str(
+            "[user]\n\tname = Test\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n",
+        );
+        std::fs::write(config, text).unwrap();
         repo.commit(files, "initial", at);
         repo
     }
