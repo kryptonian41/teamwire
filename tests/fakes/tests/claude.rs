@@ -753,3 +753,85 @@ fn dropping_the_env_ends_a_step_shell_that_never_finishes() {
         assert!(gone, "the step shell {pid} outlived the fake environment");
     }
 }
+
+/// Releasing the owner lock stands in for the test process dying by a
+/// signal: the kernel releases its lock the same way, and no `Drop` runs.
+/// Both an agent waiting for a prompt and one held by `never_stop` end.
+#[test]
+fn agents_end_once_the_owner_lock_is_released() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    let (_, own_lock) = env
+        .env()
+        .into_iter()
+        .find(|(k, _)| k == "FAKE_OWNER_LOCK")
+        .unwrap();
+    let held = std::fs::File::open(&own_lock).unwrap().try_lock_shared();
+    assert!(
+        matches!(held, Err(std::fs::TryLockError::WouldBlock)),
+        "the env does not hold its own lock: {held:?}"
+    );
+
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![]],
+        fault: ClaudeFault::NeverStop,
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let lock_path = env.root().join("test-owner.lock");
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    lock.lock().unwrap();
+    let lock_var = lock_path.display().to_string();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    for name in ["tw_demo_api", "tw_demo_web"] {
+        let pane_id = pane(&env);
+        let started = env
+            .run_with(
+                &[
+                    "agent",
+                    "start",
+                    name,
+                    "--kind",
+                    "claude",
+                    "--pane",
+                    &pane_id,
+                    "--timeout",
+                    "20000",
+                    "--",
+                    "-n",
+                    name,
+                    "--settings",
+                    &settings,
+                ],
+                &[("FAKE_OWNER_LOCK", &lock_var)],
+            )
+            .unwrap();
+        assert_eq!(started.code, Some(0), "{started:?}");
+    }
+    let sent = env.run(&["agent", "prompt", "tw_demo_api", "go"]).unwrap();
+    assert_eq!(sent.code, Some(0), "{sent:?}");
+
+    // Longer than one owner check, so a check that misreads a held lock
+    // would already have ended them.
+    std::thread::sleep(Duration::from_millis(1500));
+    assert_eq!(
+        env.session_files().len(),
+        2,
+        "an agent ended while its owner lived"
+    );
+
+    drop(lock);
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "agents outlived their owner: {:?}",
+            env.session_files()
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}

@@ -259,6 +259,7 @@ Environment of `fake-herdr` itself:
 | `FAKE_HERDR_HANG_MS` | How long a `hang` fault sleeps (default 30000), then fails with `timeout`. |
 | `FAKE_HERDR_WAIT_MS` | The no-activity limit for `agent prompt --wait` (default 5000). |
 | `FAKE_HERDR_START_WAIT_MS` | The cap on waiting for a started agent to be ready (default 10000). |
+| `FAKE_OWNER_LOCK` | The owner's lock file. `fake-herdr` passes it on to each agent, like every `FAKE_*` variable (see `fake-claude`). |
 | `FAKE_CLAUDE_BIN` | The program `--kind claude` runs (default: `fake-claude` beside `fake-herdr`, else on `PATH`). |
 
 The fault file, built with `HerdrFaults` or written by hand:
@@ -320,6 +321,14 @@ names a directory, so it can never write into the real `~/.claude`.
   the real `claude` writes there. `FAKE_CLAUDE_MCP_FAIL=add` (or `remove`)
   makes that command exit 1.
 - The prompt `/exit` ends the session.
+- It never outlives the test process that made its world. `FakeHerdrEnv`
+  holds an exclusive lock on `<root>/owner.lock` for its whole life and names
+  the file in `FAKE_OWNER_LOCK`. About once a second, while it waits for a
+  prompt or a key and during a `never_stop` turn, the agent tries a shared
+  lock on that file. When the lock is free or the file is gone, the agent
+  exits as on `/exit`. The kernel frees the lock however the test process
+  ends, so this works after a SIGKILL, when `FakeHerdrEnv`'s `Drop` never
+  runs. Without the variable the agent never checks.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 

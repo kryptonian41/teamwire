@@ -24,6 +24,7 @@ use serde_json::json;
 
 use crate::fsutil;
 use crate::harness::{ESCALATED_TRUST_TEXT, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT};
+use crate::owner::Owner;
 use settings::{Settings, hold_reason, run_shell};
 
 /// How many times a Stop hook may hold one turn before the turn ends anyway
@@ -66,9 +67,13 @@ impl Input {
         Self::Stdin(rx)
     }
 
-    /// The next prompt or key, waiting for it. `None` when input has ended.
-    fn next(&mut self, dialog_open: bool) -> Option<Event> {
+    /// The next prompt or key, waiting for it. `None` when input has ended
+    /// or the test process that owns this session is gone.
+    fn next(&mut self, dialog_open: bool, owner: &mut Owner) -> Option<Event> {
         loop {
+            if owner.gone() {
+                return None;
+            }
             match self {
                 Self::Pane {
                     dir,
@@ -93,14 +98,17 @@ impl Input {
                     }
                     std::thread::sleep(Duration::from_millis(15));
                 }
-                Self::Stdin(rx) => {
-                    let line = rx.recv().ok()?;
-                    return Some(if dialog_open {
-                        Event::Key(line)
-                    } else {
-                        Event::Prompt(line)
-                    });
-                }
+                Self::Stdin(rx) => match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(line) => {
+                        return Some(if dialog_open {
+                            Event::Key(line)
+                        } else {
+                            Event::Prompt(line)
+                        });
+                    }
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                    Err(mpsc::RecvTimeoutError::Disconnected) => return None,
+                },
             }
         }
     }
@@ -119,6 +127,7 @@ struct Session {
     /// Set by a script step; the Stop hook input lists them, and a non-empty
     /// list means the session is paused, not finished.
     background_tasks: Vec<String>,
+    owner: Owner,
 }
 
 fn say(text: &str) {
@@ -270,8 +279,8 @@ impl Session {
             self.run_step(&step);
         }
         let fault = self.script.fault;
-        if fault == Fault::NeverStop {
-            std::thread::sleep(Duration::from_secs(3600));
+        if fault == Fault::NeverStop && self.owner.sleep(Duration::from_secs(3600)) {
+            return Some(self.exit());
         }
         if fault == Fault::ExitWithoutStop {
             return Some(self.exit());
@@ -316,7 +325,7 @@ impl Session {
         self.set_status("blocked");
         let mut cursor = 0_usize;
         loop {
-            let Some(Event::Key(key)) = input.next(true) else {
+            let Some(Event::Key(key)) = input.next(true, &mut self.owner) else {
                 return false;
             };
             match key.as_str() {
@@ -387,6 +396,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         file: claude_dir.join("sessions").join(format!("{pid}.json")),
         transcript: claude_dir.join("projects").join(format!("{id}.jsonl")),
         background_tasks: Vec::new(),
+        owner: Owner::from_env(),
         pane_dir,
         seq: 0,
         settings,
@@ -408,7 +418,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     session.set_status("idle");
 
     let mut turns = 0;
-    while let Some(event) = input.next(false) {
+    while let Some(event) = input.next(false, &mut session.owner) {
         if let Event::Prompt(text) = event {
             if let Some(code) = session.turn(turns, &text) {
                 return code;

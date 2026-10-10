@@ -11,6 +11,7 @@ use crate::bins::{FakeBinDir, FakeBins};
 use crate::claude_bin::Script;
 use crate::fsutil;
 use crate::herdr_bin::{Action, ErrorBody, Rule};
+use crate::owner;
 
 /// Builds the fault file for `FAKE_HERDR_FAULTS`.
 #[derive(Debug, Clone, Default)]
@@ -129,12 +130,16 @@ impl CliOutput {
 /// A private world for `fake-herdr` and `fake-claude`: state file, log,
 /// fault file, script file, `TEAMWIRE_CLAUDE_DIR`, home, and a bin directory
 /// on a `PATH` that cannot reach the real programs. Removed on drop.
+///
+/// The world holds the owner lock (see `owner.rs`) for its whole life, so
+/// its agents end themselves when this process dies without dropping it.
 #[derive(Debug)]
 pub struct FakeHerdrEnv {
     root: tempfile::TempDir,
     bins: FakeBinDir,
     faults_set: bool,
     script_set: bool,
+    _owner_lock: std::fs::File,
 }
 
 impl FakeHerdrEnv {
@@ -149,11 +154,13 @@ impl FakeHerdrEnv {
         let bins = FakeBins::ensure()?
             .install(&root.path().join("bin"))
             .map_err(|e| e.to_string())?;
+        let owner_lock = owner::hold(&owner_lock_path(root.path())).map_err(|e| e.to_string())?;
         Ok(Self {
             root,
             bins,
             faults_set: false,
             script_set: false,
+            _owner_lock: owner_lock,
         })
     }
 
@@ -214,6 +221,10 @@ impl FakeHerdrEnv {
             ("FAKE_HERDR_LOG".to_owned(), text(self.log_path())),
             ("TEAMWIRE_CLAUDE_DIR".to_owned(), text(self.claude_dir())),
             ("FAKE_HERDR_HANG_MS".to_owned(), "20000".to_owned()),
+            (
+                owner::OWNER_LOCK_VAR.to_owned(),
+                text(owner_lock_path(self.root.path())),
+            ),
         ];
         if self.faults_set {
             env.push(("FAKE_HERDR_FAULTS".to_owned(), text(self.faults_path())));
@@ -311,6 +322,11 @@ impl FakeHerdrEnv {
             .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
             .unwrap_or_default()
     }
+}
+
+/// The file whose lock `FakeHerdrEnv` holds, under the world's root.
+fn owner_lock_path(root: &Path) -> PathBuf {
+    root.join("owner.lock")
 }
 
 impl Drop for FakeHerdrEnv {
