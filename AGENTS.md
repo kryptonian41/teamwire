@@ -26,6 +26,8 @@ runs the user's real agent teams. So:
 ## Commands (from the repo root)
 
 - While working: cargo test -p <your crate> --locked, then scripts/gate.sh fast
+- Before you finish: scripts/test-changed.sh tests your changed crates and
+  every crate that depends on them (--dry-run lists them first)
 - Your ticket's check: the Check column of your row in docs/build-plan.md
 - Full gate (the lead, after each wave): scripts/gate.sh
 - GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.

@@ -21,6 +21,76 @@ work except this file.
 | Phase 1, step 5 (gate twice with fast starts) | Done. Step 4 of the gate took 173 s and 177 s, down from 305 to 355 s. |
 | Phase 2, step 1 (fake agents exit when their owner dies) | Done in `c6a4f34`. |
 | Phase 5 (nextest, three runs) | Measured, gate not switched. All three runs passed: 152 s, 238 s and 157 s. Runs 2 and 3 overlapped another session's test run. The 23 end-to-end and crash tests run one at a time and add up to 129 s, which sets the floor for the whole run. nextest saves about 20 s, and about 12 s of that comes from skipping doctests. |
+| Phases 2, 3, 6 and 7 (team `twspeed`) | Done, except for the items named in "The `twspeed` run" below. Step 4 of the gate takes 135 s warm, down from 173 to 177 s. |
+| Phase 4 (one test binary per crate) | Not started. The user decides after seeing the `twspeed` numbers. |
+
+### The `twspeed` run, 2026-10-11
+
+A teamwire team of four implementers on `sonnet` did the work. Each worked
+on its own branch from `82aa021`, and no two branches shared a file. A
+closer on `opus` then checked every claim. Its two most serious findings
+went back to their owners for a second round. The branches were merged on
+`twspeed/integration`. The whole suite has 1,154 `#[test]` markers before
+and after the merge. That count includes markers inside string literals.
+
+| Change | Branch | Effect |
+| --- | --- | --- |
+| With `TEAMWIRE_FAKES_PREBUILT=1`, the end-to-end and crash tests use `target/<profile>/teamwire` and skip `cargo build` | `e2e_fast` | Those 23 tests took 127 s on `main` and take about 78 s now, including compile time |
+| `add.rs` waits for two watch heartbeats instead of sleeping 7 s | `e2e_fast` | 23 s down to about 4 s. The test now holds at any machine load. It fails when the watch ignores the added member, which was checked by breaking the watch once on purpose. |
+| `stall.rs` polls for the finished turn. A second sleep went from 3 s to 500 ms. | `e2e_fast` | The closer confirmed that nothing can retry once `send` has exited |
+| The `verify` fixture writes its git settings with `std::fs`. Seven tests no longer create a repository. Two tests moved to `src/inspect/tests.rs`. | `verify_fix` | Three fewer git processes for each repository the fixture creates |
+| 17 `close` tests use `Rig::without_repo()` | `rig_fix` | Four fewer git processes in each of those tests. A worktree member on such a rig fails loudly. |
+| The dialog test in `tmux_wiring.rs` types a marker and waits for it, instead of sleeping 500 ms | `misc_fix` | The test now proves that no wrong paste arrived |
+| `doctest = false` in all 18 library crates | `misc_fix`, `e2e_fast`, lead | Doctests no longer compile in step 4. The saving was estimated at 12 s and has not been measured on its own. |
+| `scripts/test-changed.sh` tests the changed crates and their dependents | `misc_fix` | For the inner loop. A change to any crate inside the CLI also runs the end-to-end and crash tests. |
+
+Gate runs on `twspeed/integration`, with `/bin/echo` at about 3 ms per
+start:
+
+| Run | Load average at start | Step 4 | Whole gate |
+| --- | --- | --- | --- |
+| 1, a new worktree, so it includes compiling every test binary | 5.4 | 151 s | 170 s |
+| 2, warm | 8.8 | 135 s | 137 s |
+
+Both runs passed, and no fake agent was left over. `dasd`, the macOS
+process that schedules background jobs, used one core at 100% during both
+runs. It had done so since boot, about two hours earlier.
+
+Plan items that were not done, with the reasons:
+
+- **Template repositories (phase 3):** Skipped by both members who were
+  asked to do them. With fast process starts, `git init` costs about
+  3.5 ms. The `teamwire-verify` tests take about 3 s in total, so a
+  template would save well under 10%.
+- **Two of the four `verify` tests stayed integration tests (phase 6):**
+  `cargo_lint_tables_are_watched_and_dependencies_are_not` reads file text
+  through `git show`. `task_md_is_ignored_wherever_verify_looks` checks the
+  changed and uncommitted path lists, which come from git. As unit tests,
+  both would check less.
+- **Three sleeps stayed:** `process.rs:138` (2 s) checks that a process
+  stays alive over real time. `add.rs` still waits on real polls, now
+  counted by heartbeats. `stall.rs` keeps 500 ms to catch a child process
+  that `send` might leave behind in the future.
+
+Follow-ups:
+
+1. **An out-of-date CLI binary.** With `TEAMWIRE_FAKES_PREBUILT=1`, someone
+   who runs `cargo test -p teamwire-e2e` by hand after a CLI change, without
+   building first, tests the old binary. The fake binaries have carried the
+   same risk since `3b6c656`. The gate and `scripts/test-changed.sh` both
+   build first. The proposed fix moves the "prebuilt" logic into
+   `tests/fakes/src/bins.rs` once. The logic would then refuse a binary
+   older than the newest file under `crates/*/src`, `crates/*/Cargo.toml`
+   or `Cargo.lock`. That is about 25 lines in protected files, and it costs
+   a few milliseconds for each test process.
+2. **`kill_launch` failed once** in a member's run of its check, and that
+   run came right after the member had rebuilt for an experiment. The next
+   run passed, the test passed alone, and both full gates passed. The cause
+   is unknown.
+3. **The floor is still the one-at-a-time group.** The 23 end-to-end and
+   crash tests run one at a time. The crash test
+   `kill9_during_send_keeps_integrity` alone takes about 30 s. Running two
+   of these tests at a time under nextest was not tried.
 
 Tests removed. For each one, the behaviour it checked is still checked:
 
