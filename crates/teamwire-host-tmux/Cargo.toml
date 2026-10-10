@@ -18,5 +18,8 @@ tracing = { workspace = true }
 teamwire-fakes = { workspace = true }
 tempfile = { workspace = true }
 
+[lib]
+doctest = false
+
 [lints]
 workspace = true

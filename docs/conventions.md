@@ -99,6 +99,12 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
+Doc examples are not compiled as tests. Each library crate sets `doctest =
+false` under `[lib]` in its `Cargo.toml`, because no crate has a doctest and
+compiling the empty set took about 12 s in step 4. A crate that wants doctests
+removes its `doctest = false` line. An explicit `cargo test --doc` still
+starts the doctest runner for every crate.
+
 `--locked` makes any build that would change `Cargo.lock` fail, so no ticket
 changes dependencies by accident. `-D warnings` goes on the clippy call, not
 in `RUSTFLAGS`, so the build cache is not thrown away.
