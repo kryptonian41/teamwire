@@ -348,6 +348,19 @@ impl World {
         assert!(ok, "members did not all start: {roles:?}");
     }
 
+    /// Waits until herdr shows the member's turn as finished (`done`). The
+    /// launch task is the member's first turn, so this is the point after
+    /// which nothing more is typed into the member unless a test types it.
+    pub fn wait_member_turn_done(&self, team: &str, role: &str) {
+        let agent = format!("tw_{team}_{role}");
+        let ok = wait_until(Duration::from_secs(30), || {
+            self.herdr
+                .run(&["agent", "get", &agent])
+                .is_ok_and(|o| o.stdout.contains("\"agent_status\":\"done\""))
+        });
+        assert!(ok, "{agent} never finished its first turn");
+    }
+
     /// The command lines of running processes that mention `path`, from
     /// `pgrep -f`. A member's session and hooks carry paths under the home.
     pub fn processes_mentioning(&self, path: &Path) -> Vec<String> {

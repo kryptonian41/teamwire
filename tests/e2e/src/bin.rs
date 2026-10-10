@@ -2,12 +2,24 @@
 //! `CARGO_BIN_EXE_teamwire` only for a package that owns the binary, and this
 //! crate does not depend on `teamwire-cli`, so the build is run here, next to
 //! the fakes (as `teamwire_fakes::FakeBins` does for them).
+//!
+//! With `TEAMWIRE_FAKES_PREBUILT=1` the build is skipped and the binary beside
+//! the fakes is used as it is. `cargo test --workspace` builds
+//! `target/<profile>/teamwire` before any test starts, because the
+//! `teamwire-cli` integration tests need it. The risk: someone who sets the
+//! variable for a `cargo test -p teamwire-e2e` run without building the
+//! workspace first tests whatever binary is already there, which may be out
+//! of date. Run `cargo build --workspace` first. The crash rig has a copy of
+//! this logic in `tests/crash/tests/support/rig.rs`; keep the two in step.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
 use teamwire_fakes::FakeBins;
+
+/// Same variable as `teamwire_fakes::FakeBins` reads.
+const PREBUILT: &str = "TEAMWIRE_FAKES_PREBUILT";
 
 static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 
@@ -30,6 +42,17 @@ fn build() -> Result<PathBuf, String> {
         .parent()
         .ok_or("cannot find the target directory")?
         .to_path_buf();
+    if std::env::var_os(PREBUILT).is_some_and(|v| v == "1") {
+        let bin = profile_dir.join("teamwire");
+        return if bin.is_file() {
+            Ok(bin)
+        } else {
+            Err(format!(
+                "{} is missing; run `cargo build --workspace` first",
+                bin.display()
+            ))
+        };
+    }
     let release = profile_dir.file_name().is_some_and(|n| n == "release");
     let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
     let mut args = vec![

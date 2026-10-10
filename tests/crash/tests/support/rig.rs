@@ -68,13 +68,27 @@ pub fn sha256(text: &str) -> [u8; 32] {
     bytes
 }
 
-/// The path of the `teamwire` binary, built once per test process.
+/// The path of the `teamwire` binary, built once per test process. With
+/// `TEAMWIRE_FAKES_PREBUILT=1` it is not built: the binary beside the test
+/// executable is used, and a missing one fails the test. A run that sets the
+/// variable without `cargo build --workspace` first tests a possibly out of
+/// date binary. `tests/e2e/src/bin.rs` has the same logic; keep the two in
+/// step (this crate does not depend on `teamwire-e2e`).
 pub fn teamwire_bin() -> &'static Path {
     static BIN: OnceLock<PathBuf> = OnceLock::new();
     BIN.get_or_init(|| {
         let exe = std::env::current_exe().unwrap();
         let profile_dir = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
         let target_dir = profile_dir.parent().unwrap().to_path_buf();
+        if std::env::var_os("TEAMWIRE_FAKES_PREBUILT").is_some_and(|v| v == "1") {
+            let bin = profile_dir.join("teamwire");
+            assert!(
+                bin.is_file(),
+                "{} is missing; run `cargo build --workspace` first",
+                bin.display()
+            );
+            return bin;
+        }
         let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
         let mut args = vec![
             "build".to_owned(),
