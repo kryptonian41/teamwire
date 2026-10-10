@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Command, Config, DeliveryErrorCode, HarnessId, Host, HostId, LeadRoute, Place, Platform,
+    Command, Config, DeliveryErrorCode, HarnessId, Host, HostId, Key, LeadRoute, Place, Platform,
     Registry, SessionId, SessionKind, SpawnRequest, TeamName, Timestamp, one_line,
 };
 use teamwire_deliver::{DeliveryOutcome, deliver_line};
@@ -101,6 +101,8 @@ struct Rig {
     _claude_dir: tempfile::TempDir,
     work: tempfile::TempDir,
     store: Store,
+    tmux: Arc<Tmux>,
+    place: Place,
     registry: Registry,
     platform: FakePlatform,
     clock: FakeClock,
@@ -159,7 +161,7 @@ impl Rig {
         );
         let mut registry = Registry::new();
         registry.add_harness(Arc::new(harness)).unwrap();
-        registry.add_host(tmux).unwrap();
+        registry.add_host(tmux.clone()).unwrap();
 
         let home = TestHome::new().unwrap();
         let team = TeamName::parse("demo").unwrap();
@@ -193,6 +195,8 @@ impl Rig {
             home,
             _claude_dir: claude_dir,
             work,
+            tmux,
+            place,
             store,
             registry,
             platform,
@@ -230,9 +234,17 @@ fn no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane() {
             if e.code == DeliveryErrorCode::NotAtInputPrompt),
         "{outcome:?}"
     );
-    // Give a wrongly sent paste and Enter time to reach the pane's input.
-    std::thread::sleep(Duration::from_millis(500));
-    assert_eq!(rig.typed(), "", "the pane's input got nothing");
+    // tmux delivers keys to a pane in order. Once the marker has arrived, a
+    // paste or Enter sent before it would have arrived too.
+    let marker = [Key::Char('Z'), Key::Char('Q')];
+    rig.tmux.send_keys(&rig.place, &marker, T).unwrap();
+    for _ in 0..100 {
+        if rig.typed().contains("ZQ") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(rig.typed(), "ZQ", "the pane's input got only the marker");
 }
 
 #[test]
