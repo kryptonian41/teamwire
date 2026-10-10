@@ -6,6 +6,9 @@ rust-version.workspace = true
 publish.workspace = true
 license.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 getrandom = { workspace = true }
 nix = { workspace = true }
