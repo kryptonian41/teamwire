@@ -32,7 +32,7 @@ pub enum StoreError {
 /// team's state after archiving it. The text is the same for every team and
 /// caller, so it says nothing about whether this team ever existed.
 pub const NO_DATABASE_HINT: &str =
-    "a closed team's state is deleted; its archive is under $TEAMWIRE_HOME/archive/";
+    "A closed team's state is deleted; its archive is under $TEAMWIRE_HOME/archive/.";
 
 impl From<rusqlite::Error> for StoreError {
     fn from(e: rusqlite::Error) -> Self {
