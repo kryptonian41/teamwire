@@ -4,13 +4,13 @@
 
 use teamwire_core::ScreenState;
 
-/// Text of the plain folder-trust dialog (`team-launch.py` `TRUST_MARKERS`).
+/// Text of the plain folder-trust dialog.
 pub(crate) const PLAIN_TRUST_MARKERS: [&str; 2] =
     ["Yes, I trust this folder", "Is this a project you created"];
 
 /// Text of the stronger dialog, which also grants what the folder's own
-/// settings declare (`team-launch.py` `TRUST_ESCALATION_MARKERS`, plus
-/// "pre-approves", which Claude Code 2.1.284 prints for permissions).
+/// settings declare. Claude Code 2.1.284 prints "pre-approves" for
+/// permissions.
 pub(crate) const ESCALATION_MARKERS: [&str; 5] = [
     "will apply without asking",
     "runs commands to mint",

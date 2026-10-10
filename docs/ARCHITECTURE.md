@@ -6,10 +6,8 @@ Version 1 design, 2026-09-29. Requirements are in `docs/requirements.md`
 
 ## Overview
 
-teamwire runs a team of coding agents for one lead agent. It replaces the
-Python team tooling (`team-launch.py`, `team-watch.py`, `team-status.py`,
-`team-verify.py`, `team-close.py`, `team-msg.py`, `pr-watch.py` and the Stop
-hook `team-report.sh`) with one Rust binary, `teamwire`.
+teamwire runs a team of coding agents for one lead agent. It is one Rust
+binary, `teamwire`.
 
 It does five jobs:
 
@@ -35,8 +33,8 @@ The user's priorities decide every trade-off, in this order:
 
 teamwire is a separate project. It keeps all state under `$TEAMWIRE_HOME`
 (default `~/.teamwire`), never writes under `~/.claude/`, and registers nothing
-in the user's global configuration. The Python tooling keeps running beside it
-until the user decides to switch.
+in the user's global configuration. The one exception is `teamwire install`,
+which writes the lead's skill and MCP server entry (ADR 0012).
 
 ## Components
 
@@ -324,39 +322,14 @@ the database itself. This section says what is enforced.
 | A member forges a watch line or a second message | Every agent string is sanitised to one printable, capped line | DEL-11 |
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
 | A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
-| teamwire breaks the running Python setup | Nothing is written under `~/.claude/` or to `~/.claude.json`; nothing is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
+| teamwire breaks the user's own Claude Code setup | Nothing is written under `~/.claude/` or to `~/.claude.json` except by `teamwire install`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
 | A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*` variable are filtered everywhere | SEC-1 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
 
-## Migration and cutover
+## Installing teamwire
 
-teamwire is built and tested while the Python tooling keeps running the
-user's real teams. Whether and when to switch is the user's decision; this
-section only makes the switch possible and safe.
-
-What makes side-by-side running safe:
-
-- Separate state: teamwire uses `$TEAMWIRE_HOME` (default `~/.teamwire`);
-  Python uses `~/.claude/team/`. Neither reads the other's teams.
-- Separate hooks: teamwire's hooks are per member, passed with `--settings`.
-  The Python Stop hook still runs for teamwire members, because it is
-  registered globally, but it exits at its first check: it finds no Python
-  manifest that lists the member's pane or session. herdr never reuses a
-  closed pane id ("Closed tab and pane IDs are not reused", `herdr --skill`,
-  read 2026-09-29), so a leftover Python manifest cannot name a teamwire
-  member's pane.
-- Separate lines: teamwire's wake-up and watch lines start with
-  `[teamwire:<team>]`; Python's start with `[team:<team>]`.
-- Separate names (INV-32): teamwire names its agents `tw_<team>_<role>`,
-  with no hyphen; every Python agent name is `<team>-<role>` and has one, so
-  `team-msg.py` can never type into a teamwire member, and teamwire can never
-  take a Python name. Launch also refuses a name that is already live in
-  herdr, whoever owns it.
-- Separate commands: the contract text given to teamwire members names only
-  `teamwire` commands and MCP tools.
-
-The steps a cutover would take, in order, when the user asks for it:
+The steps to set teamwire up on a machine, in order:
 
 1. Install the binary (`cargo install --path crates/teamwire-cli`) and run
    `teamwire doctor`. It checks herdr's session hook, the database settings,
@@ -373,14 +346,9 @@ The steps a cutover would take, in order, when the user asks for it:
    call `team_status` on it. A `refused.identity` reply that says no session
    id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.
-5. Let every running Python team finish and close under Python.
-6. Point the lead at teamwire: the skill that step 3 installed now leads
-   new teams. `teamwire uninstall` removes it again.
-7. Only then, remove `team-report.sh` from `~/.claude/settings.json`. The user
-   does this by hand; teamwire never edits that file.
 
-Rolling back is the same list in reverse. teamwire's state stays in
-`$TEAMWIRE_HOME` either way.
+`teamwire uninstall` removes the skill and the MCP server entry again.
+teamwire's state stays in `$TEAMWIRE_HOME` either way.
 
 ## Open questions for the user
 
@@ -389,15 +357,14 @@ default shown, and nothing in the build plan waits on an answer.
 
 | # | Question | Default in this design | Where it came from |
 | --- | --- | --- | --- |
-| 1 | Whether and when to cut over from the Python tooling | Not scheduled. Both run side by side. | brief |
-| 2 | Which OpenTelemetry backend, if any, and with which account | No endpoint; export off; local metrics only | brief, ADR 0005 |
-| 3 | Is a warning dialog at every member start acceptable, to use Claude Channels push? | Channels not built; typing plus `inbox` | harness Q2, protocols Q6 |
-| 4 | Should a message between members that fails to deliver wake the lead? | No. Only undelivered results and undelivered questions to the lead do; `status` lists the rest | specmsg Q4 |
-| 5 | How long are records kept? | Until close; the archive keeps everything forever; no pruning | specmsg Q7 |
-| 6 | Should planning rules (implementer without check, overlapping owns, more than five open branches) refuse a launch or only warn? | Warn, with an override flag | speclife Q7 |
-| 7 | Who should notice when the lead session itself dies? | Nobody in v1; `status` shows lead liveness | speclife Q8 |
-| 8 | Keep the stricter verify verdict (`FLAGGED` blocks member removal until waived)? | Yes | speclife Q1, ADR 0009 |
-| 9 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | No; the trait and fakes only | harness Q6 |
-| 10 | Is Linux (without a sleep hold) a supported platform for v1, or macOS only? | macOS fully; Linux without the sleep hold | rust Q7 |
-| 11 | May the build install `cargo-nextest`, `cargo-deny` and `cargo-mutants`? They add per-test timeouts, a licence and advisory audit, and mutation scores | `cargo-nextest`: installed 2026-10-10, but the gate keeps `cargo test` until process starts on this Mac are fast enough for parallel tests (`docs/conventions.md` §2). `cargo-deny` and `cargo-mutants`: not installed, so the gate has no licence audit (`docs/conventions.md` §2) | repopract Q1, R10, R14, R20 |
-| 12 | Should this repository commit its own `.claude/settings.json` with edit-time hooks (format on edit, a guard on protected files) for agents working in it? | No; the gate and `xtask tidy` enforce the same rules after the fact | repopract Q2 |
+| 1 | Which OpenTelemetry backend, if any, and with which account | No endpoint; export off; local metrics only | brief, ADR 0005 |
+| 2 | Is a warning dialog at every member start acceptable, to use Claude Channels push? | Channels not built; typing plus `inbox` | harness Q2, protocols Q6 |
+| 3 | Should a message between members that fails to deliver wake the lead? | No. Only undelivered results and undelivered questions to the lead do; `status` lists the rest | specmsg Q4 |
+| 4 | How long are records kept? | Until close; the archive keeps everything forever; no pruning | specmsg Q7 |
+| 5 | Should planning rules (implementer without check, overlapping owns, more than five open branches) refuse a launch or only warn? | Warn, with an override flag | speclife Q7 |
+| 6 | Who should notice when the lead session itself dies? | Nobody in v1; `status` shows lead liveness | speclife Q8 |
+| 7 | Keep the stricter verify verdict (`FLAGGED` blocks member removal until waived)? | Yes | speclife Q1, ADR 0009 |
+| 8 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | No; the trait and fakes only | harness Q6 |
+| 9 | Is Linux (without a sleep hold) a supported platform for v1, or macOS only? | macOS fully; Linux without the sleep hold | rust Q7 |
+| 10 | May the build install `cargo-nextest`, `cargo-deny` and `cargo-mutants`? They add per-test timeouts, a licence and advisory audit, and mutation scores | `cargo-nextest`: installed 2026-10-10, but the gate keeps `cargo test` until process starts on this Mac are fast enough for parallel tests (`docs/conventions.md` §2). `cargo-deny` and `cargo-mutants`: not installed, so the gate has no licence audit (`docs/conventions.md` §2) | repopract Q1, R10, R14, R20 |
+| 11 | Should this repository commit its own `.claude/settings.json` with edit-time hooks (format on edit, a guard on protected files) for agents working in it? | No; the gate and `xtask tidy` enforce the same rules after the fact | repopract Q2 |

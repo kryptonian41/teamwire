@@ -140,8 +140,8 @@ impl Role {
 
 checked_name! {
     /// `tw_<team>_<role>`, at most 32 characters: the member's name in hosts and
-    /// harnesses. It never contains a hyphen, and every name the Python tooling
-    /// makes (`<team>-<role>`) does, so the two can never collide (INV-32).
+    /// harnesses. It never contains a hyphen, so it never equals a `<team>-<role>`
+    /// name that another tool gives its agents (INV-32).
     pub struct Address, "address", check_address
 }
 

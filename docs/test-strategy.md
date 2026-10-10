@@ -107,7 +107,6 @@ temporary `TEAMWIRE_HOME` and temporary repository. Scenarios:
 | Remove an implementer without verify, then with verify | First refused, second accepted |
 | Launch with a failing setup for one member | Exit 2; that member refused and cleaned; the others run |
 | A harness configured without a turn-end hook (fake-claude in "no hook" mode) | `COMPLETED` printed by the watch once |
-| Run the Python-coexistence check: a fake global Stop hook that behaves like `team-report.sh`'s first checks is also present | It does nothing for teamwire members |
 
 ### 6. Live checks (not tests)
 
@@ -137,7 +136,7 @@ skipped.
 
 `cargo-mutants` on `teamwire-store`, `teamwire-deliver` and `teamwire-msg`
 would show whether the tests catch changes to the integrity code (repopract
-R20). It is not installed; installing it is open question 11 in
+R20). It is not installed; installing it is open question 10 in
 `ARCHITECTURE.md`. When installed, run it before each release, not on every
 commit, and turn each surviving mutant in the delivery path into a ticket.
 

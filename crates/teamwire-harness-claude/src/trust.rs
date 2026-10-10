@@ -76,7 +76,7 @@ fn repo_root(dir: &Path) -> Option<PathBuf> {
     Some(root.to_path_buf())
 }
 
-/// Reads `claude_json` for `cwd`, as `team-launch.py` `check_trust` does.
+/// Reads `claude_json` for `cwd`.
 ///
 /// A git repository is a trust boundary: a trusted parent directory does not
 /// cover a repository nested in it, so inside a repository only the

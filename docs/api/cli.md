@@ -4,25 +4,6 @@ One binary. Every subcommand works with no other teamwire process running
 (STO-16). `--home <dir>` overrides `$TEAMWIRE_HOME` (default `~/.teamwire`) on
 every subcommand. `--json` prints machine-readable output where listed.
 
-## What replaces what
-
-| Python today | teamwire |
-| --- | --- |
-| `team-launch.py < spec.json` | `teamwire launch < spec.json` |
-| `team-launch.py --add < more.json` | `teamwire launch --add < more.json` |
-| `team-watch.py <team>` | `teamwire watch <team>` |
-| `team-status.py <team>` | `teamwire status <team>` |
-| `team-verify.py <team> [--role R]` | `teamwire verify <team> [--role R]` |
-| `team-close.py <team> [--role R] [--dry-run]` | `teamwire close <team> [--role R] [--dry-run]` |
-| `team-msg.py <team> --from X --to Y --type T --text ...` | `teamwire send <team> --to Y --type T --text ...` |
-| `team-msg.py <team> --log` | `teamwire log <team>` |
-| writing `done/<role>.json` by hand | `teamwire done --status S --summary ...` |
-| `~/.claude/hooks/team-report.sh` (global Stop hook) | `teamwire hook claude-stop` (per-member Stop hook) |
-| `pr-watch.py -R repo 123 124` | `teamwire pr-watch -R repo 123 124` |
-| `team_sleephold.py` (library) | part of `launch` and `close` |
-| `team_labels.py` (library) | part of the herdr adapter |
-| `team_parent.py` (library) | the locator (ADR 0006), used by every delivery |
-
 ## Exit codes
 
 | Code | Meaning |

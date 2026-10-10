@@ -10,7 +10,7 @@ need_head() { grep -qiE "^#+ .*$2" "$root/$1" 2>/dev/null || { echo "$1: no head
 need_file docs/requirements.md
 need_head docs/requirements.md "invariant"
 need_file docs/ARCHITECTURE.md
-for h in "overview" "components" "data model" "message (integrity|lifecycle)" "stability|failure" "metrics|observability" "harness" "security|trust" "migration|cut-?over"; do
+for h in "overview" "components" "data model" "message (integrity|lifecycle)" "stability|failure" "metrics|observability" "harness" "security|trust" "install"; do
   need_head docs/ARCHITECTURE.md "$h"
 done
 need_file docs/api/core.md

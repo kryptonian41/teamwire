@@ -1,7 +1,7 @@
 //! `teamwire pr-watch`: watch GitHub pull-request checks (EXT-1).
 //!
-//! The rules are those of the Python `pr-watch.py`: silence while nothing
-//! changed, one line per poll at most, and no line for a check that passes.
+//! The rules: silence while nothing changed, one line per poll at most, and
+//! no line for a check that passes.
 //! `gh pr checks` exits 8 while checks are pending and 1 when one failed, yet
 //! still prints its JSON, so the exit code of `gh` is never a signal here. A
 //! call that prints nothing or prints text that is not JSON is skipped and

@@ -11,8 +11,8 @@ use teamwire_core::{Command, Platform, RunOutput};
 
 use crate::VerifyError;
 
-/// Git on a small repository answers in milliseconds; two minutes is the
-/// bound Python used for a hung network filesystem.
+/// Git on a small repository answers in milliseconds; two minutes bounds a
+/// hung network filesystem.
 const GIT_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// One repository, addressed by a directory inside it.

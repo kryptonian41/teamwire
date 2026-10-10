@@ -90,9 +90,9 @@ fn contract_passed_as_file() {
     );
 }
 
-/// `team-launch.py:1026-1039`: the argv the Python launcher passes after
-/// `agent start ... --`, with a model and an effort.
-const PYTHON_ARGV: [&str; 10] = [
+/// The argv a member's Claude Code starts with, apart from the three flags
+/// teamwire adds, given a model and an effort.
+const BASE_ARGV: [&str; 10] = [
     "-n",
     "tw_demo_api",
     "--permission-mode",
@@ -106,7 +106,7 @@ const PYTHON_ARGV: [&str; 10] = [
 ];
 
 #[test]
-fn argv_matches_python_launcher_apart_from_teamwire_additions() {
+fn argv_is_the_base_argv_plus_teamwire_additions() {
     let mut m = member();
     m.model = Some("opus".into());
     m.effort = Some("high".into());
@@ -123,7 +123,7 @@ fn argv_matches_python_launcher_apart_from_teamwire_additions() {
             rest.push(word);
         }
     }
-    assert_eq!(rest, PYTHON_ARGV);
+    assert_eq!(rest, BASE_ARGV);
     assert_eq!(
         after(&spec.argv, "--session-id"),
         "6f1c2d3e-0000-4000-8000-000000000001"

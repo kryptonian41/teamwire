@@ -17,28 +17,19 @@ Use a team when the user asks for one, for parallel agents, or for work that
 carries on while they are away. For one standalone delegated task, split a pane
 and prompt it yourself; that is simpler.
 
-## A separate project: never touch the Python setup
+## Where teamwire keeps things
 
-teamwire runs beside the older Python team tooling (`team-launch.py`,
-`team-msg.py`, `team-report.sh`). Both can run at once, and neither reads the
-other's teams. Keep it that way:
-
-- teamwire's state lives in `$TEAMWIRE_HOME` (default `~/.teamwire`). Python's
-  lives in `~/.claude/team/`. Never move files between them.
+- teamwire's state lives in `$TEAMWIRE_HOME` (default `~/.teamwire`).
 - teamwire agent names are `tw_<team>_<role>` and never contain a hyphen.
-  Python's are `<team>-<role>`, so the two can never be the same name.
-- teamwire's wake-up and watch lines start with `[teamwire:<team>]`. Python's
-  start with `[team:<team>]`. Answer each in its own tool.
-- A team started with one tool is led with that tool until it is closed. Do not
-  send a Python team a `teamwire` message or the other way round.
+- teamwire's wake-up and watch lines start with `[teamwire:<team>]`.
 - teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
   `teamwire install` writes under `~/.claude/`: this skill, and the lead's MCP
   server through `claude mcp`. After a new `cargo install`, run
   `teamwire install` again to update both.
 
-## Cutover, when the user asks for it
+## Setting up a machine
 
-Whether and when to switch is the user's decision. The steps, in order:
+The steps, in order:
 
 1. Install the binary (`cargo install --path crates/teamwire-cli`) and run
    `teamwire doctor`. It changes nothing.
@@ -57,14 +48,11 @@ Whether and when to switch is the user's decision. The steps, in order:
 3. Run `teamwire install`. It registers the lead's MCP server and installs
    this skill.
 4. Run one throwaway team in a scratch repository.
-5. Let every running Python team finish and close under Python.
-6. Check that `teamwire doctor` reports the skill and the lead's MCP server
+5. Check that `teamwire doctor` reports the skill and the lead's MCP server
    as `ok`.
-7. Only then remove `team-report.sh` from `~/.claude/settings.json`. The user
-   does this by hand.
 
-Rolling back is the same list in reverse. teamwire's state stays in
-`$TEAMWIRE_HOME` either way.
+`teamwire uninstall` removes the skill and the lead's MCP server again.
+teamwire's state stays in `$TEAMWIRE_HOME` either way.
 
 ## How it fits together
 

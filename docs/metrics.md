@@ -35,7 +35,7 @@ paths never appear as labels.
 
 | Name | Type | Unit | Labels | Question it answers |
 | --- | --- | --- | --- | --- |
-| `teamwire.lead.wakeups` | counter | `{wakeup}` | `team`, `source` (`result`, `question`, `watch`) | How many full lead turns did this team cost? The Python watch once burned 13.6M tokens on repeated lines. |
+| `teamwire.lead.wakeups` | counter | `{wakeup}` | `team`, `source` (`result`, `question`, `watch`) | How many full lead turns did this team cost? An earlier watch once burned 13.6M tokens on repeated lines. |
 | `teamwire.watch.lines` | counter | `{line}` | `team` | Is the watch staying at "two lines for a healthy team"? |
 | `teamwire.watch.events` | counter | `{event}` | `team`, `event` (`SILENT`, `DIED`, `LATE`, ...) | Which problems happen most? |
 | `teamwire.messages.sent` | counter | `{message}` | `team`, `type`, `sender_kind` | Do members talk, and in which directions? |

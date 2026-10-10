@@ -1,5 +1,5 @@
-//! The watch's poll, one row of `docs/failure-modes.md` at a time, and the
-//! scripted sequences of the Python watch's own tests.
+//! The watch's poll, one row of `docs/failure-modes.md` at a time, and
+//! longer scripted sequences of polls.
 #[path = "support/fixture.rs"]
 pub mod fixture;
 

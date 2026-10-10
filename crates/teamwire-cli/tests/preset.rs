@@ -363,16 +363,16 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         );
     }
 
-    // The cutover list registers the lead's server with `teamwire install`
+    // The setup list registers the lead's server with `teamwire install`
     // (ADR 0012) and checks it live.
-    let (_, cutover) = skill.split_once("## Cutover").unwrap();
-    let (cutover, _) = cutover.split_once("## How it fits together").unwrap();
+    let (_, setup) = skill.split_once("## Setting up a machine").unwrap();
+    let (setup, _) = setup.split_once("## How it fits together").unwrap();
     for needed in [
         "`teamwire install`",
         "CLAUDE_CODE_SESSION_ID",
         "live_check.rs",
     ] {
-        assert!(cutover.contains(needed), "the cutover list lacks {needed}");
+        assert!(setup.contains(needed), "the setup list lacks {needed}");
     }
 
     for shape in NAMES {
@@ -382,9 +382,8 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         );
     }
 
-    // Past the section that explains the two tools, no Python script or
-    // pane-typing command is named as a way to work.
-    let (_, body) = skill.split_once("## How it fits together").unwrap();
+    // No script outside teamwire or pane-typing command is named as a way
+    // to work, anywhere in the skill.
     for forbidden in [
         ".py",
         "team-report.sh",
@@ -392,7 +391,7 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         "~/.claude/team/",
     ] {
         assert!(
-            !body.contains(forbidden),
+            !skill.contains(forbidden),
             "the skill's procedures name {forbidden}"
         );
     }

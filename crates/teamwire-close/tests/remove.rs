@@ -1,6 +1,6 @@
 //! Removing one member (CLS-4, CLS-5, CLS-6): the same checks as a whole
 //! close for that member, a passing verify record for its current HEAD, and
-//! the closer's report. The cases of `team-close.py --role` are here too.
+//! the closer's report.
 #![expect(
     clippy::disallowed_methods,
     reason = "a test stands in for a person who edits files in a worktree"

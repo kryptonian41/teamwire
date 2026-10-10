@@ -76,7 +76,7 @@ fn nothing_stored(rig: &Rig) -> bool {
         .unwrap()
 }
 
-// ---- refusals: the ported cases of team-msg.py, then the new ones ----
+// ---- refusals ----
 
 #[test]
 fn notice_with_a_real_commit_is_delivered_and_stores_the_full_hash() {

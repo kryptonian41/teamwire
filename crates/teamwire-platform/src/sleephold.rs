@@ -1,7 +1,7 @@
 //! The sleep hold: an untimed `caffeinate -ims -w <lead pid>` that keeps the
 //! Mac awake while the lead session lives (SLP-1). The flag reading follows
-//! `caffeinate`'s own getopt rules, as the Python tooling's parser does, so
-//! `-ims -w 5`, `-imsw5` and `-i -w5` are one hold.
+//! `caffeinate`'s own getopt rules, so `-ims -w 5`, `-imsw5` and `-i -w5`
+//! are one hold.
 
 use std::os::unix::process::CommandExt;
 use std::process::Stdio;
