@@ -15,7 +15,12 @@ work except this file.
 | `cargo clean` | Done. It freed 14.2 GB, and a full rebuild took 95 s. Process starts did not get faster (see section 2). |
 | Quit Zoom | Done by the user. Starts still cost 0.25 s. A SentinelOne `log show` process then ran at 100% CPU. |
 | Phase 6: prune tests | Done for the entries that hold up. The suite has 16 fewer test functions. Six were dropped, and ten were folded into tests that remain. See the list below. |
-| Phase 1, steps 3 and 4 (Developer Tools, SentinelOne) | Open. The user does these. |
+| Phase 1, step 3 (Developer Tools) | Done by the user at 00:55 on 2026-10-11. Starts still cost 0.25 s afterwards. |
+| Restart the Mac | Done by the user at about 01:47 on 2026-10-11. Starts became fast again. See "After the restart" in section 2. |
+| Phase 1, step 4 (SentinelOne) | Open. Ask about it only if slow starts come back. |
+| Phase 1, step 5 (gate twice with fast starts) | Done. Step 4 of the gate took 173 s and 177 s, down from 305 to 355 s. |
+| Phase 2, step 1 (fake agents exit when their owner dies) | Done in `c6a4f34`. |
+| Phase 5 (nextest, three runs) | Measured, gate not switched. All three runs passed: 152 s, 238 s and 157 s. Runs 2 and 3 overlapped another session's test run. The 23 end-to-end and crash tests run one at a time and add up to 129 s, which sets the floor for the whole run. nextest saves about 20 s, and about 12 s of that comes from skipping doctests. |
 
 Tests removed. For each one, the behaviour it checked is still checked:
 
@@ -96,12 +101,54 @@ the same time while it built `teamwire install`.
 
 | Claim | Status |
 | --- | --- |
-| "The macOS program check (`syspolicyd`) is the bottleneck." | Not proven. It rested on one `ps` snapshot taken while two sessions ran tests. Which process adds the 0.25 s to each start is unknown. The candidates are `syspolicyd` and `XprotectService`, the SentinelOne agent, and a `log stream` process that Zoom keeps at 100% CPU from boot (pid 1566, parent `zoom.us`). |
+| "The macOS program check (`syspolicyd`) is the bottleneck." | Not proven. It rested on one `ps` snapshot taken while two sessions ran tests. Which process adds the 0.25 s to each start is unknown. The candidates are `syspolicyd` and `XprotectService`, the SentinelOne agent, and a `log stream` process that Zoom keeps at 100% CPU from boot (pid 1566, parent `zoom.us`). A restart removed the cost. The SentinelOne `log show` process at 100% CPU was gone after the restart, which makes it the leading suspect. That is a correlation only. |
 | "The size of `target/debug/deps` causes the slow starts." | **Refuted.** At 21:00 a binary in that folder (284,534 files) cost 0.25 s per start, while copies in small folders cost 0.00 s. A temp folder filled with 100,000 empty files reproduced the cost. After `cargo clean`, the folder held 12,963 files and the cost was unchanged, and `/bin/echo` paid it too. The earlier tests happened to line up with the machine-wide cost coming and going. `cargo clean` still freed 14.2 GB. |
 | "A fresh build folder makes the suite fast." | Not shown. One run built into a fresh folder at `/private/tmp`. Nine tests, most of them git-heavy `verify` tests, hit the 240 s limit, and the run was stopped. The timeouts are not explained. |
 | "Leftover fake agents load the machine." | Refuted. Each one uses about 0.1% CPU. |
 | "Slow process start makes the two platform timeout tests fail." | Unproven. The 3 s fix hides the cause and costs about 2.5 s. |
 | "nextest saves 70 to 115 s." | Rough. Measured in a private clone under load, and nextest never passed a full gate on the shared checkout. |
+
+### After the restart, 2026-10-11
+
+The user restarted the Mac at about 01:47. The measurements below were taken
+between 01:59 and 02:04, 12 to 17 minutes after boot. The machine was still
+doing its boot work during that time. `dasd`, the process that schedules
+background jobs, ran at 100% CPU, and the load average stayed between 3.9
+and 6.5.
+
+| Measure | Before the restart | After the restart |
+| --- | --- | --- |
+| 50 starts of `/bin/echo` | about 12 s (0.25 s each) | 0.14 s and 0.12 s (about 3 ms each) |
+| First start of `teamwire_store`'s test binary after boot | 0.5 to 4.5 s for a new binary | 0.19 s |
+| Later starts of the same binary (`--list`) | 0.25 s or more | 5 to 7 ms |
+| Step 4 of the gate, `cargo test --workspace`, warm | 305 to 355 s | 173 s, then 177 s |
+| Whole gate, all six steps | 683 s cold | about 187 s, twice |
+
+Both gate runs passed every step. No other session was building or testing
+during the second run.
+
+What the machine looked like after the restart:
+
+- The SentinelOne agent processes were running, each at 0% CPU. The
+  SentinelOne `log show` process from the night before was gone.
+- Zoom was not running.
+- No `fake-claude` or `kill_send` processes were left over.
+- Low power mode was off, and macOS had recorded no thermal or CPU warnings.
+
+The restart fixed the symptom. The cause is still unknown, and the cost came
+and went before the restart too, so it may come back. This command checks for
+it in about a second:
+
+```bash
+s=$(gdate +%s.%N); for i in $(seq 50); do /bin/echo >/dev/null; done; e=$(gdate +%s.%N); echo "$e - $s" | bc
+```
+
+A healthy machine prints about 0.15. A machine with the slow starts prints
+about 12. If the slow starts come back, check first for a process at 100%
+CPU, and especially for a `log show` or `log stream` process.
+
+The gate times above set the new starting point for phases 2 to 5. Those
+phases should be measured against 173 to 177 s, not against 305 to 355 s.
 
 ## 3. Review of the tests
 
