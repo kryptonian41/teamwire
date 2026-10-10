@@ -175,8 +175,16 @@ fn text_with_shell_and_tmux_special_characters_arrives_whole() {
         "{}",
         tmux.read_tail(&place, 20, T).unwrap()
     );
-    // Enter was pressed: cat echoed the line back, so it shows twice.
-    let shown = tmux.read_tail(&place, 20, T).unwrap();
+    // Enter was pressed: cat echoes the line back, so it shows twice. The
+    // echo comes after the typed text, so wait for it as for the text.
+    let mut shown = String::new();
+    for _ in 0..100 {
+        shown = tmux.read_tail(&place, 20, T).unwrap();
+        if shown.matches("#{pane_id}").count() >= 2 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
     assert!(shown.matches("#{pane_id}").count() >= 2, "{shown}");
 }
 

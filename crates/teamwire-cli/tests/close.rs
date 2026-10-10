@@ -88,6 +88,7 @@ impl Rig {
     fn launch(&self, spec: &Value) -> Run {
         let run = self.teamwire(&["launch"], Some(&spec.to_string()));
         assert_eq!(run.code, 0, "launch: {}{}", run.out, run.err);
+        self.wait_for_first_turns();
         run
     }
 
@@ -143,31 +144,56 @@ impl Rig {
         self.store().read(|tx| tx.team()).unwrap().unwrap().state
     }
 
-    /// Makes the member's pane report `status` to `fake-herdr`.
+    /// The file through which `fake-herdr` reads a pane's agent status.
+    fn status_file(&self, place_id: &str) -> PathBuf {
+        self.herdr
+            .root()
+            .join("fake-herdr-panes")
+            .join(place_id.replace(':', "_"))
+            .join("status.json")
+    }
+
+    /// Waits until every member has ended the turn its launch task started.
+    /// `close` reads busy-ness from that status, and `fake-claude` writes
+    /// `done` only after its Stop hooks return. A hook can take any time to
+    /// start, so a pause in the status says nothing; only `done` does.
+    fn wait_for_first_turns(&self) {
+        let members = self.store().read(|tx| tx.members()).unwrap().items;
+        for member in members {
+            let Some(place) = member.place else { continue };
+            let file = self.status_file(&place.id);
+            let done = || {
+                let text = std::fs::read_to_string(&file).unwrap_or_default();
+                serde_json::from_str::<Value>(&text)
+                    .is_ok_and(|s| s.get("status").is_some_and(|v| v == "done"))
+            };
+            // 30 seconds, counted in polls so the test needs no clock.
+            let ended = (0..1500).any(|_| {
+                let ended = done();
+                if !ended {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                ended
+            });
+            assert!(
+                ended,
+                "{}'s first turn did not end: {}",
+                member.role.as_str(),
+                std::fs::read_to_string(&file).unwrap_or_default()
+            );
+        }
+    }
+
+    /// Makes the member's pane report `status` to `fake-herdr`. `launch`
+    /// has waited out the first turn, so `fake-claude` writes no more.
     fn set_status(&self, role: &str, status: &str) {
         let member = self
             .store()
             .read(|tx| tx.member(&teamwire_core::Role::parse(role).unwrap()))
             .unwrap()
             .unwrap();
-        let pane = member.place.unwrap().id.replace(':', "_");
-        let dir = self.herdr.root().join("fake-herdr-panes").join(pane);
-        // `fake-claude` is still working through the task launch sent; wait
-        // until its status has stopped changing, or it would overwrite ours.
-        let read = || std::fs::read_to_string(dir.join("status.json")).unwrap_or_default();
-        let mut last = read();
-        let mut stable = 0;
-        for _ in 0..100 {
-            std::thread::sleep(std::time::Duration::from_millis(50));
-            let now = read();
-            stable = if now == last { stable + 1 } else { 0 };
-            last = now;
-            if stable >= 6 {
-                break;
-            }
-        }
         std::fs::write(
-            dir.join("status.json"),
+            self.status_file(&member.place.unwrap().id),
             format!(r#"{{"status":"{status}","seq":99}}"#),
         )
         .unwrap();

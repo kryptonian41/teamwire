@@ -17,7 +17,7 @@ use teamwire_core::{
     Registry, SessionId, SessionKind, SpawnRequest, TeamName, Timestamp, one_line,
 };
 use teamwire_deliver::{DeliveryOutcome, deliver_line};
-use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
+use teamwire_fakes::{FakeClock, FakePlatform, NoTmuxConfig, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 use teamwire_host_tmux::Tmux;
 use teamwire_store::{Ctx, NewTeam, Party, Store};
@@ -40,7 +40,7 @@ impl PrivateServer {
                 std::process::id(),
                 NEXT_SOCKET.fetch_add(1, Ordering::Relaxed)
             ),
-            platform: teamwire_platform::native(),
+            platform: Arc::new(NoTmuxConfig::new(teamwire_platform::native())),
         }
     }
 

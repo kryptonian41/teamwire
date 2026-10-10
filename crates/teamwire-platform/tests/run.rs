@@ -7,6 +7,11 @@ use teamwire_platform::{SystemClock, native};
 
 const LONG: Duration = Duration::from_secs(20);
 
+/// The timeout for a test whose shell must reach a line before the timeout
+/// kills it. On a busy machine a process start has taken over a second, and
+/// a shorter timeout kills the shell before that line runs.
+const TIMES_OUT: Duration = Duration::from_secs(3);
+
 fn sh(script: &str) -> Command {
     Command::new("/bin/sh").arg("-c").arg(script)
 }
@@ -118,7 +123,7 @@ fn a_missing_program_is_not_found() {
 fn timeout_reports_124_and_keeps_partial_output() {
     let started = SystemClock.monotonic();
     let out = native()
-        .run(&sh("echo before; sleep 60"), Duration::from_millis(500))
+        .run(&sh("echo before; sleep 60"), TIMES_OUT)
         .unwrap();
     assert!(out.timed_out);
     assert_eq!(out.exit_code, 124);
@@ -132,9 +137,7 @@ fn timeout_kills_process_group() {
     let pids = dir.path().join("pids");
     // The shell starts a grandchild, records both pids, and hangs.
     let script = format!("sleep 60 & echo $$ $! > {}; wait", pids.display());
-    let out = native()
-        .run(&sh(&script), Duration::from_millis(1000))
-        .unwrap();
+    let out = native().run(&sh(&script), TIMES_OUT).unwrap();
     assert!(out.timed_out);
     assert_eq!(out.exit_code, 124);
 

@@ -18,9 +18,18 @@ pub struct FakeBins {
 
 static BUILT: OnceLock<Result<PathBuf, String>> = OnceLock::new();
 
+/// Set to `1` by a runner that built the whole workspace before any test
+/// started, so the fake binaries beside the test executable are current.
+/// Cargo replaces those files on every build, even one with nothing to
+/// compile, so a build from one test process makes another test's start of
+/// `fake-herdr` fail with "No such file or directory". A runner with one
+/// process per test, such as nextest, starts hundreds of those builds at once.
+const PREBUILT: &str = "TEAMWIRE_FAKES_PREBUILT";
+
 impl FakeBins {
     /// Finds the fake binaries beside the running test executable, building
-    /// them first (`cargo build -p teamwire-fakes --bins`) once per process.
+    /// them first (`cargo build -p teamwire-fakes --bins`) once per process,
+    /// unless `TEAMWIRE_FAKES_PREBUILT=1` says they are built already.
     /// `cargo test -p teamwire-fakes` builds them already; another crate's
     /// tests need the build.
     pub fn ensure() -> Result<Self, String> {
@@ -63,6 +72,20 @@ fn build() -> Result<PathBuf, String> {
         .and_then(Path::parent)
         .ok_or("cannot find the target directory from the test executable")?
         .to_path_buf();
+    if std::env::var_os(PREBUILT).is_none_or(|v| v != "1") {
+        cargo_build(&profile_dir)?;
+    }
+    for name in ["fake-herdr", "fake-claude"] {
+        if !profile_dir.join(name).is_file() {
+            return Err(format!("{name} is not in {}", profile_dir.display()));
+        }
+    }
+    Ok(profile_dir)
+}
+
+/// `cargo build` of this crate's binaries into the target directory that
+/// holds `profile_dir`.
+fn cargo_build(profile_dir: &Path) -> Result<(), String> {
     let target_dir = profile_dir
         .parent()
         .ok_or("cannot find the target directory")?
@@ -88,12 +111,7 @@ fn build() -> Result<PathBuf, String> {
             String::from_utf8_lossy(&out.stderr)
         ));
     }
-    for name in ["fake-herdr", "fake-claude"] {
-        if !profile_dir.join(name).is_file() {
-            return Err(format!("{name} is not in {}", profile_dir.display()));
-        }
-    }
-    Ok(profile_dir)
+    Ok(())
 }
 
 #[expect(

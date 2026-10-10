@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{Address, Command, Host, Platform, SpawnRequest};
+use teamwire_fakes::NoTmuxConfig;
 use teamwire_host_tmux::Tmux;
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
@@ -24,7 +25,7 @@ impl PrivateServer {
                 std::process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ),
-            platform: teamwire_platform::native(),
+            platform: Arc::new(NoTmuxConfig::new(teamwire_platform::native())),
         }
     }
 

@@ -20,6 +20,7 @@ mod harness;
 pub mod herdr_bin;
 mod host;
 mod platform;
+mod tmux_config;
 
 pub use bins::{FakeBinDir, FakeBins};
 pub use calls::{Call, CallKind, CallLog};
@@ -32,6 +33,7 @@ pub use harness::{
 };
 pub use host::{FakeHost, Fault, SpawnedWith};
 pub use platform::{FakePlatform, FakeSleepHold, HoldEvent};
+pub use tmux_config::NoTmuxConfig;
 
 use std::path::Path;
 
