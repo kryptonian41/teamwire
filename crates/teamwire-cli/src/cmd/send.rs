@@ -57,7 +57,15 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Err(e) => return fail("send", &e, USAGE),
     };
     let outcome = with_ctx(global, wiring, &team, |ctx| {
-        let env = caller_env(from.clone());
+        // A member's `--from` defaults to its role. With no role and no
+        // token the caller claims to be the lead, as `resend` does, and the
+        // harness session decides.
+        let from = from.clone().or_else(|| {
+            std::env::var_os("TEAMWIRE_TOKEN")
+                .is_none()
+                .then(|| "lead".to_owned())
+        });
+        let env = caller_env(from);
         let actor = match prove_actor_logged(ctx, &env) {
             Ok(actor) => actor,
             Err(refusal) => return Outcome::Failed(SendError::Refused(refusal)),

@@ -482,6 +482,20 @@ fn the_lead_reprompts_and_is_told_whether_a_watch_runs() {
 }
 
 #[test]
+fn the_lead_sends_without_naming_itself() {
+    let rig = live_rig();
+    let out = rig.run(
+        &[
+            "send", "alpha", "--to", "api", "--type", "note", "--text", "merged",
+        ],
+        &LEAD,
+    );
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert_eq!(out.status.code(), Some(0), "{stdout} / {stderr}");
+    assert!(stdout.contains("api"), "{stdout}");
+}
+
+#[test]
 fn usage_errors_exit_3_and_store_nothing() {
     let rig = live_rig();
     let out = rig.run(
