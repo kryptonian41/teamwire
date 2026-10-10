@@ -31,7 +31,7 @@ mod watch;
 pub use completion::{CompletionRecord, NewCompletion, ResultOutcome};
 pub use ctx::{Ctx, Party};
 pub use delivery::{DeliveryRecord, DeliveryUpdate};
-pub use error::StoreError;
+pub use error::{NO_DATABASE_HINT, StoreError};
 pub use export::{ExportClaim, ExportMark};
 pub use member::NewMember;
 pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};

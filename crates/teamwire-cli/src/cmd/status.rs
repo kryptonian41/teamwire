@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
-use teamwire_store::{Ctx, Store, StoreError, database_path};
+use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError, database_path};
 use teamwire_watch::StatusView;
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
@@ -181,7 +181,7 @@ fn fail(message: &str, code: u8) -> ExitCode {
 
 fn store_failure(team: &TeamName, e: &StoreError) -> ExitCode {
     if matches!(e, StoreError::NoDatabase { .. }) {
-        return fail(&format!("no team {team}"), REFUSED);
+        return fail(&format!("no team {team}. {NO_DATABASE_HINT}"), REFUSED);
     }
     fail(&e.to_string(), STORE_ERROR)
 }

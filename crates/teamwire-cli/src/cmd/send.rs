@@ -10,7 +10,7 @@ use teamwire_msg::{
     CallerEnv, RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged,
     send_with, watch_running,
 };
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
@@ -291,7 +291,10 @@ pub(crate) fn home_or_refuse(command: &str, global: &Global) -> Result<PathBuf, 
 
 /// The refusal text for a team whose database file is missing.
 pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> String {
-    format!("no database for team {team} at {}", path.display())
+    format!(
+        "no database for team {team} at {}. {NO_DATABASE_HINT}",
+        path.display()
+    )
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that

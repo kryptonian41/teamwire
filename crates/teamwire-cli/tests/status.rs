@@ -207,6 +207,7 @@ fn an_unknown_team_is_refused() {
     let run = teamwire(&bed, &["status", "nosuch"]);
     assert_eq!(run.code, 1);
     assert!(run.err.contains("no team nosuch"), "{}", run.err);
+    assert!(run.err.contains("$TEAMWIRE_HOME/archive/"), "{}", run.err);
 }
 
 #[test]

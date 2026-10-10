@@ -10,7 +10,7 @@ use teamwire_msg::{
     prove_actor_logged, resend, roster, send, watch_running,
 };
 use teamwire_report::DoneReport;
-use teamwire_store::{Ctx, Party, Store, StoreError};
+use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
 
 use crate::failure::ToolFailure;
 use crate::inputs::{AckInput, DoneInput, InboxInput, LogInput, ResendInput, SendInput};
@@ -88,9 +88,11 @@ pub(crate) fn call(
     let mut store = match opened {
         Ok(store) => store,
         // Nothing is proven yet, so a missing team is not told apart from a
-        // wrong token.
+        // wrong token. The hint names the usual cause without confirming it.
         Err(StoreError::NoDatabase { .. }) => {
-            return Err(ToolFailure::identity("no such team, or not yours"));
+            return Err(ToolFailure::identity(format!(
+                "no such team, or not yours. {NO_DATABASE_HINT}"
+            )));
         }
         Err(e) => return Err(e.into()),
     };

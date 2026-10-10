@@ -642,6 +642,24 @@ async fn the_member_only_tools_say_so_in_their_descriptions() {
 }
 
 #[tokio::test]
+async fn a_team_with_no_database_names_the_archive_but_stays_an_identity_refusal() {
+    let rig = Rig::new();
+    let lead = rig.client(McpCaller::Lead).await;
+    for tool in ["team_members", "team_log", "team_status"] {
+        let result = call(&lead, tool, json!({"team": "closedteam"})).await;
+        assert_eq!(refused(&result), "refused.identity", "{tool}");
+        let message = result.structured_content.as_ref().unwrap()["error"]["message"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(message.contains("no such team, or not yours"), "{message}");
+        assert!(message.contains("archive"), "{message}");
+        // The same text for every team: it never names the one asked for.
+        assert!(!message.contains("closedteam"), "{message}");
+    }
+}
+
+#[tokio::test]
 async fn a_member_cannot_name_another_team() {
     let (_rig, api, _web) = two_members().await;
     let result = call(&api, "team_status", json!({"team": "beta"})).await;
