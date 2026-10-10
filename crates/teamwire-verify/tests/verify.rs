@@ -12,7 +12,7 @@
 #[path = "support/fixture.rs"]
 pub mod fixture;
 
-use fixture::{Fixture, Repo, implementer, start_secs};
+use fixture::{Fixture, Repo, implementer, implementer_without_repo, start_secs};
 use sha2::{Digest, Sha256};
 use teamwire_core::{Role, RunOutput};
 use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, verify, waive};
@@ -623,14 +623,19 @@ fn a_worktree_member_with_no_check_is_no_check_and_never_clean() {
 
 #[test]
 fn removed_unstarted_and_checkless_pane_members_are_skipped() {
-    let repo = repo_on_work(&[("src/a.rs", "")]);
     let mut fx = Fixture::new();
-    fx.add_member(&implementer("gone", &repo, Some("true"), &["src/"]));
+    let cwd = fx.home.path().to_path_buf();
+    fx.add_member(&implementer_without_repo(
+        "gone",
+        &cwd,
+        Some("true"),
+        &["src/"],
+    ));
     let now = teamwire_core::Clock::now(&fx.clock);
     fx.store
         .write(|tx| tx.remove_member(now, &role("gone"), Some("done"), &serde_json::json!({})))
         .unwrap();
-    let mut pane = implementer("pane", &repo, None, &[]);
+    let mut pane = implementer_without_repo("pane", &cwd, None, &[]);
     pane.mode = teamwire_core::Mode::Pane;
     pane.kind = teamwire_core::MemberKind::Reviewer;
     fx.add_member(&pane);
@@ -658,12 +663,10 @@ fn removed_unstarted_and_checkless_pane_members_are_skipped() {
 #[test]
 fn a_pane_member_with_a_check_is_checked_without_the_diff_rules() {
     let dir = tempfile::tempdir().unwrap();
-    let repo = repo_on_work(&[("src/a.rs", "")]);
     let mut fx = Fixture::new();
-    let mut pane = implementer("pane", &repo, Some("true"), &["src/"]);
+    let mut pane = implementer_without_repo("pane", dir.path(), Some("true"), &["src/"]);
     pane.mode = teamwire_core::Mode::Pane;
     pane.kind = teamwire_core::MemberKind::Reviewer;
-    pane.cwd = dir.path().to_path_buf();
     fx.add_member(&pane);
     let record = run_one(&mut fx, "pane");
     assert_eq!(record.verdict, Verdict::Pass);

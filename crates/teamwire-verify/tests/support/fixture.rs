@@ -362,6 +362,24 @@ pub fn implementer<'a>(
     }
 }
 
+/// An implementer whose directory is not a repository, with no base commit.
+pub fn implementer_without_repo<'a>(
+    role: &'a str,
+    cwd: &Path,
+    check: Option<&'a str>,
+    owns: &'a [&'a str],
+) -> MemberSetup<'a> {
+    MemberSetup {
+        role,
+        kind: MemberKind::Implementer,
+        mode: Mode::Worktree,
+        check,
+        owns,
+        base_sha: None,
+        cwd: cwd.to_path_buf(),
+    }
+}
+
 /// `FakeClock`'s starting time, in unix seconds.
 pub fn start_secs() -> i64 {
     FakeClock::DEFAULT_START_MILLIS / 1000

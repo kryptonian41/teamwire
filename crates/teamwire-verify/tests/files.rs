@@ -14,7 +14,7 @@ pub mod fixture;
 
 use std::path::PathBuf;
 
-use fixture::{Fixture, Repo, implementer, start_secs};
+use fixture::{Fixture, Repo, implementer, implementer_without_repo, start_secs};
 use sha2::{Digest, Sha256};
 use teamwire_core::{
     Actor, CompletionStatus, FinalSource, MessageType, Recipient, Role, Timestamp,
@@ -52,12 +52,30 @@ fn send(fx: &mut Fixture, body: &str) -> String {
         .unwrap()
 }
 
+/// A member in a real repository, so its own verdict is `Pass`. The tests that
+/// assert on `is_clean` need that: with no repository the verdict is not
+/// `Pass`, and `!is_clean` would hold for the wrong reason.
 fn team_with_member() -> (Fixture, Repo) {
     let repo = Repo::init(&[("README.md", "")], start_secs() - 10);
     let mut fx = Fixture::new();
     fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
     fx.write_report("api", "Decisions I made: none\n");
     (fx, repo)
+}
+
+/// A member whose directory is not a repository, for the tests that never
+/// look at the member's verdict.
+fn team_without_repo() -> Fixture {
+    let mut fx = Fixture::new();
+    let cwd = fx.home.path().to_path_buf();
+    fx.add_member(&implementer_without_repo(
+        "api",
+        &cwd,
+        Some("true"),
+        &["src/"],
+    ));
+    fx.write_report("api", "Decisions I made: none\n");
+    fx
 }
 
 fn comms(fx: &Fixture, id: &str) -> PathBuf {
@@ -72,7 +90,7 @@ fn write_comms(fx: &Fixture, id: &str, text: &str) {
 
 #[test]
 fn deep_runs_integrity_check() {
-    let (mut fx, _repo) = team_with_member();
+    let mut fx = team_without_repo();
     send(&mut fx, "hello");
     let report = run(
         &mut fx.ctx(),
@@ -170,7 +188,7 @@ fn repair_rewrites_missing_copy() {
 
 #[test]
 fn repair_rewrites_a_differing_message_copy() {
-    let (mut fx, _repo) = team_with_member();
+    let mut fx = team_without_repo();
     let id = send(&mut fx, "original");
     write_comms(&fx, &id, "original but edited by hand");
     let found = check_copies(&fx.ctx()).unwrap();
@@ -185,7 +203,7 @@ fn repair_rewrites_a_differing_message_copy() {
 
 #[test]
 fn a_result_file_is_checked_but_never_rewritten() {
-    let (mut fx, _repo) = team_with_member();
+    let mut fx = team_without_repo();
     let at = now(&fx);
     fx.store
         .write(|tx| {
@@ -236,7 +254,7 @@ fn a_result_file_is_checked_but_never_rewritten() {
 
 #[test]
 fn a_tampered_message_is_reported_and_never_written_back_as_a_copy() {
-    let (mut fx, _repo) = team_with_member();
+    let mut fx = team_without_repo();
     let id = send(&mut fx, "original");
     fx.store
         .write(|tx| {
@@ -255,7 +273,7 @@ fn a_tampered_message_is_reported_and_never_written_back_as_a_copy() {
 #[test]
 fn deep_reports_a_damaged_database_instead_of_an_ok() {
     use std::io::{Seek, SeekFrom, Write};
-    let (mut fx, _repo) = team_with_member();
+    let mut fx = team_without_repo();
     for n in 0..40 {
         send(
             &mut fx,
