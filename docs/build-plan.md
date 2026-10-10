@@ -215,7 +215,8 @@ irreversible step (LCH-3); `git worktree add` with `base_sha`; setup with the
 `TEAMWIRE_*` variables, timeout, log and undo; contract text as data files in
 `crates/teamwire-launch/contracts/` (one per kind, plus the shared "talking to
 the team", "your scope" and finishing parts), adapted from
-`~/.claude/team/bin/team-launch.py:319-569` (read-only) with teamwire's own
+`~/Backups/claude/agent-team-2026-10-10/team/bin/team-launch.py:319-569`
+(read-only) with teamwire's own
 commands, and a test that each rule listed in speclife §1.2 is present; spawn
 through the host; trust through the harness; dispatch sent once; member
 tokens; the sleep hold; `--add`, including relaunching a role whose row is
@@ -252,7 +253,8 @@ route `COMPLETED`, `UNDELIVERED` (including `delivery_interrupted` after
 method. `status` as in `docs/api/cli.md`, read-only. Required tests: every
 `crates/teamwire-watch/tests/...` row in `docs/failure-modes.md` and the watch
 property. Port the scripted poll sequences of
-`~/.claude/team/bin/tests/test_team_watch.py` (read-only) as test cases.
+`~/Backups/claude/agent-team-2026-10-10/team/bin/tests/test_team_watch.py`
+(read-only) as test cases.
 
 ### T11 Metrics and OpenTelemetry export (wave 4)
 
@@ -273,7 +275,8 @@ point 2a, `cli/src/cmd/resend.rs`) and
 `comms/` copies, `inbox` with hash checks, `ack`, `log`, reprompt generation
 changes with undo on a known failure and keep on unconfirmed, and `teamwire
 lead --adopt`. Port every refusal case of
-`~/.claude/team/bin/tests/test_team_msg.py:138-232` (read-only). Required tests:
+`~/Backups/claude/agent-team-2026-10-10/team/bin/tests/test_team_msg.py:138-232`
+(read-only). Required tests:
 every `crates/teamwire-msg/tests/...` row in `docs/failure-modes.md` and the
 delivery-state property.
 
@@ -286,7 +289,8 @@ rescue, `on_turn_end` (route A of ADR 0007, including `delivering` recovery
 and the combined hold note), `on_tool_use` reminders, and the CLI entry
 points `teamwire done`, `teamwire hook claude-stop`, `teamwire hook
 claude-post-tool`, which always exit 0 for hooks. Port the cases of
-`~/.claude/team/bin/tests/test_team_report.py:314-449` (read-only). Required
+`~/Backups/claude/agent-team-2026-10-10/team/bin/tests/test_team_report.py:314-449`
+(read-only). Required
 tests: every `crates/teamwire-report/tests/...` and `cli/tests/hook.rs` row in
 `docs/failure-modes.md`.
 
@@ -297,7 +301,8 @@ re-checks under it, archive with the SQLite backup API and `SHA256SUMS`,
 worktree removal without force, member removal with CLS-5, `--stop`,
 `--unverified`, `--keep-state`, `--clear-stale-lock`, sleep hold release
 last, branches kept and unpushed commits printed. Port
-`~/.claude/team/bin/tests/test_team_msg.py:236-262` (read-only). Required
+`~/Backups/claude/agent-team-2026-10-10/team/bin/tests/test_team_msg.py:236-262`
+(read-only). Required
 tests: every `crates/teamwire-close/tests/...` row in `docs/failure-modes.md`.
 
 ### T15 MCP server (wave 5)
