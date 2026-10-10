@@ -332,13 +332,3 @@ fn herdr_env_wins_over_tmux() {
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(recorded.as_deref(), Some("herdr"));
 }
-
-#[test]
-fn neither_herdr_nor_tmux_leaves_the_lead_with_no_host() {
-    for tmux in [None, Some("")] {
-        let (out, recorded) = launch_with(None, tmux);
-        assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
-        assert!(text(&out.stderr).contains("host none cannot start a member"));
-        assert_eq!(recorded, None, "nothing was created");
-    }
-}

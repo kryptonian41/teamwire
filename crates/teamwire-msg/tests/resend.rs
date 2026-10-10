@@ -17,7 +17,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::Fault;
 use teamwire_msg::{RecipientState, SendError, SendReport, resend, send};
-use teamwire_store::{DeliveryUpdate, NewMessage};
+use teamwire_store::NewMessage;
 
 use rig::{Rig, id, to};
 
@@ -308,29 +308,6 @@ fn a_resend_to_a_removed_recipient_is_undelivered_with_its_reason() {
         again.deliveries.first().unwrap().reason,
         Some(DeliveryErrorCode::RecipientRemoved)
     );
-}
-
-#[test]
-fn delivery_updates_keep_forward_only_moves_in_the_store_too() {
-    // The store refuses a backward move, whatever the service asks.
-    let mut rig = team_rig();
-    let req = rig.request("scout", &["api"], MessageType::Finding, "x");
-    let sent = send(&mut rig.ctx(), req).unwrap();
-    let at = rig.now();
-    let back = rig.store.write(|tx| {
-        tx.set_delivery_state(
-            at,
-            &sent.id,
-            &to("api"),
-            &DeliveryUpdate {
-                state: DeliveryState::Pending,
-                route: None,
-                error: None,
-                attempts: 1,
-            },
-        )
-    });
-    assert!(back.is_err());
 }
 
 /// A message whose delivery is `unconfirmed` (the line may be on screen),

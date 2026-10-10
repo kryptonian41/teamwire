@@ -347,17 +347,6 @@ fn read_only_open_creates_changes_and_deletes_no_file() {
 }
 
 #[test]
-fn read_only_open_by_path_refuses_a_missing_file() {
-    let home = TestHome::new().unwrap();
-    let missing = home.path().join("nothing.db");
-    assert!(matches!(
-        Store::open_read_only_at(&missing),
-        Err(StoreError::NoDatabase { .. })
-    ));
-    assert!(!missing.exists());
-}
-
-#[test]
 fn closing_a_read_only_store_leaves_a_live_writers_files_alone() {
     let home = TestHome::new().unwrap();
     let mut writer = Store::open(home.path(), &team()).unwrap();

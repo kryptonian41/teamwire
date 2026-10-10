@@ -82,9 +82,8 @@ fn filled(name: &str, work: &Path) -> String {
     text
 }
 
-fn validates(name: &str) {
-    let work = tempfile::tempdir().unwrap();
-    let text = filled(name, work.path());
+fn validates(name: &str, work: &Path) {
+    let text = filled(name, work);
     let home = TestHome::new().unwrap();
     let harness = Arc::new(FakeHarness::new());
     harness.set_interactive_caller(teamwire_core::SessionId::parse("lead-session").unwrap());
@@ -95,7 +94,7 @@ fn validates(name: &str) {
     registry.add_host(Arc::new(FakeHost::new())).unwrap();
     let platform = RealGit::default();
     let config = Config::default();
-    let user_home = work.path().join("userhome");
+    let user_home = work.join("userhome");
     std::fs::create_dir_all(&user_home).unwrap();
     let env = ValidateEnv {
         home: home.path(),
@@ -166,34 +165,14 @@ impl teamwire_core::Platform for RealGit {
     }
 }
 
+/// Every preset validates. They share one repository, because `filled` reuses
+/// it and a git repository per preset only adds process starts.
 #[test]
-fn survey_is_a_valid_spec() {
-    validates("survey");
-}
-
-#[test]
-fn implement_then_review_is_a_valid_spec() {
-    validates("implement-then-review");
-}
-
-#[test]
-fn parallel_tickets_is_a_valid_spec() {
-    validates("parallel-tickets");
-}
-
-#[test]
-fn dependent_tickets_is_a_valid_spec() {
-    validates("dependent-tickets");
-}
-
-#[test]
-fn contract_split_is_a_valid_spec() {
-    validates("contract-split");
-}
-
-#[test]
-fn closer_is_a_valid_spec() {
-    validates("closer");
+fn every_preset_is_a_valid_spec() {
+    let work = tempfile::tempdir().unwrap();
+    for name in NAMES {
+        validates(name, work.path());
+    }
 }
 
 #[test]

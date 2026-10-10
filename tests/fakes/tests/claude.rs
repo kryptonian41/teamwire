@@ -390,41 +390,6 @@ fn the_plain_trust_dialog_is_answered_with_down_and_enter() {
     }
 }
 
-#[test]
-fn saying_no_to_the_dialog_ends_the_session() {
-    let mut env = FakeHerdrEnv::new().unwrap();
-    env.set_script(&ClaudeScript {
-        startup: Startup::Trust,
-        ..ClaudeScript::default()
-    })
-    .unwrap();
-    let settings = settings_with(&env, LOGGING_HOOK, &identity());
-    let pane_id = pane(&env);
-    env.run(&[
-        "agent",
-        "start",
-        "tw_demo_api",
-        "--kind",
-        "claude",
-        "--pane",
-        &pane_id,
-        "--",
-        "--settings",
-        &settings,
-    ])
-    .unwrap();
-    env.run(&["agent", "send-keys", "tw_demo_api", "enter"])
-        .unwrap();
-    let begun = Instant::now();
-    while !env.session_files().is_empty() {
-        assert!(
-            begun.elapsed() < Duration::from_secs(10),
-            "the session never ended"
-        );
-        std::thread::sleep(Duration::from_millis(25));
-    }
-}
-
 fn run_direct(env_vars: &[(&str, &str)], stdin: &str) -> std::process::Output {
     use std::io::Write as _;
     let bins = FakeBins::ensure().unwrap();

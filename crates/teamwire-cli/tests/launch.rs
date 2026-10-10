@@ -157,6 +157,7 @@ fn a_member_on_host_none_is_refused_and_nothing_is_created() {
     assert_eq!(out.status.code(), Some(1));
     let err = text(&out.stderr);
     assert!(err.contains("[a]") && err.contains("no_host"), "{err}");
+    assert!(err.contains("host none cannot start a member"), "{err}");
     assert!(err.contains("nothing was created"));
     assert!(rig.home_is_empty());
 }

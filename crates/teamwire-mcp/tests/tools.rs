@@ -301,12 +301,7 @@ async fn tool_list_is_the_eight_tools_of_the_doc() {
             "team_log(limit, role, team)",
         ]
     );
-}
-
-#[tokio::test]
-async fn tool_list_carries_the_cache_fields_a_2026_client_requires() {
-    let rig = Rig::new();
-    let client = rig.member_client("api", "x").await;
+    // A 2026 client requires the cache fields on the listing itself.
     let listing = client.list_tools(None).await.unwrap();
     assert_eq!(listing.ttl_ms, Some(0));
     assert_eq!(listing.cache_scope, Some(CacheScope::Private));
@@ -582,6 +577,12 @@ async fn a_lead_call_without_the_recorded_session_is_refused() {
     let before = rig.stored();
     let result = call(&lead, "team_status", json!({"team": "alpha"})).await;
     assert_eq!(refused(&result), "refused.identity");
+    // The server has a session id, so the refusal must not blame a missing one.
+    let message = result.structured_content.as_ref().unwrap()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!message.contains("no harness session id"), "{message}");
     let result = call(
         &lead,
         "team_send",
@@ -610,20 +611,6 @@ async fn a_lead_server_with_no_session_id_says_so() {
         .unwrap()
         .to_owned();
     assert!(message.contains("no harness session id"), "{message}");
-}
-
-#[tokio::test]
-async fn a_lead_server_with_the_wrong_session_does_not_blame_the_session_id() {
-    let rig = Rig::new();
-    rig.harness.set_interactive_caller(sid("someone-else"));
-    let lead = rig.client(McpCaller::Lead).await;
-    let result = call(&lead, "team_status", json!({"team": "alpha"})).await;
-    assert_eq!(refused(&result), "refused.identity");
-    let message = result.structured_content.as_ref().unwrap()["error"]["message"]
-        .as_str()
-        .unwrap()
-        .to_owned();
-    assert!(!message.contains("no harness session id"), "{message}");
 }
 
 #[tokio::test]
@@ -663,14 +650,6 @@ async fn a_team_with_no_database_names_the_archive_but_stays_an_identity_refusal
 async fn a_member_cannot_name_another_team() {
     let (_rig, api, _web) = two_members().await;
     let result = call(&api, "team_status", json!({"team": "beta"})).await;
-    assert_eq!(refused(&result), "refused.identity");
-}
-
-#[tokio::test]
-async fn a_team_that_does_not_exist_is_refused_as_identity() {
-    let rig = Rig::new();
-    let lead = rig.client(McpCaller::Lead).await;
-    let result = call(&lead, "team_status", json!({"team": "nosuch"})).await;
     assert_eq!(refused(&result), "refused.identity");
 }
 

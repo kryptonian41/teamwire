@@ -164,23 +164,12 @@ fn files_are_settings_and_mcp_under_member_dir_and_private() {
 }
 
 #[test]
-fn settings_env_has_team() {
-    assert_eq!(settings_env(&member())["TEAMWIRE_TEAM"], "demo");
-}
-
-#[test]
-fn settings_env_has_role() {
-    assert_eq!(settings_env(&member())["TEAMWIRE_ROLE"], "api");
-}
-
-#[test]
-fn settings_env_has_home() {
-    assert_eq!(settings_env(&member())["TEAMWIRE_HOME"], "/home/tw");
-}
-
-#[test]
-fn settings_env_has_token() {
-    assert_eq!(settings_env(&member())["TEAMWIRE_TOKEN"], TOKEN);
+fn settings_env_has_team_role_home_and_token() {
+    let env = settings_env(&member());
+    assert_eq!(env["TEAMWIRE_TEAM"], "demo");
+    assert_eq!(env["TEAMWIRE_ROLE"], "api");
+    assert_eq!(env["TEAMWIRE_HOME"], "/home/tw");
+    assert_eq!(env["TEAMWIRE_TOKEN"], TOKEN);
 }
 
 #[test]

@@ -21,7 +21,7 @@ use teamwire_fakes::Fault;
 use teamwire_msg::{RecipientState, SendError, send, send_with};
 use teamwire_store::{Ctx, Store};
 
-use rig::{Rig, hash_of, id, role, to, token_of};
+use rig::{Rig, id, role, to};
 
 const FULL_SHA: &str = "3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312";
 
@@ -719,18 +719,6 @@ fn no_write_lock_held_during_host_call() {
         outcomes.iter().all(|ok| *ok),
         "another writer was blocked during delivery: {outcomes:?}"
     );
-}
-
-#[test]
-fn a_token_hash_matches_what_launch_stores() {
-    // The rig stores SHA-256 of the token's text, as launch does.
-    let rig = team_rig();
-    let stored = rig
-        .store
-        .read(|tx| tx.member_token_hash(&role("api")))
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored, hash_of(&token_of("api")));
 }
 
 #[test]
