@@ -372,7 +372,7 @@ The steps a cutover would take, in order, when the user asks for it:
    `examples/mcp/lead.json` into the lead's Claude Code MCP settings.
    teamwire never registers it. Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
-   id reached the server means the lead must use the CLI with `--from lead`.
+   id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.
 5. Let every running Python team finish and close under Python.
 6. Point the lead's skill at teamwire: install the `teamwire` skill from

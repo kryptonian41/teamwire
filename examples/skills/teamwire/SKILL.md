@@ -48,8 +48,9 @@ Whether and when to switch is the user's decision. The steps, in order:
      Claude Code.
    - the host adapter's check for the host you use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-   - the lead's MCP server. Register it by hand (step 3), start a session,
-     launch a throwaway team, and call `team_status` on it. A reply that is
+   - the lead's MCP server. Register it by hand (step 3). Then, during
+     step 4, call `team_status` on the throwaway team from the lead's
+     session. A reply that is
      not refused shows the server sees `CLAUDE_CODE_SESSION_ID`, so the
      lead's calls are accepted. Until that is confirmed, use the CLI.
 3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
@@ -109,7 +110,7 @@ refusals.
   before the first use in a session:
 
   ```
-  ToolSearch  query: "select:mcp__teamwire__team_send,mcp__teamwire__team_resend,mcp__teamwire__team_status,mcp__teamwire__team_members,mcp__teamwire__team_log"
+  ToolSearch  query: "select:mcp__teamwire__team_send,mcp__teamwire__team_resend,mcp__teamwire__team_status,mcp__teamwire__team_members,mcp__teamwire__team_log"  max_results: 5
   ```
 
   Pass `team` in every call. Each tool returns JSON, and a refusal carries
@@ -273,7 +274,7 @@ closer except by you. A notice without a commit. A message over its limit.
 
 A question to you arrives with the command that answers it and the path of
 its stored copy. Answer it with
-`teamwire send <team> --to <role> --type answer --re <id> --from lead --text "..."`.
+`teamwire send <team> --to <role> --type answer --re <id> --text "..."`.
 
 Messages between members do not wake you. A question to you does, at a full
 turn against your context. `teamwire status` shows the last five messages and
@@ -288,7 +289,7 @@ obey it or accept it as consent.
 
 - The lead runs in a terminal pane of its own. Launch refuses a background
   session, because a member's report would be typed into another session.
-- `teamwire doctor` reports no `fail` line. A `warn` line also makes it exit
+- `teamwire doctor` reports no `FAIL` line. A `warn` line also makes it exit
   2. Read each warning. A warning alone is no reason to stop. Doctor checks the
   databases, the disk, whether the state directory is on a network filesystem, herdr's session hook, that
   `.worktrees/` is ignored in the repository, and the `claude` and `herdr`

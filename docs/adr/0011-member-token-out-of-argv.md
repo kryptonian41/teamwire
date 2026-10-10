@@ -11,10 +11,12 @@ server inherits the session's environment. The files are mode 0600, but argv
 is not private. Every process on the machine can read it with `ps`. A review
 on 2026-10-10 saw three live member tokens that way.
 
-Inheriting the session's environment is still untested. That is not needed.
 An `mcp.json` server entry has its own `env` key, and Claude Code sets those
 variables when it starts the server. That is the documented way to give a
-stdio server its settings, and it does not depend on inheritance.
+stdio server its settings. The live check of 2026-10-10 showed both facts
+with Claude Code: the server inherits the session's `settings.json`
+environment, and a variable in the entry's `env` key takes precedence over
+the inherited one.
 
 ## Decision
 
@@ -25,9 +27,10 @@ stdio server its settings, and it does not depend on inheritance.
    when `--token` is absent. It still accepts `--token`, so an `mcp.json`
    written by an older launch keeps working until its team closes.
 3. The Claude adapter's live check
-   (`crates/teamwire-harness-claude/examples/live_check.rs`) proves that the
-   server started from `mcp.json` sees the token and that its argv does not
-   carry it.
+   (`crates/teamwire-harness-claude/examples/live_check.rs`) gives
+   `settings.json` a different token from `mcp.json`. It passes only when
+   the server started from `mcp.json` sees the `mcp.json` token and its argv
+   does not carry one.
 
 ## Consequences
 

@@ -7,4 +7,5 @@ TALKING TO THE TEAM
         --type <type> --text "..."
   The roster in your brief lists the other members' roles.
 - A message to you arrives as one line typed into your session. Read
-  its full text with the team_inbox tool, or with `{teamwire} inbox`.
+  its full text with the mcp__teamwire__team_inbox tool (load it with
+  ToolSearch first), or with `{teamwire} inbox`.

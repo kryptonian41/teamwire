@@ -60,11 +60,9 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         // A member's `--from` defaults to its role. With no role and no
         // token the caller claims to be the lead, as `resend` does, and the
         // harness session decides.
-        let from = from.clone().or_else(|| {
-            std::env::var_os("TEAMWIRE_TOKEN")
-                .is_none()
-                .then(|| "lead".to_owned())
-        });
+        let from = from
+            .clone()
+            .or_else(|| member_token().is_none().then(|| "lead".to_owned()));
         let env = caller_env(from);
         let actor = match prove_actor_logged(ctx, &env) {
             Ok(actor) => actor,
@@ -236,9 +234,15 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
     CallerEnv {
         team: std::env::var("TEAMWIRE_TEAM").ok(),
         role: std::env::var("TEAMWIRE_ROLE").ok(),
-        token: std::env::var("TEAMWIRE_TOKEN").ok(),
+        token: member_token(),
         from,
     }
+}
+
+/// The member token the process carries. Every command reads it here, so
+/// they agree on what counts as having one: set and valid UTF-8, even empty.
+pub(crate) fn member_token() -> Option<String> {
+    std::env::var("TEAMWIRE_TOKEN").ok()
 }
 
 /// Whether the process runs inside a member's session. The rule is

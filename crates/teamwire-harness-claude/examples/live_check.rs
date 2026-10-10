@@ -25,7 +25,13 @@ use teamwire_core::{
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
 /// Stands in for `teamwire`: logs how it was called and which identity it saw.
-const STUB: &str = "#!/bin/sh\nprintf '%s | role=%s token_set=%s\\n' \"$*\" \"$TEAMWIRE_ROLE\" \"${TEAMWIRE_TOKEN:+yes}\" >> \"$(dirname \"$0\")/calls.log\"\ncase \"$1\" in hook) cat > /dev/null ;; mcp) sleep 20 ;; esac\n";
+/// The tokens here are fake, so it logs their values.
+const STUB: &str = "#!/bin/sh\nprintf '%s | role=%s token=%s\\n' \"$*\" \"$TEAMWIRE_ROLE\" \"$TEAMWIRE_TOKEN\" >> \"$(dirname \"$0\")/calls.log\"\ncase \"$1\" in hook) cat > /dev/null ;; mcp) sleep 20 ;; esac\n";
+
+/// The token `mcp.json` carries. `settings.json` gets a different one, so the
+/// log shows which file the MCP server's token came from.
+const MCP_TOKEN: &str = "live-check-token";
+const SETTINGS_TOKEN: &str = "settings-copy";
 
 fn step(ok: bool, what: &str) -> bool {
     println!("[{}] {what}", if ok { "ok" } else { "FAIL" });
@@ -76,7 +82,7 @@ fn main() -> Result<(), String> {
         effort: None,
         member_dir: member_dir.clone(),
         contract_path: contract,
-        identity: vec![("TEAMWIRE_TOKEN".into(), "live-check-token".into())],
+        identity: vec![("TEAMWIRE_TOKEN".into(), MCP_TOKEN.into())],
         otel: OtelConfig::default(),
         teamwire_bin: stub,
     };
@@ -99,6 +105,7 @@ fn main() -> Result<(), String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    swap_settings_token(&platform, &member_dir.join("settings.json"))?;
 
     // One non-interactive turn: `-p` runs the prompt, the Bash tool writes the
     // role it sees, and the session ends, which fires the Stop hook.
@@ -127,7 +134,7 @@ fn main() -> Result<(), String> {
         "the Stop hook ran",
     );
     all &= step(
-        calls.contains("role=probe token_set=yes"),
+        calls.contains(&format!("role=probe token={SETTINGS_TOKEN}")),
         "settings.json env reached the hook",
     );
     all &= step(
@@ -141,10 +148,10 @@ fn main() -> Result<(), String> {
     all &= step(
         calls.lines().any(|l| {
             l.contains("mcp --team live --role probe")
-                && l.contains("token_set=yes")
+                && l.ends_with(&format!("token={MCP_TOKEN}"))
                 && !l.contains("--token")
         }),
-        "the MCP server got its token from mcp.json env, not argv",
+        "the MCP server got its token from mcp.json env, not argv or settings.json",
     );
     println!(
         "{}",
@@ -164,4 +171,23 @@ fn main() -> Result<(), String> {
 /// A well-formed version-4 UUID text from a number; only `--session-id` needs it.
 fn uuid_like(n: u32) -> String {
     format!("00000000-0000-4000-8000-{n:012x}")
+}
+
+/// Gives `settings.json` a token unlike the one in `mcp.json`, so a server
+/// that inherited the session's environment logs the wrong one.
+fn swap_settings_token(
+    platform: &std::sync::Arc<dyn teamwire_core::Platform>,
+    path: &Path,
+) -> Result<(), String> {
+    let text = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let mut doc: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let env = doc
+        .get_mut("env")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or("settings.json has no env object")?;
+    env.insert("TEAMWIRE_TOKEN".to_owned(), SETTINGS_TOKEN.into());
+    let bytes = serde_json::to_vec_pretty(&doc).map_err(|e| e.to_string())?;
+    platform
+        .write_atomic(path, &bytes)
+        .map_err(|e| e.to_string())
 }

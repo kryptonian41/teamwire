@@ -117,12 +117,14 @@ pub(crate) fn call(
 /// not spoken to by the wrong session. The two need different fixes, so the
 /// refusal says which one it is.
 const NO_LEAD_SESSION: &str = "no harness session id reached this server, so the lead \
-     cannot be proven; use the CLI from the lead's shell, with --from lead on send";
+     cannot be proven; use the CLI from the lead's shell";
 
 /// Whether the lead's harness reports any current session to this server.
+/// When the adapters cannot be read, the cause is something else, so this
+/// says a session was reached and the plain refusal stands.
 fn lead_session_reached(ctx: &Ctx<'_>) -> bool {
     ctx.adapters(&Party::Lead)
-        .is_ok_and(|(harness, _)| harness.current_session().is_some())
+        .map_or(true, |(harness, _)| harness.current_session().is_some())
 }
 
 /// A member speaks only for its own team. The lead names the team.

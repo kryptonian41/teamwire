@@ -118,8 +118,10 @@ user, never in `cargo test`:
   Claude Code session in a scratch directory with teamwire's per-run
   `--settings` and `--mcp-config`, and confirms the Stop hook runs, the
   `settings.json` `env` values reach the Bash tool and the hook (the lead
-  confirmed this by hand on 2026-09-29), and the MCP tools are listed. It
-  prints each step and exits.
+  confirmed this by hand on 2026-09-29), the MCP server from `mcp.json` is
+  started, and that server gets its token from the `env` key of `mcp.json`,
+  not from argv or `settings.json` (ADR 0011). It prints each step and
+  exits.
 - `crates/teamwire-host-herdr/examples/live_check.rs`: read-only herdr calls
   (`agent list`, `agent get` on the caller's own pane) to confirm the JSON
   shapes still match the adapter's parser.

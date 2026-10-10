@@ -6,7 +6,7 @@ use std::sync::Arc;
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_mcp::{McpCaller, ServerEnv, serve_stdio};
 
-use crate::cmd::send::{REFUSED, fail, home_or_refuse};
+use crate::cmd::send::{REFUSED, fail, home_or_refuse, member_token};
 use crate::wiring::{Wiring, WiringEnv, wire};
 use crate::{Global, McpArgs, USAGE};
 
@@ -23,11 +23,7 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
             // `mcp.json` passes the token in the server's environment, so it
             // never shows in the process list. `--token` still works for a
             // config written by an older launch.
-            let token = token.clone().or_else(|| {
-                std::env::var("TEAMWIRE_TOKEN")
-                    .ok()
-                    .filter(|t| !t.is_empty())
-            });
+            let token = token.clone().or_else(member_token);
             let Some(token) = token else {
                 return fail(
                     "mcp",
