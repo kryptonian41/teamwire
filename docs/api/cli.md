@@ -134,7 +134,11 @@ same checks plus CLS-5; `--stop` allows removing a busy member;
 `--unverified` overrides CLS-5 and prints why. `--dry-run` prints the plan.
 `--keep-state` leaves `$TEAMWIRE_HOME/teams/<team>` in place, marked closed.
 The archive goes to `$TEAMWIRE_HOME/archive/<team>-<date>` (a `-HHMMSS`
-suffix when taken) unless `--archive-to` names a directory. Prints the
+suffix when taken) unless `--archive-to` names a directory. The state
+directory is deleted last: it is first renamed to
+`$TEAMWIRE_HOME/deleting/<team>.<pid>`, so a kill never leaves
+`teams/<team>` without its `team.db`, and then removed. A later close
+removes any directory there whose pid is dead. Prints the
 branches kept and any unpushed commits. `--clear-stale-lock` clears a close
 lock whose owner pid is dead, and nothing else.
 

@@ -16,6 +16,7 @@ use teamwire_core::{EventType, Role};
 use teamwire_store::Ctx;
 
 mod archive;
+mod delete;
 mod facts;
 mod git;
 mod hold;

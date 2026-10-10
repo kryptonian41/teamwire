@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use rig::{Rig, entries};
 use teamwire_close::{CloseOpts, CloseTarget, close_observed};
-use teamwire_core::{MemberKind, PlaceState, TeamState};
+use teamwire_core::{MemberKind, Pid, PlaceState, TeamState};
 
 /// Something that goes wrong in an archive directory.
 type Damage = fn(&std::path::Path);
@@ -171,4 +171,33 @@ fn an_archive_path_that_exists_is_never_written_into() {
     let second = teamwire_close::close(&mut rig.ctx(), CloseTarget::Team, opts);
     assert_ne!(second.archive.unwrap(), path);
     assert_eq!(std::fs::read(path.join("SHA256SUMS")).unwrap(), before);
+}
+
+#[test]
+fn a_close_leaves_no_team_directory_and_nothing_in_deleting() {
+    let mut rig = team();
+    let report = teamwire_close::close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!rig.team_dir().exists());
+    assert_eq!(
+        entries(&rig.home.path().join("deleting")),
+        Vec::<PathBuf>::new()
+    );
+}
+
+#[test]
+fn a_close_removes_what_a_killed_close_left_in_deleting_unless_its_pid_is_alive() {
+    let mut rig = team();
+    let deleting = rig.home.path().join("deleting");
+    // What a close killed between moving its team out of teams/ and removing
+    // it leaves behind; one of the two closes is still running.
+    for name in ["old.4000001", "busy.4000002"] {
+        std::fs::create_dir_all(deleting.join(name).join("reports")).unwrap();
+        std::fs::write(deleting.join(name).join("team.db"), "x").unwrap();
+    }
+    rig.platform.inner.set_alive(Pid::new(4_000_002), true);
+    let report = teamwire_close::close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!rig.team_dir().exists());
+    assert_eq!(entries(&deleting), [deleting.join("busy.4000002")]);
 }

@@ -3,12 +3,12 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
-use teamwire_core::{EventType, Member, Mode, Pid, TeamState};
+use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
 use crate::member_close::{close_place, remove_worktree, unpushed};
-use crate::{CloseOpts, CloseReport, StepOutcome, archive, git, hold};
+use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, git, hold};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
 /// else. A live owner is never cleared.
@@ -90,6 +90,7 @@ pub(crate) fn run(ctx: &mut Ctx<'_>, opts: CloseOpts, observer: &dyn Fn(&str)) -
     };
     let mut seq = Seq {
         team_dir: ctx.home.join("teams").join(team.name.as_str()),
+        team: team.name.clone(),
         ctx,
         observer,
         report: CloseReport::default(),
@@ -109,6 +110,7 @@ struct Seq<'a, 'c> {
     report: CloseReport,
     opts: CloseOpts,
     team_dir: PathBuf,
+    team: TeamName,
 }
 
 impl Seq<'_, '_> {
@@ -363,9 +365,7 @@ impl Seq<'_, '_> {
         if let Err(why) = archive::verify(self.ctx, &self.team_dir, &dest, true) {
             return self.done("delete_state", Err(why));
         }
-        let result = std::fs::remove_dir_all(&self.team_dir)
-            .map(|()| format!("deleted {}", self.team_dir.display()))
-            .map_err(|e| format!("cannot delete {}: {e}", self.team_dir.display()));
+        let result = delete::delete_team_dir(self.ctx, &self.team, &self.team_dir);
         self.done("delete_state", result)
     }
 
