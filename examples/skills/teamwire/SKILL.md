@@ -31,9 +31,10 @@ other's teams. Keep it that way:
   start with `[team:<team>]`. Answer each in its own tool.
 - A team started with one tool is led with that tool until it is closed. Do not
   send a Python team a `teamwire` message or the other way round.
-- teamwire never edits `~/.claude/settings.json` or `~/.claude.json`, and never
-  registers a hook, MCP server or skill by itself. The files in `examples/` are
-  copied by the user.
+- teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
+  `teamwire install` writes under `~/.claude/`: this skill, and the lead's MCP
+  server through `claude mcp`. After a new `cargo install`, run
+  `teamwire install` again to update both.
 
 ## Cutover, when the user asks for it
 
@@ -48,18 +49,17 @@ Whether and when to switch is the user's decision. The steps, in order:
      Claude Code.
    - the host adapter's check for the host you use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-   - the lead's MCP server. Register it by hand (step 3). Then, during
+   - the lead's MCP server. Register it with `teamwire install` (step 3). Then, during
      step 4, call `team_status` on the throwaway team from the lead's
      session. A reply that is
      not refused shows the server sees `CLAUDE_CODE_SESSION_ID`, so the
      lead's calls are accepted. Until that is confirmed, use the CLI.
-3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
-   `examples/mcp/lead.json` into the MCP settings of the lead's Claude Code
-   session. teamwire never registers it.
+3. Run `teamwire install`. It registers the lead's MCP server and installs
+   this skill.
 4. Run one throwaway team in a scratch repository.
 5. Let every running Python team finish and close under Python.
-6. Install this skill: copy `examples/skills/teamwire/` to
-   `~/.claude/skills/teamwire/`.
+6. Check that `teamwire doctor` reports the skill and the lead's MCP server
+   as `ok`.
 7. Only then remove `team-report.sh` from `~/.claude/settings.json`. The user
    does this by hand.
 

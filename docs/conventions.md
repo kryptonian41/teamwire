@@ -59,9 +59,9 @@ teamwire/
 │   ├── crash/                 crate teamwire-crash-tests
 │   └── e2e/                   crate teamwire-e2e
 └── examples/
-    ├── skills/teamwire/SKILL.md   the lead's skill, for the user to install
+    ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
     ├── presets/*.json             the six team shapes
-    └── mcp/lead.json              lead MCP config, for the user to install
+    └── mcp/lead.json              lead MCP config, for a by-hand project setup
 ```
 
 Layout rules, each checked by `cargo xtask tidy`:

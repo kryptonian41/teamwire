@@ -29,7 +29,7 @@ every subcommand. `--json` prints machine-readable output where listed.
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; verify found a member not clean; close stopped at a step |
+| 2 | Partial: launch started some members; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered` |
@@ -223,7 +223,9 @@ These are started by a harness, not typed by people.
 
 | Command | Does |
 | --- | --- |
-| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions, free disk, network filesystem, stale close locks and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`. Exit 0 when all pass, 2 otherwise. |
+| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions, free disk, network filesystem, stale close locks and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, and the lead setup installed and matching this binary (only whether both items are teamwire's when this binary is a build under `target/`), with a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts in place of the user one. Exit 0 when all pass, 2 otherwise. |
+| `teamwire install [--dry-run] [--force]` | Installs the lead setup (ADR 0012): writes the `teamwire` skill to `<claude dir>/skills/teamwire/SKILL.md` and registers the user MCP server `teamwire` as `<this binary> [--home DIR] mcp --lead` through `claude mcp`. Skips an item that is already current. After an MCP change it says that only new Claude Code sessions see it. Refuses, before any write, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a binary inside a `target/` directory, and a `claude` that does not run; `--force` passes the first three. Exit 0 when done, 1 when refused, 2 when a change failed after another was made (the message lists what was done; run it again). |
+| `teamwire uninstall [--dry-run] [--force]` | Removes the skill and the MCP entry that `install` wrote. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, and a `claude` that does not run when the entry must be removed; `--force` removes the first two anyway. A binary under `target/` may uninstall. Exit codes as for `install`. A file the user put beside the skill stays. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). |
 | `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. |

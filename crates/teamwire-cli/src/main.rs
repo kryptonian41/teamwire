@@ -20,8 +20,10 @@ mod cmd {
     pub(crate) mod export;
     pub(crate) mod hook;
     pub(crate) mod inbox;
+    pub(crate) mod install;
     pub(crate) mod launch;
     pub(crate) mod lead;
+    pub(crate) mod lead_setup_check;
     pub(crate) mod log;
     pub(crate) mod mcp;
     pub(crate) mod members;
@@ -43,9 +45,9 @@ const USAGE: u8 = 3;
 
 pub(crate) use args::{
     AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
-    HookTarget, InboxArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs,
-    MetricsCommand, PrWatchArgs, PresetArgs, ResendArgs, SendArgs, StatusArgs, VerifyArgs,
-    WatchArgs,
+    HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
+    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ResendArgs, SendArgs, StatusArgs,
+    UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -79,6 +81,8 @@ fn main() -> ExitCode {
         Command::Hook(a) => cmd::hook::run(a, global, &wiring),
         Command::Mcp(a) => cmd::mcp::run(a, global, &wiring),
         Command::Doctor => cmd::doctor::run(global, &wiring),
+        Command::Install(a) => cmd::install::run(a, global, &wiring),
+        Command::Uninstall(a) => cmd::install::run_uninstall(a, global, &wiring),
         Command::Export(a) => cmd::export::run(a, global, &wiring),
         Command::Metrics(a) => cmd::metrics::run(a, global, &wiring),
         Command::Version => cmd::version::run(global, &wiring),
@@ -176,6 +180,9 @@ mod tests {
             "mcp --team tw --role api",
             "mcp --lead",
             "doctor",
+            "install",
+            "install --dry-run --force",
+            "uninstall --dry-run --force",
             "export tw --out e.jsonl",
             "metrics tw --since 2h --json",
             "metrics export --once",

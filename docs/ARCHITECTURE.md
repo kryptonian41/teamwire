@@ -368,15 +368,14 @@ The steps a cutover would take, in order, when the user asks for it:
      installed Claude Code.
    - The host adapter's check for the host in use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
-   `examples/mcp/lead.json` into the lead's Claude Code MCP settings.
-   teamwire never registers it. Start a session, launch a throwaway team, and
+3. Run `teamwire install`. It writes the `teamwire` skill and registers the
+   lead's MCP server for the user (ADR 0012). Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
    id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.
 5. Let every running Python team finish and close under Python.
-6. Point the lead's skill at teamwire: install the `teamwire` skill from
-   `examples/skills/teamwire/` (a file copy the user makes).
+6. Point the lead at teamwire: the skill that step 3 installed now leads
+   new teams. `teamwire uninstall` removes it again.
 7. Only then, remove `team-report.sh` from `~/.claude/settings.json`. The user
    does this by hand; teamwire never edits that file.
 

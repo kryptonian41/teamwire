@@ -11,9 +11,12 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Command, Platform, TeamName, TeamState};
+use teamwire_harness_claude::{ClaudeConfig, McpEntry};
 use teamwire_store::{SCHEMA_VERSION, Store};
 
 use crate::Global;
+use crate::cmd::install::wanted_entry;
+use crate::cmd::lead_setup_check::{self, Outcome};
 use crate::cmd::send::home_or_refuse;
 use crate::wiring::Wiring;
 
@@ -99,8 +102,13 @@ pub(crate) struct Inputs<'a> {
     pub(crate) platform: &'a dyn Platform,
     /// `$PATH`, where the harness and host binaries are looked for.
     pub(crate) path_var: Option<OsString>,
-    /// The directory that holds Claude Code's `settings.json`.
-    pub(crate) claude_dir: PathBuf,
+    /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
+    pub(crate) claude: ClaudeConfig,
+    /// The MCP entry `teamwire install` would register from this binary, or
+    /// why it cannot be worked out.
+    pub(crate) lead_entry: Result<McpEntry, String>,
+    /// True when this binary is a cargo build under `target/`.
+    pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
     pub(crate) repo: PathBuf,
 }
@@ -236,7 +244,7 @@ fn database_checks(inputs: &Inputs<'_>) -> Vec<Check> {
 /// The hook herdr manages reports a session's state to herdr. It is a
 /// command in Claude Code's `settings.json` that names herdr.
 fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
-    let path = inputs.claude_dir.join("settings.json");
+    let path = inputs.claude.claude_dir.join("settings.json");
     match std::fs::read_to_string(&path) {
         Ok(text) if text.contains("herdr") => {
             Check::pass("herdr session hook", format!("found in {}", path.display()))
@@ -306,6 +314,24 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     checks
 }
 
+/// The lead setup's checks, from `lead_setup_check`.
+fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
+    let lead = lead_setup_check::LeadInputs {
+        claude: &inputs.claude,
+        entry: &inputs.lead_entry,
+        running_a_build: inputs.running_a_build,
+        dir: &inputs.repo,
+    };
+    lead_setup_check::run(&lead)
+        .into_iter()
+        .map(|(name, outcome)| match outcome {
+            Outcome::Pass(detail) => Check::pass(name, detail),
+            Outcome::Warn(detail) => Check::warn(name, detail),
+            Outcome::Fail(detail) => Check::fail(name, detail),
+        })
+        .collect()
+}
+
 /// Every check, in the order `doctor` prints them.
 pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = disk_checks(inputs);
@@ -315,6 +341,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
+    checks.extend(lead_setup_checks(inputs));
     checks
 }
 
@@ -331,25 +358,9 @@ pub(crate) fn render(checks: &[Check]) -> String {
     checks.iter().map(|c| c.line() + "\n").collect()
 }
 
-/// `$TEAMWIRE_CLAUDE_DIR`, else `~/.claude`.
-fn claude_dir() -> Option<PathBuf> {
-    std::env::var_os("TEAMWIRE_CLAUDE_DIR")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".claude")))
-}
-
 #[expect(clippy::print_stdout, reason = "the report is the command's output")]
 fn say(text: &str) {
     print!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn refuse(message: &str) -> ExitCode {
-    eprintln!("teamwire doctor: {message}");
-    ExitCode::from(1)
 }
 
 pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
@@ -357,10 +368,8 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         Ok(home) => home,
         Err(code) => return code,
     };
-    let Some(claude_dir) = claude_dir() else {
-        return refuse("no state directory: set --home, TEAMWIRE_HOME or HOME");
-    };
     let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let lead_entry = wanted_entry(global);
     let inputs = Inputs {
         host: Host::detect(
             std::env::var("HERDR_ENV").ok().as_deref(),
@@ -369,7 +378,11 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         home,
         platform: wiring.platform.as_ref(),
         path_var: std::env::var_os("PATH"),
-        claude_dir,
+        claude: wiring.claude.clone(),
+        running_a_build: lead_entry
+            .as_ref()
+            .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
+        lead_entry,
         repo,
     };
     let checks = diagnose(&inputs);

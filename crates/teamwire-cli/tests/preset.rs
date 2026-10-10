@@ -384,11 +384,12 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         );
     }
 
-    // The cutover list registers the lead's server by hand and checks it live.
+    // The cutover list registers the lead's server with `teamwire install`
+    // (ADR 0012) and checks it live.
     let (_, cutover) = skill.split_once("## Cutover").unwrap();
     let (cutover, _) = cutover.split_once("## How it fits together").unwrap();
     for needed in [
-        "examples/mcp/lead.json",
+        "`teamwire install`",
         "CLAUDE_CODE_SESSION_ID",
         "live_check.rs",
     ] {

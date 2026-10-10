@@ -8,6 +8,7 @@
 //! real `~/.claude`.
 
 mod agents;
+mod mcp;
 mod script;
 mod settings;
 
@@ -351,8 +352,14 @@ pub fn run(argv: &[String]) -> ExitCode {
             "set TEAMWIRE_CLAUDE_DIR (or FAKE_CLAUDE_DIR); fake-claude never uses ~/.claude",
         );
     };
-    if argv.first().map(String::as_str) == Some("agents") {
-        return agents::run(&claude_dir, argv);
+    match argv.first().map(String::as_str) {
+        Some("agents") => return agents::run(&claude_dir, argv),
+        Some("mcp") => return mcp::run(&claude_dir, argv),
+        Some("--version") => {
+            say("0.0.0 (fake-claude)");
+            return ExitCode::SUCCESS;
+        }
+        _ => {}
     }
     let settings = match flag_value(argv, &["--settings"]) {
         Some(path) => match Settings::load(Path::new(path)) {

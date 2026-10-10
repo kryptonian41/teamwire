@@ -1599,8 +1599,10 @@ dependencies = [
 name = "teamwire-harness-claude"
 version = "0.0.0"
 dependencies = [
+ "hex",
  "serde",
  "serde_json",
+ "sha2",
  "teamwire-core",
  "teamwire-fakes",
  "teamwire-platform",

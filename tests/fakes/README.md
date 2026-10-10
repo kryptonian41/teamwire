@@ -308,6 +308,13 @@ names a directory, so it can never write into the real `~/.claude`.
   `<dir>/sessions` and starts no session. An interactive row carries its state
   under `status`, a background row (`"kind": "bg"` in its file) under `state`;
   add a background row with `FakeHerdrEnv::add_session_file`.
+- `claude --version` prints one line and starts no session.
+- `claude mcp add --scope user NAME -- CMD ARGS...` and `claude mcp remove
+  --scope user NAME` change the `mcpServers` map of `<dir>/.claude.json`. As
+  in Claude Code, add exits 1 for a name that exists and remove exits 1 for a
+  missing one. Both refuse unless `CLAUDE_CONFIG_DIR` names `<dir>`, because
+  the real `claude` writes there. `FAKE_CLAUDE_MCP_FAIL=add` (or `remove`)
+  makes that command exit 1.
 - The prompt `/exit` ends the session.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
@@ -388,5 +395,8 @@ Claude Code:
 - The transcript file contents are guesses; only the key names are known.
 - `claude agents --json` reads the session files only. The real command also
   lists finished background sessions with `--all`, which the fake ignores.
+- `claude mcp` knows only `add` and `remove` at user scope. The entry it
+  writes, `{"type":"stdio","command":..,"args":[..],"env":{}}`, matches what
+  Claude Code 2.1.296 wrote on 2026-10-10.
 - There is no MCP client, no PostToolUse hook run, no permission prompt and no
   model: the script decides everything.

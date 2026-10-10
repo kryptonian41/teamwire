@@ -91,7 +91,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | STO-9 | MUST | Copies of a live database use SQLite's backup API or `teamwire export`, never a plain file copy. | rust 19 |
 | STO-10 | MUST | Human-readable copies exist beside the database: each message body as `comms/<id>.md`, each result as `outbox/<role>.md`. They are written after the commit, atomically, and the database holds their SHA-256. `teamwire verify` reports a missing or different copy; `--repair-files` rewrites a `comms/` copy from the stored body. A result file holds parts the store does not keep (the task excerpt, a rescued file's link), so an `outbox/` copy is reported, never rewritten (lead, 2026-09-30). | rust 18; protocols R9; speclife LC-57 |
 | STO-11 | MUST | Every machine-read file outside SQLite is written to a temp file, synced and renamed into place. | speclife LC-3, LC-32 |
-| STO-12 | MUST | All state is under `$TEAMWIRE_HOME` (default `~/.teamwire`). teamwire never writes under `~/.claude/` or to `~/.claude.json`. | `CLAUDE.md`; speclife LC-56, N1; harness R7 |
+| STO-12 | MUST | All state is under `$TEAMWIRE_HOME` (default `~/.teamwire`). teamwire never writes under `~/.claude/` or to `~/.claude.json`, except the lead setup that `teamwire install` and `teamwire uninstall` change (ADR 0012). | `CLAUDE.md`; speclife LC-56, N1; harness R7; ADR 0012 |
 | STO-13 | MUST | `teamwire doctor` runs `PRAGMA quick_check`; `teamwire verify --deep` runs `PRAGMA integrity_check`. | rust 14 |
 | STO-14 | SHOULD | `teamwire export` writes every record as JSON lines with CloudEvents-style names. | rust 18; protocols R12 |
 | STO-15 | MUST | A corrupt or unreadable record is reported and skipped. It never blocks other records and is never read as success. | protocols R15; specmsg L2, L6; speclife F5 |
@@ -290,8 +290,8 @@ Each one has a test named in `docs/failure-modes.md`.
 | --- | --- | --- | --- |
 | SEC-1 | MUST | Never log an environment value whose name contains `TOKEN`, `KEY` or `SECRET`, including `CLAUDE_CODE_MESSAGING_TOKEN` and teamwire's own member tokens. | harness R21 |
 | SEC-2 | MUST | Any route that pushes into a session accepts only senders in the team's member list. | protocols R27 |
-| SEC-3 | MUST | teamwire registers no hook, MCP server, skill or launch agent outside its own repository and state directory. Example configs are files in the repo. | `CLAUDE.md`; harness R7 |
-| SEC-4 | MUST | Nothing is ever written to `~/.claude/settings.json`, `~/.claude.json`, or herdr's managed hook file. Reading them is allowed. | harness R7, 1.5 |
+| SEC-3 | MUST | teamwire registers no hook, MCP server, skill or launch agent outside its own repository and state directory. Example configs are files in the repo. The one exception is the lead setup: the `teamwire` skill and the lead's MCP server, registered only by `teamwire install` (ADR 0012). | `CLAUDE.md`; harness R7; ADR 0012 |
+| SEC-4 | MUST | teamwire never writes `~/.claude/settings.json`, `~/.claude.json`, or herdr's managed hook file. Reading them is allowed. `teamwire install` changes the lead's MCP entry in `~/.claude.json` only by running `claude mcp` (ADR 0012). | harness R7, 1.5; ADR 0012 |
 
 ### Extras (EXT)
 

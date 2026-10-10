@@ -10,7 +10,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | Who | How it starts | How it knows who is calling |
 | --- | --- | --- |
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
-| The lead | The user registers `teamwire mcp --lead` themselves, from `examples/mcp/lead.json`. teamwire never registers it. | The harness session id in the server's environment, checked against the team's recorded lead session per call. The `team` argument picks the team. |
+| The lead | `teamwire install` registers `teamwire mcp --lead` as a user MCP server through `claude mcp` (ADR 0012). Nothing else registers it. | The harness session id in the server's environment, checked against the team's recorded lead session per call. The `team` argument picks the team. |
 
 Every server lists all eight tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's

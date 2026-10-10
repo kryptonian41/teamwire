@@ -1,11 +1,13 @@
 //! The `Harness` trait for Claude Code: launch argv, per-run `settings.json`
 //! and `mcp.json`, session files and `claude agents --json` for liveness,
-//! background-session detection, Stop and `PostToolUse` hook input, and the
-//! trust dialog.
+//! background-session detection, Stop and `PostToolUse` hook input, the
+//! trust dialog, and the lead setup that `teamwire install` writes.
 //!
-//! Never: write anything under the user's `~/.claude/` or `~/.claude.json`
-//! (both are read-only here); answer the escalated trust dialog; register a
-//! hook or MCP server globally.
+//! Never: write under the user's `~/.claude/` except the lead setup's skill
+//! file, and only when asked to install or uninstall it (ADR 0012); write
+//! `~/.claude.json` at all (the lead's MCP entry changes only through
+//! `claude mcp`); answer the escalated trust dialog; register a member's hook
+//! or MCP server globally.
 //!
 //! Invariants: every Claude path comes from `ClaudeConfig`, so tests point
 //! them at a temporary directory; the member's identity travels in the
@@ -13,10 +15,15 @@
 
 mod hook;
 mod launch;
+mod lead_setup;
 mod screen;
 mod session;
 mod trust;
 
+pub use lead_setup::{
+    ApplyError, Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow,
+    SkillState, edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
+};
 pub use trust::{StartupPoll, TrustCheck};
 
 use std::fmt;
@@ -33,9 +40,12 @@ use teamwire_core::{
 /// Where Claude Code keeps its files, and how to start it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeConfig {
-    /// `~/.claude`, or `TEAMWIRE_CLAUDE_DIR` in tests. Holds `sessions/`.
+    /// `~/.claude`, `CLAUDE_CONFIG_DIR`, or `TEAMWIRE_CLAUDE_DIR` in tests.
+    /// Holds `sessions/` and `skills/`.
     pub claude_dir: PathBuf,
-    /// `~/.claude.json`: read for `hasTrustDialogAccepted`, never written.
+    /// `~/.claude.json`, or `.claude.json` inside `claude_dir` when that is
+    /// set from the environment. Read for `hasTrustDialogAccepted` and the
+    /// lead's MCP entry; teamwire never writes it.
     pub claude_json: PathBuf,
     /// The `claude` program to start.
     pub claude_bin: String,

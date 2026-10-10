@@ -18,6 +18,9 @@ pub(crate) struct Wiring {
     pub(crate) clock: SystemClock,
     pub(crate) lead_harness: HarnessId,
     pub(crate) lead_host: HostId,
+    /// Where Claude Code keeps its files, for the commands that read or
+    /// write the lead setup.
+    pub(crate) claude: ClaudeConfig,
 }
 
 /// The environment facts wiring reads, gathered in one place so tests can
@@ -31,6 +34,8 @@ pub(crate) struct WiringEnv {
     pub(crate) user_home: Option<PathBuf>,
     /// `TEAMWIRE_CLAUDE_DIR`: where tests put Claude's files.
     pub(crate) claude_dir: Option<PathBuf>,
+    /// `CLAUDE_CONFIG_DIR`: Claude Code's own setting for the same thing.
+    pub(crate) claude_config_dir: Option<PathBuf>,
 }
 
 impl WiringEnv {
@@ -40,16 +45,20 @@ impl WiringEnv {
             tmux: std::env::var("TMUX").ok(),
             user_home: std::env::var_os("HOME").map(PathBuf::from),
             claude_dir: std::env::var_os("TEAMWIRE_CLAUDE_DIR").map(PathBuf::from),
+            claude_config_dir: std::env::var_os("CLAUDE_CONFIG_DIR")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
         }
     }
 }
 
 pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     let platform = teamwire_platform::native();
+    let claude = claude_config(env);
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
-        claude_config(env),
+        claude.clone(),
     )))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(Tmux::new(Arc::clone(&platform))))?;
@@ -60,6 +69,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         clock: SystemClock,
         lead_harness: HarnessId::from_static(ClaudeCode::ID),
         lead_host: lead_host(env),
+        claude,
     })
 }
 
@@ -76,10 +86,12 @@ fn lead_host(env: &WiringEnv) -> HostId {
     }
 }
 
-/// Claude's files: `TEAMWIRE_CLAUDE_DIR` holds both the session directory
-/// and `.claude.json` when set; otherwise `~/.claude` and `~/.claude.json`.
+/// Claude's files: `TEAMWIRE_CLAUDE_DIR`, else `CLAUDE_CONFIG_DIR`, holds
+/// both Claude's directory and `.claude.json` when set, as Claude Code lays
+/// out `CLAUDE_CONFIG_DIR`; otherwise `~/.claude` and `~/.claude.json`.
 fn claude_config(env: &WiringEnv) -> ClaudeConfig {
-    let (claude_dir, claude_json) = match (&env.claude_dir, &env.user_home) {
+    let set_dir = env.claude_dir.as_ref().or(env.claude_config_dir.as_ref());
+    let (claude_dir, claude_json) = match (set_dir, &env.user_home) {
         (Some(dir), _) => (dir.clone(), dir.join(".claude.json")),
         (None, Some(home)) => (home.join(".claude"), home.join(".claude.json")),
         (None, None) => (PathBuf::from(".claude"), PathBuf::from(".claude.json")),
@@ -101,6 +113,7 @@ mod tests {
             tmux: None,
             user_home: Some(PathBuf::from("/home/u")),
             claude_dir: None,
+            claude_config_dir: None,
         }
     }
 
@@ -164,5 +177,16 @@ mod tests {
         let c = claude_config(&e);
         assert_eq!(c.claude_dir, PathBuf::from("/tmp/c"));
         assert_eq!(c.claude_json, PathBuf::from("/tmp/c/.claude.json"));
+    }
+
+    #[test]
+    fn claude_config_dir_is_followed_and_the_test_override_wins_over_it() {
+        let mut e = env(None);
+        e.claude_config_dir = Some(PathBuf::from("/cfg"));
+        let c = claude_config(&e);
+        assert_eq!(c.claude_dir, PathBuf::from("/cfg"));
+        assert_eq!(c.claude_json, PathBuf::from("/cfg/.claude.json"));
+        e.claude_dir = Some(PathBuf::from("/tmp/c"));
+        assert_eq!(claude_config(&e).claude_dir, PathBuf::from("/tmp/c"));
     }
 }

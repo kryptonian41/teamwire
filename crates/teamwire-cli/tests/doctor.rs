@@ -20,10 +20,13 @@ use teamwire_core::{
     Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput, TeamName,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
+use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
 use teamwire_store::{NewTeam, Store};
 
 /// The command file is compiled here with the crate-level items it names
-/// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`), so the checks run against a fake platform.
+/// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`,
+/// `cmd::install::wanted_entry`) and the real `cmd::lead_setup_check`, so
+/// the checks run against a fake platform.
 #[derive(Debug)]
 pub(crate) struct Global {
     pub(crate) home: Option<PathBuf>,
@@ -33,13 +36,31 @@ mod wiring {
     use std::sync::Arc;
 
     use teamwire_core::Platform;
+    use teamwire_harness_claude::ClaudeConfig;
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
+        pub(crate) claude: ClaudeConfig,
     }
 }
 
+#[path = "../src/cmd/lead_setup_check.rs"]
+mod lead_setup_check;
+
 mod cmd {
+    pub(crate) use crate::lead_setup_check;
+
+    pub(crate) mod install {
+        use teamwire_harness_claude::McpEntry;
+
+        use crate::Global;
+
+        /// The tests pass the wanted entry in `Inputs`; the real helper is not compiled here.
+        pub(crate) fn wanted_entry(_global: &Global) -> Result<McpEntry, String> {
+            Err("not compiled in this test".to_owned())
+        }
+    }
+
     pub(crate) mod send {
         use std::path::PathBuf;
         use std::process::ExitCode;
@@ -84,16 +105,54 @@ impl Bed {
         for program in ["claude", "herdr"] {
             std::fs::write(bed.bin.path().join(program), "#!/bin/sh\n").unwrap();
         }
+        bed.install_lead_setup();
         bed
     }
 
+    fn claude_config(&self) -> ClaudeConfig {
+        ClaudeConfig {
+            claude_dir: self.claude.path().to_path_buf(),
+            claude_json: self.claude.path().join(".claude.json"),
+            claude_bin: "claude".to_owned(),
+        }
+    }
+
+    /// The entry the teamwire binary under test would register for this
+    /// bed's state directory.
+    fn lead_entry(&self) -> McpEntry {
+        let bin = std::fs::canonicalize(env!("CARGO_BIN_EXE_teamwire")).unwrap();
+        McpEntry::lead(&bin, Some(self.home.path()))
+    }
+
+    /// Writes the skill through the harness, on a platform of its own so
+    /// the bed's platform records no writes, and the MCP entry as
+    /// `claude mcp add` would.
+    fn install_lead_setup(&self) {
+        let setup = std::sync::Arc::new(FakePlatform::new());
+        let claude = ClaudeCode::new(setup, self.claude_config());
+        let changes = claude.plan_install(&self.lead_entry(), false).unwrap();
+        claude.apply_lead_setup(&changes).unwrap();
+        let entry = self.lead_entry();
+        let doc = serde_json::json!({"mcpServers": {"teamwire": {
+            "type": "stdio", "command": entry.command, "args": entry.args, "env": {}
+        }}});
+        std::fs::write(self.claude.path().join(".claude.json"), doc.to_string()).unwrap();
+    }
+
     fn checks(&self) -> Vec<Check> {
+        self.checks_as(false)
+    }
+
+    /// The checks as a binary under `target/` (`build`) or an installed one.
+    fn checks_as(&self, build: bool) -> Vec<Check> {
         diagnose(&Inputs {
             host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
-            claude_dir: self.claude.path().to_path_buf(),
+            claude: self.claude_config(),
+            lead_entry: Ok(self.lead_entry()),
+            running_a_build: build,
             repo: self.home.path().to_path_buf(),
         })
     }
@@ -290,6 +349,106 @@ fn a_settings_file_without_the_herdr_hook_fails() {
     let bed = Bed::healthy();
     std::fs::write(bed.claude.path().join("settings.json"), "{}").unwrap();
     assert_eq!(level_of(&bed.checks(), "herdr session hook"), Level::Fail);
+}
+
+fn detail_of<'a>(checks: &'a [Check], name: &str) -> &'a str {
+    checks
+        .iter()
+        .find(|c| c.name == name)
+        .map(|c| c.detail.as_str())
+        .unwrap_or_else(|| unreachable!("no check named {name}: {checks:?}"))
+}
+
+#[test]
+fn a_missing_lead_setup_fails_and_names_install_as_the_fix() {
+    let bed = Bed::healthy();
+    std::fs::remove_file(bed.claude.path().join("skills/teamwire/SKILL.md")).unwrap();
+    std::fs::remove_file(bed.claude.path().join(".claude.json")).unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["teamwire skill", "lead MCP server"]);
+    assert!(detail_of(&checks, "teamwire skill").contains("run `teamwire install`"));
+    assert!(detail_of(&checks, "lead MCP server").contains("run `teamwire install`"));
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn an_entry_for_another_binary_or_an_edited_skill_fails() {
+    let bed = Bed::healthy();
+    let doc = r#"{"mcpServers":{"teamwire":{"command":"teamwire","args":["mcp","--lead"]}}}"#;
+    std::fs::write(bed.claude.path().join(".claude.json"), doc).unwrap();
+    let skill = bed.claude.path().join("skills/teamwire/SKILL.md");
+    let edited = std::fs::read_to_string(&skill).unwrap() + "\nmy note\n";
+    std::fs::write(&skill, edited).unwrap();
+    let checks = bed.checks();
+    assert!(
+        detail_of(&checks, "lead MCP server").contains("registered as `teamwire mcp --lead`"),
+        "{checks:?}"
+    );
+    assert!(
+        detail_of(&checks, "teamwire skill").contains("--force"),
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn a_build_under_target_accepts_any_teamwire_skill_and_entry_but_not_a_foreign_one() {
+    let bed = Bed::healthy();
+    let doc =
+        r#"{"mcpServers":{"teamwire":{"command":"/old/bin/teamwire","args":["mcp","--lead"]}}}"#;
+    std::fs::write(bed.claude.path().join(".claude.json"), doc).unwrap();
+    assert_eq!(level_of(&bed.checks(), "lead MCP server"), Level::Fail);
+    let loose = bed.checks_as(true);
+    assert_eq!(
+        level_of(&loose, "lead MCP server"),
+        Level::Pass,
+        "{loose:?}"
+    );
+    assert!(detail_of(&loose, "lead MCP server").contains("not compared"));
+
+    let foreign = r#"{"mcpServers":{"teamwire":{"command":"/bin/other","args":["serve"]}}}"#;
+    std::fs::write(bed.claude.path().join(".claude.json"), foreign).unwrap();
+    assert_eq!(
+        level_of(&bed.checks_as(true), "lead MCP server"),
+        Level::Fail
+    );
+}
+
+#[test]
+fn a_project_entry_that_hides_the_user_one_is_a_warning() {
+    let bed = Bed::healthy();
+    assert_eq!(
+        level_of(&bed.checks(), "lead MCP server scope"),
+        Level::Pass
+    );
+    let project = r#"{"mcpServers":{"teamwire":{"command":"teamwire","args":["mcp","--lead"]}}}"#;
+    std::fs::write(bed.home.path().join(".mcp.json"), project).unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "lead MCP server scope"), Level::Warn);
+    assert!(
+        detail_of(&checks, "lead MCP server scope")
+            .contains(".mcp.json has `teamwire` = teamwire mcp --lead"),
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn the_skill_is_checked_even_when_the_entry_cannot_be_worked_out() {
+    let bed = Bed::healthy();
+    let checks = diagnose(&Inputs {
+        host: bed.host,
+        home: bed.home.path().to_path_buf(),
+        platform: &bed.platform,
+        path_var: Some(bed.bin.path().as_os_str().to_owned()),
+        claude: bed.claude_config(),
+        lead_entry: Err("cannot find this binary".to_owned()),
+        running_a_build: false,
+        repo: bed.home.path().to_path_buf(),
+    });
+    assert_eq!(level_of(&checks, "teamwire skill"), Level::Pass);
+    assert_eq!(
+        detail_of(&checks, "lead MCP server"),
+        "cannot find this binary"
+    );
 }
 
 #[test]

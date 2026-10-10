@@ -70,6 +70,10 @@ pub(crate) enum Command {
     Mcp(McpArgs),
     /// Read-only checks of the state, the disk and the tools teamwire needs.
     Doctor,
+    /// Install the lead setup: the teamwire skill and the lead's MCP server.
+    Install(InstallArgs),
+    /// Remove the lead setup that `install` wrote.
+    Uninstall(UninstallArgs),
     /// Every record of a team as JSON lines.
     Export(ExportArgs),
     /// Local metrics from the event rows, or the OpenTelemetry export.
@@ -235,6 +239,27 @@ pub(crate) struct PrWatchArgs {
     pub(crate) interval: Option<u64>,
     #[arg(value_name = "PR", required = true)]
     pub(crate) prs: Vec<u64>,
+}
+
+#[derive(Args)]
+pub(crate) struct InstallArgs {
+    /// Print the changes without making them.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Replace or remove a skill or MCP entry that is not teamwire's, and
+    /// install from a binary inside a `target/` directory.
+    #[arg(long)]
+    pub(crate) force: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct UninstallArgs {
+    /// Print the changes without making them.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Also remove a skill or MCP entry that is not teamwire's.
+    #[arg(long)]
+    pub(crate) force: bool,
 }
 
 #[derive(Args)]
