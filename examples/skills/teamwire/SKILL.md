@@ -1,6 +1,6 @@
 ---
 name: teamwire
-description: The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Prefer this over the agent-team skill unless the user names agent-team or the Python team tooling, or a Python team is already running and needs its lead. Not for one standalone delegated task.
+description: The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task.
 ---
 
 # Agent teams with teamwire

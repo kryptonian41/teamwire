@@ -321,8 +321,8 @@ A Python version of this tooling runs the user's real agent teams. So:
   Use the fakes in tests/fakes/. (clippy: Command::new is disallowed
   outside teamwire-platform and the test crates)
 - Reading the Python tooling to learn its behaviour is fine:
-  ~/.claude/team/bin/, ~/.claude/hooks/team-report.sh,
-  ~/.claude/skills/agent-team/SKILL.md.
+  ~/.claude/team/bin/, and, since it was retired on 2026-10-10,
+  ~/Backups/claude/agent-team-2026-10-10/ (its skill and team-report.sh).
 
 ## Commands (from the repo root)
 
