@@ -95,13 +95,13 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 1 | `cargo fmt --all -- --check` | Format changes |
 | 2 | `cargo xtask tidy --base main` | The layout rules of section 1, layering, protected-file and weakened-test flags |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
-| 4 | `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end, doc tests) |
+| 4 | `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
 Doc examples are not compiled as tests. Each library crate sets `doctest =
 false` under `[lib]` in its `Cargo.toml`, because no crate has a doctest and
-compiling the empty set took about 12 s in step 4. A crate that wants doctests
+compiling the empty sets cost an estimated 12 s in step 4. A crate that wants doctests
 removes its `doctest = false` line. An explicit `cargo test --doc` still
 starts the doctest runner for every crate.
 
@@ -125,7 +125,10 @@ The gate sets `TEAMWIRE_FAKES_PREBUILT=1` because the workspace build has
 already made the fake binaries. Without the variable, each test process runs
 `cargo build` for them again. That build makes a second copy of the fakes with
 other dependency features, and cargo replaces the files every time, even when
-nothing changed (`tests/fakes/src/bins.rs`). A plain `cargo test -p <crate>`
+nothing changed (`tests/fakes/src/bins.rs`). The end-to-end and crash tests also use
+`target/<profile>/teamwire` without building it when the variable is set. So
+whoever sets the variable must have built the whole workspace first, including
+the CLI binary; `scripts/test-changed.sh` does that. A plain `cargo test -p <crate>`
 leaves the variable unset and builds the fakes itself.
 
 `cargo-nextest` 0.9.148 is installed (2026-10-10), and `.config/nextest.toml`

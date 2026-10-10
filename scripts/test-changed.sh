@@ -1,4 +1,8 @@
-#!/usr/bin/env bash
+  base="$(git merge-base main HEAD)" || exit 1
+  tracked="$(git diff --name-only "$base")" || exit 1
+  untracked="$(git ls-files --others --exclude-standard)" || exit 1
+  files="$tracked
+$untracked"#!/usr/bin/env bash
 # Test run for the inner loop: the tests of the changed crates and of every
 # workspace crate that depends on them, dev-dependencies included, and nothing
 # else. The full gate (scripts/gate.sh) still runs at the end of each wave.
@@ -49,11 +53,13 @@ if [ -n "$args" ]; then
     changed="$changed $p"
   done
 else
-  base="$(git merge-base main HEAD 2>/dev/null || echo main)"
-  files="$(
-    git diff --name-only "$base"
-    git ls-files --others --exclude-standard
-  )"
+  # A failing git command must not read as "no changed files": git prints its
+  # own message to stderr, and the script stops.
+  base="$(git merge-base main HEAD)" || exit 1
+  tracked="$(git diff --name-only "$base")" || exit 1
+  untracked="$(git ls-files --others --exclude-standard)" || exit 1
+  files="$tracked
+$untracked"
   # A file belongs to the member whose directory prefixes its path.
   changed="$(
     echo "$files" | while read -r f; do
@@ -70,17 +76,32 @@ fi
 
 # Reverse dependencies inside the workspace. A line of `cargo tree -i` that
 # carries a path in parentheses is a workspace package; registry crates have none.
-packages="$(
-  for p in $changed; do
-    cargo tree -i "$p" -e all --prefix none --locked --offline 2>/dev/null |
-      grep ' (/' | awk '{ print $1 }'
-  done | sort -u
-)"
+packages=""
+for p in $changed; do
+  tree="$(cargo tree -i "$p" -e all --prefix none --locked --offline)" || exit 1
+  packages="$packages
+$(echo "$tree" | grep ' (/' | awk '{ print $1 }')"
+done
+packages="$(echo "$packages" | sort -u)"
 if [ -z "$packages" ]; then
   echo "test-changed: cargo tree found no packages for:$changed" >&2
   exit 1
 fi
 
+# The end-to-end and crash tests run the `teamwire` binary, so they test every
+# crate the CLI contains. They have no Cargo dependency on teamwire-cli, so
+# cargo tree cannot see that link; add them by hand.
+case "
+$packages
+" in
+  *"
+teamwire-cli
+"*) packages="$packages
+teamwire-e2e
+teamwire-crash-tests" ;;
+esac
+
+packages="$(echo "$packages" | sort -u)"
 packages="$(echo $packages)"
 pflags=""
 for p in $packages; do
@@ -96,17 +117,19 @@ for p in teamwire-fakes teamwire-cli; do
     *) extra="$extra -p $p" ;;
   esac
 done
+# The printed commands and the run commands are the same variables.
 build="cargo build --locked --all-targets$pflags$extra"
-test="env TEAMWIRE_FAKES_PREBUILT=1 cargo test --locked$pflags"
+test="cargo test --locked$pflags"
 
 echo "test-changed: changed: $(echo $changed)"
 echo "test-changed: packages: $(echo $packages)"
 echo "test-changed: $build"
-echo "test-changed: $test"
+echo "test-changed: TEAMWIRE_FAKES_PREBUILT=1 $test"
 if [ "$dry" -eq 1 ]; then
   exit 0
 fi
 
+# shellcheck disable=SC2086
 $build || exit 1
 # shellcheck disable=SC2086
-TEAMWIRE_FAKES_PREBUILT=1 cargo test --locked $pflags
+TEAMWIRE_FAKES_PREBUILT=1 $test
