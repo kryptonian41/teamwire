@@ -280,7 +280,7 @@ fn a_failed_check_and_a_missing_check_are_not_a_pass_either() {
 
 #[test]
 fn before_closer_report_refused() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.add_pane_member("wrap", MemberKind::Closer);
     // Any member, even one that needs no verify, waits for the closer.
@@ -320,7 +320,7 @@ fn before_closer_report_refused() {
 
 #[test]
 fn a_closer_that_never_started_or_was_reprompted_is_judged_by_its_current_generation() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.add_pane_member("wrap", MemberKind::Closer);
     report_done(&mut rig, "wrap");
@@ -339,7 +339,7 @@ fn a_closer_that_never_started_or_was_reprompted_is_judged_by_its_current_genera
 
 #[test]
 fn busy_member_needs_stop_and_stop_says_so() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.set_place_state("scout", PlaceState::Working);
     let report = remove(&mut rig, "scout", CloseOpts::default());
@@ -467,7 +467,7 @@ fn a_removal_that_git_refuses_stops_with_the_row_kept() {
 
 #[test]
 fn removing_needs_a_member_and_an_open_team() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     let report = remove(&mut rig, "nobody", CloseOpts::default());
     assert!(
         asks(&report.refusals, "no member nobody in team alpha"),
@@ -521,7 +521,7 @@ fn a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop()
     // The first checks pass; then a turn starts. The re-check right before
     // the place closes sees it (CLS-3, CLS-4).
     for stop in [false, true] {
-        let mut rig = Rig::new();
+        let mut rig = Rig::without_repo();
         rig.add_pane_member("scout", MemberKind::Investigator);
         let host = rig.host.clone();
         let place = rig.place_of("scout");
@@ -583,7 +583,7 @@ fn take_the_close_lock(
 fn a_removal_stops_when_a_close_takes_the_lock_after_the_plan() {
     // The lock is taken after the removal read the team and passed its gate:
     // the re-check before the place closes refuses (CLS-3).
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     let report = {
         let (home, team, at) = (
@@ -613,7 +613,7 @@ fn a_removal_stops_when_a_close_takes_the_lock_after_the_plan() {
 
 #[test]
 fn mark_removed_checks_the_lock_inside_its_own_write() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     let report = {
         let (home, team, at) = (

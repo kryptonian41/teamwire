@@ -57,7 +57,7 @@ fn busy_member_refuses() {
 
 #[test]
 fn a_dialog_waiting_for_an_answer_refuses_too() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.set_place_state("scout", PlaceState::Blocked);
     let plan = plan_close(&rig.ctx(), CloseTarget::Team);
@@ -66,7 +66,7 @@ fn a_dialog_waiting_for_an_answer_refuses_too() {
 
 #[test]
 fn unknown_busy_state_refuses() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.add_pane_member("rev", MemberKind::Reviewer);
     // One host that reports no state, one that fails outright.
@@ -101,7 +101,7 @@ fn unknown_busy_state_refuses() {
 
 #[test]
 fn a_place_the_host_no_longer_knows_is_not_busy() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.host.inject_always(
         "state",
@@ -157,7 +157,7 @@ fn git_that_cannot_say_refuses_rather_than_guess() {
 
 #[test]
 fn a_removed_member_is_not_asked_about() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.set_place_state("scout", PlaceState::Working);
     let role = teamwire_core::Role::parse("scout").unwrap();
@@ -305,7 +305,7 @@ fn a_full_close_runs_the_fixed_order_and_archives_everything() {
 fn closes_member_left_creating() {
     // A launch that crashed after the agent started leaves a `creating` row
     // with its place recorded. Close finds the place and closes it.
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     let place = rig.host.add_place(
         "tw_alpha_ghost",
         PlaceState::Idle,
@@ -571,7 +571,7 @@ fn set_mode(path: &std::path::Path, mode: u32) {
 #[test]
 fn a_hold_the_team_did_not_start_or_another_team_needs_is_left_running() {
     // Not ours: never released.
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     rig.platform
         .inner
@@ -585,7 +585,7 @@ fn a_hold_the_team_did_not_start_or_another_team_needs_is_left_running() {
     assert!(rig.platform.inner.hold_events().is_empty());
 
     // Ours, but another open team on the same lead records the same hold.
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     let hold = rig.start_owned_hold();
     let other = teamwire_core::TeamName::parse("beta").unwrap();
@@ -677,7 +677,7 @@ fn a_hold_the_team_did_not_start_or_another_team_needs_is_left_running() {
 
 #[test]
 fn stale_close_lock_cleared_and_rerun() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
     let now = rig.clock.now();
     let dead = Pid::new(4_000_001);
@@ -733,7 +733,7 @@ fn stale_close_lock_cleared_and_rerun() {
     assert!(!rig.team_dir().exists());
 
     // With no lock at all, the flag is a no-op that says so.
-    let mut fresh = Rig::new();
+    let mut fresh = Rig::without_repo();
     let none = close(
         &mut fresh.ctx(),
         CloseTarget::Team,
@@ -935,7 +935,7 @@ fn unplaced_member(rig: &mut Rig, role: &str) -> Result<(), Box<dyn std::error::
 
 #[test]
 fn live_agent_without_a_recorded_place_refuses_and_keeps_the_state() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     unplaced_member(&mut rig, "scout").unwrap();
     rig.host.add_foreign_agent("tw_alpha_scout");
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
@@ -948,7 +948,7 @@ fn live_agent_without_a_recorded_place_refuses_and_keeps_the_state() {
 
 #[test]
 fn no_live_agent_for_an_unplaced_member_lets_close_finish() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     unplaced_member(&mut rig, "scout").unwrap();
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert!(report.refusals.is_empty(), "{report:?}");
@@ -958,7 +958,7 @@ fn no_live_agent_for_an_unplaced_member_lets_close_finish() {
 
 #[test]
 fn an_unreadable_agent_listing_refuses_for_an_unplaced_member() {
-    let mut rig = Rig::new();
+    let mut rig = Rig::without_repo();
     unplaced_member(&mut rig, "scout").unwrap();
     rig.host
         .inject_always("live_agent_names", teamwire_fakes::Fault::Hang);
