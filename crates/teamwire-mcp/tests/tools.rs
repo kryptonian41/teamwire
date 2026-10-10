@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use rmcp::model::{CallToolRequestParams, CallToolResult};
+use rmcp::model::{CacheScope, CallToolRequestParams, CallToolResult};
 use rmcp::service::RunningService;
 use rmcp::{RoleClient, ServiceExt};
 use serde_json::{Value, json};
@@ -301,6 +301,15 @@ async fn tool_list_is_the_eight_tools_of_the_doc() {
             "team_log(limit, role, team)",
         ]
     );
+}
+
+#[tokio::test]
+async fn tool_list_carries_the_cache_fields_a_2026_client_requires() {
+    let rig = Rig::new();
+    let client = rig.member_client("api", "x").await;
+    let listing = client.list_tools(None).await.unwrap();
+    assert_eq!(listing.ttl_ms, Some(0));
+    assert_eq!(listing.cache_scope, Some(CacheScope::Private));
 }
 
 #[tokio::test]

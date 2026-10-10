@@ -5,8 +5,9 @@
 use std::sync::Arc;
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, Implementation,
-    ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig, Tool,
+    CacheScope, CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock,
+    Implementation, ListToolsResult, PaginatedRequestParams, ServerCapabilities, ServerConfig,
+    Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -65,10 +66,16 @@ impl ServerHandler for McpServer {
                 Some(Tool::new(*name, *description, Arc::new(schema)))
             })
             .collect();
+        // A client on protocol 2026-07-28 (Claude Code is one) rejects a
+        // listing that carries `resultType` but no cache fields, and `rmcp`
+        // adds `resultType` whenever the request carries the 2026 envelope.
+        // So the listing always says: do not cache, and only for this user.
         Ok(ListToolsResult {
             tools: listed,
             ..ListToolsResult::default()
-        })
+        }
+        .with_ttl_ms(0)
+        .with_cache_scope(CacheScope::Private))
     }
 
     async fn call_tool(
