@@ -112,6 +112,15 @@ in `RUSTFLAGS`, so the build cache is not thrown away.
 A ticket runs its build-plan **Check** and `scripts/gate.sh fast`. The lead
 runs the full `scripts/gate.sh` once after integrating each wave.
 
+`scripts/test-changed.sh` is the test run for the inner loop. Given crate
+names, or by default the crates with files that differ from `main` (committed,
+staged, unstaged and untracked), it tests those crates and every workspace
+crate that depends on them, dev-dependencies included. The end-to-end and
+crash test crates count as dependents. It builds the tests, the fakes and the
+CLI binary in one command, then runs `cargo test --locked -p ...` with
+`TEAMWIRE_FAKES_PREBUILT=1`. `--dry-run` prints the package list and the
+commands without building. The full gate still runs at the end of each wave.
+
 The gate sets `TEAMWIRE_FAKES_PREBUILT=1` because the workspace build has
 already made the fake binaries. Without the variable, each test process runs
 `cargo build` for them again. That build makes a second copy of the fakes with
