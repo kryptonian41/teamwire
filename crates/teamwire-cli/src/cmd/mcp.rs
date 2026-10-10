@@ -19,13 +19,24 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
     } = args;
     let caller = match (team, role, token, lead) {
         (_, _, _, true) => McpCaller::Lead,
-        (Some(team), Some(role), Some(token), false) => {
+        (Some(team), Some(role), token, false) => {
+            // `mcp.json` passes the token in the server's environment, so it
+            // never shows in the process list. `--token` still works for a
+            // config written by an older launch.
+            let token = token.clone().or_else(|| {
+                std::env::var("TEAMWIRE_TOKEN")
+                    .ok()
+                    .filter(|t| !t.is_empty())
+            });
+            let Some(token) = token else {
+                return fail(
+                    "mcp",
+                    "a member's server needs its token in TEAMWIRE_TOKEN or --token",
+                    USAGE,
+                );
+            };
             match (TeamName::parse(team), Role::parse(role)) {
-                (Ok(team), Ok(role)) => McpCaller::Member {
-                    team,
-                    role,
-                    token: token.clone(),
-                },
+                (Ok(team), Ok(role)) => McpCaller::Member { team, role, token },
                 (Err(e), _) => return fail("mcp", &e.to_string(), USAGE),
                 (_, Err(e)) => return fail("mcp", &e.to_string(), USAGE),
             }
@@ -33,7 +44,7 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
         _ => {
             return fail(
                 "mcp",
-                "name a member with --team, --role and --token, or serve the lead with --lead",
+                "name a member with --team and --role (token in TEAMWIRE_TOKEN), or serve the lead with --lead",
                 USAGE,
             );
         }

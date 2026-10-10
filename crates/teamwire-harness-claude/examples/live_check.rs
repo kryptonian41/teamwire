@@ -2,9 +2,10 @@
 //!
 //! Starts ONE real Claude Code session in a scratch directory, with the
 //! per-run `--settings` and `--mcp-config` this adapter builds, and reports
-//! whether the three facts that only a real session can prove hold:
+//! whether the facts that only a real session can prove hold:
 //! the Stop hook runs, the `settings.json` `env` reaches the Bash tool and the
-//! hook, and the MCP server named in `mcp.json` is started. No test runs
+//! hook, and the MCP server named in `mcp.json` is started with the token
+//! from that file's `env` entry. No test runs
 //! this, because it needs the real `claude`, an account and a network.
 //!
 //! It reads `~/.claude.json` for trust and writes nothing under `~/.claude`.
@@ -136,6 +137,14 @@ fn main() -> Result<(), String> {
     all &= step(
         calls.contains("mcp --team live --role probe"),
         "the MCP server from mcp.json was started",
+    );
+    all &= step(
+        calls.lines().any(|l| {
+            l.contains("mcp --team live --role probe")
+                && l.contains("token_set=yes")
+                && !l.contains("--token")
+        }),
+        "the MCP server got its token from mcp.json env, not argv",
     );
     println!(
         "{}",

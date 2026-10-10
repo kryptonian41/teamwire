@@ -308,7 +308,7 @@ fn hook_command_quotes_a_binary_path_with_a_space() {
 }
 
 #[test]
-fn mcp_json_starts_the_teamwire_server_with_the_token_in_argv() {
+fn mcp_json_starts_the_teamwire_server_with_the_token_in_its_env_not_argv() {
     let spec = claude().launch_spec(&member()).unwrap();
     let server = &file_json(&spec, "mcp.json")["mcpServers"]["teamwire"];
     assert_eq!(server["command"], "/usr/local/bin/teamwire");
@@ -321,9 +321,11 @@ fn mcp_json_starts_the_teamwire_server_with_the_token_in_argv() {
     assert_eq!(
         args,
         [
-            "--home", "/home/tw", "mcp", "--team", "demo", "--role", "api", "--token", TOKEN
+            "--home", "/home/tw", "mcp", "--team", "demo", "--role", "api"
         ]
     );
+    assert!(!args.contains(&TOKEN));
+    assert_eq!(server["env"]["TEAMWIRE_TOKEN"], TOKEN);
 }
 
 #[test]

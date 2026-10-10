@@ -299,11 +299,12 @@ pub(crate) struct HookTarget {
 #[derive(Args)]
 #[command(group(ArgGroup::new("caller").required(true).args(["team", "lead"])))]
 pub(crate) struct McpArgs {
-    #[arg(long, requires_all = ["role", "token"])]
+    #[arg(long, requires = "role")]
     pub(crate) team: Option<String>,
     #[arg(long)]
     pub(crate) role: Option<String>,
-    /// The member's token. Never printed.
+    /// The member's token. Never printed. Without it the server reads
+    /// `TEAMWIRE_TOKEN`, which keeps the token out of the process list.
     #[arg(long)]
     pub(crate) token: Option<String>,
     /// Serve the lead, proven by its harness session.

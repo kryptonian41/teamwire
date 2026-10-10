@@ -178,8 +178,9 @@ fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
             "the member has no TEAMWIRE_TOKEN",
         )
     })?;
-    // The token and the home are in argv because whether a stdio MCP server
-    // inherits the session's environment is untested (ADR 0008).
+    // The home is in argv, so the server never depends on inheriting the
+    // session's environment. The token goes in the server's own `env` entry,
+    // because argv is readable by every process on the machine (ADR 0011).
     let home = identity_value(m, "TEAMWIRE_HOME")
         .map(str::to_owned)
         .or_else(|| home_from_member_dir(&m.member_dir));
@@ -187,21 +188,14 @@ fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     if let Some(home) = &home {
         args.extend(["--home", home]);
     }
-    args.extend([
-        "mcp",
-        "--team",
-        m.team.as_str(),
-        "--role",
-        m.role.as_str(),
-        "--token",
-        token,
-    ]);
+    args.extend(["mcp", "--team", m.team.as_str(), "--role", m.role.as_str()]);
     Ok(json!({
         "mcpServers": {
             "teamwire": {
                 "type": "stdio",
                 "command": path_text(&m.teamwire_bin),
                 "args": args,
+                "env": { "TEAMWIRE_TOKEN": token },
             }
         }
     }))

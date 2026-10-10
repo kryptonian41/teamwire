@@ -173,6 +173,7 @@ mod tests {
             "hook claude-stop --team tw --role api",
             "hook claude-post-tool",
             "mcp --team tw --role api --token t",
+            "mcp --team tw --role api",
             "mcp --lead",
             "doctor",
             "export tw --out e.jsonl",
