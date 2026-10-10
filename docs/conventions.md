@@ -128,7 +128,10 @@ other dependency features, and cargo replaces the files every time, even when
 nothing changed (`tests/fakes/src/bins.rs`). The end-to-end and crash tests also use
 `target/<profile>/teamwire` without building it when the variable is set. So
 whoever sets the variable must have built the whole workspace first, including
-the CLI binary; `scripts/test-changed.sh` does that. A plain `cargo test -p <crate>`
+the CLI binary; `scripts/test-changed.sh` does that. A run that forgot fails
+at once: each binary is checked against the dep-info file cargo wrote beside
+it, and one older than any of its source files is refused, with the file
+named (`teamwire_fakes::teamwire_cli` and `FakeBins::ensure`). A plain `cargo test -p <crate>`
 leaves the variable unset and builds the fakes itself.
 
 `cargo-nextest` 0.9.148 is installed (2026-10-10), and `.config/nextest.toml`

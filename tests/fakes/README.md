@@ -193,7 +193,10 @@ log reader) and `FakeBins` / `FakeBinDir` (a bin directory where `herdr` and
 binaries once per process, so any crate's tests can use them. With
 `TEAMWIRE_FAKES_PREBUILT=1` it skips that build and uses the binaries beside
 the test executable. Set the variable only right after a workspace build,
-as `scripts/gate.sh` does. `FakeBinDir`
+as `scripts/gate.sh` does. A binary older than any source file in the
+dep-info file cargo wrote beside it (`<binary>.d`) is refused with a message
+that names the file. `teamwire_cli()` does the same for the real `teamwire`
+binary, which the end-to-end and crash tests run. `FakeBinDir`
 refuses to build a `PATH` that could reach a real `herdr` or `claude`.
 
 Commands (herdr's own names and flags): `agent start|prompt|get|list|read|send-keys`,

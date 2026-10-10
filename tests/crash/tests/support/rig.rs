@@ -19,7 +19,6 @@
 use std::io::{Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use nix::sys::signal::{Signal, kill};
@@ -68,54 +67,17 @@ pub fn sha256(text: &str) -> [u8; 32] {
     bytes
 }
 
-/// The path of the `teamwire` binary, built once per test process. With
-/// `TEAMWIRE_FAKES_PREBUILT=1` it is not built: the binary beside the test
-/// executable is used, and a missing one fails the test. A run that sets the
-/// variable without `cargo build --workspace` first tests a possibly out of
-/// date binary. `tests/e2e/src/bin.rs` has the same logic; keep the two in
-/// step (this crate does not depend on `teamwire-e2e`).
+/// The path of the `teamwire` binary: built once per test process, or with
+/// `TEAMWIRE_FAKES_PREBUILT=1` the one already built, checked to be no older
+/// than its sources (`teamwire_fakes::teamwire_cli`).
 pub fn teamwire_bin() -> &'static Path {
-    static BIN: OnceLock<PathBuf> = OnceLock::new();
-    BIN.get_or_init(|| {
-        let exe = std::env::current_exe().unwrap();
-        let profile_dir = exe.parent().and_then(Path::parent).unwrap().to_path_buf();
-        let target_dir = profile_dir.parent().unwrap().to_path_buf();
-        if std::env::var_os("TEAMWIRE_FAKES_PREBUILT").is_some_and(|v| v == "1") {
-            let bin = profile_dir.join("teamwire");
-            assert!(
-                bin.is_file(),
-                "{} is missing; run `cargo build --workspace` first",
-                bin.display()
-            );
-            return bin;
-        }
-        let manifest = concat!(env!("CARGO_MANIFEST_DIR"), "/../../Cargo.toml");
-        let mut args = vec![
-            "build".to_owned(),
-            "--locked".to_owned(),
-            "-p".to_owned(),
-            "teamwire-cli".to_owned(),
-            "--bin".to_owned(),
-            "teamwire".to_owned(),
-            "--manifest-path".to_owned(),
-            manifest.to_owned(),
-            "--target-dir".to_owned(),
-            target_dir.display().to_string(),
-        ];
-        if profile_dir.file_name().is_some_and(|n| n == "release") {
-            args.push("--release".to_owned());
-        }
-        let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
-        let out = Command::new(cargo).args(&args).output().unwrap();
-        assert!(
-            out.status.success(),
-            "building teamwire failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let bin = profile_dir.join("teamwire");
-        assert!(bin.is_file(), "{} is missing", bin.display());
-        bin
-    })
+    let bin = teamwire_fakes::teamwire_cli();
+    assert!(
+        bin.is_ok(),
+        "cannot get the teamwire binary: {}",
+        bin.clone().unwrap_err()
+    );
+    bin.unwrap()
 }
 
 /// A small, replayable random source (`SplitMix64`) seeded from `getrandom`,

@@ -23,7 +23,7 @@ mod owner;
 mod platform;
 mod tmux_config;
 
-pub use bins::{FakeBinDir, FakeBins};
+pub use bins::{FakeBinDir, FakeBins, teamwire_cli};
 pub use calls::{Call, CallKind, CallLog};
 pub use claude_bin::{Fault as ClaudeFault, Script as ClaudeScript, Startup, Step};
 pub use clock::FakeClock;
