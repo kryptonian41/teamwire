@@ -13,11 +13,16 @@ pub struct RosterEntry {
     pub role: Role,
     pub title: String,
     pub kind: MemberKind,
-    pub state: MemberState,
+    /// The stored lifecycle (`creating`, `started`, `failed`, `removed`).
+    /// It does not say whether the member is working or finished: that is
+    /// the live `state` of `team_status`, so this field has its own name.
+    pub lifecycle: MemberState,
     pub generation: u32,
     pub owns: Vec<String>,
-    /// The message types this member accepts from another member.
-    pub accepts: Vec<MessageType>,
+    /// The message types this member accepts from another member. Every
+    /// member also accepts the lead's `note` and `reprompt`, which this list
+    /// leaves out. Its name says so, because a caller sees only the name.
+    pub accepts_from_members: Vec<MessageType>,
     /// Whether typing into the member's session can wake it.
     pub can_be_typed_to: bool,
 }
@@ -30,7 +35,7 @@ pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
     Ok(members
         .into_iter()
         .map(|m| {
-            let accepts = match m.kind {
+            let accepts_from_members = match m.kind {
                 MemberKind::Reviewer | MemberKind::Closer => Vec::new(),
                 MemberKind::Investigator => vec![
                     MessageType::Notice,
@@ -52,10 +57,10 @@ pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
                 role: m.role,
                 title: m.title,
                 kind: m.kind,
-                state: m.state,
+                lifecycle: m.state,
                 generation: m.generation,
                 owns: m.owns,
-                accepts,
+                accepts_from_members,
                 can_be_typed_to,
             }
         })

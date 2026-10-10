@@ -169,9 +169,18 @@ get their own team. Output: the same JSON as `teamwire status --json`
 
 ## `team_members`
 
-Who is on the team. Output per member: `role`, `title`, `kind`, `state`,
-`generation`, `owns`, the message types it accepts, and whether it can be
-woken by typing. No places, tokens or session ids.
+Who is on the team. Output per member: `role`, `title`, `kind`,
+`lifecycle`, `generation`, `owns`, `accepts_from_members`, and
+`can_be_typed_to` (whether it can be woken by typing). No places, tokens or
+session ids.
+
+- `lifecycle` is the stored member record: `creating`, `started`, `failed`
+  or `removed`. A member that has finished is still `started`. Whether a
+  member is working, quiet or done is the `state` of `team_status`.
+- `accepts_from_members` lists the types this member accepts from another
+  member. Every member also accepts the lead's `note` and `reprompt`, which
+  the list leaves out. A reviewer or closer has an empty list, because it
+  accepts messages only from the lead.
 
 ## `team_log`
 

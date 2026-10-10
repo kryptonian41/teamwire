@@ -204,7 +204,9 @@ Marks messages read without printing them.
 
 ### `teamwire members [<team>] [--json]`
 
-The roster, as `team_members` returns it.
+The roster, as `team_members` returns it (`docs/api/mcp.md`). The text form
+prints each member's `lifecycle` and the types it accepts from other
+members. Whether a member is working or done is in `teamwire status`.
 
 ## Harness and server entry points
 

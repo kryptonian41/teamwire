@@ -34,20 +34,20 @@ pub(crate) fn run(args: &MembersArgs, global: &Global, wiring: &Wiring) -> ExitC
 }
 
 fn render(e: &RosterEntry) -> String {
-    let accepts: Vec<&str> = e.accepts.iter().map(|t| t.as_str()).collect();
+    let accepts: Vec<&str> = e.accepts_from_members.iter().map(|t| t.as_str()).collect();
     let wake = if e.can_be_typed_to {
         "typed"
     } else {
         "inbox only"
     };
     format!(
-        "{:<16} {:<12} {:<8} gen {} [{wake}] accepts {}: {}\n",
+        "{:<16} {:<12} {:<8} gen {} [{wake}] from members {}: {}\n",
         e.role,
         e.kind,
-        e.state,
+        e.lifecycle,
         e.generation,
         if accepts.is_empty() {
-            "lead only".to_owned()
+            "none (lead only)".to_owned()
         } else {
             accepts.join(",")
         },

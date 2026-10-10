@@ -526,7 +526,12 @@ async fn status_members_and_log_read_the_team() {
     let members = call(&api, "team_members", json!({})).await;
     let out = ok(&members);
     let entry = &out["members"][0];
-    assert!(entry["role"].is_string() && entry["accepts"].is_array());
+    assert!(entry["role"].is_string() && entry["accepts_from_members"].is_array());
+    assert!(entry["lifecycle"].is_string(), "{entry}");
+    assert!(
+        entry.get("state").is_none() && entry.get("accepts").is_none(),
+        "{entry}"
+    );
     let text = out.to_string();
     assert!(
         !text.contains("token") && !text.contains("session"),

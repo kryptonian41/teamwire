@@ -54,7 +54,10 @@ pub(crate) const TOOLS: [(&str, &str); 8] = [
          Members only; the lead's call is refused.",
     ),
     ("team_status", "Read-only view of the team."),
-    ("team_members", "Who is on the team."),
+    (
+        "team_members",
+        "Who is on the team. Whether a member is working or done is in team_status.",
+    ),
     (
         "team_log",
         "The message log with each recipient's delivery state.",
