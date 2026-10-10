@@ -81,6 +81,19 @@ fn cwd_is_honoured() {
 }
 
 #[test]
+fn output_read_before_the_pipes_close_is_kept() {
+    // The shell exits at once, but the background sleep it leaves behind
+    // holds stdout open past the wait for the readers. What the shell
+    // printed is still returned.
+    let out = native()
+        .run(&sh("echo hello; echo oops >&2; sleep 4 &"), LONG)
+        .unwrap();
+    assert_eq!(out.exit_code, 0);
+    assert_eq!(out.stdout, b"hello\n");
+    assert_eq!(out.stderr, b"oops\n");
+}
+
+#[test]
 fn env_is_added_on_top_of_the_inherited_environment() {
     let out = native()
         .run(

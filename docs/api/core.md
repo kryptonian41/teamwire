@@ -250,6 +250,9 @@ pub trait Platform: Send + Sync {
     fn pid_alive(&self, pid: Pid) -> bool;
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError>;
     /// Run in a new process group; on timeout kill the group; exit 124.
+    /// Children start one at a time, so no child inherits another's pipes.
+    /// Output is kept as it is read: if a process the child left behind
+    /// holds a pipe open 2 s after the child ends, what was read is returned.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError>;
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;

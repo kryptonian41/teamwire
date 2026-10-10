@@ -1,11 +1,12 @@
 //! `Platform::run`: one command in its own process group, with a timeout.
 
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Child, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use nix::sys::signal::{Signal, killpg};
 use teamwire_core::{Clock, Command, PlatformError, PlatformErrorCode, RunOutput};
@@ -16,10 +17,18 @@ use crate::{SystemClock, io_error};
 /// command does not wait long, long enough not to burn a core.
 const POLL: Duration = Duration::from_millis(10);
 
-/// How long to wait for the output readers after the child has ended. A
-/// process that left its group can keep the pipes open forever; the output
-/// read so far is still returned.
+/// How long to wait, for stdout and stderr together, for the output
+/// readers after the child has ended. A process the child left behind can
+/// keep the pipes open forever; the output read so far is still returned.
 const DRAIN: Duration = Duration::from_secs(2);
+
+/// Held while a child is started, so that one thread at a time starts one.
+/// With `process_group` set, the standard library on macOS can let a child
+/// started on one thread inherit a pipe another thread has just made for
+/// its own child. The pipe then stays open until the other child exits, and
+/// the first command's reader waits for it: 4 of 43,363 parallel runs of
+/// `pwd` waited about 2 s that way. Starting a child takes milliseconds.
+static SPAWN: Mutex<()> = Mutex::new(());
 
 pub(crate) fn run_command(cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
     let clock = SystemClock;
@@ -67,8 +76,9 @@ pub(crate) fn run_command(cmd: &Command, timeout: Duration) -> Result<RunOutput,
     };
     drop(stdin_done);
 
-    let stdout = drain(stdout);
-    let stderr = drain(stderr);
+    let drained = clock.monotonic().checked_add(DRAIN);
+    let stdout = drain(stdout, drained, &cmd.program, "stdout");
+    let stderr = drain(stderr, drained, &cmd.program, "stderr");
     Ok(match status {
         Some(status) => RunOutput {
             exit_code: exit_code(status),
@@ -110,7 +120,10 @@ fn spawn(cmd: &Command) -> Result<Child, PlatformError> {
         // A group of its own, so one signal reaches every descendant and the
         // terminal's Ctrl-C does not reach the child behind our back.
         .process_group(0);
-    process.spawn().map_err(|err| {
+    let one_at_a_time = SPAWN.lock().unwrap_or_else(PoisonError::into_inner);
+    let child = process.spawn();
+    drop(one_at_a_time);
+    child.map_err(|err| {
         let mut e = io_error(&format!("starting {}", cmd.program), &err);
         if err.kind() == std::io::ErrorKind::NotFound {
             e.code = PlatformErrorCode::NotFound;
@@ -128,19 +141,55 @@ fn kill_group(group: Option<nix::unistd::Pid>) {
     }
 }
 
-fn reader<R: Read + Send + 'static>(mut pipe: R) -> Receiver<Vec<u8>> {
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let mut buf = Vec::new();
-        drop(pipe.read_to_end(&mut buf));
-        drop(tx.send(buf));
-    });
-    rx
+/// One pipe's output: the bytes read so far, and a signal sent when the
+/// pipe has closed.
+struct Reader {
+    bytes: Arc<Mutex<Vec<u8>>>,
+    closed: Receiver<()>,
 }
 
-fn drain(rx: Option<Receiver<Vec<u8>>>) -> Vec<u8> {
-    rx.and_then(|rx| rx.recv_timeout(DRAIN).ok())
-        .unwrap_or_default()
+/// Reads `pipe` on its own thread, keeping each chunk as it arrives, so the
+/// output is there even if the pipe never closes.
+fn reader<R: Read + Send + 'static>(mut pipe: R) -> Reader {
+    let bytes = Arc::new(Mutex::new(Vec::new()));
+    let (tx, closed) = mpsc::channel();
+    let sink = Arc::clone(&bytes);
+    thread::spawn(move || {
+        let mut chunk = [0_u8; 8192];
+        loop {
+            match pipe.read(&mut chunk) {
+                Ok(0) => break,
+                Ok(n) => sink
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .extend_from_slice(chunk.get(..n).unwrap_or_default()),
+                Err(e) if e.kind() == ErrorKind::Interrupted => {}
+                Err(_) => break,
+            }
+        }
+        // The receiver is gone when `drain` stopped waiting; nothing to tell.
+        tx.send(()).ok();
+    });
+    Reader { bytes, closed }
+}
+
+/// The output of one pipe once it has closed, or, at `deadline`, what was
+/// read by then.
+fn drain(reader: Option<Reader>, deadline: Option<Instant>, program: &str, pipe: &str) -> Vec<u8> {
+    let Some(reader) = reader else {
+        return Vec::new();
+    };
+    let wait = deadline.map_or(DRAIN, |d| {
+        d.saturating_duration_since(SystemClock.monotonic())
+    });
+    if reader.closed.recv_timeout(wait).is_err() {
+        tracing::warn!(
+            program,
+            pipe,
+            "the pipe was still open {DRAIN:?} after the process ended; returning the output read so far"
+        );
+    }
+    std::mem::take(&mut *reader.bytes.lock().unwrap_or_else(PoisonError::into_inner))
 }
 
 fn exit_code(status: ExitStatus) -> i32 {
