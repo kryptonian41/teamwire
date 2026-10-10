@@ -27,7 +27,7 @@ fn a_member_added_later_is_watched_and_the_team_waits_for_it() {
     let launch = w.launch(&first, &[]);
     assert_eq!(launch.code, 0, "{}", launch.all());
     w.wait_started("demo", &["a"]);
-    let watch = w.watch("demo", 2);
+    let watch = w.watch("demo", 1);
     watch.wait_for("WATCHING 1 members", Duration::from_secs(20));
 
     let more = json!({"team": "demo", "title": "Demo", "children": [member("b", "Beta")]});
@@ -37,8 +37,10 @@ fn a_member_added_later_is_watched_and_the_team_waits_for_it() {
 
     w.write(&w.home.path().join("go-a"), "");
     w.wait_lead_screen("[teamwire:demo] a finished (done)", Duration::from_secs(30));
-    // Several polls pass with a finished and b still working.
-    std::thread::sleep(Duration::from_secs(7));
+    // Several polls pass with a finished and b still working. The watch
+    // prints nothing per poll, so time is the only signal: three polls at
+    // the 1 s interval.
+    std::thread::sleep(Duration::from_secs(3));
     assert!(
         !watch.output().contains("TEAM-COMPLETE"),
         "the team waits for the added member: {}",

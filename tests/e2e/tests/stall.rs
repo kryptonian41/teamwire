@@ -27,7 +27,7 @@ fn a_stalled_message_is_unconfirmed_and_never_resent() {
     assert_eq!(launch.code, 0, "{}", launch.all());
     w.wait_started("demo", &["a"]);
     // Let the launch task finish its turn before the fault is set.
-    std::thread::sleep(Duration::from_secs(1));
+    w.wait_member_turn_done("demo", "a");
 
     w.herdr
         .set_faults(&HerdrFaults::new().stalled_prompt(None, None))
@@ -56,8 +56,9 @@ fn a_stalled_message_is_unconfirmed_and_never_resent() {
         "{}",
         log.all()
     );
-    // Wait long enough for any retry to have happened.
-    std::thread::sleep(Duration::from_secs(3));
+    // Nothing retries after `send` exits: no watch runs and `send` never
+    // forks. A short wait still lets a stray late prompt show up in the log.
+    std::thread::sleep(Duration::from_millis(500));
     assert_eq!(
         prompts_with(&w, "are you there"),
         1,
