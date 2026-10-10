@@ -528,6 +528,7 @@ per team, and a second refuses to start and names the first one's pid.
 | `SILENT <role>` | Went quiet without recording a completion. Ask it directly. |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. Read it with `teamwire log`. |
 | `TEAM-STALLED` | Every remaining member is stuck. Nothing will move. |
+| `TEAM-CLOSED` | The team was closed while the watch ran, before `TEAM-COMPLETE`. The watch has exited. If you did not close it, another session did: run `teamwire status` before you act on the team. |
 | `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done`, and each other member is named. The plan may not be finished: a later wave, a reviewer or the closer may still be due. |
 
 Tell the user about `TEAM-STALLED` and nothing else. Individual failures are

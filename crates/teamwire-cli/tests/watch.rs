@@ -116,7 +116,7 @@ fn a_dead_watchs_lease_is_taken_over() {
 }
 
 #[test]
-fn a_closed_team_ends_the_watch_silently() {
+fn a_closed_team_ends_the_watch_with_one_team_closed_line() {
     let mut bed = Bed::new();
     bed.add("api");
     let at = bed.clock.now();
@@ -128,7 +128,12 @@ fn a_closed_team_ends_the_watch_silently() {
         .unwrap();
     let run = teamwire(&bed, &["watch", "alpha", "--interval", "1"]);
     assert_eq!(run.code, 0, "{}", run.err);
-    assert!(run.out.is_empty(), "{}", run.out);
+    assert_eq!(
+        run.out.trim_end(),
+        "[teamwire:alpha] TEAM-CLOSED",
+        "{}",
+        run.out
+    );
 }
 
 #[test]

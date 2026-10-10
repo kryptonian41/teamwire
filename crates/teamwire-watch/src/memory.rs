@@ -11,7 +11,8 @@ use teamwire_core::{Role, Timestamp};
 pub enum WatchEnd {
     /// `TEAM-COMPLETE` was printed.
     TeamComplete,
-    /// The team is closed, or has no row: the watch ends without a word.
+    /// The team is closed, or has no row. `TEAM-CLOSED` was printed, because
+    /// the lead is woken when the watch exits and needs a line that says why.
     TeamClosed,
     /// The store cannot be read again by this binary (a newer or older
     /// schema, or not a teamwire database). `STORE-ERROR` was printed.
@@ -39,6 +40,17 @@ pub struct WatchMemory {
     pub(crate) grace_from: Option<Timestamp>,
     /// Time the machine was asleep: a deadline measures work, not sleep.
     pub(crate) slept: Duration,
+}
+
+impl WatchMemory {
+    /// A fresh memory that already knows the team's name, so a first poll
+    /// that finds no team row can still name it in its `TEAM-CLOSED` line.
+    pub fn for_team(team: &str) -> Self {
+        Self {
+            team: Some(team.to_owned()),
+            ..Self::default()
+        }
+    }
 }
 
 /// One member's counters, for one generation.

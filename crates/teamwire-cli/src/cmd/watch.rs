@@ -139,7 +139,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         clock: &wiring.clock,
         config: &config,
     };
-    let mut memory = WatchMemory::default();
+    let mut memory = WatchMemory::for_team(team.as_str());
     match teamwire_watch::start(
         &mut ctx,
         &mut memory,

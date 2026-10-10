@@ -54,6 +54,15 @@ fn join(team: &str, texts: &[String]) -> OneLine {
     one_line(&events.join(" | "), LINE_MAX)
 }
 
+/// The last line of a watch whose team was closed under it. The lead is
+/// woken when the watch exits, so the exit carries one line that says why.
+/// It is not stored: the team's state is closed or already gone.
+fn closed(memory: &mut WatchMemory) -> OneLine {
+    memory.end = Some(WatchEnd::TeamClosed);
+    let team = memory.team.clone().unwrap_or_else(|| "unknown".to_owned());
+    join(&team, &["TEAM-CLOSED".to_owned()])
+}
+
 fn step(
     ctx: &mut Ctx<'_>,
     memory: &mut WatchMemory,
@@ -61,13 +70,11 @@ fn step(
 ) -> Result<Option<OneLine>, StoreError> {
     check_schema(ctx)?;
     let Some(snap) = snapshot::read(ctx)? else {
-        memory.end = Some(WatchEnd::TeamClosed);
-        return Ok(None);
+        return Ok(Some(closed(memory)));
     };
     memory.team = Some(snap.team.name.to_string());
     if snap.team.state == TeamState::Closed {
-        memory.end = Some(WatchEnd::TeamClosed);
-        return Ok(None);
+        return Ok(Some(closed(memory)));
     }
     let decided = plan(ctx, &snap, memory, now);
     let watching = (memory.polls == 0).then_some(snap.members.len());

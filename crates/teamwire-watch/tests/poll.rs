@@ -389,7 +389,7 @@ fn removed_member_not_died() {
 }
 
 #[test]
-fn closed_team_ends_silently() {
+fn closed_team_ends_with_one_team_closed_line() {
     let mut bed = Bed::new();
     seasoned(&mut bed, "api");
     bed.working("api");
@@ -402,8 +402,30 @@ fn closed_team_ends_silently() {
         })
         .unwrap();
     bed.vanish("api");
-    assert!(bed.ticks(6).is_empty());
+    assert_eq!(bed.tick().as_deref(), Some("[teamwire:alpha] TEAM-CLOSED"));
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamClosed));
+    assert!(bed.ticks(6).is_empty(), "TEAM-CLOSED is printed once");
+}
+
+#[test]
+fn a_team_closed_after_team_complete_prints_no_team_closed() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.poll();
+    bed.delivered("api", CompletionStatus::Done);
+    assert_eq!(
+        bed.tick().as_deref(),
+        Some("[teamwire:alpha] TEAM-COMPLETE 1/1 done")
+    );
+    let now = teamwire_core::Clock::now(&bed.clock);
+    bed.store
+        .write(|tx| {
+            tx.begin_close(now, teamwire_core::Pid::new(1))?;
+            tx.finish_close(now, &teamwire_store::CloseEnd::Completed)
+        })
+        .unwrap();
+    assert!(bed.ticks(3).is_empty(), "the watch already ended");
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
 #[test]
