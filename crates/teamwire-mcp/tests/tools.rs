@@ -594,6 +594,49 @@ async fn a_lead_call_without_the_recorded_session_is_refused() {
 }
 
 #[tokio::test]
+async fn a_lead_server_with_no_session_id_says_so() {
+    let rig = Rig::new();
+    rig.harness.set_caller(None);
+    let lead = rig.client(McpCaller::Lead).await;
+    let result = call(&lead, "team_status", json!({"team": "alpha"})).await;
+    assert_eq!(refused(&result), "refused.identity");
+    let message = result.structured_content.as_ref().unwrap()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(message.contains("no harness session id"), "{message}");
+}
+
+#[tokio::test]
+async fn a_lead_server_with_the_wrong_session_does_not_blame_the_session_id() {
+    let rig = Rig::new();
+    rig.harness.set_interactive_caller(sid("someone-else"));
+    let lead = rig.client(McpCaller::Lead).await;
+    let result = call(&lead, "team_status", json!({"team": "alpha"})).await;
+    assert_eq!(refused(&result), "refused.identity");
+    let message = result.structured_content.as_ref().unwrap()["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert!(!message.contains("no harness session id"), "{message}");
+}
+
+#[tokio::test]
+async fn the_member_only_tools_say_so_in_their_descriptions() {
+    let rig = Rig::new();
+    let lead = rig.client(McpCaller::Lead).await;
+    let listing = lead.list_tools(None).await.unwrap();
+    for tool in listing.tools {
+        let member_only = matches!(tool.name.as_ref(), "team_inbox" | "team_ack" | "team_done");
+        let says = tool
+            .description
+            .as_deref()
+            .is_some_and(|d| d.contains("Members only"));
+        assert_eq!(says, member_only, "{}", tool.name);
+    }
+}
+
+#[tokio::test]
 async fn a_member_cannot_name_another_team() {
     let (_rig, api, _web) = two_members().await;
     let result = call(&api, "team_status", json!({"team": "beta"})).await;
