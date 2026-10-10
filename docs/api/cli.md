@@ -141,7 +141,9 @@ lock whose owner pid is dead, and nothing else.
 
 Sends one message (ADR 0003). `--to` takes roles separated by commas, or
 `lead`. For a member, `--team` and `--from` default to `TEAMWIRE_TEAM` and
-`TEAMWIRE_ROLE`. Prints the display id and one line per recipient. On
+`TEAMWIRE_ROLE`. With no `--from`, no `TEAMWIRE_ROLE` and no `TEAMWIRE_TOKEN`,
+`--from` defaults to `lead`, as `resend` does; the harness session then
+decides (ADR 0008). Prints the display id and one line per recipient. On
 `undelivered` it also prints `NOT DELIVERED to <role>: <reason>` on stderr and
 exits 4. A recipient whose delivery record could not be written is left
 `pending`, named on stderr as `NOT RECORDED for <role>`, and exits 6; retry
@@ -212,7 +214,7 @@ These are started by a harness, not typed by people.
 | --- | --- | --- |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. Always exits 0. |
-| `teamwire --home H mcp [--team T --role R --token K \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). |
+| `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 
 ## Maintenance
 

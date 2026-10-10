@@ -6,3 +6,5 @@ TALKING TO THE TEAM
     {teamwire} send --to <role or lead> \
         --type <type> --text "..."
   The roster in your brief lists the other members' roles.
+- A message to you arrives as one line typed into your session. Read
+  its full text with the team_inbox tool, or with `{teamwire} inbox`.

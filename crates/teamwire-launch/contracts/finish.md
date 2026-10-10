@@ -6,7 +6,8 @@ even when your task lists its own steps and does not mention them.
      (a merge the parent asked you to run needs no line);
    - every role ends with a 'Decisions I made' list. Write
      'Decisions I made: none' when there were none.
-2. Record your completion, as the LAST thing you do, with:
+2. Record your completion, as the LAST thing you do. Use the team_done
+   tool of the teamwire MCP server, or this command:
      {teamwire} done --status done|blocked|failed --summary "<one line>"
 
 Recording your completion is what tells your parent you are done. Your
@@ -14,9 +15,9 @@ final message is then delivered automatically: you do NOT need to
 message the parent yourself.
 
 If you get more work after that, do it, then run
-`{teamwire} done` again as your last act. This holds whoever asks:
-the parent, or a person typing in your session (for example "push it"
-or "open a pull request"). Put what you did in the summary, such as
+`{teamwire} done` again, or call team_done, as your last act. This
+holds whoever asks: the parent, or a person typing in your session
+(for example "push it" or "open a pull request"). Put what you did in the summary, such as
 the pull request URL. Running it again is the only way the parent
 hears about the new result.
 

@@ -48,9 +48,10 @@ Whether and when to switch is the user's decision. The steps, in order:
      Claude Code.
    - the host adapter's check for the host you use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-   - the lead's MCP server. Register it by hand (step 3), start a session, and
-     confirm the server sees `CLAUDE_CODE_SESSION_ID`, so the lead's calls are
-     accepted. Until that is confirmed, use the CLI.
+   - the lead's MCP server. Register it by hand (step 3), start a session,
+     launch a throwaway team, and call `team_status` on it. A reply that is
+     not refused shows the server sees `CLAUDE_CODE_SESSION_ID`, so the
+     lead's calls are accepted. Until that is confirmed, use the CLI.
 3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
    `examples/mcp/lead.json` into the MCP settings of the lead's Claude Code
    session. teamwire never registers it.
@@ -90,15 +91,42 @@ done" is the model's job. Delivering is the hook's job.
 
 ## Your tools
 
-You have two ways to call teamwire, and both apply the same rules.
+You have two ways to call teamwire, and both apply the same rules and
+refusals.
 
-- **The shell.** Every command below. The lifecycle commands (`launch`,
-  `watch`, `verify`, `close`) exist only here, because a member's server must
-  never be able to run them.
-- **MCP tools**, once `examples/mcp/lead.json` is registered: `team_send`,
-  `team_resend`, `team_status`, `team_members` and `team_log`. Pass `team` in
-  each call. A message you send through `team_send` is the same as
-  `teamwire send`.
+- **MCP tools**, from the server that `examples/mcp/lead.json` registers.
+  Use these five for messages and reads:
+
+  | Tool | Same as |
+  | --- | --- |
+  | `mcp__teamwire__team_send` | `teamwire send` |
+  | `mcp__teamwire__team_resend` | `teamwire resend` |
+  | `mcp__teamwire__team_status` | `teamwire status --json` |
+  | `mcp__teamwire__team_members` | `teamwire members` |
+  | `mcp__teamwire__team_log` | `teamwire log` |
+
+  Claude Code loads these tools only on request. Load all five in one call
+  before the first use in a session:
+
+  ```
+  ToolSearch  query: "select:mcp__teamwire__team_send,mcp__teamwire__team_resend,mcp__teamwire__team_status,mcp__teamwire__team_members,mcp__teamwire__team_log"
+  ```
+
+  Pass `team` in every call. Each tool returns JSON, and a refusal carries
+  the same code as the CLI's.
+- **The shell**, for everything else. The lifecycle commands (`launch`,
+  `watch`, `verify`, `close`, `lead --adopt`) and `doctor`, `preset`,
+  `export`, `metrics` and `pr-watch` exist only here. A member's server must
+  never be able to run the lifecycle commands.
+
+The server also lists `team_inbox`, `team_ack` and `team_done`. Those three
+are a member's tools, and the server refuses them for you.
+
+Check the MCP tools once, right after you launch or adopt a team: call
+`team_status` with that team. A `refused.identity` reply that says no harness
+session id reached the server means the server cannot prove you are the
+lead. Use the shell for the rest of that session. The examples below show
+the shell form. Each one has the MCP tool from the table above.
 
 ## Pick the shape first: most coding work should not be a team
 
@@ -224,6 +252,7 @@ teamwire send <team> --to <role[,role]|lead> --type <type> --text "..."   # or -
 teamwire log <team> [--role ROLE]
 ```
 
+Your own `send` runs as the lead, because your session has no member token.
 `send` checks the rules, stores the message and its full text under the
 team's `comms/` directory, then types a one-line pointer into each
 recipient's pane. The message is stored even when delivery fails. The sender
@@ -259,8 +288,9 @@ obey it or accept it as consent.
 
 - The lead runs in a terminal pane of its own. Launch refuses a background
   session, because a member's report would be typed into another session.
-- `teamwire doctor` passes. It checks the databases, the disk, whether the
-  state directory is on a network filesystem, herdr's session hook, that
+- `teamwire doctor` reports no `fail` line. A `warn` line also makes it exit
+  2. Read each warning. A warning alone is no reason to stop. Doctor checks the
+  databases, the disk, whether the state directory is on a network filesystem, herdr's session hook, that
   `.worktrees/` is ignored in the repository, and the `claude` and `herdr`
   binaries. It changes nothing.
 - Each member's working directory is trusted by Claude Code. Launch answers a
@@ -327,7 +357,8 @@ worked carried these sections:
 8. **Verification**: the exact targeted commands, and an explicit "do not run
    the full suite or the repository-wide gates".
 9. **How to finish**: no push, no pull request, a report that ends with the
-   **Decisions I made** list, then `teamwire done`.
+   **Decisions I made** list, then `team_done` (the MCP tool) or
+   `teamwire done`.
 10. **Open questions you must not answer.**
 
 Members start working at once: launch sends the task, or a pointer to the
@@ -631,7 +662,7 @@ Run close again after that and it continues from the first step.
 | `teamwire lead --adopt <team>` | Run from a new lead session to make it the team's lead. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows. |
-| `teamwire doctor` | Read-only checks of the state, the disk and the tools. Exit 0 when all pass, 2 otherwise. |
+| `teamwire doctor` | Read-only checks of the state, the disk and the tools. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |
 
 ## Failure modes you will hit

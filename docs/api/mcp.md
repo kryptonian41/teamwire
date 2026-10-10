@@ -9,8 +9,12 @@ same library calls the CLI makes, so every rule and refusal is identical
 
 | Who | How it starts | How it knows who is calling |
 | --- | --- | --- |
-| A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role> --token <token>` | The token in its argv, checked against the stored hash (ADR 0008) |
+| A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
 | The lead | The user registers `teamwire mcp --lead` themselves, from `examples/mcp/lead.json`. teamwire never registers it. | The harness session id in the server's environment, checked against the team's recorded lead session per call. The `team` argument picks the team. |
+
+Every server lists all eight tools. The descriptions of `team_inbox`,
+`team_ack` and `team_done` say they are for members only, so a lead's
+session knows not to call them.
 
 The server holds no state between calls. It opens the team's store for each
 call and closes it after. It exposes tools only; the inbox resource of MCP-3
@@ -27,7 +31,7 @@ refused or failed call returns `isError: true` with:
 
 | Error code | Meaning | Retry? |
 | --- | --- | --- |
-| `refused.identity` | Token or lead session does not match | no |
+| `refused.identity` | Token or lead session does not match. For the lead, the message says so when no harness session id reached the server at all | no |
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
 | `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker) | no |
 | `refused.unknown_recipient` | No such member | no |
@@ -107,6 +111,7 @@ retried recipient's new state and `attempts`. Recipients that are
 ## `team_inbox`
 
 Return unread messages for the caller, oldest first, and mark them `acked`.
+Members only: the lead's call is refused with `invalid.argument`.
 
 Input: `{"all": false}`. With `all: true` it also returns read messages and
 marks nothing.
@@ -130,12 +135,13 @@ A body whose hash does not match is returned with `hash_ok: false` and a
 ## `team_ack`
 
 Mark messages read without fetching them (for a member that read the `.md`
-copy). Input: `{"ids": ["m014", "m015"]}`. Output: `{"acked": ["m014"],
+copy). Members only, like `team_inbox`. Input: `{"ids": ["m014", "m015"]}`. Output: `{"acked": ["m014"],
 "already": ["m015"], "unknown": []}`.
 
 ## `team_done`
 
-Record a completion (ADR 0007). Members only.
+Record a completion (ADR 0007). Members only: the lead's call is refused
+with `invalid.argument`.
 
 Input: `{"status": "done", "summary": "one line, up to 2000 chars"}`.
 

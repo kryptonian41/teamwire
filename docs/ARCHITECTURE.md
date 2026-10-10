@@ -361,14 +361,23 @@ The steps a cutover would take, in order, when the user asks for it:
 1. Install the binary (`cargo install --path crates/teamwire-cli`) and run
    `teamwire doctor`. It checks herdr's session hook, the database settings,
    the disk, and the `.worktrees/` ignore rule, and changes nothing.
-2. Run the Claude adapter's manual live check (`crates/teamwire-harness-claude/examples/live_check.rs`),
-   which proves the per-run `--settings` hooks and `--mcp-config` work with the
-   installed Claude Code. The user runs it by hand; no test does.
-3. Run one throwaway team with teamwire in a scratch repository.
-4. Let every running Python team finish and close under Python.
-5. Point the lead's skill at teamwire: install the `teamwire` skill from
+2. Run the live checks by hand (`docs/test-strategy.md`, section 6). No test
+   runs them.
+   - The Claude adapter's check (`crates/teamwire-harness-claude/examples/live_check.rs`)
+     proves the per-run `--settings` hooks and `--mcp-config` work with the
+     installed Claude Code.
+   - The host adapter's check for the host in use
+     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
+3. Register the lead's MCP server by hand: merge the `mcpServers` entry of
+   `examples/mcp/lead.json` into the lead's Claude Code MCP settings.
+   teamwire never registers it. Start a session, launch a throwaway team, and
+   call `team_status` on it. A `refused.identity` reply that says no session
+   id reached the server means the lead must use the CLI with `--from lead`.
+4. Run one throwaway team with teamwire in a scratch repository.
+5. Let every running Python team finish and close under Python.
+6. Point the lead's skill at teamwire: install the `teamwire` skill from
    `examples/skills/teamwire/` (a file copy the user makes).
-6. Only then, remove `team-report.sh` from `~/.claude/settings.json`. The user
+7. Only then, remove `team-report.sh` from `~/.claude/settings.json`. The user
    does this by hand; teamwire never edits that file.
 
 Rolling back is the same list in reverse. teamwire's state stays in
