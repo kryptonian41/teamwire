@@ -100,3 +100,33 @@ fn cfg_attr_ignore_is_weakening() {
         "a lint named ignored_* is not ignore"
     );
 }
+
+#[test]
+fn each_rust_weakening_marker_is_flagged_on_its_own_line() {
+    let source = "fn a() {}\n#[allow(dead_code)]\nfn b() {}\n#![allow(unused)]\n#[should_panic]\n#[expect(clippy::all, reason = \"r\")]\nfn c() {}\n// #[ignore] in prose\n";
+    let added: String = source.lines().flat_map(|l| ["+", l, "\n"]).collect();
+    let patch = format!(
+        "diff --git a/src/lib.rs b/src/lib.rs\nnew file mode 100644\n--- /dev/null\n+++ b/src/lib.rs\n@@ -0,0 +1,8 @@\n{added}"
+    );
+    assert_eq!(
+        ids_of(&patch),
+        [
+            "weakened:src/lib.rs:2",
+            "weakened:src/lib.rs:4",
+            "weakened:src/lib.rs:5",
+            "weakened:src/lib.rs:6"
+        ]
+    );
+}
+
+#[test]
+fn a_test_moved_within_a_file_is_not_a_removal() {
+    // What git prints when a comment is added above a test: no marker leaves.
+    let comment_added = "diff --git a/tests/a.rs b/tests/a.rs\n--- a/tests/a.rs\n+++ b/tests/a.rs\n\
+                         @@ -0,0 +1 @@\n+// moved\n";
+    assert!(ids_of(comment_added).is_empty());
+    // A marker removed in one place and added in another nets to zero.
+    let moved = "diff --git a/tests/a.rs b/tests/a.rs\n--- a/tests/a.rs\n+++ b/tests/a.rs\n\
+                 @@ -1 +0,0 @@\n-#[test]\n@@ -5,0 +5 @@\n+#[test]\n";
+    assert!(ids_of(moved).is_empty());
+}

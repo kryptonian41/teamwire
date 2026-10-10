@@ -257,24 +257,6 @@ fn a_rust_branch_that_adds_ignore_is_flagged() {
 }
 
 #[test]
-fn each_rust_weakening_marker_is_flagged_on_its_own_line() {
-    let (mut fx, repo) = rust_member(&["src/"], &[]);
-    let source = "fn a() {}\n#[allow(dead_code)]\nfn b() {}\n#![allow(unused)]\n#[should_panic]\n#[expect(clippy::all, reason = \"r\")]\nfn c() {}\n// #[ignore] in prose\n";
-    repo.commit(&[("src/lib.rs", source)], "add code", start_secs() + 5);
-    report_all_commits(&fx, &repo, "api");
-    let record = run_one(&mut fx, "api");
-    assert_eq!(
-        flag_ids(&record),
-        [
-            "weakened:src/lib.rs:2",
-            "weakened:src/lib.rs:4",
-            "weakened:src/lib.rs:5",
-            "weakened:src/lib.rs:6"
-        ]
-    );
-}
-
-#[test]
 fn a_deleted_test_file_and_a_removed_test_are_flagged() {
     let (mut fx, repo) = rust_member(
         &["tests/", "src/"],
@@ -292,20 +274,6 @@ fn a_deleted_test_file_and_a_removed_test_are_flagged() {
         flag_ids(&record),
         ["test-deleted:tests/a.rs", "test-removed:src/lib.rs"]
     );
-}
-
-#[test]
-fn a_test_moved_within_a_file_is_not_a_removal() {
-    let (mut fx, repo) = rust_member(&["tests/"], &[]);
-    repo.commit(
-        &[("tests/a.rs", "// moved\n#[test]\nfn a() {}\n")],
-        "move",
-        start_secs() + 5,
-    );
-    report_all_commits(&fx, &repo, "api");
-    let record = run_one(&mut fx, "api");
-    assert_eq!(flag_ids(&record), Vec::<&str>::new());
-    assert_eq!(record.verdict, Verdict::Pass);
 }
 
 #[test]
