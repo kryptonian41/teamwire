@@ -38,6 +38,8 @@ step 3 clippy cargo clippy --workspace --all-targets --locked -- -D warnings
 if [ "$last" -eq 3 ]; then
   exit 0
 fi
-step 4 test cargo test --workspace --locked
+# The workspace build makes the fake binaries, so the tests skip their own
+# rebuild of them (tests/fakes/src/bins.rs).
+step 4 test env TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked
 step 5 doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 step 6 docs scripts/check-docs.sh

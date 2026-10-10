@@ -12,6 +12,7 @@ Every later test runs on these. Nothing here touches the real `~/.claude`,
 | `FakePlatform` | in-process `Platform` | Environments per pid, free space, network-filesystem flag, a sleep hold that records start and release (`hold_events`). It writes real files, so give it a temporary directory. |
 | `FakeHarness` | in-process `Harness` | Sessions, pids, liveness; switchable capabilities (`set_caps`); a background caller; a listing failure. |
 | `FakeHost` | in-process `Host` | Places in a map; scripted faults per method. |
+| `NoTmuxConfig` | wrapper `Platform` | The real platform it wraps, except that every `tmux` call gets `-f /dev/null`. A test's private tmux server then never reads the user's `~/.tmux.conf`, whose plugins can make a server start slow enough to time out. |
 | `fake-herdr`, `fake-claude` | binaries | See below. |
 | `contract::*` | suites | See below. |
 
@@ -189,7 +190,10 @@ A stand-in for the `herdr` command line. Build with
 log reader) and `FakeBins` / `FakeBinDir` (a bin directory where `herdr` and
 `claude` are links to the fakes, and a `PATH` of that directory plus
 `/usr/bin:/bin:/usr/sbin:/sbin`) do the setup. `FakeBins::ensure()` builds the
-binaries once per process, so any crate's tests can use them. `FakeBinDir`
+binaries once per process, so any crate's tests can use them. With
+`TEAMWIRE_FAKES_PREBUILT=1` it skips that build and uses the binaries beside
+the test executable. Set the variable only right after a workspace build,
+as `scripts/gate.sh` does. `FakeBinDir`
 refuses to build a `PATH` that could reach a real `herdr` or `claude`.
 
 Commands (herdr's own names and flags): `agent start|prompt|get|list|read|send-keys`,

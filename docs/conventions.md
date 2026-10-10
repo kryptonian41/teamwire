@@ -95,7 +95,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 1 | `cargo fmt --all -- --check` | Format changes |
 | 2 | `cargo xtask tidy --base main` | The layout rules of section 1, layering, protected-file and weakened-test flags |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
-| 4 | `cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end, doc tests) |
+| 4 | `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end, doc tests) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
@@ -106,14 +106,31 @@ in `RUSTFLAGS`, so the build cache is not thrown away.
 A ticket runs its build-plan **Check** and `scripts/gate.sh fast`. The lead
 runs the full `scripts/gate.sh` once after integrating each wave.
 
-`cargo-nextest`, `cargo-deny` and `cargo-mutants` are not installed on this
-machine (checked 2026-09-29). v1's gate does not use them. repopract
-recommends installing the first two (per-test timeouts and a licence audit);
-installing tools is the user's decision and is listed under the open
-questions in `ARCHITECTURE.md`. If the user installs them, `cargo nextest run
---workspace --locked` replaces step 4 (plus `cargo test --doc`) and `cargo deny
-check` becomes step 6, with the `deny.toml` and `.config/nextest.toml` of
-repopract section 5.4.
+The gate sets `TEAMWIRE_FAKES_PREBUILT=1` because the workspace build has
+already made the fake binaries. Without the variable, each test process runs
+`cargo build` for them again. That build makes a second copy of the fakes with
+other dependency features, and cargo replaces the files every time, even when
+nothing changed (`tests/fakes/src/bins.rs`). A plain `cargo test -p <crate>`
+leaves the variable unset and builds the fakes itself.
+
+`cargo-nextest` 0.9.148 is installed (2026-10-10), and `.config/nextest.toml`
+is ready for it, but the gate does not use it yet. nextest runs many tests at
+once, each in its own process, and the end-to-end and crash tests start dozens
+of processes each. Process starts on this Mac are slow: at times every start
+costs about 0.25 s, even `/bin/echo`, and a newly built binary's first start
+costs seconds. Under nextest those waits broke teamwire's own timeouts and the
+tests' own 20 s waits, and the gate failed in a different test on each of four
+runs. When it passed, step 4 took about 200 s against about 330 s with `cargo
+test`. The cause of the slow starts is not proven. The candidates are the
+system's program check (`syspolicyd`), a security agent, and other load on
+the machine. `docs/research/2026-10-10-test-suite.md` has the measurements
+and a plan. Try nextest again once a start costs milliseconds.
+
+`cargo-deny` and `cargo-mutants` are not installed on this machine (checked
+2026-09-29). repopract recommends `cargo-deny` for a licence audit;
+installing it is the user's decision and is listed under the open questions
+in `ARCHITECTURE.md`. If the user installs it, `cargo deny check` becomes
+step 6, with the `deny.toml` of repopract section 5.4.
 
 ## 3. Toolchain and format
 
@@ -376,7 +393,7 @@ A Python version of this tooling runs the user's real agent teams. So:
 | R5 every rule has a program | Yes | §7 brackets |
 | R7, R8 one gate script with a fast mode | Yes | §2 (`scripts/gate.sh`, `fast`) |
 | R9 lints opt-in checked | Yes | tidy |
-| R10, R14, R36 nextest and cargo-deny in the gate | No | Not installed; user decision (`ARCHITECTURE.md` open questions) |
+| R10, R14, R36 nextest and cargo-deny in the gate | No | nextest is installed but not in the gate: parallel tests overload process starts on this Mac (§2); cargo-deny is not installed, a user decision (`ARCHITECTURE.md` open questions) |
 | R11 clippy with `-D warnings` on the call | Yes | §2 |
 | R12 `#[expect]` with reason only | Yes | §4 |
 | R13 `Cargo.lock` committed, `--locked` | Yes | §2 |

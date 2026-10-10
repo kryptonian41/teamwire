@@ -1,0 +1,24 @@
+# For `cargo nextest run --workspace --locked`, with
+# `TEAMWIRE_FAKES_PREBUILT=1`. The gate does not use nextest yet; see
+# docs/conventions.md section 2 for why.
+
+nextest-version = { required = "0.9.148" }
+
+[profile.default]
+# The crash tests take over 90 s while every other test runs beside them, so
+# a test is named slow at 60 s and killed at 240 s. A hung test then fails the
+# gate instead of holding it open.
+slow-timeout = { period = "60s", terminate-after = 4 }
+
+# The end-to-end and crash tests each start dozens of real processes, and
+# teamwire's own timeouts apply to them. On macOS every new process waits for
+# the system's program check, so several of these tests at once make process
+# starts slow enough to break those timeouts. They run one at a time, as under
+# `cargo test`, and start first, since together they are the longest chain.
+[test-groups]
+process-heavy = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = "package(teamwire-e2e) | package(teamwire-crash-tests)"
+test-group = "process-heavy"
+priority = 50
