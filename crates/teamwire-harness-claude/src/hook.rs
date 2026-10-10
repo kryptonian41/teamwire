@@ -20,35 +20,6 @@ fn present(value: Option<&Value>) -> bool {
     }
 }
 
-/// True when the Stop input lists a background task that may still run.
-///
-/// The shape of `background_tasks` was not confirmed against a live Stop
-/// input. A task with no readable `status` counts as running, so an
-/// unknown shape still reads as a pause. Capture a real input with
-/// `examples/live_check.rs` to settle the field names and status values.
-fn has_running_task(value: Option<&Value>) -> bool {
-    match value {
-        Some(Value::Array(tasks)) => tasks.iter().any(|task| {
-            let status = task.get("status").and_then(Value::as_str);
-            !matches!(
-                status,
-                Some(
-                    "done"
-                        | "completed"
-                        | "finished"
-                        | "failed"
-                        | "stopped"
-                        | "exited"
-                        | "cancelled"
-                        | "killed"
-                        | "ended"
-                )
-            )
-        }),
-        other => present(other),
-    }
-}
-
 fn non_blank<'a>(doc: &'a Value, key: &str) -> Option<&'a str> {
     doc.get(key)
         .and_then(Value::as_str)
@@ -63,11 +34,11 @@ pub(crate) fn parse_turn_end(stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
     let session = non_blank(&doc, "session_id").ok_or_else(|| bad_input("no session_id"))?;
     let session = SessionId::parse(session).map_err(|e| bad_input(e.to_string()))?;
 
-    // `agent_id` marks a subagent's stop. A `background_tasks` list with a
-    // running task means the session only paused while that task runs: its
-    // work is not finished. A list of finished tasks is a real stop. `TurnEnd` has no field for "paused", so both read as
-    // `subagent`, which callers treat as "report nothing".
-    let subagent = present(doc.get("agent_id")) || has_running_task(doc.get("background_tasks"));
+    // `agent_id` marks a subagent's stop. `background_tasks` is ignored: a
+    // task the member left running says nothing about whether its work is
+    // done, and a stuck task stays "running" for every later stop. The
+    // member's own `done` record is the signal that it finished.
+    let subagent = present(doc.get("agent_id"));
 
     Ok(TurnEnd {
         session,

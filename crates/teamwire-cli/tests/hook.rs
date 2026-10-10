@@ -171,6 +171,22 @@ fn stop_holds_once_with_the_claude_reply_shape() {
     );
 }
 
+/// A shell task the member left running, possibly stuck for hours, must not
+/// keep a recorded completion from the lead. The task shape is what Claude
+/// Code 2.1.284 sends.
+#[test]
+fn a_running_background_task_does_not_stop_the_hook() {
+    let mut fx = team();
+    complete(&mut fx); // no report file yet, so the hook holds
+    let input = r#"{"session_id":"sess-1","hook_event_name":"Stop","stop_hook_active":false,
+        "background_tasks":[{"id":"b946yuhy9","type":"shell","status":"running",
+        "description":"Start a 900-second sleep in the background","command":"sleep 900"}]}"#;
+    let run = hook(&fx, "claude-stop", &as_api(), input);
+    assert_eq!(run.code, 0);
+    let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(reply["hookSpecificOutput"]["hookEventName"], "Stop");
+}
+
 #[test]
 fn a_different_session_in_the_place_is_not_the_member() {
     let mut fx = team();

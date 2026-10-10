@@ -296,8 +296,8 @@ names a directory, so it can never write into the real `~/.claude`.
   lines on standard input. Each prompt is one turn: it echoes `> <prompt>`,
   runs the turn's steps, then runs each Stop hook with this JSON on stdin:
   `{"session_id","transcript_path","cwd","permission_mode":"bypassPermissions","hook_event_name":"Stop","stop_hook_active","prompt_id","background_tasks","last_assistant_message"}`.
-  `background_tasks` is `[]` unless a script step sets tasks (see below); a
-  non-empty list means the session is paused, not finished. A hook that exits
+  `background_tasks` is `[]` unless a script step sets tasks (see below). The
+  list names tasks still running when the turn ended. A hook that exits
   2 (reason on stderr), prints `{"decision":"block","reason":..}`, or prints
   `{"hookSpecificOutput":{"additionalContext":..}}`, holds the turn: the reason
   is shown as `Stop hook feedback: ..`, the script's `on_hold` steps run, and
@@ -382,8 +382,10 @@ Claude Code:
 - Session files hold the keys the real file has, but `procStart`,
   `messagingSocketPath`, `peerFeatures` and `nameSource` are absent, and the
   `shell` status is never written.
-- The shape of one `background_tasks` entry (`{"id","status":"running"}`) and
-  the transcript file contents are guesses; only the key names are known.
+- A `background_tasks` entry is `{"id","status":"running"}`. A real Claude
+  Code 2.1.284 entry also has `type` (`"shell"`), `description` and `command`:
+  `{"id":"b946yuhy9","type":"shell","status":"running","description":"..","command":"sleep 900"}`.
+- The transcript file contents are guesses; only the key names are known.
 - `claude agents --json` reads the session files only. The real command also
   lists finished background sessions with `--all`, which the fake ignores.
 - There is no MCP client, no PostToolUse hook run, no permission prompt and no

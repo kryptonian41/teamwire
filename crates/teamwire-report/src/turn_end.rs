@@ -58,8 +58,7 @@ fn run(
     t: &TurnEnd,
     started: std::time::Instant,
 ) -> Result<TurnEndReply, StoreError> {
-    // A subagent, or a session that only paused for a background task, has
-    // not finished its work (REP-10).
+    // A subagent's stop is not the member's turn ending (REP-10).
     if t.subagent {
         return Ok(TurnEndReply::Continue);
     }

@@ -13,9 +13,12 @@ Recording your completion is what tells your parent you are done. Your
 final message is then delivered automatically: you do NOT need to
 message the parent yourself.
 
-If the parent sends you more work after that, do it, then run
-`{teamwire} done` again as your last act. Running it again is how the
-parent hears about the new result.
+If you get more work after that, do it, then run
+`{teamwire} done` again as your last act. This holds whoever asks:
+the parent, or a person typing in your session (for example "push it"
+or "open a pull request"). Put what you did in the summary, such as
+the pull request URL. Running it again is the only way the parent
+hears about the new result.
 
 NEVER write anything into the team's outbox/ directory ({outbox_dir}).
 That path belongs to teamwire and is rewritten when you finish, so

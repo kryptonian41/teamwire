@@ -85,21 +85,28 @@ fn a_null_or_empty_agent_id_is_not_a_subagent() {
     }
 }
 
+/// A stuck task stays "running" at every later stop, so a running task
+/// cannot mean "not finished". The task shape is what Claude Code 2.1.284
+/// sends.
 #[test]
-fn a_paused_session_with_background_tasks_reports_nothing() {
-    let mut doc = stop_input();
-    doc["background_tasks"] = json!([{ "id": "b1", "status": "running" }]);
-    assert!(parse(&doc).unwrap().subagent);
-}
-
-#[test]
-fn a_stop_with_only_finished_background_tasks_is_a_real_stop() {
-    let mut doc = stop_input();
-    doc["background_tasks"] = json!([{ "id": "b1", "status": "completed" }]);
-    assert!(!parse(&doc).unwrap().subagent);
-    doc["background_tasks"] =
-        json!([{ "id": "b1", "status": "completed" }, { "id": "b2", "status": "running" }]);
-    assert!(parse(&doc).unwrap().subagent);
+fn a_stop_with_background_tasks_is_a_real_stop() {
+    let running = json!({
+        "id": "b946yuhy9",
+        "type": "shell",
+        "status": "running",
+        "description": "Start a 900-second sleep in the background",
+        "command": "sleep 900"
+    });
+    let finished = json!({ "id": "b1", "type": "shell", "status": "completed" });
+    for tasks in [
+        json!([running.clone()]),
+        json!([finished.clone()]),
+        json!([finished, running]),
+    ] {
+        let mut doc = stop_input();
+        doc["background_tasks"] = tasks;
+        assert!(!parse(&doc).unwrap().subagent, "{doc}");
+    }
 }
 
 #[test]
