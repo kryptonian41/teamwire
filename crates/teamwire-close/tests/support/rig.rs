@@ -113,14 +113,26 @@ impl Default for Rig {
 
 impl Rig {
     pub fn new() -> Self {
+        Self::build(true)
+    }
+
+    /// A rig whose `repo` path does not exist, for tests that only use panes.
+    /// Starting git there fails, and `add_worktree_member` refuses to run.
+    pub fn without_repo() -> Self {
+        Self::build(false)
+    }
+
+    fn build(with_repo: bool) -> Self {
         let home = TestHome::new().unwrap();
         let work = tempfile::tempdir().unwrap();
         let repo = work.path().join("proj");
-        std::fs::create_dir_all(&repo).unwrap();
-        git(&repo, &["init", "-q", "-b", "main"]);
-        std::fs::write(repo.join("README.md"), "hello\n").unwrap();
-        git(&repo, &["add", "-A"]);
-        git(&repo, &["commit", "-q", "-m", "first"]);
+        if with_repo {
+            std::fs::create_dir_all(&repo).unwrap();
+            git(&repo, &["init", "-q", "-b", "main"]);
+            std::fs::write(repo.join("README.md"), "hello\n").unwrap();
+            git(&repo, &["add", "-A"]);
+            git(&repo, &["commit", "-q", "-m", "first"]);
+        }
         let host = Arc::new(FakeHost::with_id(HostId::from_static("herdr")));
         let harness = Arc::new(FakeHarness::with_id(HarnessId::from_static("claude-code")));
         harness.add_session(
@@ -211,6 +223,10 @@ impl Rig {
     /// An implementer (or another kind) in a real worktree of the repository,
     /// on branch `br-<role>`, with an idle place in the fake host, started.
     pub fn add_worktree_member(&mut self, role: &str, kind: MemberKind) -> Member {
+        assert!(
+            self.repo.exists(),
+            "this rig was built with Rig::without_repo(); use Rig::new() for worktree members"
+        );
         let path = self.work.path().join(format!("wt-{role}"));
         let branch = format!("br-{role}");
         git(
