@@ -5,7 +5,8 @@ Your ticket: docs/build-plan.md. Interfaces: docs/api/. Conventions: docs/conven
 
 ## Separate project: never touch the running setup
 
-A Python version of this tooling runs the user's real agent teams. So:
+The user's live Claude Code setup runs on this machine, and teamwire now
+runs the user's real agent teams. So:
 - Write only inside this repository and temporary directories you create.
   Never create, edit, move or delete anything under ~/.claude/ or ~/.claude.json.
 - Never register a hook, MCP server, skill or launch agent outside this repo.
@@ -17,9 +18,10 @@ A Python version of this tooling runs the user's real agent teams. So:
 - Tests never type into a real herdr pane or start a real Claude session.
   Use the fakes in tests/fakes/. (clippy: Command::new is disallowed
   outside teamwire-platform and the test crates)
-- Reading the Python tooling to learn its behaviour is fine:
-  ~/.claude/team/bin/, and, since it was retired on 2026-10-10,
-  ~/Backups/claude/agent-team-2026-10-10/ (its skill and team-report.sh).
+- Reading the retired Python tooling to learn its behaviour is fine. Since
+  2026-10-10 it lives in ~/Backups/claude/agent-team-2026-10-10/:
+  team/bin/ (the scripts and their tests), team-report.sh (the old global
+  Stop hook) and agent-team-skill/SKILL.md. Never edit or restore it.
 
 ## Commands (from the repo root)
 
