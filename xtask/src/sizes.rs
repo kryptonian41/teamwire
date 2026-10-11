@@ -74,22 +74,28 @@ fn in_integration_tests(root: &Path, path: &Path) -> bool {
     false
 }
 
+/// Lines outside `#[cfg(test)]` items. The skipped item ends where its braces
+/// balance, or at a `;` when it has no body, so a test-only method inside an
+/// `impl` does not hide the rest of the `impl`.
 fn non_test_lines(text: &str) -> usize {
     let mut count = 0;
     let mut skipping = false;
-    let mut just_saw_cfg = false;
+    let mut depth = 0_i64;
+    let mut opened = false;
     for line in text.lines() {
         if skipping {
-            // `#[cfg(test)] mod tests;` has no body to skip.
-            skipping = if just_saw_cfg {
-                !line.trim_end().ends_with(';')
-            } else {
-                line != "}"
-            };
-            just_saw_cfg = false;
+            let opens = line.matches('{').count();
+            let closes = line.matches('}').count();
+            opened |= opens > 0;
+            depth += i64::try_from(opens).unwrap_or(0) - i64::try_from(closes).unwrap_or(0);
+            let bodiless = !opened && line.trim_end().ends_with(';');
+            if bodiless || (opened && depth <= 0) {
+                skipping = false;
+            }
         } else if line.trim() == "#[cfg(test)]" {
             skipping = true;
-            just_saw_cfg = true;
+            depth = 0;
+            opened = false;
         } else {
             count += 1;
         }
@@ -158,6 +164,19 @@ mod tests {
             found.problems.is_empty() && found.notes.is_empty(),
             "{found:?}"
         );
+    }
+
+    #[test]
+    fn test_method_inside_an_impl_does_not_hide_the_rest_of_the_impl() {
+        let dir = clean_workspace();
+        let text = format!(
+            "{}\nimpl Thing {{\n    #[cfg(test)]\n    fn helper() {{\n        let y = 2;\n    }}\n{}}}\n",
+            source(300),
+            "    fn real() {}\n".repeat(101)
+        );
+        write(dir.path(), "crates/teamwire-a/src/lib.rs", &text);
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        assert_eq!(found.notes.len(), 1, "{found:?}");
     }
 
     #[test]
