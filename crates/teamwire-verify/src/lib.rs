@@ -56,7 +56,7 @@ pub fn is_task_file_status(line: &str) -> bool {
 pub struct VerifyOpts {
     /// Also run `PRAGMA integrity_check` and check every message hash.
     pub deep: bool,
-    /// Rewrite missing or differing `comms/` and `outbox/` copies from the store.
+    /// Rewrite missing or differing `comms/` copies from the store, only where the stored body still matches its hash.
     pub repair_files: bool,
 }
 
