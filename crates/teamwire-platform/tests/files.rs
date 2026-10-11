@@ -137,19 +137,19 @@ fn on_network_fs_of_a_missing_path_is_not_found() {
 }
 
 #[test]
-fn write_atomic_through_a_symlink_keeps_the_link_and_writes_the_target() {
+fn write_atomic_replaces_a_symlink_and_leaves_its_target() {
     let dir = tempfile::tempdir().unwrap();
-    let target = dir.path().join("real.json");
-    let link = dir.path().join("link.json");
-    native().write_atomic(&target, b"old").unwrap();
+    let target = dir.path().join("elsewhere.md");
+    let link = dir.path().join("outbox.md");
+    native().write_atomic(&target, b"theirs").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
-    native().write_atomic(&link, b"new").unwrap();
+    native().write_atomic(&link, b"ours").unwrap();
     assert!(
-        fs::symlink_metadata(&link)
+        !fs::symlink_metadata(&link)
             .unwrap()
             .file_type()
             .is_symlink()
     );
-    assert_eq!(fs::read(&target).unwrap(), b"new");
-    assert_eq!(entries(dir.path()), ["link.json", "real.json"]);
+    assert_eq!(fs::read(&link).unwrap(), b"ours");
+    assert_eq!(fs::read(&target).unwrap(), b"theirs");
 }

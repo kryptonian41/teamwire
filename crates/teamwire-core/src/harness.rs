@@ -101,7 +101,6 @@ string_enum! {
         NoDialog => "no_dialog",
         AnsweredPlainTrust => "answered_plain_trust",
         RefusedEscalated => "refused_escalated",
-        RefusedHome => "refused_home",
     }
 }
 

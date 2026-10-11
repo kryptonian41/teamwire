@@ -277,9 +277,26 @@ impl ClaudeCode {
             std::fs::create_dir_all(dir)
                 .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
         }
+        // The user may keep the skill in a dotfiles repo and link to it. The
+        // write must replace that file and leave the link, so resolve first.
+        let resolved = through_symlink(path);
         self.platform
-            .write_atomic(path, text.as_bytes())
+            .write_atomic(&resolved, text.as_bytes())
             .map_err(|e| e.to_string())
+    }
+}
+
+/// The file a symlink at `path` points to. A path that is not a link, or a
+/// link whose target does not exist yet, is returned as it is.
+fn through_symlink(path: &Path) -> std::path::PathBuf {
+    if let Ok(real) = std::fs::canonicalize(path) {
+        return real;
+    }
+    match std::fs::read_link(path) {
+        Ok(target) => path
+            .parent()
+            .map_or(target.clone(), |dir| dir.join(&target)),
+        Err(_) => path.to_path_buf(),
     }
 }
 
