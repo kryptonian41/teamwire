@@ -96,6 +96,13 @@ the same key Claude Code puts on its own telemetry, so the two can be joined.
 On teamwire's own export: `service.name=teamwire`, `service.version`,
 `teamwire.team` per exported batch.
 
+An exported batch ends at the last 60-second bucket that is already over, so
+one bucket of one series is always one delta point (ADR 0005, point 4). The
+events of the current minute are sent by the next export after that minute
+ends. When the watch exports on exit, it waits at most 3 s for the collector,
+so a minute of events can stay unsent until the next `teamwire metrics
+export` or watch.
+
 In each member's environment (OBS-4), appended to any existing value:
 `OTEL_RESOURCE_ATTRIBUTES=...,teamwire.team=<team>,teamwire.role=<role>`.
 Nothing per run or per message goes there.
