@@ -5,7 +5,8 @@
 //! `gh pr checks N` (or `gh pr view N`) is the file `checks-N-<n>.json` (or
 //! `view-N-<n>.json`); a call past the last file gets the last file. It logs
 //! every call's arguments to `calls.log` and always exits 8, as `gh pr
-//! checks` does while checks are pending: the watch must ignore that.
+//! checks` does while checks are pending: the watch must ignore that. A file
+//! `checks-N-<n>.err` is printed on stderr beside the answer.
 #![expect(
     clippy::disallowed_methods,
     reason = "the test starts the teamwire binary"
@@ -30,6 +31,7 @@ while [ "$n" -gt 0 ] && [ ! -f "$d/$kind-$pr-$n.json" ]; do
   n=$((n - 1))
 done
 [ "$n" -gt 0 ] && cat "$d/$kind-$pr-$n.json"
+[ "$n" -gt 0 ] && [ -f "$d/$kind-$pr-$n.err" ] && cat "$d/$kind-$pr-$n.err" >&2
 exit 8
 "#;
 
@@ -306,6 +308,28 @@ fn the_default_interval_is_forty_five_seconds() {
 fn no_checks_is_done() {
     let bed = Bed::new();
     bed.answer("checks", 7, 1, "[]");
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 0 passed, 0 failed, 0 skipped"
+        ]
+    );
+}
+
+#[test]
+fn gh_saying_no_checks_were_reported_is_done_not_polled_for_ever() {
+    let bed = Bed::new();
+    // Real `gh pr checks --json` prints nothing on stdout for such a pull request.
+    bed.answer("checks", 7, 1, "");
+    std::fs::write(
+        bed.dir.path().join("checks-7-1.err"),
+        "no checks reported on the 'topic' branch\n",
+    )
+    .unwrap();
     bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     let run = bed.watch(&["7"]);
     assert_eq!(run.code, 0);

@@ -132,6 +132,25 @@ fn gh(platform: &dyn Platform, args: &[&str]) -> Option<Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
+/// What `gh pr checks` prints on stderr, with exit 1 and nothing on stdout,
+/// for a pull request that has no checks at all.
+const NO_CHECKS_TEXT: &str = "no checks reported";
+
+/// The check list of one pull request. A pull request with no checks gets an
+/// empty list, because `gh` prints no JSON for it and the watch would
+/// otherwise ask again for ever.
+fn gh_checks(platform: &dyn Platform, args: &[&str]) -> Option<Value> {
+    let out = platform
+        .run(&Command::new("gh").args(args.iter().copied()), GH_TIMEOUT)
+        .ok()?;
+    if let Ok(json) = serde_json::from_slice(&out.stdout) {
+        return Some(json);
+    }
+    String::from_utf8_lossy(&out.stderr)
+        .contains(NO_CHECKS_TEXT)
+        .then(|| Value::Array(Vec::new()))
+}
+
 #[expect(clippy::print_stdout, reason = "the lines are the command's output")]
 fn say(text: &str) {
     println!("{text}");
@@ -170,7 +189,7 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
                 continue;
             }
             let number = pr.to_string();
-            let checks = gh(
+            let checks = gh_checks(
                 wiring.platform.as_ref(),
                 &["pr", "checks", &number, "-R", repo, "--json", "name,bucket"],
             );
