@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{Command, Pid, Platform, PlatformError, RunOutput, SleepHold};
+use teamwire_core::{Command, Pid, Platform, PlatformError, RunOutput, SleepHold, Timestamp};
 
 pub(crate) struct EnvPlatform {
     inner: Arc<dyn Platform>,
@@ -24,6 +24,10 @@ impl EnvPlatform {
 impl Platform for EnvPlatform {
     fn pid_alive(&self, pid: Pid) -> bool {
         self.inner.pid_alive(pid)
+    }
+
+    fn process_started(&self, pid: Pid) -> Option<Timestamp> {
+        self.inner.process_started(pid)
     }
 
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
