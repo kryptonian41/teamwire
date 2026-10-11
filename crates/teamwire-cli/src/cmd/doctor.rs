@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{Command, Platform, TeamName, TeamState};
 use teamwire_store::{SCHEMA_VERSION, Store};
 
@@ -201,10 +202,15 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
     let rows = store.read(|tx| Ok((tx.team()?, tx.watch_lease()?)));
     match rows {
         Ok((team_row, lease)) => {
+            // The pid with its recorded start time: a pid that a later
+            // process reused is gone, as `close --clear-stale-lock` judges it.
             if let Some(row) = team_row
                 && row.state == TeamState::Closing
                 && let Some(pid) = row.closing_pid
-                && !inputs.platform.pid_alive(pid)
+                && !inputs.platform.process_alive(ProcessRef {
+                    pid,
+                    started: row.closing_started,
+                })
             {
                 checks.push(Check::fail(
                     name("close lock"),

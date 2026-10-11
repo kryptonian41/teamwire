@@ -16,8 +16,10 @@
 )]
 
 use std::path::{Path, PathBuf};
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput, TeamName,
+    Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput,
+    TeamName, Timestamp,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
@@ -309,6 +311,42 @@ fn a_close_lock_held_by_a_dead_process_is_reported_with_the_fix() {
         checks.iter().all(|c| c.name != "team alpha close lock"),
         "a live owner is not stale: {checks:?}"
     );
+}
+
+/// A close lock whose pid now belongs to a process that started later is the
+/// lock of a dead close: doctor reports it, as `close --clear-stale-lock`
+/// would clear it. The original owner, still running, is not reported.
+#[test]
+fn a_close_lock_whose_pid_was_reused_is_reported() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    let now = FakeClock::new().now();
+    let pid = Pid::new(4343);
+    let started = Timestamp::from_unix_millis(now.unix_millis() - 60_000).unwrap();
+    bed.platform.set_alive(pid, true);
+    bed.platform.set_started(pid, Some(started));
+    store
+        .write(|tx| {
+            tx.begin_close(
+                now,
+                ProcessRef {
+                    pid,
+                    started: Some(started),
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    drop(store);
+    let checks = bed.checks();
+    assert!(
+        checks.iter().all(|c| c.name != "team alpha close lock"),
+        "the owner still runs: {checks:?}"
+    );
+
+    bed.platform.reuse_pid(pid, now);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha close lock"), Level::Fail);
 }
 
 #[test]
