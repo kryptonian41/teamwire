@@ -317,3 +317,67 @@ fn a_title_ending_in_a_semicolon_still_spawns() {
     let names = server.raw(&["list-windows", "-a", "-F", "#{window_name}"]);
     assert!(names.lines().any(|n| n == "x;"), "{names}");
 }
+
+/// Records the argv of every command, then runs it on the wrapped platform.
+struct Recording {
+    inner: std::sync::Arc<dyn teamwire_core::Platform>,
+    argv: std::sync::Mutex<Vec<String>>,
+}
+
+impl teamwire_core::Platform for Recording {
+    fn pid_alive(&self, pid: teamwire_core::Pid) -> bool {
+        self.inner.pid_alive(pid)
+    }
+    fn env_of(
+        &self,
+        pid: teamwire_core::Pid,
+        var: &str,
+    ) -> Result<Option<String>, teamwire_core::PlatformError> {
+        self.inner.env_of(pid, var)
+    }
+    fn run(
+        &self,
+        cmd: &teamwire_core::Command,
+        timeout: Duration,
+    ) -> Result<teamwire_core::RunOutput, teamwire_core::PlatformError> {
+        self.argv.lock().unwrap().extend(cmd.args.iter().cloned());
+        self.inner.run(cmd, timeout)
+    }
+    fn write_atomic(
+        &self,
+        path: &std::path::Path,
+        bytes: &[u8],
+    ) -> Result<(), teamwire_core::PlatformError> {
+        self.inner.write_atomic(path, bytes)
+    }
+    fn sleep_hold(&self) -> Option<&dyn teamwire_core::SleepHold> {
+        self.inner.sleep_hold()
+    }
+    fn free_bytes(&self, path: &std::path::Path) -> Result<u64, teamwire_core::PlatformError> {
+        self.inner.free_bytes(path)
+    }
+    fn on_network_fs(&self, path: &std::path::Path) -> Result<bool, teamwire_core::PlatformError> {
+        self.inner.on_network_fs(path)
+    }
+}
+
+#[test]
+fn the_environment_values_never_appear_in_any_tmux_argument() {
+    let server = PrivateServer::new();
+    let recording = std::sync::Arc::new(Recording {
+        inner: std::sync::Arc::clone(&server.platform),
+        argv: std::sync::Mutex::default(),
+    });
+    let tmux = teamwire_host_tmux::Tmux::new(recording.clone()).with_socket(server.socket.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut req = request(
+        "tw_t_a",
+        dir.path(),
+        &["sh", "-c", "echo token=$TEAMWIRE_TEST_TOKEN; sleep 30"],
+    );
+    req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "it's s3cret".to_owned())];
+    let place = tmux.spawn(&req, T).unwrap();
+    assert!(screen_shows(&tmux, &place, "token=it's s3cret"));
+    let argv = recording.argv.lock().unwrap().join("\n");
+    assert!(!argv.contains("s3cret"), "a tmux argument holds the value");
+}
