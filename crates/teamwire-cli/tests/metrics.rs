@@ -382,6 +382,40 @@ fn the_endpoint_can_come_from_the_config_file() {
     );
 }
 
+/// Credentials in the environment were meant for an endpoint in the
+/// environment: an endpoint from the file never gets them, and the run says
+/// once that they were left out.
+#[test]
+fn headers_from_the_environment_never_go_to_an_endpoint_from_the_file() {
+    let home = TestHome::new().unwrap();
+    busy_team(&home, "alpha");
+    let rx = receiver(200);
+    std::fs::write(
+        home.path().join("config.toml"),
+        format!("OTEL_EXPORTER_OTLP_ENDPOINT = \"{}\"\n", rx.url()),
+    )
+    .unwrap();
+    let run = teamwire(
+        &home,
+        &[("OTEL_EXPORTER_OTLP_HEADERS", "authorization=env-secret")],
+        &["metrics", "export", "--once"],
+    );
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(!rx.heads().is_empty(), "{}{}", run.out, run.err);
+    assert!(
+        rx.heads().iter().all(|h| !h.contains("env-secret")),
+        "{:?}",
+        rx.heads()
+    );
+    assert_eq!(
+        run.err.matches("OTEL_EXPORTER_OTLP_HEADERS").count(),
+        1,
+        "{}",
+        run.err
+    );
+    assert!(!run.err.contains("env-secret"), "{}", run.err);
+}
+
 #[test]
 fn export_is_off_without_an_endpoint() {
     let home = TestHome::new().unwrap();

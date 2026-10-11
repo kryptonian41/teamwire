@@ -2,6 +2,7 @@
 //! same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a).
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crate::OtlpConfig;
@@ -10,34 +11,69 @@ use crate::OtlpConfig;
 /// `OTEL_EXPORTER_OTLP_TIMEOUT` (milliseconds) says otherwise.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Set once the warning about headers left out was printed, so a command
+/// that reloads the settings every minute says it once.
+static WARNED: AtomicBool = AtomicBool::new(false);
+
 /// The endpoint, headers and timeout, or `None` when no endpoint is set
 /// (export is off). `env` looks up one environment variable; an empty value
 /// counts as unset. Header values may write `,` as `%2C` and `%` as `%25`.
+/// Headers often hold credentials, and those were written for the endpoint
+/// beside them, so headers go only to an endpoint from the same place. When
+/// the headers that would win come from the other place, they are left out
+/// and one warning says so.
 pub fn load_otlp_config(home: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<OtlpConfig> {
+    let (config, left_out) = resolve(home, env);
+    if let Some(left_out) = left_out
+        && !WARNED.swap(true, Ordering::Relaxed)
+    {
+        tracing::warn!("{left_out}");
+    }
+    config
+}
+
+/// `load_otlp_config`, with the warning returned instead of printed.
+fn resolve(
+    home: &Path,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> (Option<OtlpConfig>, Option<&'static str>) {
     let file = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
     let from_env = |key: &str| env(key).filter(|v| !v.is_empty());
     let setting = |key: &str| from_env(key).or_else(|| file_setting(&file, key));
     let endpoint_from_env = from_env("OTEL_EXPORTER_OTLP_ENDPOINT");
-    let endpoint = endpoint_from_env
+    let Some(endpoint) = endpoint_from_env
         .clone()
-        .or_else(|| file_setting(&file, "OTEL_EXPORTER_OTLP_ENDPOINT"))?;
-    // Credentials in the file were written for the file's endpoint. An
-    // endpoint chosen in the environment must not receive them.
-    let headers = if endpoint_from_env.is_some() {
-        from_env("OTEL_EXPORTER_OTLP_HEADERS")
+        .or_else(|| file_setting(&file, "OTEL_EXPORTER_OTLP_ENDPOINT"))
+    else {
+        return (None, None);
+    };
+    let env_headers = from_env("OTEL_EXPORTER_OTLP_HEADERS");
+    let file_headers = file_setting(&file, "OTEL_EXPORTER_OTLP_HEADERS");
+    let (headers, left_out) = if endpoint_from_env.is_some() {
+        let left_out = (env_headers.is_none() && file_headers.is_some()).then_some(
+            "OTEL_EXPORTER_OTLP_HEADERS from config.toml are not sent: \
+             the endpoint comes from the environment",
+        );
+        (env_headers, left_out)
     } else {
-        setting("OTEL_EXPORTER_OTLP_HEADERS")
-    }
-    .map(|list| parse_headers(&list))
-    .unwrap_or_default();
+        let left_out = env_headers.is_some().then_some(
+            "OTEL_EXPORTER_OTLP_HEADERS from the environment are not sent: \
+             the endpoint comes from config.toml",
+        );
+        (file_headers, left_out)
+    };
+    let headers = headers.map(|list| parse_headers(&list)).unwrap_or_default();
     let timeout = setting("OTEL_EXPORTER_OTLP_TIMEOUT")
         .and_then(|ms| ms.parse().ok())
         .map_or(DEFAULT_TIMEOUT, Duration::from_millis);
-    Some(OtlpConfig {
-        endpoint,
-        headers,
-        timeout,
-    })
+    (
+        Some(OtlpConfig {
+            endpoint,
+            headers,
+            timeout,
+        }),
+        left_out,
+    )
 }
 
 /// `KEY = value` on one line, with the value in double quotes, single quotes

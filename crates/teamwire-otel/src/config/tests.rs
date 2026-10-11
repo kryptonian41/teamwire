@@ -106,3 +106,70 @@ fn headers_from_the_file_never_go_to_an_endpoint_from_the_environment() {
     let cfg = load_otlp_config(home.path(), &none).unwrap();
     assert_eq!(cfg.headers.len(), 1);
 }
+
+/// Credentials from the environment were meant for an endpoint in the
+/// environment. With the endpoint from the file, they stay home, the file's
+/// own headers go with the file's endpoint, and a warning says so.
+#[test]
+fn headers_from_the_environment_never_go_to_an_endpoint_from_the_file() {
+    let home = TestHome::new().unwrap();
+    fs::write(
+        home.path().join("config.toml"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT = \"http://file:4318\"\n",
+    )
+    .unwrap();
+    let env =
+        |k: &str| (k == "OTEL_EXPORTER_OTLP_HEADERS").then(|| "authorization=secret".to_owned());
+    let (cfg, left_out) = resolve(home.path(), &env);
+    let cfg = cfg.unwrap();
+    assert_eq!(cfg.endpoint, "http://file:4318");
+    assert!(cfg.headers.is_empty(), "{:?}", cfg.headers);
+    assert!(
+        left_out.unwrap().contains("from the environment"),
+        "{left_out:?}"
+    );
+
+    fs::write(
+        home.path().join("config.toml"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT = \"http://file:4318\"\nOTEL_EXPORTER_OTLP_HEADERS = \"x-file=1\"\n",
+    )
+    .unwrap();
+    let (cfg, left_out) = resolve(home.path(), &env);
+    assert_eq!(
+        cfg.unwrap().headers,
+        vec![("x-file".to_owned(), "1".to_owned())]
+    );
+    assert!(left_out.is_some());
+}
+
+/// Each way round, headers left out are reported; headers from the
+/// endpoint's own place are not.
+#[test]
+fn headers_left_out_are_reported_and_headers_sent_are_not() {
+    let home = TestHome::new().unwrap();
+    fs::write(
+        home.path().join("config.toml"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT = \"http://file:4318\"\nOTEL_EXPORTER_OTLP_HEADERS = \"authorization=secret\"\n",
+    )
+    .unwrap();
+    let env_endpoint =
+        |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "http://env:4318".to_owned());
+    let (cfg, left_out) = resolve(home.path(), &env_endpoint);
+    assert!(cfg.unwrap().headers.is_empty());
+    assert!(
+        left_out.unwrap().contains("from config.toml"),
+        "{left_out:?}"
+    );
+    assert_eq!(resolve(home.path(), &none).1, None);
+    let env_both = |k: &str| match k {
+        "OTEL_EXPORTER_OTLP_ENDPOINT" => Some("http://env:4318".to_owned()),
+        "OTEL_EXPORTER_OTLP_HEADERS" => Some("x-env=1".to_owned()),
+        _ => None,
+    };
+    let (cfg, left_out) = resolve(home.path(), &env_both);
+    assert_eq!(
+        cfg.unwrap().headers,
+        vec![("x-env".to_owned(), "1".to_owned())]
+    );
+    assert_eq!(left_out, None);
+}
