@@ -163,14 +163,16 @@ impl Running {
             if let Some(status) = self.child.try_wait().unwrap() {
                 break status;
             }
-            if begun.elapsed() > CHILD_LIMIT {
+            let hung = begun.elapsed() > CHILD_LIMIT;
+            if hung {
                 self.kill9();
                 self.child.wait().unwrap();
-                panic!(
-                    "a teamwire child did not finish within {CHILD_LIMIT:?}: {}",
-                    slurp(&mut self.err)
-                );
             }
+            assert!(
+                !hung,
+                "a teamwire child did not finish within {CHILD_LIMIT:?}: {}",
+                slurp(&mut self.err)
+            );
             std::thread::sleep(Duration::from_millis(5));
         };
         Ended {

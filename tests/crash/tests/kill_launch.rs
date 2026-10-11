@@ -165,9 +165,13 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
         }
         // `open_existing` makes the schema in a fresh file, so an error here
         // is a damaged or foreign file, never "the kill was early".
-        let store = Store::open_existing(rig.home.path(), &team_name()).unwrap_or_else(|e| {
-            panic!("seed {seed}, run {i}, killed at {delay:?}: team.db cannot be opened: {e}")
-        });
+        let store = Store::open_existing(rig.home.path(), &team_name());
+        assert!(
+            store.is_ok(),
+            "seed {seed}, run {i}, killed at {delay:?}: team.db cannot be opened: {:?}",
+            store.as_ref().err()
+        );
+        let store = store.unwrap();
         reached += 1;
         assert_integrity(&store);
         drop(store);
