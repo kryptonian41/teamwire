@@ -325,7 +325,7 @@ fn hook_time_comes_from_hook_ms_and_launch_steps_from_steps() {
         EventType::MemberFailed,
         Some("web"),
         None,
-        &json!({"reason": "trust_refused", "steps": {"trust": 100}}),
+        &json!({"reason": "trust was refused", "reason_code": "trust_refused", "steps": {"trust": 100}}),
     );
     let v = view(&home, &query(Some("alpha")), 100);
     assert_eq!(
@@ -830,4 +830,94 @@ fn an_archive_without_sha256sums_is_skipped() {
         Some(1.0)
     );
     assert!(v.errors.is_empty(), "{:?}", v.errors);
+}
+
+#[test]
+fn a_completed_close_leaves_no_live_members() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    for (secs, kind) in [
+        (1, EventType::MemberCreating),
+        (2, EventType::MemberStarted),
+    ] {
+        ev(
+            &mut s,
+            secs,
+            kind,
+            Some("api"),
+            None,
+            &json!({"kind": "implementer"}),
+        );
+    }
+    let v = view(&home, &query(Some("alpha")), 100);
+    assert_eq!(
+        value(
+            &v,
+            "teamwire.members.live",
+            &[("team", "alpha"), ("state", "started")]
+        ),
+        Some(1.0)
+    );
+    ev(
+        &mut s,
+        3,
+        EventType::TeamClosed,
+        None,
+        None,
+        &json!({"outcome": "completed"}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    assert_eq!(
+        value(
+            &v,
+            "teamwire.members.live",
+            &[("team", "alpha"), ("state", "started")]
+        ),
+        Some(0.0)
+    );
+}
+
+#[test]
+fn a_launch_failure_reason_label_is_a_short_code_never_free_text() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    let text = "git worktree add failed: '/Users/x/proj' already exists";
+    let cases = [
+        (
+            1,
+            "api",
+            json!({"reason": text, "reason_code": "worktree_failed"}),
+        ),
+        (2, "ui", json!({"reason": text})),
+        (
+            3,
+            "db",
+            json!({"reason": text, "reason_code": "Not A Code/x"}),
+        ),
+    ];
+    for (secs, who, data) in &cases {
+        ev(
+            &mut s,
+            *secs,
+            EventType::MemberFailed,
+            Some(who),
+            None,
+            data,
+        );
+    }
+    let v = view(&home, &query(Some("alpha")), 100);
+    let reasons: Vec<&str> = v
+        .metrics
+        .iter()
+        .filter(|m| m.name == "teamwire.launch.members")
+        .flat_map(|m| m.labels.iter())
+        .filter(|(k, _)| k == "reason")
+        .map(|(_, val)| val.as_str())
+        .collect();
+    assert!(reasons.contains(&"worktree_failed"), "{reasons:?}");
+    assert!(reasons.contains(&"other"), "{reasons:?}");
+    assert!(
+        reasons.iter().all(|r| !r.contains(' ') && !r.contains('/')),
+        "{reasons:?}"
+    );
 }
