@@ -6,8 +6,11 @@
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use nix::sys::signal::{Signal, kill};
+use nix::unistd::Pid;
 use serde_json::Value;
 use teamwire_core::{Role, TeamName};
 use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, TestHome};
@@ -19,6 +22,10 @@ use crate::watch::Watch;
 /// The lead's session id; `teamwire` commands run as the lead carry it in
 /// `CLAUDE_CODE_SESSION_ID`, as a session of Claude Code would.
 const LEAD_SESSION: &str = "lead-1";
+
+/// How long one `teamwire` command may run. Plain `cargo test` has no time
+/// limit of its own, so a command that hangs would hang the whole run.
+const COMMAND_LIMIT: Duration = Duration::from_secs(120);
 
 /// What one run of `teamwire` printed.
 #[derive(Debug, Clone)]
@@ -382,7 +389,23 @@ fn run(mut cmd: Command, stdin: Option<&str>) -> Run {
         input.write_all(text.as_bytes()).unwrap();
     }
     drop(input);
+    // A watchdog kills the child at the limit; `done` going out of scope tells
+    // it the child ended in time.
+    let pid = Pid::from_raw(child.id().try_into().unwrap());
+    let (done, ended) = mpsc::channel::<()>();
+    let watchdog = std::thread::spawn(move || {
+        let hung = ended.recv_timeout(COMMAND_LIMIT) == Err(mpsc::RecvTimeoutError::Timeout);
+        if hung {
+            kill(pid, Signal::SIGKILL).ok();
+        }
+        hung
+    });
     let out = child.wait_with_output().unwrap();
+    drop(done);
+    assert!(
+        !watchdog.join().unwrap(),
+        "a teamwire command did not finish within {COMMAND_LIMIT:?}"
+    );
     Run {
         code: out.status.code().unwrap_or(-1),
         out: String::from_utf8_lossy(&out.stdout).into_owned(),

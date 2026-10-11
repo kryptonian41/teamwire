@@ -129,6 +129,8 @@ pub enum Identity {
 /// A child process with its stderr and stdout going to files, so output
 /// written before a kill can be read after it, even when a grandchild (a
 /// fake herdr call) still holds a pipe open.
+const CHILD_LIMIT: Duration = Duration::from_secs(120);
+
 #[derive(Debug)]
 pub struct Running {
     pub child: Child,
@@ -154,7 +156,23 @@ impl Running {
     }
 
     pub fn finish(mut self) -> Ended {
-        let status = self.child.wait().unwrap();
+        // Plain `cargo test` has no time limit of its own, so a child that
+        // hangs would hang the whole run.
+        let begun = Instant::now();
+        let status = loop {
+            if let Some(status) = self.child.try_wait().unwrap() {
+                break status;
+            }
+            if begun.elapsed() > CHILD_LIMIT {
+                self.kill9();
+                self.child.wait().unwrap();
+                panic!(
+                    "a teamwire child did not finish within {CHILD_LIMIT:?}: {}",
+                    slurp(&mut self.err)
+                );
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        };
         Ended {
             code: status.code(),
             stdout: slurp(&mut self.out),
