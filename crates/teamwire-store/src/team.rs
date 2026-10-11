@@ -162,11 +162,18 @@ impl Tx<'_> {
     }
 
     /// Clears a close lock whose owner is dead (`close --clear-stale-lock`).
-    /// False when no lock is held. The caller checked that the pid is dead.
-    pub fn clear_stale_close_lock(&self, at: Timestamp) -> Result<bool, StoreError> {
+    /// False when no lock is held, or when it is now held by another pid than
+    /// `checked`, the owner the caller saw and found dead: a close that took
+    /// the lock since then keeps it.
+    pub fn clear_stale_close_lock(
+        &self,
+        at: Timestamp,
+        checked: Option<Pid>,
+    ) -> Result<bool, StoreError> {
         let rows = self.connection().execute(
-            "UPDATE team SET state = 'open', closing_pid = NULL WHERE id = 1 AND state = 'closing'",
-            [],
+            "UPDATE team SET state = 'open', closing_pid = NULL
+             WHERE id = 1 AND state = 'closing' AND closing_pid IS ?1",
+            [checked.map(|pid| i64::from(pid.get()))],
         )?;
         if rows == 0 {
             return Ok(false);
