@@ -17,10 +17,10 @@ const NEW_FILE_MODE: u32 = 0o644;
 /// it over `path`, then sync the directory so the rename itself survives a
 /// crash. A reader sees the old file or the new one, never half of either.
 /// The temporary file sits next to the target because a rename only stays
-/// atomic inside one file system.
+/// atomic inside one file system. A symlink at `path` is replaced by a
+/// regular file, never followed, so a link planted at a path teamwire writes
+/// cannot redirect the write.
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
-    let resolved = through_symlink(path);
-    let path = resolved.as_path();
     let dir = match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
@@ -46,22 +46,6 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PlatformErro
     File::open(dir)
         .and_then(|handle| handle.sync_all())
         .map_err(|err| io_error(&context("syncing the directory of"), &err))
-}
-
-/// The file a symlink at `path` points to, so the write replaces the target
-/// and the link stays. A path that is not a link, or a link whose target
-/// cannot be found yet, is returned as it is; for a dangling link the write
-/// then creates the target beside the link's own directory.
-fn through_symlink(path: &Path) -> std::path::PathBuf {
-    if let Ok(real) = fs::canonicalize(path) {
-        return real;
-    }
-    match fs::read_link(path) {
-        Ok(target) => path
-            .parent()
-            .map_or(target.clone(), |dir| dir.join(&target)),
-        Err(_) => path.to_path_buf(),
-    }
 }
 
 /// Keep the mode of the file being replaced. A temporary file starts private

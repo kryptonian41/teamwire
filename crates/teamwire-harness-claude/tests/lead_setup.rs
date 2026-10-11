@@ -305,3 +305,22 @@ fn uninstall_refuses_an_edited_skill_and_plans_nothing_when_nothing_is_there() {
         [Change::RemoveSkill(bed.skill_path())]
     );
 }
+
+#[test]
+fn installing_through_a_skill_symlink_writes_the_target_and_keeps_the_link() {
+    let bed = Bed::new();
+    let target = bed.dir.path().join("dotfiles-skill.md");
+    std::fs::write(&target, "---\nname: teamwire\n---\n").unwrap();
+    std::fs::create_dir_all(bed.skill_path().parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(&target, bed.skill_path()).unwrap();
+    let changes = bed.claude.plan_install(&want(), true).unwrap();
+    bed.claude.apply_lead_setup(&changes).unwrap();
+    assert!(
+        std::fs::symlink_metadata(bed.skill_path())
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    let text = std::fs::read_to_string(&target).unwrap();
+    assert!(text.contains("teamwire-sha256: "), "{text}");
+}
