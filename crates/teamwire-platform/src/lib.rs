@@ -1,7 +1,7 @@
 //! Operating-system facts behind the `Platform` and `Clock` traits: pid
-//! liveness, a process's environment, running a command in its own process
-//! group with a timeout, atomic file writes, free space, and the sleep hold
-//! (`caffeinate` on macOS).
+//! liveness, a process's start time and environment, running a command in
+//! its own process group with a timeout, atomic file writes, free space, and
+//! the sleep hold (`caffeinate` on macOS).
 //!
 //! Never: kill a sleep hold the user started; leave a timed-out process
 //! group running. This is the only crate that spawns processes, reads the
@@ -45,7 +45,7 @@ pub(crate) fn io_error(what: &str, err: &std::io::Error) -> PlatformError {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MacOs;
 
-/// Linux: liveness and environment; no sleep hold.
+/// Linux: liveness, start time and environment; no sleep hold.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Linux;
 
@@ -54,6 +54,10 @@ macro_rules! platform_impl {
         impl Platform for $name {
             fn pid_alive(&self, pid: Pid) -> bool {
                 process::pid_alive(pid)
+            }
+
+            fn process_started(&self, pid: Pid) -> Option<Timestamp> {
+                process::process_started(pid)
             }
 
             fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {

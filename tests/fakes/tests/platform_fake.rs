@@ -3,13 +3,40 @@
 use std::path::Path;
 use std::time::Duration;
 
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Command, Pid, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome, RunOutput,
+    Command, Pid, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome, RunOutput, Timestamp,
 };
 use teamwire_fakes::{CallKind, FakePlatform, HoldEvent};
 
 fn pid(n: u32) -> Pid {
     Pid::new(n)
+}
+
+#[test]
+fn a_reused_pid_reports_its_new_start_time() {
+    let p = FakePlatform::new();
+    let first = Timestamp::from_unix_millis(1_790_000_000_000).unwrap();
+    let later = Timestamp::from_unix_millis(1_790_000_600_000).unwrap();
+    // Unknown until set, and never for a dead pid.
+    p.set_alive(pid(10), true);
+    assert_eq!(p.process_started(pid(10)), None);
+    p.set_started(pid(10), Some(first));
+    assert_eq!(p.process_started(pid(10)), Some(first));
+    let original = ProcessRef {
+        pid: pid(10),
+        started: Some(first),
+    };
+    assert!(p.process_alive(original));
+    p.set_alive(pid(10), false);
+    assert_eq!(p.process_started(pid(10)), None);
+    assert!(!p.process_alive(original));
+    // A new process gets the pid: alive, but not the recorded one.
+    p.reuse_pid(pid(10), later);
+    assert!(p.pid_alive(pid(10)));
+    assert_eq!(p.process_started(pid(10)), Some(later));
+    assert!(!p.process_alive(original));
+    assert_eq!(p.log().count(CallKind::Write), 0);
 }
 
 #[test]

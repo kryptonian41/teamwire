@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use nix::errno::Errno;
 use nix::sys::signal::kill;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-use teamwire_core::{Pid, PlatformError, PlatformErrorCode};
+use teamwire_core::{Pid, PlatformError, PlatformErrorCode, Timestamp};
 
 fn nix_pid(pid: Pid) -> Option<nix::unistd::Pid> {
     // Pid 0 would signal our own process group, so it never counts as a process.
@@ -22,6 +22,25 @@ pub(crate) fn pid_alive(pid: Pid) -> bool {
         Some(raw) => matches!(kill(raw, None), Ok(()) | Err(Errno::EPERM)),
         None => false,
     }
+}
+
+/// When the process with this pid started, to the second, read from the
+/// kernel (`sysinfo`). `None` when no such process exists, or the kernel
+/// reports no start time (zero).
+pub(crate) fn process_started(pid: Pid) -> Option<Timestamp> {
+    nix_pid(pid)?;
+    let target = sysinfo::Pid::from_u32(pid.get());
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[target]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    let secs = system.process(target)?.start_time();
+    if secs == 0 {
+        return None;
+    }
+    Timestamp::from_unix_millis(i64::try_from(secs).ok()?.checked_mul(1000)?)
 }
 
 /// The value of `var` in the process's environment, read from the kernel
