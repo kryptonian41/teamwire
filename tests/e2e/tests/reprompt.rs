@@ -10,9 +10,16 @@ use teamwire_fakes::{ClaudeScript, Step};
 
 #[test]
 fn a_reprompt_to_a_finished_member_makes_a_second_result() {
-    // `a` finishes at once and again after a reprompt; `b` finishes when the
-    // test says, so the watch has something to wait for in between.
-    let a = format!("{}{}", sh::report(false), sh::done("a finished"));
+    // `a` finishes at once, and finishes again after a reprompt only when the
+    // test says. `b` finishes when the test says. So `b` finishes while `a`'s
+    // second turn is still running, and a watch that still counted `a`'s first
+    // completion would call the team complete at that point.
+    let a = format!(
+        "if [ -f \"$TEAMWIRE_HOME/a-first-done\" ]; then\n{}fi\ntouch \"$TEAMWIRE_HOME/a-first-done\"\n{}{}",
+        sh::wait_for("go-a2"),
+        sh::report(false),
+        sh::done("a finished")
+    );
     let b = format!(
         "{}{}{}",
         sh::wait_for("go-b"),
@@ -57,6 +64,20 @@ fn a_reprompt_to_a_finished_member_makes_a_second_result() {
         "the reprompt says a watch is running: {}",
         reprompt.out
     );
+    // `a` is working on its second turn. Let `b` finish and give the watch
+    // several polls (2 s each) in which a wrong count would show.
+    w.write(&w.home.path().join("go-b"), "");
+    w.wait_lead_screen("[teamwire:demo] b finished (done)", Duration::from_secs(30));
+    let early = teamwire_e2e::wait_until(Duration::from_secs(7), || {
+        watch.output().contains("TEAM-COMPLETE")
+    });
+    assert!(
+        !early,
+        "the team is not complete while a works on its second turn: {}",
+        watch.output()
+    );
+
+    w.write(&w.home.path().join("go-a2"), "");
     let ok = teamwire_e2e::wait_until(Duration::from_secs(30), || {
         w.lead_screen().matches("a finished (done)").count() == 2
     });
@@ -68,13 +89,7 @@ fn a_reprompt_to_a_finished_member_makes_a_second_result() {
         .unwrap()
         .items;
     assert_eq!(done.len(), 2, "two completions, one per generation");
-    assert!(
-        !watch.output().contains("TEAM-COMPLETE"),
-        "the team is not complete while b is working: {}",
-        watch.output()
-    );
 
-    w.write(&w.home.path().join("go-b"), "");
     watch.wait_for("TEAM-COMPLETE 2/2 done", Duration::from_secs(60));
     assert_eq!(watch.output().matches("TEAM-COMPLETE").count(), 1);
 }
