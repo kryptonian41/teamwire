@@ -805,7 +805,7 @@ fn a_slow_poll_is_not_taken_for_a_sleep() {
     // still counts as the third.
     bed.age(secs(200));
     let line = bed.poll().unwrap();
-    assert_eq!(count(&[line.clone()], "DIED"), 1, "{line}");
+    assert_eq!(count(std::slice::from_ref(&line), "DIED"), 1, "{line}");
 }
 
 #[test]
