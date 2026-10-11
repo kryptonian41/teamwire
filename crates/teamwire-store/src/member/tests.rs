@@ -266,7 +266,10 @@ fn a_reprompt_cannot_be_undone_once_the_new_generation_has_a_completion() {
     let undone = f
         .store
         .write(|tx| tx.restore_generation(at(32), &r, 1, at(1)));
-    assert!(matches!(undone, Err(StoreError::Constraint(_))), "{undone:?}");
+    assert!(
+        matches!(undone, Err(StoreError::Constraint(_))),
+        "{undone:?}"
+    );
     let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
     assert_eq!(m.generation, 2);
 }
