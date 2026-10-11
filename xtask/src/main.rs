@@ -9,6 +9,7 @@
 //! (`PROTECTED-CHANGED`, `WEAKENED`, a file over 400 lines) are printed but
 //! never fail the command: the lead reads them at each integration.
 
+mod adapters;
 mod base;
 mod crates;
 #[cfg(test)]
@@ -116,6 +117,7 @@ fn tidy(root: &Path, metadata: &Value) -> Result<Findings> {
     check_claude_md(root, &mut found.problems);
     sizes::check_sizes(root, &mut found)?;
     layers::check_layers(metadata, &mut found.problems);
+    adapters::check_adapters(root, &mut found.problems)?;
     Ok(found)
 }
 
