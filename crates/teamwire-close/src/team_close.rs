@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::json;
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
@@ -21,19 +22,17 @@ pub(crate) fn clear_stale_lock(ctx: &mut Ctx<'_>) -> CloseReport {
             return report;
         }
     };
-    let holder = team.closing_pid.filter(|pid| ctx.platform.pid_alive(*pid));
+    let owner = facts::close_owner(&team);
     if team.state == TeamState::Closing {
-        if let Some(pid) = holder {
+        if let Some(live) = owner.filter(|o| ctx.platform.process_alive(*o)) {
             report.refusals.push(format!(
-                "the close lock belongs to pid {pid}, which is running; nothing was cleared"
+                "the close lock belongs to pid {}, which is running; nothing was cleared",
+                live.pid
             ));
             return report;
         }
         let now = ctx.clock.now();
-        return match ctx
-            .store
-            .write(|tx| tx.clear_stale_close_lock(now, team.closing_pid))
-        {
+        return match ctx.store.write(|tx| tx.clear_stale_close_lock(now, owner)) {
             Ok(_) => {
                 report.steps.push(StepOutcome {
                     step: "clear_stale_lock".to_owned(),
@@ -153,7 +152,11 @@ impl Seq<'_, '_> {
         (self.observer)("lock");
         let now = self.ctx.clock.now();
         let pid = Pid::new(std::process::id());
-        match self.ctx.store.write(|tx| tx.begin_close(now, pid)) {
+        let me = ProcessRef {
+            pid,
+            started: self.ctx.platform.process_started(pid),
+        };
+        match self.ctx.store.write(|tx| tx.begin_close(now, me)) {
             Ok(true) => {}
             Ok(false) => {
                 self.report

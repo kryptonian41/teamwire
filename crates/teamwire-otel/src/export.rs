@@ -4,7 +4,8 @@
 use std::time::Duration;
 
 use teamwire_core::Pid;
-use teamwire_store::{Ctx, ExportClaim};
+use teamwire_core::platform::ProcessRef;
+use teamwire_store::{Ctx, ExportClaim, ExportHolder};
 
 use crate::history::History;
 use crate::observe::{Observation, gauges, observe};
@@ -23,9 +24,14 @@ const CLAIM_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
 /// new to send is `Ok` with an empty report; a live claim held by another
 /// exporter is `Claimed` and nothing is sent.
 pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
-    let me = std::process::id().to_string();
     let now = ctx.clock.now();
     let platform = ctx.platform;
+    let own_pid = Pid::new(std::process::id());
+    let claimer = ExportHolder {
+        id: own_pid.to_string(),
+        started: platform.process_started(own_pid),
+    };
+    let me = claimer.id.clone();
     let claim = ctx.store.write(|tx| {
         // Checked in the claiming transaction, so no event can arrive between
         // the check and the claim. A batch that ends inside a bucket would send
@@ -44,10 +50,15 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
         if open_bucket && mark.claimed_to.is_none() {
             return Ok(None);
         }
-        tx.claim_metric_export(now, &me, CLAIM_STALE_AFTER, |holder| {
-            holder
-                .parse::<u32>()
-                .map_or(true, |pid| !platform.pid_alive(Pid::new(pid)))
+        // A holder whose pid now belongs to a process that started at
+        // another time is gone: its pid was reused.
+        tx.claim_metric_export(now, claimer.clone(), CLAIM_STALE_AFTER, |holder| {
+            holder.id.parse::<u32>().map_or(true, |pid| {
+                !platform.process_alive(ProcessRef {
+                    pid: Pid::new(pid),
+                    started: holder.started,
+                })
+            })
         })
     })?;
     let Some(claim) = claim else {

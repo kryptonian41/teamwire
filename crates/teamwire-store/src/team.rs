@@ -3,13 +3,14 @@
 
 use rusqlite::{OptionalExtension, Row};
 use serde_json::json;
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
     EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName,
     TeamState, Timestamp, Ulid,
 };
 
 use crate::error::StoreError;
-use crate::tx::{ReadTx, Tx, bad, col, exactly_one, listing, one, parsed, parsed_opt, ts};
+use crate::tx::{ReadTx, Tx, bad, col, exactly_one, listing, one, parsed, parsed_opt, ts, ts_opt};
 
 /// What launch records when it creates the team.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -32,6 +33,9 @@ pub struct TeamRow {
     pub state: TeamState,
     /// The process that holds the close lock, while `state` is `Closing`.
     pub closing_pid: Option<Pid>,
+    /// When `closing_pid` started, if the platform could tell. Together they
+    /// name the owner: the pid alone may since belong to another process.
+    pub closing_started: Option<Timestamp>,
     pub lead_session: Option<SessionId>,
     pub lead_kind: Option<SessionKind>,
     pub lead_harness: HarnessId,
@@ -52,7 +56,8 @@ pub enum CloseEnd {
 }
 
 const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id, lead_kind, \
-     lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at";
+     lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
+     closing_pid_started_at";
 
 fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
     let pid = |i| -> Result<Option<Pid>, String> {
@@ -72,6 +77,7 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
         title: col(row, 2)?,
         state: parsed(row, 3, "state", TeamState::parse)?,
         closing_pid: pid(4)?,
+        closing_started: ts_opt(row, 13)?,
         lead_session: parsed_opt(row, 5, "lead session", SessionId::parse)?,
         lead_kind: parsed_opt(row, 6, "lead kind", SessionKind::parse)?,
         lead_harness: parsed(row, 7, "lead harness", HarnessId::parse)?,
@@ -121,13 +127,23 @@ impl Tx<'_> {
         Ok(ulid)
     }
 
-    /// Takes the close lock: `open` to `closing` with the owner's pid, in
-    /// one conditional update. False when the team is not open, and then
-    /// nothing changes and no event is written (CLS-3).
-    pub fn begin_close(&self, at: Timestamp, pid: Pid) -> Result<bool, StoreError> {
+    /// Takes the close lock: `open` to `closing` with the owner's pid and
+    /// start time, in one conditional update. A bare `Pid` records no start
+    /// time. False when the team is not open, and then nothing changes and
+    /// no event is written (CLS-3).
+    pub fn begin_close(
+        &self,
+        at: Timestamp,
+        owner: impl Into<ProcessRef>,
+    ) -> Result<bool, StoreError> {
+        let owner = owner.into();
         let rows = self.connection().execute(
-            "UPDATE team SET state = 'closing', closing_pid = ?1 WHERE id = 1 AND state = 'open'",
-            [i64::from(pid.get())],
+            "UPDATE team SET state = 'closing', closing_pid = ?1, closing_pid_started_at = ?2
+             WHERE id = 1 AND state = 'open'",
+            rusqlite::params![
+                i64::from(owner.pid.get()),
+                owner.started.map(|t| t.to_string())
+            ],
         )?;
         if rows == 0 {
             return Ok(false);
@@ -137,7 +153,7 @@ impl Tx<'_> {
             EventType::TeamClosing,
             None,
             None,
-            &json!({ "pid": pid.get() }),
+            &json!({ "pid": owner.pid.get() }),
         )?;
         Ok(true)
     }
@@ -151,7 +167,8 @@ impl Tx<'_> {
             }
         };
         let rows = self.connection().execute(
-            "UPDATE team SET state = ?1, closing_pid = NULL WHERE id = 1 AND state = 'closing'",
+            "UPDATE team SET state = ?1, closing_pid = NULL, closing_pid_started_at = NULL
+             WHERE id = 1 AND state = 'closing'",
             [state],
         )?;
         if rows == 0 {
@@ -162,18 +179,24 @@ impl Tx<'_> {
     }
 
     /// Clears a close lock whose owner is dead (`close --clear-stale-lock`).
-    /// False when no lock is held, or when it is now held by another pid than
-    /// `checked`, the owner the caller saw and found dead: a close that took
-    /// the lock since then keeps it.
+    /// False when no lock is held, or when it is now held by another owner
+    /// than `checked` (pid and start time), the owner the caller saw and
+    /// found dead: a close that took the lock since then keeps it.
     pub fn clear_stale_close_lock(
         &self,
         at: Timestamp,
-        checked: Option<Pid>,
+        checked: Option<ProcessRef>,
     ) -> Result<bool, StoreError> {
         let rows = self.connection().execute(
-            "UPDATE team SET state = 'open', closing_pid = NULL
-             WHERE id = 1 AND state = 'closing' AND closing_pid IS ?1",
-            [checked.map(|pid| i64::from(pid.get()))],
+            "UPDATE team SET state = 'open', closing_pid = NULL, closing_pid_started_at = NULL
+             WHERE id = 1 AND state = 'closing'
+               AND closing_pid IS ?1 AND closing_pid_started_at IS ?2",
+            rusqlite::params![
+                checked.map(|owner| i64::from(owner.pid.get())),
+                checked
+                    .and_then(|owner| owner.started)
+                    .map(|t| t.to_string()),
+            ],
         )?;
         if rows == 0 {
             return Ok(false);

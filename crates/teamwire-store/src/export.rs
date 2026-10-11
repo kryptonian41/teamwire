@@ -17,7 +17,28 @@ pub struct ExportMark {
     pub last_event_seq: u64,
     pub claimed_to: Option<u64>,
     pub claimed_by: Option<String>,
+    /// When the process named by `claimed_by` started, if it was known.
+    pub claimed_by_started: Option<Timestamp>,
     pub claimed_at: Option<Timestamp>,
+}
+
+/// An exporter that holds or asks for the claim: its pid as text, and the
+/// start time of that process when the platform could read it. The pid alone
+/// may since belong to another process; the two together name the exporter.
+/// A bare `&str` has no start time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportHolder {
+    pub id: String,
+    pub started: Option<Timestamp>,
+}
+
+impl From<&str> for ExportHolder {
+    fn from(id: &str) -> Self {
+        Self {
+            id: id.to_owned(),
+            started: None,
+        }
+    }
 }
 
 /// A batch this exporter may send: events with `from_seq < seq <= to_seq`.
@@ -57,6 +78,7 @@ fn mark_from_row(row: &Row<'_>) -> Result<ExportMark, String> {
         last_event_seq: u64_col(row, 0)?.unwrap_or(0),
         claimed_to: u64_col(row, 1)?,
         claimed_by: col(row, 2)?,
+        claimed_by_started: crate::tx::ts_opt(row, 4)?,
         claimed_at: crate::tx::ts_opt(row, 3)?,
     })
 }
@@ -66,19 +88,20 @@ fn as_i64(v: u64) -> i64 {
 }
 
 impl Tx<'_> {
-    /// Claims the next batch of events for `claimer` (its pid, as text) with
-    /// one conditional update. `None` when there is nothing new, or when
-    /// another exporter holds a claim. A claim older than `stale_after`
-    /// whose holder `holder_is_dead` reports gone is taken over, and the
+    /// Claims the next batch of events for `claimer` with one conditional
+    /// update. `None` when there is nothing new, or when another exporter
+    /// holds a claim. A claim older than `stale_after` whose holder (pid and
+    /// start time) `holder_is_dead` reports gone is taken over, and the
     /// batch keeps its old end, so it is sent again once. No event: an
     /// event here would make the export chase its own tail.
     pub fn claim_metric_export(
         &self,
         at: Timestamp,
-        claimer: &str,
+        claimer: impl Into<ExportHolder>,
         stale_after: Duration,
-        holder_is_dead: impl FnOnce(&str) -> bool,
+        holder_is_dead: impl FnOnce(&ExportHolder) -> bool,
     ) -> Result<Option<ExportClaim>, StoreError> {
+        let claimer = claimer.into();
         self.connection().execute(
             "INSERT OR IGNORE INTO metric_export (id, last_event_seq) VALUES (1, 0)",
             [],
@@ -89,7 +112,11 @@ impl Tx<'_> {
         let (to, taken_over) = match (&mark.claimed_to, &mark.claimed_by, mark.claimed_at) {
             (Some(to), Some(holder), Some(since)) => {
                 let old = at.saturating_since(since) >= stale_after;
-                if !(old && holder_is_dead(holder)) {
+                let holder = ExportHolder {
+                    id: holder.clone(),
+                    started: mark.claimed_by_started,
+                };
+                if !(old && holder_is_dead(&holder)) {
                     return Ok(None);
                 }
                 (*to, true)
@@ -101,15 +128,17 @@ impl Tx<'_> {
             return Ok(None);
         }
         let rows = self.connection().execute(
-            "UPDATE metric_export SET claimed_to = ?1, claimed_by = ?2, claimed_at = ?3
+            "UPDATE metric_export SET claimed_to = ?1, claimed_by = ?2, claimed_at = ?3,
+                    claimed_by_started_at = ?6
              WHERE id = 1 AND last_event_seq = ?4
                AND (claimed_to IS NULL OR claimed_to = ?5)",
             rusqlite::params![
                 as_i64(to),
-                claimer,
+                claimer.id,
                 at.to_string(),
                 as_i64(mark.last_event_seq),
                 as_i64(mark.claimed_to.unwrap_or(to)),
+                claimer.started.map(|t| t.to_string()),
             ],
         )?;
         if rows == 0 {
@@ -124,11 +153,13 @@ impl Tx<'_> {
 
     /// The batch was sent: moves the mark to `to_seq` and clears the claim.
     /// False when the claim is no longer this claimer's (it was taken over),
-    /// and then the mark stays.
+    /// and then the mark stays. The pid alone identifies the claimer here:
+    /// only a running exporter commits, and no two running processes share
+    /// a pid.
     pub fn commit_metric_export(&self, claimer: &str, to_seq: u64) -> Result<bool, StoreError> {
         let rows = self.connection().execute(
             "UPDATE metric_export SET last_event_seq = claimed_to, claimed_to = NULL,
-                    claimed_by = NULL, claimed_at = NULL
+                    claimed_by = NULL, claimed_at = NULL, claimed_by_started_at = NULL
              WHERE id = 1 AND claimed_by = ?1 AND claimed_to = ?2",
             rusqlite::params![claimer, as_i64(to_seq)],
         )?;
@@ -139,7 +170,8 @@ impl Tx<'_> {
     /// once, without waiting for it to go stale. The mark does not move.
     pub fn release_metric_claim(&self, claimer: &str) -> Result<bool, StoreError> {
         let rows = self.connection().execute(
-            "UPDATE metric_export SET claimed_to = NULL, claimed_by = NULL, claimed_at = NULL
+            "UPDATE metric_export SET claimed_to = NULL, claimed_by = NULL, claimed_at = NULL,
+                    claimed_by_started_at = NULL
              WHERE id = 1 AND claimed_by = ?1",
             [claimer],
         )?;
@@ -179,13 +211,15 @@ impl ReadTx<'_> {
     /// The exporter's mark; all zero before the first export.
     pub fn export_mark(&self) -> Result<ExportMark, StoreError> {
         let mut stmt = self.connection().prepare(
-            "SELECT last_event_seq, claimed_to, claimed_by, claimed_at FROM metric_export WHERE id = 1",
+            "SELECT last_event_seq, claimed_to, claimed_by, claimed_at, claimed_by_started_at
+             FROM metric_export WHERE id = 1",
         )?;
         Ok(
             one(listing("metric_export", &mut stmt, [], mark_from_row)?)?.unwrap_or(ExportMark {
                 last_event_seq: 0,
                 claimed_to: None,
                 claimed_by: None,
+                claimed_by_started: None,
                 claimed_at: None,
             }),
         )

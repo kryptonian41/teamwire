@@ -231,7 +231,7 @@ fn a_stale_claim_of_a_dead_holder_is_taken_over_with_its_old_end() {
     );
     let taken = f
         .store
-        .write(|tx| tx.claim_metric_export(at(600), "222", STALE, |h| h == "111"))
+        .write(|tx| tx.claim_metric_export(at(600), "222", STALE, |h| h.id == "111"))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -249,6 +249,41 @@ fn a_stale_claim_of_a_dead_holder_is_taken_over_with_its_old_end() {
             .write(|tx| tx.commit_metric_export("222", taken.to_seq))
             .unwrap()
     );
+}
+
+#[test]
+fn the_claim_records_its_holder_start_time_and_hands_it_to_the_check() {
+    let mut f = with_members(&[]);
+    add_events(&mut f, 2);
+    let holder = crate::ExportHolder {
+        id: "111".to_owned(),
+        started: Some(at(5)),
+    };
+    f.store
+        .write(|tx| tx.claim_metric_export(at(200), holder.clone(), STALE, |_| true))
+        .unwrap()
+        .unwrap();
+    let mark = f.store.read(|tx| tx.export_mark()).unwrap();
+    assert_eq!(mark.claimed_by_started, Some(at(5)));
+    // The check sees the pid and the start time the claim was made with.
+    let mut seen = None;
+    f.store
+        .write(|tx| {
+            tx.claim_metric_export(at(600), "222", STALE, |h| {
+                seen = Some(h.clone());
+                false
+            })
+        })
+        .unwrap();
+    assert_eq!(seen, Some(holder));
+    // Committing clears the start time with the rest of the claim.
+    assert!(
+        f.store
+            .write(|tx| tx.commit_metric_export("111", mark.claimed_to.unwrap()))
+            .unwrap()
+    );
+    let mark = f.store.read(|tx| tx.export_mark()).unwrap();
+    assert_eq!((mark.claimed_by, mark.claimed_by_started), (None, None));
 }
 
 #[test]
