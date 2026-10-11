@@ -1,5 +1,6 @@
 language = "python"
 extensions = ["py", "pyi"]
+marker_comment_prefixes = ["#"]
 test_paths = ["**/tests/**", "**/test/**", "**/test_*.py", "**/*_test.py"]
 test_markers = ["def test_", "async def test_"]
 config_files = [
