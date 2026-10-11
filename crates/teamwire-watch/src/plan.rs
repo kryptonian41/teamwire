@@ -11,7 +11,7 @@ use teamwire_core::{
 };
 use teamwire_store::{CompletionRecord, Ctx, Party};
 
-use crate::memory::{MemberMemory, WatchMemory};
+use crate::memory::{MemberMemory, WatchMemory, slept_since};
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
@@ -82,7 +82,7 @@ struct Env<'a> {
     snap: &'a Snapshot,
     now: Timestamp,
     grace_from: Option<Timestamp>,
-    slept: Duration,
+    sleeps: Vec<(Timestamp, Duration)>,
     listings: Listings,
     /// Keys this plan already announces, so one occurrence is one action.
     planned: HashSet<String>,
@@ -114,17 +114,25 @@ pub(crate) fn plan(
     now: Timestamp,
 ) -> Plan {
     let interval = Duration::from_secs(ctx.config.poll_s.saturating_mul(3));
-    // A gap far longer than the interval means the machine slept. Every
-    // member looks quiet and every process looks gone, so nothing counted
-    // before the gap is evidence (WAT-14).
-    let gap = memory.last_poll.map(|last| now.saturating_since(last));
+    // The wall clock runs on while the machine sleeps and the monotonic
+    // clock does not. A wall gap far longer than the monotonic gap means the
+    // machine slept; a slow poll moves both clocks alike. Every member looks
+    // quiet and every process looks gone after a sleep, so nothing counted
+    // before it is evidence (WAT-14).
+    let wall_gap = memory.last_poll.map(|last| now.saturating_since(last));
+    let mono_gap = memory
+        .last_mono
+        .map(|last| ctx.clock.monotonic().saturating_duration_since(last));
+    let gap = wall_gap.map(|wall| wall.saturating_sub(mono_gap.unwrap_or_default()));
     if let Some(gap) = gap.filter(|gap| *gap > interval) {
         memory
             .members
             .values_mut()
             .for_each(MemberMemory::forget_quiet);
         memory.grace_from = Some(now);
-        memory.slept += gap.saturating_sub(Duration::from_secs(ctx.config.poll_s));
+        memory
+            .sleeps
+            .push((now, gap.saturating_sub(Duration::from_secs(ctx.config.poll_s))));
     }
     memory
         .members
@@ -135,7 +143,7 @@ pub(crate) fn plan(
         snap,
         now,
         grace_from: memory.grace_from,
-        slept: memory.slept,
+        sleeps: memory.sleeps.clone(),
         listings: Listings::default(),
         planned: HashSet::new(),
         actions: Vec::new(),
@@ -234,7 +242,15 @@ fn judge(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict
         return judge_completion(env, info, mm, record);
     }
     if info.member.state != MemberState::Started {
-        return Verdict::waiting();
+        // A launch that is still `creating` after the startup grace has
+        // stopped part-way. Nothing moves it without the lead, so it counts
+        // as stuck. It is not settled: launch may still finish it.
+        let late = env.now.saturating_since(info.run_start)
+            >= Duration::from_secs(env.ctx.config.startup_grace_s);
+        return Verdict {
+            settled: None,
+            stuck: late,
+        };
     }
     judge_running(env, info, mm)
 }
@@ -387,7 +403,7 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     let run_age = env
         .now
         .saturating_since(info.run_start)
-        .saturating_sub(env.slept);
+        .saturating_sub(slept_since(&env.sleeps, info.run_start));
     if run_age > Duration::from_secs(info.member.deadline_s) {
         // Overdue and still working is not stalled: it moves on its own.
         stuck |= idle;

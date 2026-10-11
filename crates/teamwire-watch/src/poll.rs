@@ -101,6 +101,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
     let outcome = step(ctx, memory, now);
     memory.polls += 1;
     memory.last_poll = Some(now);
+    memory.last_mono = Some(ctx.clock.monotonic());
     match outcome {
         Ok(line) => line,
         Err(e) => {

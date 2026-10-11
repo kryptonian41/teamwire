@@ -766,3 +766,64 @@ fn absent_polls_split_by_no_info_are_not_three_in_a_row() {
     }
     assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
 }
+
+#[test]
+fn a_sleep_before_a_member_exists_does_not_delay_its_late_line() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.clock.sleep_and_wake(secs(7200));
+    bed.poll();
+    bed.add_with_deadline("web", 100);
+    bed.working("web");
+    let lines = bed.ticks(10);
+    assert_eq!(count(&lines, "LATE"), 1, "{lines:?}");
+}
+
+#[test]
+fn a_sleep_after_a_run_started_is_not_counted_against_its_deadline() {
+    let mut bed = Bed::new();
+    bed.add_with_deadline("web", 300);
+    bed.working("web");
+    bed.poll();
+    bed.clock.sleep_and_wake(secs(7200));
+    let lines = bed.ticks(10);
+    assert_eq!(count(&lines, "LATE"), 0, "{lines:?}");
+}
+
+#[test]
+fn a_slow_poll_is_not_taken_for_a_sleep() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("web");
+    bed.vanish("web");
+    bed.poll();
+    bed.tick();
+    // One poll that took 200 s moves both clocks, so the third absent poll
+    // still counts as the third.
+    bed.age(secs(200));
+    let line = bed.poll().unwrap();
+    assert_eq!(count(&[line.clone()], "DIED"), 1, "{line}");
+}
+
+#[test]
+fn a_member_stuck_in_creating_stalls_the_team() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add_creating("web");
+    bed.poll();
+    bed.delivered("api", CompletionStatus::Done);
+    let lines = bed.ticks(20);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 1, "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("TEAM-STALLED web")), "{lines:?}");
+}
+
+#[test]
+fn a_member_still_creating_inside_the_grace_is_not_stalled() {
+    let mut bed = Bed::new();
+    bed.add_creating("web");
+    let lines = bed.ticks(3);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+}
