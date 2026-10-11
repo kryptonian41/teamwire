@@ -17,11 +17,12 @@
 )]
 
 use std::io::{Read as _, Seek as _, SeekFrom};
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use nix::sys::signal::{Signal, kill};
+use nix::sys::signal::{Signal, kill, killpg};
 use nix::unistd::Pid;
 use teamwire_core::{
     Actor, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Place, Recipient, Role,
@@ -165,7 +166,12 @@ impl Running {
             }
             let hung = begun.elapsed() > CHILD_LIMIT;
             if hung {
-                self.kill9();
+                // The whole group: a hung grandchild must not outlive the test.
+                killpg(
+                    Pid::from_raw(self.child.id().try_into().unwrap()),
+                    Signal::SIGKILL,
+                )
+                .ok();
                 self.child.wait().unwrap();
             }
             assert!(
@@ -352,7 +358,9 @@ impl Rig {
     /// temporary home, and the caller's identity.
     pub fn command(&self, args: &[&str], identity: &Identity) -> Command {
         let mut cmd = Command::new(teamwire_bin());
+        // Its own process group, so a hung run can be killed with its children.
         cmd.args(args)
+            .process_group(0)
             .env_clear()
             .envs(self.herdr.env())
             .env("TEAMWIRE_HOME", self.home.path())
