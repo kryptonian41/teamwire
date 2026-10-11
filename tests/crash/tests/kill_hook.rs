@@ -104,6 +104,7 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
     let window = started.elapsed() * 13 / 10;
     eprintln!("kill window {window:?}");
 
+    let mut interrupted = 0;
     for i in 0..KILL_POINTS {
         let summary = format!("hook-kill-{i}");
         record_done(&rig, &summary);
@@ -120,6 +121,10 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         let typed = rig.typed_count(&summary);
         assert!(typed <= 1, "{summary} typed {typed} times before the kill");
         let state = latest_state(&rig);
+        // A hook killed before it settled the completion left it unfinished.
+        if state != ReportState::Delivered {
+            interrupted += 1;
+        }
         assert!(
             matches!(
                 state,
@@ -135,5 +140,10 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         let typed = rig.typed_count(&summary);
         assert!((1..=2).contains(&typed), "{summary} typed {typed} times");
     }
+    eprintln!("{interrupted} of {KILL_POINTS} hooks were killed before they finished");
+    assert!(
+        interrupted >= KILL_POINTS / 10,
+        "only {interrupted} hooks were killed before they finished; the kill window is off"
+    );
     stop_agents(&rig);
 }

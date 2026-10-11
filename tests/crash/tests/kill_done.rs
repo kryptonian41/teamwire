@@ -104,6 +104,10 @@ fn kill9_during_done_stores_whole_or_nothing() {
         assert_eq!(states.last(), Some(&ReportState::Delivered), "{summary}");
     }
     eprintln!("{told} of {KILL_POINTS} runs printed their completion before the kill");
+    assert!(
+        told >= KILL_POINTS / 20,
+        "only {told} runs printed their completion before the kill; the kill window is off"
+    );
 
     // After the last kill a plain `done` is stored as the next number.
     let count = numbers(&rig).len();
