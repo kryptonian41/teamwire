@@ -42,8 +42,9 @@ a reused role (except one whose earlier launch failed before it started,
 LCH-5); a team or role name outside LCH-6 (no hyphens); an address
 `tw_<team>_<role>` already live in the host (LCH-25); a title over 28
 characters or repeated; an implementer in
-`pane` mode; a home-directory `cwd`; a member whose host is `none` (v1
-cannot start one); less than 200 MB free.
+`pane` mode; a home-directory `cwd`; a worktree member when git does not
+ignore `.worktrees/` (`worktree_not_ignored`, LCH-10); a member whose host
+is `none` (v1 cannot start one); less than 200 MB free.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `claude-code`), `host` (default: detected; `herdr` when `HERDR_ENV=1`),
@@ -53,7 +54,7 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `accept_trust` (default true). Keys starting with `_` are ignored.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
-<reason>`), the warnings of LCH-9, LCH-10, LCH-18, and the watch command to
+<reason>`), the warnings of LCH-9 and LCH-18, and the watch command to
 run. Exit 2 when any member did not start (including when none started).
 
 ### `teamwire watch <team> [--interval SECONDS] [--once]`

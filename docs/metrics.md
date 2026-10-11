@@ -11,7 +11,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | --- | --- | --- |
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` |
-| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `reason`, `seconds` |
+| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `reason`, `reason_code`, `seconds` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
@@ -55,7 +55,7 @@ paths never appear as labels.
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
-| `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `refused`, `failed`), `reason` | Why do launches fail? |
+| `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `refused`, `failed`), `reason` (the event's `reason_code`: `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started` and `member.failed`. |
 | `teamwire.locator.refusals` | counter | `{refusal}` | `team`, `code` | Is the wrong-session check firing, and why? |
 | `teamwire.verify.runs` | counter | `{run}` | `team`, `verdict` | How often does verify pass, flag or fail? |
