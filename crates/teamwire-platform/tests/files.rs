@@ -141,7 +141,7 @@ fn write_atomic_replaces_a_symlink_and_leaves_its_target() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("elsewhere.md");
     let link = dir.path().join("outbox.md");
-    fs::write(&target, b"theirs").unwrap();
+    native().write_atomic(&target, b"theirs").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
     native().write_atomic(&link, b"ours").unwrap();
     assert!(

@@ -8,6 +8,7 @@
 #[path = "support/server.rs"]
 mod server;
 
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnRequest, one_line};
@@ -322,6 +323,8 @@ fn a_title_ending_in_a_semicolon_still_spawns() {
 struct Recording {
     inner: std::sync::Arc<dyn teamwire_core::Platform>,
     argv: std::sync::Mutex<Vec<String>>,
+    /// The mode of each file `write_atomic` wrote, read right after the write.
+    modes: std::sync::Mutex<Vec<u32>>,
 }
 
 impl teamwire_core::Platform for Recording {
@@ -348,7 +351,10 @@ impl teamwire_core::Platform for Recording {
         path: &std::path::Path,
         bytes: &[u8],
     ) -> Result<(), teamwire_core::PlatformError> {
-        self.inner.write_atomic(path, bytes)
+        self.inner.write_atomic(path, bytes)?;
+        let mode = std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+        self.modes.lock().unwrap().push(mode);
+        Ok(())
     }
     fn sleep_hold(&self) -> Option<&dyn teamwire_core::SleepHold> {
         self.inner.sleep_hold()
@@ -367,6 +373,7 @@ fn the_environment_values_never_appear_in_any_tmux_argument() {
     let recording = std::sync::Arc::new(Recording {
         inner: std::sync::Arc::clone(&server.platform),
         argv: std::sync::Mutex::default(),
+        modes: std::sync::Mutex::default(),
     });
     let tmux = teamwire_host_tmux::Tmux::new(recording.clone()).with_socket(server.socket.clone());
     let dir = tempfile::tempdir().unwrap();
@@ -380,4 +387,20 @@ fn the_environment_values_never_appear_in_any_tmux_argument() {
     assert!(screen_shows(&tmux, &place, "token=it's s3cret"));
     let argv = recording.argv.lock().unwrap().join("\n");
     assert!(!argv.contains("s3cret"), "a tmux argument holds the value");
+}
+
+#[test]
+fn the_environment_file_is_readable_by_its_owner_only() {
+    let server = PrivateServer::new();
+    let recording = std::sync::Arc::new(Recording {
+        inner: std::sync::Arc::clone(&server.platform),
+        argv: std::sync::Mutex::default(),
+        modes: std::sync::Mutex::default(),
+    });
+    let tmux = teamwire_host_tmux::Tmux::new(recording.clone()).with_socket(server.socket.clone());
+    let dir = tempfile::tempdir().unwrap();
+    let mut req = request("tw_t_a", dir.path(), &["sleep", "30"]);
+    req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "s3cret".to_owned())];
+    tmux.spawn(&req, T).unwrap();
+    assert_eq!(*recording.modes.lock().unwrap(), [0o600]);
 }

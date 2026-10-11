@@ -201,7 +201,7 @@ impl Tmux {
     /// Writes `export KEY='value'` lines to a file in a new directory only the
     /// current user can enter, and returns the directory.
     fn write_env_file(&self, env: &[(String, String)]) -> Result<std::path::PathBuf, HostError> {
-        use std::os::unix::fs::DirBuilderExt;
+        use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
         let io = |what: &str, e: &dyn fmt::Display| {
             HostError::new(HostErrorCode::Other, format!("{what}: {e}"))
         };
@@ -222,12 +222,24 @@ impl Tmux {
             text.push_str(&sh_quote(v));
             text.push('\n');
         }
-        self.platform
-            .write_atomic(&dir.join("env"), text.as_bytes())
-            .map_err(|e| {
-                drop(std::fs::remove_dir_all(&dir));
-                io("cannot write the environment file", &e)
-            })?;
+        // `write_atomic` keeps the mode of the file it replaces and gives a new
+        // file 0644. Make the file first at 0600 so the values are private.
+        let file = dir.join("env");
+        let written = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&file)
+            .map_err(|e| io("cannot make the environment file", &e))
+            .and_then(|_| {
+                self.platform
+                    .write_atomic(&file, text.as_bytes())
+                    .map_err(|e| io("cannot write the environment file", &e))
+            });
+        if let Err(e) = written {
+            drop(std::fs::remove_dir_all(&dir));
+            return Err(e);
+        }
         Ok(dir)
     }
 }
