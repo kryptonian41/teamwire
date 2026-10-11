@@ -3,8 +3,10 @@
 # line per step with its wall time, stopping at the first failure.
 #   scripts/gate.sh        all six steps
 #   scripts/gate.sh fast   steps 1-3
-# A failing step's output is printed after its line. Timing uses bash's
-# $SECONDS, because macOS has no GNU date under that name.
+# A failing step's output is printed after its line. A passing step still
+# prints its WEAKENED and PROTECTED-CHANGED lines, because tidy reports those
+# and exits 0. Timing uses bash's $SECONDS, because macOS has no GNU date
+# under that name.
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -25,6 +27,7 @@ step() {
   local start=$SECONDS
   if "$@" >"$log" 2>&1; then
     echo "gate $n/$last $name: ok ($((SECONDS - start))s)"
+    grep -E '^(WEAKENED|PROTECTED-CHANGED) ' "$log" || true
   else
     echo "gate $n/$last $name: FAILED ($((SECONDS - start))s): $*"
     cat "$log"

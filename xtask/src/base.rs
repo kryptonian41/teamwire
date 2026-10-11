@@ -24,6 +24,9 @@ const PROTECTED_FILES: &[&str] = &[
 ];
 const PROTECTED_DIRS: &[&str] = &["scripts/", "xtask/", "tests/fakes/", "docs/adr/"];
 const TEST_ATTRS: &[&str] = &["#[test]", "#[tokio::test"];
+/// Lines that switch a test module on. Removing one turns off every test in
+/// the module without removing a `#[test]` line.
+const TEST_SWITCHES: &[&str] = &["#[cfg(test)]", "mod tests;"];
 const WEAKENING_ATTRS: &[&str] = &[
     "#[ignore",
     "#[should_panic",
@@ -68,9 +71,10 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// `WEAKENED <path>:<line>` for each net-removed test and each added
-/// `#[ignore`, `#[should_panic`, `#[expect(` or `#[allow(`, from a
-/// zero-context unified diff. A test moved inside its file is not a removal.
+/// `WEAKENED <path>:<line>` for each net-removed test, each net-removed
+/// `#[cfg(test)]` or `mod tests;` line, and each added `#[ignore`,
+/// `#[should_panic`, `#[expect(`, `#[allow(` or `cfg_attr(..., ignore)`, from
+/// a zero-context unified diff. A line moved inside its file is not a removal.
 fn weakened(diff: &str) -> Vec<String> {
     let mut scan = Scan::default();
     for line in diff.lines() {
@@ -105,6 +109,8 @@ struct Scan {
     new_line: usize,
     removed_tests: Vec<usize>,
     added_tests: usize,
+    removed_switches: Vec<usize>,
+    added_switches: usize,
 }
 
 impl Scan {
@@ -117,12 +123,18 @@ impl Scan {
             if starts_with_any(text, TEST_ATTRS) {
                 self.removed_tests.push(self.old_line);
             }
+            if is_test_switch(text) {
+                self.removed_switches.push(self.old_line);
+            }
             self.old_line += 1;
         } else if let Some(text) = line.strip_prefix('+') {
             if starts_with_any(text, TEST_ATTRS) {
                 self.added_tests += 1;
             }
-            if starts_with_any(text, WEAKENING_ATTRS) {
+            if is_test_switch(text) {
+                self.added_switches += 1;
+            }
+            if starts_with_any(text, WEAKENING_ATTRS) || is_cfg_attr_ignore(text) {
                 let entry = format!("WEAKENED {}:{}", self.name(), self.new_line);
                 self.out.push(entry);
             }
@@ -132,13 +144,20 @@ impl Scan {
 
     /// Report the tests this file lost on balance, then reset for the next.
     fn finish_file(&mut self) {
-        let net = self.removed_tests.len().saturating_sub(self.added_tests);
         let name = self.name();
-        for line in self.removed_tests.iter().take(net) {
-            self.out.push(format!("WEAKENED {name}:{line}"));
+        for (removed, added) in [
+            (&self.removed_tests, self.added_tests),
+            (&self.removed_switches, self.added_switches),
+        ] {
+            let net = removed.len().saturating_sub(added);
+            for line in removed.iter().take(net) {
+                self.out.push(format!("WEAKENED {name}:{line}"));
+            }
         }
         self.removed_tests.clear();
         self.added_tests = 0;
+        self.removed_switches.clear();
+        self.added_switches = 0;
         self.file.clear();
         self.old_file.clear();
         self.in_hunk = false;
@@ -148,6 +167,20 @@ impl Scan {
 /// A deleted file has `+++ /dev/null`, so its old path names it.
 fn file_or(file: &str, old_file: &str) -> String {
     if file.is_empty() { old_file } else { file }.to_owned()
+}
+
+fn is_test_switch(text: &str) -> bool {
+    TEST_SWITCHES.contains(&text.trim())
+}
+
+/// `#[cfg_attr(test, ignore)]` and its variants turn a test off without the
+/// `#[ignore` prefix that `WEAKENING_ATTRS` looks for.
+fn is_cfg_attr_ignore(text: &str) -> bool {
+    let text = text.trim_start();
+    text.starts_with("#[cfg_attr(")
+        && text
+            .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .any(|word| word == "ignore")
 }
 
 fn starts_with_any(text: &str, prefixes: &[&str]) -> bool {
@@ -283,6 +316,56 @@ mod tests {
                 "WEAKENED crates/teamwire-a/src/lib.rs:2",
                 "WEAKENED crates/teamwire-a/src/lib.rs:4",
             ]
+        );
+    }
+
+    #[test]
+    fn removed_or_changed_test_module_switch_is_reported() {
+        let dir = committed_workspace();
+        git_ok(dir.path(), &["checkout", "-q", "main"]);
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/other.rs",
+            "//! Purpose.\n#[cfg(test)]\nmod tests;\n",
+        );
+        git_ok(dir.path(), &["add", "."]);
+        git_ok(dir.path(), &["commit", "-q", "-m", "module"]);
+        git_ok(dir.path(), &["checkout", "-q", "work"]);
+        git_ok(dir.path(), &["merge", "-q", "main"]);
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/other.rs",
+            "//! Purpose.\n#[cfg(all(test, any()))]\nmod tests;\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            ["WEAKENED crates/teamwire-a/src/other.rs:2"]
+        );
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/other.rs",
+            "//! Purpose.\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            [
+                "WEAKENED crates/teamwire-a/src/other.rs:2",
+                "WEAKENED crates/teamwire-a/src/other.rs:3",
+            ]
+        );
+    }
+
+    #[test]
+    fn added_cfg_attr_ignore_is_reported() {
+        let dir = committed_workspace();
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/lib.rs",
+            "//! Purpose.\n#[test]\n#[cfg_attr(unix, ignore = \"x\")]\nfn one() {}\n#[test]\nfn two() {}\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            ["WEAKENED crates/teamwire-a/src/lib.rs:3"]
         );
     }
 

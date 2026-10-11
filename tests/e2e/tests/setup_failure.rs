@@ -38,9 +38,12 @@ fn a_failing_setup_fails_one_member_and_the_others_run() {
     w.wait_lead_screen("[teamwire:demo] a finished (done)", Duration::from_secs(30));
     let status = w.teamwire(&["status", "demo", "--json"], None);
     assert!(status.out.contains("failed to start"), "{}", status.all());
+    // The fake herdr lists the agents it started. A command line would not
+    // name b's checkout, so the agent list is what shows that b never ran.
+    let agents = w.herdr.run(&["agent", "list"]).unwrap().stdout;
+    assert!(agents.contains("tw_demo_a"), "a is running: {agents}");
     assert!(
-        w.processes_mentioning(&w.repo().join(".worktrees/b"))
-            .is_empty(),
-        "nothing runs for b"
+        !agents.contains("tw_demo_b"),
+        "nothing runs for b: {agents}"
     );
 }

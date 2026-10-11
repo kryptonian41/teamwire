@@ -170,4 +170,8 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
         stop_agents(&rig);
     }
     eprintln!("{caught_closed} of 8 runs saw the team closed before the kill");
+    assert!(
+        caught_closed >= 2,
+        "only {caught_closed} of 8 runs saw the team closed before the kill; the window between closed and deleted was missed"
+    );
 }

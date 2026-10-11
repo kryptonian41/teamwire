@@ -60,11 +60,21 @@ else
   untracked="$(git ls-files --others --exclude-standard)" || exit 1
   files="$tracked
 $untracked"
-  # A file belongs to the member whose directory prefixes its path.
+  # A file belongs to the member whose directory prefixes its path. Two
+  # directories outside every crate are still read by crates: examples/ is
+  # embedded by include_str! in teamwire-cli (presets) and
+  # teamwire-harness-claude (the skill), and the tests of teamwire-cli read
+  # docs/api/mcp.md.
   changed="$(
     echo "$files" | while read -r f; do
       [ -n "$f" ] || continue
       echo "$members" | awk -v f="$f" 'NF == 2 && index(f, $1 "/") == 1 { print $2 }'
+      if [ "${f#examples/}" != "$f" ]; then
+        echo teamwire-cli
+        echo teamwire-harness-claude
+      elif [ "${f#docs/}" != "$f" ]; then
+        echo teamwire-cli
+      fi
     done | sort -u
   )"
   if [ -z "$changed" ]; then

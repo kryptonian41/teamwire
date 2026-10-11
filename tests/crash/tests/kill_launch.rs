@@ -125,6 +125,11 @@ fn kill9_inside_the_agent_start_call_is_refused_by_close_until_the_agent_stops()
     assert!(agents(&rig).is_empty());
 }
 
+const RUNS: usize = 5;
+/// Fewer than this many runs past the store's creation means the kill
+/// window misses the part of launch the test names.
+const MIN_REACHED: usize = 1;
+
 #[test]
 fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
     let mut rng = rig::Rng::from_env("kill9_of_launch_at_random_points");
@@ -143,7 +148,8 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
     let seed = rng.seed();
     eprintln!("kill window {window:?}");
 
-    for i in 0..5 {
+    let mut reached = 0;
+    for i in 0..RUNS {
         let rig = Rig::bare();
         let delay: Duration = rng.up_to(window);
         let mut running = rig.start_with_stdin(&["launch"], &Identity::Nobody, &spec(work.path()));
@@ -157,9 +163,16 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
         if !rig.home.path().join("teams/alpha").join("team.db").exists() {
             continue;
         }
-        let Ok(store) = Store::open_existing(rig.home.path(), &team_name()) else {
-            continue;
-        };
+        // `open_existing` makes the schema in a fresh file, so an error here
+        // is a damaged or foreign file, never "the kill was early".
+        let store = Store::open_existing(rig.home.path(), &team_name());
+        assert!(
+            store.is_ok(),
+            "seed {seed}, run {i}, killed at {delay:?}: team.db cannot be opened: {:?}",
+            store.as_ref().err()
+        );
+        let store = store.unwrap();
+        reached += 1;
         assert_integrity(&store);
         drop(store);
         wait_idle(&rig);
@@ -187,4 +200,9 @@ fn kill9_of_launch_at_random_points_leaves_a_store_close_can_finish() {
         );
         stop_agents(&rig);
     }
+    eprintln!("{reached} of {RUNS} runs had a store when the kill came");
+    assert!(
+        reached >= MIN_REACHED,
+        "seed {seed}: only {reached} of {RUNS} runs got far enough to check the store; the kill window is off"
+    );
 }
