@@ -1,5 +1,6 @@
 language = "go"
 extensions = ["go"]
+marker_comment_prefixes = ["//"]
 test_paths = ["**/*_test.go"]
 test_markers = ["func Test"]
 config_files = [

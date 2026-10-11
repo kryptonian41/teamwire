@@ -44,6 +44,11 @@ struct RuleFile {
     extensions: Vec<String>,
     #[serde(default)]
     comment_prefixes: Vec<String>,
+    /// Like `comment_prefixes`, but only for counting test markers. A
+    /// weakening can live in a comment (`//nolint`, `# noqa`), so these
+    /// languages cannot skip comment lines when they look for one.
+    #[serde(default)]
+    marker_comment_prefixes: Vec<String>,
     #[serde(default)]
     test_paths: Vec<String>,
     #[serde(default)]
@@ -134,14 +139,16 @@ impl Ruleset {
     }
 
     /// True when `line` holds a test marker of the file's language. A comment
-    /// line is prose: `// #[test]` is a test switched off, not a test.
+    /// line is prose: `// #[test]` is a test switched off, not a test. A
+    /// marker must start a word, so `submit(` is not the marker `it(`.
     pub(crate) fn is_test_marker(&self, path: &str, line: &str) -> bool {
         self.language_of(path).is_some_and(|l| {
             let trimmed = line.trim_start();
             !l.comment_prefixes
                 .iter()
+                .chain(&l.marker_comment_prefixes)
                 .any(|p| trimmed.starts_with(p.as_str()))
-                && l.test_markers.iter().any(|m| line.contains(m.as_str()))
+                && l.test_markers.iter().any(|m| contains(line, m, true))
         })
     }
 

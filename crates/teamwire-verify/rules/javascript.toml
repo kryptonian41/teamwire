@@ -1,6 +1,7 @@
 # JavaScript and TypeScript.
 language = "javascript"
 extensions = ["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"]
+marker_comment_prefixes = ["//"]
 test_paths = [
   "**/__tests__/**",
   "**/tests/**",

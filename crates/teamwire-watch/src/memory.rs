@@ -2,7 +2,7 @@
 //! survive a restart: everything that must is an announcement in the store.
 
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use teamwire_core::{Role, Timestamp};
 
@@ -27,6 +27,9 @@ pub enum WatchEnd {
 pub struct WatchMemory {
     pub polls: u64,
     pub last_poll: Option<Timestamp>,
+    /// The monotonic clock at `last_poll`. It stops while the machine
+    /// sleeps and the wall clock does not, so the two differ by the sleep.
+    pub(crate) last_mono: Option<Instant>,
     /// Set by the poll that decided the watch is over. The caller stops
     /// polling and releases the lease.
     pub end: Option<WatchEnd>,
@@ -38,8 +41,9 @@ pub struct WatchMemory {
     /// After a sleep gap: quiet counting for every member starts again from
     /// here, as if each had just started.
     pub(crate) grace_from: Option<Timestamp>,
-    /// Time the machine was asleep: a deadline measures work, not sleep.
-    pub(crate) slept: Duration,
+    /// Each sleep, with the time of the poll that found it: a deadline
+    /// measures work, so a run subtracts only the sleeps after its start.
+    pub(crate) sleeps: Vec<(Timestamp, Duration)>,
 }
 
 impl WatchMemory {
@@ -94,4 +98,14 @@ impl MemberMemory {
         self.declared_polls = 0;
         self.seen_working = false;
     }
+}
+
+/// The sleep time that falls inside a run that began at `run_start`. A sleep
+/// found by a poll after the start can have begun before it, so it counts
+/// for no more than the time since the start.
+pub(crate) fn slept_since(sleeps: &[(Timestamp, Duration)], run_start: Timestamp) -> Duration {
+    sleeps
+        .iter()
+        .map(|(woke, slept)| (*slept).min(woke.saturating_since(run_start)))
+        .sum()
 }

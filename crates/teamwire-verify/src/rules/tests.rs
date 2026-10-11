@@ -102,3 +102,49 @@ fn a_word_start_pattern_does_not_match_inside_a_longer_name() {
     assert!(r.weakening("a.js", "  xdescribe('x', f)").is_some());
     assert!(r.weakening("a.py", "def unskip_pytest.skip(").is_none());
 }
+
+#[test]
+fn a_commented_out_test_is_not_a_test_marker_in_any_language() {
+    let r = rules();
+    for (path, line) in [
+        ("a_test.go", "// func TestX(t *testing.T) {"),
+        ("tests/test_a.py", "# def test_login():"),
+        ("src/a.test.ts", "// it(\"logs in\", () => {"),
+        ("src/test/java/ATest.java", "// @Test"),
+    ] {
+        assert!(!r.is_test_marker(path, line), "{path}: {line}");
+    }
+    assert!(r.is_test_marker("a_test.go", "func TestX(t *testing.T) {"));
+    assert!(r.is_test_marker("tests/test_a.py", "    def test_login():"));
+    assert!(r.is_test_marker("src/a.test.ts", "  it(\"logs in\", () => {"));
+    assert!(r.is_test_marker("src/test/java/ATest.java", "    @Test"));
+}
+
+#[test]
+fn a_weakening_in_a_comment_is_still_flagged_where_comments_hold_weakenings() {
+    let r = rules();
+    assert!(r.weakening("a.go", "//nolint:errcheck").is_some());
+    assert!(r.weakening("a.py", "# type: ignore").is_some());
+    assert!(r.weakening("a.ts", "// eslint-disable-next-line").is_some());
+}
+
+#[test]
+fn javascript_markers_start_a_word() {
+    let r = rules();
+    for line in [
+        "await init();",
+        "emit(x);",
+        "submit(form);",
+        "/x/.test(s)",
+        "const y = latest(a);",
+    ] {
+        assert!(!r.is_test_marker("src/a.js", line), "{line}");
+    }
+    for line in [
+        "it('x', () => {",
+        "  test(\"y\", async () => {",
+        "});it('z', f)",
+    ] {
+        assert!(r.is_test_marker("src/a.js", line), "{line}");
+    }
+}

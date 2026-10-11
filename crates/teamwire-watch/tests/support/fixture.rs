@@ -105,6 +105,16 @@ impl Bed {
     }
 
     pub fn add_with_deadline(&mut self, name: &str, deadline_s: u64) -> Member {
+        self.insert(name, deadline_s, true)
+    }
+
+    /// Adds a member whose launch stopped in `creating`: no place, no
+    /// session, never started.
+    pub fn add_creating(&mut self, name: &str) {
+        self.insert(name, 1800, false);
+    }
+
+    fn insert(&mut self, name: &str, deadline_s: u64, start: bool) -> Member {
         let role = role(name);
         let session = Self::session(name);
         let place = self.host.add_place(
@@ -134,6 +144,10 @@ impl Bed {
             owns: vec![],
             deadline_s,
         };
+        if !start {
+            self.store.write(|tx| tx.insert_member(now, &new)).unwrap();
+            return self.member(name);
+        }
         self.store
             .write(|tx| {
                 tx.insert_member(now, &new)?;
