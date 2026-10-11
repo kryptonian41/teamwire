@@ -73,7 +73,8 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
 
 /// `WEAKENED <path>:<line>` for each net-removed test, each net-removed
 /// `#[cfg(test)]` or `mod tests;` line, and each added `#[ignore`,
-/// `#[should_panic`, `#[expect(`, `#[allow(` or `cfg_attr(..., ignore)`, from
+/// `#[should_panic`, `#[expect(`, `#[allow(` or `cfg_attr(..., ignore | allow |
+/// expect | should_panic)`, from
 /// a zero-context unified diff. A line moved inside its file is not a removal.
 fn weakened(diff: &str) -> Vec<String> {
     let mut scan = Scan::default();
@@ -134,7 +135,7 @@ impl Scan {
             if is_test_switch(text) {
                 self.added_switches += 1;
             }
-            if starts_with_any(text, WEAKENING_ATTRS) || is_cfg_attr_ignore(text) {
+            if starts_with_any(text, WEAKENING_ATTRS) || is_cfg_attr_weakening(text) {
                 let entry = format!("WEAKENED {}:{}", self.name(), self.new_line);
                 self.out.push(entry);
             }
@@ -173,14 +174,14 @@ fn is_test_switch(text: &str) -> bool {
     TEST_SWITCHES.contains(&text.trim())
 }
 
-/// `#[cfg_attr(test, ignore)]` and its variants turn a test off without the
-/// `#[ignore` prefix that `WEAKENING_ATTRS` looks for.
-fn is_cfg_attr_ignore(text: &str) -> bool {
+/// `#[cfg_attr(test, ignore)]` and its variants turn a test off or a lint
+/// check down without the prefixes that `WEAKENING_ATTRS` looks for.
+fn is_cfg_attr_weakening(text: &str) -> bool {
     let text = text.trim_start();
     text.starts_with("#[cfg_attr(")
         && text
             .split(|c: char| !(c.is_alphanumeric() || c == '_'))
-            .any(|word| word == "ignore")
+            .any(|word| matches!(word, "ignore" | "allow" | "expect" | "should_panic"))
 }
 
 fn starts_with_any(text: &str, prefixes: &[&str]) -> bool {
@@ -366,6 +367,24 @@ mod tests {
         assert_eq!(
             report(dir.path()),
             ["WEAKENED crates/teamwire-a/src/lib.rs:3"]
+        );
+    }
+
+    #[test]
+    fn added_cfg_attr_allow_expect_and_should_panic_are_reported() {
+        let dir = committed_workspace();
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/lib.rs",
+            "//! Purpose.\n#[test]\n#[cfg_attr(test, allow(unused))]\nfn one() {}\n#[test]\n#[cfg_attr(test, expect(unused, reason = \"x\"))]\nfn two() {}\n#[test]\n#[cfg_attr(unix, should_panic)]\nfn three() {}\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            [
+                "WEAKENED crates/teamwire-a/src/lib.rs:3",
+                "WEAKENED crates/teamwire-a/src/lib.rs:6",
+                "WEAKENED crates/teamwire-a/src/lib.rs:9"
+            ]
         );
     }
 

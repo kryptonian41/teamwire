@@ -86,8 +86,8 @@ fn blank_raw_string(chars: &[char], start: usize, hashes: usize, out: &mut Strin
     let mut i = start + 2 + hashes;
     out.push_str(&" ".repeat(2 + hashes));
     while i < chars.len() {
-        let closes = chars[i] == '"'
-            && chars[i + 1..].iter().take_while(|c| **c == '#').count() >= hashes;
+        let closes =
+            chars[i] == '"' && chars[i + 1..].iter().take_while(|c| **c == '#').count() >= hashes;
         if closes {
             out.push_str(&" ".repeat(1 + hashes));
             return i + 1 + hashes;
@@ -161,7 +161,8 @@ mod tests {
 
     #[test]
     fn comments_and_literals_are_blanked_and_lines_are_kept() {
-        let src = "let a = \"x{\"; // y{\nlet b = '{'; /* z{\n nested /* { */ */ let c = r#\"q\"{\"#;\n";
+        let src =
+            "let a = \"x{\"; // y{\nlet b = '{'; /* z{\n nested /* { */ */ let c = r#\"q\"{\"#;\n";
         let out = code_only(src);
         assert_eq!(out.lines().count(), src.lines().count());
         assert!(!out.contains('{'), "{out}");
