@@ -47,6 +47,11 @@ struct RuleFile {
     /// Like `comment_prefixes`, but only for counting test markers. A
     /// weakening can live in a comment (`//nolint`, `# noqa`), so these
     /// languages cannot skip comment lines when they look for one.
+    /// A weakening that starts inside a string literal on its line is text a
+    /// test writes to a file, not code. Only Rust sets this. A raw string
+    /// that spans lines is not tracked.
+    #[serde(default)]
+    ignore_in_strings: bool,
     #[serde(default)]
     marker_comment_prefixes: Vec<String>,
     #[serde(default)]
@@ -132,7 +137,7 @@ impl Ruleset {
             .weakening
             .iter()
             .find(|w| {
-                contains(line, &w.contains, w.word_start)
+                contains(line, &w.contains, w.word_start, language.ignore_in_strings)
                     && w.and_contains.iter().all(|c| line.contains(c.as_str()))
             })
             .map(|w| w.id.as_str())
@@ -148,7 +153,9 @@ impl Ruleset {
                 .iter()
                 .chain(&l.marker_comment_prefixes)
                 .any(|p| trimmed.starts_with(p.as_str()))
-                && l.test_markers.iter().any(|m| contains(line, m, true))
+                && l.test_markers
+                    .iter()
+                    .any(|m| contains(line, m, true, false))
         })
     }
 
@@ -164,14 +171,37 @@ impl Ruleset {
     }
 }
 
-fn contains(line: &str, needle: &str, word_start: bool) -> bool {
+fn contains(line: &str, needle: &str, word_start: bool, ignore_in_strings: bool) -> bool {
     line.match_indices(needle).any(|(at, _)| {
-        !word_start
-            || line
-                .get(..at)
-                .and_then(|before| before.chars().next_back())
-                .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.'))
+        let before = line.get(..at).unwrap_or_default();
+        (!word_start
+            || before
+                .chars()
+                .next_back()
+                .is_none_or(|c| !(c.is_alphanumeric() || c == '_' || c == '.')))
+            && !(ignore_in_strings && ends_inside_string(before))
     })
+}
+
+/// True when `text` leaves a `"` string literal open: an odd number of
+/// quotes that are not escaped and not the char literal `'"'`.
+fn ends_inside_string(text: &str) -> bool {
+    let mut open = false;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '\'' if !open && chars.clone().take(2).eq(['"', '\'']) => {
+                chars.next();
+                chars.next();
+            }
+            '"' => open = !open,
+            _ => {}
+        }
+    }
+    open
 }
 
 #[cfg(test)]

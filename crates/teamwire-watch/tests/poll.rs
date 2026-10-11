@@ -818,12 +818,25 @@ fn a_member_stuck_in_creating_stalls_the_team() {
     bed.add_creating("web");
     bed.poll();
     bed.delivered("api", CompletionStatus::Done);
-    let lines = bed.ticks(20);
+    // 90 s grace + 600 s setup + 150 s spawn = 840 s = 42 polls of 20 s.
+    let lines = bed.ticks(50);
     assert_eq!(count(&lines, "TEAM-STALLED"), 1, "{lines:?}");
     assert!(
         lines.iter().any(|l| l.contains("TEAM-STALLED web")),
         "{lines:?}"
     );
+}
+
+#[test]
+fn a_member_creating_for_two_minutes_is_not_stalled() {
+    // Setup may run for up to 600 s while launch keeps the member `creating`.
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add_creating("web");
+    bed.poll();
+    bed.delivered("api", CompletionStatus::Done);
+    let lines = bed.ticks(6);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
 }
 
 #[test]

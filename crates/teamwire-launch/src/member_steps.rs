@@ -12,24 +12,69 @@ use crate::member_parts::Dirs;
 use crate::worktree;
 use crate::{PlannedMember, ValidPlan};
 
-const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
-const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Equals `Config::spawn_timeout_s`, which the watch adds to its limit for a
+/// `creating` member. A test keeps the two the same.
 const SPAWN_TIMEOUT: Duration = Duration::from_secs(150);
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const SUBMIT_TIMEOUT: Duration = Duration::from_secs(60);
 /// The longest first message.
 const FIRST_MESSAGE_MAX: usize = 600;
 
 /// The closed set of `reason_code` values a failed or refused launch event
-/// carries: the name of the launch step that stopped.
-pub(crate) const REASON_CODES: &[&str] = &[
-    "registry", "prepare", "record", "worktree", "setup", "harness", "files", "spawn", "place",
-    "trust", "started",
-];
+/// carries: the name of the launch step that stopped. A value of this type
+/// cannot hold a name outside the set.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReasonCode {
+    Registry,
+    Prepare,
+    Record,
+    Worktree,
+    Setup,
+    Harness,
+    Files,
+    Spawn,
+    Place,
+    Trust,
+    Started,
+}
+
+impl ReasonCode {
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 11] = [
+        Self::Registry,
+        Self::Prepare,
+        Self::Record,
+        Self::Worktree,
+        Self::Setup,
+        Self::Harness,
+        Self::Files,
+        Self::Spawn,
+        Self::Place,
+        Self::Trust,
+        Self::Started,
+    ];
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Registry => "registry",
+            Self::Prepare => "prepare",
+            Self::Record => "record",
+            Self::Worktree => "worktree",
+            Self::Setup => "setup",
+            Self::Harness => "harness",
+            Self::Files => "files",
+            Self::Spawn => "spawn",
+            Self::Place => "place",
+            Self::Trust => "trust",
+            Self::Started => "started",
+        }
+    }
+}
 
 /// Why a member's launch stopped.
 pub(crate) struct Stop {
-    /// The launch step that stopped, one of `REASON_CODES`. Metrics label a
-    /// failure with this, never with the free text in `reason`.
+    /// The launch step that stopped. Metrics label a failure with this, never
+    /// with the free text in `reason`.
     pub(crate) code: &'static str,
     pub(crate) reason: String,
     /// The member was refused (by name), as opposed to failing.
@@ -39,20 +84,18 @@ pub(crate) struct Stop {
 }
 
 impl Stop {
-    pub(crate) fn fail(code: &'static str, reason: impl Into<String>) -> Self {
-        debug_assert!(REASON_CODES.contains(&code));
+    pub(crate) fn fail(code: ReasonCode, reason: impl Into<String>) -> Self {
         Self {
-            code,
+            code: code.as_str(),
             reason: reason.into(),
             refused: false,
             advice: None,
         }
     }
 
-    pub(crate) fn refuse(code: &'static str, reason: impl Into<String>) -> Self {
-        debug_assert!(REASON_CODES.contains(&code));
+    pub(crate) fn refuse(code: ReasonCode, reason: impl Into<String>) -> Self {
         Self {
-            code,
+            code: code.as_str(),
             reason: reason.into(),
             refused: true,
             advice: None,
@@ -110,7 +153,7 @@ pub(crate) fn escalated_trust_message(repo: &Path) -> String {
 pub(crate) fn spawn_stop(e: &HostError) -> Stop {
     if e.code == HostErrorCode::BadArgument && e.detail.starts_with("agent_name_taken:") {
         return Stop {
-            code: "spawn",
+            code: ReasonCode::Spawn.as_str(),
             reason: format!("the agent name is already live in the host ({})", e.detail),
             refused: true,
             advice: None,
@@ -122,7 +165,7 @@ pub(crate) fn spawn_stop(e: &HostError) -> Stop {
         ""
     };
     Stop::fail(
-        "spawn",
+        ReasonCode::Spawn,
         format!("the host could not start the agent: {e}{hint}"),
     )
 }
@@ -151,7 +194,8 @@ pub(crate) fn run_setup(
         .env("TEAMWIRE_ROLE", role.as_str())
         .env("TEAMWIRE_HOME", ctx.home.display().to_string())
         .env("TEAMWIRE_CHILD_CWD", cwd.as_str());
-    let out = ctx.platform.run(&cmd, SETUP_TIMEOUT);
+    let setup_timeout = Duration::from_secs(ctx.config.setup_timeout_s);
+    let out = ctx.platform.run(&cmd, setup_timeout);
     let log = dirs.setup_log(role);
     let (ok, text, why) = match &out {
         Ok(o) => (
@@ -164,7 +208,7 @@ pub(crate) fn run_setup(
                 if o.timed_out { ", timed out" } else { "" }
             ),
             if o.timed_out {
-                format!("setup ran past {} s", SETUP_TIMEOUT.as_secs())
+                format!("setup ran past {} s", setup_timeout.as_secs())
             } else {
                 format!("setup exited {}", o.exit_code)
             },
@@ -182,7 +226,7 @@ pub(crate) fn run_setup(
         Ok(())
     } else {
         Err(Stop {
-            code: "setup",
+            code: ReasonCode::Setup.as_str(),
             reason: format!("{why} (log: {})", log.display()),
             refused: false,
             advice: Some("fix the setup command, then add the member again with --add"),
@@ -219,7 +263,7 @@ pub(crate) fn write_member_files(
 ) -> Result<(), Stop> {
     use std::os::unix::fs::PermissionsExt;
     let role = &m.spec.role;
-    let fail = |e: String| Stop::fail("files", e);
+    let fail = |e: String| Stop::fail(ReasonCode::Files, e);
     // The member directory holds the token, so it is private too.
     std::fs::create_dir_all(&launch.member_dir)
         .and_then(|()| {
@@ -304,13 +348,19 @@ mod tests {
 
     #[test]
     fn every_reason_code_is_a_short_lowercase_name() {
-        for code in REASON_CODES {
+        for code in ReasonCode::ALL.map(ReasonCode::as_str) {
             assert!(
                 (1..=32).contains(&code.len())
                     && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
                 "{code}"
             );
         }
+    }
+
+    #[test]
+    fn the_spawn_limit_is_the_one_the_watch_reads() {
+        let config = teamwire_core::Config::default();
+        assert_eq!(SPAWN_TIMEOUT.as_secs(), config.spawn_timeout_s);
     }
 
     #[test]

@@ -15,7 +15,7 @@ use teamwire_store::{Ctx, NewMember, NewTeam};
 
 use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
-    Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
+    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
 };
 use crate::worktree;
 use crate::{
@@ -200,16 +200,17 @@ fn run_member(
     let harness = ctx
         .registry
         .harness(&m.harness)
-        .map_err(|e| Stop::fail("registry", e.to_string()))?;
+        .map_err(|e| Stop::fail(ReasonCode::Registry, e.to_string()))?;
     let host = ctx
         .registry
         .host(&m.host)
-        .map_err(|e| Stop::fail("registry", e.to_string()))?;
-    let token = new_token().map_err(|e| Stop::fail("prepare", e))?;
+        .map_err(|e| Stop::fail(ReasonCode::Registry, e.to_string()))?;
+    let token = new_token().map_err(|e| Stop::fail(ReasonCode::Prepare, e))?;
     let base_sha = match &m.worktree {
-        Some(w) => {
-            Some(worktree::start_commit(ctx.platform, w).map_err(|e| Stop::fail("prepare", e))?)
-        }
+        Some(w) => Some(
+            worktree::start_commit(ctx.platform, w)
+                .map_err(|e| Stop::fail(ReasonCode::Prepare, e))?,
+        ),
         None => None,
     };
 
@@ -255,21 +256,27 @@ fn run_member(
     });
     if let Some(state) = closed {
         return Err(Stop::refuse(
-            "record",
+            ReasonCode::Record,
             format!(
                 "team_closed: team {} is {state}; the member was not started",
                 plan.spec.team
             ),
         ));
     }
-    recorded.map_err(|e| Stop::fail("record", format!("the member could not be recorded: {e}")))?;
+    recorded.map_err(|e| {
+        Stop::fail(
+            ReasonCode::Record,
+            format!("the member could not be recorded: {e}"),
+        )
+    })?;
     made.recorded = true;
     steps.mark(ctx, "record");
 
     // 2. The worktree.
     if let (Some(w), Some(sha)) = (&m.worktree, &base_sha) {
-        made.worktree =
-            Some(worktree::add(ctx.platform, w, sha).map_err(|e| Stop::fail("worktree", e))?);
+        made.worktree = Some(
+            worktree::add(ctx.platform, w, sha).map_err(|e| Stop::fail(ReasonCode::Worktree, e))?,
+        );
         steps.mark(ctx, "worktree");
     }
 
@@ -280,7 +287,7 @@ fn run_member(
     // 4. Contract, brief, and the harness's launch files.
     let member_dir = dirs.member(role);
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string())
-        .map_err(|e| Stop::fail("prepare", e.to_string()))?;
+        .map_err(|e| Stop::fail(ReasonCode::Prepare, e.to_string()))?;
     let identity = vec![
         ("TEAMWIRE_TEAM".to_owned(), plan.spec.team.to_string()),
         ("TEAMWIRE_ROLE".to_owned(), role.to_string()),
@@ -304,13 +311,13 @@ fn run_member(
     };
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(
-            "harness",
+            ReasonCode::Harness,
             format!("the harness could not build the launch: {e}"),
         )
     })?;
     if spec.identity_channel != m.channel {
         return Err(Stop::fail(
-            "harness",
+            ReasonCode::Harness,
             format!(
                 "the harness used identity channel {} but validation chose {}",
                 spec.identity_channel, m.channel
@@ -344,7 +351,12 @@ fn run_member(
             }
             Ok(())
         })
-        .map_err(|e| Stop::fail("place", format!("the place could not be recorded: {e}")))?;
+        .map_err(|e| {
+            Stop::fail(
+                ReasonCode::Place,
+                format!("the place could not be recorded: {e}"),
+            )
+        })?;
     steps.mark(ctx, "spawn");
 
     // 6. Trust, through the harness.
@@ -357,15 +369,20 @@ fn run_member(
         Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => {}
         Ok(StartupOutcome::RefusedEscalated) => {
             let repo = m.worktree.as_ref().map_or(&m.cwd, |w| &w.repo);
-            return Err(Stop::fail("trust", escalated_trust_message(repo)));
+            return Err(Stop::fail(ReasonCode::Trust, escalated_trust_message(repo)));
         }
         Ok(StartupOutcome::RefusedHome) => {
             return Err(Stop::fail(
-                "trust",
+                ReasonCode::Trust,
                 "the trust dialog is for a home directory and is never answered",
             ));
         }
-        Err(e) => return Err(Stop::fail("trust", format!("the trust step failed: {e}"))),
+        Err(e) => {
+            return Err(Stop::fail(
+                ReasonCode::Trust,
+                format!("the trust step failed: {e}"),
+            ));
+        }
     }
     steps.mark(ctx, "trust");
 
@@ -396,7 +413,7 @@ fn run_member(
         .write(|tx| tx.set_member_state(at, role, MemberState::Started, &data))
         .map_err(|e| {
             Stop::fail(
-                "started",
+                ReasonCode::Started,
                 format!("the member could not be marked started: {e}"),
             )
         })?;
