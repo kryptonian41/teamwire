@@ -30,6 +30,8 @@ const L4: &[&str] = &[
 const L5: &[&str] = &["teamwire-mcp"];
 const CLI: &str = "teamwire-cli";
 const FAKES: &str = "teamwire-fakes";
+/// The only packages that may depend on `anyhow` (AGENTS.md hard rules).
+const ANYHOW_USERS: &[&str] = &[CLI, "xtask"];
 const ANYTHING: &[&str] = &["teamwire-crash-tests", "teamwire-e2e"];
 
 /// What a crate in the table may depend on.
@@ -97,6 +99,7 @@ pub(crate) fn check_layers(metadata: &Value, problems: &mut Vec<String>) {
         let Some(name) = package.get("name").and_then(Value::as_str) else {
             continue;
         };
+        check_anyhow(name, package, problems);
         if !name.starts_with("teamwire-") {
             continue;
         }
@@ -126,6 +129,23 @@ pub(crate) fn check_layers(metadata: &Value, problems: &mut Vec<String>) {
                 "{name}: depends on {dep_name}, which is not in a lower layer (docs/conventions.md section 5)"
             ));
         }
+    }
+}
+
+/// Libraries return `thiserror` errors; `anyhow` is for the binaries that
+/// print them.
+fn check_anyhow(name: &str, package: &Value, problems: &mut Vec<String>) {
+    let deps = package
+        .get("dependencies")
+        .and_then(Value::as_array)
+        .map_or(&[][..], Vec::as_slice);
+    let uses = deps
+        .iter()
+        .any(|d| d.get("name").and_then(Value::as_str) == Some("anyhow"));
+    if uses && !ANYHOW_USERS.contains(&name) {
+        problems.push(format!(
+            "{name}: depends on anyhow; only teamwire-cli and xtask may (AGENTS.md hard rules)"
+        ));
     }
 }
 
@@ -209,6 +229,18 @@ mod tests {
         assert_eq!(run(&cli), Vec::<String>::new());
         let e2e = metadata("teamwire-e2e", &[("teamwire-cli", None)]);
         assert_eq!(run(&e2e), Vec::<String>::new());
+    }
+
+    #[test]
+    fn anyhow_is_allowed_only_in_cli_and_xtask() {
+        let cli = metadata("teamwire-cli", &[("anyhow", None)]);
+        assert_eq!(run(&cli), Vec::<String>::new());
+        let tool = metadata("xtask", &[("anyhow", None)]);
+        assert_eq!(run(&tool), Vec::<String>::new());
+        let lib = metadata("teamwire-store", &[("anyhow", None)]);
+        assert_eq!(run(&lib).len(), 1);
+        let dev = metadata("teamwire-e2e", &[("anyhow", Some("dev"))]);
+        assert_eq!(run(&dev).len(), 1);
     }
 
     #[test]
