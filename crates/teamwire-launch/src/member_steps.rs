@@ -39,6 +39,7 @@ pub(crate) enum ReasonCode {
 }
 
 impl ReasonCode {
+    #[cfg(test)]
     pub(crate) const ALL: [Self; 11] = [
         Self::Registry,
         Self::Prepare,

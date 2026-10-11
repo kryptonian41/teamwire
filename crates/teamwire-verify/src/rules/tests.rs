@@ -155,9 +155,9 @@ fn a_rust_weakening_inside_a_string_literal_is_fixture_text() {
     for line in [
         // The two lines verify wrongly flagged in the cli and xtask tests.
         r##"        &[("src/lib.rs", "#[allow(dead_code)]\nfn a() {}\n")],"##,
-        r##"            "//! Purpose.\n#[test]\n#[cfg_attr(unix, ignore = \"x\")]\nfn one() {}\n","##,
+        r#"            "//! Purpose.\n#[test]\n#[cfg_attr(unix, ignore = \"x\")]\nfn one() {}\n","#,
         r##"    std::fs::write(dir.join("a.rs"), "#[allow(dead_code)]\nfn f() {}\n").unwrap();"##,
-        r##"    let q = "a \" b #[allow(x)]";"##,
+        r#"    let q = "a \" b #[allow(x)]";"#,
     ] {
         assert!(r.weakening("src/lib.rs", line).is_none(), "{line}");
     }
@@ -167,9 +167,9 @@ fn a_rust_weakening_inside_a_string_literal_is_fixture_text() {
 fn a_real_rust_weakening_after_a_string_on_the_same_line_is_flagged() {
     let r = rules();
     for line in [
-        r##"let s = "x"; #[allow(dead_code)] fn f() {}"##,
-        r##"let q = '"'; #[allow(dead_code)] fn f() {}"##,
-        r##"#[allow(dead_code)] // "quoted""##,
+        r#"let s = "x"; #[allow(dead_code)] fn f() {}"#,
+        r#"let q = '"'; #[allow(dead_code)] fn f() {}"#,
+        r#"#[allow(dead_code)] // "quoted""#,
     ] {
         assert!(r.weakening("src/lib.rs", line).is_some(), "{line}");
     }
@@ -178,8 +178,5 @@ fn a_real_rust_weakening_after_a_string_on_the_same_line_is_flagged() {
 #[test]
 fn other_languages_still_flag_a_marker_inside_a_string() {
     let r = rules();
-    assert!(
-        r.weakening("a.py", r##"x = "y"  # type: ignore"##)
-            .is_some()
-    );
+    assert!(r.weakening("a.py", r#"x = "y"  # type: ignore"#).is_some());
 }
