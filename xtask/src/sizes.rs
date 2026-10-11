@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::code_text::code_only;
 use crate::{Findings, relative};
 
 const REPORT_OVER: usize = 400;
@@ -82,7 +83,8 @@ fn non_test_lines(text: &str) -> usize {
     let mut skipping = false;
     let mut depth = 0_i64;
     let mut opened = false;
-    for line in text.lines() {
+    // Braces in a char or string literal or a comment must not move the depth.
+    for line in code_only(text).lines() {
         if skipping {
             let opens = line.matches('{').count();
             let closes = line.matches('}').count();
@@ -173,6 +175,19 @@ mod tests {
             "{}\nimpl Thing {{\n    #[cfg(test)]\n    fn helper() {{\n        let y = 2;\n    }}\n{}}}\n",
             source(300),
             "    fn real() {}\n".repeat(101)
+        );
+        write(dir.path(), "crates/teamwire-a/src/lib.rs", &text);
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        assert_eq!(found.notes.len(), 1, "{found:?}");
+    }
+
+    #[test]
+    fn braces_in_literals_inside_a_skipped_item_do_not_extend_it() {
+        let dir = clean_workspace();
+        let text = format!(
+            "{}\n#[cfg(test)]\nfn helper() {{\n    let open = '{{'; // {{\n}}\n{}",
+            source(300),
+            "fn real() {}\n".repeat(101)
         );
         write(dir.path(), "crates/teamwire-a/src/lib.rs", &text);
         let found = tidy(dir.path(), &empty_metadata()).unwrap();
