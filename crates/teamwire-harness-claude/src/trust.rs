@@ -16,8 +16,11 @@ use teamwire_core::{
 
 use crate::screen::{ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, has_any, squash};
 
-/// How many screen lines to read for the dialog.
-const TAIL_LINES: u16 = 40;
+/// How many screen lines to read for the dialog: more than any terminal is
+/// tall, so a tall dialog is read whole. Its escalation lines can sit above the
+/// last 40 lines, and a marker that is missed lets the dialog be answered
+/// (INV-25).
+const TAIL_LINES: u16 = 1000;
 const HOST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// What the configuration says about one directory, before Claude starts.

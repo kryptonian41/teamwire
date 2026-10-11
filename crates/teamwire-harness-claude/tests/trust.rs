@@ -80,6 +80,15 @@ fn escalated_trust_refused() {
 }
 
 #[test]
+fn an_escalation_marker_far_above_the_last_forty_lines_still_refuses() {
+    let padding = "\n ".repeat(60);
+    let screen = format!("{PLAIN_DIALOG}\n{ESCALATED_TRUST_TEXT}{padding}");
+    let (got, keys) = answer(&screen, TrustPolicy::Accept);
+    assert_eq!(got.unwrap(), StartupOutcome::RefusedEscalated);
+    assert!(keys.is_empty(), "nothing is typed into an escalated dialog");
+}
+
+#[test]
 fn each_escalation_marker_alone_refuses() {
     for marker in TRUST_ESCALATION_MARKERS {
         let screen = format!("{PLAIN_DIALOG}\nThis folder: {marker} something");
