@@ -457,3 +457,37 @@ fn nothing_new_sends_nothing() {
     assert_eq!((report.metric_points, report.spans), (0, 0));
     assert_eq!(stub.requests().len(), before);
 }
+
+#[test]
+fn one_bucket_is_sent_as_one_point_even_when_events_arrive_between_exports() {
+    let mut e = env();
+    // T0 is 20 s past a minute, so seconds 10 and 30 share the bucket that ends at second 40.
+    e.clock.set_wall(at(15));
+    e.message(10);
+    let stub = Stub::start(Mode::Ok);
+    let early = e.export(&stub.url()).unwrap();
+    assert_eq!(early.metric_points, 0, "the bucket is still open");
+    assert!(stub.requests().is_empty());
+    assert_eq!(e.mark().last_event_seq, 0);
+
+    e.clock.set_wall(at(35));
+    e.message(30);
+    assert_eq!(e.export(&stub.url()).unwrap().metric_points, 0);
+
+    e.clock.set_wall(at(41));
+    e.export(&stub.url()).unwrap();
+    let points: Vec<_> = stub
+        .metrics()
+        .iter()
+        .flat_map(|r| &r.resource_metrics)
+        .flat_map(|r| &r.scope_metrics)
+        .flat_map(|s| &s.metrics)
+        .filter(|m| m.name == "teamwire.messages.sent")
+        .filter_map(|m| match &m.data {
+            Some(Data::Sum(sum)) => Some(sum.data_points.clone()),
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(points.len(), 1, "{points:?}");
+}
