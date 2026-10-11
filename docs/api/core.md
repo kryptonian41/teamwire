@@ -399,9 +399,10 @@ impl Store {
     pub fn open(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
     pub fn open_existing(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
     /// For commands that only read (status, log, members, metrics, export,
-    /// doctor): `mode=ro`, never creates, never migrates. A database whose
-    /// schema version differs from the binary's is refused with SchemaNewer or
-    /// SchemaOlder, and nothing on disk changes (WAT-11).
+    /// doctor): `mode=ro`, never creates, never migrates. A database at an
+    /// older schema is read as it is, each column a later version added read
+    /// as NULL. A newer schema is refused with SchemaNewer, an empty file with
+    /// SchemaOlder. Nothing on disk changes (WAT-11).
     pub fn open_read_only(home: &Path, team: &TeamName) -> Result<Store, StoreError>;
     /// Runs `f` inside BEGIN IMMEDIATE; commits on Ok, rolls back on Err.
     pub fn write<T>(&mut self, f: impl FnOnce(&Tx) -> Result<T, StoreError>) -> Result<T, StoreError>;
@@ -428,7 +429,7 @@ matching event. A few bookkeeping writes record none, because the closed event
 list has no type for them: `set_sleep_hold`, `set_member_place`,
 `set_member_session`, `set_member_token_hash`, `set_gate_told_generation`,
 `set_completion_final`, `announce_once`, `heartbeat_watch_lease`, and the
-metric-export writes `claim_metric_export`, `commit_metric_export` and
+metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
@@ -509,4 +510,8 @@ pub fn status(ctx: &Ctx) -> StatusView;                                  // read
 // teamwire-otel
 pub fn metrics(ctx: &Ctx, q: MetricsQuery) -> MetricsView;
 pub fn export_once(ctx: &mut Ctx, exporter: &OtlpConfig) -> Result<ExportReport, ExportError>;
+/// The watch's export: once `stopping` is set, a request still waiting gets
+/// at most `grace` more.
+pub fn export_once_until(ctx: &mut Ctx, exporter: &OtlpConfig, cutoff: Option<StopCutoff>) -> Result<ExportReport, ExportError>;
+pub struct StopCutoff<'a> { pub stopping: &'a AtomicBool, pub grace: Duration }
 ```

@@ -126,7 +126,9 @@ directory is deleted last: it is first renamed to
 `teams/<team>` without its `team.db`, and then removed. A later close
 removes any directory there whose pid is dead. Prints the
 branches kept and any unpushed commits. `--clear-stale-lock` clears a close
-lock whose owner pid is dead, and nothing else.
+lock whose owner is gone: its pid is dead, or now belongs to a process that
+started at another time. When another close took the lock after its owner
+was found dead, nothing is cleared and the command refuses with that reason.
 
 ### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
 
@@ -164,7 +166,8 @@ prints the old and new session ids (ADR 0008).
 EXT-1. One line per poll at most: a check's first failure, a mergeability
 change, then `DONE: n passed, m failed` per PR. Exits when every PR is done;
 exit 1 when any check failed. Ignores `gh`'s own exit code; a failed `gh`
-call is skipped.
+call is skipped. A PR with no checks is done only after three polls in a row
+find none, because GitHub has no check runs for a few seconds after a push.
 
 ### `teamwire preset [NAME]`
 
@@ -213,10 +216,10 @@ These are started by a harness, not typed by people.
 
 | Command | Does |
 | --- | --- |
-| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions, free disk, network filesystem, stale close locks and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, and the lead setup installed and matching this binary (only whether both items are teamwire's when this binary is a build under `target/`), with a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts in place of the user one. Exit 0 when all pass, 2 otherwise. |
+| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, and the lead setup installed and matching this binary (only whether both items are teamwire's when this binary is a build under `target/`), with a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts in place of the user one. Exit 0 when all pass, 2 otherwise. |
 | `teamwire install [--dry-run] [--force]` | Installs the lead setup (ADR 0012): writes the `teamwire` skill to `<claude dir>/skills/teamwire/SKILL.md` and registers the user MCP server `teamwire` as `<this binary> [--home DIR] mcp --lead` through `claude mcp`. Skips an item that is already current. After an MCP change it says that only new Claude Code sessions see it. Refuses, before any write, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a binary inside a `target/` directory, and a `claude` that does not run; `--force` passes the first three. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). |
 | `teamwire uninstall [--dry-run] [--force]` | Removes the skill and the MCP entry that `install` wrote. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, and a `claude` that does not run when the entry must be removed; `--force` removes the first two anyway. A binary under `target/` may uninstall. Exit codes as for `install`. A file the user put beside the skill stays. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). |
-| `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch ends at the last 60-second bucket that is already over, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. |
+| `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. |
 | `teamwire version` | Binary version and the schema version it writes. |

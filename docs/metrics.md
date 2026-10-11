@@ -96,12 +96,17 @@ the same key Claude Code puts on its own telemetry, so the two can be joined.
 On teamwire's own export: `service.name=teamwire`, `service.version`,
 `teamwire.team` per exported batch.
 
-An exported batch ends at the last 60-second bucket that is already over, so
-one bucket of one series is always one delta point (ADR 0005, point 4). The
-events of the current minute are sent by the next export after that minute
-ends. When the watch exports on exit, it waits at most 3 s for the collector,
-so a minute of events can stay unsent until the next `teamwire metrics
-export` or watch.
+An export claims the events up to the first unsent event whose 60-second
+bucket has not ended. That event and the ones after it wait for a later
+export, so one bucket of one series is always one delta point (ADR 0005,
+point 4). While the watch runs, each export request has the whole configured
+timeout. Once the watch stops, a request still waiting gets at most 3 s more,
+so the watch exits within about 3 s. A batch cut off that way stays unsent
+until the next `teamwire metrics export` or watch.
+
+`OTEL_EXPORTER_OTLP_HEADERS` is sent only to an endpoint from the same place,
+the environment or `config.toml`. Headers from the other place are left out,
+and one warning says so.
 
 In each member's environment (OBS-4), appended to any existing value:
 `OTEL_RESOURCE_ATTRIBUTES=...,teamwire.team=<team>,teamwire.role=<role>`.
