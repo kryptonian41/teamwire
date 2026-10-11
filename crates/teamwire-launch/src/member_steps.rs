@@ -12,9 +12,10 @@ use crate::member_parts::Dirs;
 use crate::worktree;
 use crate::{PlannedMember, ValidPlan};
 
-const SETUP_TIMEOUT: Duration = Duration::from_secs(600);
-const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Equals `Config::spawn_timeout_s`, which the watch adds to its limit for a
+/// `creating` member. A test keeps the two the same.
 const SPAWN_TIMEOUT: Duration = Duration::from_secs(150);
+const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 const SUBMIT_TIMEOUT: Duration = Duration::from_secs(60);
 /// The longest first message.
 const FIRST_MESSAGE_MAX: usize = 600;
@@ -151,7 +152,8 @@ pub(crate) fn run_setup(
         .env("TEAMWIRE_ROLE", role.as_str())
         .env("TEAMWIRE_HOME", ctx.home.display().to_string())
         .env("TEAMWIRE_CHILD_CWD", cwd.as_str());
-    let out = ctx.platform.run(&cmd, SETUP_TIMEOUT);
+    let setup_timeout = Duration::from_secs(ctx.config.setup_timeout_s);
+    let out = ctx.platform.run(&cmd, setup_timeout);
     let log = dirs.setup_log(role);
     let (ok, text, why) = match &out {
         Ok(o) => (
@@ -164,7 +166,7 @@ pub(crate) fn run_setup(
                 if o.timed_out { ", timed out" } else { "" }
             ),
             if o.timed_out {
-                format!("setup ran past {} s", SETUP_TIMEOUT.as_secs())
+                format!("setup ran past {} s", setup_timeout.as_secs())
             } else {
                 format!("setup exited {}", o.exit_code)
             },
@@ -311,6 +313,12 @@ mod tests {
                 "{code}"
             );
         }
+    }
+
+    #[test]
+    fn the_spawn_limit_is_the_one_the_watch_reads() {
+        let config = teamwire_core::Config::default();
+        assert_eq!(SPAWN_TIMEOUT.as_secs(), config.spawn_timeout_s);
     }
 
     #[test]

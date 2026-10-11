@@ -9,6 +9,12 @@ pub struct Config {
     pub poll_s: u64,
     pub silent_polls: u32,
     pub startup_grace_s: u64,
+    /// The longest a member's setup command may run. Launch kills it at this
+    /// limit, and the watch waits this long before it calls a `creating`
+    /// member stuck.
+    pub setup_timeout_s: u64,
+    /// The longest launch waits for the host to start one agent.
+    pub spawn_timeout_s: u64,
     pub default_deadline_s: u64,
     pub hook_budget_s: u64,
     pub hook_timeout_s: u64,
@@ -19,13 +25,15 @@ pub struct Config {
 
 impl Default for Config {
     /// The values the design names: a 20 s poll, 3 quiet polls, 90 s grace,
-    /// a 1800 s deadline, the 40 s hook budget under a 60 s hook timeout,
+    /// a 600 s setup limit and 150 s spawn limit, a 1800 s deadline, the 40 s hook budget under a 60 s hook timeout,
     /// 90 s before `delivering` counts as interrupted, and 200 MB free.
     fn default() -> Self {
         Self {
             poll_s: 20,
             silent_polls: 3,
             startup_grace_s: 90,
+            setup_timeout_s: 600,
+            spawn_timeout_s: 150,
             default_deadline_s: 1800,
             hook_budget_s: 40,
             hook_timeout_s: 60,

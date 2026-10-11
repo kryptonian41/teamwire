@@ -243,11 +243,14 @@ fn judge(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict
         return judge_completion(env, info, mm, record);
     }
     if info.member.state != MemberState::Started {
-        // A launch that is still `creating` after the startup grace has
-        // stopped part-way. Nothing moves it without the lead, so it counts
-        // as stuck. It is not settled: launch may still finish it.
-        let late = env.now.saturating_since(info.run_start)
-            >= Duration::from_secs(env.ctx.config.startup_grace_s);
+        // Launch keeps a member `creating` while its setup command and the
+        // host spawn run, and each has its own time limit. Only a launch that
+        // is still `creating` after the grace and both limits has stopped
+        // part-way. Nothing moves it without the lead, so it counts as stuck.
+        // It is not settled: launch may still finish it.
+        let cfg = &env.ctx.config;
+        let limit = cfg.startup_grace_s + cfg.setup_timeout_s + cfg.spawn_timeout_s;
+        let late = env.now.saturating_since(info.run_start) >= Duration::from_secs(limit);
         return Verdict {
             settled: None,
             stuck: late,
