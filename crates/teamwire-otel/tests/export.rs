@@ -180,7 +180,9 @@ fn crash_before_mark_reexports_once() {
     let dead = "999999";
     let claimed_at = e.clock.now();
     e.store
-        .write(|tx| tx.claim_metric_export(claimed_at, dead, Duration::from_secs(300), |_| false))
+        .write(|tx| {
+            tx.claim_metric_export(claimed_at, dead, None, Duration::from_secs(300), |_| false)
+        })
         .unwrap()
         .unwrap();
     let stub = Stub::start(Mode::Ok);
@@ -219,7 +221,9 @@ fn a_claim_whose_pid_was_reused_is_taken_over() {
     };
     e.store
         .write(|tx| {
-            tx.claim_metric_export(claimed_at, claimer, Duration::from_secs(300), |_| false)
+            tx.claim_metric_export(claimed_at, claimer, None, Duration::from_secs(300), |_| {
+                false
+            })
         })
         .unwrap()
         .unwrap();
@@ -284,7 +288,9 @@ fn two_exporters_never_send_one_batch_twice() {
     e.platform.set_alive(holder, true);
     let at_now = e.clock.now();
     e.store
-        .write(|tx| tx.claim_metric_export(at_now, "4242", Duration::from_secs(300), |_| false))
+        .write(|tx| {
+            tx.claim_metric_export(at_now, "4242", None, Duration::from_secs(300), |_| false)
+        })
         .unwrap()
         .unwrap();
     e.clock.advance(Duration::from_secs(400));
@@ -562,4 +568,78 @@ fn one_bucket_is_sent_as_one_point_even_when_events_arrive_between_exports() {
         .flatten()
         .collect();
     assert_eq!(points.len(), 1, "{points:?}");
+}
+
+/// The `teamwire.messages.sent` points a collector got, as (bucket start in
+/// ns, value), in the order they arrived.
+fn sent_points(stub: &Stub) -> Vec<(u64, f64)> {
+    stub.metrics()
+        .iter()
+        .flat_map(|r| &r.resource_metrics)
+        .flat_map(|r| &r.scope_metrics)
+        .flat_map(|s| &s.metrics)
+        .filter(|m| m.name == "teamwire.messages.sent")
+        .filter_map(|m| match &m.data {
+            Some(Data::Sum(sum)) => Some(sum.data_points.clone()),
+            _ => None,
+        })
+        .flatten()
+        .map(|p| {
+            let v = match p.value {
+                Some(
+                    opentelemetry_proto::tonic::metrics::v1::number_data_point::Value::AsDouble(v),
+                ) => v,
+                _ => 0.0,
+            };
+            (p.start_time_unix_nano, v)
+        })
+        .collect()
+}
+
+/// A team that writes an event early in every minute still exports: each
+/// export sends the minutes that are over and leaves the open one for later.
+#[test]
+fn a_message_every_20_s_for_20_minutes_exports_every_finished_minute() {
+    let mut e = env();
+    let stub = Stub::start(Mode::Ok);
+    let minute_ms = 60_000_i64;
+    let bucket_end_ms = |secs: i64| ((T0 + secs * 1000).div_euclid(minute_ms) + 1) * minute_ms;
+    let mut sent_times = Vec::new();
+    for i in 0..60 {
+        let secs = i * 20;
+        e.clock.set_wall(at(secs));
+        e.message(secs);
+        sent_times.push(secs);
+        if secs % 60 != 0 {
+            continue;
+        }
+        e.export(&stub.url()).unwrap();
+        let now_ms = T0 + secs * 1000;
+        let finished: Vec<i64> = sent_times
+            .iter()
+            .copied()
+            .filter(|s| bucket_end_ms(*s) <= now_ms)
+            .collect();
+        let points = sent_points(&stub);
+        let total: f64 = points.iter().map(|(_, v)| v).sum();
+        assert!(
+            (total - f64::from(u32::try_from(finished.len()).unwrap())).abs() < f64::EPSILON,
+            "at {secs} s: {} messages are in finished minutes, {total} were sent",
+            finished.len()
+        );
+        let mut starts: Vec<u64> = points.iter().map(|(s, _)| *s).collect();
+        let n = starts.len();
+        starts.sort_unstable();
+        starts.dedup();
+        assert_eq!(
+            starts.len(),
+            n,
+            "at {secs} s a minute was sent twice: {points:?}"
+        );
+    }
+    assert!(
+        stub.metrics().len() >= 19,
+        "{} exports",
+        stub.metrics().len()
+    );
 }

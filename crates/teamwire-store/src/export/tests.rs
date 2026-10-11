@@ -159,14 +159,14 @@ fn the_export_claim_takes_a_batch_once_and_commit_moves_the_mark() {
     let newest = f.store.read(|tx| tx.last_event_seq()).unwrap();
     let a = f
         .store
-        .write(|tx| tx.claim_metric_export(at(200), "111", STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(200), "111", None, STALE, |_| true))
         .unwrap()
         .unwrap();
     assert_eq!((a.from_seq, a.to_seq, a.taken_over), (0, newest, false));
     // A second exporter, live or not, gets nothing while the claim is fresh.
     let b = f
         .store
-        .write(|tx| tx.claim_metric_export(at(201), "222", STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(201), "222", None, STALE, |_| true))
         .unwrap();
     assert_eq!(b, None);
     // A wrong claimer or range cannot commit.
@@ -193,17 +193,49 @@ fn the_export_claim_takes_a_batch_once_and_commit_moves_the_mark() {
     // Nothing new: nothing to claim.
     assert_eq!(
         f.store
-            .write(|tx| tx.claim_metric_export(at(202), "111", STALE, |_| true))
+            .write(|tx| tx.claim_metric_export(at(202), "111", None, STALE, |_| true))
             .unwrap(),
         None
     );
     add_events(&mut f, 1);
     let next = f
         .store
-        .write(|tx| tx.claim_metric_export(at(203), "111", STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(203), "111", None, STALE, |_| true))
         .unwrap()
         .unwrap();
     assert_eq!((next.from_seq, next.to_seq), (newest, newest + 1));
+}
+
+#[test]
+fn a_new_claim_stops_at_its_limit_and_a_limit_at_the_mark_claims_nothing() {
+    let mut f = with_members(&[]);
+    add_events(&mut f, 4);
+    let newest = f.store.read(|tx| tx.last_event_seq()).unwrap();
+    assert_eq!(
+        f.store
+            .write(|tx| tx.claim_metric_export(at(200), "111", Some(0), STALE, |_| true))
+            .unwrap(),
+        None,
+        "nothing lies between the mark and the limit"
+    );
+    let a = f
+        .store
+        .write(|tx| tx.claim_metric_export(at(200), "111", Some(newest - 2), STALE, |_| true))
+        .unwrap()
+        .unwrap();
+    assert_eq!((a.from_seq, a.to_seq), (0, newest - 2));
+    assert!(
+        f.store
+            .write(|tx| tx.commit_metric_export("111", newest - 2))
+            .unwrap()
+    );
+    // A limit past the newest event claims up to the newest event.
+    let b = f
+        .store
+        .write(|tx| tx.claim_metric_export(at(201), "111", Some(newest + 9), STALE, |_| true))
+        .unwrap()
+        .unwrap();
+    assert_eq!((b.from_seq, b.to_seq), (newest - 2, newest));
 }
 
 #[test]
@@ -212,26 +244,26 @@ fn a_stale_claim_of_a_dead_holder_is_taken_over_with_its_old_end() {
     add_events(&mut f, 2);
     let first = f
         .store
-        .write(|tx| tx.claim_metric_export(at(200), "111", STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(200), "111", None, STALE, |_| true))
         .unwrap()
         .unwrap();
     add_events(&mut f, 2); // events that arrived after the first claim
     // Old enough but the holder is alive: refused. Dead but too new: refused.
     assert_eq!(
         f.store
-            .write(|tx| tx.claim_metric_export(at(600), "222", STALE, |_| false))
+            .write(|tx| tx.claim_metric_export(at(600), "222", None, STALE, |_| false))
             .unwrap(),
         None
     );
     assert_eq!(
         f.store
-            .write(|tx| tx.claim_metric_export(at(210), "222", STALE, |_| true))
+            .write(|tx| tx.claim_metric_export(at(210), "222", None, STALE, |_| true))
             .unwrap(),
         None
     );
     let taken = f
         .store
-        .write(|tx| tx.claim_metric_export(at(600), "222", STALE, |h| h.id == "111"))
+        .write(|tx| tx.claim_metric_export(at(600), "222", None, STALE, |h| h.id == "111"))
         .unwrap()
         .unwrap();
     assert_eq!(
@@ -260,7 +292,7 @@ fn the_claim_records_its_holder_start_time_and_hands_it_to_the_check() {
         started: Some(at(5)),
     };
     f.store
-        .write(|tx| tx.claim_metric_export(at(200), holder.clone(), STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(200), holder.clone(), None, STALE, |_| true))
         .unwrap()
         .unwrap();
     let mark = f.store.read(|tx| tx.export_mark()).unwrap();
@@ -269,7 +301,7 @@ fn the_claim_records_its_holder_start_time_and_hands_it_to_the_check() {
     let mut seen = None;
     f.store
         .write(|tx| {
-            tx.claim_metric_export(at(600), "222", STALE, |h| {
+            tx.claim_metric_export(at(600), "222", None, STALE, |h| {
                 seen = Some(h.clone());
                 false
             })
@@ -291,7 +323,7 @@ fn a_failed_send_releases_the_claim_and_the_mark_stays() {
     let mut f = with_members(&[]);
     add_events(&mut f, 2);
     f.store
-        .write(|tx| tx.claim_metric_export(at(200), "111", STALE, |_| true))
+        .write(|tx| tx.claim_metric_export(at(200), "111", None, STALE, |_| true))
         .unwrap()
         .unwrap();
     assert!(!f.store.write(|tx| tx.release_metric_claim("222")).unwrap());
@@ -302,7 +334,7 @@ fn a_failed_send_releases_the_claim_and_the_mark_stays() {
     );
     let again = f
         .store
-        .write(|tx| tx.claim_metric_export(at(201), "333", STALE, |_| false))
+        .write(|tx| tx.claim_metric_export(at(201), "333", None, STALE, |_| false))
         .unwrap();
     assert!(again.is_some(), "a released claim blocked the retry");
     assert_eq!(count_events(&f.store, EventType::StoreError), 0);

@@ -107,7 +107,7 @@ fn export_covers_every_table() {
                 pid: Pid::new(4243),
                 owned: true,
             }))?;
-            tx.claim_metric_export(now, "me", Duration::from_secs(60), |_| false)?;
+            tx.claim_metric_export(now, "me", None, Duration::from_secs(60), |_| false)?;
             Ok(())
         })
         .unwrap();

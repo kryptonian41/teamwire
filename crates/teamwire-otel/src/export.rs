@@ -33,26 +33,27 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
     };
     let me = claimer.id.clone();
     let claim = ctx.store.write(|tx| {
-        // Checked in the claiming transaction, so no event can arrive between
-        // the check and the claim. A batch that ends inside a bucket would send
+        // Read in the claiming transaction, so no event can arrive between
+        // the read and the claim. A batch that ends inside a bucket would send
         // that bucket's point again when the next batch adds to it (ADR 0005
-        // point 4), so the batch waits until the last bucket in it is over.
+        // point 4), so a new batch stops before the first event whose bucket
+        // is still open. That event and the ones after it wait for a later
+        // export. A taken-over claim keeps its old end, which was limited the
+        // same way when it was made.
         let reader = tx.reader();
         let mark = reader.export_mark()?;
-        let open_bucket = reader
+        let up_to = reader
             .events_after(mark.last_event_seq, None, None)?
             .items
             .iter()
-            .any(|e| {
+            .find(|e| {
                 e.time.unix_millis().div_euclid(BUCKET_MS) * BUCKET_MS + BUCKET_MS
                     > now.unix_millis()
-            });
-        if open_bucket && mark.claimed_to.is_none() {
-            return Ok(None);
-        }
+            })
+            .map(|e| e.seq.saturating_sub(1));
         // A holder whose pid now belongs to a process that started at
         // another time is gone: its pid was reused.
-        tx.claim_metric_export(now, claimer.clone(), CLAIM_STALE_AFTER, |holder| {
+        tx.claim_metric_export(now, claimer.clone(), up_to, CLAIM_STALE_AFTER, |holder| {
             holder.id.parse::<u32>().map_or(true, |pid| {
                 !platform.process_alive(ProcessRef {
                     pid: Pid::new(pid),
