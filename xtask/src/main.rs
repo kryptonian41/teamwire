@@ -11,6 +11,7 @@
 
 mod adapters;
 mod base;
+mod code_text;
 mod crates;
 #[cfg(test)]
 mod fixture;
