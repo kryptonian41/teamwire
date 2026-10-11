@@ -182,3 +182,46 @@ fn a_binary_path_with_a_space_or_a_quote_is_shell_quoted() {
     assert!(text.contains("\n     '/Users/a b/teamwire' done --status"));
     assert!(text.contains("echo {teamwire}"), "a check is not rewritten");
 }
+
+/// The message types each kind may send, as `teamwire-msg`'s `check_type`
+/// allows them. Launch sits below the message crate, so the table is copied.
+fn sendable(kind: MemberKind) -> &'static [&'static str] {
+    match kind {
+        MemberKind::Reviewer | MemberKind::Closer => &[],
+        MemberKind::Implementer => &["notice", "question", "answer"],
+        MemberKind::Investigator => &["finding", "question", "answer"],
+    }
+}
+
+#[test]
+fn each_contract_names_only_message_types_its_kind_may_send() {
+    const TYPES: &[&str] = &[
+        "notice", "finding", "question", "answer", "reprompt", "note",
+    ];
+    for kind in MemberKind::ALL {
+        let text = render(*kind, Some("true"), &["a/".to_owned()]);
+        for ty in TYPES {
+            let named = text.contains(&format!("--type {ty}"))
+                || text.contains(&format!("- {ty}:"))
+                || text.contains(&format!("{ty} message"));
+            // The lead's reprompt and note reach every kind; only a sent type counts.
+            if matches!(*ty, "reprompt" | "note") {
+                continue;
+            }
+            assert!(
+                !named || sendable(*kind).contains(ty),
+                "{kind}: names the {ty} type, which it may not send"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_reviewer_or_closer_writes_its_question_in_the_report_file() {
+    for kind in [MemberKind::Reviewer, MemberKind::Closer] {
+        let text = render(kind, None, &[]);
+        assert!(text.contains("write the\nquestion in your report file"));
+    }
+    let text = render(MemberKind::Implementer, None, &[]);
+    assert!(text.contains("ask it with a\nquestion message"));
+}

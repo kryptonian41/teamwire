@@ -21,6 +21,8 @@ const TALKING_IMPLEMENTER: &str = include_str!("../contracts/talking_implementer
 const TALKING_INVESTIGATOR: &str = include_str!("../contracts/talking_investigator.md");
 const TALKING_TAIL: &str = include_str!("../contracts/talking_tail.md");
 const TOGETHER: &str = include_str!("../contracts/together.md");
+const TOGETHER_ASK_MESSAGE: &str = include_str!("../contracts/together_ask_message.md");
+const TOGETHER_ASK_REPORT: &str = include_str!("../contracts/together_ask_report.md");
 const HOW_TO_WORK: &str = include_str!("../contracts/how_to_work.md");
 const FINISH: &str = include_str!("../contracts/finish.md");
 
@@ -74,6 +76,16 @@ fn talking(kind: MemberKind) -> String {
     }
 }
 
+/// How a member reaches the parent with a question. A reviewer or closer may
+/// send no message (MSG-3), so its question goes in its report file.
+fn ask_the_parent(kind: MemberKind) -> String {
+    let ask = match kind {
+        MemberKind::Reviewer | MemberKind::Closer => TOGETHER_ASK_REPORT,
+        MemberKind::Implementer | MemberKind::Investigator => TOGETHER_ASK_MESSAGE,
+    };
+    [TOGETHER, ask].concat()
+}
+
 /// The whole contract for one member. The task is not here: it is the
 /// member's first message (LCH-19).
 pub fn render_contract(p: &ContractParts<'_>) -> String {
@@ -93,7 +105,7 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         kind_text(p.kind).to_owned(),
         scope(p.check, p.owns),
         talking(p.kind).replace("{teamwire}", &bin),
-        TOGETHER.to_owned(),
+        ask_the_parent(p.kind),
         HOW_TO_WORK.to_owned(),
         finish,
     ]

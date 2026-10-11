@@ -9,8 +9,4 @@ HOW THIS TEAM WORKS TOGETHER
   and carry on with the parts that do not depend on it.
 
 There is NO human watching this session, so never ask a question in
-chat and wait. The parent is watching the team: ask it with a
-question message (TALKING TO THE TEAM above) and keep working. If you
-hit a blocker that no answer will clear, describe it in your report
-file, set status 'blocked' in your completion, and finish rather than
-stalling.
+chat and wait. The parent is watching the team: 
