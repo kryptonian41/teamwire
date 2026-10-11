@@ -23,6 +23,9 @@ use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, T
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
 use teamwire_store::{NewTeam, Store};
 
+#[path = "support/schema_1.rs"]
+mod schema_1;
+
 /// The command file is compiled here with the crate-level items it names
 /// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`,
 /// `cmd::install::wanted_entry`) and the real `cmd::lead_setup_check`, so
@@ -262,6 +265,23 @@ fn a_database_of_another_schema_version_fails() {
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "team alpha database"), Level::Fail);
     assert_eq!(exit_code(&checks), 2);
+}
+
+/// A team no read-write open has migrated since an upgrade is healthy: its
+/// rows read, and the next write migrates it.
+#[test]
+fn a_database_at_an_older_schema_passes_and_says_it_will_be_migrated() {
+    let bed = Bed::healthy();
+    schema_1::version_1_team(bed.home.path(), "alpha", 1);
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha schema")
+        .unwrap()
+        .detail;
+    assert!(detail.contains("version 1"), "{detail}");
+    assert_eq!(exit_code(&checks), 0);
 }
 
 #[test]

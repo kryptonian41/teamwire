@@ -25,6 +25,9 @@ use teamwire_core::{
 use teamwire_fakes::TestHome;
 use teamwire_store::{NewMember, NewMessage, NewTeam, Store, Waiver};
 
+#[path = "support/schema_1.rs"]
+mod schema_1;
+
 struct Run {
     code: i32,
     out: String,
@@ -549,4 +552,73 @@ fn export_without_once_keeps_running_after_its_first_pass() {
     child.kill().unwrap();
     child.wait().unwrap();
     assert!(still_running, "export without --once exited after one pass");
+}
+
+fn user_version(path: &std::path::Path) -> u32 {
+    let store = Store::open_read_only_at(path).unwrap();
+    store.schema_version().unwrap()
+}
+
+/// A team at schema 1 that no read-write open has migrated, and an archive
+/// at schema 1, which nothing ever migrates: metrics, status and export read
+/// them, and the files keep every byte and their schema version (WAT-11).
+#[test]
+fn metrics_status_and_export_read_a_schema_1_team_and_archive_and_change_neither() {
+    let home = TestHome::new().unwrap();
+    let live = schema_1::version_1_team(home.path(), "alpha", 1);
+    let other = TestHome::new().unwrap();
+    let archived_from = schema_1::version_1_team(other.path(), "beta", 2);
+    let dir = home.path().join("archive").join("beta-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    let archived = dir.join("team.db");
+    std::fs::copy(&archived_from, &archived).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let files = |paths: &[&std::path::Path]| -> Vec<(String, Vec<u8>)> {
+        let mut out = Vec::new();
+        for p in paths {
+            for e in std::fs::read_dir(p.parent().unwrap()).unwrap() {
+                let e = e.unwrap();
+                out.push((
+                    e.path().display().to_string(),
+                    std::fs::read(e.path()).unwrap(),
+                ));
+            }
+        }
+        out.sort();
+        out
+    };
+    let before = files(&[&live, &archived]);
+    assert_eq!((user_version(&live), user_version(&archived)), (1, 1));
+
+    let all = teamwire(&home, &[], &["metrics"]);
+    assert_eq!(all.code, 0, "{}{}", all.out, all.err);
+    for team in ["alpha", "beta"] {
+        assert!(
+            all.out
+                .contains(&format!("teamwire.watch.lines{{team={team}}} 2")),
+            "{team}: {}{}",
+            all.out,
+            all.err
+        );
+    }
+    assert!(!all.err.contains("schema"), "{}", all.err);
+    let one = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(one.code, 0, "{}{}", one.out, one.err);
+    let status = teamwire(&home, &[], &["status", "alpha"]);
+    assert_eq!(status.code, 0, "{}{}", status.out, status.err);
+    let export = teamwire(&home, &[], &["export", "alpha"]);
+    assert_eq!(export.code, 0, "{}{}", export.out, export.err);
+    assert_eq!(
+        export
+            .out
+            .lines()
+            .filter(|l| l.contains("watch.line"))
+            .count(),
+        2,
+        "{}",
+        export.out
+    );
+
+    assert_eq!(files(&[&live, &archived]), before, "a read changed a file");
+    assert_eq!((user_version(&live), user_version(&archived)), (1, 1));
 }

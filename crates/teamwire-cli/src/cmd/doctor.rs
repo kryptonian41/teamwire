@@ -182,9 +182,11 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
         Ok(v) if v == SCHEMA_VERSION => {
             checks.push(Check::pass(name("schema"), format!("version {v}")));
         }
-        Ok(v) => checks.push(Check::fail(
+        // A read-only open refuses a newer schema, so this is an older one.
+        // Reads work on it, and the next command that writes migrates it.
+        Ok(v) => checks.push(Check::pass(
             name("schema"),
-            format!("version {v}; this binary writes {SCHEMA_VERSION}"),
+            format!("version {v}; the next write migrates it to {SCHEMA_VERSION}"),
         )),
         Err(e) => checks.push(Check::fail(name("schema"), e.to_string())),
     }
