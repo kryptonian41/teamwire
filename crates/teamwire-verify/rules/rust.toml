@@ -6,6 +6,7 @@
 language = "rust"
 extensions = ["rs"]
 comment_prefixes = ["//"]
+ignore_in_strings = true
 test_paths = ["**/tests/**", "**/tests.rs", "**/*_test.rs"]
 test_markers = ["#[test]", "#[tokio::test", "#[proptest", "proptest!"]
 config_files = [
