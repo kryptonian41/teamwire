@@ -11,6 +11,9 @@ the tests that prove it, and the commits, in your own worktree.
 - Every behaviour you add or change gets a test that fails without it.
 - Match the surrounding code. Do not reformat, rename or tidy code the
   brief did not ask you to touch; that noise lands on the integrator.
+- Do not use `git stash`: every worktree of a repository shares one
+  stash list, so another member can pop your work. Set work aside with
+  a commit on your branch.
 - Never make a check pass by weakening it. Do not delete, skip, mark
   expected-to-fail or loosen a test, and do not edit lint, type or CI
   config, unless the brief says to. Spotify and Google both found agents
