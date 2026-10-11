@@ -110,6 +110,37 @@ fn a_writer_waits_for_the_lock_instead_of_failing() {
     assert_eq!(count_notes(&second), 2);
 }
 
+/// A write transaction that first reads and then writes must not fail when
+/// another connection wants to write in between. Under a deferred BEGIN the
+/// read takes a snapshot, the other connection commits, and the first write
+/// fails with `SQLITE_BUSY_SNAPSHOT`. BEGIN IMMEDIATE takes the write lock
+/// before the read, so the other connection waits instead.
+#[test]
+fn a_read_then_write_transaction_is_not_overtaken_by_another_writer() {
+    let home = TestHome::new().unwrap();
+    let mut first = Store::open(home.path(), &team()).unwrap();
+    let path = home.path().to_path_buf();
+
+    let other = first
+        .write(|tx| {
+            let before: i64 =
+                tx.connection()
+                    .query_row("SELECT count(*) FROM announcements", [], |r| r.get(0))?;
+            assert_eq!(before, 0);
+            let other = thread::spawn(move || {
+                let mut second = Store::open(&path, &team()).unwrap();
+                second.write(|tx| add_note(tx, "other"))
+            });
+            // Long enough for a writer that is not held back to commit.
+            thread::sleep(Duration::from_millis(400));
+            add_note(tx, "first")?;
+            Ok(other)
+        })
+        .expect("the first write was overtaken by another writer");
+    assert_eq!(other.join().unwrap(), Ok(()));
+    assert_eq!(count_notes(&first), 2);
+}
+
 #[test]
 fn a_failed_closure_rolls_back_everything_it_wrote() {
     let home = TestHome::new().unwrap();
