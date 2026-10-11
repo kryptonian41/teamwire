@@ -342,6 +342,50 @@ fn gh_saying_no_checks_were_reported_is_done_not_polled_for_ever() {
     );
 }
 
+/// Right after a push GitHub has no check runs yet. A list that is empty
+/// on the first polls and then fills is watched to its end.
+#[test]
+fn no_checks_on_the_first_polls_is_not_done_before_ci_starts() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, "[]");
+    bed.answer("checks", 7, 2, "[]");
+    bed.answer("checks", 7, 3, &checks(&[("ci", "pending")]));
+    bed.answer("checks", 7, 4, &checks(&[("ci", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
+        ]
+    );
+}
+
+/// A pull request that never gets checks is done on the third empty poll.
+#[test]
+fn no_checks_on_three_polls_in_a_row_is_done() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, "[]");
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 0 passed, 0 failed, 0 skipped"
+        ]
+    );
+    let checks_calls = bed
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("pr checks 7"))
+        .count();
+    assert_eq!(checks_calls, 3, "{:?}", bed.calls());
+}
+
 #[test]
 fn a_failure_before_merge_still_exits_1() {
     let bed = Bed::new();
