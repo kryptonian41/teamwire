@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
+use crate::code_text::code_only;
 use crate::relative;
 
 const ADAPTERS: &[&str] = &[
@@ -29,10 +30,7 @@ pub(crate) fn check_adapters(root: &Path, problems: &mut Vec<String>) -> Result<
             continue;
         }
         let text = std::fs::read_to_string(&path).with_context(|| format!("reading {name}"))?;
-        for (index, line) in text.lines().enumerate() {
-            if line.trim_start().starts_with("//") {
-                continue;
-            }
+        for (index, line) in code_only(&text).lines().enumerate() {
             if let Some(adapter) = ADAPTERS.iter().find(|a| line.contains(**a)) {
                 problems.push(format!(
                     "{name}:{}: names {adapter}; adapter crates are named only in wiring.rs (docs/conventions.md section 5)",
@@ -87,6 +85,22 @@ mod tests {
         assert!(
             hits.first()
                 .is_some_and(|p| p.starts_with("crates/teamwire-cli/src/cmd/hook.rs:2:"))
+        );
+    }
+
+    #[test]
+    fn adapter_named_in_a_string_or_a_comment_is_fine() {
+        let dir = clean_workspace();
+        write(
+            dir.path(),
+            "crates/teamwire-cli/src/cmd/hook.rs",
+            "let a = \"teamwire_host_tmux\";\nlet b = 1; // teamwire_host_tmux\n/* teamwire_host_herdr\n teamwire_harness_claude */\nlet c = r#\"teamwire_host_tmux\"#;\n",
+        );
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        assert!(
+            !found.problems.iter().any(|p| p.contains("adapter crates")),
+            "{:?}",
+            found.problems
         );
     }
 }

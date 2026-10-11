@@ -4,12 +4,13 @@
 //! real locator (ADR 0006).
 
 use std::io::Write as _;
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use nix::sys::signal::{Signal, kill};
+use nix::sys::signal::{Signal, killpg};
 use nix::unistd::Pid;
 use serde_json::Value;
 use teamwire_core::{Role, TeamName};
@@ -379,8 +380,15 @@ impl World {
     }
 }
 
-fn run(mut cmd: Command, stdin: Option<&str>) -> Run {
-    cmd.stdin(Stdio::piped())
+fn run(cmd: Command, stdin: Option<&str>) -> Run {
+    run_within(cmd, stdin, COMMAND_LIMIT)
+}
+
+fn run_within(mut cmd: Command, stdin: Option<&str>, limit: Duration) -> Run {
+    // Its own process group, so the watchdog can kill a grandchild (a hung
+    // fake herdr call) that holds the output pipes open after the child dies.
+    cmd.process_group(0)
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     let mut child = cmd.spawn().unwrap();
@@ -389,14 +397,14 @@ fn run(mut cmd: Command, stdin: Option<&str>) -> Run {
         input.write_all(text.as_bytes()).unwrap();
     }
     drop(input);
-    // A watchdog kills the child at the limit; `done` going out of scope tells
+    // A watchdog kills the group at the limit; `done` going out of scope tells
     // it the child ended in time.
     let pid = Pid::from_raw(child.id().try_into().unwrap());
     let (done, ended) = mpsc::channel::<()>();
     let watchdog = std::thread::spawn(move || {
-        let hung = ended.recv_timeout(COMMAND_LIMIT) == Err(mpsc::RecvTimeoutError::Timeout);
+        let hung = ended.recv_timeout(limit) == Err(mpsc::RecvTimeoutError::Timeout);
         if hung {
-            kill(pid, Signal::SIGKILL).ok();
+            killpg(pid, Signal::SIGKILL).ok();
         }
         hung
     });
@@ -404,11 +412,32 @@ fn run(mut cmd: Command, stdin: Option<&str>) -> Run {
     drop(done);
     assert!(
         !watchdog.join().unwrap(),
-        "a teamwire command did not finish within {COMMAND_LIMIT:?}"
+        "a teamwire command did not finish within {limit:?}"
     );
     Run {
         code: out.status.code().unwrap_or(-1),
         out: String::from_utf8_lossy(&out.stdout).into_owned(),
         err: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_grandchild_holding_the_pipes_does_not_outlive_the_limit() {
+        // Killing the shell alone leaves its `sleep 25`, which keeps stdout open.
+        let mut cmd = Command::new("sh");
+        cmd.args(["-c", "sleep 25 & sleep 60"]);
+        let begun = Instant::now();
+        let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_within(cmd, None, Duration::from_millis(500))
+        }));
+        assert!(
+            begun.elapsed() < Duration::from_secs(15),
+            "the group was not killed"
+        );
+        assert!(ended.is_err(), "the hung command was not reported");
     }
 }

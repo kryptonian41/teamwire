@@ -121,8 +121,9 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         let typed = rig.typed_count(&summary);
         assert!(typed <= 1, "{summary} typed {typed} times before the kill");
         let state = latest_state(&rig);
-        // A hook killed before it settled the completion left it unfinished.
-        if state != ReportState::Delivered {
+        // Only a kill after the claim and before the outcome tests the
+        // recovery; a kill while the completion is still `Pending` claimed nothing.
+        if state == ReportState::Delivering {
             interrupted += 1;
         }
         assert!(
@@ -140,10 +141,10 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         let typed = rig.typed_count(&summary);
         assert!((1..=2).contains(&typed), "{summary} typed {typed} times");
     }
-    eprintln!("{interrupted} of {KILL_POINTS} hooks were killed before they finished");
+    eprintln!("{interrupted} of {KILL_POINTS} hooks were killed while delivering");
     assert!(
         interrupted >= KILL_POINTS / 10,
-        "only {interrupted} hooks were killed before they finished; the kill window is off"
+        "only {interrupted} hooks were killed while delivering; the kill window is off"
     );
     stop_agents(&rig);
 }
