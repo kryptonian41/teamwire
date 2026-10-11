@@ -11,10 +11,16 @@ use crate::history::History;
 use crate::observe::{Observation, gauges, observe};
 use crate::otlp::{self, BUCKET_MS};
 use crate::spans::{spans_ending, trace_id};
-use crate::{ExportError, ExportReport, OtlpConfig, defs};
+use crate::{ExportError, ExportReport, OtlpConfig, StopCutoff, defs};
 
 /// A claim this old, whose exporter is gone, may be taken over.
 const CLAIM_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// `export_once_until` with no cutoff: each request has the whole
+/// configured timeout.
+pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
+    export_once_until(ctx, exporter, None)
+}
 
 #[expect(
     clippy::redundant_closure_for_method_calls,
@@ -22,8 +28,14 @@ const CLAIM_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
 )]
 /// Sends the events after the export mark, then moves the mark. Nothing
 /// new to send is `Ok` with an empty report; a live claim held by another
-/// exporter is `Claimed` and nothing is sent.
-pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
+/// exporter is `Claimed` and nothing is sent. With a `cutoff`, a request
+/// still waiting when the caller stops is given up after the cutoff's grace,
+/// and the export fails as on a timeout.
+pub fn export_once_until(
+    ctx: &mut Ctx<'_>,
+    exporter: &OtlpConfig,
+    cutoff: Option<StopCutoff<'_>>,
+) -> Result<ExportReport, ExportError> {
     let now = ctx.clock.now();
     let platform = ctx.platform;
     let own_pid = Pid::new(std::process::id());
@@ -33,26 +45,27 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
     };
     let me = claimer.id.clone();
     let claim = ctx.store.write(|tx| {
-        // Checked in the claiming transaction, so no event can arrive between
-        // the check and the claim. A batch that ends inside a bucket would send
+        // Read in the claiming transaction, so no event can arrive between
+        // the read and the claim. A batch that ends inside a bucket would send
         // that bucket's point again when the next batch adds to it (ADR 0005
-        // point 4), so the batch waits until the last bucket in it is over.
+        // point 4), so a new batch stops before the first event whose bucket
+        // is still open. That event and the ones after it wait for a later
+        // export. A taken-over claim keeps its old end, which was limited the
+        // same way when it was made.
         let reader = tx.reader();
         let mark = reader.export_mark()?;
-        let open_bucket = reader
+        let up_to = reader
             .events_after(mark.last_event_seq, None, None)?
             .items
             .iter()
-            .any(|e| {
+            .find(|e| {
                 e.time.unix_millis().div_euclid(BUCKET_MS) * BUCKET_MS + BUCKET_MS
                     > now.unix_millis()
-            });
-        if open_bucket && mark.claimed_to.is_none() {
-            return Ok(None);
-        }
+            })
+            .map(|e| e.seq.saturating_sub(1));
         // A holder whose pid now belongs to a process that started at
         // another time is gone: its pid was reused.
-        tx.claim_metric_export(now, claimer.clone(), CLAIM_STALE_AFTER, |holder| {
+        tx.claim_metric_export(now, claimer.clone(), up_to, CLAIM_STALE_AFTER, |holder| {
             holder.id.parse::<u32>().map_or(true, |pid| {
                 !platform.process_alive(ProcessRef {
                     pid: Pid::new(pid),
@@ -76,7 +89,7 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
             }),
         };
     };
-    match send_batch(ctx, exporter, &claim) {
+    match send_batch(ctx, exporter, &claim, cutoff) {
         Ok(report) => {
             match ctx
                 .store
@@ -110,6 +123,7 @@ fn send_batch(
     ctx: &Ctx<'_>,
     exporter: &OtlpConfig,
     claim: &ExportClaim,
+    cutoff: Option<StopCutoff<'_>>,
 ) -> Result<ExportReport, ExportError> {
     let (team, listing) = ctx
         .store
@@ -148,11 +162,11 @@ fn send_batch(
     // one copy; a resent metric point would count twice.
     if !spans.is_empty() {
         let request = otlp::traces_request(&team_name, trace_id(&team_ulid), &spans);
-        otlp::post(exporter, "v1/traces", &request)?;
+        otlp::post(exporter, "v1/traces", &request, cutoff)?;
     }
     let (request, points) = otlp::metrics_request(&team_name, &observations);
     if points > 0 {
-        otlp::post(exporter, "v1/metrics", &request)?;
+        otlp::post(exporter, "v1/metrics", &request, cutoff)?;
     }
     Ok(ExportReport {
         from_seq: claim.from_seq,

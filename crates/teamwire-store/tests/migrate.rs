@@ -11,7 +11,7 @@ use rusqlite::Connection;
 use teamwire_core::{EventType, Pid, TeamName, TeamState};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
-    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_VERSION, Store, StoreError, database_path,
+    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_VERSION, Store, StoreError, database_path,
 };
 
 fn team() -> TeamName {
@@ -486,4 +486,129 @@ fn a_table_named_like_sqlite_underscore_is_not_an_internal_table() {
         Store::open_read_only(home.path(), &team()).unwrap_err(),
         StoreError::NotTeamwire
     );
+}
+
+/// Builds a version-1 database, as a version-1 binary left it mid-close and
+/// mid-export, with the WAL folded in so `team.db` is the only file.
+fn version_1_database(path: &PathBuf) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let conn = Connection::open(path).unwrap();
+    conn.execute_batch(SCHEMA_V1_SQL).unwrap();
+    conn.pragma_update(None, "application_id", APPLICATION_ID)
+        .unwrap();
+    conn.pragma_update(None, "user_version", 1).unwrap();
+    conn.execute_batch(
+        "INSERT INTO team (id, ulid, name, title, state, closing_pid, lead_harness, lead_host,
+                           lead_route, created_at)
+         VALUES (1, '01J9ZQ0000000000000000TEAM', 'alpha', 'Alpha', 'closing', 4242,
+                 'claude-code', 'herdr', 'sink', '2026-10-01T00:00:00.000Z');
+         INSERT INTO events (ulid, time, type, writer_version)
+         VALUES ('01J9ZQ000000000000000EVENT', '2026-10-01T00:00:01.000Z', 'team.created', '0.1.0');
+         INSERT INTO metric_export (id, last_event_seq, claimed_to, claimed_by, claimed_at)
+         VALUES (1, 0, 1, '5151', '2026-10-01T00:00:02.000Z');",
+    )
+    .unwrap();
+}
+
+/// A live team no read-write open has touched since an upgrade, and every
+/// archive, sit at an older schema. A read-only open reads them as they are,
+/// with the columns a later version added read as NULL, and writes nothing
+/// (WAT-11).
+#[test]
+fn a_read_only_open_reads_a_version_1_database_and_changes_nothing() {
+    let home = TestHome::new().unwrap();
+    let path = database_path(home.path(), &team());
+    version_1_database(&path);
+    let dir = path.parent().unwrap().to_path_buf();
+    let before = directory_state(&dir);
+    let names: Vec<&str> = before.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, ["team.db"]);
+
+    for store in [
+        Store::open_read_only(home.path(), &team()).unwrap(),
+        Store::open_read_only_at(&path).unwrap(),
+    ] {
+        assert_eq!(store.schema_version().unwrap(), 1);
+        let (row, mark, events) = store
+            .read(|tx| {
+                Ok((
+                    tx.team()?.unwrap(),
+                    tx.export_mark()?,
+                    tx.events_after(0, None, None)?,
+                ))
+            })
+            .unwrap();
+        assert_eq!(row.closing_pid, Some(Pid::new(4242)));
+        assert_eq!(row.closing_started, None);
+        assert_eq!(mark.claimed_by.as_deref(), Some("5151"));
+        assert_eq!(mark.claimed_by_started, None);
+        assert_eq!(events.items.len(), 1);
+        drop(store);
+        assert_eq!(
+            directory_state(&dir),
+            before,
+            "the read changed the directory"
+        );
+    }
+    let conn = Connection::open(&path).unwrap();
+    let version: u32 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 1);
+}
+
+/// Every migration step, so that a new schema version must be added here.
+const STEPS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL];
+
+/// Every column a read sees on a database migrated to the current version,
+/// a read-only open of each older version sees too. A migration that adds a
+/// column without listing it for unmigrated reads fails here.
+#[test]
+fn a_read_only_open_of_every_older_version_shows_every_current_column() {
+    let reference_home = TestHome::new().unwrap();
+    drop(Store::open(reference_home.path(), &team()).unwrap());
+    let columns = |store: &Store| -> Vec<(String, Vec<String>)> {
+        store
+            .read(|tx| {
+                let conn = tx.connection();
+                let mut tables = conn.prepare(
+                    "SELECT name FROM main.sqlite_schema WHERE type = 'table'
+                       AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
+                )?;
+                let names: Vec<String> = tables
+                    .query_map([], |r| r.get(0))?
+                    .collect::<Result<_, _>>()?;
+                let mut out = Vec::new();
+                for name in names {
+                    let stmt = conn.prepare(&format!("SELECT * FROM {name} LIMIT 0"))?;
+                    let mut cols: Vec<String> =
+                        stmt.column_names().into_iter().map(str::to_owned).collect();
+                    cols.sort();
+                    out.push((name, cols));
+                }
+                Ok(out)
+            })
+            .unwrap()
+    };
+    let reference = columns(&Store::open_read_only(reference_home.path(), &team()).unwrap());
+    assert!(reference.iter().any(|(t, _)| t == "metric_export"));
+
+    for start in 1..SCHEMA_VERSION {
+        let home = TestHome::new().unwrap();
+        let path = database_path(home.path(), &team());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        {
+            // Build the database as version `start` left it.
+            let conn = Connection::open(&path).unwrap();
+            for step in STEPS.iter().take(start as usize) {
+                conn.execute_batch(step).unwrap();
+            }
+            conn.pragma_update(None, "application_id", APPLICATION_ID)
+                .unwrap();
+            conn.pragma_update(None, "user_version", start).unwrap();
+        }
+        let store = Store::open_read_only(home.path(), &team()).unwrap();
+        assert_eq!(store.schema_version().unwrap(), start);
+        assert_eq!(columns(&store), reference, "from version {start}");
+    }
 }

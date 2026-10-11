@@ -8,6 +8,7 @@ use rusqlite::{Connection, OpenFlags, TransactionBehavior};
 use teamwire_core::TeamName;
 
 use crate::error::StoreError;
+use crate::older::show_missing_columns;
 use crate::tx::{ReadTx, Tx};
 use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_VERSION};
 
@@ -114,9 +115,10 @@ impl Store {
     }
 
     /// For commands that only read (status, log, members, metrics, export,
-    /// doctor): `mode=ro`, never creates, never migrates. A database whose
-    /// schema version differs from the binary's is refused with `SchemaNewer` or
-    /// `SchemaOlder`, and nothing on disk changes (WAT-11).
+    /// doctor): `mode=ro`, never creates, never migrates. A database at an
+    /// older schema is read as it is, with each column a later version added
+    /// read as NULL. A newer schema is refused with `SchemaNewer`, and an
+    /// empty file with `SchemaOlder`. Nothing on disk changes (WAT-11).
     pub fn open_read_only(home: &Path, team: &TeamName) -> Result<Self, StoreError> {
         Self::open_read_only_at(&database_path(home, team))
     }
@@ -142,7 +144,10 @@ impl Store {
                     db: 0,
                     binary: SCHEMA_VERSION,
                 }),
-                Found::Ours(v) => check_version(v),
+                Found::Ours(v) => {
+                    check_version_not_newer(v)?;
+                    show_missing_columns(&conn, v)
+                }
             }
         })();
         if let Err(refused) = checked {
@@ -279,20 +284,6 @@ impl Store {
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<Result<Vec<String>, _>>()?;
         Ok(lines.join("\n"))
-    }
-}
-
-fn check_version(db: u32) -> Result<(), StoreError> {
-    match db.cmp(&SCHEMA_VERSION) {
-        std::cmp::Ordering::Greater => Err(StoreError::SchemaNewer {
-            db,
-            binary: SCHEMA_VERSION,
-        }),
-        std::cmp::Ordering::Less => Err(StoreError::SchemaOlder {
-            db,
-            binary: SCHEMA_VERSION,
-        }),
-        std::cmp::Ordering::Equal => Ok(()),
     }
 }
 

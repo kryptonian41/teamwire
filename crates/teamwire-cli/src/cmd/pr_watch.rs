@@ -20,6 +20,11 @@ use crate::{Global, PrWatchArgs, USAGE};
 const DEFAULT_INTERVAL_S: u64 = 45;
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// How many polls in a row must find no checks before a pull request with
+/// none is done. Right after a push GitHub has no check runs yet, and `gh`
+/// then says the same as for a pull request that never gets any.
+const EMPTY_POLLS_FOR_DONE: u32 = 3;
+
 /// What the watch remembers between polls, so it can stay quiet.
 #[derive(Debug, Default)]
 struct Memory {
@@ -29,6 +34,8 @@ struct Memory {
     mergeable: HashMap<u64, String>,
     /// Each finished PR with the number of checks that failed.
     done: HashMap<u64, usize>,
+    /// How many polls in a row found no checks on each PR.
+    empty_polls: HashMap<u64, u32>,
 }
 
 fn label(repo: &str, pr: u64) -> String {
@@ -77,10 +84,20 @@ impl Memory {
                 self.mergeable.insert(pr, verdict);
             }
         }
-        // A PR with no checks has nothing pending: an empty list is done.
         let Some(checks) = checks.and_then(Value::as_array) else {
             return events;
         };
+        // A PR with no checks has nothing pending, but only once the list
+        // stayed empty long enough for CI to have started.
+        if checks.is_empty() {
+            let polls = self.empty_polls.entry(pr).or_default();
+            *polls += 1;
+            if *polls < EMPTY_POLLS_FOR_DONE {
+                return events;
+            }
+        } else {
+            self.empty_polls.remove(&pr);
+        }
         let mut buckets: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for check in checks {
             let (name, bucket) = (text(check, "name"), text(check, "bucket"));

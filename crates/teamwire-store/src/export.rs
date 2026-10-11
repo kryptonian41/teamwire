@@ -89,15 +89,17 @@ fn as_i64(v: u64) -> i64 {
 
 impl Tx<'_> {
     /// Claims the next batch of events for `claimer` with one conditional
-    /// update. `None` when there is nothing new, or when another exporter
-    /// holds a claim. A claim older than `stale_after` whose holder (pid and
-    /// start time) `holder_is_dead` reports gone is taken over, and the
-    /// batch keeps its old end, so it is sent again once. No event: an
-    /// event here would make the export chase its own tail.
+    /// update. A new batch ends at `up_to` when given, else at the newest
+    /// event. `None` when there is nothing new up to that end, or when
+    /// another exporter holds a claim. A claim older than `stale_after` whose
+    /// holder (pid and start time) `holder_is_dead` reports gone is taken
+    /// over, and the batch keeps its old end, so it is sent again once. No
+    /// event: an event here would make the export chase its own tail.
     pub fn claim_metric_export(
         &self,
         at: Timestamp,
         claimer: impl Into<ExportHolder>,
+        up_to: Option<u64>,
         stale_after: Duration,
         holder_is_dead: impl FnOnce(&ExportHolder) -> bool,
     ) -> Result<Option<ExportClaim>, StoreError> {
@@ -122,7 +124,7 @@ impl Tx<'_> {
                 (*to, true)
             }
             (Some(to), _, _) => (*to, true),
-            _ => (newest, false),
+            _ => (up_to.map_or(newest, |limit| limit.min(newest)), false),
         };
         if to <= mark.last_event_seq {
             return Ok(None);

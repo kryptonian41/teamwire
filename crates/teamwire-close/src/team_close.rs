@@ -33,7 +33,15 @@ pub(crate) fn clear_stale_lock(ctx: &mut Ctx<'_>) -> CloseReport {
         }
         let now = ctx.clock.now();
         return match ctx.store.write(|tx| tx.clear_stale_close_lock(now, owner)) {
-            Ok(_) => {
+            // A close that took the lock after its owner was found dead keeps it.
+            Ok(false) => {
+                report.refusals.push(
+                    "another close took the close lock after it was checked; nothing was cleared"
+                        .to_owned(),
+                );
+                report
+            }
+            Ok(true) => {
                 report.steps.push(StepOutcome {
                     step: "clear_stale_lock".to_owned(),
                     ok: true,
