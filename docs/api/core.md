@@ -104,6 +104,8 @@ pub enum DeliveryErrorCode {
     HostBadArgument, HostOther,
     // from teamwire
     RecipientRemoved, TeamClosed, NoHost,
+    DeliveryInterrupted,  // left in `delivering` past `delivering_stale_s` (REP-14)
+    BudgetExhausted,      // the turn-end hook's delivery budget ran out (ADR 0007)
 }
 
 /// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15).
@@ -112,6 +114,7 @@ pub enum Refusal {
     RemovedRecipient, SelfMessage, EmptyBody, TooLong { limit: usize, got: usize },
     NoCommit, CommitNotReachable, NotAQuestion, NotAskedOfYou, TeamClosed,
     RateLimited, Repeat,
+    NotResendable,  // only the sender or the lead may resend, to a resendable recipient
 }
 ```
 
@@ -274,8 +277,10 @@ pub trait Clock: Send + Sync {
 ```
 
 `OneLine` is a string that has been through `sanitize::one_line(text, max)`:
-control characters and newlines removed, other non-printable characters
-dropped, cut to `max` characters with `…`. It is the only type `Host::submit`
+every run of white space (line breaks and tabs included) turned into one
+space and the ends trimmed, ANSI escape sequences and other control characters
+removed, characters that print nothing dropped, cut to `max` characters with
+`…`. So `"a\nb"` becomes `"a b"`. It is the only type `Host::submit`
 accepts, so an unsanitised string cannot reach a session (DEL-11).
 
 ## 6a. Adapter registry
@@ -393,14 +398,25 @@ impl Store {
 }
 
 pub enum StoreError { Busy, Full, SchemaNewer { db: u32, binary: u32 }, SchemaOlder { db: u32, binary: u32 },
-                      NotTeamwire, Corrupt(String), Constraint(String), Io(String) }
+                      NotTeamwire, Corrupt(String), Constraint(String),
+                      NoDatabase { path: PathBuf },  // the team has no database file
+                      Io(String) }
 ```
+
+A command treats `NoDatabase` as "no such team", not as a broken store.
 
 `Tx` offers one typed method per operation the services need, for example
 `insert_message`, `set_delivery_state`, `next_counter`, `insert_completion`,
 `claim_completion_for_delivery`, `bump_generation`, `set_member_state`,
 `record_event`, `announce_once` (returns false if the key already exists).
-Every `Tx` method that changes a row also records the matching event.
+Every `Tx` method that makes a lifecycle or message change also records the
+matching event. A few bookkeeping writes record none, because the closed event
+list has no type for them: `set_sleep_hold`, `set_member_place`,
+`set_member_session`, `set_member_token_hash`, `set_gate_told_generation`,
+`set_completion_final`, `announce_once`, `heartbeat_watch_lease`, and the
+metric-export writes `claim_metric_export`, `commit_metric_export` and
+`release_metric_claim`. The list is in the `Tx` doc comment
+(`crates/teamwire-store/src/tx.rs`).
 
 Schema version 1 lives in `crates/teamwire-store/src/schema/v1.sql`. Its
 tables and columns are those in `ARCHITECTURE.md`, "Data model". Constraints

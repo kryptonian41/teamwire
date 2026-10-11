@@ -61,7 +61,9 @@ teamwire/
 └── examples/
     ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
     ├── presets/*.json             the six team shapes
-    └── mcp/lead.json              lead MCP config, for a by-hand project setup
+    └── mcp/lead.json              the lead MCP server, which `teamwire install`
+                                   registers for the user; never merged into
+                                   a project's .mcp.json (ADR 0012)
 ```
 
 Layout rules, each checked by `cargo xtask tidy`:
@@ -93,7 +95,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | # | Command | What it stops |
 | --- | --- | --- |
 | 1 | `cargo fmt --all -- --check` | Format changes |
-| 2 | `cargo xtask tidy --base main` | The layout rules of section 1, layering, protected-file and weakened-test flags |
+| 2 | `cargo xtask tidy --base main` | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
 | 4 | `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |

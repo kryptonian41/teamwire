@@ -206,9 +206,13 @@ Principles, each with the requirement it serves:
   checks by the member's timeout (default 1800 s), each run in its own
   process group and killed as a group (DEL-14, VER-1).
 - **Record before the irreversible step.** Launch records a member as
-  `creating` before `git worktree add`, records the place before the agent
-  starts, and marks `started` after. Close finds everything recorded, whatever
-  step a crash hit (LCH-3).
+  `creating` before `git worktree add`. The host starts the agent inside its
+  spawn call (herdr's `agent start`), so launch records the place right after
+  that call returns, and marks `started` later. A crash inside the spawn call
+  leaves a `creating` member with no place and a live agent. Close looks for
+  the member's address among the host's live agents, and if it is there,
+  refuses, names the agent to stop by hand, and keeps the state. Close finds
+  everything else recorded, whatever step a crash hit (LCH-3).
 - **Hooks never fail a turn.** Every hook path exits 0. Errors go to stderr
   and to an event row when the store is reachable (REP-10).
 - **Refuse rather than guess.** An unknown busy state refuses close; a
@@ -299,8 +303,9 @@ Claude Code specifics that the adapter owns:
   output are parsed and produced here.
 
 herdr specifics that the adapter owns: the JSON result and error envelope,
-`error.code` mapping, `agent start` retries on `agent_pane_busy` and
-`agent_not_ready`, `agent prompt`, `agent get` for the session in a pane,
+`error.code` mapping, `agent start` retries on `agent_pane_busy` (a bounded
+number of times) and counts `agent_not_ready` as started (LCH-13),
+`agent prompt`, `agent get` for the session in a pane,
 one workspace per team and one tab per member, and labels set once at launch.
 
 Adding a harness (Codex CLI, Gemini CLI, opencode) or a host means one crate

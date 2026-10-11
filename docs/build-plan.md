@@ -1,5 +1,10 @@
 # Build plan
 
+**Status: complete.** Every ticket, T01 to T20, is built and merged. The
+tickets below are kept as the record of how the build was split; they are not
+open work. For what the code does now, read `docs/ARCHITECTURE.md` and
+`docs/api/`.
+
 The build as 20 tickets in five waves. Each ticket is a vertical slice with
 its own tests, sized to fit one fresh context window. No two tickets in one
 wave own the same path. Every wave has at most five implementer tickets.

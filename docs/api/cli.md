@@ -20,10 +20,12 @@ every subcommand. `--json` prints machine-readable output where listed.
 
 These refuse a caller that carries a member identity (`TEAMWIRE_TOKEN`,
 `TEAMWIRE_ROLE` or `TEAMWIRE_TEAM` set) with `refused.identity`, exit 1,
-before opening the store: `launch --add`, `watch` (except `--once`) and
-`close` (except `--dry-run`). `verify` stays open, because the closer runs
-it. A member must never be able to remove a peer, take the watch lease or
-add members by mistake (ADR 0008).
+before opening the store: `launch --add`, `watch` (with or without `--once`,
+because a single poll takes the lease and uses up announcement keys the lead's
+watch would then never print), `close` (except `--dry-run`) and
+`verify --waive`. Plain `verify` stays open, because the closer runs it. A
+member must never be able to remove a peer, take the watch lease, add
+members by mistake, or waive its own flags (ADR 0008, VER-5).
 
 ### `teamwire launch [--add] [--dry-run] [--spec FILE]`
 
@@ -106,7 +108,9 @@ and writes a verify record with the HEAD sha. Exit 0 only when every checked
 member is `PASS`; else 2. `--waive` records a waiver for one flag of one
 member at its current HEAD. `--deep` also runs `PRAGMA integrity_check` and
 checks every message hash. `--repair-files` rewrites missing or differing
-`comms/` and `outbox/` copies from the store.
+`comms/` copies from the stored body (when that body still matches its hash).
+An `outbox/` copy is reported but never rewritten: the store keeps only its
+hash, not its bytes (STO-10).
 
 ### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock]`
 
@@ -126,10 +130,10 @@ lock whose owner pid is dead, and nothing else.
 ### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
 
 Sends one message (ADR 0003). `--to` takes roles separated by commas, or
-`lead`. For a member, `--team` and `--from` default to `TEAMWIRE_TEAM` and
-`TEAMWIRE_ROLE`. With no `--from`, no `TEAMWIRE_ROLE` and no `TEAMWIRE_TOKEN`,
-`--from` defaults to `lead`, as `resend` does; the harness session then
-decides (ADR 0008). Prints the display id and one line per recipient. On
+`lead`. `<team>` is a positional argument. For a member, `<team>` and `--from`
+default to `TEAMWIRE_TEAM` and `TEAMWIRE_ROLE`. With no `--from`, no
+`TEAMWIRE_ROLE` and no `TEAMWIRE_TOKEN`, `--from` defaults to `lead`, as
+`resend` does; the harness session then decides (ADR 0008). Prints the display id and one line per recipient. On
 `undelivered` it also prints `NOT DELIVERED to <role>: <reason>` on stderr and
 exits 4. A recipient whose delivery record could not be written is left
 `pending`, named on stderr as `NOT RECORDED for <role>`, and exits 6; retry

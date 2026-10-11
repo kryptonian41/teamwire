@@ -164,8 +164,9 @@ this generation has not been told yet, nothing is stored and the output is:
 ## `team_status`
 
 Read-only team view (WAT-11). Input: `{"team": "tw"}` for the lead; members
-get their own team. Output: the same JSON as `teamwire status --json`
-(see `docs/api/cli.md`).
+get their own team. Output: the JSON of `teamwire status --json`
+(see `docs/api/cli.md`). For a member caller, `lead` is `null`: the lead's
+session id is what a member would need to speak as the lead.
 
 ## `team_members`
 
