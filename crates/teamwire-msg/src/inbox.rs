@@ -3,7 +3,7 @@
 
 use serde_json::json;
 use teamwire_core::{DeliveryState, DisplayId, EventType, Recipient, Role};
-use teamwire_store::Ctx;
+use teamwire_store::{Ctx, StoreError};
 
 use crate::{AckOutcome, AckResult, InboxItem, SendError};
 
@@ -61,9 +61,12 @@ pub fn inbox(ctx: &mut Ctx<'_>, me: &Role, all: bool) -> Result<Vec<InboxItem>, 
                     &json!({ "op": "inbox", "code": "hash_mismatch", "id": m.display_id.as_str() }),
                 )?;
             }
-            let re = match &m.re {
-                Some(ulid) => reader.message(ulid)?.map(|q| q.display_id),
-                None => None,
+            // The message this one answers may itself be damaged. That must
+            // not hide this message, so its id is left out.
+            let re = match m.re.as_ref().map(|ulid| reader.message(ulid)) {
+                Some(Ok(parent)) => parent.map(|q| q.display_id),
+                Some(Err(StoreError::Corrupt(_))) | None => None,
+                Some(Err(e)) => return Err(e),
             };
             items.push(InboxItem {
                 display_id: m.display_id.clone(),
@@ -97,15 +100,34 @@ pub fn ack(ctx: &mut Ctx<'_>, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckRes
         let reader = tx.reader();
         let mut out = Vec::with_capacity(ids.len());
         for id in ids {
-            let outcome = match reader.message_by_display_id(id)? {
-                Some(m) if reader.delivery(&m.ulid, &recipient)?.is_some() => {
-                    if tx.ack_delivery(now, &m.ulid, &recipient)? {
-                        AckOutcome::Acked
-                    } else {
-                        AckOutcome::Already
+            let acked = (|| {
+                Ok(match reader.message_by_display_id(id)? {
+                    Some(m) if reader.delivery(&m.ulid, &recipient)?.is_some() => {
+                        if tx.ack_delivery(now, &m.ulid, &recipient)? {
+                            AckOutcome::Acked
+                        } else {
+                            AckOutcome::Already
+                        }
                     }
+                    _ => AckOutcome::Unknown,
+                })
+            })();
+            let outcome = match acked {
+                Ok(outcome) => outcome,
+                // A message that fails its hash cannot be acked. The other ids
+                // of the call still are; this one is recorded and reported as
+                // unknown, as `inbox` leaves such a message unread.
+                Err(StoreError::Corrupt(why)) => {
+                    tx.record_event(
+                        now,
+                        EventType::StoreError,
+                        Some(me),
+                        None,
+                        &json!({ "op": "ack", "code": "corrupt", "id": id.as_str(), "why": why }),
+                    )?;
+                    AckOutcome::Unknown
                 }
-                _ => AckOutcome::Unknown,
+                Err(e) => return Err(e),
             };
             out.push(AckResult {
                 id: id.clone(),

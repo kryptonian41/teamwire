@@ -238,6 +238,43 @@ fn bumping_the_generation_and_undoing_it() {
 }
 
 #[test]
+fn a_reprompt_cannot_be_undone_once_the_new_generation_has_a_completion() {
+    use teamwire_core::{CompletionStatus, FinalSource};
+
+    use crate::NewCompletion;
+
+    let mut f = with_members(&["api"]);
+    let r = role("api");
+    f.store
+        .write(|tx| tx.bump_generation(at(30), &r, "please fix the tests"))
+        .unwrap();
+    f.store
+        .write(|tx| {
+            tx.insert_completion(
+                at(31),
+                &NewCompletion {
+                    role: r.clone(),
+                    generation: 2,
+                    status: CompletionStatus::Done,
+                    summary: "fixed".to_owned(),
+                    final_message: None,
+                    final_source: FinalSource::Hook,
+                },
+            )
+        })
+        .unwrap();
+    let undone = f
+        .store
+        .write(|tx| tx.restore_generation(at(32), &r, 1, at(1)));
+    assert!(
+        matches!(undone, Err(StoreError::Constraint(_))),
+        "{undone:?}"
+    );
+    let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
+    assert_eq!(m.generation, 2);
+}
+
+#[test]
 fn a_removed_or_failed_member_cannot_be_reprompted() {
     let mut f = with_members(&["api", "web"]);
     f.store

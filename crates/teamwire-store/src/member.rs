@@ -358,7 +358,9 @@ impl Tx<'_> {
     /// Undoes a `bump_generation` after a known failure to deliver the
     /// reprompt: puts back the earlier generation and its start time. The
     /// earlier `member.reprompted` event stays; a second one with
-    /// `"undone": true` says the bump was taken back.
+    /// `"undone": true` says the bump was taken back. Refused once the new
+    /// generation has a completion, which the undo would hide (ADR 0007
+    /// point 10).
     pub fn restore_generation(
         &self,
         at: Timestamp,
@@ -368,12 +370,14 @@ impl Tx<'_> {
     ) -> Result<(), StoreError> {
         let rows = self.connection().execute(
             "UPDATE members SET generation = ?2, gen_started_at = ?3
-             WHERE role = ?1 AND generation = ?2 + 1",
+             WHERE role = ?1 AND generation = ?2 + 1
+               AND NOT EXISTS (SELECT 1 FROM completions
+                               WHERE role = ?1 AND generation = ?2 + 1)",
             rusqlite::params![role.as_str(), generation, gen_started_at.to_string()],
         )?;
         exactly_one(
             rows,
-            format!("member {role} one generation ahead of {generation}"),
+            format!("member {role} one generation ahead of {generation}, with no completion yet"),
         )?;
         self.record_event(
             at,

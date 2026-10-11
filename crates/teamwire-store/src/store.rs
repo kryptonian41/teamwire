@@ -60,16 +60,21 @@ impl Drop for Store {
         if let Ok(placeholder) = Connection::open_in_memory() {
             drop(std::mem::replace(&mut self.conn, placeholder));
         }
-        if let Ok(conn) = Connection::open_with_flags(
-            &path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ) {
-            // The connection only opens the log when it reads, and only a
-            // connection that opened it cleans up on close.
-            let _version: Option<i64> =
-                conn.query_row("PRAGMA user_version", [], |r| r.get(0)).ok();
-            drop(conn);
-        }
+        remove_side_files(&path);
+    }
+}
+
+/// Makes a short read-write open and close, which deletes the `-wal` and
+/// `-shm` files once no other connection holds the database.
+fn remove_side_files(path: &Path) {
+    if let Ok(conn) = Connection::open_with_flags(
+        path,
+        OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        // The connection only opens the log when it reads, and only a
+        // connection that opened it cleans up on close.
+        let _version: Option<i64> = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).ok();
+        drop(conn);
     }
 }
 
@@ -129,16 +134,25 @@ impl Store {
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )?;
-        conn.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
-        match found(&conn)? {
-            Found::Foreign => return Err(StoreError::NotTeamwire),
-            Found::Fresh => {
-                return Err(StoreError::SchemaOlder {
+        let checked = (|| {
+            conn.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
+            match found(&conn)? {
+                Found::Foreign => Err(StoreError::NotTeamwire),
+                Found::Fresh => Err(StoreError::SchemaOlder {
                     db: 0,
                     binary: SCHEMA_VERSION,
-                });
+                }),
+                Found::Ours(v) => check_version(v),
             }
-            Found::Ours(v) => check_version(v)?,
+        })();
+        if let Err(refused) = checked {
+            // No `Store` exists to clean up after this open, so the files it
+            // created are removed here (WAT-11).
+            drop(conn);
+            if no_side_files {
+                remove_side_files(path);
+            }
+            return Err(refused);
         }
         conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA query_only = ON;")?;
         Ok(Self {
@@ -289,7 +303,7 @@ fn found(conn: &Connection) -> Result<Found, StoreError> {
         let app = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
         let version = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         let tables = conn.query_row(
-            "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%'",
+            "SELECT count(*) FROM sqlite_schema WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
             [],
             |r| r.get(0),
         )?;

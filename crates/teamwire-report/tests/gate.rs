@@ -335,3 +335,35 @@ fn a_corrupt_event_beside_a_pending_delivery_does_not_stop_the_result() {
     assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
     assert_eq!(rig.typed_to_lead().len(), 1, "the result was delivered");
 }
+
+#[test]
+fn a_message_body_that_fails_its_hash_does_not_stop_the_result() {
+    let (mut rig, api) = team();
+    rig.write_report(&api, "Found it.\n\nDecisions I made: none\n");
+    rig.complete_now(&api);
+    let at = teamwire_core::Clock::now(&*rig.clock);
+    let recipient = teamwire_core::Recipient::Member(api.clone());
+    rig.store
+        .write(|tx| {
+            let stored = tx.insert_message(
+                at,
+                &teamwire_store::NewMessage {
+                    sender: teamwire_core::Actor::Lead,
+                    kind: teamwire_core::MessageType::Note,
+                    re: None,
+                    commit: None,
+                    body: "left pending".to_owned(),
+                    client_key: None,
+                    recipients: vec![recipient],
+                },
+            )?;
+            tx.connection().execute(
+                "UPDATE messages SET body = 'changed after the hash' WHERE ulid = ?1",
+                [stored.message.ulid.to_string()],
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1, "the result was delivered");
+}

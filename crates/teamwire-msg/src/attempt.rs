@@ -177,12 +177,15 @@ pub(crate) fn deliver_one(
         let reader = tx.reader();
         let current = reader.delivery(&message.ulid, recipient)?;
         // The recipient may have read it, or another command handed it off,
-        // while this one was typing. Those states are final here.
+        // while this one was typing. Those states are final here. So is
+        // `unconfirmed` against a clean failure: the other command may have
+        // typed the line, and the store refuses that move (INV-5, REP-3).
         if let Some(c) = &current
-            && matches!(
+            && (matches!(
                 c.delivery.state,
                 DeliveryState::Acked | DeliveryState::HandedOff
-            )
+            ) || (c.delivery.state == DeliveryState::Unconfirmed
+                && update.state == DeliveryState::Undelivered))
         {
             return Ok(current);
         }

@@ -63,11 +63,14 @@ pub(crate) fn delivery_from_row_at(row: &Row<'_>, o: usize) -> Result<DeliveryRe
     })
 }
 
-/// Forward moves only: `acked` is final, `pending` never comes back, and a
-/// `handed_off` line can only be acknowledged.
+/// Forward moves only: `acked` is final, `pending` never comes back, an
+/// `unconfirmed` copy may have been typed so it never becomes `undelivered`,
+/// and a `handed_off` line can only be acknowledged.
 fn may_move(from: DeliveryState, to: DeliveryState) -> bool {
     match (from, to) {
-        (DeliveryState::Acked, _) | (_, DeliveryState::Pending) => false,
+        (DeliveryState::Acked, _)
+        | (_, DeliveryState::Pending)
+        | (DeliveryState::Unconfirmed, DeliveryState::Undelivered) => false,
         (DeliveryState::HandedOff, to) => to == DeliveryState::Acked,
         _ => true,
     }

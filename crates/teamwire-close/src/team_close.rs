@@ -30,7 +30,10 @@ pub(crate) fn clear_stale_lock(ctx: &mut Ctx<'_>) -> CloseReport {
             return report;
         }
         let now = ctx.clock.now();
-        return match ctx.store.write(|tx| tx.clear_stale_close_lock(now)) {
+        return match ctx
+            .store
+            .write(|tx| tx.clear_stale_close_lock(now, team.closing_pid))
+        {
             Ok(_) => {
                 report.steps.push(StepOutcome {
                     step: "clear_stale_lock".to_owned(),

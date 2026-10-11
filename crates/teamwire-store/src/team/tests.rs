@@ -112,7 +112,7 @@ fn a_stale_close_lock_is_cleared_with_an_event() {
     let mut f = created();
     assert!(
         !f.store
-            .write(|tx| tx.clear_stale_close_lock(at(1)))
+            .write(|tx| tx.clear_stale_close_lock(at(1), None))
             .unwrap()
     );
     f.store
@@ -120,7 +120,7 @@ fn a_stale_close_lock_is_cleared_with_an_event() {
         .unwrap();
     assert!(
         f.store
-            .write(|tx| tx.clear_stale_close_lock(at(3)))
+            .write(|tx| tx.clear_stale_close_lock(at(3), Some(Pid::new(77))))
             .unwrap()
     );
     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
@@ -128,6 +128,25 @@ fn a_stale_close_lock_is_cleared_with_an_event() {
     let event = last_event(&f.store);
     assert_eq!(event.kind, EventType::CloseStep);
     assert_eq!(event.data["step"], "clear_stale_lock");
+}
+
+#[test]
+fn a_close_lock_held_by_another_pid_is_not_cleared() {
+    let mut f = created();
+    f.store
+        .write(|tx| tx.begin_close(at(2), Pid::new(88)))
+        .unwrap();
+    // The caller found pid 77 dead, but pid 88 has taken the lock since.
+    let cleared = f
+        .store
+        .write(|tx| tx.clear_stale_close_lock(at(3), Some(Pid::new(77))))
+        .unwrap();
+    assert!(!cleared);
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(
+        (team.state, team.closing_pid),
+        (TeamState::Closing, Some(Pid::new(88)))
+    );
 }
 
 #[test]

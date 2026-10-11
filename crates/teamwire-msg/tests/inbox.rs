@@ -299,3 +299,44 @@ fn a_log_row_carries_a_sanitised_excerpt_and_each_recipients_state() {
     );
     assert_eq!(row.to, [to("api"), to("web")]);
 }
+
+fn damage_body(rig: &mut Rig, display_id: &str) {
+    let sql = format!("UPDATE messages SET body = 'changed' WHERE display_id = '{display_id}'");
+    rig.store
+        .write(|tx| {
+            tx.connection().execute(&sql, [])?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_damaged_question_does_not_stop_the_inbox_of_its_answer() {
+    let mut rig = team_rig();
+    let q = say(
+        &mut rig,
+        "api",
+        "scout",
+        MessageType::Question,
+        "which shape?",
+    );
+    let mut answer = rig.request("scout", &["api"], MessageType::Answer, "the flat one");
+    answer.re = Some(q.display_id.clone());
+    send(&mut rig.ctx(), answer).unwrap();
+    damage_body(&mut rig, q.display_id.as_str());
+    let items = inbox(&mut rig.ctx(), &role("api"), false).unwrap();
+    assert_eq!(items.first().unwrap().text, "the flat one");
+}
+
+#[test]
+fn a_damaged_message_does_not_stop_ack_of_the_others() {
+    let mut rig = team_rig();
+    let bad = say(&mut rig, "scout", "api", MessageType::Finding, "one");
+    let good = say(&mut rig, "scout", "api", MessageType::Finding, "two");
+    damage_body(&mut rig, bad.display_id.as_str());
+    let ids = [bad.display_id.clone(), good.display_id.clone()];
+    let results = ack(&mut rig.ctx(), &role("api"), &ids).unwrap();
+    let outcomes: Vec<AckOutcome> = results.iter().map(|r| r.outcome).collect();
+    assert_eq!(outcomes, [AckOutcome::Unknown, AckOutcome::Acked]);
+    assert_eq!(rig.events(EventType::StoreError).len(), 1);
+}

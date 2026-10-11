@@ -397,3 +397,43 @@ fn open_existing_missing_is_no_database() {
     );
     assert!(foreign.is_err(), "a foreign database must not open");
 }
+
+#[test]
+fn a_refused_read_only_open_leaves_no_wal_or_shm_file() {
+    let home = TestHome::new().unwrap();
+    let path = database_path(home.path(), &team());
+    let dir = path.parent().unwrap().to_path_buf();
+    drop(Store::open(home.path(), &team()).unwrap());
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1)
+            .unwrap();
+    }
+    let before = directory_state(&dir);
+    let names: Vec<&str> = before.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(names, ["team.db"], "the setup left WAL side files behind");
+    assert!(matches!(
+        Store::open_read_only(home.path(), &team()),
+        Err(StoreError::SchemaNewer { .. })
+    ));
+    assert_eq!(
+        directory_state(&dir),
+        before,
+        "a refused read-only open changed the directory"
+    );
+}
+
+#[test]
+fn a_table_named_like_sqlite_underscore_is_not_an_internal_table() {
+    let home = TestHome::new().unwrap();
+    let path = database_path(home.path(), &team());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE sqlitex (x);").unwrap();
+    }
+    assert_eq!(
+        Store::open_read_only(home.path(), &team()).unwrap_err(),
+        StoreError::NotTeamwire
+    );
+}
