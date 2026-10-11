@@ -25,6 +25,10 @@ struct Run {
 }
 
 fn teamwire(fx: &Fixture, args: &[&str]) -> Run {
+    teamwire_with(fx, args, &[])
+}
+
+fn teamwire_with(fx: &Fixture, args: &[&str], extra: &[(&str, &str)]) -> Run {
     let Output {
         status,
         stdout,
@@ -34,7 +38,11 @@ fn teamwire(fx: &Fixture, args: &[&str]) -> Run {
         .arg(fx.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
+        .env_remove("TEAMWIRE_TEAM")
+        .env_remove("TEAMWIRE_ROLE")
+        .env_remove("TEAMWIRE_TOKEN")
         .env("TEAMWIRE_HOME", fx.home.path())
+        .envs(extra.iter().copied())
         .output()
         .unwrap();
     Run {
@@ -194,4 +202,37 @@ fn deep_prints_the_integrity_result() {
     let run = teamwire(&fx, &["verify", "alpha", "--deep"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(run.out.contains("integrity_check: ok"), "{}", run.out);
+}
+
+#[test]
+fn a_member_session_cannot_waive_a_flag_but_can_run_verify() {
+    let (fx, _repo) = team(
+        "exit 0",
+        &[("src/lib.rs", "#[allow(dead_code)]\nfn a() {}\n")],
+    );
+    let member = [
+        ("TEAMWIRE_TEAM", "alpha"),
+        ("TEAMWIRE_ROLE", "api"),
+        ("TEAMWIRE_TOKEN", "not-a-real-token"),
+    ];
+    let waive = teamwire_with(
+        &fx,
+        &[
+            "verify",
+            "alpha",
+            "--role",
+            "api",
+            "--waive",
+            "weakened:src/lib.rs:1",
+            "--reason",
+            "mine",
+        ],
+        &member,
+    );
+    assert_eq!(waive.code, 1, "{}{}", waive.out, waive.err);
+    assert!(waive.err.contains("refused.identity"), "{}", waive.err);
+    // The refused waiver left the flag in place, and plain verify still runs.
+    let run = teamwire_with(&fx, &["verify", "alpha"], &member);
+    assert_eq!(run.code, 2, "{}{}", run.out, run.err);
+    assert!(run.out.contains("FLAGGED"), "{}", run.out);
 }
