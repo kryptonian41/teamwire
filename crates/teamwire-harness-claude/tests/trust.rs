@@ -1,4 +1,4 @@
-//! The folder-trust step: the saved-trust read, and the dialog answers,
+//! The folder-trust step: the dialog answers,
 //! against `FakeHost` screens and against a real `fake-claude` process.
 
 #![expect(
@@ -10,16 +10,15 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::json;
 use teamwire_core::{
     Harness, HarnessErrorCode, Host, HostCaps, HostError, HostId, Key, NoHost, Occupant, OneLine,
-    Pid, Place, PlaceState, Platform, SpawnRequest, StartupOutcome, TrustPolicy,
+    Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
 };
 use teamwire_fakes::{
     ClaudeScript, ESCALATED_TRUST_TEXT, FakeHerdrEnv, FakeHost, FakePlatform, PLAIN_TRUST_TEXT,
     Startup, TRUST_ESCALATION_MARKERS, TRUST_OPTION_TEXT,
 };
-use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, StartupPoll, TrustCheck};
+use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, StartupPoll};
 
 fn fast() -> StartupPoll {
     StartupPoll {
@@ -166,126 +165,6 @@ fn a_host_failure_is_reported_as_a_host_error() {
         .answer_startup(&host, &place, TrustPolicy::Accept)
         .unwrap_err();
     assert_eq!(err.code, HarnessErrorCode::Host);
-}
-
-// ---- the saved-trust read -------------------------------------------------
-
-struct World {
-    dir: tempfile::TempDir,
-    claude: ClaudeCode,
-}
-
-impl World {
-    fn new() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir_all(dir.path().join("home")).unwrap();
-        let claude = ClaudeCode::new(
-            Arc::new(FakePlatform::new()),
-            ClaudeConfig {
-                claude_dir: dir.path().join("home/.claude"),
-                claude_json: dir.path().join("home/.claude.json"),
-                claude_bin: "claude".into(),
-            },
-        );
-        Self { dir, claude }
-    }
-
-    fn path(&self, rel: &str) -> std::path::PathBuf {
-        let p = self.dir.path().join(rel);
-        std::fs::create_dir_all(&p).unwrap();
-        std::fs::canonicalize(p).unwrap()
-    }
-
-    fn trust(&self, entries: &[(&Path, bool)]) {
-        let projects: serde_json::Map<_, _> = entries
-            .iter()
-            .map(|(p, ok)| {
-                (
-                    p.display().to_string(),
-                    json!({ "hasTrustDialogAccepted": ok }),
-                )
-            })
-            .collect();
-        FakePlatform::new()
-            .write_atomic(
-                &self.dir.path().join("home/.claude.json"),
-                json!({ "projects": projects }).to_string().as_bytes(),
-            )
-            .unwrap();
-    }
-}
-
-#[test]
-fn no_config_file_means_trust_is_missing() {
-    let w = World::new();
-    assert_eq!(
-        w.claude.trust_check(&w.path("work/proj")),
-        TrustCheck::Missing
-    );
-}
-
-#[test]
-fn saved_trust_for_the_directory_is_persisted() {
-    let w = World::new();
-    let proj = w.path("work/proj");
-    w.trust(&[(&proj, true)]);
-    assert_eq!(w.claude.trust_check(&proj), TrustCheck::Persisted);
-}
-
-#[test]
-fn an_entry_that_is_not_accepted_is_missing() {
-    let w = World::new();
-    let proj = w.path("work/proj");
-    w.trust(&[(&proj, false)]);
-    assert_eq!(w.claude.trust_check(&proj), TrustCheck::Missing);
-}
-
-#[test]
-fn a_plain_directory_inherits_trust_from_a_parent() {
-    let w = World::new();
-    let work = w.path("work");
-    let sub = w.path("work/plain/sub");
-    w.trust(&[(&work, true)]);
-    assert_eq!(w.claude.trust_check(&sub), TrustCheck::Persisted);
-}
-
-#[test]
-fn a_git_repository_is_a_trust_boundary() {
-    let w = World::new();
-    let work = w.path("work");
-    let repo = w.path("work/repo");
-    std::fs::create_dir_all(repo.join(".git")).unwrap();
-    w.trust(&[(&work, true)]);
-    assert_eq!(w.claude.trust_check(&repo), TrustCheck::Missing);
-    let deep = w.path("work/repo/src");
-    assert_eq!(w.claude.trust_check(&deep), TrustCheck::Missing);
-    w.trust(&[(&repo, true)]);
-    assert_eq!(w.claude.trust_check(&deep), TrustCheck::Persisted);
-}
-
-#[test]
-fn a_linked_worktree_is_covered_by_its_main_checkout() {
-    let w = World::new();
-    let main = w.path("work/main");
-    std::fs::create_dir_all(main.join(".git/worktrees/wt")).unwrap();
-    let wt = w.path("work/wt");
-    FakePlatform::new()
-        .write_atomic(
-            &wt.join(".git"),
-            format!("gitdir: {}/.git/worktrees/wt\n", main.display()).as_bytes(),
-        )
-        .unwrap();
-    assert_eq!(w.claude.trust_check(&wt), TrustCheck::Missing);
-    w.trust(&[(&main, true)]);
-    assert_eq!(w.claude.trust_check(&wt), TrustCheck::Persisted);
-}
-
-#[test]
-fn the_home_directory_is_never_persisted() {
-    let w = World::new();
-    let home = w.path("home");
-    w.trust(&[(&home, true)]);
-    assert_eq!(w.claude.trust_check(&home), TrustCheck::Home);
 }
 
 // ---- a real fake-claude process ---------------------------------------------

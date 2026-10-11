@@ -359,12 +359,6 @@ fn run_member(
             let repo = m.worktree.as_ref().map_or(&m.cwd, |w| &w.repo);
             return Err(Stop::fail("trust", escalated_trust_message(repo)));
         }
-        Ok(StartupOutcome::RefusedHome) => {
-            return Err(Stop::fail(
-                "trust",
-                "the trust dialog is for a home directory and is never answered",
-            ));
-        }
         Err(e) => return Err(Stop::fail("trust", format!("the trust step failed: {e}"))),
     }
     steps.mark(ctx, "trust");

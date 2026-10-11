@@ -24,10 +24,10 @@ pub use lead_setup::{
     ApplyError, Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow,
     SkillState, edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
 };
-pub use trust::{StartupPoll, TrustCheck};
+pub use trust::StartupPoll;
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -87,13 +87,6 @@ impl ClaudeCode {
     /// `current_session` calls this with the real environment.
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
-    }
-
-    /// What `.claude.json` says about `cwd`, read-only. Nothing in launch
-    /// calls this: launch reaches a harness only through the `Harness` trait,
-    /// which has no method for it, and `answer_startup` sees only the screen.
-    pub fn trust_check(&self, cwd: &Path) -> TrustCheck {
-        trust::check(&self.config.claude_json, cwd)
     }
 
     /// The platform Claude's commands run through.

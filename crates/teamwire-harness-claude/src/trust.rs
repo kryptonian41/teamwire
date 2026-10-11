@@ -1,15 +1,12 @@
-//! The folder-trust step. Two questions, both read-only. Did the user
-//! already trust this directory (`~/.claude.json`)? And, when a dialog is
-//! on screen, is it the plain one that teamwire may answer?
+//! The folder-trust step. When a dialog is on screen, is it the plain one
+//! that teamwire may answer?
 //!
 //! Never answers a dialog that also grants folder-declared commands
-//! (INV-25), never answers for a home directory, and never writes
-//! `~/.claude.json`.
+//! (INV-25), and never writes `~/.claude.json`. Launch refuses a home
+//! directory before it gets here.
 
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use serde_json::Value;
 use teamwire_core::{
     HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
 };
@@ -22,88 +19,6 @@ use crate::screen::{ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, has_any, 
 /// (INV-25).
 const TAIL_LINES: u16 = 1000;
 const HOST_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// What the configuration says about one directory, before Claude starts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TrustCheck {
-    /// The user's home directory. Claude Code treats trust there as
-    /// session-only and never saves it, so the dialog can never be settled
-    /// ahead of time.
-    Home,
-    /// `hasTrustDialogAccepted` is saved for the directory (or for the
-    /// directory that covers it): no dialog will appear.
-    Persisted,
-    /// No saved trust. A dialog will appear.
-    Missing,
-}
-
-/// The directories with `hasTrustDialogAccepted: true`, from the text of
-/// `.claude.json`. A file that is missing or not JSON trusts nothing.
-fn trusted_dirs(claude_json: &Path) -> Vec<PathBuf> {
-    let Some(doc) = std::fs::read(claude_json)
-        .ok()
-        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-    else {
-        return Vec::new();
-    };
-    let Some(projects) = doc.get("projects").and_then(Value::as_object) else {
-        return Vec::new();
-    };
-    projects
-        .iter()
-        .filter(|(_, v)| v.get("hasTrustDialogAccepted").and_then(Value::as_bool) == Some(true))
-        .flat_map(|(k, _)| {
-            let raw = PathBuf::from(k);
-            let real = std::fs::canonicalize(&raw).ok();
-            [Some(raw), real].into_iter().flatten()
-        })
-        .collect()
-}
-
-/// The root of the git repository holding `dir`: the nearest ancestor with a
-/// `.git`. For a linked worktree the root is the main checkout, because the
-/// worktree's own `.git` file points into it.
-fn repo_root(dir: &Path) -> Option<PathBuf> {
-    let root = dir.ancestors().find(|d| d.join(".git").exists())?;
-    let dot_git = root.join(".git");
-    if dot_git.is_file() {
-        let text = std::fs::read_to_string(&dot_git).ok()?;
-        let gitdir = PathBuf::from(text.strip_prefix("gitdir:")?.trim());
-        // `<main>/.git/worktrees/<name>`
-        let worktrees = gitdir.parent()?;
-        if worktrees.file_name().is_some_and(|n| n == "worktrees") {
-            let main = worktrees.parent()?.parent()?;
-            return Some(std::fs::canonicalize(main).unwrap_or_else(|_| main.to_path_buf()));
-        }
-    }
-    Some(root.to_path_buf())
-}
-
-/// Reads `claude_json` for `cwd`.
-///
-/// A git repository is a trust boundary: a trusted parent directory does not
-/// cover a repository nested in it, so inside a repository only the
-/// repository root (or `cwd` itself) counts. A plain directory inherits
-/// trust from any ancestor.
-pub(crate) fn check(claude_json: &Path, cwd: &Path) -> TrustCheck {
-    let cwd = std::fs::canonicalize(cwd).unwrap_or_else(|_| cwd.to_path_buf());
-    if let Some(home) = claude_json.parent() {
-        let home = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
-        if cwd == home {
-            return TrustCheck::Home;
-        }
-    }
-    let trusted = trusted_dirs(claude_json);
-    let covered = match repo_root(&cwd) {
-        Some(root) => trusted.contains(&cwd) || trusted.contains(&root),
-        None => cwd.ancestors().any(|d| trusted.iter().any(|t| t == d)),
-    };
-    if covered {
-        TrustCheck::Persisted
-    } else {
-        TrustCheck::Missing
-    }
-}
 
 /// How long `answer_startup` waits: `steps` reads, `step` apart. A count of
 /// sleeps bounds the wait because the clock is not readable here.
