@@ -19,8 +19,18 @@ const SUBMIT_TIMEOUT: Duration = Duration::from_secs(60);
 /// The longest first message.
 const FIRST_MESSAGE_MAX: usize = 600;
 
+/// The closed set of `reason_code` values a failed or refused launch event
+/// carries: the name of the launch step that stopped.
+pub(crate) const REASON_CODES: &[&str] = &[
+    "registry", "prepare", "record", "worktree", "setup", "harness", "files", "spawn", "place",
+    "trust", "started",
+];
+
 /// Why a member's launch stopped.
 pub(crate) struct Stop {
+    /// The launch step that stopped, one of `REASON_CODES`. Metrics label a
+    /// failure with this, never with the free text in `reason`.
+    pub(crate) code: &'static str,
     pub(crate) reason: String,
     /// The member was refused (by name), as opposed to failing.
     pub(crate) refused: bool,
@@ -29,16 +39,20 @@ pub(crate) struct Stop {
 }
 
 impl Stop {
-    pub(crate) fn fail(reason: impl Into<String>) -> Self {
+    pub(crate) fn fail(code: &'static str, reason: impl Into<String>) -> Self {
+        debug_assert!(REASON_CODES.contains(&code));
         Self {
+            code,
             reason: reason.into(),
             refused: false,
             advice: None,
         }
     }
 
-    pub(crate) fn refuse(reason: impl Into<String>) -> Self {
+    pub(crate) fn refuse(code: &'static str, reason: impl Into<String>) -> Self {
+        debug_assert!(REASON_CODES.contains(&code));
         Self {
+            code,
             reason: reason.into(),
             refused: true,
             advice: None,
@@ -96,6 +110,7 @@ pub(crate) fn escalated_trust_message(repo: &Path) -> String {
 pub(crate) fn spawn_stop(e: &HostError) -> Stop {
     if e.code == HostErrorCode::BadArgument && e.detail.starts_with("agent_name_taken:") {
         return Stop {
+            code: "spawn",
             reason: format!("the agent name is already live in the host ({})", e.detail),
             refused: true,
             advice: None,
@@ -106,7 +121,10 @@ pub(crate) fn spawn_stop(e: &HostError) -> Stop {
     } else {
         ""
     };
-    Stop::fail(format!("the host could not start the agent: {e}{hint}"))
+    Stop::fail(
+        "spawn",
+        format!("the host could not start the agent: {e}{hint}"),
+    )
 }
 
 pub(crate) fn run_setup(
@@ -164,6 +182,7 @@ pub(crate) fn run_setup(
         Ok(())
     } else {
         Err(Stop {
+            code: "setup",
             reason: format!("{why} (log: {})", log.display()),
             refused: false,
             advice: Some("fix the setup command, then add the member again with --add"),
@@ -200,7 +219,7 @@ pub(crate) fn write_member_files(
 ) -> Result<(), Stop> {
     use std::os::unix::fs::PermissionsExt;
     let role = &m.spec.role;
-    let fail = |e: String| Stop::fail(e);
+    let fail = |e: String| Stop::fail("files", e);
     // The member directory holds the token, so it is private too.
     std::fs::create_dir_all(&launch.member_dir)
         .and_then(|()| {
@@ -282,6 +301,17 @@ pub(crate) fn dispatch(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_reason_code_is_a_short_lowercase_name() {
+        for code in REASON_CODES {
+            assert!(
+                (1..=32).contains(&code.len())
+                    && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
+                "{code}"
+            );
+        }
+    }
 
     #[test]
     fn escalated_message_names_the_main_checkout_and_add() {
