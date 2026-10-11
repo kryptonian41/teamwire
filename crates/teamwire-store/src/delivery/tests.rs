@@ -185,6 +185,23 @@ fn states_never_move_backward() {
 }
 
 #[test]
+fn unconfirmed_never_becomes_undelivered() {
+    let mut f = with_members(&["api", "web"]);
+    let m = send_one(&mut f);
+    let web = member("web");
+    f.store
+        .write(|tx| {
+            tx.set_delivery_state(at(101), &m, &web, &update(DeliveryState::Unconfirmed, 1))
+        })
+        .unwrap();
+    let r = f.store.write(|tx| {
+        tx.set_delivery_state(at(102), &m, &web, &update(DeliveryState::Undelivered, 2))
+    });
+    assert!(matches!(r, Err(StoreError::Constraint(_))), "{r:?}");
+    assert_eq!(state(&f, &m), DeliveryState::Unconfirmed);
+}
+
+#[test]
 fn setting_acked_through_set_delivery_state_is_refused() {
     let mut f = with_members(&["api", "web"]);
     let m = send_one(&mut f);
