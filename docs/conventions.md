@@ -36,7 +36,7 @@ teamwire/
 ├── xtask/                     `cargo xtask tidy`: structure, layering, protected files
 ├── crates/                    flat; folder name equals crate name
 │   ├── teamwire-core/         types, traits, sanitiser; no I/O
-│   ├── teamwire-store/        SQLite; src/schema/v1.sql
+│   ├── teamwire-store/        SQLite; src/schema/v1.sql, v2.sql
 │   ├── teamwire-platform/     the only crate that spawns processes, reads the
 │   │                          clock, or writes files outside SQLite
 │   ├── teamwire-host-herdr/

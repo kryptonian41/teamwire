@@ -249,8 +249,20 @@ pub enum Liveness { Alive(PlaceState), Dead, Unknown }
 pub enum ScreenState { InputPrompt, Dialog, Unknown }
 pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated, RefusedHome }
 
+/// A process: its pid, and when it started if the platform could read it.
+/// `From<Pid>` gives one with the start time unknown.
+pub struct ProcessRef { pub pid: Pid, pub started: Option<Timestamp> }
+/// How far two readings of one process's start time may differ.
+pub const START_TIME_SLACK: Duration = Duration::from_secs(2);
+
 pub trait Platform: Send + Sync {
     fn pid_alive(&self, pid: Pid) -> bool;
+    /// When the process with `pid` started, to the second; None when
+    /// unknown. Default None, so the pid alone decides.
+    fn process_started(&self, pid: Pid) -> Option<Timestamp> { None }
+    /// The pid is alive and, when both start times are known, started within
+    /// START_TIME_SLACK of the recorded time. A reused pid is not the process.
+    fn process_alive(&self, process: ProcessRef) -> bool;
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError>;
     /// Run in a new process group; on timeout kill the group; exit 124.
     /// Children start one at a time, so no child inherits another's pipes.
@@ -418,7 +430,10 @@ metric-export writes `claim_metric_export`, `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-Schema version 1 lives in `crates/teamwire-store/src/schema/v1.sql`. Its
+Schema version 2 is `crates/teamwire-store/src/schema/v1.sql` followed by
+`src/schema/v2.sql`. Version 2 adds `team.closing_pid_started_at` and
+`metric_export.claimed_by_started_at`: the start time of the pid beside
+each, NULL when the platform could not read it (ADR 0002 decision 8). Its
 tables and columns are those in `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

@@ -99,12 +99,12 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
 
-The database tables (schema version 1; exact DDL is owned by the store
+The database tables (schema version 2; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
 | --- | --- | --- |
-| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at` |
+| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at` |
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation`, `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender`, `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
@@ -115,7 +115,7 @@ crate and listed in `docs/api/core.md`):
 | `announcements` | thing the watch said | `key` (such as `LATE:api:2`, generation 2; `SILENT:api:2:3`, episode 3), `at` |
 | `counters` | named counter | `name` (`display_id`, `seq:<sender>`), `value` |
 | `events` | state change | `seq` (autoincrement), `ulid`, `time`, `type`, `role`, `subject`, `data` (JSON), `writer_version` |
-| `metric_export` | exporter | `last_event_seq`, `claimed_to`, `claimed_by`, `claimed_at` |
+| `metric_export` | exporter | `last_event_seq`, `claimed_to`, `claimed_by`, `claimed_by_started_at`, `claimed_at` |
 
 Rules that hold across the model:
 
