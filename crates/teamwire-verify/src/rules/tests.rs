@@ -140,7 +140,11 @@ fn javascript_markers_start_a_word() {
     ] {
         assert!(!r.is_test_marker("src/a.js", line), "{line}");
     }
-    for line in ["it('x', () => {", "  test(\"y\", async () => {", "});it('z', f)"] {
+    for line in [
+        "it('x', () => {",
+        "  test(\"y\", async () => {",
+        "});it('z', f)",
+    ] {
         assert!(r.is_test_marker("src/a.js", line), "{line}");
     }
 }

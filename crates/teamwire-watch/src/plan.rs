@@ -130,9 +130,10 @@ pub(crate) fn plan(
             .values_mut()
             .for_each(MemberMemory::forget_quiet);
         memory.grace_from = Some(now);
-        memory
-            .sleeps
-            .push((now, gap.saturating_sub(Duration::from_secs(ctx.config.poll_s))));
+        memory.sleeps.push((
+            now,
+            gap.saturating_sub(Duration::from_secs(ctx.config.poll_s)),
+        ));
     }
     memory
         .members

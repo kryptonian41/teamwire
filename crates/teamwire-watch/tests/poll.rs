@@ -817,7 +817,10 @@ fn a_member_stuck_in_creating_stalls_the_team() {
     bed.delivered("api", CompletionStatus::Done);
     let lines = bed.ticks(20);
     assert_eq!(count(&lines, "TEAM-STALLED"), 1, "{lines:?}");
-    assert!(lines.iter().any(|l| l.contains("TEAM-STALLED web")), "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains("TEAM-STALLED web")),
+        "{lines:?}"
+    );
 }
 
 #[test]
