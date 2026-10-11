@@ -32,7 +32,17 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
         let now = ctx.clock.now();
         let mut out = Vec::new();
         for d in deliveries.items.iter().filter(|d| d.reminded_at.is_none()) {
-            if let Some(message) = tx.message(&d.delivery.message)? {
+            let message = match tx.message(&d.delivery.message) {
+                Ok(found) => found,
+                Err(StoreError::Corrupt(why)) => {
+                    // One damaged message must not hide the unread ones after
+                    // it, nor the member's own result the hook also delivers.
+                    tracing::warn!(message = %d.delivery.message, %why, "skipping a damaged message");
+                    continue;
+                }
+                Err(e) => return Err(e),
+            };
+            if let Some(message) = message {
                 // A damaged event row about the message must not stop the
                 // hook, which also delivers the member's own result: the
                 // message is treated as not stale and left out.
