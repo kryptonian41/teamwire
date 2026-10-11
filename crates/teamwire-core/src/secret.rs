@@ -4,10 +4,11 @@
 use std::fmt;
 
 /// True for `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN`, and any name
-/// holding `TOKEN`, `KEY` or `SECRET` in any case.
+/// holding `TOKEN`, `KEY`, `SECRET` or `HEADERS` in any case. The last one
+/// covers `OTEL_EXPORTER_OTLP_HEADERS`, which carries credentials.
 pub fn is_secret_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    ["TOKEN", "KEY", "SECRET"]
+    ["TOKEN", "KEY", "SECRET", "HEADERS"]
         .iter()
         .any(|word| upper.contains(word))
 }
@@ -27,5 +28,24 @@ impl fmt::Debug for RedactedEnv<'_> {
             }
         }
         list.finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_otlp_headers_value_is_redacted_in_debug_output() {
+        let env = vec![(
+            "OTEL_EXPORTER_OTLP_HEADERS".to_owned(),
+            "authorization=Bearer abc123".to_owned(),
+        )];
+        let shown = format!("{:?}", RedactedEnv(&env));
+        assert!(!shown.contains("abc123"), "{shown}");
+        assert!(
+            shown.contains("OTEL_EXPORTER_OTLP_HEADERS=<redacted>"),
+            "{shown}"
+        );
     }
 }
