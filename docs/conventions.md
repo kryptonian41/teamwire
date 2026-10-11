@@ -77,7 +77,7 @@ Layout rules, each checked by `cargo xtask tidy`:
 | Every crate's `lib.rs` or `main.rs` opens with a `//!` comment of at most 15 lines: purpose, what it must never do, invariants. `ARCHITECTURE.md`'s Components table has one row per crate under `crates/`, and no row without a crate | repopract R28 |
 | `CLAUDE.md`'s first line is `@AGENTS.md`; `AGENTS.md` is under 120 lines | repopract R1, R3 |
 | The crate dependency graph follows the layers in section 5 | repopract R22 |
-| With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`, a new `#[ignore]` or a new `#[expect(` prints `WEAKENED <path>:<line>` | repopract R17, R18 |
+| With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`; a new `#[ignore]`, `#[expect(`, `#[allow(` or `#[should_panic`; a removed or changed `#[cfg(test)]` or `mod tests;` line; or an added `#[cfg_attr(..., ignore | allow | expect | should_panic)]` prints `WEAKENED <path>:<line>`. The adapter check skips comments and string literals | repopract R17, R18 |
 
 Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file, or,
 when the file would pass 400 lines, in a sibling file declared with
