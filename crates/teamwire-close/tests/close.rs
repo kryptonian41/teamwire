@@ -793,6 +793,86 @@ fn a_close_lock_whose_pid_was_reused_is_stale() {
     );
 }
 
+/// A clock that, on its first reading, lets another close take the lock:
+/// `--clear-stale-lock` reads the clock after it found the owner dead and
+/// before it clears, so the lock changes hands exactly between the two.
+struct AnotherCloseTakesTheLock {
+    inner: teamwire_fakes::FakeClock,
+    home: PathBuf,
+    armed: std::sync::atomic::AtomicBool,
+}
+
+impl Clock for AnotherCloseTakesTheLock {
+    fn now(&self) -> Timestamp {
+        if self.armed.swap(false, std::sync::atomic::Ordering::SeqCst) {
+            // A failure here leaves the lock as it was, and the test's own
+            // check of the new owner fails.
+            let other = teamwire_core::TeamName::parse(rig::TEAM)
+                .ok()
+                .and_then(|team| Store::open_existing(&self.home, &team).ok());
+            if let Some(mut other) = other {
+                let taken = other.write(|tx| {
+                    tx.connection().execute(
+                        "UPDATE team SET closing_pid = 4000099, closing_pid_started_at = NULL",
+                        [],
+                    )?;
+                    Ok(())
+                });
+                assert!(taken.is_ok(), "{taken:?}");
+            }
+        }
+        self.inner.now()
+    }
+
+    fn monotonic(&self) -> std::time::Instant {
+        self.inner.monotonic()
+    }
+}
+
+/// When another close takes the lock after the dead owner was seen, the
+/// clear leaves the new owner's lock alone and says so: nothing was cleared.
+#[test]
+fn a_lock_taken_by_another_close_after_the_check_is_reported_not_cleared() {
+    let mut rig = Rig::without_repo();
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| tx.begin_close(now, Pid::new(4_000_003)))
+        .unwrap();
+    let clock = AnotherCloseTakesTheLock {
+        inner: rig.clock.clone(),
+        home: rig.home.path().to_path_buf(),
+        armed: std::sync::atomic::AtomicBool::new(true),
+    };
+    let report = close(
+        &mut Ctx {
+            home: rig.home.path(),
+            store: &mut rig.store,
+            registry: &rig.registry,
+            platform: &*rig.platform,
+            clock: &clock,
+            config: &rig.config,
+        },
+        CloseTarget::Team,
+        CloseOpts {
+            clear_stale_lock: true,
+            ..CloseOpts::default()
+        },
+    );
+    assert!(
+        report
+            .steps
+            .iter()
+            .all(|s| !s.detail.contains("was cleared")),
+        "{report:?}"
+    );
+    assert!(asks(&report.refusals, "another close"), "{report:?}");
+    let team = rig.team();
+    assert_eq!(
+        (team.state, team.closing_pid),
+        (TeamState::Closing, Some(Pid::new(4_000_099)))
+    );
+}
+
 /// The lock a close takes names this process by pid and start time.
 #[test]
 fn a_close_records_its_own_start_time_with_the_lock() {
