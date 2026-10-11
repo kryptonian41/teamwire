@@ -290,6 +290,9 @@ A crate may depend only on crates in lower layers. `cargo xtask tidy` reads
 Service crates never depend on an adapter crate. They receive adapters as
 `&dyn Host`, `&dyn Harness`, `&dyn Platform` in `Ctx`. `anyhow` appears only in
 `teamwire-cli` and `xtask`; library crates use `thiserror` (repopract R30).
+`cargo xtask tidy` enforces both rules: the adapter crates may be named in
+`teamwire-cli` only in `src/wiring.rs` (`xtask/src/adapters.rs`), and only
+`teamwire-cli` and `xtask` may depend on `anyhow` (`xtask/src/layers.rs`).
 
 ## 6. Rules every ticket brief restates
 
