@@ -153,3 +153,55 @@ fn export_covers_every_table() {
         .unwrap();
     assert_eq!(verify["data"]["head_sha"], "abc123");
 }
+
+/// A recorded pid is half of the owner it names: the start time beside it is
+/// exported too, for the close lock and for the metric export claim.
+#[test]
+fn export_writes_the_start_time_beside_each_recorded_pid() {
+    let mut bed = Bed::new();
+    let now = bed.clock.now();
+    let started = teamwire_core::Timestamp::from_unix_millis(now.unix_millis() - 60_000).unwrap();
+    bed.store
+        .write(|tx| {
+            tx.begin_close(
+                now,
+                teamwire_core::platform::ProcessRef {
+                    pid: Pid::new(4244),
+                    started: Some(started),
+                },
+            )?;
+            tx.record_event(
+                now,
+                teamwire_core::EventType::WatchStarted,
+                None,
+                None,
+                &serde_json::json!({}),
+            )?;
+            tx.claim_metric_export(
+                now,
+                teamwire_store::ExportHolder {
+                    id: "4245".to_owned(),
+                    started: Some(started),
+                },
+                None,
+                Duration::from_secs(60),
+                |_| false,
+            )
+        })
+        .unwrap();
+
+    let out = export(&bed, false);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let records: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let data = |kind: &str| records.iter().find(|r| r["type"] == kind).unwrap()["data"].clone();
+    let team = data("teamwire.team");
+    assert_eq!(team["closing_pid"], 4244);
+    assert_eq!(team["closing_pid_started_at"], started.to_string());
+    let mark = data("teamwire.metric_export");
+    assert_eq!(mark["claimed_by"], "4245", "{mark}");
+    assert_eq!(mark["claimed_by_started_at"], started.to_string());
+}
