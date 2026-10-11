@@ -186,3 +186,25 @@ fn non_utf8_exclude_is_kept() {
     assert!(bytes.starts_with(b"caf\xe9\n"), "{bytes:?}");
     assert!(bytes.ends_with(b"TASK.md\n"), "{bytes:?}");
 }
+
+#[test]
+fn a_worktree_member_is_refused_when_worktrees_is_not_ignored() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    common::write(&repo.join(".gitignore"), "target/\n");
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "stop ignoring .worktrees"]);
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(common::codes(&errors), ["worktree_not_ignored"]);
+}
+
+#[test]
+fn a_pane_only_team_does_not_need_worktrees_ignored() {
+    let rig = Rig::new();
+    let repo = rig.repo("plain");
+    common::write(&repo.join(".gitignore"), "target/\n");
+    git(&repo, &["add", "-A"]);
+    git(&repo, &["commit", "-q", "-m", "stop ignoring .worktrees"]);
+    let spec = common::team_spec("demo", &[common::pane_member("a", "Alpha", &repo)]);
+    assert!(rig.validate(&spec, false).is_ok());
+}
