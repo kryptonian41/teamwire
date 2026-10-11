@@ -274,7 +274,7 @@ fn a_database_of_another_schema_version_fails() {
 #[test]
 fn a_database_at_an_older_schema_passes_and_says_it_will_be_migrated() {
     let bed = Bed::healthy();
-    schema_1::version_1_team(bed.home.path(), "alpha", 1);
+    schema_1::version_1_team(bed.home.path(), "alpha", 1).unwrap();
     let checks = bed.checks();
     assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
     let detail = &checks

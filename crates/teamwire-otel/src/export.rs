@@ -16,9 +16,8 @@ use crate::{ExportError, ExportReport, OtlpConfig, StopCutoff, defs};
 /// A claim this old, whose exporter is gone, may be taken over.
 const CLAIM_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
 
-/// Sends the events after the export mark, then moves the mark. Nothing
-/// new to send is `Ok` with an empty report; a live claim held by another
-/// exporter is `Claimed` and nothing is sent.
+/// `export_once_until` with no cutoff: each request has the whole
+/// configured timeout.
 pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
     export_once_until(ctx, exporter, None)
 }
@@ -27,9 +26,11 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
     clippy::redundant_closure_for_method_calls,
     reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
 )]
-/// `export_once` for a caller that may stop while the batch is sent: with a
-/// `cutoff`, a request still waiting when the caller stops is given up after
-/// the cutoff's grace, and the export fails as on a timeout.
+/// Sends the events after the export mark, then moves the mark. Nothing
+/// new to send is `Ok` with an empty report; a live claim held by another
+/// exporter is `Claimed` and nothing is sent. With a `cutoff`, a request
+/// still waiting when the caller stops is given up after the cutoff's grace,
+/// and the export fails as on a timeout.
 pub fn export_once_until(
     ctx: &mut Ctx<'_>,
     exporter: &OtlpConfig,

@@ -599,9 +599,9 @@ fn user_version(path: &std::path::Path) -> u32 {
 #[test]
 fn metrics_status_and_export_read_a_schema_1_team_and_archive_and_change_neither() {
     let home = TestHome::new().unwrap();
-    let live = schema_1::version_1_team(home.path(), "alpha", 1);
+    let live = schema_1::version_1_team(home.path(), "alpha", 1).unwrap();
     let other = TestHome::new().unwrap();
-    let archived_from = schema_1::version_1_team(other.path(), "beta", 2);
+    let archived_from = schema_1::version_1_team(other.path(), "beta", 2).unwrap();
     let dir = home.path().join("archive").join("beta-2026-09-30");
     std::fs::create_dir_all(&dir).unwrap();
     let archived = dir.join("team.db");

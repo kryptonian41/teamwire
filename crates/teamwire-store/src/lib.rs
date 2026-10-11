@@ -10,10 +10,9 @@
 //! changes a row also writes its event row in the same transaction, except
 //! the bookkeeping writes named on `Tx`; display ids and per-sender `seq`
 //! come from `counters`, never from counting rows; `application_id` is
-//! `APPLICATION_ID`, `user_version` is `SCHEMA_VERSION` after a read-write
-//! open (a read-only open reads an older schema unmigrated, its missing
-//! columns as NULL); a damaged row is reported in a `Listing`, never read as
-//! success.
+//! `APPLICATION_ID`; a read-write open leaves `user_version` at
+//! `SCHEMA_VERSION`, a read-only open reads an older one as it is; a
+//! damaged row is reported in a `Listing`, never read as success.
 
 mod completion;
 mod ctx;
