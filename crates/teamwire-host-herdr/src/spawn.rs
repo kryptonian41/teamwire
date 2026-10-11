@@ -151,6 +151,13 @@ pub(crate) fn spawn(
         args.push("--".to_owned());
         args.extend(rest.iter().cloned());
     }
-    start(host, &args, Duration::from_millis(wait) + START_SLACK)?;
+    if let Err(e) = start(host, &args, Duration::from_millis(wait) + START_SLACK) {
+        // Launch records a place only on success, so nothing else can close the
+        // pane made above. Herdr closes the tab with its last pane, and the
+        // workspace with its last tab. On a timeout this also stops an agent
+        // that started late.
+        drop(host.call(&["pane", "close", &tab.pane], LAYOUT_TIMEOUT));
+        return Err(e);
+    }
     Ok(place_for(host, &tab))
 }

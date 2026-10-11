@@ -1,6 +1,6 @@
-//! The `Host` trait for tmux: `new-window -e` to spawn with the member's
-//! environment, `load-buffer` plus `paste-buffer -p` plus `send-keys Enter`
-//! to type, `capture-pane` for the screen, the pane's process tree for its
+//! The `Host` trait for tmux: `new-window` to spawn, the member's environment
+//! passed through a private file and never through argv, `load-buffer` plus
+//! `paste-buffer -p` plus `send-keys Enter` to type, `capture-pane` for the screen, the pane's process tree for its
 //! occupant.
 //!
 //! Never: type into a pane before the screen check of ADR 0006 point 3a
@@ -133,18 +133,29 @@ impl Tmux {
                 .iter()
                 .map(|s| keys::escape_arg(s))
                 .collect();
-        for (key, value) in &req.env {
-            if key.is_empty() || key.contains('=') {
+        for (key, _) in &req.env {
+            if !is_env_name(key) {
                 return Err(HostError::new(
                     HostErrorCode::BadArgument,
                     format!("{key:?} is not an environment variable name"),
                 ));
             }
-            shared.push("-e".to_owned());
-            shared.push(keys::escape_arg(&format!("{key}={value}")));
         }
+        // `new-window -e` would put the values in tmux's argv, which any local
+        // user can read with `ps`. They go through a private file instead.
+        let env_dir = if req.env.is_empty() {
+            None
+        } else {
+            Some(self.write_env_file(&req.env)?)
+        };
         shared.push("--".to_owned());
-        shared.extend(req.argv.iter().map(|a| keys::escape_arg(a)));
+        match &env_dir {
+            None => shared.extend(req.argv.iter().map(|a| keys::escape_arg(a))),
+            Some(dir) => {
+                shared.extend(env_wrapper(dir).iter().map(|a| keys::escape_arg(a)));
+                shared.extend(req.argv.iter().map(|a| keys::escape_arg(a)));
+            }
+        }
 
         let with = |head: &[&str]| -> Vec<String> {
             head.iter()
@@ -161,23 +172,91 @@ impl Tmux {
             self.run(&refs, timeout)
         };
 
-        let mut out = run_owned(&window);
-        if matches!(out, Err(Failure::NoServer(_))) {
-            out = run_owned(&session);
-            // A second spawn started the server between our two calls.
-            if matches!(&out, Err(Failure::Host(e)) if e.detail.contains("duplicate session")) {
-                out = run_owned(&window);
+        let result = (|| {
+            let mut out = run_owned(&window);
+            if matches!(out, Err(Failure::NoServer(_))) {
+                out = run_owned(&session);
+                // A second spawn started the server between our two calls.
+                if matches!(&out, Err(Failure::Host(e)) if e.detail.contains("duplicate session")) {
+                    out = run_owned(&window);
+                }
             }
+            let id = out?.trim().to_owned();
+            if !id.starts_with('%') {
+                return Err(HostError::new(
+                    HostErrorCode::Other,
+                    format!("tmux printed no pane id: {}", call::clip(&id)),
+                ));
+            }
+            Ok(id)
+        })();
+        // The wrapper removes the directory once it has read it, so a leftover
+        // directory means the program never started.
+        if let (Err(_), Some(dir)) = (&result, &env_dir) {
+            drop(std::fs::remove_dir_all(dir));
         }
-        let id = out?.trim().to_owned();
-        if !id.starts_with('%') {
-            return Err(HostError::new(
-                HostErrorCode::Other,
-                format!("tmux printed no pane id: {}", call::clip(&id)),
-            ));
-        }
-        Ok(id)
+        result
     }
+
+    /// Writes `export KEY='value'` lines to a file in a new directory only the
+    /// current user can enter, and returns the directory.
+    fn write_env_file(&self, env: &[(String, String)]) -> Result<std::path::PathBuf, HostError> {
+        use std::os::unix::fs::DirBuilderExt;
+        let io = |what: &str, e: &dyn fmt::Display| {
+            HostError::new(HostErrorCode::Other, format!("{what}: {e}"))
+        };
+        let dir = std::env::temp_dir().join(format!(
+            "teamwire-tmux-env-{}-{}",
+            std::process::id(),
+            BUFFER_COUNTER.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .map_err(|e| io("cannot make the environment directory", &e))?;
+        let mut text = String::new();
+        for (k, v) in env {
+            text.push_str("export ");
+            text.push_str(k);
+            text.push('=');
+            text.push_str(&sh_quote(v));
+            text.push('\n');
+        }
+        self.platform
+            .write_atomic(&dir.join("env"), text.as_bytes())
+            .map_err(|e| {
+                drop(std::fs::remove_dir_all(&dir));
+                io("cannot write the environment file", &e)
+            })?;
+        Ok(dir)
+    }
+}
+
+/// A name `sh` accepts in `export NAME=...`.
+fn is_env_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// A word for `sh`: single-quoted, each `'` written `'\''`.
+fn sh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
+/// The words that load the environment file in `dir`, remove `dir`, and then
+/// run the program that follows them.
+fn env_wrapper(dir: &std::path::Path) -> Vec<String> {
+    let dir = dir.display().to_string();
+    vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        "env=\"$1/env\"; . \"$env\"; rm -rf \"$1\"; shift; exec \"$@\"".to_owned(),
+        "teamwire-env".to_owned(),
+        dir,
+    ]
 }
 
 impl fmt::Debug for Tmux {

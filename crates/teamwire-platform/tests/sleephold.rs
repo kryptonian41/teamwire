@@ -116,6 +116,11 @@ fn a_hold_on_a_different_pid_is_ignored() {
     assert_eq!(holds.find_existing(prefix_of), None);
 }
 
+/// What `release` itself decides: it kills a hold only when teamwire started
+/// it (`owned`) and the hold is still an untimed hold on this lead. Whether the
+/// closing team is the last live one on the lead is the closer's decision,
+/// which `teamwire-close` tests in
+/// `a_hold_the_team_did_not_start_or_another_team_needs_is_left_running`.
 #[test]
 fn release_only_last_owned() {
     let mut lead = Lead::start();

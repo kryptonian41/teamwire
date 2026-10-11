@@ -160,10 +160,16 @@ pub(crate) fn worktree_plan(
     if git::run(platform, repo, &["check-ignore", "-q", &ignore_path])
         .is_ok_and(|o| o.exit_code == 1)
     {
-        warnings.push(format!(
-            "role {role}: .worktrees is not ignored by {}; add it to .gitignore or `git add -A` will commit the checkout",
-            repo.display()
-        ));
+        bad(
+            "branch",
+            "worktree_not_ignored",
+            format!(
+                ".worktrees is not ignored by {}; add it to .gitignore, or `git add -A` will \
+                 commit the member's checkout",
+                repo.display()
+            ),
+        );
+        return None;
     }
     Some(WorktreePlan {
         repo: repo.to_path_buf(),

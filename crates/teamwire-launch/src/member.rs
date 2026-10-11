@@ -117,6 +117,7 @@ fn launch_member(
     match result {
         Ok(()) => LaunchOutcome::Started,
         Err(stop) => {
+            let stop_code = stop.code;
             let (undo, left) = undo(ctx, m, &made);
             let mut reason = if undo.is_empty() {
                 stop.reason
@@ -127,7 +128,7 @@ fn launch_member(
                 reason = format!("{reason}; {advice}");
             }
             if made.recorded {
-                record_failed(ctx, m, &reason, &extra, &steps);
+                record_failed(ctx, m, stop_code, &reason, &extra, &steps);
             }
             if stop.refused {
                 LaunchOutcome::Refused(reason)
@@ -138,9 +139,17 @@ fn launch_member(
     }
 }
 
-fn record_failed(ctx: &mut Ctx<'_>, m: &PlannedMember, reason: &str, extra: &Value, steps: &Steps) {
+fn record_failed(
+    ctx: &mut Ctx<'_>,
+    m: &PlannedMember,
+    code: &str,
+    reason: &str,
+    extra: &Value,
+    steps: &Steps,
+) {
     let at = ctx.clock.now();
     let mut data = extra.clone();
+    put(&mut data, "reason_code", json!(code));
     put(
         &mut data,
         "reason",
@@ -191,14 +200,16 @@ fn run_member(
     let harness = ctx
         .registry
         .harness(&m.harness)
-        .map_err(|e| Stop::fail(e.to_string()))?;
+        .map_err(|e| Stop::fail("registry", e.to_string()))?;
     let host = ctx
         .registry
         .host(&m.host)
-        .map_err(|e| Stop::fail(e.to_string()))?;
-    let token = new_token().map_err(Stop::fail)?;
+        .map_err(|e| Stop::fail("registry", e.to_string()))?;
+    let token = new_token().map_err(|e| Stop::fail("prepare", e))?;
     let base_sha = match &m.worktree {
-        Some(w) => Some(worktree::start_commit(ctx.platform, w).map_err(Stop::fail)?),
+        Some(w) => {
+            Some(worktree::start_commit(ctx.platform, w).map_err(|e| Stop::fail("prepare", e))?)
+        }
         None => None,
     };
 
@@ -243,18 +254,22 @@ fn run_member(
         tx.set_member_token_hash(role, &hash)
     });
     if let Some(state) = closed {
-        return Err(Stop::refuse(format!(
-            "team_closed: team {} is {state}; the member was not started",
-            plan.spec.team
-        )));
+        return Err(Stop::refuse(
+            "record",
+            format!(
+                "team_closed: team {} is {state}; the member was not started",
+                plan.spec.team
+            ),
+        ));
     }
-    recorded.map_err(|e| Stop::fail(format!("the member could not be recorded: {e}")))?;
+    recorded.map_err(|e| Stop::fail("record", format!("the member could not be recorded: {e}")))?;
     made.recorded = true;
     steps.mark(ctx, "record");
 
     // 2. The worktree.
     if let (Some(w), Some(sha)) = (&m.worktree, &base_sha) {
-        made.worktree = Some(worktree::add(ctx.platform, w, sha).map_err(Stop::fail)?);
+        made.worktree =
+            Some(worktree::add(ctx.platform, w, sha).map_err(|e| Stop::fail("worktree", e))?);
         steps.mark(ctx, "worktree");
     }
 
@@ -265,7 +280,7 @@ fn run_member(
     // 4. Contract, brief, and the harness's launch files.
     let member_dir = dirs.member(role);
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string())
-        .map_err(|e| Stop::fail(e.to_string()))?;
+        .map_err(|e| Stop::fail("prepare", e.to_string()))?;
     let identity = vec![
         ("TEAMWIRE_TEAM".to_owned(), plan.spec.team.to_string()),
         ("TEAMWIRE_ROLE".to_owned(), role.to_string()),
@@ -287,14 +302,20 @@ fn run_member(
         otel: ctx.config.otel.clone(),
         teamwire_bin: plan.teamwire_bin.clone(),
     };
-    let spec = harness
-        .launch_spec(&launch)
-        .map_err(|e| Stop::fail(format!("the harness could not build the launch: {e}")))?;
+    let spec = harness.launch_spec(&launch).map_err(|e| {
+        Stop::fail(
+            "harness",
+            format!("the harness could not build the launch: {e}"),
+        )
+    })?;
     if spec.identity_channel != m.channel {
-        return Err(Stop::fail(format!(
-            "the harness used identity channel {} but validation chose {}",
-            spec.identity_channel, m.channel
-        )));
+        return Err(Stop::fail(
+            "harness",
+            format!(
+                "the harness used identity channel {} but validation chose {}",
+                spec.identity_channel, m.channel
+            ),
+        ));
     }
     write_member_files(ctx, dirs, m, &launch, &spec.files)?;
     steps.mark(ctx, "files");
@@ -323,7 +344,7 @@ fn run_member(
             }
             Ok(())
         })
-        .map_err(|e| Stop::fail(format!("the place could not be recorded: {e}")))?;
+        .map_err(|e| Stop::fail("place", format!("the place could not be recorded: {e}")))?;
     steps.mark(ctx, "spawn");
 
     // 6. Trust, through the harness.
@@ -336,14 +357,15 @@ fn run_member(
         Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => {}
         Ok(StartupOutcome::RefusedEscalated) => {
             let repo = m.worktree.as_ref().map_or(&m.cwd, |w| &w.repo);
-            return Err(Stop::fail(escalated_trust_message(repo)));
+            return Err(Stop::fail("trust", escalated_trust_message(repo)));
         }
         Ok(StartupOutcome::RefusedHome) => {
             return Err(Stop::fail(
+                "trust",
                 "the trust dialog is for a home directory and is never answered",
             ));
         }
-        Err(e) => return Err(Stop::fail(format!("the trust step failed: {e}"))),
+        Err(e) => return Err(Stop::fail("trust", format!("the trust step failed: {e}"))),
     }
     steps.mark(ctx, "trust");
 
@@ -372,7 +394,12 @@ fn run_member(
     let at = ctx.clock.now();
     ctx.store
         .write(|tx| tx.set_member_state(at, role, MemberState::Started, &data))
-        .map_err(|e| Stop::fail(format!("the member could not be marked started: {e}")))?;
+        .map_err(|e| {
+            Stop::fail(
+                "started",
+                format!("the member could not be marked started: {e}"),
+            )
+        })?;
     made.recorded = false;
 
     // 8. The first message, once (LCH-14, LCH-19).

@@ -89,9 +89,9 @@ impl ClaudeCode {
         session::caller_from_env(&self.config.claude_dir, get)
     }
 
-    /// What `.claude.json` says about `cwd`, read-only. Launch calls this
-    /// before it starts a member, because `answer_startup` sees only the
-    /// screen and cannot know the directory.
+    /// What `.claude.json` says about `cwd`, read-only. Nothing in launch
+    /// calls this: launch reaches a harness only through the `Harness` trait,
+    /// which has no method for it, and `answer_startup` sees only the screen.
     pub fn trust_check(&self, cwd: &Path) -> TrustCheck {
         trust::check(&self.config.claude_json, cwd)
     }
