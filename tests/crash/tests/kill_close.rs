@@ -147,9 +147,10 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
         }
         running.kill9();
         running.finish();
-        caught_closed += usize::from(seen);
 
         let state_left = rig.home.path().join("teams/alpha").exists();
+        // A kill that came after the deletion missed the window it names.
+        caught_closed += usize::from(seen && state_left);
         if state_left {
             let store = Store::open_existing(rig.home.path(), &team_name()).unwrap();
             assert_integrity(&store);
@@ -169,9 +170,9 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
         assert_closed_for_good(&rig);
         stop_agents(&rig);
     }
-    eprintln!("{caught_closed} of 8 runs saw the team closed before the kill");
+    eprintln!("{caught_closed} of 8 runs killed close between closed and deleted");
     assert!(
         caught_closed >= 2,
-        "only {caught_closed} of 8 runs saw the team closed before the kill; the window between closed and deleted was missed"
+        "only {caught_closed} of 8 runs killed close between closed and deleted; the window between closed and deleted was missed"
     );
 }
