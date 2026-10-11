@@ -44,8 +44,8 @@ pub struct ClaudeConfig {
     /// Holds `sessions/` and `skills/`.
     pub claude_dir: PathBuf,
     /// `~/.claude.json`, or `.claude.json` inside `claude_dir` when that is
-    /// set from the environment. Read for `hasTrustDialogAccepted` and the
-    /// lead's MCP entry; teamwire never writes it.
+    /// set from the environment. Read for the lead's MCP entry; teamwire never
+    /// writes it.
     pub claude_json: PathBuf,
     /// The `claude` program to start.
     pub claude_bin: String,

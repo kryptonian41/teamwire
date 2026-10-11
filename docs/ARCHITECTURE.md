@@ -295,9 +295,9 @@ Claude Code specifics that the adapter owns:
   `CLAUDE_CODE_SESSION_KIND`; `bg` is refused.
 - Liveness comes from `~/.claude/sessions/<pid>.json` first and `claude
   agents --json` second, handling both row shapes (ADP-4). Both are read-only.
-- Trust: `~/.claude.json` is read (never written) for
-  `hasTrustDialogAccepted`; when trust is missing the adapter reads the screen
-  through the host and answers only the plain folder-trust dialog (LCH-15).
+- Trust: the adapter reads the screen through the host and answers only the
+  plain folder-trust dialog (LCH-15). Launch refuses a home directory before
+  the adapter runs.
 - The Stop hook input (`session_id`, `stop_hook_active`, `agent_id`,
   `last_assistant_message`, `transcript_path`) and its `additionalContext`
   output are parsed and produced here.

@@ -247,7 +247,7 @@ pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub transcript: Option<PathBuf> }
 pub enum Liveness { Alive(PlaceState), Dead, Unknown }
 pub enum ScreenState { InputPrompt, Dialog, Unknown }
-pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated, RefusedHome }
+pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated }
 
 /// A process: its pid, and when it started if the platform could read it.
 /// `From<Pid>` gives one with the start time unknown.

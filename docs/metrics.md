@@ -101,7 +101,7 @@ bucket has not ended. That event and the ones after it wait for a later
 export, so one bucket of one series is always one delta point (ADR 0005,
 point 4). While the watch runs, each export request has the whole configured
 timeout. Once the watch stops, a request still waiting gets at most 3 s more,
-so the watch exits within about 3 s. A batch cut off that way stays unsent
+so the watch exits within about 6 s: an export makes up to two requests, traces then metrics, and each gets its own 3 s. A batch cut off that way stays unsent
 until the next `teamwire metrics export` or watch.
 
 `OTEL_EXPORTER_OTLP_HEADERS` is sent only to an endpoint from the same place,
