@@ -362,7 +362,7 @@ pub(crate) struct MetricsArgs {
 pub(crate) enum MetricsCommand {
     /// Send events after the export mark to the OTLP endpoint, then move the mark.
     Export {
-        /// Export once and exit.
+        /// Export one pass and exit; without it, export every minute until stopped.
         #[arg(long)]
         once: bool,
     },

@@ -333,7 +333,7 @@ fn export_sends_new_events_once_and_moves_the_mark() {
     assert_eq!(mark(&home, "alpha"), 5);
     // Nothing new the second time.
     let before = rx.paths().len();
-    let again = teamwire(&home, &envs, &["metrics", "export"]);
+    let again = teamwire(&home, &envs, &["metrics", "export", "--once"]);
     assert_eq!(again.code, 0);
     assert!(
         again.out.contains("alpha: nothing new to send"),
@@ -522,4 +522,31 @@ fn export_skips_a_damaged_row_names_it_and_still_exits_zero() {
         records.iter().all(|r| r["seq"] != 3),
         "the damaged event is not written"
     );
+}
+
+#[test]
+fn export_without_once_keeps_running_after_its_first_pass() {
+    let home = TestHome::new().unwrap();
+    busy_team(&home, "alpha");
+    let rx = receiver(200);
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["metrics", "export"])
+        .env("TEAMWIRE_HOME", home.path())
+        .env("OTEL_EXPORTER_OTLP_ENDPOINT", rx.url())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while !rx.paths().contains(&"/v1/metrics".to_owned()) {
+        assert!(std::time::Instant::now() < deadline, "no export arrived");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let still_running = child.try_wait().unwrap().is_none();
+    child.kill().unwrap();
+    child.wait().unwrap();
+    assert!(still_running, "export without --once exited after one pass");
 }
