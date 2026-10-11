@@ -89,3 +89,20 @@ OTEL_EXPORTER_OTLP_HEADERS = 'a=b # not a comment'
     );
     assert_eq!(file_setting(file, "MISSING"), None);
 }
+
+#[test]
+fn headers_from_the_file_never_go_to_an_endpoint_from_the_environment() {
+    let home = TestHome::new().unwrap();
+    fs::write(
+        home.path().join("config.toml"),
+        "OTEL_EXPORTER_OTLP_ENDPOINT = \"http://file:4318\"\nOTEL_EXPORTER_OTLP_HEADERS = \"authorization=secret\"\n",
+    )
+    .unwrap();
+    let env = |k: &str| (k == "OTEL_EXPORTER_OTLP_ENDPOINT").then(|| "http://env:4318".to_owned());
+    let cfg = load_otlp_config(home.path(), &env).unwrap();
+    assert_eq!(cfg.endpoint, "http://env:4318");
+    assert!(cfg.headers.is_empty(), "{:?}", cfg.headers);
+    // With no endpoint in the environment, the file's headers go with the file's endpoint.
+    let cfg = load_otlp_config(home.path(), &none).unwrap();
+    assert_eq!(cfg.headers.len(), 1);
+}

@@ -168,6 +168,16 @@ fn kind_of<'a>(h: &'a History, e: &Event) -> &'a str {
         .map_or("unknown", |role| h.member_kind(role.as_str(), e.seq))
 }
 
+/// The `reason_code` of a failed launch when it is a short code. The free
+/// `reason` text can hold a path, so it is never a label.
+fn reason_code(d: &Value) -> &str {
+    text(d, "reason_code")
+        .filter(|c| {
+            (1..=32).contains(&c.len()) && c.bytes().all(|b| b.is_ascii_lowercase() || b == b'_')
+        })
+        .unwrap_or("other")
+}
+
 fn launch(o: &mut Out<'_>, d: &Value) {
     if o.event.kind == EventType::MemberStarted {
         o.count(
@@ -175,10 +185,9 @@ fn launch(o: &mut Out<'_>, d: &Value) {
             &[("outcome", "started"), ("reason", "none")],
         );
     } else {
-        let reason = text(d, "reason").unwrap_or("unknown");
         o.count(
             &defs::LAUNCH_MEMBERS,
-            &[("outcome", "failed"), ("reason", reason)],
+            &[("outcome", "failed"), ("reason", reason_code(d))],
         );
     }
     for step in LAUNCH_STEPS {
@@ -339,6 +348,11 @@ pub(crate) fn gauges(h: &History, upto_seq: u64, at: Timestamp, team: &str) -> V
 
     let mut state: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
     for e in h.events().iter().take_while(|e| e.seq <= upto_seq) {
+        // A completed close ends every member, and writes no per-member event.
+        if e.kind == EventType::TeamClosed && text(&e.data, "outcome") == Some("completed") {
+            state.clear();
+            continue;
+        }
         let (Some(role), Some(s)) = (e.role.as_ref(), member_state(e.kind)) else {
             continue;
         };

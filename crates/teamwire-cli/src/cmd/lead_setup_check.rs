@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use teamwire_harness_claude::{
+use crate::wiring::{
     ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state, shadowing_entries,
     skill_state,
 };

@@ -4,12 +4,11 @@ use std::io::{Read, Write};
 use std::process::ExitCode;
 
 use serde_json::json;
-use teamwire_core::{Config, HarnessId, Role, TeamName, TurnEnd, TurnEndReply};
-use teamwire_harness_claude::ClaudeCode;
+use teamwire_core::{Config, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_store::{Ctx, Store};
 
 use crate::cmd::send::state_home;
-use crate::wiring::Wiring;
+use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
 /// More hook input than this is not read; Claude Code's is a few kilobytes.
@@ -57,10 +56,7 @@ fn member_hook(
         .take(STDIN_LIMIT)
         .read_to_end(&mut input)
         .ok()?;
-    let harness = wiring
-        .registry
-        .harness(&HarnessId::from_static(ClaudeCode::ID))
-        .ok()?;
+    let harness = wiring.registry.harness(&claude_harness_id()).ok()?;
     let turn = harness.parse_turn_end(&input).ok()?;
 
     let home = state_home(global)?;

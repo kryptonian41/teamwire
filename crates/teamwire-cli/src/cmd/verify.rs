@@ -7,7 +7,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
-use crate::cmd::send::{home_or_refuse, no_database_text};
+use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
 
@@ -35,6 +35,13 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(role) => role,
         Err(e) => return fail(&format!("{e}"), USAGE),
     };
+    // A member who could waive its own flag would turn FLAGGED into PASS. A
+    // plain run stays open, because the closer runs it from a member session.
+    if waive.is_some()
+        && let Some(code) = refuse_member("verify --waive")
+    {
+        return code;
+    }
     let home = match home_or_refuse("verify", global) {
         Ok(home) => home,
         Err(code) => return code,

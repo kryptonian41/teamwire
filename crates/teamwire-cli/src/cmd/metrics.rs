@@ -29,7 +29,7 @@ pub(crate) fn run(args: &MetricsArgs, global: &Global, wiring: &Wiring) -> ExitC
         Err(code) => return code,
     };
     match action {
-        Some(MetricsCommand::Export { once: _ }) => export(&home, wiring),
+        Some(MetricsCommand::Export { once }) => export(&home, wiring, *once),
         None => show(&home, wiring, team.as_deref(), since.as_deref(), *json),
     }
 }
@@ -109,14 +109,31 @@ fn line(m: &MetricValue) -> String {
     format!("{}{labels} {value} {}\n", m.name, m.unit)
 }
 
+/// How long a repeating export waits between passes (ADR 0005 point 3).
+const EXPORT_EVERY: Duration = Duration::from_secs(60);
+
+/// One pass with `--once`; otherwise a pass every minute until the process
+/// is stopped. A pass that finds export off ends the command either way,
+/// because nothing in the environment will turn it on later.
+fn export(home: &Path, wiring: &Wiring, once: bool) -> ExitCode {
+    loop {
+        let Some(config) = teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok())
+        else {
+            warn("export is off: set OTEL_EXPORTER_OTLP_ENDPOINT to turn it on");
+            return ExitCode::SUCCESS;
+        };
+        let code = export_pass(home, wiring, &config);
+        if once || code != ExitCode::SUCCESS {
+            return code;
+        }
+        std::thread::sleep(EXPORT_EVERY);
+    }
+}
+
 /// Sends what every team's export mark has not yet covered. A missing or
 /// slow collector never changes the exit code (OBS-2): the failure is
 /// printed, the mark stays, and the next run sends the batch.
-fn export(home: &Path, wiring: &Wiring) -> ExitCode {
-    let Some(config) = teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok()) else {
-        warn("export is off: set OTEL_EXPORTER_OTLP_ENDPOINT to turn it on");
-        return ExitCode::SUCCESS;
-    };
+fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig) -> ExitCode {
     let teams = match team_dirs(home) {
         Ok(teams) => teams,
         Err(e) => return fail(&e, STORE),
@@ -138,7 +155,7 @@ fn export(home: &Path, wiring: &Wiring) -> ExitCode {
             clock: &wiring.clock,
             config: &app_config,
         };
-        match teamwire_otel::export_once(&mut ctx, &config) {
+        match teamwire_otel::export_once(&mut ctx, config) {
             Ok(r) if r.to_seq == r.from_seq => say(&format!("{team}: nothing new to send\n")),
             Ok(r) => say(&format!(
                 "{team}: sent events {} to {} ({} metric points, {} spans)\n",

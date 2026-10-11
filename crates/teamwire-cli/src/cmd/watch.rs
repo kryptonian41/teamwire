@@ -24,11 +24,23 @@ const EXPORT_EVERY: Duration = Duration::from_secs(60);
 /// How long the exporter thread sleeps between looks at the stop flag.
 const EXPORT_SLICE: Duration = Duration::from_millis(200);
 
+/// The longest one export call may wait while the watch runs. The watch
+/// waits for the exporter thread before it exits, so a collector that never
+/// answers would otherwise hold the exit for the whole configured timeout.
+const WATCH_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
 /// the same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a), read
 /// the same way `teamwire metrics export` reads them.
 fn otlp_settings(home: &Path) -> Option<OtlpConfig> {
-    teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok())
+    teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok()).map(bounded)
+}
+
+fn bounded(target: OtlpConfig) -> OtlpConfig {
+    OtlpConfig {
+        timeout: target.timeout.min(WATCH_EXPORT_TIMEOUT),
+        ..target
+    }
 }
 
 /// Sends the export mark's batch every minute until `stop` is set. It has
@@ -179,5 +191,21 @@ fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool) -> ExitCod
             None if once => return ExitCode::SUCCESS,
             None => std::thread::sleep(Duration::from_secs(ctx.config.poll_s)),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_collector_timeout_is_cut_to_the_watch_bound() {
+        let target = |secs| OtlpConfig {
+            endpoint: "http://c:4318".to_owned(),
+            headers: Vec::new(),
+            timeout: Duration::from_secs(secs),
+        };
+        assert_eq!(bounded(target(600)).timeout, WATCH_EXPORT_TIMEOUT);
+        assert_eq!(bounded(target(1)).timeout, Duration::from_secs(1));
     }
 }

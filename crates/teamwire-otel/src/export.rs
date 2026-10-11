@@ -8,7 +8,7 @@ use teamwire_store::{Ctx, ExportClaim};
 
 use crate::history::History;
 use crate::observe::{Observation, gauges, observe};
-use crate::otlp;
+use crate::otlp::{self, BUCKET_MS};
 use crate::spans::{spans_ending, trace_id};
 use crate::{ExportError, ExportReport, OtlpConfig, defs};
 
@@ -27,6 +27,23 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
     let now = ctx.clock.now();
     let platform = ctx.platform;
     let claim = ctx.store.write(|tx| {
+        // Checked in the claiming transaction, so no event can arrive between
+        // the check and the claim. A batch that ends inside a bucket would send
+        // that bucket's point again when the next batch adds to it (ADR 0005
+        // point 4), so the batch waits until the last bucket in it is over.
+        let reader = tx.reader();
+        let mark = reader.export_mark()?;
+        let open_bucket = reader
+            .events_after(mark.last_event_seq, None, None)?
+            .items
+            .iter()
+            .any(|e| {
+                e.time.unix_millis().div_euclid(BUCKET_MS) * BUCKET_MS + BUCKET_MS
+                    > now.unix_millis()
+            });
+        if open_bucket && mark.claimed_to.is_none() {
+            return Ok(None);
+        }
         tx.claim_metric_export(now, &me, CLAIM_STALE_AFTER, |holder| {
             holder
                 .parse::<u32>()

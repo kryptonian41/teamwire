@@ -15,15 +15,21 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 /// counts as unset. Header values may write `,` as `%2C` and `%` as `%25`.
 pub fn load_otlp_config(home: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<OtlpConfig> {
     let file = std::fs::read_to_string(home.join("config.toml")).unwrap_or_default();
-    let setting = |key: &str| {
-        env(key)
-            .filter(|v| !v.is_empty())
-            .or_else(|| file_setting(&file, key))
-    };
-    let endpoint = setting("OTEL_EXPORTER_OTLP_ENDPOINT")?;
-    let headers = setting("OTEL_EXPORTER_OTLP_HEADERS")
-        .map(|list| parse_headers(&list))
-        .unwrap_or_default();
+    let from_env = |key: &str| env(key).filter(|v| !v.is_empty());
+    let setting = |key: &str| from_env(key).or_else(|| file_setting(&file, key));
+    let endpoint_from_env = from_env("OTEL_EXPORTER_OTLP_ENDPOINT");
+    let endpoint = endpoint_from_env
+        .clone()
+        .or_else(|| file_setting(&file, "OTEL_EXPORTER_OTLP_ENDPOINT"))?;
+    // Credentials in the file were written for the file's endpoint. An
+    // endpoint chosen in the environment must not receive them.
+    let headers = if endpoint_from_env.is_some() {
+        from_env("OTEL_EXPORTER_OTLP_HEADERS")
+    } else {
+        setting("OTEL_EXPORTER_OTLP_HEADERS")
+    }
+    .map(|list| parse_headers(&list))
+    .unwrap_or_default();
     let timeout = setting("OTEL_EXPORTER_OTLP_TIMEOUT")
         .and_then(|ms| ms.parse().ok())
         .map_or(DEFAULT_TIMEOUT, Duration::from_millis);
