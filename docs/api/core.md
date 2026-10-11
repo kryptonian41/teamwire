@@ -196,7 +196,7 @@ pub trait Host: Send + Sync {
 pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
                       pub knows_session_of_place: bool, pub submit_ack: SubmitAck,
                       /// The host can give the started program environment
-                      /// variables (tmux `new-window -e`). herdr cannot.
+                      /// variables (tmux, through a private file, ADR 0013). herdr cannot.
                       pub sets_env_at_spawn: bool,
                       /// The host itself refuses to type into a session that
                       /// shows a dialog (herdr `agent_blocked`). tmux does not.
@@ -262,7 +262,7 @@ pub trait Platform: Send + Sync {
     fn process_started(&self, pid: Pid) -> Option<Timestamp> { None }
     /// The pid is alive and, when both start times are known, started within
     /// START_TIME_SLACK of the recorded time. A reused pid is not the process.
-    fn process_alive(&self, process: ProcessRef) -> bool;
+    fn process_alive(&self, process: ProcessRef) -> bool { /* default: pid_alive, then compare start times when both are known */ }
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError>;
     /// Run in a new process group; on timeout kill the group; exit 124.
     /// Children start one at a time, so no child inherits another's pipes.

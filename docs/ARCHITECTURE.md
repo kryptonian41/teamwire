@@ -328,7 +328,7 @@ the database itself. This section says what is enforced.
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
 | A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
 | teamwire breaks the user's own Claude Code setup | Nothing is written under `~/.claude/` or to `~/.claude.json` except by `teamwire install`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
-| A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*` variable are filtered everywhere | SEC-1 |
+| A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*` variable are filtered everywhere | SEC-1 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
 

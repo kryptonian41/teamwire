@@ -55,7 +55,7 @@ paths never appear as labels.
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
-| `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `refused`, `failed`), `reason` (the event's `reason_code`: `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; else `other`; `none` when started) | Why do launches fail? |
+| `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `failed`; a launch refused before any member was recorded writes no event), `reason` (the event's `reason_code`: `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started` and `member.failed`. |
 | `teamwire.locator.refusals` | counter | `{refusal}` | `team`, `code` | Is the wrong-session check firing, and why? |
 | `teamwire.verify.runs` | counter | `{run}` | `team`, `verdict` | How often does verify pass, flag or fail? |

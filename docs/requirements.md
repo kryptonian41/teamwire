@@ -288,7 +288,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| SEC-1 | MUST | Never log an environment value whose name contains `TOKEN`, `KEY` or `SECRET`, including `CLAUDE_CODE_MESSAGING_TOKEN` and teamwire's own member tokens. | harness R21 |
+| SEC-1 | MUST | Never log an environment value whose name contains `TOKEN`, `KEY`, `SECRET` or `HEADERS` (which covers `OTEL_EXPORTER_OTLP_HEADERS`), including `CLAUDE_CODE_MESSAGING_TOKEN` and teamwire's own member tokens. | harness R21 |
 | SEC-2 | MUST | Any route that pushes into a session accepts only senders in the team's member list. | protocols R27 |
 | SEC-3 | MUST | teamwire registers no hook, MCP server, skill or launch agent outside its own repository and state directory. Example configs are files in the repo. The one exception is the lead setup: the `teamwire` skill and the lead's MCP server, registered only by `teamwire install` (ADR 0012). | `CLAUDE.md`; harness R7; ADR 0012 |
 | SEC-4 | MUST | teamwire never writes `~/.claude/settings.json`, `~/.claude.json`, or herdr's managed hook file. Reading them is allowed. `teamwire install` changes the lead's MCP entry in `~/.claude.json` only by running `claude mcp` (ADR 0012). | harness R7, 1.5; ADR 0012 |
