@@ -1,9 +1,10 @@
 # ADR 0015: A read-only open reads an older schema as it is
 
-Status: accepted, 2026-10-11. Supersedes the part of WAT-11 and of
-`docs/api/core.md` (`Store::open_read_only`) that refuses a database whose
-schema is older than the binary's. Adds the effect on archives that ADR 0014
-left out.
+Status: accepted, 2026-10-11. Replaces the rule, written in
+`docs/api/core.md` (`Store::open_read_only`) before this change, that a
+read-only open refuses a database whose schema is older than the binary's.
+WAT-11 and STO-6 already allow this. Adds the effect on archives that ADR
+0014 left out.
 
 ## Context
 
