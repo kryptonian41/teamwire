@@ -48,8 +48,9 @@ fn removing_an_implementer_needs_a_verify_first() {
     assert_eq!(accepted.code, 0, "{}", accepted.all());
     assert!(!worktree.exists(), "the worktree is removed");
     assert_eq!(state(), MemberState::Removed);
+    let branches = w.git(w.repo(), &["branch", "--list"]);
     assert!(
-        w.git(w.repo(), &["branch", "--list"]).contains('a'),
-        "the branch is kept"
+        branches.lines().any(|l| l.trim() == "a"),
+        "the branch is kept: {branches}"
     );
 }
