@@ -374,6 +374,8 @@ pub struct SpawnRequest { pub name: Address, pub title: String, pub cwd: PathBuf
 
 pub enum TurnEndReply { Continue, Hold(String) }   // Hold carries the note
 pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s: u64,
+                    pub setup_timeout_s: u64,                             // 600
+                    pub spawn_timeout_s: u64,                             // 150
                     pub default_deadline_s: u64, pub hook_budget_s: u64,  // 40
                     pub hook_timeout_s: u64,                              // 60
                     pub delivering_stale_s: u64,                          // 90
