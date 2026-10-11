@@ -141,7 +141,7 @@ fn write_atomic_through_a_symlink_keeps_the_link_and_writes_the_target() {
     let dir = tempfile::tempdir().unwrap();
     let target = dir.path().join("real.json");
     let link = dir.path().join("link.json");
-    fs::write(&target, b"old").unwrap();
+    native().write_atomic(&target, b"old").unwrap();
     std::os::unix::fs::symlink(&target, &link).unwrap();
     native().write_atomic(&link, b"new").unwrap();
     assert!(

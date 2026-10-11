@@ -214,10 +214,14 @@ impl Tmux {
             .mode(0o700)
             .create(&dir)
             .map_err(|e| io("cannot make the environment directory", &e))?;
-        let text: String = env
-            .iter()
-            .map(|(k, v)| format!("export {k}={}\n", sh_quote(v)))
-            .collect();
+        let mut text = String::new();
+        for (k, v) in env {
+            text.push_str("export ");
+            text.push_str(k);
+            text.push('=');
+            text.push_str(&sh_quote(v));
+            text.push('\n');
+        }
         self.platform
             .write_atomic(&dir.join("env"), text.as_bytes())
             .map_err(|e| {

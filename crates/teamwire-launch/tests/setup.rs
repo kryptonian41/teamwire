@@ -42,7 +42,13 @@ fn failed_setup_undoes_and_role_reusable() {
     let events = role_events(&store, "api");
     assert_eq!(events.last().unwrap().0, "member.failed");
     // A metric label comes from the code, never from the free text (M8).
-    let code = events.last().unwrap().1["reason_code"].as_str().unwrap();
+    let code = events
+        .last()
+        .unwrap()
+        .1
+        .get("reason_code")
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(code, "setup");
     assert!(
         (1..=32).contains(&code.len()) && code.bytes().all(|b| b.is_ascii_lowercase() || b == b'_'),
