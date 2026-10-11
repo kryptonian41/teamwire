@@ -33,6 +33,9 @@ impl Platform for GitPlatform {
     fn pid_alive(&self, pid: Pid) -> bool {
         self.inner.pid_alive(pid)
     }
+    fn process_started(&self, pid: Pid) -> Option<teamwire_core::Timestamp> {
+        self.inner.process_started(pid)
+    }
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
         self.inner.env_of(pid, var)
     }

@@ -9,7 +9,7 @@ Every later test runs on these. Nothing here touches the real `~/.claude`,
 | --- | --- | --- |
 | `TestHome` | helper | A fresh `TEAMWIRE_HOME` in a temporary directory. |
 | `FakeClock` | in-process `Clock` | Time moves when the test says. `advance`, `sleep_and_wake` (wall clock jumps, monotonic does not), `set_wall`. |
-| `FakePlatform` | in-process `Platform` | Environments per pid, free space, network-filesystem flag, a sleep hold that records start and release (`hold_events`). It writes real files, so give it a temporary directory. |
+| `FakePlatform` | in-process `Platform` | Environments and start times per pid, free space, network-filesystem flag, a sleep hold that records start and release (`hold_events`). It writes real files, so give it a temporary directory. |
 | `FakeHarness` | in-process `Harness` | Sessions, pids, liveness; switchable capabilities (`set_caps`); a background caller; a listing failure. |
 | `FakeHost` | in-process `Host` | Places in a map; scripted faults per method. |
 | `NoTmuxConfig` | wrapper `Platform` | The real platform it wraps, except that every `tmux` call gets `-f /dev/null`. A test's private tmux server then never reads the user's `~/.tmux.conf`, whose plugins can make a server start slow enough to time out. |
@@ -30,7 +30,9 @@ calls" (`log.count(CallKind::Write) == 0`).
   work, then reports failure), `Fault::WrongOccupant(Occupant)`,
   `Fault::ChangeOccupantAfter(Occupant)` (the occupant changes between two
   calls). Busy twice then success is `inject("spawn", Fail(Busy), 2)`.
-- `FakePlatform`: `fail_env_reads`, `set_free_bytes` (low disk),
+- `FakePlatform`: `set_started` (a pid's start time; unknown until set),
+  `reuse_pid` (a new process, with a new start time, got a pid),
+  `fail_env_reads`, `set_free_bytes` (low disk),
   `set_network_fs`, `fail_writes` (full disk), `queue_run` (the next `run`
   result), `add_external_hold`, `reuse_hold_pid`, `end_hold_process`,
   `fail_hold_start`; `FakePlatform::without_sleep_hold()` is the Linux shape.

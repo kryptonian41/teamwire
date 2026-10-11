@@ -30,7 +30,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
 use teamwire_otel::{ExportError, OtlpConfig, export_once};
-use teamwire_store::{Ctx, NewTeam, Store};
+use teamwire_store::{Ctx, ExportHolder, NewTeam, Store};
 
 const T0: i64 = 1_790_000_000_000;
 
@@ -198,6 +198,78 @@ fn crash_before_mark_reexports_once() {
     let again = e.export(&stub.url()).unwrap();
     assert_eq!((again.metric_points, again.spans), (0, 0));
     assert_eq!(stub.metrics().len(), 1);
+}
+
+/// A claim names its exporter by pid and start time. When the exporter died
+/// and an unrelated process got its pid, the stale claim is taken over; the
+/// live original exporter keeps its claim however old it is.
+#[test]
+fn a_claim_whose_pid_was_reused_is_taken_over() {
+    let mut e = env();
+    let m = e.message(10);
+    e.handed_off(11, &m);
+    let holder = Pid::new(4242);
+    let started = at(100);
+    e.platform.set_alive(holder, true);
+    e.platform.set_started(holder, Some(started));
+    let claimed_at = e.clock.now();
+    let claimer = ExportHolder {
+        id: "4242".to_owned(),
+        started: Some(started),
+    };
+    e.store
+        .write(|tx| {
+            tx.claim_metric_export(claimed_at, claimer, Duration::from_secs(300), |_| false)
+        })
+        .unwrap()
+        .unwrap();
+    let stub = Stub::start(Mode::Ok);
+    e.clock.advance(Duration::from_secs(400));
+    // Old, but the exporter that made it still runs.
+    assert!(matches!(
+        e.export(&stub.url()),
+        Err(ExportError::Claimed(_))
+    ));
+    assert!(stub.requests().is_empty());
+    // It exits; a process started later has its pid now.
+    e.platform.reuse_pid(holder, e.clock.now());
+    let report = e.export(&stub.url()).unwrap();
+    assert_eq!(report.to_seq, e.last_seq());
+    assert_eq!(stub.metrics().len(), 1);
+    assert_eq!(e.mark().claimed_by, None);
+}
+
+/// While an exporter sends, its claim names it by pid and start time.
+#[test]
+fn an_exporter_records_its_own_start_time_with_its_claim() {
+    let mut e = env();
+    let m = e.message(10);
+    e.handed_off(11, &m);
+    let me = Pid::new(std::process::id());
+    e.platform.set_alive(me, true);
+    e.platform.set_started(me, Some(at(1)));
+    // A collector that holds each request for a while, so the claim is held
+    // long enough for another connection to read it.
+    let stub = Stub::start(Mode::Delay(Duration::from_millis(1500)));
+    let home = e.home.path().to_path_buf();
+    let watcher = std::thread::spawn(move || {
+        let name = TeamName::parse("alpha").unwrap();
+        let store = Store::open_existing(&home, &name).unwrap();
+        for _ in 0..200 {
+            let mark = store.read(|tx| tx.export_mark()).unwrap();
+            if mark.claimed_by.is_some() {
+                return Some((mark.claimed_by, mark.claimed_by_started));
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        None
+    });
+    let report = e.export(&stub.url()).unwrap();
+    assert_eq!(report.to_seq, e.last_seq());
+    assert_eq!(
+        watcher.join().unwrap(),
+        Some((Some(me.to_string()), Some(at(1))))
+    );
 }
 
 #[test]

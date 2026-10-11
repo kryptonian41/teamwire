@@ -8,7 +8,7 @@ use std::io::Write as _;
 use std::path::PathBuf;
 
 use rusqlite::Connection;
-use teamwire_core::{EventType, TeamName};
+use teamwire_core::{EventType, Pid, TeamName, TeamState};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
     APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_VERSION, Store, StoreError, database_path,
@@ -295,6 +295,56 @@ fn migration_from_every_older_version_ends_in_the_same_schema() {
         drop(store);
         assert_eq!(schema_dump(&path), reference, "from version {start}");
     }
+}
+
+/// A version-1 database, as a version-1 binary left it mid-close and
+/// mid-export, migrates to the current version with every row kept. The new
+/// start-time columns are empty, so the pid alone still names each owner.
+#[test]
+fn a_version_1_database_with_rows_migrates_and_keeps_them() {
+    let home = TestHome::new().unwrap();
+    let path = database_path(home.path(), &team());
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    {
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch(SCHEMA_V1_SQL).unwrap();
+        conn.pragma_update(None, "application_id", APPLICATION_ID)
+            .unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        conn.execute_batch(
+            "INSERT INTO team (id, ulid, name, title, state, closing_pid, lead_harness, lead_host,
+                               lead_route, created_at)
+             VALUES (1, '01J9ZQ0000000000000000TEAM', 'alpha', 'Alpha', 'closing', 4242,
+                     'claude-code', 'herdr', 'sink', '2026-10-01T00:00:00.000Z');
+             INSERT INTO events (ulid, time, type, writer_version)
+             VALUES ('01J9ZQ000000000000000EVENT', '2026-10-01T00:00:01.000Z', 'team.created', '0.1.0');
+             INSERT INTO metric_export (id, last_event_seq, claimed_to, claimed_by, claimed_at)
+             VALUES (1, 0, 1, '5151', '2026-10-01T00:00:02.000Z');",
+        )
+        .unwrap();
+    }
+    let store = Store::open(home.path(), &team()).unwrap();
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
+    let (row, mark, events) = store
+        .read(|tx| {
+            Ok((
+                tx.team()?.unwrap(),
+                tx.export_mark()?,
+                tx.events_after(0, None, None)?,
+            ))
+        })
+        .unwrap();
+    assert_eq!(row.name.as_str(), "alpha");
+    assert_eq!(row.state, TeamState::Closing);
+    assert_eq!(row.closing_pid, Some(Pid::new(4242)));
+    assert_eq!(row.closing_started, None);
+    assert_eq!(
+        (mark.claimed_to, mark.claimed_by.as_deref()),
+        (Some(1), Some("5151"))
+    );
+    assert_eq!(mark.claimed_by_started, None);
+    assert_eq!(events.items.len(), 1);
+    assert!(events.bad.is_empty(), "{:?}", events.bad);
 }
 
 /// Every file in the team directory with a hash of its bytes.

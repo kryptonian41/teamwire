@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
     Address, HostErrorCode, Member, MemberState, Mode, PlaceState, Role, TeamName, TeamState,
 };
@@ -167,19 +168,30 @@ pub(crate) fn member_refusals(ctx: &Ctx<'_>, team: &TeamName, members: &[Member]
     out
 }
 
-/// Why no close may start now, from the team row alone.
+/// The process that holds the close lock: its pid, with its start time when
+/// one was recorded.
+pub(crate) fn close_owner(team: &TeamRow) -> Option<ProcessRef> {
+    team.closing_pid.map(|pid| ProcessRef {
+        pid,
+        started: team.closing_started,
+    })
+}
+
+/// Why no close may start now, from the team row alone. An owner whose pid
+/// now belongs to a process that started at another time is gone.
 pub(crate) fn lock_refusal(ctx: &Ctx<'_>, team: &TeamRow) -> Option<String> {
     match team.state {
         TeamState::Open => None,
         TeamState::Closed => None,
-        TeamState::Closing => Some(match team.closing_pid {
-            Some(pid) if ctx.platform.pid_alive(pid) => {
-                format!("a close is already running (pid {pid}); wait for it")
-            }
-            Some(pid) => format!(
-                "a close left its lock (pid {pid} is gone). Clear it with `teamwire close \
+        TeamState::Closing => Some(match close_owner(team) {
+            Some(owner) if ctx.platform.process_alive(owner) => format!(
+                "a close is already running (pid {}); wait for it",
+                owner.pid
+            ),
+            Some(owner) => format!(
+                "a close left its lock (pid {} is gone). Clear it with `teamwire close \
                  {} --clear-stale-lock`, then run the close again",
-                team.name
+                owner.pid, team.name
             ),
             None => format!(
                 "a close left its lock. Clear it with `teamwire close {} --clear-stale-lock`",

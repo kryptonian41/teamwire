@@ -11,12 +11,21 @@ use std::time::Duration;
 use serde_json::Value;
 use teamwire_core::{
     CallerSession, Command, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState, Platform,
-    SessionId, SessionKind,
+    SessionId, SessionKind, Timestamp,
 };
 
 /// The most a `claude agents --json` call may take. A slower call is not
 /// waited for, because the callers (watch, close) poll on a short clock.
 const LISTING_BOUND: Duration = Duration::from_secs(5);
+
+/// How much later than a session's `startedAt` the process with its pid may
+/// have started and still be the process that wrote the file. Claude Code
+/// writes `startedAt` after its process starts, so the real process always
+/// started earlier; the slack covers the kernel keeping start times to the
+/// second and a small correction of the wall clock in between. A process
+/// that started later than this is another program that got the pid after
+/// the session's process exited.
+const SESSION_START_SLACK: Duration = Duration::from_secs(5);
 
 /// One `sessions/<pid>.json`, reduced to what liveness needs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +34,8 @@ pub(crate) struct SessionFile {
     pub(crate) session_id: String,
     pub(crate) status: Option<String>,
     pub(crate) kind: Option<String>,
+    /// `startedAt`: when the session started, in the file's milliseconds.
+    pub(crate) started_at: Option<Timestamp>,
 }
 
 /// The caller's own session. The lookup is a parameter so a test never has
@@ -92,7 +103,27 @@ fn parse_session_file(bytes: &[u8]) -> Option<SessionFile> {
         session_id: doc.get("sessionId")?.as_str()?.to_owned(),
         status: doc.get("status").and_then(Value::as_str).map(str::to_owned),
         kind: doc.get("kind").and_then(Value::as_str).map(str::to_owned),
+        started_at: started_at(&doc),
     })
+}
+
+/// The `startedAt` milliseconds of a session file or a listing row.
+fn started_at(doc: &Value) -> Option<Timestamp> {
+    Timestamp::from_unix_millis(doc.get("startedAt")?.as_i64()?)
+}
+
+/// True when `pid` runs and is the process of a session that started at
+/// `started_at`. A pid whose process started after the session did belongs
+/// to another program: the session's process exited and the pid was reused.
+/// With either time unknown, a live pid counts as the session's.
+fn runs_session(platform: &dyn Platform, pid: Pid, started_at: Option<Timestamp>) -> bool {
+    platform.pid_alive(pid)
+        && match (started_at, platform.process_started(pid)) {
+            (Some(session), Some(process)) => {
+                process.saturating_since(session) <= SESSION_START_SLACK
+            }
+            _ => true,
+        }
 }
 
 /// What a session's `status` (a file) or `state` (a background row) says.
@@ -120,6 +151,7 @@ fn has_ended(state: Option<&str>) -> bool {
 pub(crate) struct AgentRow {
     pub(crate) pid: Option<Pid>,
     pub(crate) state: Option<String>,
+    pub(crate) started_at: Option<Timestamp>,
 }
 
 /// Why a listing gave no answer.
@@ -183,13 +215,15 @@ pub(crate) fn list_rows(
                 .and_then(|p| u32::try_from(p).ok())
                 .map(Pid::new),
             state: text(row, "status").or_else(|| text(row, "state")),
+            started_at: started_at(row),
         })
         .collect())
 }
 
 /// Liveness of `session`: the session files, then the listing.
 ///
-/// A file whose process is gone is not alive. A listing that fails is
+/// A file whose process is gone, or whose pid now belongs to a process that
+/// started after the session, is not alive. A listing that fails is
 /// `Unknown`, never `Dead`: the program may be running and only the
 /// listing broken.
 pub(crate) fn liveness(
@@ -201,7 +235,7 @@ pub(crate) fn liveness(
 ) -> Liveness {
     let running = read_session_files(claude_dir)
         .into_iter()
-        .find(|f| f.session_id == session.as_str() && platform.pid_alive(f.pid));
+        .find(|f| f.session_id == session.as_str() && runs_session(platform, f.pid, f.started_at));
     if let Some(file) = running {
         return Liveness::Alive(place_state(file.status.as_deref()));
     }
@@ -209,7 +243,11 @@ pub(crate) fn liveness(
         Err(_) => Liveness::Unknown,
         Ok(rows) => rows
             .into_iter()
-            .find(|r| !has_ended(r.state.as_deref()) && r.pid.is_none_or(|p| platform.pid_alive(p)))
+            .find(|r| {
+                !has_ended(r.state.as_deref())
+                    && r.pid
+                        .is_none_or(|p| runs_session(platform, p, r.started_at))
+            })
             .map_or(Liveness::Dead, |r| {
                 Liveness::Alive(place_state(r.state.as_deref()))
             }),
@@ -226,7 +264,7 @@ pub(crate) fn processes(
 ) -> Result<Vec<Pid>, HarnessError> {
     let mut pids: Vec<Pid> = read_session_files(claude_dir)
         .into_iter()
-        .filter(|f| f.session_id == session.as_str() && platform.pid_alive(f.pid))
+        .filter(|f| f.session_id == session.as_str() && runs_session(platform, f.pid, f.started_at))
         .map(|f| f.pid)
         .collect();
     if pids.is_empty() {
@@ -235,8 +273,7 @@ pub(crate) fn processes(
         pids = rows
             .into_iter()
             .filter(|r| !has_ended(r.state.as_deref()))
-            .filter_map(|r| r.pid)
-            .filter(|p| platform.pid_alive(*p))
+            .filter_map(|r| r.pid.filter(|p| runs_session(platform, *p, r.started_at)))
             .collect();
     }
     pids.sort();

@@ -44,6 +44,11 @@ const RULES: &[(&str, &str, bool)] = &[
         false,
     ),
     (
+        "no git stash: every worktree shares one stash list",
+        "Do not use `git stash`: every worktree of a repository shares one\n  stash list",
+        false,
+    ),
+    (
         "never weaken a check",
         "Never make a check pass by weakening it",
         false,

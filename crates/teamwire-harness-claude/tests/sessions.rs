@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde_json::json;
 use teamwire_core::{
     Harness, HarnessErrorCode, Liveness, Pid, PlaceState, Platform, PlatformError,
-    PlatformErrorCode, RunOutput, SessionId, SessionKind,
+    PlatformErrorCode, RunOutput, SessionId, SessionKind, Timestamp,
 };
 use teamwire_fakes::{FakeHerdrEnv, FakePlatform};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
@@ -97,6 +97,93 @@ fn a_session_file_whose_process_is_gone_is_not_alive() {
     listing(&p, &json!([]));
     let claude = ClaudeCode::new(p, config(dir.path()));
     assert_eq!(claude.is_alive(&sid("s-1"), T).unwrap(), Liveness::Dead);
+}
+
+/// When the session started, as Claude Code writes `startedAt`.
+const STARTED_MS: i64 = 1_790_000_000_000;
+
+fn ms(millis: i64) -> Timestamp {
+    Timestamp::from_unix_millis(millis).unwrap()
+}
+
+/// A session file with `startedAt`, as Claude Code writes it.
+fn write_started_session(p: &FakePlatform, dir: &Path, pid: u32, session: &str) {
+    std::fs::create_dir_all(dir.join("sessions")).unwrap();
+    let doc = json!({
+        "pid": pid, "sessionId": session, "status": "idle", "kind": "interactive",
+        "startedAt": STARTED_MS,
+    });
+    p.write_atomic(
+        &dir.join("sessions").join(format!("{pid}.json")),
+        doc.to_string().as_bytes(),
+    )
+    .unwrap();
+}
+
+/// The session's process exited without removing its file, and an unrelated
+/// program got its pid an hour later. The pid is alive, but the file is a
+/// dead session's: neither liveness nor the process list counts it.
+#[test]
+fn a_session_file_whose_pid_was_reused_is_not_alive() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = platform();
+    write_started_session(&p, dir.path(), LIVE, "s-1");
+    p.reuse_pid(Pid::new(LIVE), ms(STARTED_MS + 3_600_000));
+    listing(&p, &json!([]));
+    listing(&p, &json!([]));
+    let claude = ClaudeCode::new(p, config(dir.path()));
+    assert_eq!(claude.is_alive(&sid("s-1"), T).unwrap(), Liveness::Dead);
+    assert!(
+        claude
+            .processes_for_session(&sid("s-1"), T)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// The listing names the same reused pid with the session's `startedAt`:
+/// it does not bring the dead session back.
+#[test]
+fn a_listing_row_whose_pid_was_reused_is_not_alive() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = platform();
+    p.reuse_pid(Pid::new(LIVE), ms(STARTED_MS + 3_600_000));
+    let row =
+        json!([{ "pid": LIVE, "sessionId": "s-1", "status": "idle", "startedAt": STARTED_MS }]);
+    listing(&p, &row);
+    listing(&p, &row);
+    let claude = ClaudeCode::new(p, config(dir.path()));
+    assert_eq!(claude.is_alive(&sid("s-1"), T).unwrap(), Liveness::Dead);
+    assert!(
+        claude
+            .processes_for_session(&sid("s-1"), T)
+            .unwrap()
+            .is_empty()
+    );
+}
+
+/// The process that wrote the file started before `startedAt` (Claude Code
+/// writes it once it is up), or a few seconds after it within the slack for
+/// second-rounded start times and clock corrections: the session is alive.
+#[test]
+fn a_session_file_of_its_own_process_is_alive() {
+    for process_ms in [STARTED_MS - 900, STARTED_MS, STARTED_MS + 4_000] {
+        let dir = tempfile::tempdir().unwrap();
+        let p = platform();
+        write_started_session(&p, dir.path(), LIVE, "s-1");
+        p.set_started(Pid::new(LIVE), Some(ms(process_ms)));
+        let claude = ClaudeCode::new(p.clone(), config(dir.path()));
+        assert_eq!(
+            claude.is_alive(&sid("s-1"), T).unwrap(),
+            Liveness::Alive(PlaceState::Idle),
+            "process started at {process_ms}"
+        );
+        assert_eq!(
+            claude.processes_for_session(&sid("s-1"), T).unwrap(),
+            [Pid::new(LIVE)]
+        );
+        assert!(p.runs().is_empty(), "a live file needs no listing");
+    }
 }
 
 #[test]
@@ -348,9 +435,13 @@ fn current_session_without_an_id_is_none() {
 fn fake_claude_listing_gives_both_row_shapes() {
     let env = FakeHerdrEnv::new().unwrap();
     let me = std::process::id();
+    // The session started when this process did, as a real session file says.
+    let started = teamwire_platform::native()
+        .process_started(Pid::new(me))
+        .map_or(0, Timestamp::unix_millis);
     let bg = json!({
         "pid": me, "sessionId": "bg-1", "kind": "bg", "status": "busy",
-        "cwd": "/tmp", "name": "bg", "startedAt": 1
+        "cwd": "/tmp", "name": "bg", "startedAt": started
     });
     env.add_session_file(me, &bg).unwrap();
     // No session file names a *live* file for "bg-2", so only the listing can.

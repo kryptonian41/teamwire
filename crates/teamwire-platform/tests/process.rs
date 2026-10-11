@@ -1,4 +1,5 @@
-//! `pid_alive` and `env_of`, against children the test starts itself.
+//! `pid_alive`, `process_started` and `env_of`, against children the test
+//! starts itself.
 
 #![expect(
     clippy::disallowed_methods,
@@ -11,7 +12,8 @@
 
 use std::process::{Child, Command, Stdio};
 
-use teamwire_core::{Pid, PlatformErrorCode};
+use teamwire_core::platform::ProcessRef;
+use teamwire_core::{Pid, PlatformErrorCode, Timestamp};
 use teamwire_platform::native;
 
 /// Set in a child to make `sleeper_entry` sleep instead of returning.
@@ -74,6 +76,60 @@ fn pid_alive_is_false_for_pid_zero_and_out_of_range_pids() {
 #[test]
 fn pid_alive_is_true_for_this_process() {
     assert!(native().pid_alive(Pid::new(std::process::id())));
+}
+
+fn wall_clock() -> Timestamp {
+    let millis = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
+    Timestamp::from_unix_millis(i64::try_from(millis).unwrap()).unwrap()
+}
+
+#[test]
+fn process_started_is_when_the_child_started_and_none_once_it_is_gone() {
+    let before = wall_clock();
+    let mut child = Sleeper::start(|_| {});
+    let after = wall_clock();
+    let pid = child.pid();
+    let started = native().process_started(pid).unwrap();
+    // The kernel keeps seconds, so the reading can be up to a second early.
+    let slack = std::time::Duration::from_secs(1);
+    assert!(
+        before.saturating_since(started) <= slack && started <= after,
+        "{before} <= {started} <= {after}"
+    );
+    // Two readings of one process agree exactly.
+    assert_eq!(native().process_started(pid), Some(started));
+    child.0.kill().unwrap();
+    child.0.wait().unwrap();
+    assert_eq!(native().process_started(pid), None);
+}
+
+#[test]
+fn process_started_is_none_for_pid_zero_and_out_of_range_pids() {
+    assert_eq!(native().process_started(Pid::new(0)), None);
+    assert_eq!(native().process_started(Pid::new(u32::MAX)), None);
+}
+
+/// The recorded start time decides: the same pid with an older start time is
+/// a process that has since exited and whose pid was reused.
+#[test]
+fn process_alive_tells_the_recorded_process_from_a_reused_pid() {
+    let child = Sleeper::start(|_| {});
+    let pid = child.pid();
+    let started = native().process_started(pid).unwrap();
+    let platform = native();
+    assert!(platform.process_alive(ProcessRef {
+        pid,
+        started: Some(started),
+    }));
+    assert!(platform.process_alive(ProcessRef::from(pid)));
+    let an_hour_earlier = Timestamp::from_unix_millis(started.unix_millis() - 3_600_000).unwrap();
+    assert!(!platform.process_alive(ProcessRef {
+        pid,
+        started: Some(an_hour_earlier),
+    }));
 }
 
 #[test]

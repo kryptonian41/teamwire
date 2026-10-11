@@ -161,7 +161,10 @@ fn a_store_from_a_newer_binary_exits_six() {
     bed.store
         .write(|tx| {
             tx.connection()
-                .execute_batch("PRAGMA user_version = 2")
+                .execute_batch(&format!(
+                    "PRAGMA user_version = {}",
+                    teamwire_store::SCHEMA_VERSION + 1
+                ))
                 .map_err(teamwire_store::StoreError::from)
         })
         .unwrap();

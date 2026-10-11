@@ -178,7 +178,8 @@ use std::path::PathBuf;
 use rig::{entries, git};
 use sha2::{Digest, Sha256};
 use teamwire_close::close_observed;
-use teamwire_core::{Clock, HoldInfo, Pid, ReleaseOutcome, Role};
+use teamwire_core::platform::ProcessRef;
+use teamwire_core::{Clock, HoldInfo, Pid, ReleaseOutcome, Role, Timestamp};
 use teamwire_fakes::HoldEvent;
 use teamwire_store::{Ctx, Store};
 
@@ -746,6 +747,84 @@ fn stale_close_lock_cleared_and_rerun() {
     assert!(
         none.steps.first().unwrap().detail.contains("no close lock"),
         "{none:?}"
+    );
+}
+
+/// A close records its own start time beside its pid. A lock whose pid now
+/// belongs to a process that started later is the lock of a dead close: it
+/// is reported as gone and cleared. The live original owner keeps its lock.
+#[test]
+fn a_close_lock_whose_pid_was_reused_is_stale() {
+    let mut rig = Rig::without_repo();
+    let now = rig.clock.now();
+    let owner_pid = Pid::new(4_000_002);
+    let started = Timestamp::from_unix_millis(now.unix_millis() - 60_000).unwrap();
+    rig.platform.inner.set_alive(owner_pid, true);
+    rig.platform.inner.set_started(owner_pid, Some(started));
+    let owner = ProcessRef {
+        pid: owner_pid,
+        started: Some(started),
+    };
+    rig.store.write(|tx| tx.begin_close(now, owner)).unwrap();
+    assert_eq!(rig.team().closing_started, Some(started));
+
+    // The original owner still runs: its lock stays.
+    let clear = CloseOpts {
+        clear_stale_lock: true,
+        ..CloseOpts::default()
+    };
+    let live = close(&mut rig.ctx(), CloseTarget::Team, clear.clone());
+    assert!(asks(&live.refusals, "is running"), "{live:?}");
+    let busy = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(asks(&busy.refusals, "already running"), "{busy:?}");
+    assert_eq!(rig.team().state, TeamState::Closing);
+
+    // The owner exits and an unrelated process gets its pid.
+    rig.platform.inner.reuse_pid(owner_pid, now);
+    let refused = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(asks(&refused.refusals, "is gone"), "{refused:?}");
+    let cleared = close(&mut rig.ctx(), CloseTarget::Team, clear);
+    assert_eq!(cleared.stopped_at, None, "{cleared:?}");
+    assert_eq!(step_names(&cleared), ["clear_stale_lock"]);
+    let team = rig.team();
+    assert_eq!(
+        (team.state, team.closing_pid, team.closing_started),
+        (TeamState::Open, None, None)
+    );
+}
+
+/// The lock a close takes names this process by pid and start time.
+#[test]
+fn a_close_records_its_own_start_time_with_the_lock() {
+    let mut rig = Rig::without_repo();
+    let me = Pid::new(std::process::id());
+    let started = Timestamp::from_unix_millis(rig.clock.now().unix_millis() - 5_000).unwrap();
+    rig.platform.inner.set_alive(me, true);
+    rig.platform.inner.set_started(me, Some(started));
+    let home = rig.home.path().to_path_buf();
+    let team = teamwire_core::TeamName::parse(rig::TEAM).unwrap();
+    let seen = RefCell::new(None);
+    let (registry, clock, config) = (&rig.registry, &rig.clock, &rig.config);
+    let platform: &dyn teamwire_core::Platform = &*rig.platform;
+    let mut ctx = Ctx {
+        home: &home,
+        store: &mut rig.store,
+        registry,
+        platform,
+        clock,
+        config,
+    };
+    let report = close_observed(&mut ctx, CloseTarget::Team, CloseOpts::default(), &|step| {
+        if step == "archive" {
+            let other = Store::open_existing(&home, &team).unwrap();
+            let row = other.read(|tx| tx.team()).unwrap().unwrap();
+            *seen.borrow_mut() = Some((row.state, row.closing_pid, row.closing_started));
+        }
+    });
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        seen.into_inner(),
+        Some((TeamState::Closing, Some(me), Some(started)))
     );
 }
 

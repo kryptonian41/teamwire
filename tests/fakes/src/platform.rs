@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Command, HoldInfo, Pid, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome, RunOutput,
-    SleepHold,
+    SleepHold, Timestamp,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
@@ -119,6 +119,9 @@ impl SleepHold for FakeSleepHold {
 #[derive(Debug)]
 struct State {
     alive: HashSet<Pid>,
+    /// Start times by pid. A pid with none reports `None`, as a platform
+    /// that cannot read start times does.
+    started: HashMap<Pid, Timestamp>,
     envs: HashMap<(Pid, String), String>,
     env_fault: Option<PlatformError>,
     run_queue: VecDeque<Result<RunOutput, PlatformError>>,
@@ -157,6 +160,7 @@ impl FakePlatform {
             log,
             state: Mutex::new(State {
                 alive: HashSet::new(),
+                started: HashMap::new(),
                 envs: HashMap::new(),
                 env_fault: None,
                 run_queue: VecDeque::new(),
@@ -191,6 +195,24 @@ impl FakePlatform {
         } else {
             state.alive.remove(&pid);
         }
+    }
+
+    /// When the process with `pid` started; `None` makes the start time
+    /// unknown. `process_started` reports it only while the pid is alive.
+    pub fn set_started(&self, pid: Pid, started: Option<Timestamp>) {
+        let mut state = lock(&self.state);
+        match started {
+            Some(at) => state.started.insert(pid, at),
+            None => state.started.remove(&pid),
+        };
+    }
+
+    /// The process with `pid` exited and a new process, started at
+    /// `started`, got the same pid: alive again, with a new start time.
+    pub fn reuse_pid(&self, pid: Pid, started: Timestamp) {
+        let mut state = lock(&self.state);
+        state.alive.insert(pid);
+        state.started.insert(pid, started);
     }
 
     pub fn set_env(&self, pid: Pid, var: &str, value: &str) {
@@ -341,6 +363,17 @@ impl Platform for FakePlatform {
         self.log
             .record("pid_alive", CallKind::Read, pid.to_string());
         lock(&self.state).alive.contains(&pid)
+    }
+
+    fn process_started(&self, pid: Pid) -> Option<Timestamp> {
+        self.log
+            .record("process_started", CallKind::Read, pid.to_string());
+        let state = lock(&self.state);
+        state
+            .started
+            .get(&pid)
+            .copied()
+            .filter(|_| state.alive.contains(&pid))
     }
 
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {

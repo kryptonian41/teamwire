@@ -32,7 +32,7 @@ pub use completion::{CompletionRecord, NewCompletion, ResultOutcome};
 pub use ctx::{Ctx, Party};
 pub use delivery::{DeliveryRecord, DeliveryUpdate};
 pub use error::{NO_DATABASE_HINT, StoreError};
-pub use export::{ExportClaim, ExportMark};
+pub use export::{ExportClaim, ExportHolder, ExportMark};
 pub use member::NewMember;
 pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};
 pub use store::{APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path};
@@ -42,10 +42,14 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
+
+/// The step from schema version 1 to 2: the start time beside each recorded
+/// owner pid.
+pub const SCHEMA_V2_SQL: &str = include_str!("schema/v2.sql");
 
 #[cfg(test)]
 mod tests {
@@ -74,6 +78,7 @@ mod tests {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
         conn.execute_batch(SCHEMA_V1_SQL).unwrap();
+        conn.execute_batch(SCHEMA_V2_SQL).unwrap();
         conn
     }
 
