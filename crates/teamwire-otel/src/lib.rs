@@ -19,6 +19,7 @@ mod otlp;
 mod spans;
 
 use std::fmt;
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -72,6 +73,16 @@ impl fmt::Debug for OtlpConfig {
     }
 }
 
+/// Ends a running export early once its caller is stopping: a request still
+/// waiting for the collector then gets at most `grace` more, and the export
+/// fails as if the collector had timed out. Until `stopping` is set, each
+/// request has the whole configured timeout.
+#[derive(Debug, Clone, Copy)]
+pub struct StopCutoff<'a> {
+    pub stopping: &'a AtomicBool,
+    pub grace: Duration,
+}
+
 /// What one export sent.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExportReport {
@@ -108,7 +119,7 @@ pub fn metrics(ctx: &Ctx<'_>, q: MetricsQuery) -> MetricsView {
 }
 
 pub use config::load_otlp_config;
-pub use export::export_once;
+pub use export::{export_once, export_once_until};
 
 #[cfg(test)]
 mod tests {

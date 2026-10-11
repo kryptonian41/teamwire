@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{Config, Pid, TeamName};
-use teamwire_otel::OtlpConfig;
+use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
@@ -24,22 +24,25 @@ const EXPORT_EVERY: Duration = Duration::from_secs(60);
 /// How long the exporter thread sleeps between looks at the stop flag.
 const EXPORT_SLICE: Duration = Duration::from_millis(200);
 
-/// The longest one export call may wait while the watch runs. The watch
-/// waits for the exporter thread before it exits, so a collector that never
-/// answers would otherwise hold the exit for the whole configured timeout.
+/// How long an export request still waiting when the watch stops may go on.
+/// The watch waits for the exporter thread before it exits, so a collector
+/// that never answers would otherwise hold the exit for the whole configured
+/// timeout. While the watch runs, each request has that whole timeout.
 const WATCH_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
 /// the same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a), read
 /// the same way `teamwire metrics export` reads them.
-fn otlp_settings(home: &Path) -> Option<OtlpConfig> {
-    teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok()).map(bounded)
+fn otlp_settings(home: &Path, env: &dyn Fn(&str) -> Option<String>) -> Option<OtlpConfig> {
+    teamwire_otel::load_otlp_config(home, env)
 }
 
-fn bounded(target: OtlpConfig) -> OtlpConfig {
-    OtlpConfig {
-        timeout: target.timeout.min(WATCH_EXPORT_TIMEOUT),
-        ..target
+/// The cutoff of each watch export: the short grace applies only once the
+/// watch is stopping.
+fn cutoff(stop: &AtomicBool) -> StopCutoff<'_> {
+    StopCutoff {
+        stopping: stop,
+        grace: WATCH_EXPORT_TIMEOUT,
     }
 }
 
@@ -77,7 +80,7 @@ fn export_loop(
             clock: &wiring.clock,
             config,
         };
-        match teamwire_otel::export_once(&mut ctx, target) {
+        match teamwire_otel::export_once_until(&mut ctx, target, Some(cutoff(stop))) {
             Ok(report) => tracing::debug!(?report, "exported"),
             Err(teamwire_otel::ExportError::Claimed(by)) => {
                 tracing::debug!(%by, "another exporter holds the batch");
@@ -164,7 +167,11 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
 
     let stop = AtomicBool::new(false);
-    let exporter = if *once { None } else { otlp_settings(&home) };
+    let exporter = if *once {
+        None
+    } else {
+        otlp_settings(&home, &|key| std::env::var(key).ok())
+    };
     let code = std::thread::scope(|scope| {
         if let Some(target) = &exporter {
             scope.spawn(|| export_loop(&home, &team, wiring, &config, target, &stop));
@@ -199,13 +206,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_long_collector_timeout_is_cut_to_the_watch_bound() {
-        let target = |secs| OtlpConfig {
-            endpoint: "http://c:4318".to_owned(),
-            headers: Vec::new(),
-            timeout: Duration::from_secs(secs),
+    fn the_short_grace_applies_only_once_the_watch_is_stopping() {
+        let stop = AtomicBool::new(false);
+        let c = cutoff(&stop);
+        assert_eq!(c.grace, WATCH_EXPORT_TIMEOUT);
+        assert!(!c.stopping.load(Ordering::Relaxed));
+        stop.store(true, Ordering::Relaxed);
+        assert!(cutoff(&stop).stopping.load(Ordering::Relaxed));
+    }
+
+    /// A collector slower than the stop grace still gets each export while
+    /// the watch runs: the configured timeout is not cut.
+    #[test]
+    fn a_watch_export_keeps_the_configured_timeout() {
+        let home = tempfile::tempdir().unwrap();
+        let env = |key: &str| match key {
+            "OTEL_EXPORTER_OTLP_ENDPOINT" => Some("http://c:4318".to_owned()),
+            "OTEL_EXPORTER_OTLP_TIMEOUT" => Some("600000".to_owned()),
+            _ => None,
         };
-        assert_eq!(bounded(target(600)).timeout, WATCH_EXPORT_TIMEOUT);
-        assert_eq!(bounded(target(1)).timeout, Duration::from_secs(1));
+        let target = otlp_settings(home.path(), &env);
+        assert_eq!(target.map(|t| t.timeout), Some(Duration::from_secs(600)),);
     }
 }

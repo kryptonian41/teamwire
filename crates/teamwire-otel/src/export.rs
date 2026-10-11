@@ -11,19 +11,30 @@ use crate::history::History;
 use crate::observe::{Observation, gauges, observe};
 use crate::otlp::{self, BUCKET_MS};
 use crate::spans::{spans_ending, trace_id};
-use crate::{ExportError, ExportReport, OtlpConfig, defs};
+use crate::{ExportError, ExportReport, OtlpConfig, StopCutoff, defs};
 
 /// A claim this old, whose exporter is gone, may be taken over.
 const CLAIM_STALE_AFTER: Duration = Duration::from_secs(5 * 60);
+
+/// Sends the events after the export mark, then moves the mark. Nothing
+/// new to send is `Ok` with an empty report; a live claim held by another
+/// exporter is `Claimed` and nothing is sent.
+pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
+    export_once_until(ctx, exporter, None)
+}
 
 #[expect(
     clippy::redundant_closure_for_method_calls,
     reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
 )]
-/// Sends the events after the export mark, then moves the mark. Nothing
-/// new to send is `Ok` with an empty report; a live claim held by another
-/// exporter is `Claimed` and nothing is sent.
-pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportReport, ExportError> {
+/// `export_once` for a caller that may stop while the batch is sent: with a
+/// `cutoff`, a request still waiting when the caller stops is given up after
+/// the cutoff's grace, and the export fails as on a timeout.
+pub fn export_once_until(
+    ctx: &mut Ctx<'_>,
+    exporter: &OtlpConfig,
+    cutoff: Option<StopCutoff<'_>>,
+) -> Result<ExportReport, ExportError> {
     let now = ctx.clock.now();
     let platform = ctx.platform;
     let own_pid = Pid::new(std::process::id());
@@ -77,7 +88,7 @@ pub fn export_once(ctx: &mut Ctx<'_>, exporter: &OtlpConfig) -> Result<ExportRep
             }),
         };
     };
-    match send_batch(ctx, exporter, &claim) {
+    match send_batch(ctx, exporter, &claim, cutoff) {
         Ok(report) => {
             match ctx
                 .store
@@ -111,6 +122,7 @@ fn send_batch(
     ctx: &Ctx<'_>,
     exporter: &OtlpConfig,
     claim: &ExportClaim,
+    cutoff: Option<StopCutoff<'_>>,
 ) -> Result<ExportReport, ExportError> {
     let (team, listing) = ctx
         .store
@@ -149,11 +161,11 @@ fn send_batch(
     // one copy; a resent metric point would count twice.
     if !spans.is_empty() {
         let request = otlp::traces_request(&team_name, trace_id(&team_ulid), &spans);
-        otlp::post(exporter, "v1/traces", &request)?;
+        otlp::post(exporter, "v1/traces", &request, cutoff)?;
     }
     let (request, points) = otlp::metrics_request(&team_name, &observations);
     if points > 0 {
-        otlp::post(exporter, "v1/metrics", &request)?;
+        otlp::post(exporter, "v1/metrics", &request, cutoff)?;
     }
     Ok(ExportReport {
         from_seq: claim.from_seq,

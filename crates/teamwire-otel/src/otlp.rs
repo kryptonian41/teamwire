@@ -3,6 +3,9 @@
 //! only in the request and never written to a log or an error (SEC-1).
 
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::Duration;
 
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
@@ -20,7 +23,7 @@ use prost::Message;
 use crate::defs::{Def, Kind};
 use crate::observe::Observation;
 use crate::spans::{Attr, Span};
-use crate::{ExportError, OtlpConfig};
+use crate::{ExportError, OtlpConfig, StopCutoff};
 
 /// Metric points are delta points over buckets of this many milliseconds of
 /// event time (ADR 0005 point 4).
@@ -252,12 +255,17 @@ pub(crate) fn traces_request(
     }
 }
 
+/// How long a caller with a cutoff waits between looks at its stop flag.
+const STOP_SLICE: Duration = Duration::from_millis(50);
+
 /// Posts `message` to `<endpoint>/<path>` with the configured headers. The
-/// whole call, connect to last byte, is bounded by the configured timeout.
+/// whole call, connect to last byte, is bounded by the configured timeout,
+/// and with a `cutoff` also by its grace once the caller is stopping.
 pub(crate) fn post(
     config: &OtlpConfig,
     path: &str,
     message: &impl Message,
+    cutoff: Option<StopCutoff<'_>>,
 ) -> Result<(), ExportError> {
     let url = format!("{}/{path}", config.endpoint.trim_end_matches('/'));
     let agent: ureq::Agent = ureq::Agent::config_builder()
@@ -265,16 +273,12 @@ pub(crate) fn post(
         .http_status_as_error(false)
         .build()
         .into();
-    let mut request = agent
-        .post(&url)
-        .header("Content-Type", "application/x-protobuf");
-    for (name, value) in &config.headers {
-        request = request.header(name.as_str(), value.as_str());
+    let body = message.encode_to_vec();
+    let status = match cutoff {
+        None => send(&agent, &url, &config.headers, &body),
+        Some(cutoff) => send_until(agent, &url, config.headers.clone(), body, cutoff),
     }
-    let response = request
-        .send(&message.encode_to_vec()[..])
-        .map_err(|e| ExportError::Http(redact(&config.endpoint, &format!("{url}: {e}"))))?;
-    let status = response.status().as_u16();
+    .map_err(|e| ExportError::Http(redact(&config.endpoint, &e)))?;
     if (200..300).contains(&status) {
         Ok(())
     } else {
@@ -282,6 +286,70 @@ pub(crate) fn post(
             &config.endpoint,
             &format!("{url}: status {status}"),
         )))
+    }
+}
+
+/// One request; the status, or why there is none, as unredacted text.
+fn send(
+    agent: &ureq::Agent,
+    url: &str,
+    headers: &[(String, String)],
+    body: &[u8],
+) -> Result<u16, String> {
+    let mut request = agent
+        .post(url)
+        .header("Content-Type", "application/x-protobuf");
+    for (name, value) in headers {
+        request = request.header(name.as_str(), value.as_str());
+    }
+    request
+        .send(body)
+        .map(|response| response.status().as_u16())
+        .map_err(|e| format!("{url}: {e}"))
+}
+
+/// `send` on a thread of its own, so the caller can stop waiting: the HTTP
+/// client fixes its timeout when the request starts and cannot be told to
+/// give up later. A request given up on is left to end at its own timeout,
+/// and its answer is dropped.
+fn send_until(
+    agent: ureq::Agent,
+    url: &str,
+    headers: Vec<(String, String)>,
+    body: Vec<u8>,
+    cutoff: StopCutoff<'_>,
+) -> Result<u16, String> {
+    let (answer, answered) = mpsc::channel();
+    let thread_url = url.to_owned();
+    std::thread::Builder::new()
+        .name("teamwire-otlp".to_owned())
+        .spawn(move || {
+            if answer
+                .send(send(&agent, &thread_url, &headers, &body))
+                .is_err()
+            {
+                tracing::debug!("an export request answered after it was given up");
+            }
+        })
+        .map_err(|e| format!("{url}: could not start the request: {e}"))?;
+    let mut since_stop = Duration::ZERO;
+    loop {
+        match answered.recv_timeout(STOP_SLICE) {
+            Ok(result) => return result,
+            Err(RecvTimeoutError::Disconnected) => {
+                return Err(format!("{url}: the request ended without an answer"));
+            }
+            Err(RecvTimeoutError::Timeout) => {}
+        }
+        if cutoff.stopping.load(Ordering::Relaxed) {
+            since_stop += STOP_SLICE;
+            if since_stop >= cutoff.grace {
+                return Err(format!(
+                    "{url}: given up {} ms after the stop",
+                    cutoff.grace.as_millis()
+                ));
+            }
+        }
     }
 }
 

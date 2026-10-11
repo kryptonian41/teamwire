@@ -17,6 +17,7 @@
 #[path = "support/stub.rs"]
 mod stub;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Barrier};
 use std::time::Duration;
 
@@ -29,7 +30,7 @@ use teamwire_core::{
     Timestamp, Ulid,
 };
 use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
-use teamwire_otel::{ExportError, OtlpConfig, export_once};
+use teamwire_otel::{ExportError, OtlpConfig, StopCutoff, export_once, export_once_until};
 use teamwire_store::{Ctx, ExportHolder, NewTeam, Store};
 
 const T0: i64 = 1_790_000_000_000;
@@ -642,4 +643,75 @@ fn a_message_every_20_s_for_20_minutes_exports_every_finished_minute() {
         "{} exports",
         stub.metrics().len()
     );
+}
+
+fn export_until(
+    e: &mut Env,
+    cfg: &OtlpConfig,
+    cutoff: StopCutoff<'_>,
+) -> Result<teamwire_otel::ExportReport, ExportError> {
+    let mut ctx = Ctx {
+        home: e.home.path(),
+        store: &mut e.store,
+        registry: &e.registry,
+        platform: &e.platform,
+        clock: &e.clock,
+        config: &e.config,
+    };
+    export_once_until(&mut ctx, cfg, Some(cutoff))
+}
+
+/// A caller that is not stopping waits the whole configured timeout, however
+/// short the stop grace is: a slow collector still gets every export.
+#[test]
+fn a_slow_collector_gets_the_whole_timeout_while_the_caller_runs() {
+    let mut e = env();
+    e.message(10);
+    let stub = Stub::start(Mode::Delay(Duration::from_millis(1200)));
+    let stopping = AtomicBool::new(false);
+    let report = export_until(
+        &mut e,
+        &config(&stub.url()),
+        StopCutoff {
+            stopping: &stopping,
+            grace: Duration::from_millis(200),
+        },
+    )
+    .unwrap();
+    assert_eq!(report.to_seq, e.last_seq());
+    assert_eq!(e.mark().last_event_seq, e.last_seq());
+}
+
+/// Once the caller stops, a request still waiting gets the grace and no
+/// more, and the batch stays unsent for the next export.
+#[test]
+fn a_stop_cuts_a_waiting_request_to_the_grace() {
+    let mut e = env();
+    e.message(10);
+    let stub = Stub::start(Mode::Delay(Duration::from_secs(20)));
+    let mut cfg = config(&stub.url());
+    cfg.timeout = Duration::from_secs(15);
+    let stopping = AtomicBool::new(false);
+    let started = std::time::Instant::now();
+    let err = std::thread::scope(|scope| {
+        scope.spawn(|| {
+            std::thread::sleep(Duration::from_millis(300));
+            stopping.store(true, Ordering::Relaxed);
+        });
+        export_until(
+            &mut e,
+            &cfg,
+            StopCutoff {
+                stopping: &stopping,
+                grace: Duration::from_millis(500),
+            },
+        )
+        .unwrap_err()
+    });
+    let took = started.elapsed();
+    assert!(matches!(err, ExportError::Http(_)), "{err:?}");
+    assert!(took < Duration::from_secs(3), "{took:?}");
+    assert!(took >= Duration::from_millis(700), "{took:?}");
+    assert_eq!(e.mark().last_event_seq, 0);
+    assert_eq!(e.mark().claimed_to, None, "the claim was left behind");
 }
