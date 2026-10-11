@@ -201,3 +201,15 @@ fn uninstall_removes_both_items_and_then_has_nothing_to_do() {
     let again = bed.teamwire(&["uninstall"], &[]);
     assert_eq!(again.out, "no lead setup to remove\n");
 }
+
+#[test]
+fn a_failure_that_changed_nothing_exits_one_not_two() {
+    let bed = Bed::new();
+    let fail = [("FAKE_CLAUDE_MCP_FAIL", "add")];
+    // The first run writes the skill and then fails to add the entry.
+    assert_eq!(bed.teamwire(&["install", "--force"], &fail).code, 2);
+    // The skill is current now, so the second run fails with nothing changed.
+    let run = bed.teamwire(&["install", "--force"], &fail);
+    assert_eq!(run.code, 1, "{}", run.err);
+    assert!(!run.err.contains("already done:"), "{}", run.err);
+}

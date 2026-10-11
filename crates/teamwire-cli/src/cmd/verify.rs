@@ -37,7 +37,9 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
     };
     // A member who could waive its own flag would turn FLAGGED into PASS. A
     // plain run stays open, because the closer runs it from a member session.
-    if waive.is_some() && let Some(code) = refuse_member("verify --waive") {
+    if waive.is_some()
+        && let Some(code) = refuse_member("verify --waive")
+    {
         return code;
     }
     let home = match home_or_refuse("verify", global) {

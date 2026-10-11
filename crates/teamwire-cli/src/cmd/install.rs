@@ -111,7 +111,16 @@ fn finish(command: &str, claude: &ClaudeCode, changes: &[Change], dry_run: bool)
             }
             ExitCode::SUCCESS
         }
-        Err(e) => fail(command, &partial_text(command, &e), PARTIAL),
+        // Exit 2 says some change was made. A failure with nothing changed is a
+        // plain refusal, so a script does not read it as a half-done setup.
+        Err(e) => {
+            let code = if e.done.is_empty() && !e.entry_removed {
+                REFUSED
+            } else {
+                PARTIAL
+            };
+            fail(command, &partial_text(command, &e), code)
+        }
     }
 }
 
