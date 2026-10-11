@@ -11,11 +11,10 @@ pub(crate) fn code_only(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
     let mut i = 0;
-    while i < chars.len() {
-        let c = chars[i];
+    while let Some(&c) = chars.get(i) {
         let next = chars.get(i + 1).copied();
         if c == '/' && next == Some('/') {
-            while i < chars.len() && chars[i] != '\n' {
+            while chars.get(i).is_some_and(|c| *c != '\n') {
                 out.push(' ');
                 i += 1;
             }
@@ -43,12 +42,13 @@ fn blank(c: char, out: &mut String) {
 fn blank_block_comment(chars: &[char], start: usize, out: &mut String) -> usize {
     let mut depth = 0_usize;
     let mut i = start;
-    while i < chars.len() {
-        if chars[i] == '/' && chars.get(i + 1) == Some(&'*') {
+    while let Some(&c) = chars.get(i) {
+        let next = chars.get(i + 1);
+        if c == '/' && next == Some(&'*') {
             depth += 1;
             out.push_str("  ");
             i += 2;
-        } else if chars[i] == '*' && chars.get(i + 1) == Some(&'/') {
+        } else if c == '*' && next == Some(&'/') {
             depth -= 1;
             out.push_str("  ");
             i += 2;
@@ -56,7 +56,7 @@ fn blank_block_comment(chars: &[char], start: usize, out: &mut String) -> usize 
                 break;
             }
         } else {
-            blank(chars[i], out);
+            blank(c, out);
             i += 1;
         }
     }
@@ -66,43 +66,47 @@ fn blank_block_comment(chars: &[char], start: usize, out: &mut String) -> usize 
 /// The number of `#` of a raw string that opens at `i` (`r"`, `r#"`, `br"`),
 /// or `None` when no raw string opens there.
 fn raw_string_hashes(chars: &[char], i: usize) -> Option<usize> {
-    if chars[i] != 'r' {
+    if chars.get(i) != Some(&'r') {
         return None;
     }
-    let before = i.checked_sub(1).map(|p| chars[p]);
-    let before = if before == Some('b') {
-        i.checked_sub(2).map(|p| chars[p])
+    let back = |n: usize| i.checked_sub(n).and_then(|p| chars.get(p)).copied();
+    let before = if back(1) == Some('b') {
+        back(2)
     } else {
-        before
+        back(1)
     };
     if before.is_some_and(|b| b.is_alphanumeric() || b == '_') {
         return None;
     }
-    let hashes = chars[i + 1..].iter().take_while(|c| **c == '#').count();
+    let hashes = hashes_from(chars, i + 1);
     (chars.get(i + 1 + hashes) == Some(&'"')).then_some(hashes)
 }
 
 fn blank_raw_string(chars: &[char], start: usize, hashes: usize, out: &mut String) -> usize {
     let mut i = start + 2 + hashes;
     out.push_str(&" ".repeat(2 + hashes));
-    while i < chars.len() {
-        let closes =
-            chars[i] == '"' && chars[i + 1..].iter().take_while(|c| **c == '#').count() >= hashes;
-        if closes {
+    while let Some(&c) = chars.get(i) {
+        if c == '"' && hashes_from(chars, i + 1) >= hashes {
             out.push_str(&" ".repeat(1 + hashes));
             return i + 1 + hashes;
         }
-        blank(chars[i], out);
+        blank(c, out);
         i += 1;
     }
     i
 }
 
+fn hashes_from(chars: &[char], from: usize) -> usize {
+    chars
+        .get(from..)
+        .map_or(0, |rest| rest.iter().take_while(|c| **c == '#').count())
+}
+
 fn blank_string(chars: &[char], start: usize, out: &mut String) -> usize {
     out.push(' ');
     let mut i = start + 1;
-    while i < chars.len() {
-        match chars[i] {
+    while let Some(&current) = chars.get(i) {
+        match current {
             '\\' => {
                 out.push(' ');
                 if let Some(escaped) = chars.get(i + 1) {
@@ -136,8 +140,8 @@ fn is_char_literal(chars: &[char], i: usize) -> bool {
 fn blank_char(chars: &[char], start: usize, out: &mut String) -> usize {
     out.push(' ');
     let mut i = start + 1;
-    while i < chars.len() {
-        match chars[i] {
+    while let Some(&current) = chars.get(i) {
+        match current {
             '\\' => {
                 out.push_str("  ");
                 i += 2;

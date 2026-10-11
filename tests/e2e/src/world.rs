@@ -426,9 +426,8 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "did not finish within")]
     fn a_grandchild_holding_the_pipes_does_not_outlive_the_limit() {
-        // The shell exits at once; the `sleep` it left behind keeps stdout open.
+        // Killing the shell alone leaves its `sleep 25`, which keeps stdout open.
         let mut cmd = Command::new("sh");
         cmd.args(["-c", "sleep 25 & sleep 60"]);
         let begun = Instant::now();
@@ -439,8 +438,6 @@ mod tests {
             begun.elapsed() < Duration::from_secs(15),
             "the group was not killed"
         );
-        if let Err(panic) = ended {
-            std::panic::resume_unwind(panic);
-        }
+        assert!(ended.is_err(), "the hung command was not reported");
     }
 }
