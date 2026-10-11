@@ -10,6 +10,7 @@ mod helpers;
 
 use helpers::{T, World};
 use teamwire_core::{Host, HostErrorCode, Key, Place, PlaceState, SubmitAck, one_line};
+use teamwire_fakes::HerdrFaults;
 
 fn started(world: &World, name: &str, title: &str) -> Place {
     world
@@ -249,4 +250,23 @@ fn a_foreign_workspace_with_the_team_label_gets_no_tabs() {
     let second = started(&world, "tw_demo_web", "Web");
     assert_eq!(second.id.split(':').next().unwrap(), own);
     assert_eq!(world.calls_of("tab create").len(), 1);
+}
+
+#[test]
+fn a_failed_agent_start_closes_the_pane_it_made() {
+    let faults = HerdrFaults::new().error("agent start", None, None, "agent_start_failed");
+    let world = World::with_faults(Some(&faults));
+    let e = world
+        .herdr
+        .spawn(&world.request("tw_demo_api", "API"), T)
+        .expect_err("start fails");
+    assert_ne!(e.code, HostErrorCode::NotReady);
+    let all = calls(&world);
+    let made = all
+        .iter()
+        .any(|c| c.starts_with(&["workspace".to_owned(), "create".to_owned()]));
+    let closed = all
+        .iter()
+        .any(|c| c.starts_with(&["pane".to_owned(), "close".to_owned()]));
+    assert!(made && closed, "{all:?}");
 }
