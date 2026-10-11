@@ -11,14 +11,13 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Command, Platform, TeamName, TeamState};
-use teamwire_harness_claude::{ClaudeConfig, McpEntry};
 use teamwire_store::{SCHEMA_VERSION, Store};
 
 use crate::Global;
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check::{self, Outcome};
 use crate::cmd::send::home_or_refuse;
-use crate::wiring::Wiring;
+use crate::wiring::{ClaudeConfig, McpEntry, Wiring};
 
 /// Exit code of a doctor run that found a problem (`docs/api/cli.md`).
 const PARTIAL: u8 = 2;

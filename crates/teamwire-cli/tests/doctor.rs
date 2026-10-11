@@ -36,7 +36,10 @@ mod wiring {
     use std::sync::Arc;
 
     use teamwire_core::Platform;
-    use teamwire_harness_claude::ClaudeConfig;
+    pub(crate) use teamwire_harness_claude::{
+        ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state, shadowing_entries,
+        skill_state,
+    };
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
@@ -51,7 +54,7 @@ mod cmd {
     pub(crate) use crate::lead_setup_check;
 
     pub(crate) mod install {
-        use teamwire_harness_claude::McpEntry;
+        use crate::wiring::McpEntry;
 
         use crate::Global;
 

@@ -4,13 +4,10 @@
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
-
-use teamwire_harness_claude::{ApplyError, Change, ClaudeCode, McpEntry};
 
 use crate::cmd::lead_setup_check::is_build_output;
 use crate::cmd::send::{REFUSED, fail, state_home};
-use crate::wiring::Wiring;
+use crate::wiring::{ApplyError, Change, LeadSetup, McpEntry, Wiring};
 use crate::{Global, InstallArgs, UninstallArgs};
 
 /// A change failed after the checks passed (`docs/api/cli.md`).
@@ -39,10 +36,6 @@ pub(crate) fn wanted_entry(global: &Global) -> Result<McpEntry, String> {
     Ok(lead_entry(&this_binary()?, &home, user_home.as_deref()))
 }
 
-fn claude(wiring: &Wiring) -> ClaudeCode {
-    ClaudeCode::new(Arc::clone(&wiring.platform), wiring.claude.clone())
-}
-
 #[expect(
     clippy::print_stdout,
     reason = "the change list is the command's output"
@@ -67,7 +60,7 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
             REFUSED,
         );
     }
-    let claude = claude(wiring);
+    let claude = wiring.lead_setup();
     match claude.plan_install(&want, args.force) {
         Ok(changes) if changes.is_empty() => {
             say("the lead setup is already installed");
@@ -79,7 +72,7 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
 }
 
 pub(crate) fn run_uninstall(args: &UninstallArgs, _global: &Global, wiring: &Wiring) -> ExitCode {
-    let claude = claude(wiring);
+    let claude = wiring.lead_setup();
     match claude.plan_uninstall(args.force) {
         Ok(changes) if changes.is_empty() => {
             say("no lead setup to remove");
@@ -92,7 +85,7 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, _global: &Global, wiring: &Wir
 
 /// Prints the plan for a dry run; otherwise makes the changes and prints
 /// each one, or what was left behind when one fails.
-fn finish(command: &str, claude: &ClaudeCode, changes: &[Change], dry_run: bool) -> ExitCode {
+fn finish(command: &str, claude: &LeadSetup, changes: &[Change], dry_run: bool) -> ExitCode {
     if dry_run {
         for change in changes {
             say(&format!("would {change}"));

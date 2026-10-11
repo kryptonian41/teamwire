@@ -6,10 +6,23 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use teamwire_core::{HarnessId, HostId, NoHost, Platform, Registry, RegistryError};
-use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
+use teamwire_harness_claude::ClaudeCode;
 use teamwire_host_herdr::Herdr;
 use teamwire_host_tmux::Tmux;
 use teamwire_platform::SystemClock;
+
+// The Claude Code lead-setup items that `install`, `doctor` and the hook
+// name. They are re-exported here so no other file names an adapter crate.
+pub(crate) use teamwire_harness_claude::ClaudeCode as LeadSetup;
+pub(crate) use teamwire_harness_claude::{
+    ApplyError, Change, ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state,
+    shadowing_entries, skill_state,
+};
+
+/// The harness whose hook commands this binary serves.
+pub(crate) fn claude_harness_id() -> HarnessId {
+    HarnessId::from_static(ClaudeCode::ID)
+}
 
 /// The adapters and the platform one command runs with.
 pub(crate) struct Wiring {
@@ -21,6 +34,13 @@ pub(crate) struct Wiring {
     /// Where Claude Code keeps its files, for the commands that read or
     /// write the lead setup.
     pub(crate) claude: ClaudeConfig,
+}
+
+impl Wiring {
+    /// The Claude Code adapter that reads and writes the lead setup.
+    pub(crate) fn lead_setup(&self) -> LeadSetup {
+        LeadSetup::new(Arc::clone(&self.platform), self.claude.clone())
+    }
 }
 
 /// The environment facts wiring reads, gathered in one place so tests can
