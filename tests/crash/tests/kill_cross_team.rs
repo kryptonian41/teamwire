@@ -13,7 +13,8 @@
 )]
 #![expect(
     clippy::indexing_slicing,
-    reason = "helper functions in an integration-test file index; a failure there fails the test"
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file index and unwrap; a failure there fails the test"
 )]
 
 #[path = "support/rig.rs"]

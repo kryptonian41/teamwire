@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use teamwire_core::{Refusal, TeamName, TeamState};
 use teamwire_store::{Ctx, Store, StoreError, team_names};
 
+use crate::send::read_team;
 use crate::{RosterEntry, SendError, roster};
 
 /// One team as `team_teams` and `teamwire teams` show it. Its agents are
@@ -39,14 +40,7 @@ pub fn roster_of(ctx: &Ctx<'_>, team: &TeamName) -> Result<Vec<RosterEntry>, Sen
 
 /// The team of `ctx`'s own store, as `teams` lists it.
 pub fn describe(ctx: &Ctx<'_>) -> Result<TeamEntry, SendError> {
-    #[expect(
-        clippy::redundant_closure_for_method_calls,
-        reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-    )]
-    let row = ctx
-        .store
-        .read(|tx| tx.team())?
-        .ok_or(Refusal::UnknownTeam)?;
+    let row = read_team(ctx)?.ok_or(Refusal::UnknownTeam)?;
     Ok(TeamEntry {
         name: row.name,
         title: row.title,
