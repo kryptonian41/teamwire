@@ -112,7 +112,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | DEL-9 | MUST | A send is retried only when the host's error code proves the text was not submitted, a bounded number of times. Errors are matched on the code field, never on message text. | harness R4, R13; speclife LC-14, F11 |
 | DEL-10 | MUST | The sender's identity comes from something the sender cannot pick freely. When it cannot be established, the send is refused. | specmsg R9, A7, A8, L9 |
 | DEL-11 | MUST | Every agent-supplied string placed in another agent's input or in the event stream is reduced to printable characters on one line and cut to a fixed length. This covers the completion summary and the task excerpt. | specmsg R10, A12, A13; speclife W11, LC-26; INV-20 |
-| DEL-12 | MUST | A peer message arrives with a reminder that it is information to check, not an instruction. A lead message is marked as the lead's. | specmsg R11, D4; protocols R11 |
+| DEL-12 | MUST | A peer message arrives with a reminder that it is information to check, not an instruction. A message from another team, its lead's included, is a peer message and names that team. A message from the member's own lead is marked as the lead's. | specmsg R11, D4; protocols R11; ADR 0016 |
 | DEL-13 | MUST | Every typed line carries the message id. The full text lives in the store. The recipient can read and acknowledge by id, and a repeat of an acknowledged id is reported as already read. | harness R4; rust 11; protocols R3 |
 | DEL-14 | MUST | Every call to an external program has a timeout. | harness R14; speclife F4, LC-5 |
 | DEL-15 | MUST | A peer message never approves a permission prompt and never counts as user consent. teamwire relays no permission decision between members, and never submits text into a session that is blocked or not at its input prompt. | protocols R26; archrev 4 |
@@ -142,9 +142,9 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| MSG-1 | MUST | Six message types with fixed sender and recipient rules and size limits: `notice` (implementer to members, 600 chars), `finding` (investigator to members, 800), `question` (implementer or investigator to the lead or an investigator, 800), `answer` (to the asker only, 800), `reprompt` and `note` (lead only, no limit). Refusals state their reason. | specmsg R23, D1, D3; protocols R10 |
+| MSG-1 | MUST | Six message types with fixed sender and recipient rules and size limits. Every agent that talks (a lead, an implementer, an investigator) sends `finding` (800 chars) and `question` (800) to any agent that talks, and a member that talks also sends `notice` (600; it names a commit, and the lead has no checkout); `answer` goes to the asker only (800); `reprompt` and `note` come from a member's own lead only (no limit). Refusals state their reason. | specmsg R23, D1, D3; protocols R10; ADR 0016 |
 | MSG-2 | MUST | A `notice` names a commit that exists in the sender's checkout and is reachable from its current head. | specmsg R24 |
-| MSG-3 | MUST | Reviewers and closers send nothing and receive only from the lead. | specmsg R25, D2 |
+| MSG-3 | MUST | Reviewers and closers send nothing and receive only from their own team's lead. | specmsg R25, D2 |
 | MSG-4 | MUST | The message and one delivery row per recipient are committed, state `pending`, before any delivery attempt. Ids are never derived from counting records. | specmsg R26, L1, L2; rust 4, 6; protocols R1, R2 |
 | MSG-5 | MUST | A send is idempotent on (sender, client-supplied key). Retrying after a crash returns the first record and creates no second one. | rust 5; rust crash test row 28963 |
 | MSG-6 | MUST | A per-sender sequence number is assigned in the same transaction as the insert. Gaps are detectable. | rust 7; protocols R6 |
@@ -161,6 +161,8 @@ Each one has a test named in `docs/failure-modes.md`.
 | MSG-16 | SHOULD | Field names follow CloudEvents where one fits (`id`, `source`, `type`, `time`, `subject`). | protocols R12 |
 | MSG-17 | SHOULD | Causal links use `re` (the id being answered). No vector clocks. | protocols R7 |
 | MSG-18 | MUST | The rules above apply identically to the CLI and the MCP tools, and each tool result says `delivered`, `undelivered` or `unconfirmed` per recipient. | specmsg R31; harness R8 |
+| MSG-20 | MUST | An agent of another team is addressed as `<role>@<team>` or `lead@<team>`. A message to it is stored in both teams under one id, and the recipient team's copy is the one that counts. Another team informs and never instructs: `reprompt` and `note` never cross teams, and the message arrives marked as information. A closed or unknown team refuses it. A resend from the sending team repairs a send that stopped part way and never types a line twice. | ADR 0016 |
+| MSG-21 | MUST | Any agent can list every team on the machine with its state and members, and read another team's roster, without writing anything. | ADR 0016 |
 
 ### Watch and status (WAT)
 

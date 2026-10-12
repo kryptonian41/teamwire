@@ -34,8 +34,13 @@ pub struct Pid(u32);
 pub struct HarnessId(String);
 pub struct HostId(String);
 
-/// Who is acting. Proven before any rule runs (ADR 0008).
-pub enum Actor { Lead, Member(Role) }
+/// Who is acting. Proven before any rule runs (ADR 0008). `Other` is a
+/// sender in another team, `role@team` or `lead@team`; it appears only on a
+/// stored message, never from a proof (ADR 0016).
+pub enum Actor { Lead, Member(Role), Other(Remote) }
+
+/// An agent of another team: `lead@<team>` or `<role>@<team>`.
+pub struct Remote { /* team, role (None for the lead) */ }
 ```
 
 ## 2. Members
@@ -64,7 +69,7 @@ pub enum MessageType { Notice, Finding, Question, Answer, Reprompt, Note }
 pub struct SendRequest {
     pub team: TeamName,
     pub actor: Actor,                 // proven identity, not a claim
-    pub to: Vec<Recipient>,           // Recipient::Lead | Recipient::Member(Role)
+    pub to: Vec<Recipient>,           // Lead | Member(Role) | Other(Remote)
     pub kind: MessageType,
     pub body: String,
     pub commit: Option<String>,       // required for Notice
@@ -108,9 +113,10 @@ pub enum DeliveryErrorCode {
     BudgetExhausted,      // the turn-end hook's delivery budget ran out (ADR 0007)
 }
 
-/// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15).
+/// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15, MSG-20).
 pub enum Refusal {
     Identity, TypeNotAllowed, RecipientNotAllowed, UnknownRecipient,
+    UnknownTeam, RecipientTeamClosed,  // role@team names no team, or a team not open
     RemovedRecipient, SelfMessage, EmptyBody, TooLong { limit: usize, got: usize },
     NoCommit, CommitNotReachable, NotAQuestion, NotAskedOfYou, TeamClosed,
     RateLimited, Repeat,
@@ -336,7 +342,7 @@ The shapes T01 must write, so that T06 (which produces `LaunchSpec`) and T08
 shown are defined above.
 
 ```rust
-pub enum Recipient { Lead, Member(Role) }
+pub enum Recipient { Lead, Member(Role), Other(Remote) }
 pub enum SessionKind { Interactive, Background }
 pub struct CallerSession { pub id: SessionId, pub kind: SessionKind }
 pub enum SubmitAck { None, Submitted, StateChange }   // what Ok(()) from submit proves
@@ -419,9 +425,12 @@ pub enum StoreError { Busy, Full, SchemaNewer { db: u32, binary: u32 }, SchemaOl
 ```
 
 A command treats `NoDatabase` as "no such team", not as a broken store.
+`team_names(home)` lists every team that has a database, sorted by name; it
+is the one scan of `<home>/teams` every command uses.
 
 `Tx` offers one typed method per operation the services need, for example
-`insert_message`, `set_delivery_state`, `next_counter`, `insert_completion`,
+`insert_message`, `insert_received` (another team's message under its own
+ULID, ADR 0016), `set_delivery_state`, `next_counter`, `insert_completion`,
 `claim_completion_for_delivery`, `bump_generation`, `set_member_state`,
 `record_event`, `announce_once` (returns false if the key already exists).
 Every `Tx` method that makes a lifecycle or message change also records the

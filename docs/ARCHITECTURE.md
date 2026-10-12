@@ -99,15 +99,15 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
 
-The database tables (schema version 2; exact DDL is owned by the store
+The database tables (schema version 3; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
 | --- | --- | --- |
 | `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at` |
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation`, `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
-| `messages` | message | `ulid`, `display_id` (unique), `sender`, `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
-| `deliveries` | message and recipient | `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
+| `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
+| `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
 | `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `result_sha256` |
 | `verify_records` | verify run per member | `role`, `head_sha`, `verdict`, `exit_code`, `seconds`, `flags`, `log_sha256` |
 | `waivers` | waived flag | `role`, `flag_id`, `head_sha`, `reason` |
@@ -171,6 +171,14 @@ report once, writes the result file, marks `delivering`, locates the lead,
 types one line, and records the outcome. A completion the lead could not
 receive becomes `undelivered`, and the watch prints `UNDELIVERED` once with
 the result path.
+
+A message to another team's agent (`--to db@billing`) is stored twice under
+one ULID (ADR 0016). The sender's copy is stored as in step 2, with a row for
+`db@billing`. Then the sender writes billing's own copy into billing's store,
+with billing's display id and a `pending` row for `db`. Steps 3 to 4 run
+against billing's store, and the outcome is copied back onto the sender's
+row. Each write is a transaction in one store, never two at once. A resend
+from the sending team repeats the second step and everything after it.
 
 What each guarantee rests on:
 
