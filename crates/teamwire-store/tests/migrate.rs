@@ -11,7 +11,8 @@ use rusqlite::Connection;
 use teamwire_core::{EventType, Pid, TeamName, TeamState};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
-    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_VERSION, Store, StoreError, database_path,
+    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_VERSION, Store, StoreError,
+    database_path,
 };
 
 fn team() -> TeamName {
@@ -284,7 +285,9 @@ fn migration_from_every_older_version_ends_in_the_same_schema() {
             // Build the database as version `start` left it.
             let conn = Connection::open(&path).unwrap();
             if start >= 1 {
-                conn.execute_batch(SCHEMA_V1_SQL).unwrap();
+                for step in STEPS.iter().take(start as usize) {
+                    conn.execute_batch(step).unwrap();
+                }
                 conn.pragma_update(None, "application_id", APPLICATION_ID)
                     .unwrap();
                 conn.pragma_update(None, "user_version", start).unwrap();
@@ -558,7 +561,7 @@ fn a_read_only_open_reads_a_version_1_database_and_changes_nothing() {
 }
 
 /// Every migration step, so that a new schema version must be added here.
-const STEPS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL];
+const STEPS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL];
 
 /// Every column a read sees on a database migrated to the current version,
 /// a read-only open of each older version sees too. A migration that adds a

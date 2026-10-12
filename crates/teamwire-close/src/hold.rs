@@ -82,13 +82,9 @@ fn another_team_records(
     this: &TeamName,
     hold: Pid,
 ) -> Result<Option<TeamName>, String> {
-    let Ok(entries) = std::fs::read_dir(ctx.home.join("teams")) else {
-        return Ok(None);
-    };
-    for entry in entries.flatten() {
-        let Ok(name) = TeamName::parse(&entry.file_name().to_string_lossy()) else {
-            continue;
-        };
+    let names = teamwire_store::team_names(ctx.home)
+        .map_err(|e| format!("the teams could not be listed ({e})"))?;
+    for name in names {
         if &name == this {
             continue;
         }

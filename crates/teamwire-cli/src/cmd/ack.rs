@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use teamwire_core::{Actor, DisplayId, TeamName};
+use teamwire_core::{Actor, DisplayId, Refusal, TeamName};
 use teamwire_msg::{AckOutcome, SendError, ack, prove_actor_logged};
 
 use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
@@ -31,6 +31,8 @@ pub(crate) fn run(args: &AckArgs, global: &Global, wiring: &Wiring) -> ExitCode 
             Actor::Lead => Err(SendError::InvalidArgument(
                 "the lead has no inbox to acknowledge".to_owned(),
             )),
+            // A proof names a party of its own team only.
+            Actor::Other(_) => Err(SendError::Refused(Refusal::Identity)),
         }
     });
     match outcome {

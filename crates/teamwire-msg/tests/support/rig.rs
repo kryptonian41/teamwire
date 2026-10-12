@@ -126,7 +126,7 @@ impl Rig {
 
     /// One place that holds `session`, run by a process that names that
     /// place for itself: the state of a healthy session.
-    fn healthy(&mut self, session: &str) -> Place {
+    pub(crate) fn healthy(&mut self, session: &str) -> Place {
         self.next_pid += 1;
         let pid = self.next_pid;
         let place = self.host.add_place(
@@ -153,11 +153,15 @@ impl Rig {
     /// Makes `member`'s session unreachable (the locator finds no process:
     /// the session was replaced or died) or reachable again.
     pub(crate) fn set_reachable(&self, member: &str, reachable: bool) {
-        let session = format!("session-{member}");
+        self.set_reachable_session(&format!("session-{member}"), reachable);
+    }
+
+    /// `set_reachable` for the session named `session`.
+    pub(crate) fn set_reachable_session(&self, session: &str, reachable: bool) {
         let pid = self
             .processes
             .iter()
-            .find(|(s, _)| *s == session)
+            .find(|(s, _)| s == session)
             .map(|(_, pid)| *pid)
             .unwrap();
         let (pids, liveness) = if reachable {
@@ -165,7 +169,7 @@ impl Rig {
         } else {
             (vec![], Liveness::Dead)
         };
-        self.harness.add_session(sid(&session), pids, liveness);
+        self.harness.add_session(sid(session), pids, liveness);
     }
 
     pub(crate) fn healthy_lead(&mut self) -> Place {

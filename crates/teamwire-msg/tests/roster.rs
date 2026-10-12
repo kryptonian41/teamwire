@@ -31,14 +31,19 @@ fn each_kind_lists_what_it_accepts_from_members() {
             .accepts_from_members
             .clone()
     };
-    assert_eq!(
-        accepts("impl"),
-        [
-            MessageType::Notice,
-            MessageType::Finding,
-            MessageType::Answer
-        ]
-    );
+    // Every agent that talks takes every kind of information.
+    for talker in ["impl", "scout"] {
+        assert_eq!(
+            accepts(talker),
+            [
+                MessageType::Notice,
+                MessageType::Finding,
+                MessageType::Question,
+                MessageType::Answer
+            ],
+            "{talker}"
+        );
+    }
     assert_eq!(
         accepts("scout"),
         [

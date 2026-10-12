@@ -249,8 +249,14 @@ fn generation(h: &History, e: &Event, team_span: SpanId) -> Option<Span> {
     })
 }
 
-fn recipient_of(e: &Event) -> &str {
-    e.role.as_ref().map_or("lead", |r| r.as_str())
+/// The recipient a delivery event names. Every delivery event records it as
+/// `to`; an event written before that names a member by its role and the
+/// lead by no role.
+pub(crate) fn recipient_of(e: &Event) -> &str {
+    e.data
+        .get("to")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_else(|| e.role.as_ref().map_or("lead", |r| r.as_str()))
 }
 
 fn is_outcome(kind: EventType) -> bool {

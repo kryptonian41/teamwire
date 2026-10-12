@@ -13,6 +13,7 @@ use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
 use crate::attempt::{Bumped, bump, bump_again, deliver_one, earlier_bump, report_of};
+use crate::remote::{Try, deliver_to_team};
 use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
 
 /// A message that is committed and about to be delivered. The CLI prints
@@ -58,6 +59,8 @@ pub fn send_with(
     // which are not text the sender chose. Checks, the stored copy and its
     // hash all see the plain body.
     req.body = normalise_body(&req.body);
+    let own = team_name(ctx)?;
+    req.to = local_names(std::mem::take(&mut req.to), &own);
     let checked = match rules::check(ctx, &req) {
         Ok(checked) => checked,
         Err(SendError::Refused(refusal)) => {
@@ -99,14 +102,22 @@ pub fn send_with(
         key: client_key.unwrap_or_else(|| message.ulid.to_string()),
         duplicate: stored.duplicate,
     });
-    let team = team_name(ctx)?;
+    let team = own;
     write_copy(ctx, &team, &message);
 
+    let to_try = |r: &DeliveryRecord| {
+        matches!(
+            r.delivery.state,
+            DeliveryState::Pending | DeliveryState::Undelivered
+        )
+    };
     let mut deliveries = Vec::new();
     for record in &stored.deliveries {
-        let state = record.delivery.state;
-        if !matches!(state, DeliveryState::Pending | DeliveryState::Undelivered) {
+        if !to_try(record) {
             deliveries.push(report_of(record));
+            continue;
+        }
+        if record.delivery.recipient.other_team().is_some() {
             continue;
         }
         let attempts = record.delivery.attempts + 1;
@@ -117,6 +128,27 @@ pub fn send_with(
             attempts,
         )?);
     }
+    for (other, rows) in by_other_team(&stored.deliveries) {
+        let tries: Vec<Try<'_>> = rows
+            .iter()
+            .filter(|r| to_try(r))
+            .map(|row| Try {
+                row,
+                attempts: row.delivery.attempts + 1,
+            })
+            .collect();
+        if tries.is_empty() {
+            continue;
+        }
+        let results = deliver_to_team(ctx, &team, &message, &other, &rows, &tries);
+        for (t, result) in tries.iter().zip(results) {
+            deliveries.push(survive_store_error(
+                result,
+                &t.row.delivery.recipient,
+                t.attempts,
+            )?);
+        }
+    }
     Ok(SendReport {
         id: message.ulid,
         display_id: message.display_id,
@@ -124,6 +156,36 @@ pub fn send_with(
         deliveries,
         duplicate_of_key: stored.duplicate,
     })
+}
+
+/// Each recipient once, and a name that points back at the sender's own
+/// team (`api@<own>`) as its local name, so the rules and the rows see one
+/// spelling for one party.
+fn local_names(to: Vec<Recipient>, own: &TeamName) -> Vec<Recipient> {
+    let mut out: Vec<Recipient> = Vec::with_capacity(to.len());
+    for r in to {
+        let r = r.local_to(own);
+        if !out.contains(&r) {
+            out.push(r);
+        }
+    }
+    out
+}
+
+/// The rows that name agents of other teams, grouped by team in the order
+/// the teams first appear.
+pub(crate) fn by_other_team(rows: &[DeliveryRecord]) -> Vec<(TeamName, Vec<&DeliveryRecord>)> {
+    let mut groups: Vec<(TeamName, Vec<&DeliveryRecord>)> = Vec::new();
+    for row in rows {
+        let Some(team) = row.delivery.recipient.other_team() else {
+            continue;
+        };
+        match groups.iter_mut().find(|(t, _)| t == team) {
+            Some((_, group)) => group.push(row),
+            None => groups.push((team.clone(), vec![row])),
+        }
+    }
+    groups
 }
 
 /// The body without a leading byte-order mark and with `\r\n` as `\n`.
@@ -240,7 +302,7 @@ pub(crate) fn team_name(ctx: &Ctx<'_>) -> Result<TeamName, SendError> {
 
 /// Writes `comms/<display-id>.md`. The store holds the original, so a
 /// failure here is reported in the log and left for `verify --repair-files`.
-fn write_copy(ctx: &Ctx<'_>, team: &TeamName, message: &Message) {
+pub(crate) fn write_copy(ctx: &Ctx<'_>, team: &TeamName, message: &Message) {
     let dir: PathBuf = ctx.home.join("teams").join(team.as_str()).join("comms");
     let path = dir.join(format!("{}.md", message.display_id));
     let written = std::fs::create_dir_all(&dir)

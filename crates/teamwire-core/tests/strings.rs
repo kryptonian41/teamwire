@@ -100,6 +100,8 @@ fn refusal_codes_match_the_mcp_error_codes() {
         Refusal::TypeNotAllowed,
         Refusal::RecipientNotAllowed,
         Refusal::UnknownRecipient,
+        Refusal::UnknownTeam,
+        Refusal::RecipientTeamClosed,
         Refusal::RemovedRecipient,
         Refusal::SelfMessage,
         Refusal::EmptyBody,
@@ -121,8 +123,8 @@ fn refusal_codes_match_the_mcp_error_codes() {
     .collect();
     assert_eq!(
         codes.join(" "),
-        "identity type_not_allowed recipient_not_allowed unknown_recipient removed_recipient \
-         self empty too_long no_commit commit_not_reachable not_a_question not_asked_of_you \
+        "identity type_not_allowed recipient_not_allowed unknown_recipient unknown_team \
+         recipient_team_closed removed_recipient self empty too_long no_commit commit_not_reachable not_a_question not_asked_of_you \
          team_closed rate_limited repeat not_resendable"
     );
 }

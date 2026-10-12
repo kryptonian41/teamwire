@@ -1,7 +1,9 @@
 //! Name rules (LCH-6, INV-32).
 
 use proptest::prelude::*;
-use teamwire_core::{Actor, Address, DisplayId, HarnessId, HostId, Recipient, Role, TeamName};
+use teamwire_core::{
+    Actor, Address, DisplayId, HarnessId, HostId, Recipient, Remote, Role, TeamName,
+};
 
 #[test]
 fn team_names() {
@@ -116,5 +118,46 @@ proptest! {
         prop_assert!(!address.as_str().contains('-'));
         prop_assert!(address.as_str().len() <= 32);
         prop_assert_eq!(Address::parse(address.as_str()).unwrap(), address);
+    }
+}
+
+#[test]
+fn another_teams_party_is_role_or_lead_at_team() {
+    let api = Recipient::parse("api_2@beta").unwrap();
+    assert_eq!(api.other_team().unwrap().as_str(), "beta");
+    assert_eq!(api.as_str(), "api_2@beta");
+    assert!(matches!(
+        Actor::parse("lead@beta").unwrap(),
+        Actor::Other(_)
+    ));
+    assert!(Remote::parse("abcdefghijklmnop@abcdefghijkl").is_ok());
+    for bad in [
+        "api@",
+        "@beta",
+        "lead@",
+        "api@be-ta",
+        "api@beta@x",
+        "Api@beta",
+        "api@b_c",
+    ] {
+        assert!(Recipient::parse(bad).is_err(), "{bad}");
+    }
+    let json = serde_json::to_string(&api).unwrap();
+    assert_eq!(json, "\"api_2@beta\"");
+    assert_eq!(serde_json::from_str::<Recipient>(&json).unwrap(), api);
+}
+
+proptest! {
+    #[test]
+    fn a_remote_name_reads_back_as_itself(
+        team in "[a-z][a-z0-9]{0,11}",
+        who in "lead|[a-z][a-z0-9_]{0,15}",
+    ) {
+        let text = format!("{who}@{team}");
+        let parsed = Recipient::parse(&text).unwrap();
+        prop_assert_eq!(parsed.as_str(), text.as_str());
+        prop_assert!(text.len() <= Remote::MAX_LEN);
+        let actor = Actor::parse(&text).unwrap();
+        prop_assert_eq!(actor.as_str(), text.as_str());
     }
 }

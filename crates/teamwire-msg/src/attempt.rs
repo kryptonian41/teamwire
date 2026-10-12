@@ -163,6 +163,12 @@ pub(crate) fn deliver_one(
     let party = match recipient {
         Recipient::Lead => Party::Lead,
         Recipient::Member(role) => Party::Member(role.clone()),
+        // Typed through that team's own store, by `remote`.
+        Recipient::Other(_) => {
+            return Err(SendError::Internal(format!(
+                "{recipient} is delivered through its own team"
+            )));
+        }
     };
     let outcome = deliver_line(ctx, &party, &line);
     let (state, route, error) = forward_only(before, outcome);

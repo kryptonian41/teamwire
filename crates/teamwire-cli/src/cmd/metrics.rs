@@ -134,9 +134,9 @@ fn export(home: &Path, wiring: &Wiring, once: bool) -> ExitCode {
 /// slow collector never changes the exit code (OBS-2): the failure is
 /// printed, the mark stays, and the next run sends the batch.
 fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig) -> ExitCode {
-    let teams = match team_dirs(home) {
+    let teams = match teamwire_store::team_names(home) {
         Ok(teams) => teams,
-        Err(e) => return fail(&e, STORE),
+        Err(e) => return fail(&e.to_string(), STORE),
     };
     let app_config = Config::default();
     for team in teams {
@@ -171,26 +171,6 @@ fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig)
         }
     }
     ExitCode::SUCCESS
-}
-
-/// The teams that have a database under `home`.
-fn team_dirs(home: &Path) -> Result<Vec<TeamName>, String> {
-    let root = home.join("teams");
-    let Ok(entries) = std::fs::read_dir(&root) else {
-        return Ok(Vec::new());
-    };
-    let mut teams = Vec::new();
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("{}: {e}", root.display()))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if let Ok(team) = TeamName::parse(&name)
-            && database_path(home, &team).is_file()
-        {
-            teams.push(team);
-        }
-    }
-    teams.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    Ok(teams)
 }
 
 #[expect(clippy::print_stdout, reason = "the metrics are the command's output")]

@@ -1,4 +1,4 @@
-//! The `rmcp` handler: lists the eight tools and runs each call on a
+//! The `rmcp` handler: lists the nine tools and runs each call on a
 //! blocking thread, because the service functions and the store are
 //! synchronous.
 

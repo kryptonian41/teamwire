@@ -33,7 +33,7 @@ pub(crate) fn run(args: &MembersArgs, global: &Global, wiring: &Wiring) -> ExitC
     }
 }
 
-fn render(e: &RosterEntry) -> String {
+pub(crate) fn render(e: &RosterEntry) -> String {
     let accepts: Vec<&str> = e.accepts_from_members.iter().map(|t| t.as_str()).collect();
     let wake = if e.can_be_typed_to {
         "typed"

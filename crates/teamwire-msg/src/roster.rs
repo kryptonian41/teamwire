@@ -19,17 +19,18 @@ pub struct RosterEntry {
     pub lifecycle: MemberState,
     pub generation: u32,
     pub owns: Vec<String>,
-    /// The message types this member accepts from another member. Every
-    /// member also accepts the lead's `note` and `reprompt`, which this list
-    /// leaves out. Its name says so, because a caller sees only the name.
+    /// The message types this member accepts from another member, of this
+    /// team or another. Every member also accepts its own lead's `note` and
+    /// `reprompt`, which this list leaves out. Its name says so, because a
+    /// caller sees only the name.
     pub accepts_from_members: Vec<MessageType>,
     /// Whether typing into the member's session can wake it.
     pub can_be_typed_to: bool,
 }
 
 /// Every member, in the order they joined. A reviewer or closer accepts
-/// messages only from the lead (MSG-3); a question is accepted only by an
-/// investigator.
+/// messages only from its own lead (MSG-3); every other member accepts every
+/// kind of information from anyone (MSG-1).
 pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
     let members = ctx.store.read(|tx| tx.members()?.all_or_corrupt())?;
     Ok(members
@@ -37,15 +38,10 @@ pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
         .map(|m| {
             let accepts_from_members = match m.kind {
                 MemberKind::Reviewer | MemberKind::Closer => Vec::new(),
-                MemberKind::Investigator => vec![
+                MemberKind::Implementer | MemberKind::Investigator => vec![
                     MessageType::Notice,
                     MessageType::Finding,
                     MessageType::Question,
-                    MessageType::Answer,
-                ],
-                MemberKind::Implementer => vec![
-                    MessageType::Notice,
-                    MessageType::Finding,
                     MessageType::Answer,
                 ],
             };

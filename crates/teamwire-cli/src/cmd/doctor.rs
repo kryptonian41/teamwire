@@ -156,20 +156,6 @@ fn disk_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     vec![free, network]
 }
 
-/// Every directory under `<home>/teams` that names a team and holds a database.
-fn team_names(home: &Path) -> Vec<TeamName> {
-    let Ok(entries) = std::fs::read_dir(home.join("teams")) else {
-        return Vec::new();
-    };
-    let mut names: Vec<TeamName> = entries
-        .filter_map(Result::ok)
-        .filter_map(|e| e.file_name().to_str().and_then(|n| TeamName::parse(n).ok()))
-        .filter(|n| teamwire_store::database_path(home, n).is_file())
-        .collect();
-    names.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    names
-}
-
 /// The database checks of one team: opens, `quick_check`, the close lock and
 /// the watch lease.
 fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
@@ -238,7 +224,10 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
 }
 
 fn database_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let teams = team_names(&inputs.home);
+    let teams = match teamwire_store::team_names(&inputs.home) {
+        Ok(teams) => teams,
+        Err(e) => return vec![Check::fail("databases", e.to_string())],
+    };
     if teams.is_empty() {
         return vec![Check::pass(
             "databases",

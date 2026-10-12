@@ -33,6 +33,7 @@ mod cmd {
     pub(crate) mod resend;
     pub(crate) mod send;
     pub(crate) mod status;
+    pub(crate) mod teams;
     pub(crate) mod verify;
     pub(crate) mod version;
     pub(crate) mod watch;
@@ -47,7 +48,7 @@ pub(crate) use args::{
     AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
     HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
     MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ResendArgs, SendArgs, StatusArgs,
-    UninstallArgs, VerifyArgs, WatchArgs,
+    TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -78,6 +79,7 @@ fn main() -> ExitCode {
         Command::Inbox(a) => cmd::inbox::run(a, global, &wiring),
         Command::Ack(a) => cmd::ack::run(a, global, &wiring),
         Command::Members(a) => cmd::members::run(a, global, &wiring),
+        Command::Teams(a) => cmd::teams::run(a, global, &wiring),
         Command::Hook(a) => cmd::hook::run(a, global, &wiring),
         Command::Mcp(a) => cmd::mcp::run(a, global, &wiring),
         Command::Doctor => cmd::doctor::run(global, &wiring),

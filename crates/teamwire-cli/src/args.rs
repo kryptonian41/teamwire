@@ -62,8 +62,10 @@ pub(crate) enum Command {
     Inbox(InboxArgs),
     /// Mark messages read without printing them (members).
     Ack(AckArgs),
-    /// The team roster.
+    /// The team roster, of your own team or any other.
     Members(MembersArgs),
+    /// Every team on this machine with its state and members. Reads only.
+    Teams(TeamsArgs),
     /// Hook entry points, started by a harness.
     Hook(HookArgs),
     /// The stdio MCP server, started by a harness.
@@ -174,7 +176,8 @@ pub(crate) struct SendArgs {
         help = "The team. A member's defaults to $TEAMWIRE_TEAM."
     )]
     pub(crate) team: String,
-    /// Recipients: roles separated by commas, or lead.
+    /// Recipients, separated by commas: a role or lead in this team, or
+    /// role@team or lead@team in another team.
     #[arg(long, value_name = "ROLES", value_delimiter = ',', required = true)]
     pub(crate) to: Vec<String>,
     /// notice, finding, question, answer, reprompt or note.
@@ -294,6 +297,12 @@ pub(crate) struct AckArgs {
 #[derive(Args)]
 pub(crate) struct MembersArgs {
     pub(crate) team: Option<String>,
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct TeamsArgs {
     #[arg(long)]
     pub(crate) json: bool,
 }

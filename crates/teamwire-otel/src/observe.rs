@@ -2,6 +2,7 @@
 //! sections 2 and 5). Local metrics and the export both read this, so the two
 //! can never disagree about what an event means.
 
+use crate::spans::recipient_of;
 use serde_json::Value;
 use teamwire_core::{Event, EventType, Timestamp};
 
@@ -433,15 +434,22 @@ pub(crate) fn read_state(
                 .as_ref()
                 .map(ToString::to_string)
                 .unwrap_or_default(),
-            e.role.as_ref().map_or("lead", |r| r.as_str())
+            recipient_of(e)
         )
     };
     let mut handed = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let mut acked = std::collections::HashSet::new();
     for e in h.events().iter().take_while(|e| e.seq <= upto_seq) {
+        let to = recipient_of(e);
+        // A row for an agent of another team is read in that team's store
+        // and counted there; this team's row never becomes `acked`.
+        if to.contains('@') {
+            continue;
+        }
         if e.kind == EventType::DeliveryHandedOff && seen.insert(key(e)) {
-            handed.push((e.role.as_ref().map_or("lead", |_| "member"), key(e)));
+            let kind = if to == "lead" { "lead" } else { "member" };
+            handed.push((kind, key(e)));
         } else if e.kind == EventType::DeliveryAcked {
             acked.insert(key(e));
         }

@@ -4,9 +4,10 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::host::{HostError, HostErrorCode};
-use crate::names::{Actor, DisplayId, Recipient, TeamName, Ulid};
+use crate::names::{DisplayId, TeamName, Ulid};
 use crate::strings::string_enum;
 use crate::timestamp::Timestamp;
+use crate::who::{Actor, Recipient};
 
 string_enum! {
     pub enum MessageType {
@@ -172,6 +173,10 @@ pub enum Refusal {
     RecipientNotAllowed,
     #[error("no such member")]
     UnknownRecipient,
+    #[error("no such team")]
+    UnknownTeam,
+    #[error("the recipient's team is closing or closed")]
+    RecipientTeamClosed,
     #[error("the member was removed")]
     RemovedRecipient,
     #[error("you cannot send to yourself")]
@@ -208,6 +213,8 @@ impl Refusal {
             Self::TypeNotAllowed => "type_not_allowed",
             Self::RecipientNotAllowed => "recipient_not_allowed",
             Self::UnknownRecipient => "unknown_recipient",
+            Self::UnknownTeam => "unknown_team",
+            Self::RecipientTeamClosed => "recipient_team_closed",
             Self::RemovedRecipient => "removed_recipient",
             Self::SelfMessage => "self",
             Self::EmptyBody => "empty",

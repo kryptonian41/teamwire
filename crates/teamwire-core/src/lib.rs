@@ -26,6 +26,7 @@ pub mod secret;
 pub mod spec;
 pub mod team;
 pub mod timestamp;
+pub mod who;
 
 pub use completion::{Completion, CompletionStatus, FinalSource, ReportGaps, ReportState};
 pub use config::{Config, OtelConfig};
@@ -45,8 +46,7 @@ pub use message::{
     Route, SendRequest,
 };
 pub use names::{
-    Actor, Address, DisplayId, HarnessId, HostId, NameError, Pid, Place, Recipient, Role,
-    SessionId, TeamName, Ulid,
+    Address, DisplayId, HarnessId, HostId, NameError, Pid, Place, Role, SessionId, TeamName, Ulid,
 };
 pub use platform::{
     Clock, Command, HoldInfo, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome,
@@ -59,3 +59,4 @@ pub use spec::{MemberSpec, TeamSpec};
 pub use strings::UnknownString;
 pub use team::{LeadRoute, TeamState};
 pub use timestamp::{Timestamp, TimestampError};
+pub use who::{Actor, Recipient, Remote};
