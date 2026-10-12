@@ -315,14 +315,55 @@ impl Rig {
         self.start_agent("lead-agent", LEAD_SESSION);
     }
 
-    /// A member. `live` starts a `fake-claude` session in its own herdr pane;
-    /// otherwise the member is recorded and no process stands behind it.
+    /// A member of team alpha. `live` starts a `fake-claude` session in its
+    /// own herdr pane; otherwise the member is recorded and no process stands
+    /// behind it.
     pub fn add_member(&self, role: &str, kind: MemberKind, live: bool) {
-        let session = format!("session-{role}");
-        let place = live.then(|| self.start_agent(&format!("tw_{TEAM}_{role}"), &session));
+        self.add_member_to(TEAM, role, kind, live);
+    }
+
+    /// Another team in the same home, led from session `lead-<name>`, with no
+    /// members yet.
+    pub fn add_team(&self, name: &str) {
+        let team = TeamName::parse(name).unwrap();
+        let mut store = Store::open(self.home.path(), &team).unwrap();
+        store
+            .write(|tx| {
+                tx.create_team(
+                    at(),
+                    &NewTeam {
+                        name: team.clone(),
+                        title: name.to_owned(),
+                        lead_harness: HarnessId::from_static("claude-code"),
+                        lead_host: HostId::from_static("herdr"),
+                        lead_route: LeadRoute::Sink,
+                        lead_session: Some((
+                            SessionId::parse(&format!("lead-{name}")).unwrap(),
+                            SessionKind::Interactive,
+                        )),
+                    },
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+    }
+
+    /// Team `team`'s store.
+    pub fn store_of(&self, team: &str) -> Store {
+        Store::open(self.home.path(), &TeamName::parse(team).unwrap()).unwrap()
+    }
+
+    /// `add_member` for any team. A session id is unique across teams.
+    pub fn add_member_to(&self, team: &str, role: &str, kind: MemberKind, live: bool) {
+        let session = if team == TEAM {
+            format!("session-{role}")
+        } else {
+            format!("session-{team}-{role}")
+        };
+        let place = live.then(|| self.start_agent(&format!("tw_{team}_{role}"), &session));
         let r = Role::parse(role).unwrap();
         let hash = sha256(&token_of(role));
-        let mut store = self.store();
+        let mut store = self.store_of(team);
         store
             .write(|tx| {
                 tx.insert_member(
