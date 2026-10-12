@@ -17,8 +17,8 @@ const SCOPE_OWNS: &str = include_str!("../contracts/scope_owns.md");
 const SCOPE_CHECK: &str = include_str!("../contracts/scope_check.md");
 const TALKING_SILENT: &str = include_str!("../contracts/talking_silent.md");
 const TALKING_HEAD: &str = include_str!("../contracts/talking_head.md");
-const TALKING_IMPLEMENTER: &str = include_str!("../contracts/talking_implementer.md");
-const TALKING_INVESTIGATOR: &str = include_str!("../contracts/talking_investigator.md");
+const TALKING_INFO: &str = include_str!("../contracts/talking_info.md");
+const TALKING_TEAMS: &str = include_str!("../contracts/talking_teams.md");
 const TALKING_TAIL: &str = include_str!("../contracts/talking_tail.md");
 const TOGETHER: &str = include_str!("../contracts/together.md");
 const TOGETHER_ASK_MESSAGE: &str = include_str!("../contracts/together_ask_message.md");
@@ -68,11 +68,14 @@ fn scope(check: Option<&str>, owns: &[String]) -> String {
     out
 }
 
+/// Every member that talks sends every kind of information, to its own team
+/// and to other teams (MSG-1, MSG-20); a reviewer or closer talks to no one.
 fn talking(kind: MemberKind) -> String {
     match kind {
         MemberKind::Reviewer | MemberKind::Closer => TALKING_SILENT.to_owned(),
-        MemberKind::Implementer => [TALKING_HEAD, TALKING_IMPLEMENTER, TALKING_TAIL].concat(),
-        MemberKind::Investigator => [TALKING_HEAD, TALKING_INVESTIGATOR, TALKING_TAIL].concat(),
+        MemberKind::Implementer | MemberKind::Investigator => {
+            [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
+        }
     }
 }
 
