@@ -6,6 +6,7 @@ import { joinAll } from "./model/teams.ts";
 import { href, parseRoute, type Route } from "./model/route.ts";
 import type { TeamModel } from "./model/teams.ts";
 import { Overview } from "./Overview.tsx";
+import { Archive, History } from "./History.tsx";
 import { TeamDetail } from "./TeamDetail.tsx";
 import type { Snapshot } from "../shared/api.ts";
 
@@ -57,7 +58,11 @@ function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; 
       return <Overview teams={teams} loaded={snapshot !== null} />;
     case "team":
       return <TeamDetail team={teams.find((t) => t.name === route.team)} member={route.member} snapshot={snapshot} />;
+    case "history":
+      return <History />;
+    case "archive":
+      return <Archive dir={route.dir} />;
     default:
-      return <p className="note">Views arrive in the next commits.</p>;
+      return <p className="empty">Nothing at {route.hash}. <a href={href.overview()}>Back to the teams</a>.</p>;
   }
 }
