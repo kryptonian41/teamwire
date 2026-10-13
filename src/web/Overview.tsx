@@ -3,8 +3,10 @@ import { StateChip } from "./components.tsx";
 import { countByCategory, hasProblem, livenessInfo, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
 
-export function Overview({ teams, loaded }: { teams: TeamModel[]; loaded: boolean }) {
+export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; loaded: boolean; neverPolled: boolean }) {
   if (!loaded) return <p className="note">Waiting for the first poll…</p>;
+  // An empty list from a failed poll says nothing about the home.
+  if (neverPolled && teams.length === 0) return <p className="note">Waiting for teamwire: no poll has worked yet.</p>;
   if (teams.length === 0) return <p className="empty">No teams under this teamwire home.</p>;
   return (
     <>
@@ -31,7 +33,7 @@ function TeamCard({ team }: { team: TeamModel }) {
         </div>
         <div className="row" style={{ marginTop: 0 }}>
           <span className="chip small cat-idle">{s.state ?? "state unknown"}</span>
-          <span className={`dot ${live.cls}`} title={live.label} role="img" aria-label={live.label} />
+          <span className={`dot cat-${live.category}`} title={live.label} role="img" aria-label={live.label} />
         </div>
       </div>
       <div className="row">

@@ -53,13 +53,14 @@ export function App({ client }: { client: ApiClient }) {
 }
 
 function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; snapshot: Snapshot | null }) {
+  const liveTeams = new Set(snapshot?.status.flatMap((s) => (s.team === null ? [] : [s.team])));
   switch (route.page) {
     case "overview":
-      return <Overview teams={teams} loaded={snapshot !== null} />;
+      return <Overview teams={teams} loaded={snapshot !== null} neverPolled={snapshot?.lastGoodAt === null} />;
     case "team":
       return <TeamDetail team={teams.find((t) => t.name === route.team)} member={route.member} snapshot={snapshot} />;
     case "history":
-      return <History />;
+      return <History liveTeams={liveTeams} />;
     case "archive":
       return <Archive dir={route.dir} />;
     default:

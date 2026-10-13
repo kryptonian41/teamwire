@@ -116,10 +116,12 @@ button { font: inherit; }
 .sub { color: var(--muted); font-size: 12px; }
 .row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c-idle); }
-.dot.alive-working { background: var(--c-done); }
-.dot.alive-idle { background: var(--c-active); }
-.dot.alive-blocked { background: var(--c-attention); }
-.dot.dead, .dot.alive-gone { background: var(--c-failed); }
+.dot.cat-done { background: var(--c-done); }
+.dot.cat-active { background: var(--c-active); }
+.dot.cat-idle { background: var(--c-idle); }
+.dot.cat-attention { background: var(--c-attention); }
+.dot.cat-failed { background: var(--c-failed); }
+.dot.cat-unknown { background: var(--c-unknown); }
 .badge { font-size: 12px; padding: 0 6px; border-radius: 4px; background: var(--bg-attention); color: var(--c-attention); }
 .badge.bad { background: var(--bg-failed); color: var(--c-failed); }
 .counts { color: var(--muted); font-size: 12px; }

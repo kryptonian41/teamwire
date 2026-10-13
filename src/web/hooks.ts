@@ -33,7 +33,7 @@ export function useNow(ms = 1000): number {
 
 export function useSnapshot(client: ApiClient): { snapshot: Snapshot | null; connection: Connection } {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
-  const [connection, setConnection] = useState<Connection>("reconnecting");
+  const [connection, setConnection] = useState<Connection>("connecting");
   useEffect(() => client.subscribe(setSnapshot, setConnection), [client]);
   return { snapshot, connection };
 }

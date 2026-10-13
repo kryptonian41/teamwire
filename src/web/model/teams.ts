@@ -165,10 +165,29 @@ export function summarizeMetrics(metrics: readonly Metric[]): Map<string, TeamMe
   return out;
 }
 
-/** The lead's liveness as a CSS class suffix and a label. */
-export function livenessInfo(lead: StatusView["lead"]): { cls: string; label: string } {
-  if (lead === null) return { cls: "unknown", label: "no lead" };
+/** The one place that maps the lead's liveness to a colour category. */
+export function leadCategory(lead: StatusView["lead"]): StateCategory {
+  if (lead === null) return "unknown";
   const l = lead.liveness;
-  if (typeof l === "string") return { cls: l, label: `lead ${l}` };
-  return { cls: `alive-${l.alive}`, label: `lead ${l.alive}` };
+  if (l === "dead") return "failed";
+  if (l === "unknown") return "unknown";
+  switch (l.alive) {
+    case "working":
+      return "active";
+    case "idle":
+      return "idle";
+    case "blocked":
+      return "attention";
+    case "gone":
+      return "failed";
+    case "unknown":
+      return "unknown";
+  }
+}
+
+/** The lead's liveness as a category and a label. */
+export function livenessInfo(lead: StatusView["lead"]): { category: StateCategory; label: string } {
+  if (lead === null) return { category: leadCategory(lead), label: "no lead" };
+  const l = lead.liveness;
+  return { category: leadCategory(lead), label: `lead ${typeof l === "string" ? l : l.alive}` };
 }

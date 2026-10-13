@@ -2,17 +2,17 @@ import type { ArchiveEntry, FileRef } from "../../shared/api.ts";
 
 const when = (a: ArchiveEntry) => a.closedAt ?? a.date;
 
-/** Archives grouped by team. Teams in name order, archives newest first. */
+/** Archives grouped by team. Teams ordered by their newest archive, newest first; archives newest first. */
 export function groupArchives(archives: readonly ArchiveEntry[]): { team: string; archives: ArchiveEntry[] }[] {
   const byTeam = new Map<string, ArchiveEntry[]>();
   for (const a of archives) byTeam.set(a.team, [...(byTeam.get(a.team) ?? []), a]);
   return [...byTeam.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
     .map(([team, list]) => ({
       team,
       // The directory name breaks ties, since its time suffix grows with the close time.
       archives: [...list].sort((x, y) => when(y).localeCompare(when(x)) || y.dir.localeCompare(x.dir)),
-    }));
+    }))
+    .sort((a, b) => when(b.archives[0]!).localeCompare(when(a.archives[0]!)) || a.team.localeCompare(b.team));
 }
 
 /** Files by role. Message files (`comms`) form one group named by `MESSAGES`. */

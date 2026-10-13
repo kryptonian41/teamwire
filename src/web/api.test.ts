@@ -7,6 +7,7 @@ test("mock snapshot advances member ages and keeps the fixture shape", () => {
   const b = mockSnapshot(30);
   expect(b.status[0]!.members[0]!.age_s).toBe(a.status[0]!.members[0]!.age_s + 30);
   expect(a.stale).toBe(false);
+  expect(a.lastGoodAt).toBe(a.at);
   expect(a.teams.length).toBe(2);
 });
 

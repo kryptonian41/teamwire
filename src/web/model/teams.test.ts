@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { StatusAll, TeamsList, MetricsView } from "../../shared/teamwire.ts";
+import { StatusAll, TeamsList, MetricsView, type Liveness } from "../../shared/teamwire.ts";
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, joinAll, joinTeam, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
+import { countByCategory, formatAge, joinAll, joinTeam, leadCategory, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -64,8 +64,15 @@ test("groups metrics by team label", () => {
   expect(pay.durations["teamwire.member.run.duration"]).toEqual({ mean: 1820.5, count: 1 });
 });
 
-test("describes the lead's liveness", () => {
+test("maps the lead's liveness to one category", () => {
+  const lead = (liveness: Liveness) => ({ session_id: null, liveness });
+  expect(leadCategory(null)).toBe("unknown");
+  expect(leadCategory(lead("dead"))).toBe("failed");
+  expect(leadCategory(lead("unknown"))).toBe("unknown");
+  expect(leadCategory(lead({ alive: "working" }))).toBe("active");
+  expect(leadCategory(lead({ alive: "idle" }))).toBe("idle");
+  expect(leadCategory(lead({ alive: "blocked" }))).toBe("attention");
+  expect(leadCategory(lead({ alive: "gone" }))).toBe("failed");
+  expect(livenessInfo(lead({ alive: "working" }))).toEqual({ category: "active", label: "lead working" });
   expect(livenessInfo(null).label).toBe("no lead");
-  expect(livenessInfo({ session_id: null, liveness: "dead" })).toEqual({ cls: "dead", label: "lead dead" });
-  expect(livenessInfo({ session_id: null, liveness: { alive: "working" } }).cls).toBe("alive-working");
 });

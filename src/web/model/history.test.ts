@@ -12,8 +12,14 @@ test("groups by team with the newest archive first", () => {
     { dir: "ads-2026-10-07", team: "ads", date: "2026-10-07", closedAt: null, files: [] },
     { dir: "ads-2026-10-07-153012", team: "ads", date: "2026-10-07", closedAt: "2026-10-07T15:30:12.000Z", files: [] },
   ]);
-  expect(g.map((x) => x.team)).toEqual(["ads", "zed"]);
+  expect(g.map((x) => x.team)).toEqual(["ads", "zed"]); // ads closed in October, zed in September
   expect(g[0]!.archives.map((a) => a.dir)).toEqual(["ads-2026-10-07-153012", "ads-2026-10-07", "ads-2026-10-01"]);
+});
+
+test("team groups are ordered by their newest archive, not by name", () => {
+  const mk = (team: string, closedAt: string): ArchiveEntry => ({ dir: `${team}-${closedAt.slice(0, 10)}`, team, date: closedAt.slice(0, 10), closedAt, files: [] });
+  const g = groupArchives([mk("aaa", "2026-01-01T00:00:00.000Z"), mk("zzz", "2026-10-01T00:00:00.000Z"), mk("mmm", "2026-05-01T00:00:00.000Z")]);
+  expect(g.map((x) => x.team)).toEqual(["zzz", "mmm", "aaa"]);
 });
 
 test("the fixture archives form one group", () => {

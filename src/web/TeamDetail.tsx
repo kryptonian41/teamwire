@@ -9,7 +9,7 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { countByCategory, formatAge, livenessInfo, type TeamModel } from "./model/teams.ts";
+import { countByCategory, formatAge, leadCategory, livenessInfo, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
 export function TeamDetail({
@@ -50,7 +50,7 @@ export function TeamDetail({
         <span className="sub">{team.name}</span>
         <span className="chip small cat-idle">{s.state ?? "state unknown"}</span>
         <span className="row" style={{ margin: 0 }}>
-          <span className={`dot ${live.cls}`} aria-hidden="true" />
+          <span className={`dot cat-${live.category}`} aria-hidden="true" />
           <span className="sub">{live.label}</span>
         </span>
         {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
@@ -220,8 +220,7 @@ function MessageSection({ team, snapshotAt }: { team: TeamModel; snapshotAt: str
   const [selected, setSelected] = useState<Selected | null>(null);
 
   const categories = new Map<string, StateCategory>(team.members.map((m) => [m.role, m.category]));
-  const lead = livenessInfo(team.status.lead).cls;
-  categories.set("lead", lead === "alive-working" ? "active" : lead === "alive-blocked" ? "attention" : lead === "dead" || lead === "alive-gone" ? "failed" : "idle");
+  categories.set("lead", leadCategory(team.status.lead));
 
   return (
     <>

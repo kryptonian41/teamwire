@@ -7,7 +7,7 @@ import { groupArchives, groupFilesByRole } from "./model/history.ts";
 import { href } from "./model/route.ts";
 import { summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
 
-export function History() {
+export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
   const client = useClient();
   const archives = useLoad(() => client.archives(), "archives");
   const metrics = useLoad(() => client.metrics(), "metrics");
@@ -24,7 +24,7 @@ export function History() {
         groupArchives(archives.data).map((g) => (
           <section key={g.team}>
             <h2>{g.team}</h2>
-            <SummaryLine m={summary.get(g.team)} />
+            <SummaryLine m={summary.get(g.team)} live={liveTeams.has(g.team)} />
             <div className="table-wrap">
               <table>
                 <thead>
@@ -55,7 +55,7 @@ export function History() {
   );
 }
 
-function SummaryLine({ m }: { m: TeamMetrics | undefined }) {
+function SummaryLine({ m, live }: { m: TeamMetrics | undefined; live: boolean }) {
   if (!m) return <p className="sub">No metrics for this team. Totals cover all of its archives.</p>;
   const done = Object.entries(m.completions)
     .map(([status, n]) => `${n} ${status}`)
@@ -64,6 +64,7 @@ function SummaryLine({ m }: { m: TeamMetrics | undefined }) {
     <p className="sub">
       Completions: {done || "none"} · {m.messagesSent} messages sent · {m.leadWakeups} lead wakeups · {m.verifyRuns} verify
       runs
+      {live && " · Totals include the live team of the same name."}
     </p>
   );
 }

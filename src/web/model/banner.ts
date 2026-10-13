@@ -42,7 +42,10 @@ export function bannerFor(snapshot: Snapshot | null, connection: Connection, now
   if (snapshot.stale) {
     return {
       kind: "stale",
-      text: `Data is stale. The last good poll was ${secondsSince(snapshot.at, now)} s ago.`,
+      text:
+        snapshot.lastGoodAt === null
+          ? "No poll of teamwire has worked yet, so there is no data to show."
+          : `Data is stale. The last good poll was ${secondsSince(snapshot.lastGoodAt, now)} s ago.`,
       problems: snapshot.problems,
     };
   }

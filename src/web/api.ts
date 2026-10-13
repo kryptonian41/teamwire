@@ -21,7 +21,7 @@ import logFixture from "../../fixtures/log.json";
 import metricsFixture from "../../fixtures/metrics.json";
 import archivesFixture from "../../fixtures/archives.json";
 
-export type Connection = "connected" | "reconnecting" | "forbidden";
+export type Connection = "connecting" | "connected" | "reconnecting" | "forbidden";
 
 /** A failed request. `problem` is the server's JSON body when it sent one. */
 export class ApiError extends Error {
@@ -124,6 +124,7 @@ export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
     durationMs: 120,
     intervalMs: MOCK_INTERVAL_MS,
     stale: false,
+    lastGoodAt: now.toISOString(),
     status: baseStatus.map((t) => ({
       ...t,
       members: t.members.map((m) => ({ ...m, age_s: m.age_s + elapsedS })),
