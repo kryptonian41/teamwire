@@ -268,9 +268,15 @@ impl Bed {
 
     /// A question from `name` to the lead, delivered as `state`.
     pub fn question(&mut self, name: &str, state: teamwire_core::DeliveryState) -> String {
+        self.question_from(Actor::Member(role(name)), state)
+    }
+
+    /// A question to the lead from `sender`, which may be an agent of
+    /// another team, left in `state`.
+    pub fn question_from(&mut self, sender: Actor, state: teamwire_core::DeliveryState) -> String {
         let now = self.clock.now();
         let new = NewMessage {
-            sender: Actor::Member(role(name)),
+            sender,
             kind: MessageType::Question,
             re: None,
             commit: None,

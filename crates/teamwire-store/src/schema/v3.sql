@@ -1,0 +1,5 @@
+-- teamwire schema version 3: a sender or recipient may name an agent in
+-- another team, as `<role>@<team>` or `lead@<team>` (ADR 0016). No column
+-- changes; `messages.sender` and `deliveries.recipient` were free text. The
+-- version moves so that a binary that reads only `lead` and roles stops at
+-- "schema newer" instead of reading such a row as damaged.

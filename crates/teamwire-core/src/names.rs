@@ -280,64 +280,6 @@ impl<'de> Deserialize<'de> for Ulid {
     }
 }
 
-/// Who is acting. Proven before any rule runs (ADR 0008). Its string form is
-/// `lead` or the role; a role can never be `lead`, so the form is unambiguous.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Actor {
-    Lead,
-    Member(Role),
-}
-
-/// Who a message is for. The same string form as `Actor`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum Recipient {
-    Lead,
-    Member(Role),
-}
-
-macro_rules! lead_or_role {
-    ($name:ident) => {
-        impl $name {
-            pub fn parse(text: &str) -> Result<$name, NameError> {
-                if text == "lead" {
-                    Ok($name::Lead)
-                } else {
-                    Role::parse(text).map($name::Member)
-                }
-            }
-
-            pub fn as_str(&self) -> &str {
-                match self {
-                    $name::Lead => "lead",
-                    $name::Member(role) => role.as_str(),
-                }
-            }
-        }
-
-        impl fmt::Display for $name {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str(self.as_str())
-            }
-        }
-
-        impl Serialize for $name {
-            fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-                s.serialize_str(self.as_str())
-            }
-        }
-
-        impl<'de> Deserialize<'de> for $name {
-            fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<$name, D::Error> {
-                let text = <std::borrow::Cow<'de, str> as Deserialize>::deserialize(d)?;
-                $name::parse(&text).map_err(<D::Error as serde::de::Error>::custom)
-            }
-        }
-    };
-}
-
-lead_or_role!(Actor);
-lead_or_role!(Recipient);
-
 #[cfg(test)]
 mod tests {
     use super::*;

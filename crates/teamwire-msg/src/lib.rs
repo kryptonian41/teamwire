@@ -1,5 +1,6 @@
 //! The six message types and their rules (MSG-1..MSG-3, MSG-9, MSG-14,
-//! MSG-15): proving the sender, send, resend, inbox, ack and log.
+//! MSG-15, MSG-20, MSG-21): proving the sender, send, resend, inbox, ack,
+//! log, and finding and reaching the agents of other teams.
 //!
 //! Never: deliver before the message and its delivery rows are committed;
 //! mark a delivery `acked` except from the recipient's own inbox or ack;
@@ -10,10 +11,12 @@
 //! states only move forward and `acked` is final.
 
 mod attempt;
+mod directory;
 mod inbox;
 mod lead;
 mod log;
 mod prove;
+mod remote;
 mod resend;
 mod roster;
 mod rules;
@@ -29,6 +32,7 @@ use teamwire_core::{
 use teamwire_store::StoreError;
 use thiserror::Error;
 
+pub use directory::{TeamEntry, describe, roster_of, teams};
 pub use inbox::{ack, inbox};
 pub use lead::{AdoptReport, adopt_lead};
 pub use log::log;

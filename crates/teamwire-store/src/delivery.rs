@@ -152,6 +152,7 @@ impl Tx<'_> {
             recipient_role(recipient),
             Some(message),
             &json!({
+                "to": recipient.as_str(),
                 "route": update.route.map(Route::as_str),
                 "attempts": update.attempts,
                 "code": update.error.as_ref().map(|e| e.code.as_str()),
@@ -184,7 +185,7 @@ impl Tx<'_> {
             EventType::DeliveryAcked,
             recipient_role(recipient),
             Some(message),
-            &json!({ "seconds": seconds_since(sent, at) }),
+            &json!({ "to": recipient.as_str(), "seconds": seconds_since(sent, at) }),
         )?;
         Ok(true)
     }
@@ -215,7 +216,11 @@ impl Tx<'_> {
             EventType::DeliveryResent,
             recipient_role(recipient),
             Some(message),
-            &json!({ "attempt": attempt, "previous_state": from.as_str() }),
+            &json!({
+                "to": recipient.as_str(),
+                "attempt": attempt,
+                "previous_state": from.as_str(),
+            }),
         )?;
         Ok(attempt)
     }
@@ -243,15 +248,17 @@ impl Tx<'_> {
             EventType::DeliveryReminded,
             recipient_role(recipient),
             Some(message),
-            &json!({ "seconds": seconds_since(sent, at) }),
+            &json!({ "to": recipient.as_str(), "seconds": seconds_since(sent, at) }),
         )?;
         Ok(())
     }
 }
 
+/// The event's role column names a member of this team, so the lead and an
+/// agent in another team both leave it empty; the event's `to` names them.
 fn recipient_role(recipient: &Recipient) -> Option<&teamwire_core::Role> {
     match recipient {
-        Recipient::Lead => None,
+        Recipient::Lead | Recipient::Other(_) => None,
         Recipient::Member(role) => Some(role),
     }
 }

@@ -10,7 +10,7 @@ use teamwire_core::TeamName;
 use crate::error::StoreError;
 use crate::older::show_missing_columns;
 use crate::tx::{ReadTx, Tx};
-use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_VERSION};
+use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_VERSION};
 
 /// `PRAGMA application_id` of every teamwire database: the ASCII bytes
 /// `tWIR`. A file with another id (including 0 with tables in it) is not ours.
@@ -24,7 +24,7 @@ pub const WRITER_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const BUSY_TIMEOUT_MS: u32 = 5000;
 
 /// `MIGRATIONS[i]` takes a database from schema version `i` to `i + 1`.
-const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL];
+const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL];
 
 /// One team's database. One `rusqlite::Connection`, never shared across
 /// processes.
@@ -92,6 +92,30 @@ enum Found {
 /// The database file of `team`: `<home>/teams/<team>/team.db`.
 pub fn database_path(home: &Path, team: &TeamName) -> PathBuf {
     home.join("teams").join(team.as_str()).join("team.db")
+}
+
+/// Every team under `home`: each directory of `<home>/teams` that names a
+/// valid team and holds a database, sorted by name. No `teams` directory is
+/// no teams; an entry that cannot be read is an error, and the caller
+/// decides whether one unreadable entry hides the rest.
+pub fn team_names(home: &Path) -> Result<Vec<TeamName>, StoreError> {
+    let Ok(entries) = std::fs::read_dir(home.join("teams")) else {
+        return Ok(Vec::new());
+    };
+    let mut names = Vec::new();
+    for entry in entries {
+        let entry = entry?;
+        if let Some(name) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| TeamName::parse(n).ok())
+            && database_path(home, &name).is_file()
+        {
+            names.push(name);
+        }
+    }
+    names.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+    Ok(names)
 }
 
 impl Store {

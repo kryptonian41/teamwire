@@ -81,6 +81,7 @@ fn handed_off_records_route_attempts_and_seconds() {
     assert_eq!(e.data["seconds"], 2.0);
     assert_eq!(e.data["attempts"], 1);
     assert_eq!(e.data["route"], "host_typing");
+    assert_eq!(e.data["to"], "web");
 }
 
 #[test]
@@ -286,7 +287,7 @@ fn a_resend_adds_an_attempt_without_changing_the_state() {
     assert_eq!(e.kind, EventType::DeliveryResent);
     assert_eq!(
         e.data,
-        serde_json::json!({ "attempt": 3, "previous_state": "undelivered" })
+        serde_json::json!({ "to": "web", "attempt": 3, "previous_state": "undelivered" })
     );
     f.store
         .write(|tx| tx.set_delivery_state(at(201), &m, &web, &update(DeliveryState::HandedOff, 3)))

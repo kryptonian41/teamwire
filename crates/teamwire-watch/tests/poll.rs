@@ -555,6 +555,21 @@ fn an_undelivered_question_is_announced_once() {
 }
 
 #[test]
+fn an_undelivered_question_from_another_team_is_announced() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.working("api");
+    bed.poll();
+    let sender = teamwire_core::Actor::parse("db@beta").unwrap();
+    let id = bed.question_from(sender, DeliveryState::Undelivered);
+    let line = bed.tick().unwrap();
+    assert!(
+        line.ends_with(&format!("QUESTION-UNDELIVERED {id} from db@beta")),
+        "{line}"
+    );
+}
+
+#[test]
 fn sleep_gap_resets_counters() {
     let mut bed = Bed::new();
     seasoned(&mut bed, "api");

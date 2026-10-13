@@ -133,7 +133,9 @@ was found dead, nothing is cleared and the command refuses with that reason.
 ### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
 
 Sends one message (ADR 0003). `--to` takes roles separated by commas, or
-`lead`. `<team>` is a positional argument. For a member, `<team>` and `--from`
+`lead`; an agent of another team is `role@team`, and its lead `lead@team`
+(ADR 0016). A message to another team is stored in both teams, and the
+other team's store types the line. `<team>` is a positional argument. For a member, `<team>` and `--from`
 default to `TEAMWIRE_TEAM` and `TEAMWIRE_ROLE`. With no `--from`, no
 `TEAMWIRE_ROLE` and no `TEAMWIRE_TOKEN`, `--from` defaults to `lead`, as
 `resend` does; the harness session then decides (ADR 0008). Prints the display id and one line per recipient. On
@@ -148,7 +150,9 @@ generation and says whether a watch is running, or that it could not tell.
 Retries one stored message, by display id, to its `undelivered`,
 `unconfirmed` or stale `pending` recipients (ADR 0003 point 2a). Same message
 id, a new delivery attempt, no burst or repeat check. The sender or the lead
-only. Exit codes as for `send`.
+only. For a recipient in another team it writes that team's copy if it is
+missing, and never types a line that team already handed off. Exit codes as
+for `send`.
 
 ### `teamwire log <team> [--role ROLE] [--json]`
 
@@ -198,9 +202,18 @@ Marks messages read without printing them.
 
 ### `teamwire members [<team>] [--json]`
 
-The roster, as `team_members` returns it (`docs/api/mcp.md`). The text form
-prints each member's `lifecycle` and the types it accepts from other
-members. Whether a member is working or done is in `teamwire status`.
+The roster, as `team_members` returns it (`docs/api/mcp.md`), of the
+caller's own team or any other. The text form prints each member's
+`lifecycle` and the types it accepts from other members. Whether a member
+is working or done is in `teamwire status`.
+
+### `teamwire teams [--json]`
+
+Every team under the home with its title, state and roster, as `team_teams`
+returns it (MSG-21), and how to address its agents (`lead@<team>`,
+`<role>@<team>`). Reads only and needs no proof. A team whose store cannot
+be read is named on stderr and makes the command exit 6; the others are
+still listed.
 
 ## Harness and server entry points
 

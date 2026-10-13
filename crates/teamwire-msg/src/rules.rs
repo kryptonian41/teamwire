@@ -1,6 +1,10 @@
 //! The rules a send must pass before anything is stored (MSG-1..MSG-3,
-//! MSG-9, MSG-14, MSG-15): who may send which type to whom, size limits,
-//! the notice's commit, an answer's question, the burst and repeat limits.
+//! MSG-9, MSG-14, MSG-15, MSG-20): who may send which type to whom, size
+//! limits, the notice's commit, an answer's question, the burst and repeat
+//! limits. A recipient in another team is checked against that team's
+//! store in `foreign`.
+
+mod foreign;
 
 use std::path::Path;
 use std::time::Duration;
@@ -9,7 +13,7 @@ use teamwire_core::{
     Actor, Command, DeliveryState, DisplayId, Member, MemberKind, MemberState, Message,
     MessageType, Recipient, Refusal, SendRequest, TeamState, Timestamp, Ulid,
 };
-use teamwire_store::Ctx;
+use teamwire_store::{Ctx, TeamRow};
 
 use crate::SendError;
 
@@ -31,6 +35,7 @@ pub(crate) struct Checked {
 
 /// The stored facts the pure rules need, read in one snapshot.
 struct Snapshot {
+    team: TeamRow,
     team_state: TeamState,
     members: Vec<Member>,
     /// The question named by `re`, and who it was asked of.
@@ -69,6 +74,7 @@ pub(crate) fn check(ctx: &Ctx<'_>, req: &SendRequest) -> Result<Checked, SendErr
     check_type(sender_kind, req.kind)?;
     check_size(req)?;
     check_recipients(&snap, &req.actor, req)?;
+    foreign::check(ctx, &snap.team, &req.actor, req)?;
     let re = check_answer(&snap, req)?;
     let commit = if req.kind == MessageType::Notice {
         Some(check_commit(ctx, &snap, req)?)
@@ -107,6 +113,7 @@ fn snapshot(ctx: &Ctx<'_>, re: Option<&DisplayId>) -> Result<Snapshot, SendError
         };
         Ok(Snapshot {
             team_state: team.state,
+            team,
             members: tx.members()?.all_or_corrupt()?,
             question,
         })
@@ -122,6 +129,8 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
     }
     match actor {
         Actor::Lead => Ok(None),
+        // A caller is proven in its own team, never as another team's agent.
+        Actor::Other(_) => Err(Refusal::Identity.into()),
         Actor::Member(role) => {
             // The actor is proven, so a role with no live row is a stale proof.
             let member = snap
@@ -138,21 +147,31 @@ fn is_quiet(kind: MemberKind) -> bool {
     matches!(kind, MemberKind::Reviewer | MemberKind::Closer)
 }
 
+/// Every agent that talks sends every kind of information; only the lead
+/// instructs (MSG-1).
 fn check_type(sender: SenderKind, kind: MessageType) -> Result<(), SendError> {
     let allowed = match (sender, kind) {
         // Reviewers and closers report; the lead acts on the report (MSG-3).
         (Some(k), _) if is_quiet(k) => false,
         (Some(_), MessageType::Reprompt | MessageType::Note) => false,
-        (Some(k), MessageType::Notice) => k == MemberKind::Implementer,
-        (Some(k), MessageType::Finding) => k == MemberKind::Investigator,
-        (Some(k), MessageType::Question) => {
-            matches!(k, MemberKind::Implementer | MemberKind::Investigator)
-        }
-        (Some(_), MessageType::Answer) => true,
-        (None, kind) => matches!(
-            kind,
-            MessageType::Answer | MessageType::Reprompt | MessageType::Note
-        ),
+        (
+            Some(_),
+            MessageType::Notice
+            | MessageType::Finding
+            | MessageType::Question
+            | MessageType::Answer,
+        ) => true,
+        // A notice names a commit in the sender's checkout, and the lead has
+        // no checkout on record to look it up in (MSG-2).
+        (None, MessageType::Notice) => false,
+        (
+            None,
+            MessageType::Finding
+            | MessageType::Question
+            | MessageType::Answer
+            | MessageType::Reprompt
+            | MessageType::Note,
+        ) => true,
     };
     if allowed {
         Ok(())
@@ -185,6 +204,8 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
         }
         let member = match to {
             Recipient::Lead => None,
+            // Checked against its own team's store in `foreign`.
+            Recipient::Other(_) => continue,
             Recipient::Member(role) => {
                 let found = snap
                     .members
@@ -208,11 +229,6 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
             {
                 return Err(Refusal::RecipientNotAllowed.into());
             }
-        }
-        if req.kind == MessageType::Question
-            && member.is_some_and(|m| m.kind != MemberKind::Investigator)
-        {
-            return Err(Refusal::RecipientNotAllowed.into());
         }
     }
     Ok(())

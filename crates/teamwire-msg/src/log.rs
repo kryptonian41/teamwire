@@ -23,7 +23,7 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
     } = filter;
     let viewer_scope = match viewer {
         Actor::Lead => None,
-        Actor::Member(role) => Some(Actor::Member(role)),
+        other @ (Actor::Member(_) | Actor::Other(_)) => Some(other),
     };
     let query = MessageFilter {
         involving: viewer_scope

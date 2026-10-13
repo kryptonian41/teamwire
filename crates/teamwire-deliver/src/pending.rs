@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{EventType, Message, Recipient, Timestamp};
+use teamwire_core::{Event, EventType, Message, Recipient, Timestamp};
 use teamwire_store::{ReadTx, StoreError};
 
 /// A `pending` delivery is stale only after this long without a new attempt.
@@ -19,18 +19,28 @@ pub fn attempt_started(
     message: &Message,
     recipient: &Recipient,
 ) -> Result<Timestamp, StoreError> {
-    let role = match recipient {
-        Recipient::Lead => None,
-        Recipient::Member(role) => Some(role),
-    };
     let latest = tx
         .events_about(&message.ulid)?
         .all_or_corrupt()?
         .into_iter()
-        .filter(|e| e.kind == EventType::DeliveryResent && e.role.as_ref() == role)
+        .filter(|e| e.kind == EventType::DeliveryResent && is_for(e, recipient))
         .map(|e| e.time)
         .max();
     Ok(latest.map_or(message.created_at, |t| t.max(message.created_at)))
+}
+
+/// The event's `to` names the recipient. An event written before `to` was
+/// recorded names a member by its role and the lead by no role; an agent in
+/// another team also has no role, so only `to` can tell it from the lead.
+fn is_for(event: &Event, recipient: &Recipient) -> bool {
+    if let Some(to) = event.data.get("to").and_then(|v| v.as_str()) {
+        return to == recipient.as_str();
+    }
+    match recipient {
+        Recipient::Lead => event.role.is_none(),
+        Recipient::Member(role) => event.role.as_ref() == Some(role),
+        Recipient::Other(_) => false,
+    }
 }
 
 /// True when the attempt at `message` for `recipient` began over

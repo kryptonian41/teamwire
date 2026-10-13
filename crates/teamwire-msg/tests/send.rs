@@ -193,14 +193,9 @@ fn members_may_not_message_a_closer_or_reviewer_but_the_lead_may() {
 }
 
 #[test]
-fn a_question_goes_only_to_the_lead_or_an_investigator() {
+fn a_question_goes_to_any_talking_agent_and_never_to_a_quiet_one() {
     let mut rig = team_rig();
-    let req = rig.request("api", &["web"], MessageType::Question, "which shape?");
-    assert_eq!(
-        refused(send(&mut rig.ctx(), req)),
-        Some(Refusal::RecipientNotAllowed)
-    );
-    for target in ["scout", "lead"] {
+    for target in ["web", "scout", "lead"] {
         let req = rig.request(
             "api",
             &[target],
@@ -208,6 +203,14 @@ fn a_question_goes_only_to_the_lead_or_an_investigator() {
             &format!("to {target}?"),
         );
         assert!(send(&mut rig.ctx(), req).is_ok(), "{target}");
+    }
+    for target in ["rev", "close"] {
+        let req = rig.request("api", &[target], MessageType::Question, "x?");
+        assert_eq!(
+            refused(send(&mut rig.ctx(), req)),
+            Some(Refusal::RecipientNotAllowed),
+            "{target}"
+        );
     }
 }
 
@@ -225,21 +228,23 @@ fn only_the_lead_sends_a_reprompt_or_a_note() {
 }
 
 #[test]
-fn a_type_is_sent_only_by_the_kind_that_owns_it() {
+fn every_talking_kind_sends_every_kind_of_information() {
     let mut rig = team_rig();
-    let req = rig.request("api", &["web"], MessageType::Finding, "x");
-    assert_eq!(
-        refused(send(&mut rig.ctx(), req)),
-        Some(Refusal::TypeNotAllowed)
-    );
-    let mut req = rig.request("scout", &["web"], MessageType::Notice, "x");
+    let req = rig.request("api", &["web"], MessageType::Finding, "found it");
+    assert!(send(&mut rig.ctx(), req).is_ok());
+    rig.platform
+        .queue_run(Ok(finished(0, &format!("{FULL_SHA}\n"))));
+    rig.platform.queue_run(Ok(finished(0, "")));
+    let mut req = rig.request("scout", &["web"], MessageType::Notice, "moved");
     req.commit = Some(FULL_SHA.to_owned());
-    assert_eq!(
-        refused(send(&mut rig.ctx(), req)),
-        Some(Refusal::TypeNotAllowed)
-    );
-    // The lead speaks with answer, reprompt and note only.
-    let req = rig.request("lead", &["web"], MessageType::Finding, "x");
+    assert!(send(&mut rig.ctx(), req).is_ok());
+    for kind in [MessageType::Finding, MessageType::Question] {
+        let req = rig.request("lead", &["web"], kind, &format!("lead {kind}"));
+        assert!(send(&mut rig.ctx(), req).is_ok(), "{kind}");
+    }
+    // A notice names a commit in the sender's checkout; the lead has none.
+    let mut req = rig.request("lead", &["web"], MessageType::Notice, "x");
+    req.commit = Some(FULL_SHA.to_owned());
     assert_eq!(
         refused(send(&mut rig.ctx(), req)),
         Some(Refusal::TypeNotAllowed)

@@ -102,13 +102,10 @@ fn lead_process(
 
 /// True when another open team of the same lead records this hold as its own.
 fn another_team_owns(ctx: &Ctx<'_>, this: &TeamName, session: &SessionId, hold: Pid) -> bool {
-    let Ok(entries) = std::fs::read_dir(ctx.home.join("teams")) else {
+    let Ok(names) = teamwire_store::team_names(ctx.home) else {
         return false;
     };
-    entries.flatten().any(|entry| {
-        let Ok(name) = TeamName::parse(&entry.file_name().to_string_lossy()) else {
-            return false;
-        };
+    names.into_iter().any(|name| {
         if &name == this {
             return false;
         }

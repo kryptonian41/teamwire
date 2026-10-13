@@ -9,7 +9,8 @@ use teamwire_deliver::is_pending_stale;
 use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
-use crate::send::{read_team, record_refusal, survive_store_error, team_name};
+use crate::remote::{Try, deliver_to_team};
+use crate::send::{by_other_team, read_team, record_refusal, survive_store_error, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
@@ -78,16 +79,21 @@ pub fn resend(
         )));
     }
     let team = team_name(ctx)?;
-    let mut deliveries: Vec<RecipientReport> = Vec::new();
-    for row in rows.iter().filter(|r| wanted(r)) {
-        if !chosen
+    let is_chosen = |row: &DeliveryRecord| {
+        chosen
             .iter()
             .any(|c| c.delivery.recipient == row.delivery.recipient)
-        {
+    };
+    let mut deliveries: Vec<RecipientReport> = Vec::new();
+    for row in rows.iter().filter(|r| wanted(r)) {
+        if !is_chosen(row) {
             deliveries.push(RecipientReport {
                 state: RecipientState::Skipped,
                 ..report_of(row)
             });
+            continue;
+        }
+        if row.delivery.recipient.other_team().is_some() {
             continue;
         }
         let result = retry(ctx, actor, &team, &message, row);
@@ -96,6 +102,24 @@ pub fn resend(
             &row.delivery.recipient,
             row.delivery.attempts + 1,
         )?);
+    }
+    for (other, group) in by_other_team(&rows) {
+        let mut tries = Vec::new();
+        for row in group.iter().copied().filter(|r| is_chosen(r)) {
+            let attempts = count_attempt(ctx, actor, &message, row)?;
+            tries.push(Try { row, attempts });
+        }
+        if tries.is_empty() {
+            continue;
+        }
+        let results = deliver_to_team(ctx, &team, &message, &other, &group, &tries);
+        for (t, result) in tries.iter().zip(results) {
+            deliveries.push(survive_store_error(
+                result,
+                &t.row.delivery.recipient,
+                t.attempts,
+            )?);
+        }
     }
     Ok(SendReport {
         id: message.ulid,
@@ -135,6 +159,38 @@ fn retry(
 ) -> Result<RecipientReport, SendError> {
     let recipient = &row.delivery.recipient;
     let before = row.delivery.state;
+    let attempts = count_attempt(ctx, actor, message, row)?;
+    // A reprompt that failed cleanly was undone, so its next try starts the
+    // generation again. One that may have arrived kept its generation. One
+    // left `pending` by a dead sender kept a bump that nothing has undone.
+    // The bump comes after the attempt is counted, so a failed count leaves
+    // the generation alone.
+    let bump = match before {
+        DeliveryState::Undelivered => bump_again(ctx, message, recipient)?,
+        DeliveryState::Pending => earlier_bump(ctx, message, recipient)?,
+        DeliveryState::HandedOff | DeliveryState::Unconfirmed | DeliveryState::Acked => None,
+    };
+    deliver_one(
+        ctx,
+        team,
+        message,
+        recipient,
+        before,
+        attempts,
+        bump.as_ref(),
+    )
+}
+
+/// Counts one more attempt for `row` and writes `delivery.resent`, in a
+/// transaction that first checks the team is still open. Returns the new
+/// attempt number.
+fn count_attempt(
+    ctx: &mut Ctx<'_>,
+    actor: &Actor,
+    message: &Message,
+    row: &DeliveryRecord,
+) -> Result<u32, SendError> {
+    let recipient = &row.delivery.recipient;
     let now = ctx.clock.now();
     // The team can start closing after the first check, so the attempt is
     // counted only inside a transaction that sees it still open.
@@ -159,25 +215,7 @@ fn retry(
         );
         return Err(Refusal::TeamClosed.into());
     };
-    // A reprompt that failed cleanly was undone, so its next try starts the
-    // generation again. One that may have arrived kept its generation. One
-    // left `pending` by a dead sender kept a bump that nothing has undone.
-    // The bump comes after the attempt is counted, so a failed count leaves
-    // the generation alone.
-    let bump = match before {
-        DeliveryState::Undelivered => bump_again(ctx, message, recipient)?,
-        DeliveryState::Pending => earlier_bump(ctx, message, recipient)?,
-        DeliveryState::HandedOff | DeliveryState::Unconfirmed | DeliveryState::Acked => None,
-    };
-    deliver_one(
-        ctx,
-        team,
-        message,
-        recipient,
-        before,
-        attempts,
-        bump.as_ref(),
-    )
+    Ok(attempts)
 }
 
 fn team_is_open(ctx: &Ctx<'_>) -> Result<bool, SendError> {

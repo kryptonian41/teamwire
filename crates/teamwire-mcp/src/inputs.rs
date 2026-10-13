@@ -13,9 +13,10 @@ use serde::Deserialize;
 pub(crate) struct SendInput {
     /// The team. The lead names it; a member's own team is implied.
     pub(crate) team: Option<String>,
-    /// Roles, or "lead".
+    /// Roles or "lead" in this team; "role@team" or "lead@team" in another team.
     pub(crate) to: Vec<String>,
-    /// notice, finding, question, answer; the lead may also send reprompt and note.
+    /// notice, finding, question, answer; the lead may also send reprompt and note,
+    /// to its own team only. A lead sends no notice.
     #[serde(rename = "type")]
     pub(crate) kind: String,
     pub(crate) text: String,
@@ -87,6 +88,16 @@ pub(crate) struct TeamOnly {
 }
 
 #[derive(Deserialize, JsonSchema)]
+pub(crate) struct MembersInput {
+    /// The team. The lead names it; a member's own team is implied. Read from
+    /// the raw arguments before the store opens; the field puts it in the schema.
+    #[serde(rename = "team")]
+    pub(crate) _team: Option<String>,
+    /// Another team whose members to list, such as one found with `team_teams`.
+    pub(crate) of: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
 #[expect(
     dead_code,
     reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
@@ -110,7 +121,8 @@ pub(crate) fn input_schema(tool: &str) -> Option<JsonObject> {
         "team_inbox" => of::<InboxInput>(),
         "team_ack" => of::<AckInput>(),
         "team_done" => of::<DoneInput>(),
-        "team_status" | "team_members" => of::<TeamOnly>(),
+        "team_status" | "team_teams" => of::<TeamOnly>(),
+        "team_members" => of::<MembersInput>(),
         "team_log" => of::<LogInput>(),
         _ => None,
     }

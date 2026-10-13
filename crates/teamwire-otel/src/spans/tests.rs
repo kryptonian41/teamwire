@@ -268,3 +268,39 @@ fn a_verify_span_starts_when_the_check_started() {
         Some(&Attr::Str("PASS".to_owned()))
     );
 }
+
+#[test]
+fn a_delivery_to_another_team_is_its_own_recipient_and_never_the_lead() {
+    let mut log = Log(Vec::new());
+    let m = Ulid::from_parts(at(10), 98);
+    log.add(
+        10,
+        EventType::MessageSent,
+        Some("api"),
+        Some(m),
+        json!({"type": "finding", "recipients": ["lead", "db@beta"]}),
+    );
+    let lead = log.add(
+        12,
+        EventType::DeliveryHandedOff,
+        None,
+        Some(m),
+        json!({"to": "lead", "route": "host_typing", "attempts": 1}),
+    );
+    assert_eq!(log.spans(&lead).len(), 1);
+    // Neither row has a role; only `to` tells them apart.
+    let remote = log.add(
+        13,
+        EventType::DeliveryHandedOff,
+        None,
+        Some(m),
+        json!({"to": "db@beta", "route": "host_typing", "attempts": 1}),
+    );
+    let spans = log.spans(&remote);
+    let names: Vec<&str> = spans.iter().map(|s| s.name).collect();
+    assert_eq!(names, ["teamwire.delivery", "teamwire.message"]);
+    assert_eq!(
+        attr(&spans[0], "teamwire.to"),
+        Some(&Attr::Str("db@beta".to_owned()))
+    );
+}

@@ -5,8 +5,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use teamwire_core::{
-    Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
-    Ulid,
+    Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Timestamp, Ulid,
 };
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
@@ -42,7 +41,7 @@ pub(crate) struct MemberInfo {
 pub(crate) struct Question {
     pub message: Ulid,
     pub display_id: String,
-    pub sender: Role,
+    pub sender: Actor,
     pub state: DeliveryState,
 }
 
@@ -94,11 +93,13 @@ fn questions(tx: &ReadTx<'_>) -> Result<Vec<Question>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        if let (MessageType::Question, Actor::Member(sender)) = (message.kind, &message.sender) {
+        // A question from a member of this team or from any agent of
+        // another team waits on this lead; the lead's own never does.
+        if message.kind == MessageType::Question && message.sender != Actor::Lead {
             found.push(Question {
                 message: message.ulid,
                 display_id: message.display_id.to_string(),
-                sender: sender.clone(),
+                sender: message.sender.clone(),
                 state: d.state,
             });
         }

@@ -12,7 +12,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
 | The lead | `teamwire install` registers `teamwire mcp --lead` as a user MCP server through `claude mcp` (ADR 0012). Nothing else registers it. | The harness session id in the server's environment, checked against the team's recorded lead session per call. The `team` argument picks the team. |
 
-Every server lists all eight tools. The descriptions of `team_inbox`,
+Every server lists all nine tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's
 session knows not to call them.
 
@@ -33,8 +33,10 @@ refused or failed call returns `isError: true` with:
 | --- | --- | --- |
 | `refused.identity` | Token or lead session does not match, or the team has no database. A closed team has none, because close deletes its state after archiving it; the message then says so, and is the same for every team. For the lead, the message also says when no harness session id reached the server at all | no |
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
-| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker) | no |
+| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
 | `refused.unknown_recipient` | No such member | no |
+| `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
+| `refused.recipient_team_closed` | The recipient's team is closing or closed | no |
 | `refused.removed_recipient` | The member was removed | no |
 | `refused.self` | Sending to yourself | no |
 | `refused.empty` | Empty text | no |
@@ -59,16 +61,17 @@ message, and the result reports each recipient's state.
 
 ## `team_send`
 
-Send one message. Members may send `notice`, `finding`, `question`, `answer`
-under the rules of MSG-1..MSG-3 and MSG-9. The lead may also send `reprompt`
-and `note`.
+Send one message, to agents of this team or of another (MSG-20). Every
+agent that talks may send `finding`, `question` and `answer`, and a member
+also `notice`, under the rules of MSG-1..MSG-3 and MSG-9. The lead may also
+send `reprompt` and `note` to its own team's members.
 
 Input:
 
 ```json
 {
   "team": "tw",                    // lead only; members use their own team
-  "to": ["harness"],               // roles, or "lead"
+  "to": ["harness", "db@billing"],  // roles or "lead"; another team's as role@team or lead@team
   "type": "finding",
   "text": "…",
   "commit": "abc1234",             // required for notice
@@ -107,6 +110,8 @@ resendable recipient).
 Output: the same shape as `team_send`, for the same message id, with each
 retried recipient's new state and `attempts`. Recipients that are
 `handed_off` or `acked` are listed as `skipped`. No new message is created.
+For a recipient in another team, the resend also writes that team's copy if
+it is missing, and leaves a line that team already handed off untyped.
 
 ## `team_inbox`
 
@@ -170,7 +175,9 @@ session id is what a member would need to speak as the lead.
 
 ## `team_members`
 
-Who is on the team. Output per member: `role`, `title`, `kind`,
+Who is on the team. Input: `{"of": "billing"}` (optional) reads another
+team's roster instead; the caller is still proven in its own team. Output
+per member: `role`, `title`, `kind`,
 `lifecycle`, `generation`, `owns`, `accepts_from_members`, and
 `can_be_typed_to` (whether it can be woken by typing). No places, tokens or
 session ids.
@@ -179,9 +186,10 @@ session ids.
   or `removed`. A member that has finished is still `started`. Whether a
   member is working, quiet or done is the `state` of `team_status`.
 - `accepts_from_members` lists the types this member accepts from another
-  member. Every member also accepts the lead's `note` and `reprompt`, which
-  the list leaves out. A reviewer or closer has an empty list, because it
-  accepts messages only from the lead.
+  member, of its own team or another. Every member also accepts its own
+  lead's `note` and `reprompt`, which the list leaves out. A reviewer or
+  closer has an empty list, because it accepts messages only from its own
+  lead.
 
 ## `team_log`
 
@@ -189,6 +197,23 @@ Message log. Input: `{"role": "specmsg", "limit": 50}` (both optional).
 Output per row: `display_id`, `time`, `type`, `from`, `to`, `excerpt` (300
 chars, sanitised), and each recipient's delivery state. Members see only
 messages they sent or received; the lead sees all.
+
+## `team_teams`
+
+Every team on this machine (MSG-21), read-only, for finding agents of other
+teams to message. Input: `{"team": "tw"}` for the lead; members get their
+own team, in which they are proven. Output:
+
+```json
+{"teams": [
+  {"name": "billing", "title": "Billing", "state": "open",
+   "members": [ /* each as in team_members */ ]}
+]}
+```
+
+Address an agent listed here as `<role>@<name>`, and its lead as
+`lead@<name>`. Only an `open` team takes messages. A team whose store cannot
+be read is left out of the list.
 
 ## What is not an MCP tool
 

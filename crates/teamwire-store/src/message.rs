@@ -175,9 +175,10 @@ impl Tx<'_> {
                 [ulid.to_string(), r.as_str().to_owned()],
             )?;
         }
-        let sender_role = match &new.sender {
-            Actor::Lead => None,
-            Actor::Member(role) => Some(role),
+        let (sender_role, sender_kind) = match &new.sender {
+            Actor::Lead => (None, "lead"),
+            Actor::Member(role) => (Some(role), "member"),
+            Actor::Other(_) => (None, "other_team"),
         };
         self.record_event(
             at,
@@ -186,7 +187,7 @@ impl Tx<'_> {
             Some(&ulid),
             &json!({
                 "type": new.kind.as_str(),
-                "sender_kind": if sender_role.is_some() { "member" } else { "lead" },
+                "sender_kind": sender_kind,
                 "recipients": recipients.iter().map(|r| r.as_str()).collect::<Vec<_>>(),
                 "chars": new.body.chars().count(),
             }),

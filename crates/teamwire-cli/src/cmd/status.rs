@@ -4,7 +4,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
-use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError, database_path};
+use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::StatusView;
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
@@ -33,21 +33,6 @@ fn view_of(
         config: &config,
     };
     Ok(teamwire_watch::status_with(&ctx, role))
-}
-
-/// Every directory under `<home>/teams` that names a valid team and holds a
-/// database. A directory without one is not a team to report on.
-fn team_names(home: &Path) -> Vec<TeamName> {
-    let Ok(entries) = std::fs::read_dir(home.join("teams")) else {
-        return Vec::new();
-    };
-    let mut names: Vec<TeamName> = entries
-        .filter_map(Result::ok)
-        .filter_map(|e| e.file_name().to_str().and_then(|n| TeamName::parse(n).ok()))
-        .filter(|name| database_path(home, name).is_file())
-        .collect();
-    names.sort_by(|a, b| a.as_str().cmp(b.as_str()));
-    names
 }
 
 fn liveness_text(liveness: Liveness) -> String {
@@ -254,8 +239,12 @@ fn unreadable(view: &StatusView) -> bool {
 }
 
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
+    let names = match teamwire_store::team_names(home) {
+        Ok(names) => names,
+        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+    };
     let mut views = Vec::new();
-    for name in team_names(home) {
+    for name in names {
         let view = view_of(home, &name, None, wiring).unwrap_or_else(|e| StatusView {
             team: Some(name.clone()),
             errors: vec![e.to_string()],
