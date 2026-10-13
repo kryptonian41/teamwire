@@ -59,3 +59,27 @@ test("filters the log to one sender and recipient pair", () => {
   expect(filterByPair(L.messages, "ledger", "web").map((m) => m.display_id)).toEqual(["m004"]);
   expect(filterByPair(L.messages, "web", "ledger")).toEqual([]);
 });
+
+test("labels sit outside their node, and 18 members keep their circles apart", () => {
+  const roles = Array.from({ length: 18 }, (_, i) => `role${i}`);
+  const lay = layoutFlow(buildFlow(L, roles));
+  for (const n of lay.nodes) {
+    expect(Math.hypot(n.label.x - n.x, n.label.y - n.y)).toBeGreaterThan(lay.r);
+  }
+  for (const a of lay.nodes) {
+    for (const b of lay.nodes) {
+      if (a !== b) expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThan(2 * lay.r + 8);
+    }
+  }
+  expect(lay.r).toBeLessThan(22);
+});
+
+test("a label never lands on another node", () => {
+  const roles = Array.from({ length: 18 }, (_, i) => `role${i}`);
+  const lay = layoutFlow(buildFlow(L, roles));
+  for (const n of lay.nodes) {
+    for (const o of lay.nodes) {
+      if (o !== n) expect(Math.hypot(n.label.x - o.x, n.label.y - o.y)).toBeGreaterThan(lay.r);
+    }
+  }
+});

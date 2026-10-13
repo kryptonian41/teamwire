@@ -68,44 +68,65 @@ export function buildFlow(log: LogView, roles: readonly string[] = []): FlowGrap
 export interface Placed extends FlowNode {
   x: number;
   y: number;
+  /** Where the label goes: outside the circle, along the line from the centre. */
+  label: { x: number; y: number; anchor: "start" | "middle" | "end" };
 }
 
 export interface Layout {
   width: number;
   height: number;
+  /** Radius of every node circle. */
+  r: number;
   nodes: Placed[];
 }
 
 const RAD = Math.PI / 180;
+const LABEL_GAP = 11;
 
 /**
  * The lead sits in the centre, members on a circle around it, and external
- * parties on an arc outside that circle, across the top.
+ * parties on an arc outside that circle, across the top. The circle grows
+ * and the nodes shrink as members are added, so that neighbours stay apart.
  */
-export function layoutFlow(graph: FlowGraph, width = 640, height = 520): Layout {
-  const cx = width / 2;
-  const cy = height / 2;
+export function layoutFlow(graph: FlowGraph, minWidth = 640, minHeight = 520): Layout {
   const members = graph.nodes.filter((n) => n.kind === "member");
   const externals = graph.nodes.filter((n) => n.kind === "external");
-  const inner = Math.min(width, height) * 0.27;
-  const outer = Math.min(width, height) * 0.44;
+  const r = members.length > 10 ? 12 : 22;
+  // Each member needs room for its circle and the label beside it.
+  const inner = Math.max(minHeight * 0.27, (members.length * (2 * r + 42)) / (2 * Math.PI));
+  const outer = inner + (externals.length > 0 ? r + 95 : 0);
+  const reach = Math.max(inner, outer) + r + 95;
+  const width = Math.max(minWidth, 2 * reach);
+  const height = Math.max(minHeight, 2 * reach);
+  const cx = width / 2;
+  const cy = height / 2;
+
+  const place = (n: FlowNode, x: number, y: number): Placed => {
+    const dx = x - cx;
+    const dy = y - cy;
+    const len = Math.hypot(dx, dy);
+    // The lead has no outward direction, so its label goes below.
+    const ux = len === 0 ? 0 : dx / len;
+    const uy = len === 0 ? 1 : dy / len;
+    const d = r + LABEL_GAP;
+    const anchor = ux > 0.35 ? "start" : ux < -0.35 ? "end" : "middle";
+    // Text is drawn from its baseline, so labels below a node sit a little lower.
+    const ly = y + uy * d + (uy > 0.35 ? 4 : uy < -0.35 ? 0 : 4);
+    return { ...n, x, y, label: { x: x + ux * d, y: ly, anchor } };
+  };
 
   const placed: Placed[] = [];
-  for (const n of graph.nodes) {
-    if (n.kind === "lead") placed.push({ ...n, x: cx, y: cy });
-  }
+  for (const n of graph.nodes) if (n.kind === "lead") placed.push(place(n, cx, cy));
   members.forEach((n, i) => {
     // Start at the bottom so the top stays free for external parties.
     const a = (90 + (360 * i) / members.length) * RAD;
-    placed.push({ ...n, x: cx + inner * Math.cos(a), y: cy + inner * Math.sin(a) });
+    placed.push(place(n, cx + inner * Math.cos(a), cy + inner * Math.sin(a)));
   });
   externals.forEach((n, i) => {
-    const from = -150;
-    const to = -30;
-    const deg = externals.length === 1 ? -90 : from + ((to - from) * i) / (externals.length - 1);
-    placed.push({ ...n, x: cx + outer * Math.cos(deg * RAD), y: cy + outer * Math.sin(deg * RAD) });
+    const deg = externals.length === 1 ? -90 : -150 + (120 * i) / (externals.length - 1);
+    placed.push(place(n, cx + outer * Math.cos(deg * RAD), cy + outer * Math.sin(deg * RAD)));
   });
-  return { width, height, nodes: placed };
+  return { width, height, r, nodes: placed };
 }
 
 /** The messages sent on one edge: from `from` to a list that includes `to`. */

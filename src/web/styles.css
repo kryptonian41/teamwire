@@ -181,7 +181,7 @@ pre.text {
 /* Flow diagram */
 .flow { width: 100%; max-width: 720px; height: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .flow .node circle { stroke-width: 2; }
-.flow .node text { fill: var(--text); font-size: 12px; text-anchor: middle; pointer-events: none; }
+.flow .node text { fill: var(--text); font-size: 11px; pointer-events: none; }
 .flow .edge { fill: none; cursor: pointer; }
 .flow .edge:hover, .flow .edge.selected { stroke-opacity: 1; }
 .flow .node.cat-done circle { stroke: var(--c-done); fill: var(--bg-done); }

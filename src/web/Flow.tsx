@@ -3,8 +3,6 @@ import { DELIVERY_CATEGORY } from "./components.tsx";
 import { layoutFlow, type FlowGraph, type Placed } from "./model/flow.ts";
 import { DELIVERY_ORDER } from "./model/flow.ts";
 
-const R = 24;
-
 export interface Selected {
   from: string;
   to: string;
@@ -32,7 +30,7 @@ export function Flow({
     <>
       <svg className="flow" viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label="Message flow between members">
         <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="userSpaceOnUse" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M0 0L10 5L0 10z" fill="context-stroke" />
           </marker>
         </defs>
@@ -41,8 +39,8 @@ export function Flow({
           const b = at.get(e.to);
           if (!a || !b || a === b) return null;
           const both = pairs.has(`${e.to}>${e.from}`);
-          const d = edgePath(a, b, both);
-          const width = 1.5 + (4.5 * e.count) / maxCount;
+          const d = edgePath(a, b, both, layout.r);
+          const width = 1 + (3 * e.count) / maxCount;
           const isSel = selected?.from === e.from && selected?.to === e.to;
           return (
             <path
@@ -66,9 +64,9 @@ export function Flow({
               {n.id} ({n.kind === "external" ? "other team" : n.kind}
               {categories.has(n.id) ? `, ${categories.get(n.id)}` : ""})
             </title>
-            <circle cx={n.x} cy={n.y} r={R} />
-            <text x={n.x} y={n.y + R + 14}>
-              {n.id.length > 16 ? `${n.id.slice(0, 15)}…` : n.id}
+            <circle cx={n.x} cy={n.y} r={layout.r} />
+            <text x={n.label.x} y={n.label.y} textAnchor={n.label.anchor}>
+              {n.id.length > 18 ? `${n.id.slice(0, 17)}…` : n.id}
             </text>
           </g>
         ))}
@@ -86,7 +84,7 @@ export function Flow({
 }
 
 /** A line from the edge of one circle to the edge of the other; curved when both directions exist. */
-function edgePath(a: Placed, b: Placed, curved: boolean): string {
+function edgePath(a: Placed, b: Placed, curved: boolean, R: number): string {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const len = Math.hypot(dx, dy) || 1;
@@ -98,7 +96,7 @@ function edgePath(a: Placed, b: Placed, curved: boolean): string {
   const ny = ux * off;
   const x1 = a.x + ux * R + nx;
   const y1 = a.y + uy * R + ny;
-  const x2 = b.x - ux * (R + 4) + nx;
-  const y2 = b.y - uy * (R + 4) + ny;
+  const x2 = b.x - ux * (R + 2) + nx;
+  const y2 = b.y - uy * (R + 2) + ny;
   return `M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}`;
 }
