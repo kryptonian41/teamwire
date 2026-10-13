@@ -2,8 +2,13 @@
 
 A read-only web dashboard for teamwire teams. A Bun server runs the
 `teamwire` CLI with `--json`, and a React page shows every team, its
-members, their messages and closed teams' archives. teamwire itself lives in
-`~/Projects/teamwire`. Its CLI reference is `docs/api/cli.md` there.
+members, their messages and closed teams' archives. This folder sits inside
+the teamwire repository, and teamwire's Rust code is in the parent folder.
+The CLI reference is `../docs/api/cli.md`. When a teamwire change alters the
+`--json` output, change `src/shared/teamwire.ts` in the same commit.
+
+Run every command below from `ui/`. The repository's root `AGENTS.md`
+covers the Rust code. Its cargo commands and gates do not cover this folder.
 
 ## Layout
 

@@ -126,6 +126,7 @@ endpoint. See [docs/metrics.md](docs/metrics.md).
 | [docs/build-plan.md](docs/build-plan.md) | The build as tickets in dependency waves |
 | [CONTEXT.md](CONTEXT.md) | The glossary of terms that the docs, errors and commands share |
 | [examples/](examples/) | Team presets, the lead's skill, and the lead's MCP config |
+| [ui/](ui/) | A read-only web dashboard for teams, built with Bun and React. Start it with `cd ui && bun install && bun run start` |
 
 ## Development
 

@@ -55,6 +55,10 @@ runs the user's real agent teams. So:
 - No mod.rs. Split a source file past 400 lines; tidy fails past 800.
 - Unit tests at the bottom of the file; integration tests in crates/<crate>/tests/.
 - Extend the nearest existing helper instead of adding a parallel one.
+- ui/ is a separate Bun and TypeScript project, the read-only dashboard.
+  Its rules and commands are in ui/AGENTS.md. Its zod schemas copy the
+  CLI's --json output, so a change to that output updates
+  ui/src/shared/teamwire.ts in the same commit.
 
 ## Comments
 

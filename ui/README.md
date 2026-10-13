@@ -1,6 +1,6 @@
 # teamwire-ui
 
-A read-only web dashboard for [teamwire](../teamwire) agent teams.
+A read-only web dashboard for [teamwire](..) agent teams.
 
 ```bash
 bun install
