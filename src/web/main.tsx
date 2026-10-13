@@ -1,5 +1,6 @@
-// Placeholder. The web member replaces this with the app.
 import { createRoot } from "react-dom/client";
+import { App } from "./App.tsx";
+import { selectClient } from "./api.ts";
 
 const root = document.getElementById("root");
-if (root) createRoot(root).render(<p>teamwire-ui: the page is not built yet.</p>);
+if (root) createRoot(root).render(<App client={selectClient()} />);
