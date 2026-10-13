@@ -6,6 +6,8 @@ import { joinAll } from "./model/teams.ts";
 import { href, parseRoute, type Route } from "./model/route.ts";
 import type { TeamModel } from "./model/teams.ts";
 import { Overview } from "./Overview.tsx";
+import { TeamDetail } from "./TeamDetail.tsx";
+import type { Snapshot } from "../shared/api.ts";
 
 export function App({ client }: { client: ApiClient }) {
   const hash = useHash();
@@ -43,16 +45,18 @@ export function App({ client }: { client: ApiClient }) {
         )}
       </div>
       <main>
-        <Routes route={route} teams={teams} loaded={snapshot !== null} />
+        <Routes route={route} teams={teams} snapshot={snapshot} />
       </main>
     </ClientContext.Provider>
   );
 }
 
-function Routes({ route, teams, loaded }: { route: Route; teams: TeamModel[]; loaded: boolean }) {
+function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; snapshot: Snapshot | null }) {
   switch (route.page) {
     case "overview":
-      return <Overview teams={teams} loaded={loaded} />;
+      return <Overview teams={teams} loaded={snapshot !== null} />;
+    case "team":
+      return <TeamDetail team={teams.find((t) => t.name === route.team)} member={route.member} snapshot={snapshot} />;
     default:
       return <p className="note">Views arrive in the next commits.</p>;
   }

@@ -107,3 +107,8 @@ export function layoutFlow(graph: FlowGraph, width = 640, height = 520): Layout 
   });
   return { width, height, nodes: placed };
 }
+
+/** The messages sent on one edge: from `from` to a list that includes `to`. */
+export function filterByPair<M extends { from: string; to: string[] }>(messages: readonly M[], from: string, to: string): M[] {
+  return messages.filter((m) => m.from === from && m.to.includes(to));
+}

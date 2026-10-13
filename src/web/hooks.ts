@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { ApiClient, Connection } from "./api.ts";
 import { ApiError } from "./api.ts";
@@ -44,12 +44,18 @@ export interface Loaded<T> {
   loading: boolean;
 }
 
-/** Runs `load` when `key` changes. A newer key drops the result of an older one. */
-export function useLoad<T>(load: () => Promise<T>, key: string): Loaded<T> {
+/**
+ * Runs `load` when `key` changes and shows the loading state. When only
+ * `refresh` changes, it loads again and keeps the data on screen meanwhile.
+ * A newer call drops the result of an older one.
+ */
+export function useLoad<T>(load: () => Promise<T>, key: string, refresh = ""): Loaded<T> {
   const [state, setState] = useState<Loaded<T>>({ data: null, error: null, loading: true });
+  const lastKey = useRef<string | null>(null);
   useEffect(() => {
     let live = true;
-    setState({ data: null, error: null, loading: true });
+    if (lastKey.current !== key) setState({ data: null, error: null, loading: true });
+    lastKey.current = key;
     load().then(
       (data) => live && setState({ data, error: null, loading: false }),
       (err: unknown) =>
@@ -63,8 +69,7 @@ export function useLoad<T>(load: () => Promise<T>, key: string): Loaded<T> {
     return () => {
       live = false;
     };
-    // `key` stands for everything `load` closes over.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+    // `key` and `refresh` stand for everything `load` closes over.
+  }, [key, refresh]);
   return state;
 }

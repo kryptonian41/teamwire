@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { LogView } from "../../shared/teamwire.ts";
 import log from "../../../fixtures/log.json";
-import { buildFlow, layoutFlow, worseOf } from "./flow.ts";
+import { buildFlow, filterByPair, layoutFlow, worseOf } from "./flow.ts";
 
 const L = LogView.parse(log);
 
@@ -51,4 +51,11 @@ test("layout puts the lead at the centre and keeps everything inside the box", (
     expect(n.y).toBeGreaterThan(0);
     expect(n.y).toBeLessThan(lay.height);
   }
+});
+
+test("filters the log to one sender and recipient pair", () => {
+  const got = filterByPair(L.messages, "lead", "web");
+  expect(got.map((m) => m.display_id)).toEqual(["m002", "m008"]);
+  expect(filterByPair(L.messages, "ledger", "web").map((m) => m.display_id)).toEqual(["m004"]);
+  expect(filterByPair(L.messages, "web", "ledger")).toEqual([]);
 });
