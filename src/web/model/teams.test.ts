@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView } from "../../shared/teamwire.ts";
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, joinAll, joinTeam, sortTeams, summarizeMetrics } from "./teams.ts";
+import { countByCategory, formatAge, joinAll, joinTeam, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -62,4 +62,10 @@ test("groups metrics by team label", () => {
   const pay = sum.get("payments")!;
   expect(pay.leadWakeups).toBe(4);
   expect(pay.durations["teamwire.member.run.duration"]).toEqual({ mean: 1820.5, count: 1 });
+});
+
+test("describes the lead's liveness", () => {
+  expect(livenessInfo(null).label).toBe("no lead");
+  expect(livenessInfo({ session_id: null, liveness: "dead" })).toEqual({ cls: "dead", label: "lead dead" });
+  expect(livenessInfo({ session_id: null, liveness: { alive: "working" } }).cls).toBe("alive-working");
 });

@@ -3,7 +3,9 @@ import type { ApiClient } from "./api.ts";
 import { ClientContext, useHash, useNow, useSnapshot } from "./hooks.ts";
 import { bannerFor } from "./model/banner.ts";
 import { joinAll } from "./model/teams.ts";
-import { href, parseRoute } from "./model/route.ts";
+import { href, parseRoute, type Route } from "./model/route.ts";
+import type { TeamModel } from "./model/teams.ts";
+import { Overview } from "./Overview.tsx";
 
 export function App({ client }: { client: ApiClient }) {
   const hash = useHash();
@@ -47,9 +49,11 @@ export function App({ client }: { client: ApiClient }) {
   );
 }
 
-import type { Route } from "./model/route.ts";
-import type { TeamModel } from "./model/teams.ts";
-
-function Routes(_: { route: Route; teams: TeamModel[]; loaded: boolean }) {
-  return <p className="note">Views arrive in the next commits.</p>;
+function Routes({ route, teams, loaded }: { route: Route; teams: TeamModel[]; loaded: boolean }) {
+  switch (route.page) {
+    case "overview":
+      return <Overview teams={teams} loaded={loaded} />;
+    default:
+      return <p className="note">Views arrive in the next commits.</p>;
+  }
 }

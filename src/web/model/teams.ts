@@ -164,3 +164,11 @@ export function summarizeMetrics(metrics: readonly Metric[]): Map<string, TeamMe
   }
   return out;
 }
+
+/** The lead's liveness as a CSS class suffix and a label. */
+export function livenessInfo(lead: StatusView["lead"]): { cls: string; label: string } {
+  if (lead === null) return { cls: "unknown", label: "no lead" };
+  const l = lead.liveness;
+  if (typeof l === "string") return { cls: l, label: `lead ${l}` };
+  return { cls: `alive-${l.alive}`, label: `lead ${l.alive}` };
+}
