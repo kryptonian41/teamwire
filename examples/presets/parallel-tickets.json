@@ -8,7 +8,7 @@
     "Every worktree member needs the repository's setup command in the `setup` field. Launch runs it before the agent starts and refuses the member if it fails. Without it a member has no dependencies installed and spends its time on a broken checkout.",
     "Write each brief as a file and pass it with task_file. Inline task strings are for one-paragraph jobs.",
     "Tell members which tests to run and which gates to skip. You run the full gate yourself on each branch before its pull request.",
-    "Route implementers to sonnet and keep the lead on opus for planning and review.",
+    "Route implementers to sonnet at medium effort and keep the lead on opus for planning and review. Raise one implementer's effort only when its ticket is hard to reason about.",
     "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest with `teamwire launch --add`.",
     "One coherent change per branch. Agent pull requests succeed less often as they grow. A ticket that touches more than one module is two members, or one member with two units.",
@@ -27,6 +27,7 @@
       "branch": "myteam/ticket-a",
       "base": "main",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [
@@ -43,6 +44,7 @@
       "branch": "myteam/ticket-b",
       "base": "main",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [

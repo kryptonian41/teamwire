@@ -31,6 +31,7 @@
       "branch": "myteam/ticket-a",
       "base": "main",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [
@@ -50,6 +51,7 @@
       "branch": "myteam/ticket-b",
       "base": "main",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [
@@ -71,6 +73,7 @@
       "branch": "myteam/ticket-c",
       "base": "myteam/ticket-a",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [

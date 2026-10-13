@@ -24,6 +24,7 @@
       "branch": "myteam/logic",
       "base": "myteam/contract-base",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 1800,
       "check": "CHANGEME targeted test command",
       "owns": [
@@ -40,6 +41,7 @@
       "branch": "myteam/ui",
       "base": "myteam/contract-base",
       "model": "sonnet",
+      "effort": "medium",
       "deadline_s": 1800,
       "check": "CHANGEME targeted test command",
       "owns": [

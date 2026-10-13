@@ -141,6 +141,17 @@ shape's rules and a spec to fill in.
 Reviewers, closers and your own planning on `opus`. Set `model` per member.
 This is the largest cost lever in a run.
 
+**Route effort per member too.** Set `effort` beside `model`. Implementers
+run on `medium`, investigators on `high`, and reviewers and closers on
+`xhigh`. Effort applies to every turn of the member's session, and an
+implementer spends most turns on routine edits and test runs, so extra
+thinking there costs much and buys little. A reviewer or closer takes few
+turns, each one judgement over other agents' work, and a missed bug costs more
+than the thinking. Raise one member to `max` only when its task is hard to
+reason about, such as a race or a data-loss path, and never as a default:
+slower turns use up its `deadline_s`. Higher effort does not rescue a member
+that failed twice. Rewrite the brief instead.
+
 **Cap retries at two.** A member that failed the same task twice needs a
 better brief, not a third attempt. Rewrite the task yourself.
 
@@ -205,12 +216,12 @@ takes over, so results reach it and not the old session.
 Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets to restate it.
 
-| Kind | Does | May not | Mode | Model |
-| --- | --- | --- | --- | --- |
-| `implementer` | Builds what its brief asks, with tests, and commits after each unit. Logs one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration. Fix a failing check more than twice. | `worktree` (required) | `sonnet` |
-| `reviewer` | Reads a finished diff and reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. | Edit or commit anything. Report style or naming. | `pane` | `opus` |
-| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` |
-| `closer` | Runs every check the team claimed, names contradictions, grades each finding and names its owner, and writes one integrated report. | Edit source, commit, or message any member. | `pane` | `opus` |
+| Kind | Does | May not | Mode | Model | Effort |
+| --- | --- | --- | --- | --- | --- |
+| `implementer` | Builds what its brief asks, with tests, and commits after each unit. Logs one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration. Fix a failing check more than twice. | `worktree` (required) | `sonnet` | `medium` |
+| `reviewer` | Reads a finished diff and reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. | Edit or commit anything. Report style or naming. | `pane` | `opus` | `xhigh` |
+| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` | `high` |
+| `closer` | Runs every check the team claimed, names contradictions, grades each finding and names its owner, and writes one integrated report. | Edit source, commit, or message any member. | `pane` | `opus` | `xhigh` |
 
 Without `kind`, a worktree member is an implementer and a pane member is an
 investigator. Launch refuses an implementer in `pane` mode.
