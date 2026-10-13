@@ -1,0 +1,12 @@
+{
+  "messages": [
+    { "display_id": "m001", "time": "2026-10-13T06:40:00.000Z", "type": "reprompt", "from": "lead", "to": ["ledger"], "excerpt": "Second pass: add the REFUND_PARTIAL entry type.", "deliveries": [ { "to": "ledger", "state": "acked", "attempts": 1 } ] },
+    { "display_id": "m002", "time": "2026-10-13T06:41:10.010Z", "type": "note", "from": "lead", "to": ["api", "ledger", "web", "emails"], "excerpt": "Shared context is in docs/refunds.md", "deliveries": [ { "to": "api", "state": "acked", "attempts": 1 }, { "to": "ledger", "state": "acked", "attempts": 1 }, { "to": "web", "state": "handed_off", "attempts": 1 }, { "to": "emails", "state": "acked", "attempts": 2 } ] },
+    { "display_id": "m003", "time": "2026-10-13T06:50:02.333Z", "type": "finding", "from": "api@billing", "to": ["api"], "excerpt": "billing moved the invoices table to schema v2", "deliveries": [ { "to": "api", "state": "acked", "attempts": 1 } ] },
+    { "display_id": "m004", "time": "2026-10-13T06:58:30.500Z", "type": "notice", "from": "ledger", "to": ["api", "web"], "excerpt": "Ledger entry type REFUND_PARTIAL committed in 4f1c2ab", "deliveries": [ { "to": "api", "state": "acked", "attempts": 1 }, { "to": "web", "state": "pending", "attempts": 0 } ] },
+    { "display_id": "m005", "time": "2026-10-13T07:05:44.001Z", "type": "finding", "from": "fraud", "to": ["api"], "excerpt": "src/refund/rules.ts:88 lets a refund exceed the captured amount when currency differs", "deliveries": [ { "to": "api", "state": "undelivered", "attempts": 3 } ] },
+    { "display_id": "m006", "time": "2026-10-13T07:12:09.120Z", "type": "question", "from": "web", "to": ["lead"], "excerpt": "Should the refund screen show partial refunds as a separate row?", "deliveries": [ { "to": "lead", "state": "unconfirmed", "attempts": 1 } ] },
+    { "display_id": "m007", "time": "2026-10-13T07:13:00.000Z", "type": "question", "from": "api", "to": ["db@billing"], "excerpt": "Is invoices.currency nullable in schema v2?", "deliveries": [ { "to": "db@billing", "state": "handed_off", "attempts": 1 } ] },
+    { "display_id": "m008", "time": "2026-10-13T07:14:30.000Z", "type": "answer", "from": "lead", "to": ["web"], "excerpt": "Yes, one row per partial refund.", "deliveries": [ { "to": "web", "state": "acked", "attempts": 1 } ] }
+  ]
+}

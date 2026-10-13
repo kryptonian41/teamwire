@@ -1,0 +1,15 @@
+{
+  "metrics": [
+    { "name": "teamwire.completions", "unit": "{completion}", "labels": [["team", "payments"], ["kind", "implementer"], ["status", "done"]], "value": 1 },
+    { "name": "teamwire.messages.sent", "unit": "{message}", "labels": [["team", "payments"], ["type", "finding"]], "value": 2 },
+    { "name": "teamwire.lead.wakeups", "unit": "{wakeup}", "labels": [["team", "payments"]], "value": 4 },
+    { "name": "teamwire.member.run.duration", "unit": "s", "labels": [["team", "payments"], ["kind", "implementer"]], "value": 1820.5 },
+    { "name": "teamwire.member.run.duration.count", "unit": "{observation}", "labels": [["team", "payments"], ["kind", "implementer"]], "value": 1 },
+    { "name": "teamwire.completions", "unit": "{completion}", "labels": [["team", "ads"], ["kind", "reviewer"], ["status", "done"]], "value": 3 },
+    { "name": "teamwire.completions", "unit": "{completion}", "labels": [["team", "ads"], ["kind", "implementer"], ["status", "failed"]], "value": 1 },
+    { "name": "teamwire.messages.sent", "unit": "{message}", "labels": [["team", "ads"], ["type", "note"]], "value": 5 },
+    { "name": "teamwire.lead.wakeups", "unit": "{wakeup}", "labels": [["team", "ads"]], "value": 7 },
+    { "name": "teamwire.verify.runs", "unit": "{run}", "labels": [["team", "ads"], ["verdict", "PASS"]], "value": 2 }
+  ],
+  "errors": []
+}
