@@ -1,0 +1,28 @@
+{
+  "teams": [
+    {
+      "name": "payments", "title": "Refund flow rewrite", "state": "open",
+      "members": [
+        { "role": "api", "title": "Build refund endpoint", "kind": "implementer", "lifecycle": "started", "generation": 1, "owns": ["src/refund/"], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "ledger", "title": "Write ledger entries", "kind": "implementer", "lifecycle": "started", "generation": 2, "owns": ["src/ledger/"], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "web", "title": "Build refund screen", "kind": "implementer", "lifecycle": "started", "generation": 1, "owns": ["web/refund/"], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "emails", "title": "Send refund emails", "kind": "implementer", "lifecycle": "started", "generation": 1, "owns": ["src/emails/refund.ts"], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "audit", "title": "Trace refund audit log", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "fraud", "title": "Check fraud rules", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "review", "title": "Review refund diff", "kind": "reviewer", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": [], "can_be_typed_to": true },
+        { "role": "oldapi", "title": "First refund attempt", "kind": "implementer", "lifecycle": "removed", "generation": 1, "owns": ["src/refund/"], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true }
+      ]
+    },
+    {
+      "name": "docs", "title": "Survey API docs gaps", "state": "open",
+      "members": [
+        { "role": "auth", "title": "Survey auth docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "search", "title": "Survey search docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "ingest", "title": "Survey ingest docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "closer", "title": "Grade the survey", "kind": "closer", "lifecycle": "creating", "generation": 1, "owns": [], "accepts_from_members": [], "can_be_typed_to": true },
+        { "role": "extra", "title": "Survey extra docs", "kind": "investigator", "lifecycle": "failed", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
+        { "role": "oddone", "title": "Has a new state word", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true }
+      ]
+    }
+  ]
+}
