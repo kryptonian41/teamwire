@@ -13,8 +13,14 @@ export const DEFAULT_PORT = 7878;
 /** Default time between two polls of `teamwire status --json`. */
 export const DEFAULT_INTERVAL_MS = 5000;
 
-/** Name of the cookie that carries the session token. */
-export const TOKEN_COOKIE = "tw_ui";
+/**
+ * Name of the cookie that carries the session token. Browsers share
+ * cookies across every port of a host (RFC 6265, section 8.5), so the
+ * name carries the port: two dashboards on different ports keep their own
+ * tokens. A cookie for 127.0.0.1 is still sent to any server on any port
+ * of 127.0.0.1. No cookie setting prevents that for plain-HTTP localhost.
+ */
+export const tokenCookie = (port: number) => `tw_ui_${port}`;
 
 export type ProblemCode =
   /** `teamwire` exited non-zero, or could not be started. */
@@ -41,8 +47,14 @@ export interface Problem {
  * `teamwire status --json` and `teamwire teams --json`.
  */
 export interface Snapshot {
-  /** ISO time at which this poll finished. */
+  /** ISO time at which this poll finished, whether it worked or failed. */
   at: string;
+  /**
+   * ISO time at which the last poll that worked finished, or null when no
+   * poll has worked since the server started. When `stale` is true, this
+   * is the age of the data on screen.
+   */
+  lastGoodAt: string | null;
   /** How long the poll took. */
   durationMs: number;
   /** The server's poll interval. */
