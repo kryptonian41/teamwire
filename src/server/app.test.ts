@@ -51,7 +51,7 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
   }) as unknown as Runner;
   const poller = createPoller({ run, intervalMs: 5000 });
   const app = createApp({ security: createSecurity({ token, port }), poller, run, home, ...opts });
-  const get = (path: string, headers: Record<string, string> = { cookie: `tw_ui=${token}` }) =>
+  const get = (path: string, headers: Record<string, string> = { cookie: `tw_ui_7878=${token}` }) =>
     app.handle(new Request(`http://127.0.0.1:${port}${path}`, { headers: { host: `127.0.0.1:${port}`, ...headers } }));
   return { app, poller, get, calls };
 }
@@ -65,11 +65,11 @@ describe("access", () => {
   });
   test("403 with a wrong Host", async () => {
     const { get } = setup();
-    expect((await get("/api/snapshot", { cookie: `tw_ui=${token}`, host: "evil.example:7878" })).status).toBe(403);
+    expect((await get("/api/snapshot", { cookie: `tw_ui_7878=${token}`, host: "evil.example:7878" })).status).toBe(403);
   });
   test("403 with a foreign Origin", async () => {
     const { get } = setup();
-    expect((await get("/api/snapshot", { cookie: `tw_ui=${token}`, origin: "https://evil.example" })).status).toBe(403);
+    expect((await get("/api/snapshot", { cookie: `tw_ui_7878=${token}`, origin: "https://evil.example" })).status).toBe(403);
   });
   test("every API route is protected", async () => {
     const { get } = setup();
@@ -85,7 +85,7 @@ describe("access", () => {
   });
   test("non-GET is refused", async () => {
     const { app } = setup();
-    const res = await app.handle(new Request(`http://127.0.0.1:${port}/api/snapshot`, { method: "POST", headers: { host: `127.0.0.1:${port}`, cookie: `tw_ui=${token}` } }));
+    const res = await app.handle(new Request(`http://127.0.0.1:${port}/api/snapshot`, { method: "POST", headers: { host: `127.0.0.1:${port}`, cookie: `tw_ui_7878=${token}` } }));
     expect(res.status).toBe(405);
   });
 });

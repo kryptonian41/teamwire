@@ -5,7 +5,7 @@ const token = "ab".repeat(32);
 const sec = createSecurity({ token, port: 7878 });
 const req = (path: string, headers: Record<string, string> = {}) =>
   new Request(`http://127.0.0.1:7878${path}`, { headers: { host: "127.0.0.1:7878", ...headers } });
-const cookie = { cookie: `tw_ui=${token}` };
+const cookie = { cookie: `tw_ui_7878=${token}` };
 
 describe("makeToken", () => {
   test("is 64 hex characters and differs per call", () => {
@@ -24,7 +24,7 @@ describe("checkApi", () => {
     expect(sec.checkApi(req("/api/x", { ...cookie, origin: "http://localhost:7878" }))).toBeNull();
   });
   test("accepts the cookie among others", () => {
-    expect(sec.checkApi(req("/api/x", { cookie: `a=b; tw_ui=${token}; c=d` }))).toBeNull();
+    expect(sec.checkApi(req("/api/x", { cookie: `a=b; tw_ui_7878=${token}; c=d` }))).toBeNull();
   });
 
   const refuse = async (headers: Record<string, string>) => {
@@ -33,7 +33,8 @@ describe("checkApi", () => {
     expect(await res?.json()).toMatchObject({ code: "forbidden" });
   };
   test("refuses a missing cookie", () => refuse({}));
-  test("refuses a wrong cookie", () => refuse({ cookie: "tw_ui=nope" }));
+  test("refuses a wrong cookie", () => refuse({ cookie: "tw_ui_7878=nope" }));
+  test("refuses a cookie named for another port", () => refuse({ cookie: `tw_ui_7879=${token}` }));
   test("refuses a cookie of another name", () => refuse({ cookie: `other=${token}` }));
   test("refuses a wrong host", () => refuse({ ...cookie, host: "evil.example:7878" }));
   test("refuses the right host with the wrong port", () => refuse({ ...cookie, host: "127.0.0.1:1" }));
@@ -52,7 +53,7 @@ describe("auth", () => {
     const res = sec.auth(req(`/auth?token=${token}`));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/");
-    expect(res.headers.get("set-cookie")).toBe(`tw_ui=${token}; HttpOnly; SameSite=Strict; Path=/`);
+    expect(res.headers.get("set-cookie")).toBe(`tw_ui_7878=${token}; HttpOnly; SameSite=Strict; Path=/`);
   });
   test("a wrong, short or missing token is 403 with no cookie", () => {
     for (const path of ["/auth?token=nope", `/auth?token=${token}00`, "/auth", "/auth?token="]) {

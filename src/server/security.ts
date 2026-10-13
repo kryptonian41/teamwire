@@ -3,7 +3,7 @@
 // another local user from reading team data through the browser.
 
 import { timingSafeEqual } from "node:crypto";
-import { TOKEN_COOKIE, type Problem } from "../shared/api.ts";
+import { tokenCookie, type Problem } from "../shared/api.ts";
 
 export function makeToken(): string {
   const bytes = new Uint8Array(32);
@@ -48,6 +48,7 @@ export interface Security {
 }
 
 export function createSecurity(opts: { token: string; port: number }): Security {
+  const cookieName = tokenCookie(opts.port);
   const hosts = new Set([`127.0.0.1:${opts.port}`, `localhost:${opts.port}`]);
   const origins = new Set([`http://127.0.0.1:${opts.port}`, `http://localhost:${opts.port}`]);
   const forbidden = (detail: string) => problem(403, { code: "forbidden", detail });
@@ -64,7 +65,7 @@ export function createSecurity(opts: { token: string; port: number }): Security 
     checkApi(req) {
       const bad = checkHostAndOrigin(req);
       if (bad) return bad;
-      const cookie = cookieValue(req.headers.get("cookie"), TOKEN_COOKIE);
+      const cookie = cookieValue(req.headers.get("cookie"), cookieName);
       if (cookie === null || !sameToken(cookie, opts.token)) return forbidden("missing or wrong token cookie");
       return null;
     },
@@ -77,7 +78,7 @@ export function createSecurity(opts: { token: string; port: number }): Security 
         status: 303,
         headers: {
           location: "/",
-          "set-cookie": `${TOKEN_COOKIE}=${opts.token}; HttpOnly; SameSite=Strict; Path=/`,
+          "set-cookie": `${cookieName}=${opts.token}; HttpOnly; SameSite=Strict; Path=/`,
         },
       });
     },

@@ -21,6 +21,7 @@ case "$FAKE_MODE" in
   badjson) echo "not json"; exit 0 ;;
   shape) echo '{"teams": 5}'; exit 0 ;;
   hang) exec sleep 30 ;;
+  grandchild) sleep 100 & sleep 8 ;;
   env) echo "{\\"teams\\": [], \\"leak\\": \\"\${TEAMWIRE_TOKEN}\${TEAMWIRE_ROLE}\${TEAMWIRE_TEAM}\\"}" > ${dir}/env.out; echo '{"teams":[]}'; exit 0 ;;
   args) echo "$@" > ${dir}/args.out; echo '{"teams":[]}'; exit 0 ;;
 esac
@@ -115,6 +116,14 @@ describe("runner", () => {
     const res = await withMode("hang", () => make(200)({ cmd: "teams" }));
     expect(res.ok).toBe(false);
     expect(res.problems[0]?.code).toBe("cli_timeout");
+    expect(Date.now() - t0).toBeLessThan(5000);
+  });
+
+  test("a grandchild that holds the pipes open does not stall the runner", async () => {
+    const t0 = Date.now();
+    const res = await withMode("grandchild", () => make(500)({ cmd: "teams" }));
+    expect(res.problems[0]?.code).toBe("cli_timeout");
+    // Time limit 0.5 s plus the 2 s read grace period; the grandchild sleeps 100 s.
     expect(Date.now() - t0).toBeLessThan(5000);
   });
 

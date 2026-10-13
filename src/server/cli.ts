@@ -93,6 +93,26 @@ export interface CliOutput {
 
 export type Runner = <C extends CliCall>(call: C) => Promise<CliResult<CliOutput[C["cmd"]]>>;
 
+const READ_GRACE_MS = 2000;
+
+function collect(stream: ReadableStream<Uint8Array>) {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  const done = (async () => {
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+      }
+    } catch {
+      // Cancelled after the grace period.
+    }
+  })();
+  return { done, text: () => text, stop: () => void reader.cancel().catch(() => {}) };
+}
+
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
 }
@@ -131,11 +151,17 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
       timedOut = true;
       proc.kill("SIGKILL");
     }, limit);
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
+    // Read while the child runs so a full pipe cannot block it. After it
+    // exits, a process it started may still hold the pipes open, so the
+    // reads get a short grace period and are then cancelled.
+    const out = collect(proc.stdout);
+    const err = collect(proc.stderr);
+    const exitCode = await proc.exited;
+    await Promise.race([Promise.all([out.done, err.done]), Bun.sleep(READ_GRACE_MS)]);
+    out.stop();
+    err.stop();
+    const stdout = out.text();
+    const stderr = err.text();
     clearTimeout(timer);
     if (timedOut) {
       return { ok: false, problems: [{ code: "cli_timeout", detail: `teamwire ${name} passed ${limit} ms and was killed` }] };

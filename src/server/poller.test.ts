@@ -84,4 +84,25 @@ describe("poller", () => {
     await p.poll();
     expect(n).toBe(1);
   });
+
+  test("lastGoodAt: null on a first failure, kept on a later failure, moved by a good poll", async () => {
+    let t = Date.parse("2026-10-13T10:00:00Z");
+    let fail = true;
+    const p = createPoller({
+      run: fakeRunner({ status: () => (fail ? bad("x") : ok([])), teams: () => ok({ teams: [] }) }),
+      intervalMs: 1,
+      now: () => t,
+    });
+    expect(await p.poll()).toMatchObject({ stale: true, lastGoodAt: null });
+    fail = false;
+    t += 60_000;
+    const good1 = await p.poll();
+    expect(good1?.lastGoodAt).toBe("2026-10-13T10:01:00.000Z");
+    fail = true;
+    t += 60_000;
+    expect(await p.poll()).toMatchObject({ stale: true, lastGoodAt: "2026-10-13T10:01:00.000Z" });
+    fail = false;
+    t += 60_000;
+    expect((await p.poll())?.lastGoodAt).toBe("2026-10-13T10:03:00.000Z");
+  });
 });
