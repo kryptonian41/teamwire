@@ -21,6 +21,7 @@
   "setup": "./scripts/setup-worktree.sh \"$1\"",
   "children": [
     {
+      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 1,
       "_blocked_by": [],
       "role": "ticket_a",
@@ -40,9 +41,9 @@
       "task_file": "/abs/path/briefs/ticket_a.md"
     },
     {
+      "_note": "No file overlap with ticket_a. Check this by reading the code, not the tickets. Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 1,
       "_blocked_by": [],
-      "_note": "No file overlap with ticket_a. Check this by reading the code, not the tickets.",
       "role": "ticket_b",
       "title": "TICKET-B: CHANGEME",
       "kind": "implementer",
@@ -60,6 +61,7 @@
       "task_file": "/abs/path/briefs/ticket_b.md"
     },
     {
+      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 2,
       "_blocked_by": [
         "ticket_a"
