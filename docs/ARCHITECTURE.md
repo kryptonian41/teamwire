@@ -92,7 +92,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `team.db` (with `-wal`, `-shm`) | teamwire only | Every record below |
 | `briefs/<role>.md` | launch | The brief as sent (a worktree member also gets a copy at `<worktree>/TASK.md`, listed in the repository's `info/exclude`) |
 | `contract/<role>.md` | launch | The rendered system-prompt contract |
-| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
+| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), the merged `plugins` map as `enabledPlugins` (only when non-empty, ADR 0017), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
 | `setup/<role>.log` | launch | Output of the setup command |
 | `comms/<display-id>.md` | send | Full message text (copy; the store has the original) |
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |

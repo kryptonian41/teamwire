@@ -48,10 +48,12 @@ is `none` (v1 cannot start one); less than 200 MB free.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `claude-code`), `host` (default: detected; `herdr` when `HERDR_ENV=1`),
-`children`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
+`children`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `setup`, `dispatch` (default true),
-`accept_trust` (default true). Keys starting with `_` are ignored.
+`accept_trust` (default true), `plugins`. `plugins` is an object from a
+Claude plugin id `name@marketplace` to true or false. The team's map applies
+to every member, and a member's value wins per key (ADR 0017). Keys starting with `_` are ignored.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9 and LCH-18, and the watch command to
