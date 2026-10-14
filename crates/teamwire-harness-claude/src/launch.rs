@@ -162,13 +162,18 @@ fn hook_entry(m: &MemberLaunch, event: &str, timeout_s: Option<u64>) -> Value {
 }
 
 fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
-    Ok(json!({
+    let mut settings = json!({
         "env": Value::Object(env_object(m)?),
         "hooks": {
             "Stop": hook_entry(m, "claude-stop", Some(STOP_HOOK_TIMEOUT_S)),
             "PostToolUse": hook_entry(m, "claude-post-tool", None),
         },
-    }))
+    });
+    // Absent when empty, so teams that set no plugins keep the same file.
+    if !m.plugins.is_empty() {
+        settings["enabledPlugins"] = json!(m.plugins);
+    }
+    Ok(settings)
 }
 
 fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {

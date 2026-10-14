@@ -356,3 +356,24 @@ fn resume_spec_resumes_the_given_session_with_the_same_files() {
         after(&fresh.argv, "--settings")
     );
 }
+
+#[test]
+fn plugins_become_enabled_plugins_in_settings() {
+    let mut m = member();
+    m.plugins = [("ponytail@ponytail".to_owned(), false)].into();
+    let spec = claude().launch_spec(&m).unwrap();
+    let settings = file_json(&spec, "settings.json");
+    assert_eq!(
+        settings["enabledPlugins"],
+        serde_json::json!({"ponytail@ponytail": false})
+    );
+}
+
+#[test]
+fn no_plugins_leaves_settings_without_the_key() {
+    let m = member();
+    let spec = claude().launch_spec(&m).unwrap();
+    let settings = file_json(&spec, "settings.json");
+    let keys: Vec<&String> = settings.as_object().unwrap().keys().collect();
+    assert_eq!(keys, ["env", "hooks"]);
+}
