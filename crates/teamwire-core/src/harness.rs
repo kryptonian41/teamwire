@@ -1,6 +1,7 @@
 //! The `Harness` trait: one agent program (Claude Code first), and the
 //! records a harness produces to start a member.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Duration;
@@ -143,6 +144,10 @@ pub struct MemberLaunch {
     pub identity: Vec<(String, String)>,
     pub otel: OtelConfig,
     pub teamwire_bin: PathBuf,
+    /// Plugin id to on/off, the team's map overlaid by the member's. A harness
+    /// without plugins ignores it.
+    #[serde(default)]
+    pub plugins: BTreeMap<String, bool>,
 }
 
 /// What the harness returns. Files are written by launch (mode given) before spawn.
@@ -246,6 +251,7 @@ impl fmt::Debug for MemberLaunch {
             .field("identity", &RedactedEnv(&self.identity))
             .field("otel", &self.otel)
             .field("teamwire_bin", &self.teamwire_bin)
+            .field("plugins", &self.plugins)
             .finish()
     }
 }

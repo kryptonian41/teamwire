@@ -104,6 +104,7 @@ fn harness_setup(harness: &FakeHarness) -> HarnessSetup<'_> {
             ],
             otel: OtelConfig::default(),
             teamwire_bin: "/bin/teamwire".into(),
+            plugins: Default::default(),
         },
         turn_end_stdin: br#"{"session_id":"member-1","stop_hook_active":false}"#.to_vec(),
         turn_end_session: sid("member-1"),

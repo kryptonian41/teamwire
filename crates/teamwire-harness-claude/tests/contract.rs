@@ -78,6 +78,7 @@ fn claude_code_passes_the_harness_contract() {
         ],
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
+        plugins: Default::default(),
     };
     harness_contract(&HarnessSetup {
         harness: &claude,

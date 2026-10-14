@@ -3,6 +3,7 @@
 //! `started`, and the first message. A failure at any step undoes that
 //! member only, without force, and records it `failed` (LCH-4).
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -308,6 +309,7 @@ fn run_member(
         identity,
         otel: ctx.config.otel.clone(),
         teamwire_bin: plan.teamwire_bin.clone(),
+        plugins: merged_plugins(&plan.spec.plugins, &m.spec.plugins),
     };
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(
@@ -418,4 +420,30 @@ fn run_member(
         dispatch(host, &place, plan, dirs, m, warnings);
     }
     Ok(())
+}
+
+/// The team's plugin map overlaid by the member's: the member wins per key.
+pub(crate) fn merged_plugins(
+    team: &BTreeMap<String, bool>,
+    member: &BTreeMap<String, bool>,
+) -> BTreeMap<String, bool> {
+    let mut merged = team.clone();
+    merged.extend(member.iter().map(|(k, v)| (k.clone(), *v)));
+    merged
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn member_value_wins_and_other_keys_are_kept() {
+        let map = |kv: &[(&str, bool)]| kv.iter().map(|(k, v)| ((*k).to_owned(), *v)).collect();
+        let team = map(&[("a@x", true), ("b@x", false)]);
+        let member = map(&[("a@x", false), ("c@x", true)]);
+        assert_eq!(
+            merged_plugins(&team, &member),
+            map(&[("a@x", false), ("b@x", false), ("c@x", true)])
+        );
+    }
 }

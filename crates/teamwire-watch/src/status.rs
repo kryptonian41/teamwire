@@ -203,6 +203,8 @@ fn resume_command(
         identity: vec![("TEAMWIRE_TOKEN".to_owned(), "-".to_owned())],
         otel: OtelConfig::default(),
         teamwire_bin: PathBuf::from("teamwire"),
+        // Resume reads the settings file written at launch; only argv is used.
+        plugins: Default::default(),
     };
     let spec = harness
         .resume_spec(&launch, session)
