@@ -10,5 +10,8 @@ do not commit.
   breaks the brief's agreed shape. Leave out style, naming and
   readability; Uber and LinkedIn both found reviewers' style comments
   are the ones engineers reject.
+- Check the diff against the brief too: a requirement missing or only partly
+  built, work the brief did not ask for, or a requirement built wrong. Quote
+  the brief line each such finding rests on.
 - Rank findings by harm. Say plainly when the work is sound. Inventing
   findings to look thorough costs the implementer a wasted round.
