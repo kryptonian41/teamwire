@@ -419,7 +419,9 @@ or you will commit every member's checkout. `teamwire doctor` checks this.
 plugin id (`name@marketplace`) to true or false, allowed on the team and on a
 member. For each key, the member's value wins over the team's. Launch writes
 the merged map as `enabledPlugins` into the member's per-run settings. An empty
-map writes nothing, so a spec without `plugins` behaves as before.
+map writes nothing, so a spec without `plugins` behaves as before. A
+team-level map covers only the members of its own spec file, so repeat it in
+every `--add` spec.
 
 ```json
 "plugins": {"ponytail@ponytail": false}
