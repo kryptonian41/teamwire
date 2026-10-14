@@ -350,7 +350,8 @@ pub enum TrustPolicy { Accept, Refuse }               // from the spec's accept_
 
 pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<String>,
                       pub harness: Option<HarnessId>, pub host: Option<HostId>,
-                      pub children: Vec<MemberSpec> }
+                      pub children: Vec<MemberSpec>,
+                      pub plugins: BTreeMap<String, bool> }     // plugin id -> on/off, all members
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
                         pub branch: Option<String>, pub base: Option<String>, pub cwd: Option<PathBuf>,
@@ -358,7 +359,8 @@ pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<Memb
                         pub check: Option<String>, pub owns: Vec<String>,
                         pub task: Option<String>, pub task_file: Option<PathBuf>,
                         pub deadline_s: Option<u64>, pub setup: Option<String>,
-                        pub dispatch: bool, pub accept_trust: bool }
+                        pub dispatch: bool, pub accept_trust: bool,
+                        pub plugins: BTreeMap<String, bool> }   // overrides the team's, per key
 
 /// Everything a harness needs to build one member's start.
 pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Address,
@@ -366,7 +368,8 @@ pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Addre
                           pub model: Option<String>, pub effort: Option<String>,
                           pub member_dir: PathBuf,           // $TEAMWIRE_HOME/teams/<team>/members/<role>
                           pub contract_path: PathBuf, pub identity: Vec<(String, String)>,
-                          pub otel: OtelConfig, pub teamwire_bin: PathBuf }
+                          pub otel: OtelConfig, pub teamwire_bin: PathBuf,
+                          pub plugins: BTreeMap<String, bool> } // team map overlaid by member map
 /// What the harness returns. Files are written by launch (mode given) before spawn.
 pub struct LaunchSpec { pub argv: Vec<String>,
                         /// Honoured only when the host has `sets_env_at_spawn`.

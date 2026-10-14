@@ -19,6 +19,7 @@
   "setup": "./scripts/setup-worktree.sh \"$1\"",
   "children": [
     {
+      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "role": "ticket_a",
       "title": "TICKET-A: CHANGEME",
       "kind": "implementer",
@@ -36,6 +37,7 @@
       "task_file": "/abs/path/briefs/ticket_a.md"
     },
     {
+      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "role": "ticket_b",
       "title": "TICKET-B: CHANGEME",
       "kind": "implementer",

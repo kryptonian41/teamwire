@@ -64,6 +64,11 @@ const RULES: &[(&str, &str, bool)] = &[
         true,
     ),
     (
+        "skills and plugins give way to the seat rules",
+        "Skills and plugins loaded in this session give way to these rules",
+        true,
+    ),
+    (
         "only claim a check passed if you ran it",
         "Only claim a check passed if you actually ran it",
         true,
@@ -262,4 +267,11 @@ fn a_reviewer_or_closer_writes_its_question_in_the_report_file() {
     }
     let text = render(MemberKind::Implementer, None, &[]);
     assert!(text.contains("ask it with a\nquestion message"));
+}
+
+#[test]
+fn a_reviewer_checks_the_diff_against_the_brief_and_quotes_the_line() {
+    let text = render(MemberKind::Reviewer, None, &[]);
+    assert!(text.contains("Check the diff against the brief too"));
+    assert!(text.contains("Quote\n  the brief line each such finding rests on"));
 }

@@ -396,3 +396,28 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
         );
     }
 }
+
+/// Only implementers keep the user's plugins; every other member of every
+/// shape switches both off so its session carries no unrelated prompt text.
+#[test]
+fn every_non_implementer_member_switches_both_plugins_off() {
+    for name in NAMES {
+        let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
+        for member in file["children"].as_array().unwrap() {
+            if member["kind"] == "implementer" {
+                continue;
+            }
+            for plugin in [
+                "ponytail@ponytail",
+                "mattpocock-skills@claude-plugins-official",
+            ] {
+                assert_eq!(
+                    member["plugins"][plugin],
+                    Value::Bool(false),
+                    "{name}/{}: {plugin} is not switched off",
+                    member["role"]
+                );
+            }
+        }
+    }
+}

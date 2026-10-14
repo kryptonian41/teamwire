@@ -94,6 +94,7 @@ pub fn validate(
         );
     }
     team_title(spec, existing.as_ref(), &mut errors);
+    plugin_keys(&spec.plugins, None, &mut errors);
     if spec.children.is_empty() {
         errors.push(SpecError::new(
             None,
@@ -222,6 +223,35 @@ fn team_title(spec: &TeamSpec, existing: Option<&Existing>, errors: &mut Vec<Spe
             "title_too_long",
             format!("team title {title:?} is over {TITLE_MAX} characters"),
         ));
+    }
+}
+
+/// A refusal for each plugin key that is not `name@marketplace`. The id goes
+/// into the harness's settings file, so a stray character must not reach it.
+pub(crate) fn plugin_keys(
+    plugins: &BTreeMap<String, bool>,
+    role: Option<&str>,
+    errors: &mut Vec<SpecError>,
+) {
+    let part_ok = |p: &str| {
+        !p.is_empty()
+            && p.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    for key in plugins.keys() {
+        if !key
+            .split_once('@')
+            .is_some_and(|(n, m)| part_ok(n) && part_ok(m))
+        {
+            errors.push(SpecError::new(
+                role,
+                Some("plugins"),
+                "bad_plugin_id",
+                format!(
+                    "plugin id {key:?} must be name@marketplace, each part made of letters, digits, '.', '_' or '-'"
+                ),
+            ));
+        }
     }
 }
 

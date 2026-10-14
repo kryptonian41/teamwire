@@ -1,6 +1,7 @@
 //! The team spec that `teamwire launch` reads, as data. Validation belongs
 //! to `teamwire-launch`; these types only carry what the JSON said.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,10 @@ pub struct TeamSpec {
     #[serde(default)]
     pub host: Option<HostId>,
     pub children: Vec<MemberSpec>,
+    /// Claude plugin id `name@marketplace` to on/off, written into the member's
+    /// per-run settings. A member's value wins over the team's, per key.
+    #[serde(default)]
+    pub plugins: BTreeMap<String, bool>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,4 +67,8 @@ pub struct MemberSpec {
     pub dispatch: bool,
     #[serde(default = "yes")]
     pub accept_trust: bool,
+    /// Claude plugin id `name@marketplace` to on/off, written into the member's
+    /// per-run settings. A member's value wins over the team's, per key.
+    #[serde(default)]
+    pub plugins: BTreeMap<String, bool>,
 }

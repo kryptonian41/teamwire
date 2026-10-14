@@ -28,7 +28,7 @@
       "owns": [
         "CHANGEME/path/"
       ],
-      "task": "<what to build, with acceptance criteria, as units>. <which files you own>. Commit after each unit. Run only your check and the tests you write; do not run the full suite or the repo-wide lint and type gates, which the lead runs once."
+      "task": "<what to build, with acceptance criteria, as units>. <which files you own>. Commit after each unit. Run only your check and the tests you write; do not run the full suite or the repo-wide lint and type gates, which the lead runs once. Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt."
     },
     {
       "_launch_after": "impl reports done",
@@ -39,6 +39,10 @@
       "cwd": "/abs/path/repo",
       "model": "opus",
       "effort": "xhigh",
+      "plugins": {
+        "ponytail@ponytail": false,
+        "mattpocock-skills@claude-plugins-official": false
+      },
       "deadline_s": 1200,
       "task": "Review the diff on branch myteam/impl against main. Read it with `git diff main...myteam/impl`. Report correctness, security and data-loss bugs, each with file:line and a concrete failure scenario. Do NOT edit any file in the repository. If the diff is sound, say so plainly rather than inventing findings."
     }
