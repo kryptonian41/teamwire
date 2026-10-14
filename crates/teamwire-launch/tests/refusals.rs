@@ -387,3 +387,39 @@ fn add_spec_without_title_uses_team_title() {
     let errors = fresh.validate(&spec, false).unwrap_err();
     assert_eq!(codes(&errors), ["title_missing"]);
 }
+
+#[test]
+fn bad_plugin_id_refused_naming_the_key() {
+    let rig = Rig::new();
+    let member = common::with(
+        pane_member("a", "Alpha", rig.work.path()),
+        "plugins",
+        json!({"no-marketplace": false, "ok@x.y_z-1": true}),
+    );
+    let spec = common::with(
+        team_spec("demo", &[member]),
+        "plugins",
+        json!({"@m": false}),
+    );
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["bad_plugin_id", "bad_plugin_id"]);
+    let text: String = errors.iter().map(|e| e.message.clone()).collect();
+    assert!(text.contains("no-marketplace") && text.contains("\"@m\""));
+    assert!(!text.contains("ok@x"));
+}
+
+#[test]
+fn good_plugin_ids_pass() {
+    let rig = Rig::new();
+    let member = common::with(
+        pane_member("a", "Alpha", rig.work.path()),
+        "plugins",
+        json!({"mattpocock-skills@claude-plugins-official": true}),
+    );
+    let spec = common::with(
+        team_spec("demo", &[member]),
+        "plugins",
+        json!({"ponytail@ponytail": false}),
+    );
+    rig.validate(&spec, false).unwrap();
+}

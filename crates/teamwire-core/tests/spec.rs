@@ -11,10 +11,7 @@ fn parse(extra_team: &str, extra_member: &str) -> TeamSpec {
 
 #[test]
 fn plugins_parse_on_team_and_member() {
-    let s = parse(
-        r#","plugins":{"a@b":false}"#,
-        r#","plugins":{"c@d":true}"#,
-    );
+    let s = parse(r#","plugins":{"a@b":false}"#, r#","plugins":{"c@d":true}"#);
     assert_eq!(s.plugins.get("a@b"), Some(&false));
     assert_eq!(s.children[0].plugins.get("c@d"), Some(&true));
 }

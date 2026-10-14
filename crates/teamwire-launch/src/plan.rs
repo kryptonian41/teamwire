@@ -130,6 +130,11 @@ pub(crate) fn plan_member(
             format!("title {title:?} is already used in this team"),
         );
     }
+    drop(bad);
+    crate::validate::plugin_keys(&child.plugins, Some(role), errors);
+    let mut bad = |field: &str, code: &str, message: String| {
+        errors.push(SpecError::new(Some(role), Some(field), code, message));
+    };
     let brief = brief_text(child, &mut bad);
     let kind = child.kind.unwrap_or(match child.mode {
         Mode::Worktree => MemberKind::Implementer,
