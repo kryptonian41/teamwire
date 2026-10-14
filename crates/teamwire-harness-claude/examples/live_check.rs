@@ -85,7 +85,7 @@ fn main() -> Result<(), String> {
         identity: vec![("TEAMWIRE_TOKEN".into(), MCP_TOKEN.into())],
         otel: OtelConfig::default(),
         teamwire_bin: stub,
-        plugins: Default::default(),
+        plugins: std::collections::BTreeMap::new(),
     };
     let claude = ClaudeCode::new(
         platform.clone(),

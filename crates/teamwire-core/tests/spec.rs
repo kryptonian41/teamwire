@@ -2,23 +2,27 @@
 
 use teamwire_core::TeamSpec;
 
-fn parse(extra_team: &str, extra_member: &str) -> TeamSpec {
-    let json = format!(
+fn json(extra_team: &str, extra_member: &str) -> String {
+    format!(
         r#"{{"team":"tw","title":"t"{extra_team},"children":[{{"role":"r","title":"R","mode":"pane"{extra_member}}}]}}"#
-    );
-    serde_json::from_str(&json).unwrap()
+    )
 }
 
 #[test]
 fn plugins_parse_on_team_and_member() {
-    let s = parse(r#","plugins":{"a@b":false}"#, r#","plugins":{"c@d":true}"#);
+    let s: TeamSpec = serde_json::from_str(&json(
+        r#","plugins":{"a@b":false}"#,
+        r#","plugins":{"c@d":true}"#,
+    ))
+    .unwrap();
     assert_eq!(s.plugins.get("a@b"), Some(&false));
-    assert_eq!(s.children[0].plugins.get("c@d"), Some(&true));
+    let member = s.children.first().unwrap();
+    assert_eq!(member.plugins.get("c@d"), Some(&true));
 }
 
 #[test]
 fn plugins_default_to_empty() {
-    let s = parse("", "");
+    let s: TeamSpec = serde_json::from_str(&json("", "")).unwrap();
     assert!(s.plugins.is_empty());
-    assert!(s.children[0].plugins.is_empty());
+    assert!(s.children.iter().all(|m| m.plugins.is_empty()));
 }

@@ -204,7 +204,7 @@ fn resume_command(
         otel: OtelConfig::default(),
         teamwire_bin: PathBuf::from("teamwire"),
         // Resume reads the settings file written at launch; only argv is used.
-        plugins: Default::default(),
+        plugins: std::collections::BTreeMap::new(),
     };
     let spec = harness
         .resume_spec(&launch, session)

@@ -51,7 +51,7 @@ fn member() -> MemberLaunch {
         ],
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
-        plugins: Default::default(),
+        plugins: std::collections::BTreeMap::new(),
     }
 }
 

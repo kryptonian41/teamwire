@@ -47,7 +47,7 @@ fn debug_output_hides_the_token() {
             headers: vec![("authorization".to_owned(), TOKEN.to_owned())],
         },
         teamwire_bin: "/bin/teamwire".into(),
-        plugins: Default::default(),
+        plugins: std::collections::BTreeMap::new(),
     };
     let spec = LaunchSpec {
         argv: vec!["claude".to_owned()],
