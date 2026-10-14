@@ -53,7 +53,9 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `deadline_s` (default 1800), `setup`, `dispatch` (default true),
 `accept_trust` (default true), `plugins`. `plugins` is an object from a
 Claude plugin id `name@marketplace` to true or false. The team's map applies
-to every member, and a member's value wins per key (ADR 0017). Keys starting with `_` are ignored.
+to every member of the same spec file, and a member's value wins per key
+(ADR 0017). An `--add` spec must repeat the team's map, because the store keeps
+none. Keys starting with `_` are ignored.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9 and LCH-18, and the watch command to

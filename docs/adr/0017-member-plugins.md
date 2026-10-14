@@ -24,8 +24,9 @@ recommends that switch, because it changes sessions it did not start.
 
 1. **A `plugins` field.** The spec takes `plugins` on the team and on a
    member. It is an object from a Claude plugin id `name@marketplace` to
-   true or false. The team's map applies to every member. For each key, the
-   member's value wins.
+   true or false. The team's map applies to every member of the same spec
+   file. For each key, the member's value wins. The store keeps no team map,
+   so a spec passed to `teamwire launch --add` must repeat it.
 2. **Validation.** A key must be `name@marketplace`. Both parts must be
    non-empty and use only ASCII letters, digits, `.`, `_` and `-`. A bad key
    refuses the launch with code `bad_plugin_id` and names the key.
