@@ -18,6 +18,10 @@
       "cwd": "/abs/path/repo",
       "model": "sonnet",
       "effort": "high",
+      "plugins": {
+        "ponytail@ponytail": false,
+        "mattpocock-skills@claude-plugins-official": false
+      },
       "deadline_s": 900,
       "task": "Investigate <question> in <area>. Do NOT modify any file in the repository. Give file:line evidence for every claim. Say plainly when something is NOT the cause, because ruling things out is as useful as finding the cause. End with the three findings most worth acting on."
     }

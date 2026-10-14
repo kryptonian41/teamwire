@@ -180,8 +180,9 @@ When the user is present, ask them about every open question you would
 otherwise answer yourself. Show a numbered list, one entry per member: its
 kind, its task, what blocks it, the files it owns and its wave. Ask about
 ambiguous acceptance criteria, a blocking edge that looks missing or spurious,
-and anything you would have to invent to write a brief. Launch once every
-question has an answer. When no user is present, put each question in the
+and anything you would have to invent to write a brief. Run the open
+questions through the `grilling` skill, one round, with a recommended answer
+for each. Launch once every question has an answer. When no user is present, put each question in the
 affected member's brief under "Open questions you must not answer", and list
 them in your final report.
 
@@ -244,6 +245,44 @@ Every member is also told how the team works:
 Give each brief the roster: who else is on the team, their kind, what each one
 owns, and who uses its work. A member that knows another member owns a file
 asks you for the change and never edits the file itself.
+
+## Skills and plugins in members
+
+Members load every user plugin, skill, hook and output style. Teamwire narrows
+nothing unless the spec sets `plugins`.
+
+| Kind | `ponytail@ponytail` | `mattpocock-skills@claude-plugins-official` |
+| --- | --- | --- |
+| `implementer` | on (default level `full`) | on |
+| `reviewer`, `closer`, `investigator` | off | off |
+
+Turn `mattpocock-skills` on for an investigator that hunts a bug, and name
+`diagnosing-bugs` steps 1 to 3 (no fix) in its brief.
+
+Put two sentences in every implementer brief:
+
+- "Use the tdd skill for each unit; test only at these seams: ..." Naming the
+  seams means the skill never needs to ask the user.
+- "If a check fails and the cause is not clear from its output, use the
+  diagnosing-bugs skill before your second fix attempt." Teamwire allows two
+  fix rounds, so the second must be informed.
+
+Never ask a member to use these skills. Each group fails for one reason.
+
+- `grilling`, `prototype`: wait for a human.
+- `to-spec`, `to-tickets`, `triage`, `wayfinder`: publish to a tracker.
+- `research`, `domain-modeling`: write files outside `owns`, or into the repo.
+- `code-review`, `/ponytail-review`: report style and start sub-agents.
+- Ponytail `lite` or `ultra`: ask the user to choose.
+
+Never switch Ponytail off with `PONYTAIL_DEFAULT_MODE=off`. It deletes a mode
+file that every session in the repo shares, yours included. Use `plugins`.
+
+A plugin switch does not cover a skill installed as a plain user skill under
+`~/.claude/skills/`.
+
+Ponytail marks a deliberate limit with a `shortcut: <limit>, <when to upgrade>`
+comment. The closer lists the new ones as known debt.
 
 ## How agents talk to each other
 
@@ -375,6 +414,18 @@ Pick the mode per task:
 
 Add `.worktrees/` to the repository's `.gitignore` before any `git add -A`,
 or you will commit every member's checkout. `teamwire doctor` checks this.
+
+`plugins` turns Claude plugins on or off for members. It is an object from
+plugin id (`name@marketplace`) to true or false, allowed on the team and on a
+member. For each key, the member's value wins over the team's. Launch writes
+the merged map as `enabledPlugins` into the member's per-run settings. An empty
+map writes nothing, so a spec without `plugins` behaves as before. A
+team-level map covers only the members of its own spec file, so repeat it in
+every `--add` spec.
+
+```json
+"plugins": {"ponytail@ponytail": false}
+```
 
 ### Every coding member needs `setup`
 
