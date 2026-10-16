@@ -79,24 +79,22 @@ pub(crate) fn last_pointer_text(screen: &str) -> Option<String> {
 /// wraps a long line, but its first row holds the start.
 const PREFIX_CHARS: usize = 40;
 
-/// The text after the last pointer line of the screen. That line is the input
-/// box: a line Claude echoed into its transcript is always followed by the
-/// box's own pointer line.
-fn input_box_text(tail: &str) -> Option<String> {
-    tail.lines().rev().find_map(pointer_rest).map(squash)
-}
-
 /// Whether `line` still sits in the input box, unsent. Used after a submit
 /// to decide on one more Enter.
 pub(crate) fn line_pending(tail: &str, line: &OneLine) -> bool {
     let wanted: String = squash(line.as_str()).chars().take(PREFIX_CHARS).collect();
-    input_box_text(tail).is_some_and(|text| text.contains(&wanted) || is_paste_marker(&text))
+    // The last pointer line is the input box: a line Claude echoed into its
+    // transcript is always followed by the box's own pointer line.
+    last_pointer_text(tail).is_some_and(|text| text.contains(&wanted) || is_paste_marker(&text))
 }
 
 /// A long paste shows in the box as `[Pasted text #1]`, or
 /// `[Pasted text #1 +12 lines]`, in place of the text. The wording is
 /// assumed from Claude Code's behaviour, not captured from a real screen, so
 /// only a box holding nothing but such a marker counts.
+// shortcut: any marker counts, not only one for the line teamwire pasted, so
+// a person's own paste in the 300 ms window also gets the Enter. Upgrade once
+// the real marker text is captured: tie it to the length of the pasted line.
 fn is_paste_marker(text: &str) -> bool {
     text.strip_prefix("[Pasted text #")
         .and_then(|rest| rest.strip_suffix(']'))

@@ -155,3 +155,20 @@ fn no_second_enter_writes_no_event() {
     deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello there", 80));
     assert!(reentered(&rig).is_empty());
 }
+
+#[test]
+fn a_failed_event_write_leaves_the_delivery_handed_off() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    no_ack(&rig);
+    // A read-only store reads the team and refuses the write.
+    rig.store = teamwire_store::Store::open_read_only(
+        rig.home.path(),
+        &teamwire_core::TeamName::parse("alpha").unwrap(),
+    )
+    .unwrap();
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello there", 80));
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert_eq!(rig.host.keys_sent(&place), [Key::Enter]);
+    assert!(reentered(&rig).is_empty());
+}
