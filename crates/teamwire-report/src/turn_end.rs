@@ -271,8 +271,9 @@ fn deliver(
     let c = &record.completion;
     let mut line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
     // A lead that is idle reads the result before it ever stops, so the line
-    // itself says that nothing is watching (ADR 0018 point 6).
-    if watch_is_dead(ctx)? {
+    // itself says that nothing is watching (ADR 0018 point 6). The note is
+    // advice: a lease that cannot be read skips it and never stops delivery.
+    if watch_is_dead(ctx).unwrap_or(false) {
         line = one_line(
             &format!("{line} (no watch is running: teamwire watch {})", team.name),
             NOTE_LINE_CHARS,
