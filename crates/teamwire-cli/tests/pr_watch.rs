@@ -5,7 +5,10 @@
 //! `gh pr checks N` (or `gh pr view N`) is the file `checks-N-<n>.json` (or
 //! `view-N-<n>.json`); a call past the last file gets the last file. It logs
 //! every call's arguments to `calls.log` and always exits 8, as `gh pr
-//! checks` does while checks are pending: the watch must ignore that. A file
+//! checks` does while checks are pending: the watch must ignore that. For
+//! `gh api <path>` the kind is `api` and the pull-request slot is the path
+//! with `/` turned into `_`; a call with no answer file exits 1 and one with
+//! an answer file exits 0, because the watch trusts `api` exit codes. A file
 //! `checks-N-<n>.err` is printed on stderr beside the answer.
 #![expect(
     clippy::disallowed_methods,
@@ -24,6 +27,10 @@ d="$FAKE_GH_DIR"
 echo "$*" >> "$d/calls.log"
 kind="$2"
 pr="$3"
+if [ "$1" = api ]; then
+  kind=api
+  pr=$(echo "$2" | tr / _)
+fi
 n=$(cat "$d/n-$kind-$pr" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" > "$d/n-$kind-$pr"
@@ -32,6 +39,10 @@ while [ "$n" -gt 0 ] && [ ! -f "$d/$kind-$pr-$n.json" ]; do
 done
 [ "$n" -gt 0 ] && cat "$d/$kind-$pr-$n.json"
 [ "$n" -gt 0 ] && [ -f "$d/$kind-$pr-$n.err" ] && cat "$d/$kind-$pr-$n.err" >&2
+if [ "$1" = api ]; then
+  [ "$n" -gt 0 ] && exit 0
+  exit 1
+fi
 exit 8
 "#;
 
@@ -50,11 +61,21 @@ impl Bed {
         let gh = dir.path().join("gh");
         std::fs::write(&gh, FAKE_GH).unwrap();
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Self { dir }
+        let bed = Self { dir };
+        // By default the base branch `main` requires nothing.
+        bed.api("repos/o/r/branches/main", "{}");
+        bed.api("repos/o/r/rules/branches/main", "[]");
+        bed
     }
 
     fn answer(&self, kind: &str, pr: u64, n: u32, body: &str) {
         std::fs::write(self.dir.path().join(format!("{kind}-{pr}-{n}.json")), body).unwrap();
+    }
+
+    /// The answer to `gh api <path>`; a path with no answer makes `gh` fail.
+    fn api(&self, path: &str, body: &str) {
+        let slot = path.replace('/', "_");
+        std::fs::write(self.dir.path().join(format!("api-{slot}-1.json")), body).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
@@ -112,7 +133,9 @@ fn checks(items: &[(&str, &str)]) -> String {
 }
 
 fn view(state: &str, mergeable: &str, merge_state: &str) -> String {
-    format!(r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}"}}"#)
+    format!(
+        r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}","baseRefName":"main"}}"#
+    )
 }
 
 #[test]
@@ -139,7 +162,9 @@ fn all_checks_passing_prints_one_done_line_and_exits_zero() {
         bed.calls(),
         [
             "pr checks 7 -R o/r --json name,bucket",
-            "pr view 7 -R o/r --json mergeable,mergeStateStatus,state"
+            "pr view 7 -R o/r --json mergeable,mergeStateStatus,state,baseRefName",
+            "api repos/o/r/branches/main",
+            "api repos/o/r/rules/branches/main"
         ]
     );
 }
@@ -181,6 +206,7 @@ fn a_failure_is_said_once_and_the_run_exits_one() {
 #[test]
 fn skipped_checks_are_counted_and_pending_ones_keep_the_watch_going() {
     let bed = Bed::new();
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     bed.answer("checks", 7, 1, &checks(&[("a", "pending"), ("b", "pass")]));
     bed.answer(
         "checks",
@@ -262,11 +288,13 @@ fn a_call_that_prints_no_json_is_skipped_and_tried_again() {
     bed.answer("checks", 7, 2, &checks(&[("a", "pass")]));
     let run = bed.watch(&["7"]);
     assert_eq!(run.code, 0);
+    // The view never answered, so the base branch and its required checks
+    // stay unknown.
     assert_eq!(
         run.lines,
         [
             "WATCHING o/r#7 (poll 1s)",
-            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
+            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required checks unknown)"
         ]
     );
     assert!(bed.calls().len() >= 4, "{:?}", bed.calls());
@@ -285,6 +313,8 @@ fn a_merged_pull_request_is_done_without_checks() {
 #[test]
 fn several_pull_requests_share_one_line_per_poll_and_a_done_one_is_not_asked_again() {
     let bed = Bed::new();
+    bed.answer("view", 1, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("view", 2, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     bed.answer("checks", 1, 1, &checks(&[("a", "pass")]));
     bed.answer("checks", 2, 1, &checks(&[("a", "pending")]));
     bed.answer("checks", 2, 2, &checks(&[("a", "fail")]));
@@ -445,4 +475,161 @@ fn interval_zero_is_a_usage_error() {
         .unwrap();
     assert_eq!(out.status.code(), Some(3));
     assert!(!bed.dir.path().join("calls.log").exists(), "gh was called");
+}
+
+#[test]
+fn the_required_set_is_read_once_per_pull_request_for_the_whole_watch() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("a", "pending")]));
+    bed.answer("checks", 7, 2, &checks(&[("a", "pending")]));
+    bed.answer("checks", 7, 3, &checks(&[("a", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.watch(&["7"]);
+    let api_calls = bed.calls().iter().filter(|c| c.starts_with("api ")).count();
+    assert_eq!(api_calls, 2, "{:?}", bed.calls());
+}
+
+fn done_line(run: &Run) -> &str {
+    run.lines.last().unwrap()
+}
+
+#[test]
+fn a_required_check_that_never_reported_is_named_and_fails_the_run() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build","build-macos"]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("lint", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 2 passed, 0 failed, 0 skipped (required, never reported: build-macos)"
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn every_required_check_present_leaves_the_done_line_and_exit_code_alone() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build"],"checks":[{"context":"lint","app_id":1}]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("lint", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(done_line(&run), "o/r#7 DONE: 2 passed, 0 failed, 0 skipped");
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn when_neither_endpoint_answers_the_done_line_says_the_required_set_is_unknown() {
+    let bed = Bed::new();
+    std::fs::remove_file(bed.dir.path().join("api-repos_o_r_branches_main-1.json")).unwrap();
+    std::fs::remove_file(
+        bed.dir
+            .path()
+            .join("api-repos_o_r_rules_branches_main-1.json"),
+    )
+    .unwrap();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required checks unknown)"
+    );
+    // Unknown is not a failure: nothing is known to be missing.
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn a_repository_with_only_rules_names_what_its_rules_require() {
+    let bed = Bed::new();
+    // The branch endpoint fails (no protection API access); the rules answer.
+    std::fs::remove_file(bed.dir.path().join("api-repos_o_r_branches_main-1.json")).unwrap();
+    bed.api(
+        "repos/o/r/rules/branches/main",
+        r#"[{"type":"pull_request","parameters":{}},
+            {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"},{"context":"deploy-preview"}]}}]"#,
+    );
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: deploy-preview)"
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// Names match ignoring case and any `Workflow / ` prefix in front of the job.
+#[test]
+fn a_check_reported_with_another_case_or_a_prefix_counts_as_reported() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["Build","test"]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("CI / test", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(done_line(&run), "o/r#7 DONE: 2 passed, 0 failed, 0 skipped");
+    assert_eq!(run.code, 0);
+}
+
+/// GitHub recomputes the merge state after the last check ends, so a BLOCKED
+/// read in the poll that sees the last check pass may be out of date.
+#[test]
+fn a_blocked_state_at_done_is_read_again_and_the_fresh_one_is_used() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    bed.answer("view", 7, 2, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
+        ]
+    );
+    let views = bed
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("pr view"))
+        .count();
+    assert_eq!(views, 2, "{:?}", bed.calls());
+}
+
+#[test]
+fn a_state_that_is_still_blocked_after_the_second_read_is_reported_as_before() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        run.lines.get(1),
+        Some(
+            &"o/r#7 MERGEABLE: MERGEABLE/BLOCKED | o/r#7 DONE: 1 passed, 0 failed, 0 skipped (merge state: BLOCKED)"
+                .to_owned()
+        )
+    );
 }
