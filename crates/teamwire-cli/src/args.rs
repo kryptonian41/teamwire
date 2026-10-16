@@ -314,11 +314,19 @@ pub(crate) struct HookArgs {
 }
 
 #[derive(Subcommand)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "the variant names are the command names Claude Code's hook settings spell"
+)]
 pub(crate) enum HookCommand {
     /// A member's Stop hook: hold once for gaps or unread messages, else deliver the result.
     ClaudeStop(HookTarget),
     #[command(about = "A member's PostToolUse hook: remind it of unread message ids.")]
     ClaudePostTool(HookTarget),
+    #[command(
+        about = "The lead's Stop hook: hold once when a team has working members and no watch."
+    )]
+    ClaudeLeadStop,
 }
 
 /// Who the hook runs for. The per-run settings put both in the command.

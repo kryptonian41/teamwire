@@ -210,7 +210,8 @@ fn a_lease_nobody_refreshed_does_not_count() {
     let mut store = rig.team("alpha");
     rig.platform.set_alive(Pid::new(700), true);
     rig.lease(&mut store, 700);
-    rig.clock.advance(WATCH_LEASE_STALE + Duration::from_secs(1));
+    rig.clock
+        .advance(WATCH_LEASE_STALE + Duration::from_secs(1));
     assert_eq!(rig.names("lead-1"), ["alpha"]);
 }
 
