@@ -231,7 +231,14 @@ impl Host for SlowDialog {
                         st = self.state.lock().unwrap();
                     }
                 }
-                _ => {}
+                Key::Char(_)
+                | Key::Up
+                | Key::Left
+                | Key::Right
+                | Key::Tab
+                | Key::Escape
+                | Key::Backspace
+                | Key::CtrlC => {}
             }
         }
         Ok(())

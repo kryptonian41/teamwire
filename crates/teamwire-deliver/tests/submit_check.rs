@@ -2,7 +2,7 @@
 //! after the submit. A line still in the input box gets one more Enter.
 #![expect(
     clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+    reason = "the shared rig unwraps its fixtures; a failure there fails the test"
 )]
 
 #[path = "support/rig.rs"]
@@ -46,7 +46,7 @@ fn a_line_the_session_took_gets_no_second_enter() {
         host.set_screen(&later, "> hello there\n* Working (esc to interrupt)\n> ");
     });
     let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello there", 80));
-    taken.join().unwrap();
+    assert!(taken.join().is_ok());
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert!(rig.host.keys_sent(&place).is_empty());
 }
@@ -63,7 +63,7 @@ fn a_dialog_on_screen_gets_no_enter() {
         host.set_screen(&later, &format!("{PLAIN_TRUST_TEXT}\n> hello there"));
     });
     deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello there", 80));
-    opened.join().unwrap();
+    assert!(opened.join().is_ok());
     assert!(rig.host.keys_sent(&place).is_empty());
 }
 
