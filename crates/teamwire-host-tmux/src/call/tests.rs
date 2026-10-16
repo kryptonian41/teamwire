@@ -12,7 +12,7 @@ fn run(code: i32, stdout: &str, stderr: &str) -> Result<String, Failure> {
     }));
     call(
         &platform,
-        Some("s"),
+        Some(Socket::Name("s")),
         &["list-panes"],
         None,
         Duration::from_secs(1),
@@ -30,7 +30,7 @@ fn stdout_is_returned_and_the_socket_is_named_first() {
     }));
     let got = call(
         &platform,
-        Some("sock"),
+        Some(Socket::Name("sock")),
         &["list-panes", "-a"],
         None,
         Duration::from_secs(2),
@@ -41,6 +41,30 @@ fn stdout_is_returned_and_the_socket_is_named_first() {
     assert_eq!(sent.program, "tmux");
     assert_eq!(sent.args, ["-L", "sock", "list-panes", "-a"]);
     assert_eq!(*waited, Duration::from_secs(2));
+}
+
+#[test]
+fn a_socket_path_is_passed_with_dash_s() {
+    let platform = FakePlatform::new();
+    platform.queue_run(Ok(RunOutput {
+        exit_code: 0,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        timed_out: false,
+    }));
+    call(
+        &platform,
+        Some(Socket::Path("/tmp/tmux-1/w")),
+        &["list-panes"],
+        None,
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    let runs = platform.runs();
+    assert_eq!(
+        runs.first().unwrap().0.args,
+        ["-S", "/tmp/tmux-1/w", "list-panes"]
+    );
 }
 
 #[test]
