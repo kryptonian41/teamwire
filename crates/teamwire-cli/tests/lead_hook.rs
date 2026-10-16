@@ -168,7 +168,7 @@ fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
 }
 
 /// Two teams' databases are each held under an exclusive lock by another
-/// process, so each read waits for SQLite's own 5 s busy timeout. Read one
+/// process, so each read waits for the database engine's own 5 s busy timeout. Read one
 /// after the other that is 10 s; the hook must give up at its own 5 s bound
 /// and let the stop through with no output.
 #[test]
