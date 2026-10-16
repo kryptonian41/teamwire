@@ -12,8 +12,8 @@ pub mod rig;
 use rig::{Rig, git};
 use teamwire_close::{CloseOpts, CloseReport, CloseTarget, close, plan_close_with};
 use teamwire_core::{
-    Clock, CompletionStatus, EventType, FinalSource, Host, MemberKind, MemberState, PlaceState,
-    Role,
+    Clock, CompletionStatus, EventType, FinalSource, Host, Liveness, MemberKind, MemberState,
+    PlaceState, Role,
 };
 use teamwire_store::{NewCompletion, NewVerifyRecord, Waiver};
 
@@ -375,7 +375,7 @@ fn busy_member_needs_stop_and_stop_says_so() {
 }
 
 #[test]
-fn stop_never_overrides_uncommitted_work_or_an_unknown_state() {
+fn stop_never_overrides_uncommitted_work() {
     let mut rig = Rig::new();
     let api = rig.add_worktree_member("api", MemberKind::Implementer);
     let head = head_of(&rig, "api");
@@ -386,22 +386,70 @@ fn stop_never_overrides_uncommitted_work_or_an_unknown_state() {
         unverified: true,
         ..CloseOpts::default()
     };
-    let report = remove(&mut rig, "api", opts.clone());
+    let report = remove(&mut rig, "api", opts);
     assert!(
         asks(&report.refusals, "api has 1 uncommitted path"),
         "{report:?}"
     );
     assert!(api.cwd.join("wip.txt").is_file());
     assert_eq!(rig.member("api").state, MemberState::Started);
+}
 
-    std::fs::remove_file(api.cwd.join("wip.txt")).unwrap();
-    rig.set_place_state("api", PlaceState::Unknown);
-    let report = remove(&mut rig, "api", opts);
+#[test]
+fn an_unknown_state_refuses_without_stop_and_is_stopped_anyway_with_it() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    rig.set_place_state("scout", PlaceState::Unknown);
+    let report = remove(&mut rig, "scout", CloseOpts::default());
     assert!(
-        asks(&report.refusals, "cannot tell whether api is busy"),
+        asks(&report.refusals, "cannot tell whether scout is busy"),
         "{report:?}"
     );
-    assert!(api.cwd.is_dir());
+    assert_eq!(rig.member("scout").state, MemberState::Started);
+
+    let opts = CloseOpts {
+        stop: true,
+        ..CloseOpts::default()
+    };
+    let report = remove(&mut rig, "scout", opts);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let stop = report.steps.iter().find(|s| s.step == "stop").unwrap();
+    assert!(
+        stop.detail.contains("state was unknown") && stop.detail.contains("stopped anyway"),
+        "{stop:?}"
+    );
+    assert!(place_is_closed(&rig, "scout"));
+    assert_eq!(rig.member("scout").state, MemberState::Removed);
+}
+
+#[test]
+fn a_host_with_no_state_asks_the_harness_instead() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    rig.set_place_state("scout", PlaceState::Unknown);
+
+    rig.set_session_liveness("scout", Liveness::Alive(PlaceState::Working));
+    let report = remove(&mut rig, "scout", CloseOpts::default());
+    assert!(asks(&report.refusals, "scout is busy"), "{report:?}");
+
+    rig.set_session_liveness("scout", Liveness::Alive(PlaceState::Blocked));
+    let report = remove(&mut rig, "scout", CloseOpts::default());
+    assert!(asks(&report.refusals, "dialog"), "{report:?}");
+
+    // Both unknown stays unknown: a session the harness cannot read is no answer.
+    rig.set_session_liveness("scout", Liveness::Unknown);
+    let report = remove(&mut rig, "scout", CloseOpts::default());
+    assert!(
+        asks(&report.refusals, "cannot tell whether scout is busy"),
+        "{report:?}"
+    );
+
+    rig.set_session_liveness("scout", Liveness::Alive(PlaceState::Idle));
+    let report = remove(&mut rig, "scout", CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(rig.member("scout").state, MemberState::Removed);
+    assert!(place_is_closed(&rig, "scout"));
 }
 
 #[test]

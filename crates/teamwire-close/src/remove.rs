@@ -173,13 +173,19 @@ pub(crate) fn run(
             format!("removing anyway (--unverified): {why}"),
         ));
     }
-    let stopped_mid_turn = matches!(busy_state(ctx, member), Busy::Working | Busy::Blocked);
-    if stopped_mid_turn {
-        report.steps.push(step(
+    let busy = busy_state(ctx, member);
+    match &busy {
+        Busy::Working | Busy::Blocked => report.steps.push(step(
             "stop",
             true,
             format!("stopping {role} mid-turn (--stop); that turn writes no report"),
-        ));
+        )),
+        Busy::Unknown(why) => report.steps.push(step(
+            "stop",
+            true,
+            format!("{role}'s state was unknown ({why}); stopped anyway (--stop)"),
+        )),
+        Busy::Idle => {}
     }
     if let Some(branch) = &member.branch {
         report.branches_kept.push(branch.clone());
@@ -219,7 +225,7 @@ pub(crate) fn run(
         remove_worktree(c, &member)
     }) {
         go("mark_removed", &mut report, &|c| {
-            mark_removed(c, &member, &gate.overridden, stopped_mid_turn)
+            mark_removed(c, &member, &gate.overridden, &busy)
         });
     }
     report
@@ -305,17 +311,17 @@ fn mark_removed(
     ctx: &mut Ctx<'_>,
     member: &Member,
     overridden: &[String],
-    stopped: bool,
+    busy: &Busy,
 ) -> Result<String, String> {
     let role = &member.role;
     let now = ctx.clock.now();
-    let note = if stopped {
-        "stopped while busy"
-    } else {
-        "removed"
+    let note = match busy {
+        Busy::Working | Busy::Blocked => "stopped while busy",
+        Busy::Unknown(_) => "stopped, state unknown",
+        Busy::Idle => "removed",
     };
     let data = json!({
-        "stopped": stopped,
+        "stopped": *busy != Busy::Idle,
         "unverified": !overridden.is_empty(),
         "unverified_reasons": overridden,
     });

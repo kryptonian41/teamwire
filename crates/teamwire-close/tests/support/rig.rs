@@ -313,6 +313,18 @@ impl Rig {
         self.host.set_state(&self.place_of(role), state);
     }
 
+    /// Gives the member a harness session that reports `liveness`, as the
+    /// Claude harness reports a session's status from its session file.
+    pub fn set_session_liveness(&mut self, role: &str, liveness: Liveness) {
+        let session = SessionId::parse(&format!("session-{role}")).unwrap();
+        self.harness
+            .add_session(session.clone(), Vec::new(), liveness);
+        let parsed = Role::parse(role).unwrap();
+        self.store
+            .write(|tx| tx.set_member_session(&parsed, &session))
+            .unwrap();
+    }
+
     /// Records a sleep hold on the team.
     pub fn record_hold(&mut self, hold: HoldInfo) {
         self.store
