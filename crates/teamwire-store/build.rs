@@ -65,11 +65,16 @@ fn main() {
         .and_then(git_dir)
         .and_then(|git| head_commit(&git, &mut watch))
         .map_or_else(|| "unknown".to_owned(), |sha| sha[..12].to_owned());
-    // Watching `watch` would rerun this script on every commit and rebuild
-    // every crate above the store. `cargo install` builds in a fresh target
-    // directory, so an installed binary still names its own commit; a
-    // development build keeps the commit it was first built at.
-    drop(watch);
+    // A release build (what `cargo install` runs, in the workspace `target/`)
+    // reruns when HEAD or its branch moves, so an installed binary names the
+    // commit it was installed from. Every other profile reruns only when this
+    // script changes, so a commit does not rebuild every crate above the store;
+    // a development build keeps the commit it was first built at.
+    if std::env::var("PROFILE").is_ok_and(|p| p == "release") {
+        for path in watch {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rustc-env=TEAMWIRE_BUILD_COMMIT={commit}");
 }
