@@ -134,6 +134,10 @@ fn dispatch(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliE
 /// Runs one call. The exit code is 0 for a result, 1 for an error envelope,
 /// and 2 when the fake itself is misconfigured.
 pub fn run(argv: &[String]) -> ExitCode {
+    if argv == ["--version"] {
+        say(&mut std::io::stdout().lock(), "herdr 0.0.0 (fake-herdr)");
+        return ExitCode::SUCCESS;
+    }
     let args = Args::parse(argv);
     let command = args.command();
     if let Err(text) = syntax::check(&args) {

@@ -16,9 +16,15 @@ use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_VERSION};
 /// `tWIR`. A file with another id (including 0 with tables in it) is not ours.
 pub const APPLICATION_ID: i32 = 0x7457_4952;
 
-/// The version recorded in each event's `writer_version`, unless a caller
-/// overrides it with `Store::with_writer_version`.
-pub const WRITER_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// The build identity recorded in each event's `writer_version`, unless a
+/// caller overrides it with `Store::with_writer_version`: the crate version,
+/// `+`, and the first 12 hex digits of the git commit (`unknown` when the
+/// build could not read one). Compare it as text, never as semver.
+pub const WRITER_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION"),
+    "+",
+    env!("TEAMWIRE_BUILD_COMMIT")
+);
 
 /// How long a connection waits for another writer before `StoreError::Busy`.
 pub const BUSY_TIMEOUT_MS: u32 = 5000;
@@ -392,4 +398,17 @@ fn check_version_not_newer(db: u32) -> Result<(), StoreError> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod build_identity_tests {
+    use super::WRITER_VERSION;
+
+    #[test]
+    fn the_writer_version_is_the_crate_version_plus_a_commit_or_unknown() {
+        let (version, commit) = WRITER_VERSION.split_once('+').unwrap_or(("", ""));
+        assert_eq!(version, env!("CARGO_PKG_VERSION"), "{WRITER_VERSION}");
+        let is_commit = commit.len() == 12 && commit.bytes().all(|b| b.is_ascii_hexdigit());
+        assert!(is_commit || commit == "unknown", "{WRITER_VERSION}");
+    }
 }

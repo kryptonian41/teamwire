@@ -16,10 +16,11 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput,
-    TeamName, Timestamp,
+    Clock, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Pid, PlatformError,
+    PlatformErrorCode, Registry, Role, RunOutput, TeamName, Timestamp,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
@@ -49,6 +50,8 @@ mod wiring {
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
+        pub(crate) registry: teamwire_core::Registry,
+        pub(crate) clock: teamwire_fakes::FakeClock,
     }
 }
 
@@ -93,6 +96,24 @@ struct Bed {
     bin: TestHome,
     platform: FakePlatform,
     host: Host,
+    /// What `claude --help` prints.
+    claude_help: String,
+    /// The environment variables that are set.
+    env_names: Vec<String>,
+    registry: Registry,
+    clock: FakeClock,
+}
+
+const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
+                         --settings --mcp-config --model --effort";
+
+fn answer(text: &str) -> RunOutput {
+    RunOutput {
+        exit_code: 0,
+        stdout: text.as_bytes().to_vec(),
+        stderr: Vec::new(),
+        timed_out: false,
+    }
 }
 
 impl Bed {
@@ -104,6 +125,15 @@ impl Bed {
             bin: TestHome::new().unwrap(),
             platform: FakePlatform::new(),
             host: Host::Herdr,
+            claude_help: ALL_FLAGS.to_owned(),
+            env_names: Vec::new(),
+            registry: {
+                let mut registry = Registry::new();
+                registry.add_harness(Arc::new(FakeHarness::new())).unwrap();
+                registry.add_host(Arc::new(FakeHost::new())).unwrap();
+                registry
+            },
+            clock: FakeClock::new(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -184,15 +214,24 @@ impl Bed {
 
     /// The checks as a binary under `target/` (`build`) or an installed one.
     fn checks_as(&self, build: bool) -> Vec<Check> {
+        // The order doctor runs them in: git, then the claude probes, then
+        // the host's version.
+        self.platform.queue_run(Ok(answer("")));
+        self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
+        self.platform.queue_run(Ok(answer(&self.claude_help)));
+        self.platform.queue_run(Ok(answer("host 1.2.3\n")));
         diagnose(&Inputs {
             host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
+            registry: &self.registry,
+            clock: &self.clock,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
             claude: self.claude_config(),
             lead_entry: Ok(self.lead_entry()),
             running_a_build: build,
             repo: self.home.path().to_path_buf(),
+            env_names: self.env_names.clone(),
         })
     }
 
@@ -564,11 +603,14 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         host: bed.host,
         home: bed.home.path().to_path_buf(),
         platform: &bed.platform,
+        registry: &bed.registry,
+        clock: &bed.clock,
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
+        env_names: Vec::new(),
     });
     assert_eq!(level_of(&checks, "old lead setup"), Level::Pass);
     assert_eq!(
@@ -705,4 +747,154 @@ fn with_no_host_doctor_says_so_and_requires_neither_host_tool() {
     assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
     assert_eq!(level_of(&checks, "host"), Level::Pass);
     assert!(!names(&checks).contains(&"herdr session hook"));
+}
+
+#[test]
+fn the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines() {
+    let bed = Bed::healthy();
+    let checks = bed.checks();
+    let detail = |name: &str| {
+        checks
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .detail
+            .clone()
+    };
+    assert_eq!(detail("claude version"), "2.1.0 (Claude Code)");
+    assert_eq!(detail("herdr version"), "host 1.2.3");
+    assert_eq!(level_of(&checks, "claude flags"), Level::Pass);
+}
+
+#[test]
+fn a_claude_help_without_a_launch_flag_warns_and_names_it() {
+    let mut bed = Bed::healthy();
+    bed.claude_help = ALL_FLAGS.replace("--effort", "");
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "claude flags")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("--effort") && !detail.contains("--model"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn a_probe_that_times_out_or_fails_is_a_warning() {
+    let bed = Bed::healthy();
+    bed.platform.queue_run(Ok(answer("")));
+    bed.platform.queue_run(Ok(RunOutput {
+        exit_code: 124,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        timed_out: true,
+    }));
+    bed.platform
+        .queue_run(Err(PlatformError::new(PlatformErrorCode::NotFound, "gone")));
+    // These queue ahead of `checks_as`'s own answers: git, the claude
+    // version, the claude help.
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "claude version"),
+        Level::Warn,
+        "{checks:?}"
+    );
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn, "{checks:?}");
+}
+
+#[test]
+fn a_credential_variable_warns_by_name_and_a_clean_environment_passes() {
+    let mut bed = Bed::healthy();
+    assert_eq!(level_of(&bed.checks(), "credential variables"), Level::Pass);
+    bed.env_names = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX", "HOME"]
+        .map(str::to_owned)
+        .to_vec();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "credential variables"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "credential variables")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("ANTHROPIC_API_KEY, CLAUDE_CODE_USE_VERTEX"),
+        "{detail}"
+    );
+    assert!(!detail.contains("HOME"), "{detail}");
+}
+
+/// Starts member `role` on `store`, which writes `version` as the writer of
+/// the `member.started` event.
+fn start_member(store: &mut Store, role: &str) {
+    let role = Role::parse(role).unwrap();
+    let now = FakeClock::new().now();
+    let new = teamwire_store::NewMember {
+        role: role.clone(),
+        title: "T".to_owned(),
+        kind: MemberKind::Implementer,
+        mode: Mode::Pane,
+        harness: HarnessId::from_static(FakeHarness::ID),
+        host: HostId::from_static(FakeHost::ID),
+        cwd: PathBuf::from("/tmp"),
+        repo: None,
+        branch: None,
+        base: None,
+        base_sha: None,
+        check: None,
+        owns: vec![],
+        deadline_s: 1800,
+    };
+    store
+        .write(|tx| {
+            tx.insert_member(now, &new)?;
+            tx.set_member_state(now, &role, MemberState::Started, &serde_json::json!({}))
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    let mut older = Store::open(bed.home.path(), &TeamName::parse("alpha").unwrap())
+        .unwrap()
+        .with_writer_version("0.0.0+aaaaaaaaaaaa");
+    start_member(&mut older, "web");
+    drop(older);
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha older members")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("web (0.0.0+aaaaaaaaaaaa)") && !detail.contains("api"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("relaunch the member, or ignore if its wiring did not change"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn members_of_this_build_pass_the_older_members_check() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    assert_eq!(
+        level_of(&bed.checks(), "team alpha older members"),
+        Level::Pass
+    );
 }
