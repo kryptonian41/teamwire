@@ -282,7 +282,7 @@ fn run_member(
     }
 
     // 3. Setup, before the agent exists.
-    run_setup(ctx, plan, dirs, m)?;
+    run_setup(ctx, plan, dirs, m, warnings)?;
     steps.mark(ctx, "setup");
 
     // 4. Contract, brief, and the harness's launch files.
