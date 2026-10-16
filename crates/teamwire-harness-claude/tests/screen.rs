@@ -219,3 +219,26 @@ fn only_the_first_forty_characters_are_matched() {
     let first_row: String = long.chars().take(60).collect();
     assert!(pending(&format!("❯ {first_row}\n"), &long));
 }
+
+#[test]
+fn a_box_holding_only_a_paste_marker_is_pending() {
+    for marker in [
+        "[Pasted text #1]",
+        "[Pasted text #12 +34 lines]",
+        "[Pasted text #2 +1 line]",
+    ] {
+        let tail = format!("done\n❯ {marker}\n  ? for shortcuts");
+        assert!(
+            pending(&tail, "a long line the box did not show"),
+            "{marker}"
+        );
+    }
+}
+
+#[test]
+fn text_that_only_mentions_a_paste_marker_is_not_pending() {
+    assert!(!pending("❯ see [Pasted text #1] above\n", "something else"));
+    assert!(!pending("❯ [Pasted text #]\n", "something else"));
+    assert!(!pending("❯ [Pasted text #1 +x lines]\n", "something else"));
+    assert!(!pending("[Pasted text #1]\n❯ \n", "something else"));
+}

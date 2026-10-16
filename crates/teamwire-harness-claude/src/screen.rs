@@ -90,7 +90,29 @@ fn input_box_text(tail: &str) -> Option<String> {
 /// to decide on one more Enter.
 pub(crate) fn line_pending(tail: &str, line: &OneLine) -> bool {
     let wanted: String = squash(line.as_str()).chars().take(PREFIX_CHARS).collect();
-    input_box_text(tail).is_some_and(|text| text.contains(&wanted))
+    input_box_text(tail).is_some_and(|text| text.contains(&wanted) || is_paste_marker(&text))
+}
+
+/// A long paste shows in the box as `[Pasted text #1]`, or
+/// `[Pasted text #1 +12 lines]`, in place of the text. The wording is
+/// assumed from Claude Code's behaviour, not captured from a real screen, so
+/// only a box holding nothing but such a marker counts.
+fn is_paste_marker(text: &str) -> bool {
+    text.strip_prefix("[Pasted text #")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .is_some_and(|rest| {
+            let digits = rest.chars().take_while(char::is_ascii_digit).count();
+            digits > 0
+                && rest.get(digits..).is_some_and(|more| {
+                    more.is_empty()
+                        || more
+                            .strip_prefix(" +")
+                            .and_then(|n| {
+                                n.strip_suffix(" lines").or_else(|| n.strip_suffix(" line"))
+                            })
+                            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+                })
+        })
 }
 
 /// The non-empty lines at the end of the screen that can belong to the
