@@ -23,9 +23,13 @@ and prompt it yourself; that is simpler.
 - teamwire agent names are `tw_<team>_<role>` and never contain a hyphen.
 - teamwire's wake-up and watch lines start with `[teamwire:<team>]`.
 - teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
-  `teamwire install` writes under `~/.claude/`: this skill, and the lead's MCP
-  server through `claude mcp`. After a new `cargo install`, run
-  `teamwire install` again to update both.
+  `teamwire install` changes Claude Code's setup, and only through
+  `claude plugin`. It writes one plugin, `teamwire@teamwire`, to
+  `$TEAMWIRE_HOME/claude-plugin/` and registers it at user scope. The plugin
+  carries this skill, the lead's MCP server and the lead's Stop hook. After a
+  new `cargo install`, run `teamwire install` again to update it.
+- A member never loads that plugin: launch switches `teamwire@teamwire` off in
+  every member's settings.
 
 ## Setting up a machine
 
@@ -40,18 +44,19 @@ The steps, in order:
      Claude Code.
    - the host adapter's check for the host you use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-   - the lead's MCP server. Register it with `teamwire install` (step 3). Then, during
-     step 4, call `team_status` on the throwaway team from the lead's
-     session. A reply that is
+   - the lead's MCP server. It comes with the plugin that `teamwire install`
+     registers (step 3). Then, during step 4, call `team_status` on the
+     throwaway team from the lead's session. A reply that is
      not refused shows the server sees `CLAUDE_CODE_SESSION_ID`, so the
      lead's calls are accepted. Until that is confirmed, use the CLI.
-3. Run `teamwire install`. It registers the lead's MCP server and installs
-   this skill.
+3. Run `teamwire install`. It registers the teamwire plugin, which holds this
+   skill, the lead's MCP server and the lead's Stop hook. It also removes the
+   skill and MCP server entry of an older install. Start a new Claude Code
+   session afterwards: an open session does not load the plugin.
 4. Run one throwaway team in a scratch repository.
-5. Check that `teamwire doctor` reports the skill and the lead's MCP server
-   as `ok`.
+5. Check that `teamwire doctor` reports the teamwire plugin as `ok`.
 
-`teamwire uninstall` removes the skill and the lead's MCP server again.
+`teamwire uninstall` removes the plugin and its marketplace again.
 teamwire's state stays in `$TEAMWIRE_HOME` either way.
 
 ## How it fits together
@@ -85,23 +90,24 @@ done" is the model's job. Delivering is the hook's job.
 You have two ways to call teamwire, and both apply the same rules and
 refusals.
 
-- **MCP tools**, from the server that `examples/mcp/lead.json` registers.
-  Use these six for messages and reads:
+- **MCP tools**, from the lead's MCP server in the teamwire plugin
+  (`examples/mcp/lead.json` shows the same server). Use these six for messages
+  and reads:
 
   | Tool | Same as |
   | --- | --- |
-  | `mcp__teamwire__team_send` | `teamwire send` |
-  | `mcp__teamwire__team_resend` | `teamwire resend` |
-  | `mcp__teamwire__team_status` | `teamwire status --json` |
-  | `mcp__teamwire__team_members` | `teamwire members` (`of` reads another team) |
-  | `mcp__teamwire__team_log` | `teamwire log` |
-  | `mcp__teamwire__team_teams` | `teamwire teams --json` |
+  | `mcp__plugin_teamwire_teamwire__team_send` | `teamwire send` |
+  | `mcp__plugin_teamwire_teamwire__team_resend` | `teamwire resend` |
+  | `mcp__plugin_teamwire_teamwire__team_status` | `teamwire status --json` |
+  | `mcp__plugin_teamwire_teamwire__team_members` | `teamwire members` (`of` reads another team) |
+  | `mcp__plugin_teamwire_teamwire__team_log` | `teamwire log` |
+  | `mcp__plugin_teamwire_teamwire__team_teams` | `teamwire teams --json` |
 
   Claude Code loads these tools only on request. Load all six in one call
   before the first use in a session:
 
   ```
-  ToolSearch  query: "select:mcp__teamwire__team_send,mcp__teamwire__team_resend,mcp__teamwire__team_status,mcp__teamwire__team_members,mcp__teamwire__team_log,mcp__teamwire__team_teams"  max_results: 6
+  ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams"  max_results: 6
   ```
 
   Pass `team` in every call. Each tool returns JSON, and a refusal carries
