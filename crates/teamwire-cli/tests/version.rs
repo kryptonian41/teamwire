@@ -3,10 +3,6 @@
     clippy::disallowed_methods,
     reason = "the test starts the teamwire binary as a user would"
 )]
-#![expect(
-    clippy::unwrap_used,
-    reason = "a failure to run the binary fails the test"
-)]
 
 use std::process::Command;
 
