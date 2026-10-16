@@ -91,6 +91,9 @@ impl Host for SlowHost {
     fn place_env_var(&self) -> Option<&'static str> {
         self.inner.place_env_var()
     }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.inner.place_from_env(read)
+    }
 }
 
 /// A rig whose registry holds a `SlowHost` in place of the plain fake.
@@ -182,4 +185,34 @@ fn roomy_deadline_keeps_the_five_second_bound() {
     );
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert!(slow.given().iter().all(|t| *t == Duration::from_secs(5)));
+}
+
+fn reentered_events(rig: &Rig) -> usize {
+    rig.store
+        .read(|tx| {
+            Ok(tx
+                .events_of_type(teamwire_core::EventType::DeliveryReentered)?
+                .items
+                .len())
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_spent_budget_after_the_second_enter_skips_the_event() {
+    let (mut rig, _slow) = slow_rig(Duration::from_secs(5));
+    let mut caps = FakeHost::caps();
+    caps.submit_ack = teamwire_core::SubmitAck::None;
+    rig.host.set_caps(caps);
+    // Six host calls of 5 s each: the key press ends at 30 s, past 28 s.
+    let deadline = rig.clock.monotonic() + Duration::from_secs(28);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert_eq!(rig.host.log().count_named("send_keys"), 1);
+    assert_eq!(reentered_events(&rig), 0);
 }

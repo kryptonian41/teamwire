@@ -255,6 +255,9 @@ impl Host for SlowDialog {
     fn place_env_var(&self) -> Option<&'static str> {
         self.host.place_env_var()
     }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.host.place_from_env(read)
+    }
 }
 
 fn slow_answer(

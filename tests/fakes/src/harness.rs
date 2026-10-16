@@ -152,13 +152,13 @@ impl FakeHarness {
         }));
     }
 
-    /// `processes_for_session` and `is_alive` fail with `err` until cleared.
     /// Whether `line_pending` can tell (the default) or, like a harness that
     /// cannot read its screen, always answers `false`.
     pub fn set_detects_pending(&self, detects: bool) {
         lock(&self.state).detects_pending = detects;
     }
 
+    /// `processes_for_session` and `is_alive` fail with `err` until cleared.
     pub fn fail_listing(&self, err: Option<HarnessError>) {
         lock(&self.state).listing_fault = err;
     }

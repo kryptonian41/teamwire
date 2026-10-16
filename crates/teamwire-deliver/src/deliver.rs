@@ -60,8 +60,14 @@ fn run(
         Err(e) => (DeliveryOutcome::Undelivered(e), None),
     };
     // After every host call, so no write transaction is open during one. The
-    // line is already handed off, so a failed write changes nothing.
+    // line is already handed off, so a failed write changes nothing. A locked
+    // store would make the write wait past the caller's deadline, so it is
+    // skipped when no time is left.
     if let Some(place) = reentered_at {
+        if budget.call().is_err() {
+            tracing::warn!("the delivery budget is spent; the second Enter is not recorded");
+            return outcome;
+        }
         let at = ctx.clock.now();
         if let Err(e) = ctx
             .store
