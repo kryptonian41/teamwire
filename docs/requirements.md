@@ -213,7 +213,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | LCH-21 | MUST | Per-member harness configuration (hooks, MCP server) is passed per run through files in the team directory. teamwire never registers anything in the user's global configuration. | harness R7; `CLAUDE.md` |
 | LCH-22 | SHOULD | teamwire chooses the member's session id before launch where the harness allows it (Claude: `--session-id`). | harness 1.3 |
 | LCH-23 | SHOULD | Titles are required, at most 28 characters, unique per team ignoring case. | speclife L5 |
-| LCH-24 | MUST | A worktree member's brief is also copied to `<worktree>/TASK.md`, and `TASK.md` is added to the repository's `info/exclude`, so the member reads its brief where it works and never commits it. Close and verify ignore that one path. | speclife L7; archrev 8 |
+| LCH-24 | MUST | A worktree member's brief is also copied to `<worktree>/TASK.md`, and `TASK.md` is added to the repository's `info/exclude`, so the member reads its brief where it works and never commits it. Close and verify ignore that one path. Each file the setup command created that git does not already ignore is also added there, anchored at the root, and launch names each one in its warnings. `info/exclude` is shared by every worktree and the main checkout. | speclife L7; archrev 8 |
 
 ### Verify (VER)
 

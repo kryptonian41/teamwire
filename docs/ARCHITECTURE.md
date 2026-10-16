@@ -102,7 +102,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
 
-The database tables (schema version 3; exact DDL is owned by the store
+The database tables (schema version 4; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
