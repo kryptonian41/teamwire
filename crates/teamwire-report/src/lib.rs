@@ -17,6 +17,7 @@ use thiserror::Error;
 
 mod done;
 mod final_message;
+mod lead_stop;
 mod note;
 mod paths;
 mod reminder;
@@ -24,6 +25,7 @@ mod result_file;
 mod turn_end;
 
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
+pub use lead_stop::{teams_without_watch, watch_missing_note};
 pub use reminder::on_tool_use;
 pub use turn_end::on_turn_end;
 
