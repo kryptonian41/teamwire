@@ -20,7 +20,7 @@ use std::path::Path;
 use fixture::{Bed, role};
 use teamwire_core::{CompletionStatus, DeliveryState, PlaceState, ReportState};
 use teamwire_store::{Ctx, Store};
-use teamwire_watch::StatusView;
+use teamwire_watch::{StatusView, WatchState};
 
 /// A hash of every file under `dir`, by path.
 fn hashes(dir: &Path) -> BTreeMap<String, u64> {
@@ -221,4 +221,29 @@ fn role_adds_the_resume_command() {
     assert!(!command.contains("TEAMWIRE_TOKEN"), "{command}");
     let missing = status_of(&bed, Some("nobody"));
     assert!(missing.errors.iter().any(|e| e.contains("nobody")));
+}
+
+#[test]
+fn status_says_whether_a_watch_runs() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    let none = status_of(&bed, None).watch;
+    assert_eq!((none.state, none.pid), (WatchState::None, None));
+
+    bed.start_watch(4242);
+    bed.age(std::time::Duration::from_secs(30));
+    let running = status_of(&bed, None).watch;
+    assert_eq!(running.state, WatchState::Running);
+    assert_eq!(running.pid.map(teamwire_core::Pid::get), Some(4242));
+    assert_eq!(running.heartbeat_age_s, Some(30));
+
+    // The heartbeat is old: a lease nobody renews is stale.
+    bed.age(std::time::Duration::from_secs(900));
+    assert_eq!(status_of(&bed, None).watch.state, WatchState::Stale);
+
+    // The process is gone, whatever the heartbeat says.
+    let mut bed = Bed::new();
+    bed.start_watch(4243);
+    bed.platform.set_alive(teamwire_core::Pid::new(4243), false);
+    assert_eq!(status_of(&bed, None).watch.state, WatchState::Stale);
 }

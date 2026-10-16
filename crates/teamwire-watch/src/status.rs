@@ -8,12 +8,15 @@ use teamwire_core::{
     Address, DeliveryState, Liveness, Member, MemberState, OtelConfig, Recipient, ReportState,
     Role, SessionId, Timestamp, one_line,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started};
+use teamwire_deliver::{PENDING_STALE, attempt_started, watch_lease_is_dead};
 use teamwire_store::{CompletionRecord, Ctx, Party, ReadTx, StoreError, database_path};
 
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::text::result_path;
-use crate::{LeadView, MemberView, MessageView, StatusView, StuckDelivery, UndeliveredResult};
+use crate::{
+    LeadView, MemberView, MessageView, StatusView, StuckDelivery, UndeliveredResult, WatchState,
+    WatchView,
+};
 
 /// The longest message excerpt status shows.
 const EXCERPT: usize = 80;
@@ -50,6 +53,19 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         session_id: team.lead_session.clone(),
         liveness: Liveness::Unknown,
     });
+
+    view.watch = match tx.watch_lease()? {
+        None => WatchView::default(),
+        Some(lease) => WatchView {
+            state: if watch_lease_is_dead(&lease, ctx.platform, now) {
+                WatchState::Stale
+            } else {
+                WatchState::Running
+            },
+            pid: Some(lease.pid),
+            heartbeat_age_s: Some(seconds(now.saturating_since(lease.heartbeat_at))),
+        },
+    };
 
     let mut members = Vec::new();
     for member in tx.members()?.all_or_corrupt()? {

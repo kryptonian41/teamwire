@@ -22,7 +22,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
-    Actor, DeliveryState, DisplayId, Liveness, MessageType, Recipient, ReportState, Role,
+    Actor, DeliveryState, DisplayId, Liveness, MessageType, Pid, Recipient, ReportState, Role,
     SessionId, TeamName, TeamState, Timestamp,
 };
 use teamwire_store::Ctx;
@@ -88,6 +88,28 @@ pub struct UndeliveredResult {
     pub path: PathBuf,
 }
 
+/// Whether a watch is looking after the team.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchState {
+    /// A live process holds the lease and beats recently.
+    Running,
+    /// A lease row exists, but its process is gone or its heartbeat is old.
+    Stale,
+    /// No lease row: no watch was started, or it ended.
+    #[default]
+    None,
+}
+
+/// The team's watch as `status` shows it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatchView {
+    pub state: WatchState,
+    pub pid: Option<Pid>,
+    /// Seconds since the last heartbeat.
+    pub heartbeat_age_s: Option<u64>,
+}
+
 /// `teamwire status <team>` and `team_status`. Read-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatusView {
@@ -95,6 +117,7 @@ pub struct StatusView {
     pub title: Option<String>,
     pub state: Option<TeamState>,
     pub lead: Option<LeadView>,
+    pub watch: WatchView,
     pub members: Vec<MemberView>,
     /// The last five messages.
     pub messages: Vec<MessageView>,

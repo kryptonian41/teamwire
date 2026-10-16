@@ -349,3 +349,36 @@ fn messages_to_or_from_a_role_and_the_newest_n() {
     };
     assert_eq!(bodies(&f, api_last), ["a>d"]);
 }
+
+#[test]
+fn a_question_stays_unanswered_until_an_answer_points_at_it() {
+    let mut f = with_members(&["api", "web"]);
+    let ask = |kind, re, body: &str| NewMessage {
+        kind,
+        re,
+        ..note(from("api"), &[member("web")], body, None)
+    };
+    let first = f
+        .store
+        .write(|tx| {
+            let a = tx.insert_message(at(1), &ask(MessageType::Question, None, "one?"))?;
+            tx.insert_message(at(2), &ask(MessageType::Question, None, "two?"))?;
+            tx.insert_message(at(3), &ask(MessageType::Finding, None, "not a question"))?;
+            Ok(a.message.ulid)
+        })
+        .unwrap();
+    let open = |f: &crate::testkit::Fixture| {
+        f.store
+            .read(|tx| tx.unanswered_questions())
+            .unwrap()
+            .items
+            .into_iter()
+            .map(|m| m.body)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(open(&f), ["one?", "two?"]);
+    f.store
+        .write(|tx| tx.insert_message(at(4), &ask(MessageType::Answer, Some(first), "yes")))
+        .unwrap();
+    assert_eq!(open(&f), ["two?"]);
+}

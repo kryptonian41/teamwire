@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
-use teamwire_watch::StatusView;
+use teamwire_watch::{StatusView, WatchState};
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
@@ -88,6 +88,21 @@ fn render(view: &StatusView) -> String {
             liveness_text(lead.liveness)
         ));
     }
+    out.push(
+        match (view.watch.state, view.watch.pid, view.watch.heartbeat_age_s) {
+            (WatchState::None, ..) => "watch: none".to_owned(),
+            (state, pid, beat) => format!(
+                "watch: {} (pid {}, last beat {} ago)",
+                if state == WatchState::Running {
+                    "running"
+                } else {
+                    "stale"
+                },
+                pid.map_or_else(|| "?".to_owned(), |p| p.to_string()),
+                beat.map_or_else(|| "?".to_owned(), minutes)
+            ),
+        },
+    );
     out.push("members:".to_owned());
     for m in &view.members {
         let result = m.result.map_or("-", |r| r.as_str());

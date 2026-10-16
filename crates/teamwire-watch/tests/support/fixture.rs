@@ -208,6 +208,21 @@ impl Bed {
         teamwire_watch::poll(&mut ctx, &mut self.memory).map(teamwire_core::OneLine::into_string)
     }
 
+    /// Starts a watch as live process `pid`, which the fake platform reports alive.
+    pub fn start_watch(&mut self, pid: u32) {
+        let pid = teamwire_core::Pid::new(pid);
+        self.platform.set_alive(pid, true);
+        let mut ctx = Ctx {
+            home: self.home.path(),
+            store: &mut self.store,
+            registry: &self.registry,
+            platform: &self.platform,
+            clock: &self.clock,
+            config: &self.config,
+        };
+        teamwire_watch::start(&mut ctx, &mut WatchMemory::default(), pid, "testhost").unwrap();
+    }
+
     /// One poll interval later, one poll.
     pub fn tick(&mut self) -> Option<String> {
         self.clock.advance(POLL);

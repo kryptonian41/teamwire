@@ -293,6 +293,18 @@ impl ReadTx<'_> {
         Ok(found)
     }
 
+    /// Every `question` that no `answer` points at through `re`, in the order
+    /// they were stored. A question to a member and one to the lead count alike.
+    pub fn unanswered_questions(&self) -> Result<Listing<Message>, StoreError> {
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {MESSAGE_COLS} FROM messages m
+             WHERE m.type = 'question'
+               AND NOT EXISTS (SELECT 1 FROM messages a WHERE a.type = 'answer' AND a.re = m.ulid)
+             ORDER BY m.rowid"
+        ))?;
+        listing("messages", &mut stmt, [], message_from_row)
+    }
+
     /// The deliveries to `recipient` in any of `states`, each with its message
     /// body and whether the body still matches its hash. A body that fails
     /// its hash is returned, not skipped, so the recipient can be told. Rows

@@ -36,6 +36,8 @@ export const Liveness = z.union([
   z.literal("unknown"),
 ]);
 
+export const WatchState = z.enum(["running", "stale", "none"]);
+
 const count = z.number().int().nonnegative();
 
 /** One member in `teamwire status --json`. Removed members are left out. */
@@ -62,6 +64,14 @@ export const MemberView = z.object({
 export const LeadView = z.object({
   session_id: z.string().nullable(),
   liveness: Liveness,
+});
+
+/** The team's watch: a live lease, a lease left behind, or no lease. */
+export const WatchView = z.object({
+  state: WatchState,
+  pid: count.nullable(),
+  /** Seconds since the last heartbeat. */
+  heartbeat_age_s: count.nullable(),
 });
 
 export const MessageView = z.object({
@@ -94,6 +104,7 @@ export const StatusView = z.object({
   title: z.string().nullable(),
   state: TeamState.nullable(),
   lead: LeadView.nullable(),
+  watch: WatchView,
   members: z.array(MemberView),
   /** The last five messages, newest first. */
   messages: z.array(MessageView),
