@@ -72,6 +72,29 @@ fn host_listing_failure_refuses() {
 }
 
 #[test]
+fn a_host_listing_failure_keeps_a_short_one_line_host_error() {
+    let mut rig = Rig::new();
+    rig.healthy("lead-1", 100);
+    let long = format!(
+        "tmux: ps failed\n\u{1b}[31mexit 1\u{1b}[0m\n{}",
+        "x".repeat(500)
+    );
+    rig.host.inject_always(
+        "occupant",
+        Fault::Fail(HostError::new(HostErrorCode::Other, long)),
+    );
+    let DeliveryOutcome::Undelivered(e) =
+        deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80))
+    else {
+        unreachable!("the listing failed, so nothing was delivered");
+    };
+    assert_eq!(e.code, DeliveryErrorCode::HostListingFailed);
+    assert!(e.detail.contains("tmux: ps failed exit 1"), "{}", e.detail);
+    assert!(!e.detail.contains('\n') && !e.detail.contains('\u{1b}'));
+    assert!(e.detail.chars().count() <= 200, "{}", e.detail.len());
+}
+
+#[test]
 fn session_in_two_places_refuses() {
     let mut rig = Rig::new();
     let a = rig.healthy("lead-1", 100);
