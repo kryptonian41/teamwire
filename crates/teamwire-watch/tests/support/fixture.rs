@@ -105,16 +105,22 @@ impl Bed {
     }
 
     pub fn add_with_deadline(&mut self, name: &str, deadline_s: u64) -> Member {
-        self.insert(name, deadline_s, true)
+        self.insert(name, deadline_s, true, None)
+    }
+
+    /// Adds a started member whose `member.started` event was written by
+    /// teamwire `version`.
+    pub fn add_started_by(&mut self, name: &str, version: &str) -> Member {
+        self.insert(name, 1800, true, Some(version))
     }
 
     /// Adds a member whose launch stopped in `creating`: no place, no
     /// session, never started.
     pub fn add_creating(&mut self, name: &str) {
-        self.insert(name, 1800, false);
+        self.insert(name, 1800, false, None);
     }
 
-    fn insert(&mut self, name: &str, deadline_s: u64, start: bool) -> Member {
+    fn insert(&mut self, name: &str, deadline_s: u64, start: bool, by: Option<&str>) -> Member {
         let role = role(name);
         let session = Self::session(name);
         let place = self.host.add_place(
@@ -148,7 +154,14 @@ impl Bed {
             self.store.write(|tx| tx.insert_member(now, &new)).unwrap();
             return self.member(name);
         }
-        self.store
+        let team = TeamName::parse(TEAM).unwrap();
+        let mut other = by.map(|v| {
+            Store::open(self.home.path(), &team)
+                .unwrap()
+                .with_writer_version(v)
+        });
+        let store = other.as_mut().unwrap_or(&mut self.store);
+        store
             .write(|tx| {
                 tx.insert_member(now, &new)?;
                 tx.set_member_place(&role, &place)?;

@@ -9,13 +9,15 @@ use teamwire_core::{
     Role, SessionId, Timestamp, one_line,
 };
 use teamwire_deliver::{PENDING_STALE, attempt_started, watch_lease_is_dead};
-use teamwire_store::{CompletionRecord, Ctx, Party, ReadTx, StoreError, database_path};
+use teamwire_store::{
+    CompletionRecord, Ctx, Party, ReadTx, StoreError, WRITER_VERSION, database_path,
+};
 
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::text::result_path;
 use crate::{
-    LeadView, MemberView, MessageView, StatusView, StuckDelivery, UndeliveredResult, WatchState,
-    WatchView,
+    LeadView, MemberView, MessageView, StatusView, StuckDelivery, UNREAD_AFTER, UnansweredQuestion,
+    UndeliveredResult, UnreadDelivery, WatchState, WatchView,
 };
 
 /// The longest message excerpt status shows.
@@ -24,7 +26,7 @@ const EXCERPT: usize = 80;
 /// The rows status shows, read in one transaction.
 struct Rows {
     view: StatusView,
-    members: Vec<(Member, Option<CompletionRecord>, Timestamp)>,
+    members: Vec<(Member, Option<CompletionRecord>, Timestamp, Option<String>)>,
     team_dir: PathBuf,
 }
 
@@ -77,13 +79,19 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             .all_or_corrupt()?
             .into_iter()
             .rev()
-            .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
-            .map(|e| e.time);
-        let run_start = started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at));
+            .find(|e| e.kind == teamwire_core::EventType::MemberStarted);
+        let run_start = started
+            .as_ref()
+            .map_or(member.gen_started_at, |e| e.time.max(member.gen_started_at));
         let completion = tx
             .latest_completion(&member.role)?
             .filter(|c| c.completion.generation == member.generation);
-        members.push((member, completion, run_start));
+        members.push((
+            member,
+            completion,
+            run_start,
+            started.map(|e| e.writer_version),
+        ));
     }
 
     let recent = tx
@@ -131,6 +139,39 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             to: d.recipient,
             state: d.state,
             age_s: seconds(age),
+        });
+    }
+
+    for record in tx
+        .deliveries_in_states(&[DeliveryState::HandedOff])?
+        .all_or_corrupt()?
+    {
+        let d = record.delivery;
+        let Some(message) = tx.message(&d.message)? else {
+            continue;
+        };
+        let age = now.saturating_since(attempt_started(tx, &message, &d.recipient)?);
+        if age > UNREAD_AFTER {
+            view.unread_deliveries.push(UnreadDelivery {
+                display_id: message.display_id,
+                to: d.recipient,
+                age_s: seconds(age),
+            });
+        }
+    }
+
+    for m in tx.unanswered_questions()?.all_or_corrupt()? {
+        let to = tx
+            .deliveries_of(&m.ulid)?
+            .all_or_corrupt()?
+            .into_iter()
+            .map(|d| d.delivery.recipient)
+            .collect();
+        view.unanswered_questions.push(UnansweredQuestion {
+            display_id: m.display_id,
+            from: m.sender,
+            to,
+            age_s: seconds(now.saturating_since(m.created_at)),
         });
     }
 
@@ -263,7 +304,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         team_dir,
     } = rows;
     let mut listings = Listings::default();
-    for (member, completion, run_start) in &members {
+    for (member, completion, run_start, started_by) in &members {
         let seen = observe(ctx, member, &mut listings);
         let age = now.saturating_since(*run_start);
         let resume = match (role, &view.team, &member.session_id) {
@@ -291,6 +332,8 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             generation: member.generation,
             age_s: seconds(age),
             deadline_s: member.deadline_s,
+            older_build: started_by.as_deref().is_some_and(|v| v != WRITER_VERSION),
+            started_by: started_by.clone(),
             result: completion.as_ref().map(|c| c.completion.report_state),
             branch: member.branch.clone(),
             resume_command: resume,

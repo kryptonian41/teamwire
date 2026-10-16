@@ -116,6 +116,12 @@ fn render(view: &StatusView) -> String {
             m.branch.as_deref().unwrap_or("-"),
             m.title
         ));
+        if m.older_build {
+            out.push(format!(
+                "    started by teamwire {}, not this build",
+                m.started_by.as_deref().unwrap_or("?")
+            ));
+        }
         if let Some(command) = &m.resume_command {
             out.push(format!("    resume: {command}"));
         }
@@ -144,6 +150,30 @@ fn render(view: &StatusView) -> String {
                 d.to.as_str(),
                 d.state.as_str(),
                 minutes(d.age_s)
+            ));
+        }
+    }
+    if !view.unread_deliveries.is_empty() {
+        out.push("deliveries handed off and not read:".to_owned());
+        for d in &view.unread_deliveries {
+            out.push(format!(
+                "  {} -> {} for {}",
+                d.display_id,
+                d.to.as_str(),
+                minutes(d.age_s)
+            ));
+        }
+    }
+    if !view.unanswered_questions.is_empty() {
+        out.push("questions without an answer:".to_owned());
+        for q in &view.unanswered_questions {
+            let to: Vec<&str> = q.to.iter().map(Recipient::as_str).collect();
+            out.push(format!(
+                "  {} from {} to {} for {}",
+                q.display_id,
+                q.from.as_str(),
+                to.join(","),
+                minutes(q.age_s)
             ));
         }
     }

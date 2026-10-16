@@ -94,6 +94,11 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
         "{}",
         run.out
     );
+    assert!(
+        run.out.contains("questions without an answer:") && run.out.contains("from web to lead"),
+        "{}",
+        run.out
+    );
     assert_eq!(sizes(&bed), before, "status changed a file");
 }
 
@@ -142,6 +147,10 @@ fn json_is_the_view() {
     assert_eq!(view["members"].as_array().unwrap().len(), 2);
     assert_eq!(view["members"][0]["state"], "done(done)");
     assert_eq!(view["watch"]["state"], "none");
+    assert_eq!(view["members"][0]["older_build"], false);
+    assert!(view["members"][0]["started_by"].is_string(), "{view}");
+    assert_eq!(view["unread_deliveries"], serde_json::json!([]));
+    assert_eq!(view["unanswered_questions"][0]["from"], "web");
 }
 
 #[test]
