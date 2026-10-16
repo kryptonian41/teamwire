@@ -112,6 +112,16 @@ impl Host {
     }
 }
 
+/// Each of these overrides the stored Claude login for every member and
+/// changes who is billed.
+const CREDENTIAL_VARS: [&str; 5] = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+];
+
 /// What the checks look at.
 pub(crate) struct Inputs<'a> {
     pub(crate) host: Host,
@@ -128,6 +138,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
     pub(crate) repo: PathBuf,
+    /// The names of the environment variables that are set, never their
+    /// values (SEC-1).
+    pub(crate) env_names: Vec<String>,
 }
 
 /// The nearest directory at or above `path` that exists, so a state
@@ -390,6 +403,27 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     checks
 }
 
+fn credential_check(inputs: &Inputs<'_>) -> Check {
+    let set: Vec<&str> = CREDENTIAL_VARS
+        .into_iter()
+        .filter(|v| inputs.env_names.iter().any(|n| n == v))
+        .collect();
+    if set.is_empty() {
+        return Check::pass(
+            "credential variables",
+            "none set; members use the stored login",
+        );
+    }
+    Check::warn(
+        "credential variables",
+        format!(
+            "{} set in this environment; each overrides the stored login for every \
+             member and changes who is billed. Unset it unless that is intended",
+            set.join(", ")
+        ),
+    )
+}
+
 /// The lead setup's checks, from `lead_setup_check`.
 fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     let lead = lead_setup_check::LeadInputs {
@@ -417,6 +451,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
+    checks.push(credential_check(inputs));
     checks.extend(lead_setup_checks(inputs));
     checks
 }
@@ -460,6 +495,10 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
             .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
         lead_entry,
         repo,
+        env_names: std::env::vars_os()
+            .filter(|(_, v)| !v.is_empty())
+            .filter_map(|(k, _)| k.into_string().ok())
+            .collect(),
     };
     let checks = diagnose(&inputs);
     say(&render(&checks));

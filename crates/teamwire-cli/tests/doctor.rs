@@ -95,6 +95,8 @@ struct Bed {
     host: Host,
     /// What `claude --help` prints.
     claude_help: String,
+    /// The environment variables that are set.
+    env_names: Vec<String>,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -119,6 +121,7 @@ impl Bed {
             platform: FakePlatform::new(),
             host: Host::Herdr,
             claude_help: ALL_FLAGS.to_owned(),
+            env_names: Vec::new(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -214,6 +217,7 @@ impl Bed {
             lead_entry: Ok(self.lead_entry()),
             running_a_build: build,
             repo: self.home.path().to_path_buf(),
+            env_names: self.env_names.clone(),
         })
     }
 
@@ -590,6 +594,7 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
+        env_names: Vec::new(),
     });
     assert_eq!(level_of(&checks, "old lead setup"), Level::Pass);
     assert_eq!(
@@ -784,4 +789,25 @@ fn a_probe_that_times_out_or_fails_is_a_warning() {
         "{checks:?}"
     );
     assert_eq!(level_of(&checks, "claude flags"), Level::Warn, "{checks:?}");
+}
+
+#[test]
+fn a_credential_variable_warns_by_name_and_a_clean_environment_passes() {
+    let mut bed = Bed::healthy();
+    assert_eq!(level_of(&bed.checks(), "credential variables"), Level::Pass);
+    bed.env_names = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX", "HOME"]
+        .map(str::to_owned)
+        .to_vec();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "credential variables"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "credential variables")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("ANTHROPIC_API_KEY, CLAUDE_CODE_USE_VERTEX"),
+        "{detail}"
+    );
+    assert!(!detail.contains("HOME"), "{detail}");
 }

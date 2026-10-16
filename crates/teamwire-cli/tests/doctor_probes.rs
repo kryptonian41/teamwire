@@ -56,3 +56,17 @@ fn a_claude_without_a_launch_flag_is_warned_with_the_flag_named() {
     assert!(line.starts_with("warn"), "{out}");
     assert!(line.contains("--effort"), "{line}");
 }
+
+#[test]
+fn a_credential_variable_is_named_and_its_value_is_never_printed() {
+    let out = doctor(&[("ANTHROPIC_API_KEY", "sk-secret-value")]);
+    let line = out
+        .lines()
+        .find(|l| l.contains("credential variables"))
+        .unwrap();
+    assert!(
+        line.starts_with("warn") && line.contains("ANTHROPIC_API_KEY"),
+        "{line}"
+    );
+    assert!(!out.contains("sk-secret-value"), "{out}");
+}
