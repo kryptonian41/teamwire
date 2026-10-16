@@ -21,16 +21,47 @@ pub(super) enum Required {
     Known(BTreeSet<String>),
 }
 
-/// An `gh api` answer, only when `gh` exited 0. On an error `gh` still prints
-/// the error body as JSON, and that body is not an answer.
-fn api(platform: &dyn Platform, path: &str) -> Option<Value> {
-    let out = platform
-        .run(&Command::new("gh").args(["api", path]), GH_TIMEOUT)
-        .ok()?;
-    if out.exit_code != 0 {
-        return None;
+/// What one endpoint said.
+enum Answer {
+    Json(Value),
+    /// HTTP 404: the server has no such feature (no rulesets, no rules), so
+    /// nothing is required through this endpoint.
+    NotFound,
+    /// Any other failure: the endpoint may well require checks.
+    Failed,
+}
+
+/// A `gh api` answer, trusted only when `gh` exited 0. On an error `gh` still
+/// prints the error body as JSON, and that body is not an answer.
+/// `paginate` reads every page of a list: `--slurp` joins the pages into one
+/// array of arrays.
+fn api(platform: &dyn Platform, path: &str, paginate: bool) -> Answer {
+    let mut args = vec!["api"];
+    if paginate {
+        args.extend(["--paginate", "--slurp"]);
     }
-    serde_json::from_slice(&out.stdout).ok()
+    args.push(path);
+    let Ok(out) = platform.run(&Command::new("gh").args(args), GH_TIMEOUT) else {
+        return Answer::Failed;
+    };
+    if out.exit_code != 0 {
+        let said = String::from_utf8_lossy(&[out.stderr, out.stdout].concat()).into_owned();
+        return if said.contains("HTTP 404") || said.contains("Not Found") {
+            Answer::NotFound
+        } else {
+            Answer::Failed
+        };
+    }
+    serde_json::from_slice(&out.stdout).map_or(Answer::Failed, Answer::Json)
+}
+
+/// `None` for a failure; JSON null for a 404, which answers "nothing".
+fn json_or_none(answer: Answer) -> Option<Value> {
+    match answer {
+        Answer::Json(v) => Some(v),
+        Answer::NotFound => Some(Value::Null),
+        Answer::Failed => None,
+    }
 }
 
 fn strings<'a>(value: Option<&'a Value>, key: &str) -> impl Iterator<Item = &'a str> {
@@ -45,15 +76,25 @@ fn strings<'a>(value: Option<&'a Value>, key: &str) -> impl Iterator<Item = &'a 
 /// Reads the required set of `base`. The watch calls it once per pull
 /// request and keeps the answer, `Unknown` included.
 pub(super) fn read(platform: &dyn Platform, repo: &str, base: &str) -> Required {
-    let branch = api(platform, &format!("repos/{repo}/branches/{base}"));
-    let rules = api(platform, &format!("repos/{repo}/rules/branches/{base}"));
-    if branch.is_none() && rules.is_none() {
+    let (Some(branch), Some(rules)) = (
+        json_or_none(api(
+            platform,
+            &format!("repos/{repo}/branches/{base}"),
+            false,
+        )),
+        json_or_none(api(
+            platform,
+            &format!("repos/{repo}/rules/branches/{base}"),
+            true,
+        )),
+    ) else {
+        // One endpoint failing for any reason but 404 may hide required
+        // checks, so the whole set is unknown, not the other endpoint's half.
         return Required::Unknown;
-    }
+    };
     let mut names = BTreeSet::new();
     let status_checks = branch
-        .as_ref()
-        .and_then(|b| b.get("protection"))
+        .get("protection")
         .and_then(|p| p.get("required_status_checks"));
     names.extend(strings(status_checks, "contexts").map(str::to_owned));
     for check in status_checks
@@ -69,12 +110,11 @@ pub(super) fn read(platform: &dyn Platform, repo: &str, base: &str) -> Required 
                 .map(str::to_owned),
         );
     }
-    for rule in rules
-        .as_ref()
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-    {
+    // Slurped pages are an array of arrays; a plain list is read too.
+    for rule in rules.as_array().into_iter().flatten().flat_map(|page| {
+        page.as_array()
+            .map_or_else(|| std::slice::from_ref(page), Vec::as_slice)
+    }) {
         if rule.get("type").and_then(Value::as_str) != Some("required_status_checks") {
             continue;
         }

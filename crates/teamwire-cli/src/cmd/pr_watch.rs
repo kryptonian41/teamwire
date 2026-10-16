@@ -166,8 +166,19 @@ impl Memory {
         {
             line = format!("{line} (merge state: {state})");
         }
-        self.done
-            .insert(pr, failed.len() + missing.map_or(0, |m| m.len()));
+        // CLEAN means GitHub found every requirement met, so a "missing" check
+        // beside it most likely means the set was read or matched wrongly:
+        // the line names it, the exit code does not count it.
+        let clean = self
+            .mergeable
+            .get(&pr)
+            .is_some_and(|v| v.ends_with("/CLEAN"));
+        let unreported = if clean {
+            0
+        } else {
+            missing.map_or(0, |m| m.len())
+        };
+        self.done.insert(pr, failed.len() + unreported);
         events.push(line);
         events
     }

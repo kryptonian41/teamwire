@@ -29,7 +29,8 @@ kind="$2"
 pr="$3"
 if [ "$1" = api ]; then
   kind=api
-  pr=$(echo "$2" | tr / _)
+  for last; do :; done
+  pr=$(echo "$last" | tr / _)
 fi
 n=$(cat "$d/n-$kind-$pr" 2>/dev/null || echo 0)
 n=$((n + 1))
@@ -40,6 +41,7 @@ done
 [ "$n" -gt 0 ] && cat "$d/$kind-$pr-$n.json"
 [ "$n" -gt 0 ] && [ -f "$d/$kind-$pr-$n.err" ] && cat "$d/$kind-$pr-$n.err" >&2
 if [ "$1" = api ]; then
+  [ "$n" -gt 0 ] && [ -f "$d/$kind-$pr-$n.exit" ] && exit "$(cat "$d/$kind-$pr-$n.exit")"
   [ "$n" -gt 0 ] && exit 0
   exit 1
 fi
@@ -76,6 +78,20 @@ impl Bed {
     fn api(&self, path: &str, body: &str) {
         let slot = path.replace('/', "_");
         std::fs::write(self.dir.path().join(format!("api-{slot}-1.json")), body).unwrap();
+    }
+
+    /// Makes `gh api <path>` exit `code` after printing its answer, and print
+    /// `stderr` on stderr, as `gh` does for an HTTP error.
+    fn api_fails(&self, path: &str, code: i32, stderr: &str) {
+        let slot = path.replace('/', "_");
+        // The fake answers only where an answer file exists; this one is empty.
+        std::fs::write(self.dir.path().join(format!("api-{slot}-1.json")), "").unwrap();
+        std::fs::write(
+            self.dir.path().join(format!("api-{slot}-1.exit")),
+            code.to_string(),
+        )
+        .unwrap();
+        std::fs::write(self.dir.path().join(format!("api-{slot}-1.err")), stderr).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
@@ -164,7 +180,7 @@ fn all_checks_passing_prints_one_done_line_and_exits_zero() {
             "pr checks 7 -R o/r --json name,bucket",
             "pr view 7 -R o/r --json mergeable,mergeStateStatus,state,baseRefName",
             "api repos/o/r/branches/main",
-            "api repos/o/r/rules/branches/main"
+            "api --paginate --slurp repos/o/r/rules/branches/main"
         ]
     );
 }
@@ -490,7 +506,7 @@ fn the_required_set_is_read_once_per_pull_request_for_the_whole_watch() {
 }
 
 fn done_line(run: &Run) -> &str {
-    run.lines.last().unwrap()
+    run.lines.last().unwrap().rsplit(" | ").next().unwrap()
 }
 
 #[test]
@@ -506,11 +522,11 @@ fn a_required_check_that_never_reported_is_named_and_fails_the_run() {
         1,
         &checks(&[("build", "pass"), ("lint", "pass")]),
     );
-    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
     let run = bed.watch(&["7"]);
     assert_eq!(
         done_line(&run),
-        "o/r#7 DONE: 2 passed, 0 failed, 0 skipped (required, never reported: build-macos)"
+        "o/r#7 DONE: 2 passed, 0 failed, 0 skipped (required, never reported: build-macos) (merge state: BLOCKED)"
     );
     assert_eq!(run.code, 1);
 }
@@ -556,23 +572,103 @@ fn when_neither_endpoint_answers_the_done_line_says_the_required_set_is_unknown(
 }
 
 #[test]
-fn a_repository_with_only_rules_names_what_its_rules_require() {
+fn a_repository_with_only_rules_names_what_its_rules_require_from_every_page() {
     let bed = Bed::new();
-    // The branch endpoint fails (no protection API access); the rules answer.
+    // No classic protection: the branch endpoint says 404. The rules come as
+    // `gh api --paginate --slurp` prints them, one array per page.
     std::fs::remove_file(bed.dir.path().join("api-repos_o_r_branches_main-1.json")).unwrap();
+    bed.api_fails("repos/o/r/branches/main", 1, "gh: Not Found (HTTP 404)");
     bed.api(
         "repos/o/r/rules/branches/main",
-        r#"[{"type":"pull_request","parameters":{}},
-            {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"},{"context":"deploy-preview"}]}}]"#,
+        r#"[[{"type":"pull_request","parameters":{}}],
+            [{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"},{"context":"deploy-preview"}]}}]]"#,
+    );
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: deploy-preview) (merge state: BLOCKED)"
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// A server without rulesets answers 404 for the rules; that is "no rules",
+/// not a reason to doubt the classic protection it did read.
+#[test]
+fn a_404_from_the_rules_endpoint_means_no_rules() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build","lint"]}}}"#,
+    );
+    std::fs::remove_file(
+        bed.dir
+            .path()
+            .join("api-repos_o_r_rules_branches_main-1.json"),
+    )
+    .unwrap();
+    bed.api_fails(
+        "repos/o/r/rules/branches/main",
+        1,
+        "gh: Not Found (HTTP 404)",
+    );
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: lint) (merge state: BLOCKED)"
+    );
+}
+
+/// One endpoint failing for another reason may hide required checks, so the
+/// classic checks alone must not be taken for the whole set.
+#[test]
+fn a_rules_endpoint_error_that_is_not_a_404_makes_the_set_unknown() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build","lint"]}}}"#,
+    );
+    std::fs::remove_file(
+        bed.dir
+            .path()
+            .join("api-repos_o_r_rules_branches_main-1.json"),
+    )
+    .unwrap();
+    bed.api_fails(
+        "repos/o/r/rules/branches/main",
+        1,
+        "gh: API rate limit exceeded (HTTP 403)",
+    );
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required checks unknown) (merge state: BLOCKED)"
+    );
+    assert_eq!(run.code, 0);
+}
+
+/// CLEAN means GitHub found every requirement met, so a missing check beside
+/// it is named but does not fail the run.
+#[test]
+fn a_missing_required_check_beside_a_clean_merge_state_is_named_but_not_counted() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build","lint"]}}}"#,
     );
     bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
     bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     let run = bed.watch(&["7"]);
     assert_eq!(
         done_line(&run),
-        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: deploy-preview)"
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: lint)"
     );
-    assert_eq!(run.code, 1);
+    assert_eq!(run.code, 0);
 }
 
 /// Names match ignoring case and any `Workflow / ` prefix in front of the job.
