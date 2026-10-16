@@ -59,8 +59,10 @@ removed with `claude plugin`, and can be switched off per session with
    it under `Monitor`. It returns nothing when the stop is already a
    continuation (`stop_hook_active`) or comes from a subagent. It never starts
    a watch, never types into a pane and never retries. Every error returns
-   nothing. It opens team stores read-only except to record one
-   `lead.watch_missing` event row per team it names.
+   nothing. It opens team stores read-only and writes nothing, because it
+   runs on every stop in every session where the plugin is on. It records no
+   event: a new event type needs a schema migration, and the hold is visible
+   in the lead's transcript.
 6. **The member hook says so too.** When a member's Stop hook types a result
    line to the lead and the team's watch lease is dead, the line ends with
    `(no watch is running: teamwire watch <team>)`. This reaches a lead that is
