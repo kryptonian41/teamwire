@@ -594,3 +594,42 @@ fn a_check_reported_with_another_case_or_a_prefix_counts_as_reported() {
     assert_eq!(done_line(&run), "o/r#7 DONE: 2 passed, 0 failed, 0 skipped");
     assert_eq!(run.code, 0);
 }
+
+/// GitHub recomputes the merge state after the last check ends, so a BLOCKED
+/// read in the poll that sees the last check pass may be out of date.
+#[test]
+fn a_blocked_state_at_done_is_read_again_and_the_fresh_one_is_used() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    bed.answer("view", 7, 2, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        run.lines,
+        [
+            "WATCHING o/r#7 (poll 1s)",
+            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
+        ]
+    );
+    let views = bed
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("pr view"))
+        .count();
+    assert_eq!(views, 2, "{:?}", bed.calls());
+}
+
+#[test]
+fn a_state_that_is_still_blocked_after_the_second_read_is_reported_as_before() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "BLOCKED"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        run.lines.get(1),
+        Some(
+            &"o/r#7 MERGEABLE: MERGEABLE/BLOCKED | o/r#7 DONE: 1 passed, 0 failed, 0 skipped (merge state: BLOCKED)"
+                .to_owned()
+        )
+    );
+}
