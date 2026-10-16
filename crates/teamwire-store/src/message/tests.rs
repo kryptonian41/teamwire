@@ -369,12 +369,15 @@ fn a_question_stays_unanswered_until_an_answer_points_at_it() {
         .unwrap();
     let open = |f: &crate::testkit::Fixture| {
         f.store
-            .read(|tx| tx.unanswered_questions())
+            .read(|tx| {
+                Ok(tx
+                    .unanswered_questions()?
+                    .items
+                    .into_iter()
+                    .map(|m| m.body)
+                    .collect::<Vec<_>>())
+            })
             .unwrap()
-            .items
-            .into_iter()
-            .map(|m| m.body)
-            .collect::<Vec<_>>()
     };
     assert_eq!(open(&f), ["one?", "two?"]);
     f.store
