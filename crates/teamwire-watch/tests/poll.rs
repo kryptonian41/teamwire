@@ -861,3 +861,50 @@ fn a_member_still_creating_inside_the_grace_is_not_stalled() {
     let lines = bed.ticks(3);
     assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
 }
+
+#[test]
+fn unread_delivery_is_announced_once_after_ten_minutes() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    bed.poll();
+    bed.age(secs(599));
+    assert_eq!(bed.poll(), None, "not yet ten minutes");
+    bed.age(secs(2));
+    let line = bed.poll().unwrap();
+    assert!(line.contains("UNREAD m001 -> api 10m"), "{line}");
+    bed.working("api");
+    assert!(bed.ticks(10).is_empty(), "said once");
+
+    // A watch that starts later finds it announced.
+    bed.memory = teamwire_watch::WatchMemory::default();
+    assert!(!bed.poll().unwrap_or_default().contains("UNREAD"));
+}
+
+#[test]
+fn unanswered_question_to_the_lead_is_announced_once() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.question("api", DeliveryState::HandedOff);
+    bed.poll();
+    bed.age(secs(601));
+    let line = bed.poll().unwrap();
+    assert!(line.contains("UNANSWERED m001 from api 10m"), "{line}");
+    bed.working("api");
+    assert!(bed.ticks(10).is_empty());
+}
+
+#[test]
+fn a_question_between_the_lead_and_a_member_is_not_unanswered_news() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.send(teamwire_core::MessageType::Question, "api", None);
+    bed.poll();
+    bed.age(secs(601));
+    let line = bed.poll().unwrap();
+    assert!(line.contains("UNREAD"), "{line}");
+    assert!(!line.contains("UNANSWERED"), "{line}");
+}

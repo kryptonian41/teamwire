@@ -16,8 +16,9 @@ use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
     STALLED_PREFIX, age, agent_text, blocked_key, died_key, late_key, question_key, result_key,
-    result_path, silent_key, stalled_key,
+    result_path, silent_key, stalled_key, unanswered_key, unread_key,
 };
+use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
 /// One thing the poll will do in its write transaction.
 pub(crate) enum Action {
@@ -175,6 +176,33 @@ pub(crate) fn plan(
     }
     for q in &snap.questions {
         question(&mut env, q);
+    }
+
+    for u in &snap.unread {
+        let waited = now.saturating_since(u.since);
+        // A removed or failed member's inbox is not waited on.
+        if waited > UNREAD_AFTER && snap.members.iter().any(|m| m.member.role == u.to) {
+            env.announce(
+                unread_key(&u.message, &u.to),
+                "UNREAD",
+                format!("UNREAD {} -> {} {}", u.display_id, u.to, age(waited)),
+            );
+        }
+    }
+    for q in &snap.unanswered {
+        let waited = now.saturating_since(q.since);
+        if waited > UNANSWERED_AFTER {
+            env.announce(
+                unanswered_key(&q.message),
+                "UNANSWERED",
+                format!(
+                    "UNANSWERED {} from {} {}",
+                    q.display_id,
+                    q.sender,
+                    age(waited)
+                ),
+            );
+        }
     }
 
     // Everyone still outstanding is stuck right now: only that is worth a

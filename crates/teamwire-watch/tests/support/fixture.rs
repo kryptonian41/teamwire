@@ -331,6 +331,38 @@ impl Bed {
             .unwrap()
     }
 
+    /// A message from the lead to member `to`, which the host took (`handed_off`).
+    pub fn send(&mut self, kind: MessageType, to: &str, re: Option<Ulid>) -> Ulid {
+        let now = self.clock.now();
+        let to = Recipient::Member(role(to));
+        let new = NewMessage {
+            sender: Actor::Lead,
+            kind,
+            re,
+            commit: None,
+            body: "text".to_owned(),
+            client_key: None,
+            recipients: vec![to.clone()],
+        };
+        self.store
+            .write(|tx| {
+                let stored = tx.insert_message(now, &new)?;
+                tx.set_delivery_state(
+                    now,
+                    &stored.message.ulid,
+                    &to,
+                    &teamwire_store::DeliveryUpdate {
+                        state: teamwire_core::DeliveryState::HandedOff,
+                        route: None,
+                        error: None,
+                        attempts: 1,
+                    },
+                )?;
+                Ok(stored.message.ulid)
+            })
+            .unwrap()
+    }
+
     pub fn reprompt(&mut self, name: &str) {
         let now = self.clock.now();
         let role = role(name);
