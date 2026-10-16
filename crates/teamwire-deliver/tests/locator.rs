@@ -390,3 +390,24 @@ proptest! {
         }
     }
 }
+
+#[test]
+fn a_host_that_joins_two_variables_gets_the_joined_place() {
+    let mut rig = Rig::new();
+    rig.host.set_place_suffix_var(Some("FAKE_SOCKET"));
+    let place = rig.host.add_place_with_id(
+        "pane-100@/tmp/sock".to_owned(),
+        "pane-100",
+        PlaceState::Idle,
+        holds("lead-1", &[]),
+    );
+    rig.harness.add_session(
+        sid("lead-1"),
+        vec![Pid::new(100)],
+        Liveness::Alive(PlaceState::Idle),
+    );
+    rig.claim(100, "pane-100");
+    rig.platform
+        .set_env(Pid::new(100), "FAKE_SOCKET", "/tmp/sock");
+    assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), place);
+}

@@ -206,8 +206,16 @@ fn candidate_places(
     let mut places: Vec<Place> = Vec::new();
     let mut unreadable = Vec::new();
     for pid in pids {
-        match ctx.platform.env_of(*pid, place_var) {
-            Ok(Some(id)) if !id.is_empty() => {
+        let failure = std::cell::RefCell::new(None);
+        let id = host.place_from_env(&|var| match ctx.platform.env_of(*pid, var) {
+            Ok(value) => value,
+            Err(e) => {
+                failure.borrow_mut().get_or_insert(e);
+                None
+            }
+        });
+        match (id, failure.into_inner()) {
+            (Some(id), _) if !id.is_empty() => {
                 let place = Place {
                     host: host.id(),
                     id,
@@ -216,8 +224,8 @@ fn candidate_places(
                     places.push(place);
                 }
             }
-            Ok(_) => {}
-            Err(e) => unreadable.push(format!("pid {pid}: {e}")),
+            (_, Some(e)) => unreadable.push(format!("pid {pid}: {e}")),
+            _ => {}
         }
     }
     if places.is_empty() {

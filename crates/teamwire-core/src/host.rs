@@ -31,6 +31,13 @@ pub trait Host: Send + Sync {
     /// The environment variable a process uses to name its own place, if any
     /// (herdr: "`HERDR_PANE_ID`").
     fn place_env_var(&self) -> Option<&'static str>;
+    /// The place id one process names for itself, given a reader of that
+    /// process's environment. The default is the value of `place_env_var`. A
+    /// host whose place id needs more than that one variable (tmux also needs
+    /// the server) overrides it, so the locator never learns the id format.
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        read(self.place_env_var()?)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

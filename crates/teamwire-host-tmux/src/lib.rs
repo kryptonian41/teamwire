@@ -506,6 +506,14 @@ impl Host for Tmux {
     fn place_env_var(&self) -> Option<&'static str> {
         Some("TMUX_PANE")
     }
+
+    /// `TMUX_PANE` alone names the pane on the default server. The server
+    /// comes from `TMUX`, so a shell outside tmux still reaches it.
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        let pane = read("TMUX_PANE").filter(|p| !p.is_empty())?;
+        let socket = read("TMUX").and_then(|t| pane::socket_of_client(&t).map(str::to_owned));
+        Some(pane::place_id(&pane, socket.as_deref().unwrap_or_default()))
+    }
 }
 
 /// The last `n` lines of `screen`, with the empty lines tmux pads a tall
@@ -551,6 +559,34 @@ mod tests {
         let total: Duration = runs.iter().map(|(_, t)| *t).sum();
         assert_eq!(runs.len(), 2, "one tmux call and one process listing");
         assert!(total <= Duration::from_secs(8), "{runs:?}");
+    }
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |var| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == var)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    #[test]
+    fn a_process_names_its_pane_with_the_server_from_its_tmux_value() {
+        let tmux = Tmux::new(Arc::new(FakePlatform::new()));
+        let read = env(&[
+            ("TMUX_PANE", "%4"),
+            ("TMUX", "/private/tmp/tmux-501/tw,95189,0"),
+        ]);
+        assert_eq!(
+            tmux.place_from_env(&read).as_deref(),
+            Some("%4@/private/tmp/tmux-501/tw")
+        );
+        // Without `TMUX` the pane is on the default server, as before.
+        assert_eq!(
+            tmux.place_from_env(&env(&[("TMUX_PANE", "%4")])).as_deref(),
+            Some("%4")
+        );
+        assert_eq!(tmux.place_from_env(&env(&[("TMUX", "/x,1,0")])), None);
     }
 
     #[test]
