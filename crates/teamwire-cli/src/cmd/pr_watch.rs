@@ -15,7 +15,10 @@ use serde_json::Value;
 use teamwire_core::{Command, Platform};
 
 use crate::wiring::Wiring;
+use required::Required;
 use crate::{Global, PrWatchArgs, USAGE};
+
+mod required;
 
 const DEFAULT_INTERVAL_S: u64 = 45;
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -36,6 +39,8 @@ struct Memory {
     done: HashMap<u64, usize>,
     /// How many polls in a row found no checks on each PR.
     empty_polls: HashMap<u64, u32>,
+    /// The required checks of each PR's base branch, read once per PR.
+    required: HashMap<u64, Required>,
 }
 
 fn label(repo: &str, pr: u64) -> String {
@@ -229,9 +234,16 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
                     "-R",
                     repo,
                     "--json",
-                    "mergeable,mergeStateStatus,state",
+                    "mergeable,mergeStateStatus,state,baseRefName",
                 ],
             );
+            if let Some(base) = view.as_ref().map(|v| text(v, "baseRefName"))
+                && !base.is_empty()
+                && !memory.required.contains_key(pr)
+            {
+                let set = required::read(wiring.platform.as_ref(), repo, &base);
+                memory.required.insert(*pr, set);
+            }
             events.extend(memory.poll_one(repo, *pr, checks.as_ref(), view.as_ref()));
         }
         if !events.is_empty() {

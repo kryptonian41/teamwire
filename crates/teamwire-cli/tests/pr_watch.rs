@@ -5,7 +5,10 @@
 //! `gh pr checks N` (or `gh pr view N`) is the file `checks-N-<n>.json` (or
 //! `view-N-<n>.json`); a call past the last file gets the last file. It logs
 //! every call's arguments to `calls.log` and always exits 8, as `gh pr
-//! checks` does while checks are pending: the watch must ignore that. A file
+//! checks` does while checks are pending: the watch must ignore that. For
+//! `gh api <path>` the kind is `api` and the pull-request slot is the path
+//! with `/` turned into `_`; a call with no answer file exits 1 and one with
+//! an answer file exits 0, because the watch trusts `api` exit codes. A file
 //! `checks-N-<n>.err` is printed on stderr beside the answer.
 #![expect(
     clippy::disallowed_methods,
@@ -24,6 +27,10 @@ d="$FAKE_GH_DIR"
 echo "$*" >> "$d/calls.log"
 kind="$2"
 pr="$3"
+if [ "$1" = api ]; then
+  kind=api
+  pr=$(echo "$2" | tr / _)
+fi
 n=$(cat "$d/n-$kind-$pr" 2>/dev/null || echo 0)
 n=$((n + 1))
 echo "$n" > "$d/n-$kind-$pr"
@@ -32,6 +39,10 @@ while [ "$n" -gt 0 ] && [ ! -f "$d/$kind-$pr-$n.json" ]; do
 done
 [ "$n" -gt 0 ] && cat "$d/$kind-$pr-$n.json"
 [ "$n" -gt 0 ] && [ -f "$d/$kind-$pr-$n.err" ] && cat "$d/$kind-$pr-$n.err" >&2
+if [ "$1" = api ]; then
+  [ "$n" -gt 0 ] && exit 0
+  exit 1
+fi
 exit 8
 "#;
 
@@ -55,6 +66,12 @@ impl Bed {
 
     fn answer(&self, kind: &str, pr: u64, n: u32, body: &str) {
         std::fs::write(self.dir.path().join(format!("{kind}-{pr}-{n}.json")), body).unwrap();
+    }
+
+    /// The answer to `gh api <path>`; a path with no answer makes `gh` fail.
+    fn api(&self, path: &str, body: &str) {
+        let slot = path.replace('/', "_");
+        std::fs::write(self.dir.path().join(format!("api-{slot}-1.json")), body).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
@@ -112,7 +129,7 @@ fn checks(items: &[(&str, &str)]) -> String {
 }
 
 fn view(state: &str, mergeable: &str, merge_state: &str) -> String {
-    format!(r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}"}}"#)
+    format!(r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}","baseRefName":"main"}}"#)
 }
 
 #[test]
@@ -139,7 +156,9 @@ fn all_checks_passing_prints_one_done_line_and_exits_zero() {
         bed.calls(),
         [
             "pr checks 7 -R o/r --json name,bucket",
-            "pr view 7 -R o/r --json mergeable,mergeStateStatus,state"
+            "pr view 7 -R o/r --json mergeable,mergeStateStatus,state,baseRefName",
+            "api repos/o/r/branches/main",
+            "api repos/o/r/rules/branches/main"
         ]
     );
 }
@@ -445,4 +464,16 @@ fn interval_zero_is_a_usage_error() {
         .unwrap();
     assert_eq!(out.status.code(), Some(3));
     assert!(!bed.dir.path().join("calls.log").exists(), "gh was called");
+}
+
+#[test]
+fn the_required_set_is_read_once_per_pull_request_for_the_whole_watch() {
+    let bed = Bed::new();
+    bed.answer("checks", 7, 1, &checks(&[("a", "pending")]));
+    bed.answer("checks", 7, 2, &checks(&[("a", "pending")]));
+    bed.answer("checks", 7, 3, &checks(&[("a", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.watch(&["7"]);
+    let api_calls = bed.calls().iter().filter(|c| c.starts_with("api ")).count();
+    assert_eq!(api_calls, 2, "{:?}", bed.calls());
 }
