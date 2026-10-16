@@ -28,6 +28,23 @@ const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Each probe of a harness or host binary waits this long, then warns.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The flags teamwire passes when it starts a member
+/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help lacks one
+/// would refuse or ignore the launch.
+const CLAUDE_FLAGS: [&str; 8] = [
+    "--session-id",
+    "--resume",
+    "--permission-mode",
+    "--append-system-prompt-file",
+    "--settings",
+    "--mcp-config",
+    "--model",
+    "--effort",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Level {
     Pass,
@@ -280,6 +297,60 @@ fn on_path(path_var: Option<&OsString>, program: &str) -> Option<PathBuf> {
     dirs.map(|d| d.join(program)).find(|p| p.is_file())
 }
 
+/// Runs `program args` and returns its output, or why it gave none. A probe
+/// that fails or times out is a warning for the caller, never a hang.
+fn probe(inputs: &Inputs<'_>, program: &Path, args: &[&str]) -> Result<String, String> {
+    let cmd = Command::new(program.to_string_lossy().into_owned()).args(args.iter().copied());
+    let out = inputs
+        .platform
+        .run(&cmd, PROBE_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+    if out.timed_out {
+        return Err(format!("no answer within {} s", PROBE_TIMEOUT.as_secs()));
+    }
+    if out.exit_code != 0 {
+        return Err(format!("exited with code {}", out.exit_code));
+    }
+    // Some tools print their help on stderr.
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok(text)
+}
+
+/// The first line of a `--version` answer, which is the version itself.
+fn version_check(inputs: &Inputs<'_>, program: &str, path: &Path, flag: &str) -> Check {
+    let name = format!("{program} version");
+    match probe(inputs, path, &[flag]) {
+        Ok(text) => Check::pass(name, text.lines().next().unwrap_or("").trim().to_owned()),
+        Err(e) => Check::warn(name, format!("`{program} {flag}` failed: {e}")),
+    }
+}
+
+fn claude_flag_check(inputs: &Inputs<'_>, path: &Path) -> Check {
+    let name = "claude flags";
+    match probe(inputs, path, &["--help"]) {
+        Ok(help) => {
+            let missing: Vec<&str> = CLAUDE_FLAGS
+                .into_iter()
+                .filter(|f| !help.contains(f))
+                .collect();
+            if missing.is_empty() {
+                Check::pass(name, "the help text lists every flag teamwire passes")
+            } else {
+                Check::warn(
+                    name,
+                    format!(
+                        "`claude --help` does not list {}; teamwire passes them when it \
+                         starts a member, so this claude may be too old or too new",
+                        missing.join(", ")
+                    ),
+                )
+            }
+        }
+        Err(e) => Check::warn(name, format!("`claude --help` failed: {e}")),
+    }
+}
+
 fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = Vec::new();
     let host_program = match inputs.host {
@@ -291,10 +362,19 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     for (program, role) in wanted {
         let name = format!("{program} on PATH");
         match on_path(inputs.path_var.as_ref(), program) {
-            Some(path) => checks.push(Check::pass(
-                name,
-                format!("{role} binary at {}", path.display()),
-            )),
+            Some(path) => {
+                checks.push(Check::pass(
+                    name,
+                    format!("{role} binary at {}", path.display()),
+                ));
+                if program == "claude" {
+                    checks.push(version_check(inputs, program, &path, "--version"));
+                    checks.push(claude_flag_check(inputs, &path));
+                } else {
+                    let flag = if program == "tmux" { "-V" } else { "--version" };
+                    checks.push(version_check(inputs, program, &path, flag));
+                }
+            }
             None => checks.push(Check::fail(
                 name,
                 format!("the {role} binary `{program}` is not on PATH"),

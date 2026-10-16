@@ -355,6 +355,29 @@ fn claude_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The flags teamwire passes to start a member, as `claude --help` lists
+/// them. `FAKE_CLAUDE_HELP_WITHOUT` names one flag to leave out, so a test
+/// can play a `claude` that lacks it.
+fn help_text() -> String {
+    let without = std::env::var("FAKE_CLAUDE_HELP_WITHOUT").unwrap_or_default();
+    let flags = [
+        "--session-id",
+        "--resume",
+        "--permission-mode",
+        "--append-system-prompt-file",
+        "--settings",
+        "--mcp-config",
+        "--model",
+        "--effort",
+    ];
+    let lines: Vec<String> = flags
+        .into_iter()
+        .filter(|f| *f != without)
+        .map(|f| format!("  {f} <value>"))
+        .collect();
+    format!("Usage: claude [options]\n{}", lines.join("\n"))
+}
+
 /// Runs one session until it exits.
 pub fn run(argv: &[String]) -> ExitCode {
     let Some(claude_dir) = claude_dir() else {
@@ -368,6 +391,10 @@ pub fn run(argv: &[String]) -> ExitCode {
         Some("plugin" | "plugins") => return plugin::run(&claude_dir, argv),
         Some("--version") => {
             say("0.0.0 (fake-claude)");
+            return ExitCode::SUCCESS;
+        }
+        Some("--help") => {
+            say(&help_text());
             return ExitCode::SUCCESS;
         }
         _ => {}

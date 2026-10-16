@@ -318,7 +318,9 @@ names a directory, so it can never write into the real `~/.claude`.
   `<dir>/sessions` and starts no session. An interactive row carries its state
   under `status`, a background row (`"kind": "bg"` in its file) under `state`;
   add a background row with `FakeHerdrEnv::add_session_file`.
-- `claude --version` prints one line and starts no session.
+- `claude --version` prints one line and starts no session. `claude --help`
+  lists the flags teamwire passes to start a member; `FAKE_CLAUDE_HELP_WITHOUT=--effort`
+  leaves one out. `herdr --version` prints one line.
 - `claude mcp add --scope user NAME -- CMD ARGS...` and `claude mcp remove
   --scope user NAME` change the `mcpServers` map of `<dir>/.claude.json`. As
   in Claude Code, add exits 1 for a name that exists and remove exits 1 for a

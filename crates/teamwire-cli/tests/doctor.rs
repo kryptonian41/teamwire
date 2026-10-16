@@ -93,6 +93,20 @@ struct Bed {
     bin: TestHome,
     platform: FakePlatform,
     host: Host,
+    /// What `claude --help` prints.
+    claude_help: String,
+}
+
+const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
+                         --settings --mcp-config --model --effort";
+
+fn answer(text: &str) -> RunOutput {
+    RunOutput {
+        exit_code: 0,
+        stdout: text.as_bytes().to_vec(),
+        stderr: Vec::new(),
+        timed_out: false,
+    }
 }
 
 impl Bed {
@@ -104,6 +118,7 @@ impl Bed {
             bin: TestHome::new().unwrap(),
             platform: FakePlatform::new(),
             host: Host::Herdr,
+            claude_help: ALL_FLAGS.to_owned(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -184,6 +199,12 @@ impl Bed {
 
     /// The checks as a binary under `target/` (`build`) or an installed one.
     fn checks_as(&self, build: bool) -> Vec<Check> {
+        // The order doctor runs them in: git, then the claude probes, then
+        // the host's version.
+        self.platform.queue_run(Ok(answer("")));
+        self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
+        self.platform.queue_run(Ok(answer(&self.claude_help)));
+        self.platform.queue_run(Ok(answer("host 1.2.3\n")));
         diagnose(&Inputs {
             host: self.host,
             home: self.home.path().to_path_buf(),
@@ -705,4 +726,62 @@ fn with_no_host_doctor_says_so_and_requires_neither_host_tool() {
     assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
     assert_eq!(level_of(&checks, "host"), Level::Pass);
     assert!(!names(&checks).contains(&"herdr session hook"));
+}
+
+#[test]
+fn the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines() {
+    let bed = Bed::healthy();
+    let checks = bed.checks();
+    let detail = |name: &str| {
+        checks
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .detail
+            .clone()
+    };
+    assert_eq!(detail("claude version"), "2.1.0 (Claude Code)");
+    assert_eq!(detail("herdr version"), "host 1.2.3");
+    assert_eq!(level_of(&checks, "claude flags"), Level::Pass);
+}
+
+#[test]
+fn a_claude_help_without_a_launch_flag_warns_and_names_it() {
+    let mut bed = Bed::healthy();
+    bed.claude_help = ALL_FLAGS.replace("--effort", "");
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "claude flags")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("--effort") && !detail.contains("--model"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn a_probe_that_times_out_or_fails_is_a_warning() {
+    let bed = Bed::healthy();
+    bed.platform.queue_run(Ok(answer("")));
+    bed.platform.queue_run(Ok(RunOutput {
+        exit_code: 124,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        timed_out: true,
+    }));
+    bed.platform
+        .queue_run(Err(PlatformError::new(PlatformErrorCode::NotFound, "gone")));
+    // These queue ahead of `checks_as`'s own answers: git, the claude
+    // version, the claude help.
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "claude version"),
+        Level::Warn,
+        "{checks:?}"
+    );
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn, "{checks:?}");
 }
