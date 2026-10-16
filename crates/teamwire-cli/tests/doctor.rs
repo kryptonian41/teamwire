@@ -898,3 +898,41 @@ fn members_of_this_build_pass_the_older_members_check() {
         Level::Pass
     );
 }
+
+#[test]
+fn a_member_from_another_build_that_has_finished_is_not_counted() {
+    let bed = Bed::healthy();
+    let mut older = bed.team("alpha").with_writer_version("0.0.0");
+    start_member(&mut older, "web");
+    start_member(&mut older, "api");
+    let now = FakeClock::new().now();
+    older
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &teamwire_store::NewCompletion {
+                    role: Role::parse("web").unwrap(),
+                    generation: 1,
+                    status: teamwire_core::CompletionStatus::Done,
+                    summary: "finished".to_owned(),
+                    final_message: None,
+                    final_source: teamwire_core::FinalSource::Hook,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    drop(older);
+
+    let checks = bed.checks();
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha older members")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("api (0.0.0)") && !detail.contains("web"),
+        "{detail}"
+    );
+    assert!(detail.contains("shows as 0.0.0"), "{detail}");
+}

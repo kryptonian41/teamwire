@@ -285,7 +285,9 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
     let older: Vec<String> = view
         .members
         .iter()
-        .filter(|m| m.older_build)
+        // A member with a result for its current generation has finished, so
+        // relaunching it changes nothing (the rule of the lead's Stop hook).
+        .filter(|m| m.older_build && m.result.is_none())
         .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
         .collect();
     if older.is_empty() {
@@ -295,7 +297,8 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
         name,
         format!(
             "{} started by a build other than {}; relaunch the member, or ignore if its \
-             wiring did not change",
+             wiring did not change. A member started before builds recorded their \
+             commit shows as 0.0.0",
             older.join(", "),
             teamwire_store::WRITER_VERSION
         ),
