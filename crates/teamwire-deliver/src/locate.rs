@@ -4,11 +4,14 @@ use std::time::Duration;
 
 use teamwire_core::{
     DeliveryError, DeliveryErrorCode, Harness, Host, HostErrorCode, Pid, Place, SessionId,
-    SessionKind,
+    SessionKind, one_line,
 };
 use teamwire_store::{Ctx, Party, StoreError};
 
 use crate::budget::Budget;
+
+/// The most characters of a host's error text kept in a delivery error.
+const FAILED_DETAIL_CHARS: usize = 200;
 
 /// The place two views agreed on, with the evidence the second check needs.
 pub(crate) struct Located {
@@ -203,8 +206,16 @@ fn candidate_places(
     let mut places: Vec<Place> = Vec::new();
     let mut unreadable = Vec::new();
     for pid in pids {
-        match ctx.platform.env_of(*pid, place_var) {
-            Ok(Some(id)) if !id.is_empty() => {
+        let failure = std::cell::RefCell::new(None);
+        let id = host.place_from_env(&|var| match ctx.platform.env_of(*pid, var) {
+            Ok(value) => value,
+            Err(e) => {
+                failure.borrow_mut().get_or_insert(e);
+                None
+            }
+        });
+        match (id, failure.into_inner()) {
+            (Some(id), _) if !id.is_empty() => {
                 let place = Place {
                     host: host.id(),
                     id,
@@ -213,8 +224,8 @@ fn candidate_places(
                     places.push(place);
                 }
             }
-            Ok(_) => {}
-            Err(e) => unreadable.push(format!("pid {pid}: {e}")),
+            (_, Some(e)) => unreadable.push(format!("pid {pid}: {e}")),
+            _ => {}
         }
     }
     if places.is_empty() {
@@ -253,9 +264,14 @@ fn host_view(
         Err(e) if e.code == HostErrorCode::NotFound => {
             HostView::Nothing(format!("the host does not list place {}", place.id))
         }
-        Err(e) => HostView::Failed(format!(
-            "the host could not say who holds {}: {e}",
-            place.id
-        )),
+        // The detail is stored and shown to the lead, and a host error can
+        // hold several lines of command output.
+        Err(e) => HostView::Failed(
+            one_line(
+                &format!("the host could not say who holds {}: {e}", place.id),
+                FAILED_DETAIL_CHARS,
+            )
+            .into_string(),
+        ),
     }
 }

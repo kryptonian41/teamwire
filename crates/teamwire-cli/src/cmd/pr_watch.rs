@@ -16,6 +16,9 @@ use teamwire_core::{Command, Platform};
 
 use crate::wiring::Wiring;
 use crate::{Global, PrWatchArgs, USAGE};
+use required::Required;
+
+mod required;
 
 const DEFAULT_INTERVAL_S: u64 = 45;
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
@@ -36,6 +39,8 @@ struct Memory {
     done: HashMap<u64, usize>,
     /// How many polls in a row found no checks on each PR.
     empty_polls: HashMap<u64, u32>,
+    /// The required checks of each PR's base branch, read once per PR.
+    required: HashMap<u64, Required>,
 }
 
 fn label(repo: &str, pr: u64) -> String {
@@ -55,6 +60,7 @@ impl Memory {
     /// (`None` when the call printed nothing usable).
     fn poll_one(
         &mut self,
+        reread: &mut dyn FnMut() -> Option<Value>,
         repo: &str,
         pr: u64,
         checks: Option<&Value>,
@@ -62,6 +68,10 @@ impl Memory {
     ) -> Vec<String> {
         let label = label(repo, pr);
         let mut events = Vec::new();
+        // Where this poll said the verdict, and what the watch knew before,
+        // so a re-read at DONE can take the saying back.
+        let mut verdict_at = None;
+        let mut verdict_before = None;
         if let Some(view) = view {
             let state = text(view, "state");
             if state == "MERGED" || state == "CLOSED" {
@@ -72,17 +82,9 @@ impl Memory {
                 events.push(format!("{label} {state}"));
                 return events;
             }
-            let verdict = format!(
-                "{}/{}",
-                text(view, "mergeable"),
-                text(view, "mergeStateStatus")
-            );
-            if !verdict.contains("UNKNOWN") && self.mergeable.get(&pr) != Some(&verdict) {
-                if self.mergeable.contains_key(&pr) || verdict.contains("CONFLICTING") {
-                    events.push(format!("{label} MERGEABLE: {verdict}"));
-                }
-                self.mergeable.insert(pr, verdict);
-            }
+            let before = self.mergeable.get(&pr).cloned();
+            verdict_at = self.see_verdict(&label, pr, view, &mut events);
+            verdict_before = Some(before);
         }
         let Some(checks) = checks.and_then(Value::as_array) else {
             return events;
@@ -117,6 +119,8 @@ impl Memory {
             .flatten()
             .map(String::as_str)
             .collect();
+        let reported: Vec<String> = buckets.values().flatten().cloned().collect();
+        let missing = self.required.get(&pr).and_then(|r| r.missing(&reported));
         let mut line = format!(
             "{label} DONE: {} passed, {} failed, {} skipped",
             count("pass"),
@@ -126,9 +130,85 @@ impl Memory {
         if !failed.is_empty() {
             line = format!("{line} [{}]", failed.join(", "));
         }
-        self.done.insert(pr, failed.len());
+        // A required check that never started is not a pass: the pull request
+        // cannot merge, yet `gh pr checks` does not list it.
+        match &missing {
+            Some(names) if !names.is_empty() => {
+                line = format!("{line} (required, never reported: {})", names.join(", "));
+            }
+            Some(_) => {}
+            None => line = format!("{line} (required checks unknown)"),
+        }
+        // GitHub recomputes the merge state after the last check finishes, so
+        // a BLOCKED read in the same poll may already be out of date. Ask
+        // once more, and let the fresh verdict replace the one said above.
+        if self
+            .mergeable
+            .get(&pr)
+            .is_some_and(|v| v.ends_with("/BLOCKED"))
+            && let Some(fresh) = reread()
+            && text(&fresh, "mergeable") != "UNKNOWN"
+            && text(&fresh, "mergeStateStatus") != "UNKNOWN"
+        {
+            // Take back the verdict this poll said, as if it was never read.
+            if let (Some(at), Some(before)) = (verdict_at, verdict_before) {
+                events.remove(at);
+                match before {
+                    Some(v) => self.mergeable.insert(pr, v),
+                    None => self.mergeable.remove(&pr),
+                };
+            }
+            self.see_verdict(&label, pr, &fresh, &mut events);
+        }
+        // DIRTY was already said as a conflict; the other states are news.
+        if let Some((_, state)) = self.mergeable.get(&pr).and_then(|v| v.split_once('/'))
+            && !matches!(state, "CLEAN" | "DIRTY" | "")
+        {
+            line = format!("{line} (merge state: {state})");
+        }
+        // CLEAN means GitHub found every requirement met, so a "missing" check
+        // beside it most likely means the set was read or matched wrongly:
+        // the line names it, the exit code does not count it.
+        let clean = self
+            .mergeable
+            .get(&pr)
+            .is_some_and(|v| v.ends_with("/CLEAN"));
+        let unreported = if clean {
+            0
+        } else {
+            missing.map_or(0, |m| m.len())
+        };
+        self.done.insert(pr, failed.len() + unreported);
         events.push(line);
         events
+    }
+
+    /// Records the mergeability verdict of `view` and says it when it is news.
+    /// Returns where in `events` the line went.
+    fn see_verdict(
+        &mut self,
+        label: &str,
+        pr: u64,
+        view: &Value,
+        events: &mut Vec<String>,
+    ) -> Option<usize> {
+        let verdict = format!(
+            "{}/{}",
+            text(view, "mergeable"),
+            text(view, "mergeStateStatus")
+        );
+        if verdict.contains("UNKNOWN") || self.mergeable.get(&pr) == Some(&verdict) {
+            return None;
+        }
+        let said = self.mergeable.contains_key(&pr)
+            || ["CONFLICTING", "BLOCKED", "DRAFT"]
+                .iter()
+                .any(|first| verdict.contains(first));
+        self.mergeable.insert(pr, verdict.clone());
+        said.then(|| {
+            events.push(format!("{label} MERGEABLE: {verdict}"));
+            events.len() - 1
+        })
     }
 
     fn finished(&self, prs: &[u64]) -> bool {
@@ -182,6 +262,25 @@ fn fail(message: &str) -> ExitCode {
     ExitCode::from(USAGE)
 }
 
+fn view_args<'a>(number: &'a str, repo: &'a str) -> [&'a str; 7] {
+    [
+        "pr",
+        "view",
+        number,
+        "-R",
+        repo,
+        "--json",
+        "mergeable,mergeStateStatus,state,baseRefName",
+    ]
+}
+
+/// How long to wait before reading the merge state again at DONE: half a poll,
+/// but never long, because `Platform` and `Clock` have no sleep and the watch
+/// sleeps with `std::thread::sleep` already.
+fn recheck_wait(interval: Duration) -> Duration {
+    (interval / 2).min(Duration::from_secs(5))
+}
+
 pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> ExitCode {
     let PrWatchArgs {
         repo,
@@ -210,19 +309,19 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
                 wiring.platform.as_ref(),
                 &["pr", "checks", &number, "-R", repo, "--json", "name,bucket"],
             );
-            let view = gh(
-                wiring.platform.as_ref(),
-                &[
-                    "pr",
-                    "view",
-                    &number,
-                    "-R",
-                    repo,
-                    "--json",
-                    "mergeable,mergeStateStatus,state",
-                ],
-            );
-            events.extend(memory.poll_one(repo, *pr, checks.as_ref(), view.as_ref()));
+            let view = gh(wiring.platform.as_ref(), &view_args(&number, repo));
+            if let Some(base) = view.as_ref().map(|v| text(v, "baseRefName"))
+                && !base.is_empty()
+                && !memory.required.contains_key(pr)
+            {
+                let set = required::read(wiring.platform.as_ref(), repo, &base);
+                memory.required.insert(*pr, set);
+            }
+            let mut reread = || {
+                std::thread::sleep(recheck_wait(interval));
+                gh(wiring.platform.as_ref(), &view_args(&number, repo))
+            };
+            events.extend(memory.poll_one(&mut reread, repo, *pr, checks.as_ref(), view.as_ref()));
         }
         if !events.is_empty() {
             say(&events.join(" | "));

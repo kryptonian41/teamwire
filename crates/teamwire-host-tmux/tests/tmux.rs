@@ -15,8 +15,14 @@ use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnR
 use teamwire_fakes::contract::{HostSetup, host_contract};
 
 use server::{PrivateServer, request, screen_shows};
+use teamwire_host_tmux::Tmux;
 
 const T: Duration = Duration::from_secs(10);
+
+/// The `%<n>` part of a place id, which is what `TMUX_PANE` holds.
+fn bare(place: &Place) -> &str {
+    place.id.split('@').next().unwrap()
+}
 
 #[test]
 fn passes_host_contract_on_a_private_socket() {
@@ -55,7 +61,7 @@ fn the_environment_reaches_the_program_at_spawn() {
     assert!(screen_shows(&tmux, &place, "token=s3cret value"));
     let shown = tmux.read_tail(&place, 20, T).unwrap();
     assert!(
-        shown.contains(&format!("pane={}", place.id)),
+        shown.contains(&format!("pane={}", bare(&place))),
         "TMUX_PANE names the place: {shown}"
     );
 }
@@ -143,7 +149,7 @@ fn occupant_holds_the_panes_process_and_its_children() {
             T,
         )
         .unwrap();
-    let want = server.raw(&["display-message", "-p", "-t", &place.id, "#{pane_pid}"]);
+    let want = server.raw(&["display-message", "-p", "-t", bare(&place), "#{pane_pid}"]);
     let mut pids = Vec::new();
     for _ in 0..100 {
         let occupant = tmux.occupant(&place, T).unwrap();
@@ -271,6 +277,32 @@ fn spawn_needs_a_program_and_a_sane_environment_name() {
         HostErrorCode::BadArgument
     );
     assert_eq!(tmux.list(T).unwrap(), []);
+}
+
+#[test]
+fn a_place_composed_from_a_process_env_works_from_outside_tmux() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    let placed = server
+        .tmux()
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    let socket = server.raw(&["display-message", "-p", "#{socket_path}"]);
+    let tmux_value = format!("{},123,0", socket.trim());
+    let read = |var: &str| match var {
+        "TMUX_PANE" => Some(bare(&placed).to_owned()),
+        "TMUX" => Some(tmux_value.clone()),
+        _ => None,
+    };
+    // A client with no socket of its own: the shell the CLI runs in.
+    let outside = Tmux::new(server.platform.clone());
+    let id = outside.place_from_env(&read).unwrap();
+    assert_eq!(id, placed.id);
+    let place = Place {
+        host: outside.id(),
+        id,
+    };
+    assert!(outside.occupant(&place, T).is_ok());
 }
 
 #[test]
@@ -403,4 +435,61 @@ fn the_environment_file_is_readable_by_its_owner_only() {
     req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "s3cret".to_owned())];
     tmux.spawn(&req, T).unwrap();
     assert_eq!(*recording.modes.lock().unwrap(), [0o600]);
+}
+
+#[test]
+fn a_place_records_its_server_and_any_adapter_can_reach_it() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    let place = server
+        .tmux()
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    let (pane, path) = place
+        .id
+        .split_once('@')
+        .expect("the place records the socket path");
+    assert!(pane.starts_with('%'), "{}", place.id);
+    assert!(path.ends_with(&server.socket), "{path}");
+
+    // An adapter on another server, and one on none, as a shell outside tmux
+    // builds it: the place names the server, so neither asks the wrong one.
+    let other = PrivateServer::new();
+    for tmux in [
+        other.tmux(),
+        teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform)),
+    ] {
+        assert_eq!(tmux.state(&place, T).unwrap(), PlaceState::Unknown);
+        tmux.submit(&place, &one_line("from afar", 20), T).unwrap();
+        assert!(screen_shows(&tmux, &place, "from afar"));
+        assert!(tmux.occupant(&place, T).unwrap().pids.len() == 1);
+    }
+    teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform))
+        .close(&place, T)
+        .unwrap();
+    assert_eq!(server.tmux().list(T).unwrap(), []);
+}
+
+#[test]
+fn a_bare_pane_id_goes_to_the_server_the_client_value_names() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    let placed = server
+        .tmux()
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    let (pane, path) = placed.id.split_once('@').unwrap();
+    // What an older team stored, and what a locate finds in `TMUX_PANE`.
+    let bare = Place {
+        host: placed.host.clone(),
+        id: pane.to_owned(),
+    };
+    let tmux = teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform))
+        .with_client(&format!("{path},4242,0"));
+    assert_eq!(tmux.state(&bare, T).unwrap(), PlaceState::Unknown);
+    assert_eq!(
+        tmux.list(T).unwrap(),
+        [placed],
+        "list records the server too"
+    );
 }

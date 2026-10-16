@@ -11,8 +11,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
-use teamwire_core::{Command, Platform, TeamName, TeamState};
-use teamwire_store::{SCHEMA_VERSION, Store};
+use teamwire_core::{Clock, Command, Config, Platform, Registry, TeamName, TeamState};
+use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 
 use crate::Global;
 use crate::cmd::install::wanted_entry;
@@ -27,6 +27,23 @@ const PARTIAL: u8 = 2;
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Each probe of a harness or host binary waits this long, then warns.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The flags teamwire passes when it starts a member
+/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help does not
+/// list one may not support it; the launch itself is the real test.
+const CLAUDE_FLAGS: [&str; 8] = [
+    "--session-id",
+    "--resume",
+    "--permission-mode",
+    "--append-system-prompt-file",
+    "--settings",
+    "--mcp-config",
+    "--model",
+    "--effort",
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Level {
@@ -95,11 +112,24 @@ impl Host {
     }
 }
 
+/// Each of these overrides the stored Claude login for every member and
+/// changes who is billed.
+const CREDENTIAL_VARS: [&str; 5] = [
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+];
+
 /// What the checks look at.
 pub(crate) struct Inputs<'a> {
     pub(crate) host: Host,
     pub(crate) home: PathBuf,
     pub(crate) platform: &'a dyn Platform,
+    /// The adapters and the clock `status` reads members with.
+    pub(crate) registry: &'a Registry,
+    pub(crate) clock: &'a dyn Clock,
     /// `$PATH`, where the harness and host binaries are looked for.
     pub(crate) path_var: Option<OsString>,
     /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
@@ -111,6 +141,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
     pub(crate) repo: PathBuf,
+    /// The names of the environment variables that are set, never their
+    /// values (SEC-1).
+    pub(crate) env_names: Vec<String>,
 }
 
 /// The nearest directory at or above `path` that exists, so a state
@@ -160,7 +193,7 @@ fn disk_checks(inputs: &Inputs<'_>) -> Vec<Check> {
 /// the watch lease.
 fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
     let name = |what: &str| format!("team {team} {what}");
-    let store = match Store::open_read_only(&inputs.home, team) {
+    let mut store = match Store::open_read_only(&inputs.home, team) {
         Ok(store) => store,
         Err(e) => return vec![Check::fail(name("database"), e.to_string())],
     };
@@ -188,6 +221,12 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
     let rows = store.read(|tx| Ok((tx.team()?, tx.watch_lease()?)));
     match rows {
         Ok((team_row, lease)) => {
+            if team_row
+                .as_ref()
+                .is_some_and(|r| r.state == TeamState::Open)
+            {
+                checks.push(older_members_check(inputs, &mut store, team));
+            }
             // The pid with its recorded start time: a pid that a later
             // process reused is gone, as `close --clear-stale-lock` judges it.
             if let Some(row) = team_row
@@ -221,6 +260,49 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
         Err(e) => checks.push(Check::fail(name("rows"), e.to_string())),
     }
     checks
+}
+
+/// The members `status` marks as started by another build of teamwire. The
+/// check reuses the status view, so doctor and `status` cannot disagree.
+fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) -> Check {
+    let name = format!("team {team} older members");
+    let config = Config::default();
+    let ctx = Ctx {
+        home: &inputs.home,
+        store,
+        registry: inputs.registry,
+        platform: inputs.platform,
+        clock: inputs.clock,
+        config: &config,
+    };
+    let view = teamwire_watch::status_with(&ctx, None);
+    if !view.errors.is_empty() {
+        return Check::warn(
+            name,
+            format!("could not read the members: {}", view.errors.join("; ")),
+        );
+    }
+    let older: Vec<String> = view
+        .members
+        .iter()
+        // A member with a result for its current generation has finished, so
+        // relaunching it changes nothing (the rule of the lead's Stop hook).
+        .filter(|m| m.older_build && m.result.is_none())
+        .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
+        .collect();
+    if older.is_empty() {
+        return Check::pass(name, "no member was started by another build");
+    }
+    Check::warn(
+        name,
+        format!(
+            "{} started by a build other than {}; relaunch the member, or ignore if its \
+             wiring did not change. A member started before builds recorded their \
+             commit shows as 0.0.0",
+            older.join(", "),
+            teamwire_store::WRITER_VERSION
+        ),
+    )
 }
 
 fn database_checks(inputs: &Inputs<'_>) -> Vec<Check> {
@@ -280,6 +362,69 @@ fn on_path(path_var: Option<&OsString>, program: &str) -> Option<PathBuf> {
     dirs.map(|d| d.join(program)).find(|p| p.is_file())
 }
 
+/// Runs `program args` and returns its output, or why it gave none. A probe
+/// that fails or times out is a warning for the caller, never a hang.
+fn probe(inputs: &Inputs<'_>, program: &Path, args: &[&str]) -> Result<String, String> {
+    let cmd = Command::new(program.to_string_lossy().into_owned()).args(args.iter().copied());
+    let out = inputs
+        .platform
+        .run(&cmd, PROBE_TIMEOUT)
+        .map_err(|e| e.to_string())?;
+    if out.timed_out {
+        return Err(format!("no answer within {} s", PROBE_TIMEOUT.as_secs()));
+    }
+    if out.exit_code != 0 {
+        return Err(format!("exited with code {}", out.exit_code));
+    }
+    // Some tools print their help on stderr.
+    let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&out.stderr));
+    Ok(text)
+}
+
+/// The first line of a `--version` answer, which is the version itself.
+fn version_check(inputs: &Inputs<'_>, program: &str, path: &Path, flag: &str) -> Check {
+    let name = format!("{program} version");
+    match probe(inputs, path, &[flag]) {
+        Ok(text) => Check::pass(name, text.lines().next().unwrap_or("").trim().to_owned()),
+        Err(e) => Check::warn(name, format!("`{program} {flag}` failed: {e}")),
+    }
+}
+
+/// Claude Code writes a flag as `--name-suffix` or, in a description, as
+/// `--name[-suffix]` (2.1.301 does this for `--append-system-prompt-file`).
+fn lists_flag(help: &str, flag: &str) -> bool {
+    help.contains(flag)
+        || flag
+            .rsplit_once('-')
+            .is_some_and(|(base, suffix)| help.contains(&format!("{base}[-{suffix}]")))
+}
+
+fn claude_flag_check(inputs: &Inputs<'_>, path: &Path) -> Check {
+    let name = "claude flags";
+    match probe(inputs, path, &["--help"]) {
+        Ok(help) => {
+            let missing: Vec<&str> = CLAUDE_FLAGS
+                .into_iter()
+                .filter(|f| !lists_flag(&help, f))
+                .collect();
+            if missing.is_empty() {
+                Check::pass(name, "the help text lists every flag teamwire passes")
+            } else {
+                Check::warn(
+                    name,
+                    format!(
+                        "`claude --help` does not list {}; teamwire passes them when it \
+                         starts a member, so this claude may be too old or too new",
+                        missing.join(", ")
+                    ),
+                )
+            }
+        }
+        Err(e) => Check::warn(name, format!("`claude --help` failed: {e}")),
+    }
+}
+
 fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = Vec::new();
     let host_program = match inputs.host {
@@ -291,10 +436,19 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     for (program, role) in wanted {
         let name = format!("{program} on PATH");
         match on_path(inputs.path_var.as_ref(), program) {
-            Some(path) => checks.push(Check::pass(
-                name,
-                format!("{role} binary at {}", path.display()),
-            )),
+            Some(path) => {
+                checks.push(Check::pass(
+                    name,
+                    format!("{role} binary at {}", path.display()),
+                ));
+                if program == "claude" {
+                    checks.push(version_check(inputs, program, &path, "--version"));
+                    checks.push(claude_flag_check(inputs, &path));
+                } else {
+                    let flag = if program == "tmux" { "-V" } else { "--version" };
+                    checks.push(version_check(inputs, program, &path, flag));
+                }
+            }
             None => checks.push(Check::fail(
                 name,
                 format!("the {role} binary `{program}` is not on PATH"),
@@ -308,6 +462,27 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         ));
     }
     checks
+}
+
+fn credential_check(inputs: &Inputs<'_>) -> Check {
+    let set: Vec<&str> = CREDENTIAL_VARS
+        .into_iter()
+        .filter(|v| inputs.env_names.iter().any(|n| n == v))
+        .collect();
+    if set.is_empty() {
+        return Check::pass(
+            "credential variables",
+            "none set; members use the stored login",
+        );
+    }
+    Check::warn(
+        "credential variables",
+        format!(
+            "{} set in this environment; each overrides the stored login for every \
+             member and changes who is billed. Unset it unless that is intended",
+            set.join(", ")
+        ),
+    )
 }
 
 /// The lead setup's checks, from `lead_setup_check`.
@@ -337,6 +512,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
+    checks.push(credential_check(inputs));
     checks.extend(lead_setup_checks(inputs));
     checks
 }
@@ -373,6 +549,8 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         ),
         home,
         platform: wiring.platform.as_ref(),
+        registry: &wiring.registry,
+        clock: &wiring.clock,
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
         running_a_build: lead_entry
@@ -380,6 +558,10 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
             .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
         lead_entry,
         repo,
+        env_names: std::env::vars_os()
+            .filter(|(_, v)| !v.is_empty())
+            .filter_map(|(k, _)| k.into_string().ok())
+            .collect(),
     };
     let checks = diagnose(&inputs);
     say(&render(&checks));

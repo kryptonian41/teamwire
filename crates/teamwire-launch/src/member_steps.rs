@@ -175,6 +175,7 @@ pub(crate) fn run_setup(
     plan: &ValidPlan,
     dirs: &Dirs,
     m: &PlannedMember,
+    warnings: &mut Vec<String>,
 ) -> Result<(), Stop> {
     let script = m.spec.setup.clone().or_else(|| {
         m.worktree
@@ -223,6 +224,10 @@ pub(crate) fn run_setup(
         tracing::warn!(error = %e, "could not write the setup log");
     }
     if ok {
+        if m.worktree.is_some() {
+            let notes = worktree::exclude_setup_files(ctx.platform, &m.cwd);
+            warnings.extend(notes.into_iter().map(|n| format!("member {role}: {n}")));
+        }
         Ok(())
     } else {
         Err(Stop {

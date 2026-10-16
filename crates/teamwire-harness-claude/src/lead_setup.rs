@@ -1,12 +1,13 @@
-//! The lead setup: the `teamwire` skill and the lead's MCP server entry in
-//! Claude Code's user configuration (ADR 0012).
+//! The lead setup: the `teamwire` plugin in Claude Code (ADR 0018), and the
+//! removal of the skill and MCP entry that ADR 0012 wrote.
 //!
-//! Install and uninstall run in two halves. `plan_*` reads both items, runs
+//! Install and uninstall run in two halves. `plan_*` reads both setups, runs
 //! every check, and returns the changes; nothing is written. `apply` makes
 //! them in order and stops at the first failure. A caller that only plans
 //! has a dry run.
 
 mod mcp;
+mod plugin;
 mod shadow;
 mod skill;
 
@@ -17,6 +18,8 @@ pub use skill::{SKILL_TEXT, SkillState};
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+
+use plugin::{MarketplaceState, PLUGIN_ID, PluginFiles, plugin_dir, plugin_state};
 
 use crate::{ClaudeCode, ClaudeConfig};
 
@@ -32,7 +35,7 @@ pub enum LeadSetupError {
     Refused(String),
 }
 
-/// Both items of the lead setup, as they are now.
+/// The skill file and MCP entry that ADR 0012 wrote, as they are now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LeadSetupState {
     pub skill_path: PathBuf,
@@ -43,25 +46,34 @@ pub struct LeadSetupState {
 /// One change install or uninstall makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Change {
-    /// Write this binary's skill, stamped, over whatever is there.
-    WriteSkill(PathBuf),
-    RemoveSkill(PathBuf),
-    AddMcp(McpEntry),
-    /// `claude mcp add` refuses a name that exists, so a replacement is a
-    /// remove followed by an add.
-    ReplaceMcp {
-        old: String,
-        new: McpEntry,
+    /// Write the plugin's files into the marketplace directory: each path is
+    /// relative to `dir`.
+    WritePlugin {
+        dir: PathBuf,
+        files: Vec<(PathBuf, String)>,
     },
+    AddMarketplace(PathBuf),
+    UpdateMarketplace,
+    RemoveMarketplace,
+    InstallPlugin,
+    /// Claude Code keeps its own copy of a plugin, so a new binary needs this.
+    UpdatePlugin,
+    EnablePlugin,
+    UninstallPlugin,
+    /// Delete the marketplace directory.
+    RemovePluginFiles(PathBuf),
+    /// The skill file ADR 0012 wrote.
+    RemoveSkill(PathBuf),
+    /// The user MCP entry ADR 0012 wrote, described.
     RemoveMcp(String),
 }
 
 impl Change {
-    /// True for a change to the MCP entry, which needs `claude`.
-    pub fn is_mcp(&self) -> bool {
-        matches!(
+    /// True for a change made by running `claude`.
+    pub fn is_claude(&self) -> bool {
+        !matches!(
             self,
-            Self::AddMcp(_) | Self::ReplaceMcp { .. } | Self::RemoveMcp(_)
+            Self::WritePlugin { .. } | Self::RemovePluginFiles(_) | Self::RemoveSkill(_)
         )
     }
 }
@@ -69,14 +81,29 @@ impl Change {
 impl fmt::Display for Change {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::WriteSkill(p) => write!(f, "write the teamwire skill to {}", p.display()),
-            Self::RemoveSkill(p) => write!(f, "remove the teamwire skill at {}", p.display()),
-            Self::AddMcp(e) => write!(f, "add the user MCP server `teamwire`: {e}"),
-            Self::ReplaceMcp { old, new } => write!(
-                f,
-                "replace the user MCP server `teamwire` ({old}) with: {new}"
-            ),
-            Self::RemoveMcp(old) => write!(f, "remove the user MCP server `teamwire` ({old})"),
+            Self::WritePlugin { dir, .. } => {
+                write!(f, "write the teamwire plugin files to {}", dir.display())
+            }
+            Self::AddMarketplace(dir) => {
+                write!(
+                    f,
+                    "add the Claude Code marketplace `teamwire` from {}",
+                    dir.display()
+                )
+            }
+            Self::UpdateMarketplace => write!(f, "update the Claude Code marketplace `teamwire`"),
+            Self::RemoveMarketplace => write!(f, "remove the Claude Code marketplace `teamwire`"),
+            Self::InstallPlugin => write!(f, "install the plugin `{PLUGIN_ID}` at user scope"),
+            Self::UpdatePlugin => write!(f, "update the plugin `{PLUGIN_ID}` at user scope"),
+            Self::EnablePlugin => write!(f, "enable the plugin `{PLUGIN_ID}` at user scope"),
+            Self::UninstallPlugin => write!(f, "uninstall the plugin `{PLUGIN_ID}` at user scope"),
+            Self::RemovePluginFiles(dir) => {
+                write!(f, "delete the teamwire plugin files at {}", dir.display())
+            }
+            Self::RemoveSkill(p) => write!(f, "remove the old teamwire skill at {}", p.display()),
+            Self::RemoveMcp(old) => {
+                write!(f, "remove the old user MCP server `teamwire` ({old})")
+            }
         }
     }
 }
@@ -89,9 +116,6 @@ pub struct ApplyError {
     pub done: Vec<Change>,
     pub failed: Change,
     pub detail: String,
-    /// True when the failure came after `claude mcp remove` succeeded, so
-    /// the old entry is gone and the new one was not added.
-    pub entry_removed: bool,
 }
 
 /// Why an item was refused, with the way past it: `--force` to `verb` it.
@@ -112,7 +136,10 @@ fn foreign_entry(found: &str) -> String {
     format!("the user MCP server `teamwire` is not teamwire's lead server: {found}")
 }
 
-/// The skill file's path and state. Reads only.
+const FOREIGN_MARKETPLACE: &str =
+    "a Claude Code marketplace named `teamwire` is registered from another source";
+
+/// The old skill file's path and state. Reads only.
 pub fn skill_state(config: &ClaudeConfig) -> Result<(PathBuf, SkillState), LeadSetupError> {
     let path = skill::path(&config.claude_dir);
     let state = skill::read(&path, SKILL_TEXT)?;
@@ -124,7 +151,7 @@ pub fn mcp_state(config: &ClaudeConfig, want: &McpEntry) -> Result<McpState, Lea
     mcp::read(&config.claude_json, want)
 }
 
-/// Reads both items, comparing the MCP entry with `want`. Reads only, so
+/// Reads both old items, comparing the MCP entry with `want`. Reads only, so
 /// `doctor` calls it without a platform.
 pub fn lead_setup_state(
     config: &ClaudeConfig,
@@ -138,67 +165,141 @@ pub fn lead_setup_state(
     })
 }
 
+impl ClaudeConfig {
+    /// What is wrong with Claude Code's registration of the teamwire plugin,
+    /// in words; empty when it is installed, enabled, and (when
+    /// `compare_files`) holds the files `want` would render. Reads only.
+    pub fn plugin_problems(
+        &self,
+        want: &McpEntry,
+        compare_files: bool,
+    ) -> Result<Vec<String>, LeadSetupError> {
+        let files = PluginFiles::render(Path::new(""), want).map_err(LeadSetupError::Refused)?;
+        let state = plugin_state(self, Path::new(""))?;
+        let mut problems = Vec::new();
+        match &state.installed {
+            None => problems.push(format!("`{PLUGIN_ID}` is not installed at user scope")),
+            Some(root) if compare_files && !files.plugin_matches(root) => problems.push(format!(
+                "the installed plugin at {} is another version of teamwire's",
+                root.display()
+            )),
+            Some(_) => {}
+        }
+        if state.installed.is_some() && state.enabled == Some(false) {
+            problems.push(format!("`{PLUGIN_ID}` is disabled at user scope"));
+        }
+        Ok(problems)
+    }
+}
+
+/// The changes that remove what ADR 0012 wrote. `force` also removes an
+/// edited skill and a foreign entry.
+fn plan_migration(config: &ClaudeConfig, force: bool) -> Result<Vec<Change>, LeadSetupError> {
+    // An entry no one registered, so a teamwire entry reads as `Outdated` and
+    // its text reaches the change list.
+    let any = McpEntry::lead(Path::new("/"), None);
+    let state = lead_setup_state(config, &any)?;
+    let mut changes = Vec::new();
+    match state.skill {
+        SkillState::Missing => {}
+        SkillState::Edited if !force => {
+            return Err(refused(&edited_skill(&state.skill_path), "remove"));
+        }
+        SkillState::Current | SkillState::Outdated | SkillState::Edited => {
+            changes.push(Change::RemoveSkill(state.skill_path.clone()));
+        }
+    }
+    match &state.mcp {
+        McpState::Missing => {}
+        McpState::Foreign(found) if !force => {
+            return Err(refused(&foreign_entry(found), "remove"));
+        }
+        McpState::Current | McpState::Outdated(_) | McpState::Foreign(_) => {
+            changes.push(Change::RemoveMcp(describe(&state.mcp)));
+        }
+    }
+    Ok(changes)
+}
+
 impl ClaudeCode {
-    /// The changes that make the lead setup this binary's, after every
-    /// check. `force` replaces an edited skill and a foreign entry.
+    /// The changes that make the plugin this binary's and remove the ADR 0012
+    /// setup, after every check. `home` is the state directory, whose
+    /// `claude-plugin` holds the files. `force` replaces a marketplace from
+    /// another source, and removes an edited old skill and a foreign entry.
     pub fn plan_install(
         &self,
         want: &McpEntry,
+        home: &Path,
         force: bool,
     ) -> Result<Vec<Change>, LeadSetupError> {
-        let state = lead_setup_state(&self.config, want)?;
+        let dir = plugin_dir(home);
+        let files = PluginFiles::render(&dir, want).map_err(LeadSetupError::Refused)?;
+        let state = plugin_state(&self.config, &dir)?;
+        let migration = plan_migration(&self.config, force)?;
+
+        let written = files.is_written();
+        let stale = state
+            .installed
+            .as_deref()
+            .is_none_or(|root| !files.plugin_matches(root));
         let mut changes = Vec::new();
-        match state.skill {
-            SkillState::Current => {}
-            SkillState::Edited if !force => {
-                return Err(refused(&edited_skill(&state.skill_path), "replace"));
-            }
-            SkillState::Missing | SkillState::Outdated | SkillState::Edited => {
-                changes.push(Change::WriteSkill(state.skill_path.clone()));
-            }
+        if !written {
+            changes.push(Change::WritePlugin {
+                dir: files.dir,
+                files: files.files,
+            });
         }
-        match &state.mcp {
-            McpState::Current => {}
-            McpState::Missing => changes.push(Change::AddMcp(want.clone())),
-            McpState::Foreign(found) if !force => {
-                return Err(refused(&foreign_entry(found), "replace"));
+        match state.marketplace {
+            MarketplaceState::Missing => changes.push(Change::AddMarketplace(dir.clone())),
+            MarketplaceState::Foreign if !force => {
+                return Err(refused(FOREIGN_MARKETPLACE, "replace"));
             }
-            McpState::Outdated(_) | McpState::Foreign(_) => {
-                changes.push(Change::ReplaceMcp {
-                    old: describe(&state.mcp),
-                    new: want.clone(),
-                });
+            MarketplaceState::Foreign => {
+                changes.push(Change::RemoveMarketplace);
+                changes.push(Change::AddMarketplace(dir.clone()));
             }
+            MarketplaceState::Ours if !written || stale => {
+                changes.push(Change::UpdateMarketplace);
+            }
+            MarketplaceState::Ours => {}
         }
+        match &state.installed {
+            None => changes.push(Change::InstallPlugin),
+            Some(_) if stale => changes.push(Change::UpdatePlugin),
+            Some(_) => {}
+        }
+        if state.installed.is_some() && state.enabled == Some(false) {
+            changes.push(Change::EnablePlugin);
+        }
+        changes.extend(migration);
         self.check_claude_runs(&changes)?;
         Ok(changes)
     }
 
-    /// The changes that remove the lead setup, after every check. `force`
-    /// also removes an edited skill and a foreign entry.
-    pub fn plan_uninstall(&self, force: bool) -> Result<Vec<Change>, LeadSetupError> {
-        // Any lead entry will do: uninstall asks only "is it teamwire's".
-        let any = McpEntry::lead(Path::new("teamwire"), None);
-        let state = lead_setup_state(&self.config, &any)?;
+    /// The changes that remove the plugin and the ADR 0012 setup, after every
+    /// check. `force` also removes a marketplace from another source, an
+    /// edited old skill and a foreign entry.
+    pub fn plan_uninstall(&self, home: &Path, force: bool) -> Result<Vec<Change>, LeadSetupError> {
+        let dir = plugin_dir(home);
+        let state = plugin_state(&self.config, &dir)?;
+        let migration = plan_migration(&self.config, force)?;
         let mut changes = Vec::new();
-        match state.skill {
-            SkillState::Missing => {}
-            SkillState::Edited if !force => {
-                return Err(refused(&edited_skill(&state.skill_path), "remove"));
+        if state.installed.is_some() {
+            changes.push(Change::UninstallPlugin);
+        }
+        match state.marketplace {
+            MarketplaceState::Missing => {}
+            MarketplaceState::Foreign if !force => {
+                return Err(refused(FOREIGN_MARKETPLACE, "remove"));
             }
-            SkillState::Current | SkillState::Outdated | SkillState::Edited => {
-                changes.push(Change::RemoveSkill(state.skill_path.clone()));
+            MarketplaceState::Ours | MarketplaceState::Foreign => {
+                changes.push(Change::RemoveMarketplace);
             }
         }
-        match &state.mcp {
-            McpState::Missing => {}
-            McpState::Foreign(found) if !force => {
-                return Err(refused(&foreign_entry(found), "remove"));
-            }
-            McpState::Current | McpState::Outdated(_) | McpState::Foreign(_) => {
-                changes.push(Change::RemoveMcp(describe(&state.mcp)));
-            }
+        if dir.exists() {
+            changes.push(Change::RemovePluginFiles(dir));
         }
+        changes.extend(migration);
         self.check_claude_runs(&changes)?;
         Ok(changes)
     }
@@ -207,29 +308,11 @@ impl ClaudeCode {
     pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError>> {
         let mut done = Vec::new();
         for change in changes {
-            let result = match change {
-                Change::WriteSkill(path) => self.write_skill(path).map_err(|d| (d, false)),
-                Change::RemoveSkill(path) => remove_skill(path).map_err(|d| (d, false)),
-                Change::AddMcp(entry) => self
-                    .run_claude(&mcp::add_command(&self.config, entry))
-                    .map_err(|d| (d, false)),
-                Change::RemoveMcp(_) => self
-                    .run_claude(&mcp::remove_command(&self.config))
-                    .map_err(|d| (d, false)),
-                Change::ReplaceMcp { new, .. } => self
-                    .run_claude(&mcp::remove_command(&self.config))
-                    .map_err(|d| (d, false))
-                    .and_then(|()| {
-                        self.run_claude(&mcp::add_command(&self.config, new))
-                            .map_err(|d| (d, true))
-                    }),
-            };
-            if let Err((detail, entry_removed)) = result {
+            if let Err(detail) = self.apply_one(change) {
                 return Err(Box::new(ApplyError {
                     done,
                     failed: change.clone(),
                     detail,
-                    entry_removed,
                 }));
             }
             done.push(change.clone());
@@ -237,16 +320,35 @@ impl ClaudeCode {
         Ok(())
     }
 
-    /// Runs `claude --version` when a change needs `claude`, so a missing
-    /// `claude` is refused before the skill is written.
+    fn apply_one(&self, change: &Change) -> Result<(), String> {
+        let cfg = &self.config;
+        match change {
+            Change::WritePlugin { dir, files } => self.write_plugin(dir, files),
+            Change::RemovePluginFiles(dir) => std::fs::remove_dir_all(dir)
+                .map_err(|e| format!("cannot remove {}: {e}", dir.display())),
+            Change::RemoveSkill(path) => remove_skill(path),
+            Change::AddMarketplace(dir) => self.run_claude(&plugin::marketplace_add(cfg, dir)),
+            Change::UpdateMarketplace => self.run_claude(&plugin::marketplace_update(cfg)),
+            Change::RemoveMarketplace => self.run_claude(&plugin::marketplace_remove(cfg)),
+            Change::InstallPlugin => self.run_claude(&plugin::plugin_verb(cfg, "install")),
+            Change::UpdatePlugin => self.run_claude(&plugin::plugin_verb(cfg, "update")),
+            Change::EnablePlugin => self.run_claude(&plugin::plugin_verb(cfg, "enable")),
+            Change::UninstallPlugin => self.run_claude(&plugin::plugin_verb(cfg, "uninstall")),
+            Change::RemoveMcp(_) => self.run_claude(&mcp::remove_command(cfg)),
+        }
+    }
+
+    /// Runs `claude plugin --help` when a change needs `claude`, so a missing
+    /// `claude`, or one without the `plugin` command, is refused before the
+    /// first write.
     fn check_claude_runs(&self, changes: &[Change]) -> Result<(), LeadSetupError> {
-        if !changes.iter().any(Change::is_mcp) {
+        if !changes.iter().any(Change::is_claude) {
             return Ok(());
         }
-        self.run_claude(&mcp::version_command(&self.config))
+        self.run_claude(&plugin::probe_command(&self.config))
             .map_err(|detail| {
                 LeadSetupError::Refused(format!(
-                    "cannot run `{}`, which changes the MCP server entry: {detail}",
+                    "cannot run `{} plugin`, which registers the teamwire plugin: {detail}",
                     self.config.claude_bin
                 ))
             })
@@ -270,33 +372,18 @@ impl ClaudeCode {
         })
     }
 
-    fn write_skill(&self, path: &Path) -> Result<(), String> {
-        let text = skill::stamp(SKILL_TEXT)
-            .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
-        if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
-                .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    fn write_plugin(&self, dir: &Path, files: &[(PathBuf, String)]) -> Result<(), String> {
+        for (rel, text) in files {
+            let path = dir.join(rel);
+            if let Some(dir) = path.parent() {
+                std::fs::create_dir_all(dir)
+                    .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+            }
+            self.platform
+                .write_atomic(&path, text.as_bytes())
+                .map_err(|e| e.to_string())?;
         }
-        // The user may keep the skill in a dotfiles repo and link to it. The
-        // write must replace that file and leave the link, so resolve first.
-        let resolved = through_symlink(path);
-        self.platform
-            .write_atomic(&resolved, text.as_bytes())
-            .map_err(|e| e.to_string())
-    }
-}
-
-/// The file a symlink at `path` points to. A path that is not a link, or a
-/// link whose target does not exist yet, is returned as it is.
-fn through_symlink(path: &Path) -> std::path::PathBuf {
-    if let Ok(real) = std::fs::canonicalize(path) {
-        return real;
-    }
-    match std::fs::read_link(path) {
-        Ok(target) => path
-            .parent()
-            .map_or(target.clone(), |dir| dir.join(&target)),
-        Err(_) => path.to_path_buf(),
+        Ok(())
     }
 }
 
@@ -311,8 +398,16 @@ fn describe(state: &McpState) -> String {
 }
 
 /// Removes the skill file, then its directory when nothing else is in it,
-/// so files the user put beside the skill stay.
+/// so files the user put beside the skill stay. A skill folder that is a
+/// symlink loses only the link: following it would delete a file in the
+/// link's target, which may be the user's own.
 fn remove_skill(path: &Path) -> Result<(), String> {
+    if let Some(dir) = path.parent()
+        && std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_symlink())
+    {
+        return std::fs::remove_file(dir)
+            .map_err(|e| format!("cannot remove {}: {e}", dir.display()));
+    }
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -323,4 +418,52 @@ fn remove_skill(path: &Path) -> Result<(), String> {
         std::fs::remove_dir(dir).ok();
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes the user's files as the user would, not through the platform"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_real_folder_loses_the_file_and_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skill");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        remove_skill(&dir.join("SKILL.md")).unwrap();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn a_symlinked_folder_loses_only_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("mine");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("SKILL.md"), "keep").unwrap();
+        let link = tmp.path().join("skill");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        remove_skill(&link.join("SKILL.md")).unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(
+            std::fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_file_in_a_real_folder_loses_only_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine.md");
+        std::fs::write(&mine, "keep").unwrap();
+        let dir = tmp.path().join("skill");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(&mine, dir.join("SKILL.md")).unwrap();
+        remove_skill(&dir.join("SKILL.md")).unwrap();
+        assert_eq!(std::fs::read_to_string(&mine).unwrap(), "keep");
+        assert!(!dir.exists());
+    }
 }

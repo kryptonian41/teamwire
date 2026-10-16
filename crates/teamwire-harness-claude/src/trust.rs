@@ -11,7 +11,12 @@ use teamwire_core::{
     HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
 };
 
-use crate::screen::{ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, has_any, squash};
+use crate::screen::{
+    ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, has_any, last_pointer_text, squash,
+};
+
+/// The option that trusts the folder.
+const ACCEPT_OPTION: &str = "Yes, I trust this folder";
 
 /// How many screen lines to read for the dialog: more than any terminal is
 /// tall, so a tall dialog is read whole. Its escalation lines can sit above the
@@ -104,8 +109,41 @@ fn accept(
     poll: StartupPoll,
 ) -> Result<StartupOutcome, HarnessError> {
     // "No, exit" is the preselected line, so Down moves to "Yes, I trust
-    // this folder". Never `1`: it does not pick the first line.
-    host.send_keys(place, &[Key::Down], HOST_TIMEOUT)?;
+    // this folder". Never `1`: it does not pick the first line. A slow start
+    // can drop or delay a key, so Enter waits until the screen shows the
+    // pointer on the accepting option. A second Down is sent once, after a
+    // long wait: a late first Down would otherwise be undone by it.
+    let patience = (poll.steps / 3).max(1);
+    let mut downs = 0;
+    let mut since_down = 0;
+    for _ in 0..poll.steps {
+        let screen = read(host, place)?;
+        if classify(&after_dialog(&screen)) == ScreenState::InputPrompt {
+            return Ok(StartupOutcome::NoDialog);
+        }
+        match last_pointer_text(&screen) {
+            Some(text) if text.contains(ACCEPT_OPTION) => return confirm(host, place, poll),
+            Some(_) if downs == 0 || (downs == 1 && since_down >= patience) => {
+                host.send_keys(place, &[Key::Down], HOST_TIMEOUT)?;
+                downs += 1;
+                since_down = 0;
+            }
+            _ => since_down += 1,
+        }
+        std::thread::sleep(poll.step);
+    }
+    Err(timeout(
+        "the trust dialog never showed the accepting option selected",
+    ))
+}
+
+/// Presses Enter on the selected "Yes, I trust this folder" and waits for the
+/// input prompt.
+fn confirm(
+    host: &dyn Host,
+    place: &Place,
+    poll: StartupPoll,
+) -> Result<StartupOutcome, HarnessError> {
     host.send_keys(place, &[Key::Enter], HOST_TIMEOUT)?;
     for _ in 0..poll.steps {
         if classify(&after_dialog(&read(host, place)?)) == ScreenState::InputPrompt {

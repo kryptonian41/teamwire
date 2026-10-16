@@ -1,12 +1,12 @@
 //! The `Harness` trait for Claude Code: launch argv, per-run `settings.json`
 //! and `mcp.json`, session files and `claude agents --json` for liveness,
 //! background-session detection, Stop and `PostToolUse` hook input, the
-//! trust dialog, and the lead setup that `teamwire install` writes.
+//! trust dialog, and the teamwire plugin that `teamwire install` writes.
 //!
-//! Never: write under the user's `~/.claude/` except the lead setup's skill
-//! file, and only when asked to install or uninstall it (ADR 0012); write
-//! `~/.claude.json` at all (the lead's MCP entry changes only through
-//! `claude mcp`); answer the escalated trust dialog; register a member's hook
+//! Never: write under the user's `~/.claude/` except deleting an ADR 0012
+//! skill file during install or uninstall; write `~/.claude.json` at all;
+//! change Claude Code's setup other than through `claude plugin` and
+//! `claude mcp remove` (ADR 0018); answer the escalated trust dialog; register a member's hook
 //! or MCP server globally.
 //!
 //! Invariants: every Claude path comes from `ClaudeConfig`, so tests point
@@ -33,15 +33,15 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome,
-    TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
+    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaudeConfig {
     /// `~/.claude`, `CLAUDE_CONFIG_DIR`, or `TEAMWIRE_CLAUDE_DIR` in tests.
-    /// Holds `sessions/` and `skills/`.
+    /// Holds `sessions/`, `skills/`, `plugins/` and `settings.json`.
     pub claude_dir: PathBuf,
     /// `~/.claude.json`, or `.claude.json` inside `claude_dir` when that is
     /// set from the environment. Read for the lead's MCP entry; teamwire never
@@ -165,6 +165,10 @@ impl Harness for ClaudeCode {
 
     fn screen_state(&self, tail: &str) -> ScreenState {
         screen::classify(tail)
+    }
+
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
+        screen::line_pending(tail, line)
     }
 
     fn answer_startup(

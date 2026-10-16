@@ -1,8 +1,8 @@
-//! The lead setup checks of `teamwire doctor` (ADR 0012): the skill and the
-//! lead's MCP entry, each compared with what this binary would install, and
-//! any `teamwire` entry in a scope that hides the user one. Reads only.
-//! Kept apart from `doctor.rs` and free of its types, so the doctor tests
-//! compile this file as it is.
+//! The lead setup checks of `teamwire doctor` (ADR 0018): the teamwire plugin,
+//! compared with what this binary would install, any skill or MCP entry left
+//! from ADR 0012, and any `teamwire` entry in a scope that adds a second
+//! server. Reads only. Kept apart from `doctor.rs` and free of its types, so
+//! the doctor tests compile this file as it is.
 
 use std::path::Path;
 
@@ -24,9 +24,9 @@ pub(crate) struct LeadInputs<'a> {
     pub(crate) claude: &'a ClaudeConfig,
     /// The entry `teamwire install` would register, or why there is none.
     pub(crate) entry: &'a Result<McpEntry, String>,
-    /// True when this binary is a cargo build under `target/`. Its skill
-    /// text and path differ from the installed binary's by design, so the
-    /// checks then ask only whether both items are teamwire's.
+    /// True when this binary is a cargo build under `target/`. Its path and
+    /// skill text differ from the installed binary's by design, so the
+    /// plugin check then asks only whether the plugin is installed and on.
     pub(crate) running_a_build: bool,
     /// The directory whose local and project scopes are checked.
     pub(crate) dir: &'a Path,
@@ -39,45 +39,59 @@ pub(crate) fn is_build_output(bin: &Path) -> bool {
 }
 
 const INSTALL: &str = "run `teamwire install`";
-const FORCE: &str = "run `teamwire install --force` to replace it";
+const FORCE: &str = "run `teamwire install --force` to remove it";
 const LOOSE: &str = "not compared, because this binary is a build under target/";
 
-fn skill_check(inputs: &LeadInputs<'_>) -> Outcome {
-    let (path, state) = match skill_state(inputs.claude) {
-        Ok(found) => found,
-        Err(e) => return Outcome::Fail(e.to_string()),
-    };
-    let at = path.display();
-    match state {
-        SkillState::Current => Outcome::Pass(format!("installed at {at}")),
-        SkillState::Outdated if inputs.running_a_build => {
-            Outcome::Pass(format!("teamwire's skill at {at}; {LOOSE}"))
-        }
-        SkillState::Outdated => Outcome::Fail(format!("{at} is another version; {INSTALL}")),
-        SkillState::Missing => Outcome::Fail(format!("not installed at {at}; {INSTALL}")),
-        SkillState::Edited => Outcome::Fail(format!("{}; {FORCE}", edited_skill(&path))),
-    }
-}
-
-fn mcp_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
-    match mcp_state(inputs.claude, want) {
+fn plugin_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
+    match inputs.claude.plugin_problems(want, !inputs.running_a_build) {
         Err(e) => Outcome::Fail(e.to_string()),
-        Ok(McpState::Current) => Outcome::Pass(format!("registered: {want}")),
-        Ok(McpState::Outdated(found)) if inputs.running_a_build => {
-            Outcome::Pass(format!("registered: {found}; {LOOSE}"))
+        Ok(problems) if !problems.is_empty() => {
+            Outcome::Fail(format!("{}; {INSTALL}", problems.join("; ")))
         }
-        Ok(McpState::Outdated(found)) => {
-            Outcome::Fail(format!("registered as `{found}`, not `{want}`; {INSTALL}"))
-        }
-        Ok(McpState::Missing) => Outcome::Fail(format!("no user MCP server `teamwire`; {INSTALL}")),
-        Ok(McpState::Foreign(found)) => {
-            Outcome::Fail(format!("`teamwire` is another server ({found}); {FORCE}"))
-        }
+        Ok(_) if inputs.running_a_build => Outcome::Pass(format!(
+            "`teamwire@teamwire` is installed and enabled; {LOOSE}"
+        )),
+        Ok(_) => Outcome::Pass(format!("installed and enabled: {want}")),
     }
 }
 
-/// Entries in the local or project scope run in place of the user one in
-/// that directory only, so they warn rather than fail.
+/// The skill and MCP entry that ADR 0012 wrote must be gone, so the lead does
+/// not see two copies of the skill and two sets of tools.
+fn leftover_check(inputs: &LeadInputs<'_>) -> Outcome {
+    let mut found = Vec::new();
+    let mut needs_force = false;
+    match skill_state(inputs.claude) {
+        Err(e) => return Outcome::Fail(e.to_string()),
+        Ok((_, SkillState::Missing)) => {}
+        Ok((path, SkillState::Edited)) => {
+            needs_force = true;
+            found.push(edited_skill(&path));
+        }
+        Ok((path, _)) => found.push(format!("the old skill at {}", path.display())),
+    }
+    // Any entry will do: the question is only whether one is there.
+    let any = McpEntry::lead(Path::new("/"), None);
+    match mcp_state(inputs.claude, &any) {
+        Err(e) => return Outcome::Fail(e.to_string()),
+        Ok(McpState::Missing) => {}
+        Ok(McpState::Foreign(found_entry)) => {
+            needs_force = true;
+            found.push(format!("the user MCP server `teamwire` ({found_entry})"));
+        }
+        Ok(McpState::Current | McpState::Outdated(_)) => {
+            found.push("the old user MCP server `teamwire`".to_owned());
+        }
+    }
+    if found.is_empty() {
+        Outcome::Pass("no skill or user MCP server left from the old install".to_owned())
+    } else {
+        let fix = if needs_force { FORCE } else { INSTALL };
+        Outcome::Fail(format!("{} remains; {fix}", found.join(" and ")))
+    }
+}
+
+/// Entries in the local or project scope start a second `teamwire` server
+/// beside the plugin's in that directory only, so they warn rather than fail.
 fn shadow_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
     match shadowing_entries(inputs.claude, inputs.dir, want) {
         Err(e) => Outcome::Warn(e.to_string()),
@@ -90,8 +104,8 @@ fn shadow_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
                 .iter()
                 .map(|s| {
                     format!(
-                        "{} has `teamwire` = {}, which Claude Code starts in place of the \
-                         user entry here; remove it",
+                        "{} has `teamwire` = {}, which Claude Code starts as a second server \
+                         beside the plugin's here; remove it",
                         s.place, s.entry
                     )
                 })
@@ -101,16 +115,20 @@ fn shadow_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
     }
 }
 
-/// Each check's name and outcome. The skill check does not need the entry,
-/// so it runs even when the entry cannot be worked out.
+/// Each check's name and outcome. The leftover check does not need the
+/// entry, so it runs even when the entry cannot be worked out.
 pub(crate) fn run(inputs: &LeadInputs<'_>) -> Vec<(&'static str, Outcome)> {
-    let mut checks = vec![("teamwire skill", skill_check(inputs))];
+    let mut checks = Vec::new();
     match inputs.entry {
         Ok(want) => {
-            checks.push(("lead MCP server", mcp_check(inputs, want)));
+            checks.push(("teamwire plugin", plugin_check(inputs, want)));
+            checks.push(("old lead setup", leftover_check(inputs)));
             checks.push(("lead MCP server scope", shadow_check(inputs, want)));
         }
-        Err(e) => checks.push(("lead MCP server", Outcome::Fail(e.clone()))),
+        Err(e) => {
+            checks.push(("teamwire plugin", Outcome::Fail(e.clone())));
+            checks.push(("old lead setup", leftover_check(inputs)));
+        }
     }
     checks
 }

@@ -2,7 +2,7 @@
 //! dialog? The answer decides whether a host may type into the session, so
 //! `InputPrompt` needs positive evidence and nothing else is trusted.
 
-use teamwire_core::ScreenState;
+use teamwire_core::{OneLine, ScreenState};
 
 /// Text of the plain folder-trust dialog.
 pub(crate) const PLAIN_TRUST_MARKERS: [&str; 2] =
@@ -37,6 +37,9 @@ const FOOTER_MARKERS: [&str; 4] = [
     "auto-accept edits on",
 ];
 
+/// Text only a working session prints in its footer or status line.
+const BUSY_MARKERS: [&str; 1] = ["esc to interrupt"];
+
 /// How many non-empty lines at the end of the screen can belong to the
 /// input box and its footer.
 const BOX_LINES: usize = 8;
@@ -63,6 +66,51 @@ fn pointer_rest(line: &str) -> Option<&str> {
     line.strip_prefix('❯')
         .or_else(|| line.strip_prefix('>'))
         .map(str::trim)
+}
+
+/// What the last pointer line of the screen says, such as `No, exit`. A
+/// dialog redraws its pointer as the selection moves, and the last one is the
+/// current selection.
+pub(crate) fn last_pointer_text(screen: &str) -> Option<String> {
+    screen.lines().rev().find_map(pointer_rest).map(squash)
+}
+
+/// How much of a submitted line is looked for in the input box. The box
+/// wraps a long line, but its first row holds the start.
+const PREFIX_CHARS: usize = 40;
+
+/// Whether `line` still sits in the input box, unsent. Used after a submit
+/// to decide on one more Enter.
+pub(crate) fn line_pending(tail: &str, line: &OneLine) -> bool {
+    let wanted: String = squash(line.as_str()).chars().take(PREFIX_CHARS).collect();
+    // The last pointer line is the input box: a line Claude echoed into its
+    // transcript is always followed by the box's own pointer line.
+    last_pointer_text(tail).is_some_and(|text| text.contains(&wanted) || is_paste_marker(&text))
+}
+
+/// A long paste shows in the box as `[Pasted text #1]`, or
+/// `[Pasted text #1 +12 lines]`, in place of the text. The wording is
+/// assumed from Claude Code's behaviour, not captured from a real screen, so
+/// only a box holding nothing but such a marker counts.
+// shortcut: any marker counts, not only one for the line teamwire pasted, so
+// a person's own paste in the 300 ms window also gets the Enter. Upgrade once
+// the real marker text is captured: tie it to the length of the pasted line.
+fn is_paste_marker(text: &str) -> bool {
+    text.strip_prefix("[Pasted text #")
+        .and_then(|rest| rest.strip_suffix(']'))
+        .is_some_and(|rest| {
+            let digits = rest.chars().take_while(char::is_ascii_digit).count();
+            digits > 0
+                && rest.get(digits..).is_some_and(|more| {
+                    more.is_empty()
+                        || more
+                            .strip_prefix(" +")
+                            .and_then(|n| {
+                                n.strip_suffix(" lines").or_else(|| n.strip_suffix(" line"))
+                            })
+                            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+                })
+        })
 }
 
 /// The non-empty lines at the end of the screen that can belong to the
@@ -107,9 +155,35 @@ fn dialog_near_the_end(last: &[&str]) -> bool {
         || last.iter().any(|l| is_selected_option(l))
 }
 
+/// A line of box-drawing dashes that closes Claude's input box.
+fn is_rule(line: &str) -> bool {
+    let line = inner(line);
+    line.chars().count() >= 3 && line.chars().all(|c| "─━".contains(c))
+}
+
+/// The box Claude draws today: the pointer line, a rule, then the status and
+/// footer lines. The footer text changes with the mode and with what runs in
+/// the background, so the shape is the evidence, not the words. A working
+/// session prints `esc to interrupt` and is not ready to be typed into.
+fn is_ruled_box(last: &[&str]) -> bool {
+    let busy = last
+        .iter()
+        .filter(|l| !is_transcript_line(l))
+        .any(|l| BUSY_MARKERS.iter().any(|m| l.contains(m)));
+    !busy
+        && last.iter().enumerate().any(|(i, line)| {
+            pointer_rest(line).is_some()
+                && last.get(i + 1).is_some_and(|rule| is_rule(rule))
+                && i + 2 < last.len()
+        })
+}
+
 fn at_input_prompt(last: &[&str]) -> bool {
     // An empty pointer line as the last thing on screen.
     if last.last().and_then(|l| pointer_rest(l)) == Some("") {
+        return true;
+    }
+    if is_ruled_box(last) {
         return true;
     }
     // A pointer line (empty, or holding a suggestion or typed text) with the

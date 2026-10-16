@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, ScreenState};
+use teamwire_core::{Harness, ScreenState, one_line};
 use teamwire_fakes::{
     ESCALATED_TRUST_TEXT, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT,
 };
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
-fn state(tail: &str) -> ScreenState {
+fn claude() -> ClaudeCode {
     ClaudeCode::new(
         Arc::new(FakePlatform::new()),
         ClaudeConfig {
@@ -17,7 +17,14 @@ fn state(tail: &str) -> ScreenState {
             claude_bin: "claude".into(),
         },
     )
-    .screen_state(tail)
+}
+
+fn state(tail: &str) -> ScreenState {
+    claude().screen_state(tail)
+}
+
+fn pending(tail: &str, text: &str) -> bool {
+    claude().line_pending(tail, &one_line(text, 200))
 }
 
 const BOX: &str =
@@ -118,4 +125,120 @@ fn a_numbered_list_in_the_last_reply_above_an_idle_box_is_a_prompt() {
 fn marker_text_inside_a_reply_is_a_prompt() {
     let screen = format!("⏺ Press Esc to cancel a run, then Enter to confirm.\n\n{BOX}");
     assert_eq!(state(&screen), ScreenState::InputPrompt);
+}
+
+/// Claude Code's input box as it draws it today: a rule, the pointer line,
+/// a rule, then the status line and the footer.
+fn real_box(pointer: &str, footer: &str) -> String {
+    let rule = "─".repeat(40);
+    format!(
+        "⏺ Done.\n\n{rule}\n{pointer}\n{rule}\n  💬 Teamwire team   │   Sonnet 5.5 · medium\n  {footer}"
+    )
+}
+
+const IDLE_FOOTERS: [&str; 7] = [
+    "⏵⏵ auto mode on · 1 monitor · ← 3 agents",
+    "⏵⏵ auto mode on (shift+tab to cycle) · ← 3 agents",
+    "⏵⏵ bypass permissions on · 2 monitors",
+    "⏵⏵ accept edits on · 1 monitor",
+    "⏸ plan mode on · ← 1 agent",
+    "? for shortcuts",
+    "← 3 agents",
+];
+
+#[test]
+fn an_idle_box_is_a_prompt_whatever_the_footer_says() {
+    for footer in IDLE_FOOTERS {
+        assert_eq!(
+            state(&real_box("❯", footer)),
+            ScreenState::InputPrompt,
+            "{footer}"
+        );
+    }
+}
+
+#[test]
+fn typed_text_in_the_box_keeps_it_a_prompt() {
+    for footer in IDLE_FOOTERS {
+        let screen = real_box("❯ fix the lint errors", footer);
+        assert_eq!(state(&screen), ScreenState::InputPrompt, "{footer}");
+    }
+}
+
+#[test]
+fn a_busy_box_is_not_a_prompt() {
+    let screen = real_box("❯", "⏵⏵ auto mode on · 1 monitor · esc to interrupt");
+    assert_eq!(state(&screen), ScreenState::Unknown);
+}
+
+#[test]
+fn a_dialog_over_a_ruled_box_is_a_dialog() {
+    let rule = "─".repeat(40);
+    let trust = format!(
+        "{PLAIN_TRUST_TEXT}\n ❯ No, exit\n   {TRUST_OPTION_TEXT}\n{rule}\n  ⏵⏵ auto mode on · 1 monitor"
+    );
+    assert_eq!(state(&trust), ScreenState::Dialog);
+    let permission = format!(
+        "Do you want to proceed?\n ❯ 1. Yes\n   2. No\n{}",
+        real_box("❯", "⏵⏵ auto mode on · 1 monitor")
+    );
+    assert_eq!(state(&permission), ScreenState::Dialog);
+}
+
+#[test]
+fn a_pointer_line_without_a_ruled_box_or_footer_is_unknown() {
+    assert_eq!(
+        state("❯ No, exit\n  some text\n  more text"),
+        ScreenState::Unknown
+    );
+}
+
+#[test]
+fn a_line_in_the_input_box_is_pending() {
+    assert!(pending(
+        "done\n❯ hello there\n  ? for shortcuts",
+        "hello there"
+    ));
+    assert!(pending(
+        "╭────╮\n│ > hello   there │\n╰────╯",
+        "hello there"
+    ));
+}
+
+#[test]
+fn a_line_that_only_the_transcript_echoes_is_not_pending() {
+    // The session took the line: its echo is followed by the box's own empty pointer.
+    assert!(!pending("❯ hello there\n⏺ Working\n❯ ", "hello there"));
+    assert!(!pending("ready\n❯ ", "hello there"));
+    assert!(!pending("no pointer at all", "hello there"));
+}
+
+#[test]
+fn only_the_first_forty_characters_are_matched() {
+    let long = "word ".repeat(30);
+    let first_row: String = long.chars().take(60).collect();
+    assert!(pending(&format!("❯ {first_row}\n"), &long));
+}
+
+#[test]
+fn a_box_holding_only_a_paste_marker_is_pending() {
+    for marker in [
+        "[Pasted text #1]",
+        "[Pasted text #12 +34 lines]",
+        "[Pasted text #2 +1 line]",
+    ] {
+        let tail = format!("done\n❯ {marker}\n  ? for shortcuts");
+        assert!(
+            pending(&tail, "a long line the box did not show"),
+            "{marker}"
+        );
+    }
+}
+
+#[test]
+fn text_that_only_mentions_a_paste_marker_is_not_pending() {
+    assert!(!pending("❯ see [Pasted text #1] above\n", "something else"));
+    assert!(!pending("❯ [Pasted text #]\n", "something else"));
+    assert!(!pending("❯ [Pasted text #1 +x lines]\n", "something else"));
+    assert!(!pending("[Pasted text #1]\n❯ \n", "something else"));
 }

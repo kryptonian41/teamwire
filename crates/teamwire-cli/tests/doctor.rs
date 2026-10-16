@@ -16,10 +16,11 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput,
-    TeamName, Timestamp,
+    Clock, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Pid, PlatformError,
+    PlatformErrorCode, Registry, Role, RunOutput, TeamName, Timestamp,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
@@ -49,6 +50,8 @@ mod wiring {
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
+        pub(crate) registry: teamwire_core::Registry,
+        pub(crate) clock: teamwire_fakes::FakeClock,
     }
 }
 
@@ -93,6 +96,24 @@ struct Bed {
     bin: TestHome,
     platform: FakePlatform,
     host: Host,
+    /// What `claude --help` prints.
+    claude_help: String,
+    /// The environment variables that are set.
+    env_names: Vec<String>,
+    registry: Registry,
+    clock: FakeClock,
+}
+
+const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
+                         --settings --mcp-config --model --effort";
+
+fn answer(text: &str) -> RunOutput {
+    RunOutput {
+        exit_code: 0,
+        stdout: text.as_bytes().to_vec(),
+        stderr: Vec::new(),
+        timed_out: false,
+    }
 }
 
 impl Bed {
@@ -104,6 +125,15 @@ impl Bed {
             bin: TestHome::new().unwrap(),
             platform: FakePlatform::new(),
             host: Host::Herdr,
+            claude_help: ALL_FLAGS.to_owned(),
+            env_names: Vec::new(),
+            registry: {
+                let mut registry = Registry::new();
+                registry.add_harness(Arc::new(FakeHarness::new())).unwrap();
+                registry.add_host(Arc::new(FakeHost::new())).unwrap();
+                registry
+            },
+            clock: FakeClock::new(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -132,19 +162,50 @@ impl Bed {
         McpEntry::lead(&bin, Some(self.home.path()))
     }
 
-    /// Writes the skill through the harness, on a platform of its own so
-    /// the bed's platform records no writes, and the MCP entry as
-    /// `claude mcp add` would.
+    /// Writes the plugin files through the harness, on a platform of its own
+    /// so the bed's platform records no writes, and Claude's own registration
+    /// of the plugin as `claude plugin install` leaves it: loaded from the
+    /// marketplace directory.
     fn install_lead_setup(&self) {
         let setup = std::sync::Arc::new(FakePlatform::new());
         let claude = ClaudeCode::new(setup, self.claude_config());
-        let changes = claude.plan_install(&self.lead_entry(), false).unwrap();
+        let changes = claude
+            .plan_install(&self.lead_entry(), self.home.path(), false)
+            .unwrap();
         claude.apply_lead_setup(&changes).unwrap();
-        let entry = self.lead_entry();
-        let doc = serde_json::json!({"mcpServers": {"teamwire": {
-            "type": "stdio", "command": entry.command, "args": entry.args, "env": {}
-        }}});
-        std::fs::write(self.claude.path().join(".claude.json"), doc.to_string()).unwrap();
+        self.register_plugin(&self.plugin_root(), true);
+    }
+
+    fn plugin_root(&self) -> PathBuf {
+        self.home.path().join("claude-plugin/teamwire")
+    }
+
+    /// `installed_plugins.json` and `enabledPlugins`, with the plugin loaded
+    /// from `root`.
+    fn register_plugin(&self, root: &Path, enabled: bool) {
+        let plugins = self.claude.path().join("plugins");
+        std::fs::create_dir_all(&plugins).unwrap();
+        let installed = serde_json::json!({"version": 2, "plugins": {"teamwire@teamwire": [
+            {"scope": "user", "installPath": root}]}});
+        std::fs::write(
+            plugins.join("installed_plugins.json"),
+            installed.to_string(),
+        )
+        .unwrap();
+        let path = self.claude.path().join("settings.json");
+        let mut settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap_or_default())
+                .unwrap_or_else(|_| serde_json::json!({}));
+        settings["enabledPlugins"] = serde_json::json!({"teamwire@teamwire": enabled});
+        std::fs::write(path, settings.to_string()).unwrap();
+    }
+
+    /// The skill and MCP entry that ADR 0012 wrote.
+    fn put_old_setup(&self, skill: &str, entry: &str) {
+        let path = self.claude.path().join("skills/teamwire/SKILL.md");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, skill).unwrap();
+        std::fs::write(self.claude.path().join(".claude.json"), entry).unwrap();
     }
 
     fn checks(&self) -> Vec<Check> {
@@ -153,15 +214,24 @@ impl Bed {
 
     /// The checks as a binary under `target/` (`build`) or an installed one.
     fn checks_as(&self, build: bool) -> Vec<Check> {
+        // The order doctor runs them in: git, then the claude probes, then
+        // the host's version.
+        self.platform.queue_run(Ok(answer("")));
+        self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
+        self.platform.queue_run(Ok(answer(&self.claude_help)));
+        self.platform.queue_run(Ok(answer("host 1.2.3\n")));
         diagnose(&Inputs {
             host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
+            registry: &self.registry,
+            clock: &self.clock,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
             claude: self.claude_config(),
             lead_entry: Ok(self.lead_entry()),
             running_a_build: build,
             repo: self.home.path().to_path_buf(),
+            env_names: self.env_names.clone(),
         })
     }
 
@@ -421,55 +491,89 @@ fn detail_of<'a>(checks: &'a [Check], name: &str) -> &'a str {
 }
 
 #[test]
-fn a_missing_lead_setup_fails_and_names_install_as_the_fix() {
+fn a_missing_plugin_fails_and_names_install_as_the_fix() {
     let bed = Bed::healthy();
-    std::fs::remove_file(bed.claude.path().join("skills/teamwire/SKILL.md")).unwrap();
-    std::fs::remove_file(bed.claude.path().join(".claude.json")).unwrap();
+    std::fs::remove_file(bed.claude.path().join("plugins/installed_plugins.json")).unwrap();
     let checks = bed.checks();
-    assert_eq!(failing(&checks), ["teamwire skill", "lead MCP server"]);
-    assert!(detail_of(&checks, "teamwire skill").contains("run `teamwire install`"));
-    assert!(detail_of(&checks, "lead MCP server").contains("run `teamwire install`"));
+    assert_eq!(failing(&checks), ["teamwire plugin"]);
+    assert!(detail_of(&checks, "teamwire plugin").contains("not installed"));
+    assert!(detail_of(&checks, "teamwire plugin").contains("run `teamwire install`"));
     assert_eq!(exit_code(&checks), 2);
 }
 
 #[test]
-fn an_entry_for_another_binary_or_an_edited_skill_fails() {
+fn a_plugin_for_another_binary_or_a_disabled_one_fails() {
     let bed = Bed::healthy();
-    let doc = r#"{"mcpServers":{"teamwire":{"command":"teamwire","args":["mcp","--lead"]}}}"#;
-    std::fs::write(bed.claude.path().join(".claude.json"), doc).unwrap();
-    let skill = bed.claude.path().join("skills/teamwire/SKILL.md");
-    let edited = std::fs::read_to_string(&skill).unwrap() + "\nmy note\n";
-    std::fs::write(&skill, edited).unwrap();
+    // Claude Code's copy, made by an older binary.
+    let copy = bed.claude.path().join("plugins/cache/teamwire");
+    std::fs::create_dir_all(&copy).unwrap();
+    std::fs::write(
+        copy.join(".mcp.json"),
+        r#"{"mcpServers":{"teamwire":{"command":"/old/teamwire","args":["mcp","--lead"]}}}"#,
+    )
+    .unwrap();
+    bed.register_plugin(&copy, true);
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["teamwire plugin"]);
+    assert!(
+        detail_of(&checks, "teamwire plugin").contains("another version"),
+        "{checks:?}"
+    );
+
+    bed.register_plugin(&bed.plugin_root(), false);
     let checks = bed.checks();
     assert!(
-        detail_of(&checks, "lead MCP server").contains("registered as `teamwire mcp --lead`"),
+        detail_of(&checks, "teamwire plugin").contains("disabled"),
         "{checks:?}"
     );
-    assert!(
-        detail_of(&checks, "teamwire skill").contains("--force"),
-        "{checks:?}"
-    );
+    assert!(detail_of(&checks, "teamwire plugin").contains("run `teamwire install`"));
 }
 
 #[test]
-fn a_build_under_target_accepts_any_teamwire_skill_and_entry_but_not_a_foreign_one() {
+fn the_skill_and_entry_from_the_old_install_fail_and_name_install_as_the_fix() {
     let bed = Bed::healthy();
-    let doc =
-        r#"{"mcpServers":{"teamwire":{"command":"/old/bin/teamwire","args":["mcp","--lead"]}}}"#;
-    std::fs::write(bed.claude.path().join(".claude.json"), doc).unwrap();
-    assert_eq!(level_of(&bed.checks(), "lead MCP server"), Level::Fail);
+    assert_eq!(level_of(&bed.checks(), "old lead setup"), Level::Pass);
+    let entry = r#"{"mcpServers":{"teamwire":{"command":"teamwire","args":["mcp","--lead"]}}}"#;
+    bed.put_old_setup(teamwire_harness_claude::SKILL_TEXT, entry);
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["old lead setup"]);
+    let detail = detail_of(&checks, "old lead setup");
+    assert!(detail.contains("the old skill at"), "{detail}");
+    assert!(detail.contains("the old user MCP server"), "{detail}");
+    assert!(detail.ends_with("run `teamwire install`"), "{detail}");
+}
+
+#[test]
+fn an_edited_old_skill_or_a_foreign_entry_needs_force() {
+    let bed = Bed::healthy();
+    bed.put_old_setup(
+        "---\nname: teamwire\n---\nmine\n",
+        r#"{"mcpServers":{"teamwire":{"command":"/bin/other","args":["serve"]}}}"#,
+    );
+    let detail = detail_of(&bed.checks(), "old lead setup").to_owned();
+    assert!(detail.contains("/bin/other serve"), "{detail}");
+    assert!(detail.contains("teamwire install --force"), "{detail}");
+}
+
+#[test]
+fn a_build_under_target_accepts_any_plugin_files_but_still_needs_the_plugin_on() {
+    let bed = Bed::healthy();
+    let copy = bed.claude.path().join("plugins/cache/teamwire");
+    std::fs::create_dir_all(&copy).unwrap();
+    std::fs::write(copy.join(".mcp.json"), "{}").unwrap();
+    bed.register_plugin(&copy, true);
+    assert_eq!(level_of(&bed.checks(), "teamwire plugin"), Level::Fail);
     let loose = bed.checks_as(true);
     assert_eq!(
-        level_of(&loose, "lead MCP server"),
+        level_of(&loose, "teamwire plugin"),
         Level::Pass,
         "{loose:?}"
     );
-    assert!(detail_of(&loose, "lead MCP server").contains("not compared"));
+    assert!(detail_of(&loose, "teamwire plugin").contains("not compared"));
 
-    let foreign = r#"{"mcpServers":{"teamwire":{"command":"/bin/other","args":["serve"]}}}"#;
-    std::fs::write(bed.claude.path().join(".claude.json"), foreign).unwrap();
+    bed.register_plugin(&copy, false);
     assert_eq!(
-        level_of(&bed.checks_as(true), "lead MCP server"),
+        level_of(&bed.checks_as(true), "teamwire plugin"),
         Level::Fail
     );
 }
@@ -493,21 +597,24 @@ fn a_project_entry_that_hides_the_user_one_is_a_warning() {
 }
 
 #[test]
-fn the_skill_is_checked_even_when_the_entry_cannot_be_worked_out() {
+fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
     let bed = Bed::healthy();
     let checks = diagnose(&Inputs {
         host: bed.host,
         home: bed.home.path().to_path_buf(),
         platform: &bed.platform,
+        registry: &bed.registry,
+        clock: &bed.clock,
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
+        env_names: Vec::new(),
     });
-    assert_eq!(level_of(&checks, "teamwire skill"), Level::Pass);
+    assert_eq!(level_of(&checks, "old lead setup"), Level::Pass);
     assert_eq!(
-        detail_of(&checks, "lead MCP server"),
+        detail_of(&checks, "teamwire plugin"),
         "cannot find this binary"
     );
 }
@@ -640,4 +747,192 @@ fn with_no_host_doctor_says_so_and_requires_neither_host_tool() {
     assert_eq!(failing(&checks), Vec::<&str>::new(), "{checks:?}");
     assert_eq!(level_of(&checks, "host"), Level::Pass);
     assert!(!names(&checks).contains(&"herdr session hook"));
+}
+
+#[test]
+fn the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines() {
+    let bed = Bed::healthy();
+    let checks = bed.checks();
+    let detail = |name: &str| {
+        checks
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap()
+            .detail
+            .clone()
+    };
+    assert_eq!(detail("claude version"), "2.1.0 (Claude Code)");
+    assert_eq!(detail("herdr version"), "host 1.2.3");
+    assert_eq!(level_of(&checks, "claude flags"), Level::Pass);
+}
+
+#[test]
+fn a_claude_help_without_a_launch_flag_warns_and_names_it() {
+    let mut bed = Bed::healthy();
+    bed.claude_help = ALL_FLAGS.replace("--effort", "");
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "claude flags")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("--effort") && !detail.contains("--model"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn a_probe_that_times_out_or_fails_is_a_warning() {
+    let bed = Bed::healthy();
+    bed.platform.queue_run(Ok(answer("")));
+    bed.platform.queue_run(Ok(RunOutput {
+        exit_code: 124,
+        stdout: Vec::new(),
+        stderr: Vec::new(),
+        timed_out: true,
+    }));
+    bed.platform
+        .queue_run(Err(PlatformError::new(PlatformErrorCode::NotFound, "gone")));
+    // These queue ahead of `checks_as`'s own answers: git, the claude
+    // version, the claude help.
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "claude version"),
+        Level::Warn,
+        "{checks:?}"
+    );
+    assert_eq!(level_of(&checks, "claude flags"), Level::Warn, "{checks:?}");
+}
+
+#[test]
+fn a_credential_variable_warns_by_name_and_a_clean_environment_passes() {
+    let mut bed = Bed::healthy();
+    assert_eq!(level_of(&bed.checks(), "credential variables"), Level::Pass);
+    bed.env_names = ["ANTHROPIC_API_KEY", "CLAUDE_CODE_USE_VERTEX", "HOME"]
+        .map(str::to_owned)
+        .to_vec();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "credential variables"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "credential variables")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("ANTHROPIC_API_KEY, CLAUDE_CODE_USE_VERTEX"),
+        "{detail}"
+    );
+    assert!(!detail.contains("HOME"), "{detail}");
+}
+
+/// Starts member `role` on `store`, which writes `version` as the writer of
+/// the `member.started` event.
+fn start_member(store: &mut Store, role: &str) {
+    let role = Role::parse(role).unwrap();
+    let now = FakeClock::new().now();
+    let new = teamwire_store::NewMember {
+        role: role.clone(),
+        title: "T".to_owned(),
+        kind: MemberKind::Implementer,
+        mode: Mode::Pane,
+        harness: HarnessId::from_static(FakeHarness::ID),
+        host: HostId::from_static(FakeHost::ID),
+        cwd: PathBuf::from("/tmp"),
+        repo: None,
+        branch: None,
+        base: None,
+        base_sha: None,
+        check: None,
+        owns: vec![],
+        deadline_s: 1800,
+    };
+    store
+        .write(|tx| {
+            tx.insert_member(now, &new)?;
+            tx.set_member_state(now, &role, MemberState::Started, &serde_json::json!({}))
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    let mut older = Store::open(bed.home.path(), &TeamName::parse("alpha").unwrap())
+        .unwrap()
+        .with_writer_version("0.0.0+aaaaaaaaaaaa");
+    start_member(&mut older, "web");
+    drop(older);
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha older members")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("web (0.0.0+aaaaaaaaaaaa)") && !detail.contains("api"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("relaunch the member, or ignore if its wiring did not change"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn members_of_this_build_pass_the_older_members_check() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    assert_eq!(
+        level_of(&bed.checks(), "team alpha older members"),
+        Level::Pass
+    );
+}
+
+#[test]
+fn a_member_from_another_build_that_has_finished_is_not_counted() {
+    let bed = Bed::healthy();
+    let mut older = bed.team("alpha").with_writer_version("0.0.0");
+    start_member(&mut older, "web");
+    start_member(&mut older, "api");
+    let now = FakeClock::new().now();
+    older
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &teamwire_store::NewCompletion {
+                    role: Role::parse("web").unwrap(),
+                    generation: 1,
+                    status: teamwire_core::CompletionStatus::Done,
+                    summary: "finished".to_owned(),
+                    final_message: None,
+                    final_source: teamwire_core::FinalSource::Hook,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    drop(older);
+
+    let checks = bed.checks();
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha older members")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("api (0.0.0)") && !detail.contains("web"),
+        "{detail}"
+    );
+    assert!(detail.contains("shows as 0.0.0"), "{detail}");
 }

@@ -14,7 +14,8 @@ pub mod fixture;
 
 use fixture::{Fixture, Repo, implementer, implementer_without_repo, start_secs};
 use sha2::{Digest, Sha256};
-use teamwire_core::{Role, RunOutput};
+use teamwire_core::{CompletionStatus, FinalSource, Role, RunOutput};
+use teamwire_store::NewCompletion;
 use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, verify, waive};
 
 const T0: i64 = 0;
@@ -454,6 +455,51 @@ fn flags_with_exit_zero_is_flagged_not_pass() {
     assert_eq!(row.record.verdict, "FLAGGED");
     assert_eq!(row.record.head_sha, repo.head());
     assert_eq!(row.record.flags, ["test-deleted:tests/a.rs"]);
+}
+
+fn record_done(fx: &mut Fixture, name: &str) {
+    let at = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| {
+            tx.insert_completion(
+                at,
+                &NewCompletion {
+                    role: role(name),
+                    generation: 1,
+                    status: CompletionStatus::Done,
+                    summary: "finished".to_owned(),
+                    final_message: None,
+                    final_source: FinalSource::None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_done_implementer_with_no_commit_is_flagged_and_a_waiver_clears_it() {
+    let (mut fx, repo) = rust_member(&["src/"], &[]);
+    report_all_commits(&fx, &repo, "api");
+    assert_eq!(flag_ids(&run_one(&mut fx, "api")), Vec::<&str>::new());
+
+    record_done(&mut fx, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["no-commits"], "{record:?}");
+    assert_eq!(record.verdict, Verdict::Flagged);
+
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("no-commits"),
+        "nothing to change",
+    )
+    .unwrap();
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+
+    repo.commit(&[("src/a.rs", "fn a() {}\n")], "work", start_secs() + 5);
+    report_all_commits(&fx, &repo, "api");
+    assert_eq!(flag_ids(&run_one(&mut fx, "api")), Vec::<&str>::new());
 }
 
 #[test]

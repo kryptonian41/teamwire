@@ -1,7 +1,8 @@
 // Schemas for the JSON that the `teamwire` CLI prints. These are the only
 // shapes this app accepts from teamwire. Each one was written from the
 // teamwire source (crates/teamwire-watch/src/lib.rs, teamwire-core enums)
-// and checked against real output on 2026-10-13 (teamwire 0.0.0, schema 3).
+// and checked against real output on 2026-10-13 (teamwire 0.0.0, schema 3);
+// teamwire now prints its version as `0.0.0+<commit>`.
 //
 // Unknown object keys are dropped, so teamwire may add fields freely. A new
 // enum value or a changed type fails the parse on purpose: the server then
@@ -36,6 +37,8 @@ export const Liveness = z.union([
   z.literal("unknown"),
 ]);
 
+export const WatchState = z.enum(["running", "stale", "none"]);
+
 const count = z.number().int().nonnegative();
 
 /** One member in `teamwire status --json`. Removed members are left out. */
@@ -52,6 +55,10 @@ export const MemberView = z.object({
   generation: count,
   age_s: count,
   deadline_s: count,
+  /** The teamwire version that started the member; null before it started. */
+  started_by: z.string().nullable(),
+  /** True when `started_by` differs from the running teamwire. */
+  older_build: z.boolean(),
   /** Delivery state of the member's newest result in this generation. */
   result: ReportState.nullable(),
   branch: z.string().nullable(),
@@ -62,6 +69,14 @@ export const MemberView = z.object({
 export const LeadView = z.object({
   session_id: z.string().nullable(),
   liveness: Liveness,
+});
+
+/** The team's watch: a live lease, a lease left behind, or no lease. */
+export const WatchView = z.object({
+  state: WatchState,
+  pid: count.nullable(),
+  /** Seconds since the last heartbeat. */
+  heartbeat_age_s: count.nullable(),
 });
 
 export const MessageView = z.object({
@@ -81,6 +96,21 @@ export const StuckDelivery = z.object({
   age_s: count,
 });
 
+/** Handed to the recipient's session, not acknowledged after 10 minutes. */
+export const UnreadDelivery = z.object({
+  display_id: z.string(),
+  to: Party,
+  age_s: count,
+});
+
+/** A question that no answer message points at. */
+export const UnansweredQuestion = z.object({
+  display_id: z.string(),
+  from: Party,
+  to: z.array(Party),
+  age_s: count,
+});
+
 export const UndeliveredResult = z.object({
   role: z.string(),
   n: count,
@@ -94,10 +124,13 @@ export const StatusView = z.object({
   title: z.string().nullable(),
   state: TeamState.nullable(),
   lead: LeadView.nullable(),
+  watch: WatchView,
   members: z.array(MemberView),
   /** The last five messages, newest first. */
   messages: z.array(MessageView),
   stuck_deliveries: z.array(StuckDelivery),
+  unread_deliveries: z.array(UnreadDelivery),
+  unanswered_questions: z.array(UnansweredQuestion),
   undelivered_results: z.array(UndeliveredResult),
   /** Why part of the view could not be read. */
   errors: z.array(z.string()),

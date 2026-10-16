@@ -54,6 +54,7 @@ struct PlaceRec {
 struct State {
     caps: HostCaps,
     place_env_var: Option<&'static str>,
+    place_suffix_var: Option<&'static str>,
     places: HashMap<String, PlaceRec>,
     order: Vec<String>,
     foreign_agents: Vec<String>,
@@ -98,6 +99,7 @@ impl FakeHost {
             state: Mutex::new(State {
                 caps: Self::caps(),
                 place_env_var: Some("FAKE_PLACE_ID"),
+                place_suffix_var: None,
                 places: HashMap::new(),
                 order: Vec::new(),
                 foreign_agents: Vec::new(),
@@ -116,6 +118,12 @@ impl FakeHost {
 
     pub fn set_place_env_var(&self, var: Option<&'static str>) {
         lock(&self.state).place_env_var = var;
+    }
+
+    /// A host whose place id is the place variable, `@`, and the value of
+    /// `var` (as tmux joins the pane and its server). `None` is the default.
+    pub fn set_place_suffix_var(&self, var: Option<&'static str>) {
+        lock(&self.state).place_suffix_var = var;
     }
 
     /// Fires `fault` on the next `times` calls of the method `op`
@@ -144,6 +152,17 @@ impl FakeHost {
     /// Adds a place as if a member were already running in it.
     pub fn add_place(&self, name: &str, state: PlaceState, occupant: Occupant) -> Place {
         let id = self.new_id();
+        self.add_place_with_id(id, name, state, occupant)
+    }
+
+    /// Like `add_place` with the id chosen by the caller.
+    pub fn add_place_with_id(
+        &self,
+        id: String,
+        name: &str,
+        state: PlaceState,
+        occupant: Occupant,
+    ) -> Place {
         let mut st = lock(&self.state);
         st.places.insert(
             id.clone(),
@@ -446,5 +465,17 @@ impl Host for FakeHost {
 
     fn place_env_var(&self) -> Option<&'static str> {
         lock(&self.state).place_env_var
+    }
+
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        let (var, suffix) = {
+            let st = lock(&self.state);
+            (st.place_env_var?, st.place_suffix_var)
+        };
+        let id = read(var).filter(|id| !id.is_empty())?;
+        Some(match suffix.and_then(read) {
+            Some(extra) => format!("{id}@{extra}"),
+            None => id,
+        })
     }
 }

@@ -4,9 +4,11 @@ use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{
-    LeadRoute, Member, MemberState, ReportState, Role, Route, TurnEnd, TurnEndReply,
+    LeadRoute, Member, MemberState, ReportState, Role, Route, TurnEnd, TurnEndReply, one_line,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_within, result_line};
+use teamwire_deliver::{
+    DeliveryOutcome, deliver_line, deliver_line_within, result_line, watch_lease_is_dead,
+};
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
@@ -14,6 +16,10 @@ use crate::note::{gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
 use crate::result_file::{MISSING_FROM_HARNESS, write_current};
+
+/// The cap on a result line that ends with the no-watch note: the 1000
+/// characters `result_line` allows, and room for the note after them.
+const NOTE_LINE_CHARS: usize = 1200;
 
 /// The name a hook run gives its events (`docs/metrics.md` section 5).
 const HOOK: &str = "claude-stop";
@@ -103,6 +109,18 @@ fn run(
         }
     }
     Ok(TurnEndReply::Continue)
+}
+
+/// True when no live watch holds the lease: none was ever taken, its process
+/// is gone, or its heartbeat is old.
+fn watch_is_dead(ctx: &Ctx<'_>) -> Result<bool, StoreError> {
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "`ReadTx::watch_lease` as a path does not infer the transaction's lifetime for `Store::read`"
+    )]
+    let lease = ctx.store.read(|tx| tx.watch_lease())?;
+    let now = ctx.clock.now();
+    Ok(lease.is_none_or(|l| watch_lease_is_dead(&l, ctx.platform, now)))
 }
 
 /// A completion the watch already reported (route B) has no final message
@@ -251,7 +269,16 @@ fn deliver(
         |w| w.path.clone(),
     );
     let c = &record.completion;
-    let line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
+    let mut line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
+    // A lead that is idle reads the result before it ever stops, so the line
+    // itself says that nothing is watching (ADR 0018 point 6). The note is
+    // advice: a lease that cannot be read skips it and never stops delivery.
+    if watch_is_dead(ctx).unwrap_or(false) {
+        line = one_line(
+            &format!("{line} (no watch is running: teamwire watch {})", team.name),
+            NOTE_LINE_CHARS,
+        );
+    }
     let outcome = match deadline_after(started, Duration::from_secs(ctx.config.hook_budget_s)) {
         Some(deadline) => deliver_line_within(ctx, &Party::Lead, &line, deadline),
         // A budget too large for the clock is no deadline at all.

@@ -8,13 +8,15 @@
 //! with a timeout.
 //!
 //! Invariants: every call after `spawn` names its pane by its `%` id and
-//! nothing else, so a session or window name is never taken for a place;
-//! `spawn` and `list` leave the choice of session to tmux; `list` and
-//! `live_agent_names` report only panes this adapter started, marked with
-//! the pane option `@teamwire_name`, never the user's own panes.
+//! nothing else, never a session or window name; a place is
+//! `%<n>@<socket path>` and every call for it goes to that server, whatever
+//! the caller's `TMUX`; a bare `%<n>` goes to the adapter's own server;
+//! `list` and `live_agent_names` report only panes this adapter started,
+//! marked with the pane option `@teamwire_name`.
 
 mod call;
 mod keys;
+mod pane;
 mod tree;
 
 use std::fmt;
@@ -27,7 +29,8 @@ use teamwire_core::{
     PlaceState, Platform, SpawnRequest, SubmitAck,
 };
 
-use call::{Failure, call};
+use call::{Failure, Socket, call};
+use pane::Pane;
 
 /// The session `spawn` creates when the tmux server has none.
 const SESSION: &str = "teamwire";
@@ -46,13 +49,17 @@ static BUFFER_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// The tmux host adapter (id `tmux`).
 ///
-/// A place is a pane, named by its `%<n>` id, which is also the value of
-/// `TMUX_PANE` inside the pane. Errors: a pane, or the whole server, that is
+/// A place is a pane: its `%<n>` id, which is also the value of `TMUX_PANE`
+/// inside the pane, and the socket path of its server (`pane` module).
+/// Errors: a pane, or the whole server, that is
 /// not there is `NotFound`; a timeout is `Timeout`; any other tmux failure
 /// is `Other` with tmux's message in the detail.
 pub struct Tmux {
     platform: Arc<dyn Platform>,
-    socket: Option<String>,
+    /// `-L <name>`, for a test's private server.
+    socket_name: Option<String>,
+    /// `-S <path>`, the server the calling tmux client belongs to.
+    socket_path: Option<String>,
 }
 
 impl Tmux {
@@ -63,7 +70,8 @@ impl Tmux {
     pub fn new(platform: Arc<dyn Platform>) -> Self {
         Self {
             platform,
-            socket: None,
+            socket_name: None,
+            socket_path: None,
         }
     }
 
@@ -71,7 +79,17 @@ impl Tmux {
     /// test never touches the user's server.
     #[must_use]
     pub fn with_socket(mut self, name: impl Into<String>) -> Self {
-        self.socket = Some(name.into());
+        self.socket_name = Some(name.into());
+        self
+    }
+
+    /// Runs commands for a bare pane id on the server the `TMUX` value names
+    /// (its first comma field is the socket path), and records that server in
+    /// every place `spawn` and `list` return. A value with no path changes
+    /// nothing.
+    #[must_use]
+    pub fn with_client(mut self, tmux_env: &str) -> Self {
+        self.socket_path = pane::socket_of_client(tmux_env).map(str::to_owned);
         self
     }
 
@@ -80,33 +98,48 @@ impl Tmux {
         self.platform.as_ref()
     }
 
+    /// The server a call goes to when its place names none.
+    fn own_server(&self) -> Option<Socket<'_>> {
+        self.socket_path
+            .as_deref()
+            .map(Socket::Path)
+            .or_else(|| self.socket_name.as_deref().map(Socket::Name))
+    }
+
     fn run(&self, args: &[&str], timeout: Duration) -> Result<String, Failure> {
         call(
             self.platform.as_ref(),
-            self.socket.as_deref(),
+            self.own_server(),
             args,
             None,
             timeout,
         )
     }
 
-    /// The pane id of `place`, or `NotFound` when the id is not a pane id.
-    /// tmux would also resolve a session or window name, and a place must
-    /// never be one.
-    fn pane(place: &Place) -> Result<&str, HostError> {
-        if place.id.starts_with('%') && place.id.len() > 1 {
-            Ok(&place.id)
-        } else {
-            Err(HostError::new(
-                HostErrorCode::NotFound,
-                format!("{} is not a tmux pane id", place.id),
-            ))
-        }
+    /// Runs tmux on the server that holds `pane`.
+    fn run_at(&self, pane: &Pane<'_>, args: &[&str], timeout: Duration) -> Result<String, Failure> {
+        call(
+            self.platform.as_ref(),
+            pane.server().or_else(|| self.own_server()),
+            args,
+            None,
+            timeout,
+        )
     }
 
-    /// `(pane id, member name)` for every pane this adapter started.
+    /// The pane of `place`, or `NotFound` when the id is not a pane id.
+    fn pane(place: &Place) -> Result<Pane<'_>, HostError> {
+        Pane::parse(&place.id).ok_or_else(|| {
+            HostError::new(
+                HostErrorCode::NotFound,
+                format!("{} is not a tmux pane id", place.id),
+            )
+        })
+    }
+
+    /// `(place id, member name)` for every pane this adapter started.
     fn marked_panes(&self, timeout: Duration) -> Result<Vec<(String, String)>, HostError> {
-        let format = format!("#{{pane_id}} #{{{NAME_OPTION}}}");
+        let format = format!("#{{pane_id}}\t#{{socket_path}}\t#{{{NAME_OPTION}}}");
         let listing = match self.run(&["list-panes", "-a", "-F", &format], timeout) {
             Ok(text) => text,
             Err(Failure::NoServer(_)) => return Ok(Vec::new()),
@@ -114,9 +147,12 @@ impl Tmux {
         };
         Ok(listing
             .lines()
-            .filter_map(|line| line.split_once(' '))
-            .filter(|(_, name)| !name.trim().is_empty())
-            .map(|(id, name)| (id.to_owned(), name.trim().to_owned()))
+            .filter_map(|line| {
+                let mut fields = line.splitn(3, '\t');
+                Some((fields.next()?, fields.next()?, fields.next()?.trim()))
+            })
+            .filter(|(_, _, name)| !name.is_empty())
+            .map(|(id, socket, name)| (pane::place_id(id, socket), name.to_owned()))
             .collect())
     }
 
@@ -128,11 +164,19 @@ impl Tmux {
             ));
         }
         let cwd = req.cwd.display().to_string();
-        let mut shared: Vec<String> =
-            ["-d", "-P", "-F", "#{pane_id}", "-n", &req.title, "-c", &cwd]
-                .iter()
-                .map(|s| keys::escape_arg(s))
-                .collect();
+        let mut shared: Vec<String> = [
+            "-d",
+            "-P",
+            "-F",
+            "#{pane_id} #{socket_path}",
+            "-n",
+            &req.title,
+            "-c",
+            &cwd,
+        ]
+        .iter()
+        .map(|s| keys::escape_arg(s))
+        .collect();
         for (key, _) in &req.env {
             if !is_env_name(key) {
                 return Err(HostError::new(
@@ -181,14 +225,18 @@ impl Tmux {
                     out = run_owned(&window);
                 }
             }
-            let id = out?.trim().to_owned();
+            let printed = out?;
+            let (id, socket) = printed
+                .trim()
+                .split_once(' ')
+                .unwrap_or((printed.trim(), ""));
             if !id.starts_with('%') {
                 return Err(HostError::new(
                     HostErrorCode::Other,
-                    format!("tmux printed no pane id: {}", call::clip(&id)),
+                    format!("tmux printed no pane id: {}", call::clip(&printed)),
                 ));
             }
-            Ok(id)
+            Ok(pane::place_id(id, socket))
         })();
         // The wrapper removes the directory once it has read it, so a leftover
         // directory means the program never started.
@@ -300,18 +348,20 @@ impl Host for Tmux {
             id,
         };
         // A pane that cannot be marked would never be listed or cleaned up.
-        if let Err(e) = self.run(
+        let pane = Self::pane(&place)?;
+        if let Err(e) = self.run_at(
+            &pane,
             &[
                 "set-option",
                 "-p",
                 "-t",
-                &place.id,
+                pane.id,
                 NAME_OPTION,
                 req.name.as_str(),
             ],
             timeout,
         ) {
-            drop(self.run(&["kill-pane", "-t", &place.id], timeout));
+            drop(self.run_at(&pane, &["kill-pane", "-t", pane.id], timeout));
             return Err(e.into());
         }
         Ok(place)
@@ -324,24 +374,27 @@ impl Host for Tmux {
             std::process::id(),
             BUFFER_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        // The buffer lives on the pane's server, so load, paste and delete
+        // all go there.
         call(
             self.platform.as_ref(),
-            self.socket.as_deref(),
+            pane.server().or_else(|| self.own_server()),
             &["load-buffer", "-b", &buffer, "-"],
             Some(text.as_str().as_bytes()),
             timeout,
         )?;
         // `-p` sends the text as a bracketed paste where the program asked
         // for one; `-d` drops the buffer afterwards.
-        if let Err(e) = self.run(
-            &["paste-buffer", "-p", "-d", "-b", &buffer, "-t", pane],
+        if let Err(e) = self.run_at(
+            &pane,
+            &["paste-buffer", "-p", "-d", "-b", &buffer, "-t", pane.id],
             timeout,
         ) {
-            drop(self.run(&["delete-buffer", "-b", &buffer], timeout));
+            drop(self.run_at(&pane, &["delete-buffer", "-b", &buffer], timeout));
             return Err(e.into());
         }
         std::thread::sleep(PASTE_SETTLE);
-        self.run(&["send-keys", "-t", pane, "Enter"], timeout)?;
+        self.run_at(&pane, &["send-keys", "-t", pane.id, "Enter"], timeout)?;
         Ok(())
     }
 
@@ -349,8 +402,9 @@ impl Host for Tmux {
         let Ok(pane) = Self::pane(place) else {
             return Ok(PlaceState::Gone);
         };
-        match self.run(
-            &["display-message", "-p", "-t", pane, "#{pane_dead}"],
+        match self.run_at(
+            &pane,
+            &["display-message", "-p", "-t", pane.id, "#{pane_dead}"],
             timeout,
         ) {
             Ok(text) => Ok(match text.trim() {
@@ -364,9 +418,13 @@ impl Host for Tmux {
 
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError> {
         let pane = Self::pane(place)?;
-        let text = self.run(
-            &["display-message", "-p", "-t", pane, "#{pane_pid}"],
-            timeout,
+        // Two commands run one after the other (tmux, then `ps`), so each
+        // gets half: the whole call stays inside the caller's `timeout`.
+        let each = timeout / 2;
+        let text = self.run_at(
+            &pane,
+            &["display-message", "-p", "-t", pane.id, "#{pane_pid}"],
+            each,
         )?;
         // tmux 3.x prints nothing and exits 0 for a pane that is not there.
         let Ok(root) = text.trim().parse::<u32>() else {
@@ -375,7 +433,7 @@ impl Host for Tmux {
                 format!("tmux has no pane {}", place.id),
             ));
         };
-        let pids: Vec<Pid> = tree::tree_of(self.platform.as_ref(), Pid::new(root), timeout)?;
+        let pids: Vec<Pid> = tree::tree_of(self.platform.as_ref(), Pid::new(root), each)?;
         Ok(Occupant {
             session: None,
             pids,
@@ -385,8 +443,9 @@ impl Host for Tmux {
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError> {
         let pane = Self::pane(place)?;
         let from = format!("-{lines}");
-        let text = self.run(
-            &["capture-pane", "-p", "-J", "-t", pane, "-S", &from],
+        let text = self.run_at(
+            &pane,
+            &["capture-pane", "-p", "-J", "-t", pane.id, "-S", &from],
             timeout,
         )?;
         Ok(last_lines(&text, usize::from(lines)))
@@ -396,9 +455,9 @@ impl Host for Tmux {
         let pane = Self::pane(place)?;
         for key in keys {
             let tail = keys::send_args(*key);
-            let mut args = vec!["send-keys", "-t", pane];
+            let mut args = vec!["send-keys", "-t", pane.id];
             args.extend(tail.iter().map(String::as_str));
-            self.run(&args, timeout)?;
+            self.run_at(&pane, &args, timeout)?;
         }
         Ok(())
     }
@@ -409,14 +468,18 @@ impl Host for Tmux {
         // recorded id can name a pane that is not ours. Only a pane this
         // adapter marked is killed.
         let format = format!("#{{{NAME_OPTION}}}");
-        let mark = self.run(&["display-message", "-p", "-t", pane, &format], timeout)?;
+        let mark = self.run_at(
+            &pane,
+            &["display-message", "-p", "-t", pane.id, &format],
+            timeout,
+        )?;
         if mark.trim().is_empty() {
             return Err(HostError::new(
                 HostErrorCode::NotFound,
-                format!("{pane} is not a pane teamwire started"),
+                format!("{} is not a pane teamwire started", pane.id),
             ));
         }
-        self.run(&["kill-pane", "-t", pane], timeout)?;
+        self.run_at(&pane, &["kill-pane", "-t", pane.id], timeout)?;
         Ok(())
     }
 
@@ -443,6 +506,14 @@ impl Host for Tmux {
     fn place_env_var(&self) -> Option<&'static str> {
         Some("TMUX_PANE")
     }
+
+    /// `TMUX_PANE` alone names the pane on the default server. The server
+    /// comes from `TMUX`, so a shell outside tmux still reaches it.
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        let pane = read("TMUX_PANE").filter(|p| !p.is_empty())?;
+        let socket = read("TMUX").and_then(|t| pane::socket_of_client(&t).map(str::to_owned));
+        Some(pane::place_id(&pane, socket.as_deref().unwrap_or_default()))
+    }
 }
 
 /// The last `n` lines of `screen`, with the empty lines tmux pads a tall
@@ -460,6 +531,63 @@ fn last_lines(screen: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use teamwire_core::RunOutput;
+    use teamwire_fakes::FakePlatform;
+
+    fn ok(stdout: &str) -> RunOutput {
+        RunOutput {
+            exit_code: 0,
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+            timed_out: false,
+        }
+    }
+
+    #[test]
+    fn occupant_keeps_both_commands_inside_the_callers_timeout() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(Ok(ok("10\n")));
+        platform.queue_run(Ok(ok("10 1\n11 10\n")));
+        let tmux = Tmux::new(platform.clone());
+        let place = Place {
+            host: tmux.id(),
+            id: "%1".to_owned(),
+        };
+        let got = tmux.occupant(&place, Duration::from_secs(8)).unwrap();
+        assert_eq!(got.pids.len(), 2);
+        let runs = platform.runs();
+        let total: Duration = runs.iter().map(|(_, t)| *t).sum();
+        assert_eq!(runs.len(), 2, "one tmux call and one process listing");
+        assert!(total <= Duration::from_secs(8), "{runs:?}");
+    }
+
+    fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |var| {
+            pairs
+                .iter()
+                .find(|(k, _)| *k == var)
+                .map(|(_, v)| (*v).to_owned())
+        }
+    }
+
+    #[test]
+    fn a_process_names_its_pane_with_the_server_from_its_tmux_value() {
+        let tmux = Tmux::new(Arc::new(FakePlatform::new()));
+        let read = env(&[
+            ("TMUX_PANE", "%4"),
+            ("TMUX", "/private/tmp/tmux-501/tw,95189,0"),
+        ]);
+        assert_eq!(
+            tmux.place_from_env(&read).as_deref(),
+            Some("%4@/private/tmp/tmux-501/tw")
+        );
+        // Without `TMUX` the pane is on the default server, as before.
+        assert_eq!(
+            tmux.place_from_env(&env(&[("TMUX_PANE", "%4")])).as_deref(),
+            Some("%4")
+        );
+        assert_eq!(tmux.place_from_env(&env(&[("TMUX", "/x,1,0")])), None);
+    }
 
     #[test]
     fn last_lines_drops_padding_then_takes_the_end() {

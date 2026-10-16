@@ -318,13 +318,24 @@ names a directory, so it can never write into the real `~/.claude`.
   `<dir>/sessions` and starts no session. An interactive row carries its state
   under `status`, a background row (`"kind": "bg"` in its file) under `state`;
   add a background row with `FakeHerdrEnv::add_session_file`.
-- `claude --version` prints one line and starts no session.
+- `claude --version` prints one line and starts no session. `claude --help`
+  lists the flags teamwire passes to start a member; `FAKE_CLAUDE_HELP_WITHOUT=--effort`
+  leaves one out. `herdr --version` prints one line.
 - `claude mcp add --scope user NAME -- CMD ARGS...` and `claude mcp remove
   --scope user NAME` change the `mcpServers` map of `<dir>/.claude.json`. As
   in Claude Code, add exits 1 for a name that exists and remove exits 1 for a
   missing one. Both refuse unless `CLAUDE_CONFIG_DIR` names `<dir>`, because
   the real `claude` writes there. `FAKE_CLAUDE_MCP_FAIL=add` (or `remove`)
   makes that command exit 1.
+- `claude plugin marketplace add|update|remove`, `claude plugin
+  install|update|enable|disable|uninstall ID --scope user` and `claude plugin
+  --help` keep `plugins/known_marketplaces.json`, `plugins/installed_plugins.json`
+  and `enabledPlugins` in `settings.json` under `<dir>`. Only local directory
+  marketplaces work. Install copies the plugin into `plugins/cache/` under its
+  `plugin.json` version, and `update` copies again only when that version
+  changed, so a test sees a stale copy unless teamwire runs `update`. Both
+  refuse unless `CLAUDE_CONFIG_DIR` names `<dir>`. `FAKE_CLAUDE_PLUGIN_FAIL`
+  set to a command (`install`, `marketplace add`, ...) makes it exit 1.
 - The prompt `/exit` ends the session.
 - It never outlives the test process that made its world. `FakeHerdrEnv`
   holds an exclusive lock on `<root>/owner.lock` for its whole life and names
@@ -413,6 +424,11 @@ Claude Code:
 - The transcript file contents are guesses; only the key names are known.
 - `claude agents --json` reads the session files only. The real command also
   lists finished background sessions with `--all`, which the fake ignores.
+- `claude plugin` is a guess from `claude plugin --help` and the files in a
+  real `~/.claude/plugins/` on 2026-10-16. Nothing here ran a real `claude
+  plugin install` of a local directory marketplace, so the shapes in
+  `known_marketplaces.json` (`source.source` is `directory`) and the cache
+  layout are not confirmed.
 - `claude mcp` knows only `add` and `remove` at user scope. The entry it
   writes, `{"type":"stdio","command":..,"args":[..],"env":{}}`, matches what
   Claude Code 2.1.296 wrote on 2026-10-10.

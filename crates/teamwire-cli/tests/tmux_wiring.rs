@@ -206,7 +206,7 @@ impl Rig {
     }
 
     fn deliver(&mut self, text: &str) -> DeliveryOutcome {
-        let ctx = Ctx {
+        let mut ctx = Ctx {
             home: self.home.path(),
             store: &mut self.store,
             registry: &self.registry,
@@ -214,7 +214,7 @@ impl Rig {
             clock: &self.clock,
             config: &self.config,
         };
-        deliver_line(&ctx, &Party::Lead, &one_line(text, 200))
+        deliver_line(&mut ctx, &Party::Lead, &one_line(text, 200))
     }
 
     /// What the pane's program has read from its input so far.

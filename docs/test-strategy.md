@@ -124,8 +124,13 @@ user, never in `cargo test`:
 - `crates/teamwire-host-herdr/examples/live_check.rs`: read-only herdr calls
   (`agent list`, `agent get` on the caller's own pane) to confirm the JSON
   shapes still match the adapter's parser.
-- The lead's MCP server (`teamwire mcp --lead`, registered by
-  `teamwire install`): confirm it sees `CLAUDE_CODE_SESSION_ID` in its
+- `crates/teamwire-host-tmux/examples/tmux_live_check.rs`
+  (`cargo run -p teamwire-host-tmux --example tmux_live_check --locked`):
+  starts a private tmux server and proves spawn, a place that records its
+  server, the identity environment, typing, submit, `read_tail`, state,
+  occupant, list and close against the installed tmux, then kills the server.
+- The lead's MCP server (`teamwire mcp --lead`, carried by the teamwire
+  plugin that `teamwire install` registers): confirm it sees `CLAUDE_CODE_SESSION_ID` in its
   environment, so the lead's calls are accepted (harness Q4). Until this is
   confirmed the lead uses the CLI, which reads the variable in the Bash tool.
 

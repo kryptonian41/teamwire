@@ -164,7 +164,7 @@ team.created team.closing team.closed team.lead_adopted
 member.creating member.started member.failed member.replaced member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
-delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent
+delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
 result.delivering result.delivered result.undelivered result.unconfirmed
 watch.started watch.line watch.stopped
 verify.recorded verify.waived
@@ -197,6 +197,10 @@ pub trait Host: Send + Sync {
     /// The environment variable a process uses to name its own place, if any
     /// (herdr: "HERDR_PANE_ID").
     fn place_env_var(&self) -> Option<&'static str>;
+    /// The place id one process names for itself, read from its environment.
+    /// Default: the value of `place_env_var`. tmux joins `TMUX_PANE` with the
+    /// server named by `TMUX`, as `%<n>@<socket path>`.
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String>;
 }
 
 pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
@@ -229,9 +233,12 @@ pub trait Harness: Send + Sync {
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError>;
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
-    /// Handle a startup dialog on the member's screen, if the harness has one.
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
     fn screen_state(&self, tail: &str) -> ScreenState;
+    /// Whether a line just submitted still sits unsent in the input box.
+    /// Default false, so a harness that cannot tell gets no second Enter.
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool;
+    /// Handle a startup dialog on the member's screen, if the harness has one.
     fn answer_startup(&self, host: &dyn Host, place: &Place, policy: TrustPolicy)
         -> Result<StartupOutcome, HarnessError>;
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)>;
@@ -484,7 +491,10 @@ impl Ctx<'_> {
 
 // teamwire-deliver
 pub fn locate(ctx: &Ctx, party: &Party) -> Result<Place, DeliveryError>;
-pub fn deliver_line(ctx: &Ctx, party: &Party, line: &OneLine) -> DeliveryOutcome;
+pub fn deliver_line(ctx: &mut Ctx, party: &Party, line: &OneLine) -> DeliveryOutcome;
+pub fn deliver_line_within(ctx: &mut Ctx, party: &Party, line: &OneLine, deadline: Instant)
+    -> DeliveryOutcome;
+// `&mut Ctx`: a delivery that pressed Enter a second time records `delivery.reentered`.
 // DeliveryOutcome = HandedOff | Unconfirmed(DeliveryError) | Undelivered(DeliveryError)
 
 // teamwire-msg

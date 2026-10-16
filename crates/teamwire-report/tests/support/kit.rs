@@ -263,4 +263,7 @@ impl Host for WrapHost {
     fn place_env_var(&self) -> Option<&'static str> {
         self.inner.place_env_var()
     }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.inner.place_from_env(read)
+    }
 }

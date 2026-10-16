@@ -9,6 +9,7 @@
 
 mod agents;
 mod mcp;
+mod plugin;
 mod script;
 mod settings;
 
@@ -354,6 +355,37 @@ fn claude_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The flags teamwire passes to start a member, as `claude --help` lists
+/// them. `FAKE_CLAUDE_HELP_WITHOUT` names one flag to leave out, so a test
+/// can play a `claude` that lacks it.
+fn help_text() -> String {
+    let without = std::env::var("FAKE_CLAUDE_HELP_WITHOUT").unwrap_or_default();
+    let flags = [
+        "--session-id",
+        "--resume",
+        "--permission-mode",
+        "--settings",
+        "--mcp-config",
+        "--model",
+        "--effort",
+    ];
+    let mut lines: Vec<String> = flags
+        .into_iter()
+        .filter(|f| *f != without)
+        .map(|f| format!("  {f} <value>"))
+        .collect();
+    // Claude Code 2.1.301 lists `--append-system-prompt` as an option and
+    // writes the file form only inside another option's description.
+    lines.push("  --append-system-prompt <prompt>       Append a system prompt".to_owned());
+    if without != "--append-system-prompt-file" {
+        lines.push(
+            "                                        --append-system-prompt[-file], --add-dir"
+                .to_owned(),
+        );
+    }
+    format!("Usage: claude [options]\n{}", lines.join("\n"))
+}
+
 /// Runs one session until it exits.
 pub fn run(argv: &[String]) -> ExitCode {
     let Some(claude_dir) = claude_dir() else {
@@ -364,8 +396,13 @@ pub fn run(argv: &[String]) -> ExitCode {
     match argv.first().map(String::as_str) {
         Some("agents") => return agents::run(&claude_dir, argv),
         Some("mcp") => return mcp::run(&claude_dir, argv),
+        Some("plugin" | "plugins") => return plugin::run(&claude_dir, argv),
         Some("--version") => {
             say("0.0.0 (fake-claude)");
+            return ExitCode::SUCCESS;
+        }
+        Some("--help") => {
+            say(&help_text());
             return ExitCode::SUCCESS;
         }
         _ => {}

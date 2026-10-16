@@ -50,7 +50,7 @@ fn takeover_session_in_lead_place_gets_nothing() {
     // Another conversation now holds the lead's pane (INV-1).
     rig.host.set_occupant(&place, holds("intruder", &[]));
     let line = one_line("hello", 80);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &line);
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &line);
     assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
     assert!(rig.host.submitted(&place).is_empty());
     assert_eq!(rig.host.log().count_named("submit"), 0);
@@ -65,10 +65,33 @@ fn host_listing_failure_refuses() {
         let mut rig = Rig::new();
         let place = rig.healthy("lead-1", 100);
         rig.host.inject_always("occupant", fault);
-        let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+        let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
         assert_eq!(code_of(outcome), DeliveryErrorCode::HostListingFailed);
         assert!(rig.host.submitted(&place).is_empty());
     }
+}
+
+#[test]
+fn a_host_listing_failure_keeps_a_short_one_line_host_error() {
+    let mut rig = Rig::new();
+    rig.healthy("lead-1", 100);
+    let long = format!(
+        "tmux: ps failed\n\u{1b}[31mexit 1\u{1b}[0m\n{}",
+        "x".repeat(500)
+    );
+    rig.host.inject_always(
+        "occupant",
+        Fault::Fail(HostError::new(HostErrorCode::Other, long)),
+    );
+    let DeliveryOutcome::Undelivered(e) =
+        deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80))
+    else {
+        unreachable!("the listing failed, so nothing was delivered");
+    };
+    assert_eq!(e.code, DeliveryErrorCode::HostListingFailed);
+    assert!(e.detail.contains("tmux: ps failed exit 1"), "{}", e.detail);
+    assert!(!e.detail.contains('\n') && !e.detail.contains('\u{1b}'));
+    assert!(e.detail.chars().count() <= 200, "{}", e.detail.len());
 }
 
 #[test]
@@ -88,7 +111,7 @@ fn session_in_two_places_refuses() {
         refusal(&mut rig, &Party::Lead),
         DeliveryErrorCode::TwoPlaces
     );
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(code_of(outcome), DeliveryErrorCode::TwoPlaces);
     assert!(rig.host.submitted(&a).is_empty() && rig.host.submitted(&b).is_empty());
 }
@@ -102,7 +125,7 @@ fn place_changing_hands_during_the_dialog_check_is_refused() {
         Fault::ChangeOccupantAfter(holds("intruder", &[])),
         1,
     );
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
     assert!(rig.host.submitted(&place).is_empty());
     // The occupant check is the last read before the submit, never the
@@ -137,7 +160,7 @@ fn place_changing_hands_between_retries_is_refused() {
         Fault::Fail(HostError::new(HostErrorCode::Busy, "scripted")),
         1,
     );
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
     assert_eq!(rig.host.log().count_named("submit"), 1);
     assert!(rig.host.submitted(&place).is_empty());
@@ -153,7 +176,7 @@ fn occupant_changes_before_submit_refuses() {
         Fault::ChangeOccupantAfter(holds("intruder", &[])),
         1,
     );
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(code_of(outcome), DeliveryErrorCode::HostOtherSession);
     assert_eq!(rig.host.log().count_named("occupant"), 2);
     assert!(rig.host.submitted(&place).is_empty());
@@ -169,7 +192,7 @@ fn resumed_lead_in_new_place_receives() {
     rig.platform.set_alive(Pid::new(100), false);
     let new = rig.healthy("lead-1", 200);
     assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), new);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert_eq!(rig.host.submitted(&new), ["hello"]);
     assert!(rig.host.submitted(&old).is_empty());
@@ -366,4 +389,25 @@ proptest! {
             _ => prop_assert!(result.is_err()),
         }
     }
+}
+
+#[test]
+fn a_host_that_joins_two_variables_gets_the_joined_place() {
+    let mut rig = Rig::new();
+    rig.host.set_place_suffix_var(Some("FAKE_SOCKET"));
+    let place = rig.host.add_place_with_id(
+        "pane-100@/tmp/sock".to_owned(),
+        "pane-100",
+        PlaceState::Idle,
+        holds("lead-1", &[]),
+    );
+    rig.harness.add_session(
+        sid("lead-1"),
+        vec![Pid::new(100)],
+        Liveness::Alive(PlaceState::Idle),
+    );
+    rig.claim(100, "pane-100");
+    rig.platform
+        .set_env(Pid::new(100), "FAKE_SOCKET", "/tmp/sock");
+    assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), place);
 }

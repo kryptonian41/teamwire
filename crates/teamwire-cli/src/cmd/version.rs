@@ -9,7 +9,7 @@ use crate::wiring::Wiring;
 fn text() -> String {
     format!(
         "teamwire {}\nschema {}\n",
-        env!("CARGO_PKG_VERSION"),
+        teamwire_store::WRITER_VERSION,
         teamwire_store::SCHEMA_VERSION
     )
 }
@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn names_the_binary_and_the_schema_it_writes() {
         let text = text();
-        assert!(text.starts_with(&format!("teamwire {}\n", env!("CARGO_PKG_VERSION"))));
+        assert!(text.starts_with(&format!("teamwire {}\n", teamwire_store::WRITER_VERSION)));
         assert!(text.ends_with(&format!("schema {}\n", teamwire_store::SCHEMA_VERSION)));
     }
 }

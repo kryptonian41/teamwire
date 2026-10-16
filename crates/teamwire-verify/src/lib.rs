@@ -14,7 +14,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use teamwire_core::{Member, MemberState, Mode, Role};
+use teamwire_core::{CompletionStatus, Member, MemberKind, MemberState, Mode, Role};
 use teamwire_store::{Ctx, NewVerifyRecord, StoreError, Waiver};
 use thiserror::Error;
 
@@ -362,6 +362,25 @@ fn verify_member(
     Ok(record)
 }
 
+/// An implementer that recorded `done` while `HEAD` is still its base made no
+/// commit: its work, if any, is not on its branch.
+fn no_commits_flag(ctx: &Ctx<'_>, member: &Member, git: &Git<'_>) -> Option<RawFlag> {
+    let base = member.base_sha.as_deref()?;
+    if member.kind != MemberKind::Implementer || git.head().ok()?.as_str() != base {
+        return None;
+    }
+    let latest = ctx
+        .store
+        .read(|tx| tx.latest_completion(&member.role))
+        .ok()??;
+    (latest.completion.status == CompletionStatus::Done).then(|| {
+        RawFlag::new(
+            "no-commits",
+            "recorded done, but HEAD is still the base: the branch has no commit",
+        )
+    })
+}
+
 /// The flags a worktree member raises now: its diff, its report, and any
 /// uncommitted path. Each flag id appears once.
 fn member_flags(ctx: &Ctx<'_>, rules: &Ruleset, member: &Member, git: &Git<'_>) -> Vec<RawFlag> {
@@ -381,6 +400,7 @@ fn member_flags(ctx: &Ctx<'_>, rules: &Ruleset, member: &Member, git: &Git<'_>) 
         )),
     }
     flags.extend(report::report_flags(ctx, member));
+    flags.extend(no_commits_flag(ctx, member, git));
     match git.uncommitted() {
         Ok(paths) if !paths.is_empty() => flags.push(RawFlag::new(
             "uncommitted",

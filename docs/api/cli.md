@@ -2,7 +2,10 @@
 
 One binary. Every subcommand works with no other teamwire process running
 (STO-16). `--home <dir>` overrides `$TEAMWIRE_HOME` (default `~/.teamwire`) on
-every subcommand. `--json` prints machine-readable output where listed.
+every subcommand. `--version` prints `teamwire <version>+<build id>`, the same identity as
+`teamwire version`. The build id is the first 12 hex digits of the commit the
+binary was built from, or `unknown` when git was not available. A debug build
+keeps the commit it was first built at. `--json` prints machine-readable output where listed.
 
 ## Exit codes
 
@@ -58,8 +61,9 @@ to every member of the same spec file, and a member's value wins per key
 none. Keys starting with `_` are ignored.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
-<reason>`), the warnings of LCH-9 and LCH-18, and the watch command to
-run. Exit 2 when any member did not start (including when none started).
+<reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
+member's setup created that launch added to `info/exclude` (LCH-24), and the
+watch command to run. Exit 2 when any member did not start (including when none started).
 
 ### `teamwire watch <team> [--interval SECONDS] [--once]`
 
@@ -84,6 +88,8 @@ Events, each announced once per occurrence:
 | `UNCONFIRMED <role> Result: <path>` | A result whose typing stalled or timed out; it may or may not be on the lead's screen |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to the lead that could not be typed |
 | `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
+| `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes (`UNREAD_AFTER`), counted from its latest attempt. Once per message and recipient |
+| `UNANSWERED <id> from <role> <age>` | A question to the lead, handed off or acknowledged, has no `answer` whose `re` points at it after 10 minutes (`UNANSWERED_AFTER`). Once per question. Questions between members appear only in `status` |
 | `STORE-ERROR <code>` | The store could not be read; once per code |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |
 | `TEAM-CLOSED` | The team was closed, or its row is gone, before the watch printed `TEAM-COMPLETE`. The watch exits 0 after it. It is never printed after `TEAM-COMPLETE`, because the watch has already exited |
@@ -99,7 +105,13 @@ member identity); per member: state
 `quiet`, `late`, `prompted outside teamwire`), generation, age against
 deadline, delivery state of its newest result, branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
-`undelivered`, and undelivered results. `--role R` adds the exact command
+`undelivered`, and undelivered results. It also shows the team's watch
+(`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
+`handed_off` after 10 minutes, every question with no answer, and per member
+the teamwire build that started it (`started_by`, from its `member.started`
+event's `writer_version`) with `older_build` when that differs from this
+binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
+`unanswered_questions`, and `started_by` and `older_build` per member. `--role R` adds the exact command
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
 --append-system-prompt-file ...`), because a session resumed without them has
@@ -109,6 +121,8 @@ no Stop hook, no identity and no MCP tools.
 
 Runs each member's check and the diff rules (ADR 0009). Prints one verdict
 per member (`PASS`, `FLAGGED`, `FAIL`, `NO-CHECK`, `SKIPPED`) with its flags,
+including `no-commits` for an implementer that recorded `done` while its
+HEAD is still its base,
 and writes a verify record with the HEAD sha. Exit 0 only when every checked
 member is `PASS`; else 2. `--waive` records a waiver for one flag of one
 member at its current HEAD. `--deep` also runs `PRAGMA integrity_check` and
@@ -172,9 +186,18 @@ prints the old and new session ids (ADR 0008).
 ### `teamwire pr-watch -R OWNER/REPO [-i SECONDS] PR...`
 
 EXT-1. One line per poll at most: a check's first failure, a mergeability
-change, then `DONE: n passed, m failed` per PR. Exits when every PR is done;
-exit 1 when any check failed. Ignores `gh`'s own exit code; a failed `gh`
-call is skipped. A PR with no checks is done only after three polls in a row
+change (a first `CONFLICTING`, `BLOCKED` or `DRAFT` merge state is said once),
+then `DONE: n passed, m failed` per PR, ending ` (merge state: <state>)` when
+the state is neither `CLEAN` nor `DIRTY`. A `BLOCKED` state at DONE is read
+once more after half the interval (at most 5 s), because GitHub recomputes it
+after the last check finishes. The DONE line also names required checks that
+never reported, `(required, never reported: a, b)`. The required set is read
+once per PR from the base branch's branch endpoint and rules endpoint (all
+pages). It is unknown, and the line says `(required checks unknown)`, when
+either endpoint fails with anything but HTTP 404. Exits when every PR is done;
+exit 1 when any check failed, or when a required check never reported and
+the merge state is not `CLEAN`. Ignores the exit code of `gh pr checks` and
+`gh pr view`; a failed call of either is skipped. A PR with no checks is done only after three polls in a row
 find none, because GitHub has no check runs for a few seconds after a push.
 
 ### `teamwire preset [NAME]`
@@ -227,16 +250,17 @@ These are started by a harness, not typed by people.
 | --- | --- | --- |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. Always exits 0. |
+| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
 | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 
 ## Maintenance
 
 | Command | Does |
 | --- | --- |
-| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, and the lead setup installed and matching this binary (only whether both items are teamwire's when this binary is a build under `target/`), with a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts in place of the user one. Exit 0 when all pass, 2 otherwise. |
-| `teamwire install [--dry-run] [--force]` | Installs the lead setup (ADR 0012): writes the `teamwire` skill to `<claude dir>/skills/teamwire/SKILL.md` and registers the user MCP server `teamwire` as `<this binary> [--home DIR] mcp --lead` through `claude mcp`. Skips an item that is already current. After an MCP change it says that only new Claude Code sessions see it. Refuses, before any write, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a binary inside a `target/` directory, and a `claude` that does not run; `--force` passes the first three. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). |
-| `teamwire uninstall [--dry-run] [--force]` | Removes the skill and the MCP entry that `install` wrote. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, and a `claude` that does not run when the entry must be removed; `--force` removes the first two anyway. A binary under `target/` may uninstall. Exit codes as for `install`. A file the user put beside the skill stays. |
+| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. Exit 0 when all pass, 2 otherwise. |
+| `teamwire install [--dry-run] [--force]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skill, the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). |
+| `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/`, and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). |
 | `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. |
-| `teamwire version` | Binary version and the schema version it writes. |
+| `teamwire version` | Binary version, as `<crate version>+<12 hex commit>` (or `+unknown` when the build found no git commit), and the schema version it writes. |

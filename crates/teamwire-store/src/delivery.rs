@@ -7,6 +7,7 @@ use teamwire_core::{
     Timestamp, Ulid,
 };
 
+use crate::Party;
 use crate::error::StoreError;
 use crate::tx::{
     Listing, ReadTx, Tx, bad, col, listing, one, parsed, parsed_opt, ts_opt, ulid_col,
@@ -249,6 +250,31 @@ impl Tx<'_> {
             recipient_role(recipient),
             Some(message),
             &json!({ "to": recipient.as_str(), "seconds": seconds_since(sent, at) }),
+        )?;
+        Ok(())
+    }
+
+    /// Tmux delivery pressed Enter a second time because the pasted line was
+    /// still in the input box. Writes `delivery.reentered` and nothing else:
+    /// the caller holds no message or completion id, and the delivery row's
+    /// state is the outcome's to move. The role column names a member, and the
+    /// lead leaves it empty; `to` names both, as on the sibling events.
+    pub fn record_delivery_reentered(
+        &self,
+        at: Timestamp,
+        party: &Party,
+        place: &str,
+    ) -> Result<(), StoreError> {
+        let (role, to) = match party {
+            Party::Lead => (None, "lead"),
+            Party::Member(role) => (Some(role), role.as_str()),
+        };
+        self.record_event(
+            at,
+            EventType::DeliveryReentered,
+            role,
+            None,
+            &json!({ "to": to, "place": place }),
         )?;
         Ok(())
     }

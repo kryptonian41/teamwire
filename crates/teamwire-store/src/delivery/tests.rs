@@ -9,7 +9,7 @@ use teamwire_core::{
 };
 
 use crate::testkit::{at, count_events, last_event, member, role, with_members};
-use crate::{DeliveryUpdate, NewMessage, StoreError};
+use crate::{DeliveryUpdate, NewMessage, Party, StoreError};
 
 fn send_one(f: &mut crate::testkit::Fixture) -> Ulid {
     f.store
@@ -369,4 +369,28 @@ fn inbox_style_reads_by_recipient_and_state() {
             .items
             .is_empty()
     );
+}
+
+#[test]
+fn a_second_enter_is_recorded_with_the_role_and_the_place() {
+    let mut f = with_members(&["api"]);
+    f.store
+        .write(|tx| tx.record_delivery_reentered(at(50), &Party::Member(role("api")), "%7"))
+        .unwrap();
+    let e = last_event(&f.store);
+    assert_eq!(e.kind, EventType::DeliveryReentered);
+    assert_eq!(e.role, Some(role("api")));
+    assert_eq!(e.subject, None);
+    assert_eq!(e.data, serde_json::json!({ "to": "api", "place": "%7" }));
+}
+
+#[test]
+fn a_second_enter_to_the_lead_leaves_the_role_empty() {
+    let mut f = with_members(&["api"]);
+    f.store
+        .write(|tx| tx.record_delivery_reentered(at(50), &Party::Lead, "%1"))
+        .unwrap();
+    let e = last_event(&f.store);
+    assert_eq!(e.role, None);
+    assert_eq!(e.data, serde_json::json!({ "to": "lead", "place": "%1" }));
 }

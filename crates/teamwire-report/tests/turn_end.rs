@@ -21,8 +21,8 @@ use std::time::{Duration, Instant};
 
 use sha2::Digest as _;
 use teamwire_core::{
-    Clock, DeliveryErrorCode, EventType, FinalSource, HostError, HostErrorCode, ReportState, Role,
-    TeamName, TurnEndReply,
+    Clock, DeliveryErrorCode, EventType, FinalSource, HostError, HostErrorCode, Pid, ReportState,
+    Role, TeamName, TurnEndReply,
 };
 use teamwire_fakes::Fault;
 use teamwire_report::on_turn_end;
@@ -44,6 +44,69 @@ fn finished_member() -> (Rig, Role) {
 
 fn reply(rig: &mut Rig, api: &Role) -> TurnEndReply {
     on_turn_end(&mut rig.ctx(), api, &stop("api-1"))
+}
+
+fn take_lease(rig: &mut Rig, pid: u32) {
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| {
+            tx.take_watch_lease(now, Pid::new(pid), "host", |_| true)
+                .map(|_| ())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_result_without_a_running_watch_says_so() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let lines = rig.typed_to_lead();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].ends_with(" (no watch is running: teamwire watch alpha)"),
+        "{}",
+        lines[0]
+    );
+}
+
+#[test]
+fn a_result_with_a_dead_watch_says_so() {
+    let (mut rig, api) = finished_member();
+    take_lease(&mut rig, 700); // the process is not alive
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert!(rig.typed_to_lead()[0].ends_with("(no watch is running: teamwire watch alpha)"));
+}
+
+#[test]
+fn a_result_with_a_running_watch_carries_no_note() {
+    let (mut rig, api) = finished_member();
+    rig.platform.set_alive(Pid::new(700), true);
+    take_lease(&mut rig, 700);
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let lines = rig.typed_to_lead();
+    assert!(!lines[0].contains("no watch is running"), "{}", lines[0]);
+}
+
+#[test]
+fn the_note_stays_on_the_longest_result_line() {
+    let (mut rig, api) = finished_member();
+    teamwire_report::done(
+        &mut rig.ctx(),
+        &api,
+        teamwire_core::CompletionStatus::Done,
+        &"x ".repeat(900),
+    )
+    .unwrap();
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let line = &rig.typed_to_lead()[0];
+    assert!(
+        line.ends_with("(no watch is running: teamwire watch alpha)"),
+        "{line}"
+    );
+    assert!(line.contains("Full result:"), "{line}");
 }
 
 #[test]

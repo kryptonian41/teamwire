@@ -91,6 +91,9 @@ impl Host for SlowHost {
     fn place_env_var(&self) -> Option<&'static str> {
         self.inner.place_env_var()
     }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.inner.place_from_env(read)
+    }
 }
 
 /// A rig whose registry holds a `SlowHost` in place of the plain fake.
@@ -123,7 +126,12 @@ fn refused_with(outcome: &DeliveryOutcome) -> DeliveryErrorCode {
 fn budget_runs_out_between_calls_and_nothing_is_typed() {
     let (mut rig, slow) = slow_rig(Duration::from_secs(5));
     let deadline = rig.clock.monotonic() + Duration::from_secs(12);
-    let outcome = deliver_line_within(&rig.ctx(), &Party::Lead, &one_line("hello", 80), deadline);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
     assert_eq!(refused_with(&outcome), DeliveryErrorCode::BudgetExhausted);
     // occupant 5 s (7 s left), second occupant 5 s (2 s left), state gets the 2 s left.
     let secs = |n| Duration::from_secs(n);
@@ -135,7 +143,12 @@ fn budget_runs_out_between_calls_and_nothing_is_typed() {
 fn spent_budget_makes_no_call_at_all() {
     let (mut rig, slow) = slow_rig(Duration::ZERO);
     let deadline = rig.clock.monotonic();
-    let outcome = deliver_line_within(&rig.ctx(), &Party::Lead, &one_line("hello", 80), deadline);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
     assert_eq!(refused_with(&outcome), DeliveryErrorCode::BudgetExhausted);
     assert!(slow.given().is_empty());
     assert_eq!(rig.harness.log().count_named("processes_for_session"), 0);
@@ -145,7 +158,12 @@ fn spent_budget_makes_no_call_at_all() {
 fn every_call_is_bounded_by_the_time_left() {
     let (mut rig, slow) = slow_rig(Duration::ZERO);
     let deadline = rig.clock.monotonic() + Duration::from_secs(3);
-    let outcome = deliver_line_within(&rig.ctx(), &Party::Lead, &one_line("hello", 80), deadline);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     let given = slow.given();
     assert_eq!(given.len(), 4, "occupant, occupant, state, submit");
@@ -159,7 +177,42 @@ fn every_call_is_bounded_by_the_time_left() {
 fn roomy_deadline_keeps_the_five_second_bound() {
     let (mut rig, slow) = slow_rig(Duration::ZERO);
     let deadline = rig.clock.monotonic() + Duration::from_secs(40);
-    let outcome = deliver_line_within(&rig.ctx(), &Party::Lead, &one_line("hello", 80), deadline);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert!(slow.given().iter().all(|t| *t == Duration::from_secs(5)));
+}
+
+fn reentered_events(rig: &Rig) -> usize {
+    rig.store
+        .read(|tx| {
+            Ok(tx
+                .events_of_type(teamwire_core::EventType::DeliveryReentered)?
+                .items
+                .len())
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_spent_budget_after_the_second_enter_skips_the_event() {
+    let (mut rig, _slow) = slow_rig(Duration::from_secs(5));
+    let mut caps = FakeHost::caps();
+    caps.submit_ack = teamwire_core::SubmitAck::None;
+    rig.host.set_caps(caps);
+    // Six host calls of 5 s each: the key press ends at 30 s, past 28 s.
+    let deadline = rig.clock.monotonic() + Duration::from_secs(28);
+    let outcome = deliver_line_within(
+        &mut rig.ctx(),
+        &Party::Lead,
+        &one_line("hello", 80),
+        deadline,
+    );
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert_eq!(rig.host.log().count_named("send_keys"), 1);
+    assert_eq!(reentered_events(&rig), 0);
 }

@@ -4,14 +4,15 @@
     "title": "Refund flow rewrite",
     "state": "open",
     "lead": { "session_id": "11111111-2222-4333-8444-555555555555", "liveness": { "alive": "working" } },
+    "watch": { "state": "running", "pid": 4242, "heartbeat_age_s": 12 },
     "members": [
-      { "role": "api", "title": "Build refund endpoint", "state": "working", "generation": 1, "age_s": 1240, "deadline_s": 3600, "result": null, "branch": "payments/api", "resume_command": null },
-      { "role": "ledger", "title": "Write ledger entries", "state": "done(done)", "generation": 2, "age_s": 610, "deadline_s": 3600, "result": "delivered", "branch": "payments/ledger", "resume_command": null },
-      { "role": "web", "title": "Build refund screen", "state": "late", "generation": 1, "age_s": 3900, "deadline_s": 3600, "result": null, "branch": "payments/web", "resume_command": null },
-      { "role": "emails", "title": "Send refund emails", "state": "blocked", "generation": 1, "age_s": 800, "deadline_s": 1800, "result": null, "branch": "payments/emails", "resume_command": null },
-      { "role": "audit", "title": "Trace refund audit log", "state": "quiet", "generation": 1, "age_s": 400, "deadline_s": 1800, "result": null, "branch": null, "resume_command": null },
-      { "role": "fraud", "title": "Check fraud rules", "state": "undelivered", "generation": 1, "age_s": 950, "deadline_s": 1800, "result": "undelivered", "branch": null, "resume_command": null },
-      { "role": "review", "title": "Review refund diff", "state": "died?", "generation": 1, "age_s": 300, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null }
+      { "role": "api", "title": "Build refund endpoint", "state": "working", "generation": 1, "age_s": 1240, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": null, "branch": "payments/api", "resume_command": null },
+      { "role": "ledger", "title": "Write ledger entries", "state": "done(done)", "generation": 2, "age_s": 610, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": "payments/ledger", "resume_command": null },
+      { "role": "web", "title": "Build refund screen", "state": "late", "generation": 1, "age_s": 3900, "started_by": "0.3.2", "older_build": true, "deadline_s": 3600, "result": null, "branch": "payments/web", "resume_command": null },
+      { "role": "emails", "title": "Send refund emails", "state": "blocked", "generation": 1, "age_s": 800, "started_by": "0.4.0", "older_build": false, "deadline_s": 1800, "result": null, "branch": "payments/emails", "resume_command": null },
+      { "role": "audit", "title": "Trace refund audit log", "state": "quiet", "generation": 1, "age_s": 400, "started_by": "0.4.0", "older_build": false, "deadline_s": 1800, "result": null, "branch": null, "resume_command": null },
+      { "role": "fraud", "title": "Check fraud rules", "state": "undelivered", "generation": 1, "age_s": 950, "started_by": "0.4.0", "older_build": false, "deadline_s": 1800, "result": "undelivered", "branch": null, "resume_command": null },
+      { "role": "review", "title": "Review refund diff", "state": "died?", "generation": 1, "age_s": 300, "started_by": "0.4.0", "older_build": false, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null }
     ],
     "messages": [
       { "display_id": "m006", "time": "2026-10-13T07:12:09.120Z", "type": "question", "from": "web", "to": ["lead"], "excerpt": "Should the refund screen show partial refunds as a separate row?" },
@@ -24,6 +25,12 @@
       { "display_id": "m006", "to": "lead", "state": "unconfirmed", "age_s": 120 },
       { "display_id": "m005", "to": "api", "state": "undelivered", "age_s": 520 }
     ],
+    "unread_deliveries": [
+      { "display_id": "m004", "to": "web", "age_s": 1900 }
+    ],
+    "unanswered_questions": [
+      { "display_id": "m006", "from": "web", "to": ["lead"], "age_s": 2100 }
+    ],
     "undelivered_results": [
       { "role": "fraud", "n": 1, "report_state": "undelivered", "path": "/Users/example/.teamwire/teams/payments/outbox/fraud.md" }
     ],
@@ -34,16 +41,19 @@
     "title": "Survey API docs gaps",
     "state": "open",
     "lead": { "session_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "liveness": { "alive": "idle" } },
+    "watch": { "state": "stale", "pid": 4300, "heartbeat_age_s": 900 },
     "members": [
-      { "role": "auth", "title": "Survey auth docs", "state": "done(done)", "generation": 1, "age_s": 2200, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
-      { "role": "search", "title": "Survey search docs", "state": "done(failed)", "generation": 1, "age_s": 2100, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
-      { "role": "ingest", "title": "Survey ingest docs", "state": "done(blocked)", "generation": 1, "age_s": 2000, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
-      { "role": "closer", "title": "Grade the survey", "state": "not started", "generation": 1, "age_s": 5, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null },
-      { "role": "extra", "title": "Survey extra docs", "state": "failed to start", "generation": 1, "age_s": 0, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null },
-      { "role": "oddone", "title": "Has a new state word", "state": "snoozing", "generation": 1, "age_s": 10, "deadline_s": 1200, "result": "pending", "branch": null, "resume_command": null }
+      { "role": "auth", "title": "Survey auth docs", "state": "done(done)", "generation": 1, "age_s": 2200, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
+      { "role": "search", "title": "Survey search docs", "state": "done(failed)", "generation": 1, "age_s": 2100, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
+      { "role": "ingest", "title": "Survey ingest docs", "state": "done(blocked)", "generation": 1, "age_s": 2000, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
+      { "role": "closer", "title": "Grade the survey", "state": "not started", "generation": 1, "age_s": 5, "started_by": null, "older_build": false, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null },
+      { "role": "extra", "title": "Survey extra docs", "state": "failed to start", "generation": 1, "age_s": 0, "started_by": null, "older_build": false, "deadline_s": 1200, "result": null, "branch": null, "resume_command": null },
+      { "role": "oddone", "title": "Has a new state word", "state": "snoozing", "generation": 1, "age_s": 10, "started_by": "0.4.0", "older_build": false, "deadline_s": 1200, "result": "pending", "branch": null, "resume_command": null }
     ],
     "messages": [],
     "stuck_deliveries": [],
+    "unread_deliveries": [],
+    "unanswered_questions": [],
     "undelivered_results": [],
     "errors": []
   },
@@ -52,9 +62,12 @@
     "title": null,
     "state": null,
     "lead": null,
+    "watch": { "state": "none", "pid": null, "heartbeat_age_s": null },
     "members": [],
     "messages": [],
     "stuck_deliveries": [],
+    "unread_deliveries": [],
+    "unanswered_questions": [],
     "undelivered_results": [],
     "errors": ["store busy past the timeout: database is locked"]
   }
