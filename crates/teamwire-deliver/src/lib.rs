@@ -20,7 +20,7 @@ mod unsent;
 use serde::{Deserialize, Serialize};
 use teamwire_core::DeliveryError;
 
-pub use deliver::{deliver_line, deliver_line_noting_reentry, deliver_line_within};
+pub use deliver::{deliver_line, deliver_line_within};
 pub use lease::{WATCH_LEASE_STALE, watch_lease_is_dead};
 pub use lines::{agent_text, message_line, message_line_to, result_line};
 pub use locate::locate;
