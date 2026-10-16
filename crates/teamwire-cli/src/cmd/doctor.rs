@@ -32,8 +32,8 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The flags teamwire passes when it starts a member
-/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help lacks one
-/// would refuse or ignore the launch.
+/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help does not
+/// list one may not support it; the launch itself is the real test.
 const CLAUDE_FLAGS: [&str; 8] = [
     "--session-id",
     "--resume",
@@ -285,7 +285,9 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
     let older: Vec<String> = view
         .members
         .iter()
-        .filter(|m| m.older_build)
+        // A member with a result for its current generation has finished, so
+        // relaunching it changes nothing (the rule of the lead's Stop hook).
+        .filter(|m| m.older_build && m.result.is_none())
         .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
         .collect();
     if older.is_empty() {
@@ -295,7 +297,8 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
         name,
         format!(
             "{} started by a build other than {}; relaunch the member, or ignore if its \
-             wiring did not change",
+             wiring did not change. A member started before builds recorded their \
+             commit shows as 0.0.0",
             older.join(", "),
             teamwire_store::WRITER_VERSION
         ),
@@ -388,13 +391,22 @@ fn version_check(inputs: &Inputs<'_>, program: &str, path: &Path, flag: &str) ->
     }
 }
 
+/// Claude Code writes a flag as `--name-suffix` or, in a description, as
+/// `--name[-suffix]` (2.1.301 does this for `--append-system-prompt-file`).
+fn lists_flag(help: &str, flag: &str) -> bool {
+    help.contains(flag)
+        || flag
+            .rsplit_once('-')
+            .is_some_and(|(base, suffix)| help.contains(&format!("{base}[-{suffix}]")))
+}
+
 fn claude_flag_check(inputs: &Inputs<'_>, path: &Path) -> Check {
     let name = "claude flags";
     match probe(inputs, path, &["--help"]) {
         Ok(help) => {
             let missing: Vec<&str> = CLAUDE_FLAGS
                 .into_iter()
-                .filter(|f| !help.contains(f))
+                .filter(|f| !lists_flag(&help, f))
                 .collect();
             if missing.is_empty() {
                 Check::pass(name, "the help text lists every flag teamwire passes")

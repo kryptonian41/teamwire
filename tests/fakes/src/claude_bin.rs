@@ -364,17 +364,25 @@ fn help_text() -> String {
         "--session-id",
         "--resume",
         "--permission-mode",
-        "--append-system-prompt-file",
         "--settings",
         "--mcp-config",
         "--model",
         "--effort",
     ];
-    let lines: Vec<String> = flags
+    let mut lines: Vec<String> = flags
         .into_iter()
         .filter(|f| *f != without)
         .map(|f| format!("  {f} <value>"))
         .collect();
+    // Claude Code 2.1.301 lists `--append-system-prompt` as an option and
+    // writes the file form only inside another option's description.
+    lines.push("  --append-system-prompt <prompt>       Append a system prompt".to_owned());
+    if without != "--append-system-prompt-file" {
+        lines.push(
+            "                                        --append-system-prompt[-file], --add-dir"
+                .to_owned(),
+        );
+    }
     format!("Usage: claude [options]\n{}", lines.join("\n"))
 }
 
