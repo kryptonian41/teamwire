@@ -1,6 +1,8 @@
 //! `teamwire install` and `teamwire uninstall` end to end: the binary runs
 //! with `fake-claude` as `claude`, and Claude's directory, `HOME` and the
-//! state directory are all temporary.
+//! state directory are all temporary. The binary under test is linked to a
+//! path outside `target/`, as an installed one is, so the refusal of a build
+//! does not come first.
 #![expect(
     clippy::disallowed_methods,
     reason = "the test starts the teamwire binary and edits Claude's files as a user would"
@@ -11,9 +13,9 @@
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use serde_json::Value;
+use serde_json::{Value, json};
 use teamwire_fakes::{FakeBinDir, FakeBins, TestHome};
 
 struct Bed {
@@ -28,6 +30,20 @@ struct Run {
     code: i32,
     out: String,
     err: String,
+}
+
+/// `real` linked (or copied, across volumes) to `<dir>/teamwire`, so the
+/// binary does not run from under `target/`.
+fn link_binary(real: &Path, dir: &Path) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let to = dir.join("teamwire");
+    // Once only: copying onto a hard link of `real` would truncate `real`.
+    if !to.exists() {
+        std::fs::hard_link(real, &to)
+            .or_else(|_| std::fs::copy(real, &to).map(|_| ()))
+            .unwrap();
+    }
+    std::fs::canonicalize(to).unwrap()
 }
 
 impl Bed {
@@ -46,8 +62,16 @@ impl Bed {
         }
     }
 
-    fn teamwire(&self, args: &[&str], extra_env: &[(&str, &str)]) -> Run {
-        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
+    /// An installed copy of the binary under test, named by `tag`.
+    fn binary(&self, tag: &str) -> PathBuf {
+        link_binary(
+            Path::new(env!("CARGO_BIN_EXE_teamwire")),
+            &self.user.path().join(tag),
+        )
+    }
+
+    fn teamwire_with(&self, bin: &Path, args: &[&str], extra_env: &[(&str, &str)]) -> Run {
+        let mut cmd = std::process::Command::new(bin);
         cmd.arg("--home")
             .arg(self.home.path())
             .args(args)
@@ -55,7 +79,8 @@ impl Bed {
             .env("HOME", self.user.path())
             .env("TEAMWIRE_CLAUDE_DIR", self.claude.path())
             .env_remove("CLAUDE_CONFIG_DIR")
-            .env_remove("FAKE_CLAUDE_MCP_FAIL");
+            .env_remove("FAKE_CLAUDE_MCP_FAIL")
+            .env_remove("FAKE_CLAUDE_PLUGIN_FAIL");
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
@@ -67,109 +92,169 @@ impl Bed {
         }
     }
 
-    fn skill(&self) -> PathBuf {
+    fn teamwire(&self, args: &[&str], extra_env: &[(&str, &str)]) -> Run {
+        self.teamwire_with(&self.binary("bin"), args, extra_env)
+    }
+
+    fn plugin_dir(&self) -> PathBuf {
+        self.home.path().join("claude-plugin")
+    }
+
+    fn old_skill(&self) -> PathBuf {
         self.claude.path().join("skills/teamwire/SKILL.md")
     }
 
-    /// The user-scope `teamwire` entry, or `Value::Null`.
-    fn entry(&self) -> Value {
-        std::fs::read_to_string(self.claude.path().join(".claude.json"))
+    fn claude_json(&self, rel: &str) -> Value {
+        std::fs::read_to_string(self.claude.path().join(rel))
             .ok()
-            .and_then(|t| serde_json::from_str::<Value>(&t).ok())
-            .and_then(|d| d.pointer("/mcpServers/teamwire").cloned())
+            .and_then(|t| serde_json::from_str(&t).ok())
             .unwrap_or(Value::Null)
     }
 
-    fn put_entry(&self, entry: &Value) {
-        let doc = serde_json::json!({"mcpServers": {"teamwire": entry}});
+    /// Where Claude Code loaded the user-scope plugin from, if it did.
+    fn installed_root(&self) -> Option<PathBuf> {
+        self.claude_json("plugins/installed_plugins.json")["plugins"]["teamwire@teamwire"][0]
+            ["installPath"]
+            .as_str()
+            .map(PathBuf::from)
+    }
+
+    fn marketplace_added(&self) -> bool {
+        self.claude_json("plugins/known_marketplaces.json")["teamwire"].is_object()
+    }
+
+    /// The user-scope `teamwire` MCP entry that ADR 0012 wrote, or `Value::Null`.
+    fn old_entry(&self) -> Value {
+        self.claude_json(".claude.json")
+            .pointer("/mcpServers/teamwire")
+            .cloned()
+            .unwrap_or(Value::Null)
+    }
+
+    fn put_old_entry(&self, entry: &Value) {
+        let doc = json!({"mcpServers": {"teamwire": entry}});
         std::fs::write(self.claude.path().join(".claude.json"), doc.to_string()).unwrap();
+    }
+
+    fn put_old_skill(&self, text: &str) {
+        std::fs::create_dir_all(self.old_skill().parent().unwrap()).unwrap();
+        std::fs::write(self.old_skill(), text).unwrap();
     }
 }
 
-fn this_binary() -> String {
-    std::fs::canonicalize(env!("CARGO_BIN_EXE_teamwire"))
+fn mcp_command(root: &Path) -> String {
+    let doc: Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join(".mcp.json")).unwrap()).unwrap();
+    doc["mcpServers"]["teamwire"]["command"]
+        .as_str()
         .unwrap()
-        .display()
-        .to_string()
+        .to_owned()
 }
 
 #[test]
 fn a_build_under_target_is_refused_and_nothing_is_written() {
     let bed = Bed::new();
-    let run = bed.teamwire(&["install"], &[]);
+    let run = bed.teamwire_with(Path::new(env!("CARGO_BIN_EXE_teamwire")), &["install"], &[]);
     assert_eq!(run.code, 1, "{}", run.err);
     assert!(run.err.contains("target/"), "{}", run.err);
-    assert!(!bed.skill().exists());
-    assert_eq!(bed.entry(), Value::Null);
+    assert!(!bed.plugin_dir().exists());
+    assert!(!bed.marketplace_added());
 }
 
 #[test]
-fn install_writes_both_items_and_a_second_run_changes_nothing() {
+fn install_registers_the_plugin_and_a_second_run_changes_nothing() {
     let bed = Bed::new();
-    let run = bed.teamwire(&["install", "--force"], &[]);
+    let run = bed.teamwire(&["install"], &[]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    assert!(
-        run.out.contains("did write the teamwire skill"),
-        "{}",
-        run.out
-    );
-    assert!(
-        std::fs::read_to_string(bed.skill())
-            .unwrap()
-            .contains("teamwire-sha256: ")
-    );
-    let home = bed.home.path().display().to_string();
-    assert_eq!(bed.entry()["command"], this_binary().as_str());
+    for line in [
+        "did write the teamwire plugin files",
+        "did add the Claude Code marketplace `teamwire`",
+        "did install the plugin `teamwire@teamwire`",
+    ] {
+        assert!(run.out.contains(line), "{line}: {}", run.out);
+    }
+    assert!(bed.marketplace_added());
     assert_eq!(
-        bed.entry()["args"],
-        serde_json::json!(["--home", home, "mcp", "--lead"])
+        bed.claude_json("settings.json")["enabledPlugins"]["teamwire@teamwire"],
+        true
+    );
+    let root = bed.installed_root().unwrap();
+    assert_eq!(mcp_command(&root), bed.binary("bin").display().to_string());
+    let hooks = std::fs::read_to_string(root.join("hooks/hooks.json")).unwrap();
+    let home = bed.home.path().display().to_string();
+    assert!(
+        hooks.contains(&format!(
+            "{} --home {home} hook claude-lead-stop",
+            bed.binary("bin").display()
+        )),
+        "{hooks}"
     );
 
-    let again = bed.teamwire(&["install", "--force"], &[]);
+    let again = bed.teamwire(&["install"], &[]);
     assert_eq!(again.code, 0, "{}", again.err);
     assert_eq!(again.out, "the lead setup is already installed\n");
+}
 
-    let doctor = bed.teamwire(&["doctor"], &[]);
-    assert!(doctor.out.contains("ok   teamwire skill"), "{}", doctor.out);
-    assert!(
-        doctor.out.contains("ok   lead MCP server"),
-        "{}",
-        doctor.out
+#[test]
+fn a_new_binary_refreshes_the_copy_claude_keeps() {
+    let bed = Bed::new();
+    assert_eq!(bed.teamwire(&["install"], &[]).code, 0);
+    let first = bed.installed_root().unwrap();
+
+    let moved = bed.binary("other");
+    let run = bed.teamwire_with(&moved, &["install"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    for line in [
+        "did write the teamwire plugin files",
+        "did update the Claude Code marketplace `teamwire`",
+        "did update the plugin `teamwire@teamwire`",
+    ] {
+        assert!(run.out.contains(line), "{line}: {}", run.out);
+    }
+    let second = bed.installed_root().unwrap();
+    assert_ne!(first, second, "the plugin version moved with the binary");
+    assert_eq!(mcp_command(&second), moved.display().to_string());
+    assert_eq!(
+        bed.teamwire_with(&moved, &["install"], &[]).out,
+        "the lead setup is already installed\n"
     );
 }
 
 #[test]
 fn a_dry_run_prints_the_changes_and_makes_none() {
     let bed = Bed::new();
-    let run = bed.teamwire(&["install", "--dry-run", "--force"], &[]);
+    bed.put_old_entry(&json!({"command": "teamwire", "args": ["mcp", "--lead"]}));
+    bed.put_old_skill(teamwire_harness_claude::SKILL_TEXT);
+    let run = bed.teamwire(&["install", "--dry-run"], &[]);
     assert_eq!(run.code, 0, "{}", run.err);
-    assert!(
-        run.out.contains("would write the teamwire skill"),
-        "{}",
-        run.out
-    );
-    assert!(
-        run.out.contains("would add the user MCP server"),
-        "{}",
-        run.out
-    );
-    assert!(!bed.skill().exists());
-    assert_eq!(bed.entry(), Value::Null);
+    for line in [
+        "would write the teamwire plugin files",
+        "would add the Claude Code marketplace",
+        "would install the plugin",
+        "would remove the old teamwire skill",
+        "would remove the old user MCP server `teamwire` (teamwire mcp --lead)",
+    ] {
+        assert!(run.out.contains(line), "{line}: {}", run.out);
+    }
+    assert!(!bed.plugin_dir().exists());
+    assert!(bed.old_skill().exists());
+    assert_ne!(bed.old_entry(), Value::Null);
 }
 
 #[test]
-fn a_failed_add_exits_two_says_what_is_left_and_a_rerun_finishes() {
+fn a_failed_install_exits_two_says_what_is_left_and_a_rerun_finishes() {
     let bed = Bed::new();
-    bed.put_entry(&serde_json::json!({"command": "teamwire", "args": ["mcp", "--lead"]}));
-    let run = bed.teamwire(&["install", "--force"], &[("FAKE_CLAUDE_MCP_FAIL", "add")]);
+    let run = bed.teamwire(&["install"], &[("FAKE_CLAUDE_PLUGIN_FAIL", "install")]);
     assert_eq!(run.code, 2, "{}", run.err);
     assert!(
-        run.err.contains("already done: write the teamwire skill"),
+        run.err
+            .contains("already done: write the teamwire plugin files"),
         "{}",
         run.err
     );
     assert!(
-        run.err.contains("the old MCP server entry was removed"),
+        run.err
+            .contains("already done: add the Claude Code marketplace"),
         "{}",
         run.err
     );
@@ -178,38 +263,82 @@ fn a_failed_add_exits_two_says_what_is_left_and_a_rerun_finishes() {
         "{}",
         run.err
     );
-    assert_eq!(bed.entry(), Value::Null);
+    assert!(bed.installed_root().is_none());
 
-    let rerun = bed.teamwire(&["install", "--force"], &[]);
+    let rerun = bed.teamwire(&["install"], &[]);
     assert_eq!(rerun.code, 0, "{}", rerun.err);
     assert!(
-        !rerun.out.contains("skill"),
-        "the skill was already current: {}",
+        !rerun.out.contains("write the teamwire plugin files"),
+        "the files were already current: {}",
         rerun.out
     );
-    assert_eq!(bed.entry()["command"], this_binary().as_str());
-}
-
-#[test]
-fn uninstall_removes_both_items_and_then_has_nothing_to_do() {
-    let bed = Bed::new();
-    assert_eq!(bed.teamwire(&["install", "--force"], &[]).code, 0);
-    let run = bed.teamwire(&["uninstall"], &[]);
-    assert_eq!(run.code, 0, "{}", run.err);
-    assert!(!bed.skill().exists());
-    assert_eq!(bed.entry(), Value::Null);
-    let again = bed.teamwire(&["uninstall"], &[]);
-    assert_eq!(again.out, "no lead setup to remove\n");
+    assert!(bed.installed_root().is_some());
 }
 
 #[test]
 fn a_failure_that_changed_nothing_exits_one_not_two() {
     let bed = Bed::new();
-    let fail = [("FAKE_CLAUDE_MCP_FAIL", "add")];
-    // The first run writes the skill and then fails to add the entry.
-    assert_eq!(bed.teamwire(&["install", "--force"], &fail).code, 2);
-    // The skill is current now, so the second run fails with nothing changed.
-    let run = bed.teamwire(&["install", "--force"], &fail);
+    let fail = [("FAKE_CLAUDE_PLUGIN_FAIL", "marketplace add")];
+    // The first run writes the files and then fails to add the marketplace.
+    assert_eq!(bed.teamwire(&["install"], &fail).code, 2);
+    // The files are current now, so the second run fails with nothing changed.
+    let run = bed.teamwire(&["install"], &fail);
     assert_eq!(run.code, 1, "{}", run.err);
     assert!(!run.err.contains("already done:"), "{}", run.err);
+}
+
+#[test]
+fn install_removes_the_old_skill_and_entry_after_the_plugin_is_in() {
+    let bed = Bed::new();
+    bed.put_old_skill(teamwire_harness_claude::SKILL_TEXT);
+    bed.put_old_entry(
+        &json!({"type": "stdio", "command": "/old/teamwire", "args": ["mcp", "--lead"], "env": {}}),
+    );
+    let run = bed.teamwire(&["install"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(!bed.old_skill().exists());
+    assert_eq!(bed.old_entry(), Value::Null);
+    assert!(bed.installed_root().is_some());
+    let plugin_at = run.out.find("install the plugin").unwrap();
+    let skill_at = run.out.find("remove the old teamwire skill").unwrap();
+    assert!(plugin_at < skill_at, "{}", run.out);
+}
+
+#[test]
+fn an_edited_old_skill_or_a_foreign_entry_is_refused_and_nothing_is_changed() {
+    let bed = Bed::new();
+    bed.put_old_skill("---\nname: teamwire\n---\nmy own notes\n");
+    let run = bed.teamwire(&["install"], &[]);
+    assert_eq!(run.code, 1, "{}", run.err);
+    assert!(run.err.contains("--force"), "{}", run.err);
+    assert!(!bed.plugin_dir().exists());
+    assert!(!bed.marketplace_added());
+
+    std::fs::remove_file(bed.old_skill()).unwrap();
+    bed.put_old_entry(&json!({"command": "/usr/local/bin/other-tool", "args": ["serve"]}));
+    let run = bed.teamwire(&["install"], &[]);
+    assert_eq!(run.code, 1, "{}", run.err);
+    assert!(run.err.contains("other-tool"), "{}", run.err);
+    assert!(!bed.plugin_dir().exists());
+
+    let forced = bed.teamwire(&["install", "--force"], &[]);
+    assert_eq!(forced.code, 0, "{}", forced.err);
+    assert_eq!(bed.old_entry(), Value::Null);
+}
+
+#[test]
+fn uninstall_removes_the_plugin_the_marketplace_and_the_files_and_then_has_nothing_to_do() {
+    let bed = Bed::new();
+    assert_eq!(bed.teamwire(&["install"], &[]).code, 0);
+    let run = bed.teamwire(&["uninstall"], &[]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(bed.installed_root().is_none());
+    assert!(!bed.marketplace_added());
+    assert!(!bed.plugin_dir().exists());
+    assert_eq!(
+        bed.claude_json("settings.json")["enabledPlugins"]["teamwire@teamwire"],
+        Value::Null
+    );
+    let again = bed.teamwire(&["uninstall"], &[]);
+    assert_eq!(again.out, "no lead setup to remove\n");
 }

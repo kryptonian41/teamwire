@@ -9,6 +9,7 @@
 
 mod agents;
 mod mcp;
+mod plugin;
 mod script;
 mod settings;
 
@@ -364,6 +365,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     match argv.first().map(String::as_str) {
         Some("agents") => return agents::run(&claude_dir, argv),
         Some("mcp") => return mcp::run(&claude_dir, argv),
+        Some("plugin" | "plugins") => return plugin::run(&claude_dir, argv),
         Some("--version") => {
             say("0.0.0 (fake-claude)");
             return ExitCode::SUCCESS;

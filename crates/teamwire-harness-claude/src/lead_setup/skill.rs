@@ -34,7 +34,7 @@ pub(crate) fn path(claude_dir: &Path) -> PathBuf {
     claude_dir.join("skills").join("teamwire").join("SKILL.md")
 }
 
-fn sha256_hex(text: &str) -> String {
+pub(crate) fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 

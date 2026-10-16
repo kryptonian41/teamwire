@@ -358,22 +358,37 @@ fn resume_spec_resumes_the_given_session_with_the_same_files() {
 }
 
 #[test]
-fn plugins_become_enabled_plugins_in_settings() {
+fn plugins_become_enabled_plugins_in_settings_beside_the_lead_plugin_switched_off() {
     let mut m = member();
     m.plugins = [("ponytail@ponytail".to_owned(), false)].into();
     let spec = claude().launch_spec(&m).unwrap();
     let settings = file_json(&spec, "settings.json");
     assert_eq!(
         settings["enabledPlugins"],
-        serde_json::json!({"ponytail@ponytail": false})
+        serde_json::json!({"ponytail@ponytail": false, "teamwire@teamwire": false})
     );
 }
 
 #[test]
-fn no_plugins_leaves_settings_without_the_key() {
+fn a_member_never_loads_the_lead_plugin_whatever_the_spec_says() {
+    let mut m = member();
+    m.plugins = [("teamwire@teamwire".to_owned(), true)].into();
+    let settings = file_json(&claude().launch_spec(&m).unwrap(), "settings.json");
+    assert_eq!(
+        settings["enabledPlugins"],
+        serde_json::json!({"teamwire@teamwire": false})
+    );
+}
+
+#[test]
+fn no_plugins_leaves_only_the_lead_plugin_switched_off() {
     let m = member();
     let spec = claude().launch_spec(&m).unwrap();
     let settings = file_json(&spec, "settings.json");
     let keys: Vec<&String> = settings.as_object().unwrap().keys().collect();
-    assert_eq!(keys, ["env", "hooks"]);
+    assert_eq!(keys, ["enabledPlugins", "env", "hooks"]);
+    assert_eq!(
+        settings["enabledPlugins"],
+        serde_json::json!({"teamwire@teamwire": false})
+    );
 }
