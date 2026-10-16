@@ -52,9 +52,13 @@ fn team() -> Fixture {
 }
 
 fn hook(fx: &Fixture, env: &[(&str, &str)], stdin: &str) -> Run {
+    hook_at(fx.home.path(), env, stdin)
+}
+
+fn hook_at(home: &std::path::Path, env: &[(&str, &str)], stdin: &str) -> Run {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire"));
     cmd.arg("--home")
-        .arg(fx.home.path())
+        .arg(home)
         .args(["hook", "claude-lead-stop"])
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
@@ -161,4 +165,56 @@ fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
     let empty = Fixture::new();
     let run = hook(&empty, &[], &stop("lead-1", ""));
     assert_eq!((run.code, run.out.as_str()), (0, ""));
+}
+
+/// Two teams' databases are each held under an exclusive lock by another
+/// process, so each read waits for the database engine's own 5 s busy timeout. Read one
+/// after the other that is 10 s; the hook must give up at its own 5 s bound
+/// and let the stop through with no output.
+#[test]
+fn locked_stores_let_the_stop_through_at_the_bound() {
+    let fx = team();
+    // Close the test's own connection and leave WAL mode: a WAL reader is not
+    // blocked by a lock, a rollback-journal reader is.
+    let home = fx.home.path().to_path_buf();
+    drop(fx.store);
+    let db = |name: &str| {
+        teamwire_store::database_path(&home, &teamwire_core::TeamName::parse(name).unwrap())
+    };
+    std::fs::create_dir_all(db("beta").parent().unwrap()).unwrap();
+    std::fs::copy(db("alpha"), db("beta")).unwrap();
+    let mut holders = Vec::new();
+    for name in ["alpha", "beta"] {
+        let mut holder = Command::new("sqlite3")
+            .arg(db(name))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut held = holder.stdin.take().unwrap();
+        held.write_all(b"PRAGMA journal_mode=DELETE;\nBEGIN EXCLUSIVE;\nSELECT 1;\n")
+            .unwrap();
+        held.flush().unwrap();
+        holders.push((holder, held));
+    }
+    // Time for the holders to take their locks before the hook starts.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+
+    let start = std::time::Instant::now();
+    let run = hook_at(&home, &[], &stop("lead-1", ""));
+    let waited = start.elapsed();
+    for (mut holder, held) in holders {
+        drop(held);
+        holder.kill().ok();
+        holder.wait().ok();
+    }
+
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    // Not much below 5 s: a hook that failed fast on the lock would also print
+    // nothing, and only the wait shows it used its bound.
+    assert!(waited >= std::time::Duration::from_secs(4), "{waited:?}");
+    // Well under the 10 s that two unbounded reads take, yet loose enough for
+    // process start and exit on a loaded machine.
+    assert!(waited < std::time::Duration::from_secs(8), "{waited:?}");
 }

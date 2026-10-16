@@ -2,8 +2,10 @@
 
 One binary. Every subcommand works with no other teamwire process running
 (STO-16). `--home <dir>` overrides `$TEAMWIRE_HOME` (default `~/.teamwire`) on
-every subcommand. `--version` prints `teamwire <version>+<12 hex digits of the
-commit>`, the same identity as `teamwire version`. `--json` prints machine-readable output where listed.
+every subcommand. `--version` prints `teamwire <version>+<build id>`, the same identity as
+`teamwire version`. The build id is the first 12 hex digits of the commit the
+binary was built from, or `unknown` when git was not available. A debug build
+keeps the commit it was first built at. `--json` prints machine-readable output where listed.
 
 ## Exit codes
 
