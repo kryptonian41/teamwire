@@ -116,7 +116,7 @@ crate and listed in `docs/api/core.md`):
 | `watch_lease` | team (single row) | `pid`, `host`, `started_at`, `heartbeat_at` |
 | `announcements` | thing the watch said | `key` (such as `LATE:api:2`, generation 2; `SILENT:api:2:3`, episode 3), `at` |
 | `counters` | named counter | `name` (`display_id`, `seq:<sender>`), `value` |
-| `events` | state change | `seq` (autoincrement), `ulid`, `time`, `type`, `role`, `subject`, `data` (JSON), `writer_version` |
+| `events` | state change | `seq` (autoincrement), `ulid`, `time`, `type`, `role`, `subject`, `data` (JSON), `writer_version` (`<crate version>+<12 hex commit>` or `+unknown`; compared as text, never parsed) |
 | `metric_export` | exporter | `last_event_seq`, `claimed_to`, `claimed_by`, `claimed_by_started_at`, `claimed_at` |
 
 Rules that hold across the model:
