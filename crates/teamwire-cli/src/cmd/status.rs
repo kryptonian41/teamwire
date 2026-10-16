@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
-use teamwire_watch::StatusView;
+use teamwire_watch::{StatusView, WatchState};
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
@@ -88,6 +88,21 @@ fn render(view: &StatusView) -> String {
             liveness_text(lead.liveness)
         ));
     }
+    out.push(
+        match (view.watch.state, view.watch.pid, view.watch.heartbeat_age_s) {
+            (WatchState::None, ..) => "watch: none".to_owned(),
+            (state, pid, beat) => format!(
+                "watch: {} (pid {}, last beat {} ago)",
+                if state == WatchState::Running {
+                    "running"
+                } else {
+                    "stale"
+                },
+                pid.map_or_else(|| "?".to_owned(), |p| p.to_string()),
+                beat.map_or_else(|| "?".to_owned(), minutes)
+            ),
+        },
+    );
     out.push("members:".to_owned());
     for m in &view.members {
         let result = m.result.map_or("-", |r| r.as_str());
@@ -101,6 +116,12 @@ fn render(view: &StatusView) -> String {
             m.branch.as_deref().unwrap_or("-"),
             m.title
         ));
+        if m.older_build {
+            out.push(format!(
+                "    started by teamwire {}, not this build",
+                m.started_by.as_deref().unwrap_or("?")
+            ));
+        }
         if let Some(command) = &m.resume_command {
             out.push(format!("    resume: {command}"));
         }
@@ -129,6 +150,30 @@ fn render(view: &StatusView) -> String {
                 d.to.as_str(),
                 d.state.as_str(),
                 minutes(d.age_s)
+            ));
+        }
+    }
+    if !view.unread_deliveries.is_empty() {
+        out.push("deliveries handed off and not read:".to_owned());
+        for d in &view.unread_deliveries {
+            out.push(format!(
+                "  {} -> {} for {}",
+                d.display_id,
+                d.to.as_str(),
+                minutes(d.age_s)
+            ));
+        }
+    }
+    if !view.unanswered_questions.is_empty() {
+        out.push("questions without an answer:".to_owned());
+        for q in &view.unanswered_questions {
+            let to: Vec<&str> = q.to.iter().map(Recipient::as_str).collect();
+            out.push(format!(
+                "  {} from {} to {} for {}",
+                q.display_id,
+                q.from.as_str(),
+                to.join(","),
+                minutes(q.age_s)
             ));
         }
     }

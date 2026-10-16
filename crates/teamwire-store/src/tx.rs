@@ -63,7 +63,7 @@ pub struct Tx<'a> {
 /// `all_waivers`; `watch_lease`, `was_announced`, `announcements`,
 /// `announcements_with_prefix`; `export_mark`, `last_event_seq`,
 /// `events_after`, `events_since`, `events_of_role`, `event`,
-/// `events_of_type`, `events_about`.
+/// `events_of_type`, `events_about`; `unanswered_questions`.
 #[derive(Debug)]
 pub struct ReadTx<'a> {
     conn: &'a Connection,

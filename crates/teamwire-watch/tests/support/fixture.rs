@@ -105,16 +105,22 @@ impl Bed {
     }
 
     pub fn add_with_deadline(&mut self, name: &str, deadline_s: u64) -> Member {
-        self.insert(name, deadline_s, true)
+        self.insert(name, deadline_s, true, None)
+    }
+
+    /// Adds a started member whose `member.started` event was written by
+    /// teamwire `version`.
+    pub fn add_started_by(&mut self, name: &str, version: &str) -> Member {
+        self.insert(name, 1800, true, Some(version))
     }
 
     /// Adds a member whose launch stopped in `creating`: no place, no
     /// session, never started.
     pub fn add_creating(&mut self, name: &str) {
-        self.insert(name, 1800, false);
+        self.insert(name, 1800, false, None);
     }
 
-    fn insert(&mut self, name: &str, deadline_s: u64, start: bool) -> Member {
+    fn insert(&mut self, name: &str, deadline_s: u64, start: bool, by: Option<&str>) -> Member {
         let role = role(name);
         let session = Self::session(name);
         let place = self.host.add_place(
@@ -148,7 +154,14 @@ impl Bed {
             self.store.write(|tx| tx.insert_member(now, &new)).unwrap();
             return self.member(name);
         }
-        self.store
+        let team = TeamName::parse(TEAM).unwrap();
+        let mut other = by.map(|v| {
+            Store::open(self.home.path(), &team)
+                .unwrap()
+                .with_writer_version(v)
+        });
+        let store = other.as_mut().unwrap_or(&mut self.store);
+        store
             .write(|tx| {
                 tx.insert_member(now, &new)?;
                 tx.set_member_place(&role, &place)?;
@@ -206,6 +219,21 @@ impl Bed {
             config: &self.config,
         };
         teamwire_watch::poll(&mut ctx, &mut self.memory).map(teamwire_core::OneLine::into_string)
+    }
+
+    /// Starts a watch as live process `pid`, which the fake platform reports alive.
+    pub fn start_watch(&mut self, pid: u32) {
+        let pid = teamwire_core::Pid::new(pid);
+        self.platform.set_alive(pid, true);
+        let mut ctx = Ctx {
+            home: self.home.path(),
+            store: &mut self.store,
+            registry: &self.registry,
+            platform: &self.platform,
+            clock: &self.clock,
+            config: &self.config,
+        };
+        teamwire_watch::start(&mut ctx, &mut WatchMemory::default(), pid, "testhost").unwrap();
     }
 
     /// One poll interval later, one poll.
@@ -299,6 +327,38 @@ impl Bed {
                     },
                 )?;
                 Ok(stored.message.display_id.to_string())
+            })
+            .unwrap()
+    }
+
+    /// A message from the lead to member `to`, which the host took (`handed_off`).
+    pub fn send(&mut self, kind: MessageType, to: &str, re: Option<Ulid>) -> Ulid {
+        let now = self.clock.now();
+        let to = Recipient::Member(role(to));
+        let new = NewMessage {
+            sender: Actor::Lead,
+            kind,
+            re,
+            commit: None,
+            body: "text".to_owned(),
+            client_key: None,
+            recipients: vec![to.clone()],
+        };
+        self.store
+            .write(|tx| {
+                let stored = tx.insert_message(now, &new)?;
+                tx.set_delivery_state(
+                    now,
+                    &stored.message.ulid,
+                    &to,
+                    &teamwire_store::DeliveryUpdate {
+                        state: teamwire_core::DeliveryState::HandedOff,
+                        route: None,
+                        error: None,
+                        attempts: 1,
+                    },
+                )?;
+                Ok(stored.message.ulid)
             })
             .unwrap()
     }

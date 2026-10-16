@@ -5,8 +5,10 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use teamwire_core::{
-    Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Timestamp, Ulid,
+    Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
+    Ulid,
 };
+use teamwire_deliver::attempt_started;
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
@@ -17,6 +19,10 @@ pub(crate) struct Snapshot {
     /// Members still to be waited for: launching or running.
     pub members: Vec<MemberInfo>,
     pub questions: Vec<Question>,
+    /// Deliveries to a member that the host took and nobody acknowledged.
+    pub unread: Vec<Unread>,
+    /// Questions to the lead that no answer points at.
+    pub unanswered: Vec<Unanswered>,
     /// Every key the watch has announced, in this or an earlier process.
     pub announced: HashSet<String>,
     /// How many `TEAM-STALLED` episodes have ended. Episodes are numbered in
@@ -43,6 +49,21 @@ pub(crate) struct Question {
     pub display_id: String,
     pub sender: Actor,
     pub state: DeliveryState,
+}
+
+pub(crate) struct Unread {
+    pub message: Ulid,
+    pub display_id: String,
+    pub to: Role,
+    /// When the latest attempt at this delivery began.
+    pub since: Timestamp,
+}
+
+pub(crate) struct Unanswered {
+    pub message: Ulid,
+    pub display_id: String,
+    pub sender: Actor,
+    pub since: Timestamp,
 }
 
 /// The highest episode number among announced keys `<prefix><n>`.
@@ -107,6 +128,55 @@ fn questions(tx: &ReadTx<'_>) -> Result<Vec<Question>, StoreError> {
     Ok(found)
 }
 
+fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
+    let mut found = Vec::new();
+    for record in tx
+        .deliveries_in_states(&[DeliveryState::HandedOff])?
+        .all_or_corrupt()?
+    {
+        let d = record.delivery;
+        // The lead reads its own inbox; only a member's silence is news.
+        let Recipient::Member(to) = d.recipient.clone() else {
+            continue;
+        };
+        let Some(message) = tx.message(&d.message)? else {
+            continue;
+        };
+        found.push(Unread {
+            since: attempt_started(tx, &message, &d.recipient)?,
+            message: message.ulid,
+            display_id: message.display_id.to_string(),
+            to,
+        });
+    }
+    Ok(found)
+}
+
+fn unanswered(tx: &ReadTx<'_>) -> Result<Vec<Unanswered>, StoreError> {
+    let mut found = Vec::new();
+    for message in tx.unanswered_questions()?.all_or_corrupt()? {
+        // A question the lead never received is `QUESTION-UNDELIVERED`'s;
+        // questions between members are for `status` only.
+        let reached_lead = tx
+            .delivery(&message.ulid, &Recipient::Lead)?
+            .is_some_and(|r| {
+                matches!(
+                    r.delivery.state,
+                    DeliveryState::HandedOff | DeliveryState::Acked
+                )
+            });
+        if reached_lead {
+            found.push(Unanswered {
+                message: message.ulid,
+                display_id: message.display_id.to_string(),
+                sender: message.sender,
+                since: message.created_at,
+            });
+        }
+    }
+    Ok(found)
+}
+
 /// `Ok(None)` when the team has no row: there is nothing to watch.
 pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
     ctx.store.read(|tx| {
@@ -134,6 +204,8 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
             team_dir,
             members,
             questions: questions(tx)?,
+            unread: unread(tx)?,
+            unanswered: unanswered(tx)?,
             announced,
             stalls_ended: tx.counter(STALLS_ENDED)?.unwrap_or(0),
         }))

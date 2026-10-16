@@ -94,6 +94,11 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
         "{}",
         run.out
     );
+    assert!(
+        run.out.contains("questions without an answer:") && run.out.contains("from web to lead"),
+        "{}",
+        run.out
+    );
     assert_eq!(sizes(&bed), before, "status changed a file");
 }
 
@@ -141,6 +146,29 @@ fn json_is_the_view() {
     assert_eq!(view["team"], "alpha");
     assert_eq!(view["members"].as_array().unwrap().len(), 2);
     assert_eq!(view["members"][0]["state"], "done(done)");
+    assert_eq!(view["watch"]["state"], "none");
+    assert_eq!(view["members"][0]["older_build"], false);
+    assert!(view["members"][0]["started_by"].is_string(), "{view}");
+    assert_eq!(view["unread_deliveries"], serde_json::json!([]));
+    assert_eq!(view["unanswered_questions"][0]["from"], "web");
+}
+
+#[test]
+fn a_watch_whose_heartbeat_is_old_is_stale_in_text_and_json() {
+    let mut bed = team();
+    // The test's fake clock is far behind the binary's real one.
+    bed.start_watch(std::process::id());
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert_eq!(view["watch"]["state"], "stale", "{}", json.out);
+    assert_eq!(view["watch"]["pid"], std::process::id());
+    let text = teamwire(&bed, &["status", "alpha"]);
+    assert!(
+        text.out
+            .contains(&format!("watch: stale (pid {}", std::process::id())),
+        "{}",
+        text.out
+    );
 }
 
 #[test]

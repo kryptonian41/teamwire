@@ -57,6 +57,14 @@ pub(crate) fn question_key(kind: &str, message: &Ulid) -> String {
     format!("{kind}:{message}")
 }
 
+pub(crate) fn unread_key(message: &Ulid, to: &Role) -> String {
+    format!("UNREAD:{message}:{to}")
+}
+
+pub(crate) fn unanswered_key(message: &Ulid) -> String {
+    format!("UNANSWERED:{message}")
+}
+
 /// `31m`, `2h05m` or `45s`: an age as the lead reads it.
 pub(crate) fn age(span: Duration) -> String {
     let s = span.as_secs();
