@@ -43,7 +43,9 @@ The steps, in order:
      per-run `--settings` hooks and `--mcp-config` work with the installed
      Claude Code.
    - the host adapter's check for the host you use
-     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
+     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr, or
+     `cargo run -p teamwire-host-tmux --example tmux_live_check --locked`
+     for tmux).
    - the lead's MCP server. It comes with the plugin that `teamwire install`
      registers (step 3). Then, during step 4, call `team_status` on the
      throwaway team from the lead's session. A reply that is
@@ -380,13 +382,18 @@ its own lead. To change what another team builds, ask its lead.
 
 ## Preconditions
 
-- The lead runs in a terminal pane of its own. Launch refuses a background
-  session, because a member's report would be typed into another session.
+- The lead runs in a terminal pane of its own, in herdr or in tmux. teamwire
+  picks herdr inside a herdr pane (`HERDR_ENV=1`), else tmux inside a tmux
+  client (`TMUX` set). Members open as tabs or windows beside the lead. Launch
+  refuses a background session, because a member's report would be typed into
+  another session.
 - `teamwire doctor` reports no `FAIL` line. A `warn` line also makes it exit
   2. Read each warning. A warning alone is no reason to stop. Doctor checks the
   databases, the disk, whether the state directory is on a network filesystem, herdr's session hook, that
-  `.worktrees/` is ignored in the repository, and the `claude` and `herdr`
-  binaries. It changes nothing.
+  `.worktrees/` is ignored in the repository, the `claude` binary and its
+  flags, the host binary in use (`herdr` or `tmux`) and its version,
+  credential variables that override the stored login, members started by
+  another teamwire build, and the teamwire plugin. It changes nothing.
 - Each member's working directory is trusted by Claude Code. Launch answers a
   plain folder-trust prompt itself, because the spec names the directory. It
   refuses the stronger prompt that also grants what the folder's own settings
@@ -511,7 +518,10 @@ and any member while the team's closer has not reported, unless you pass
 
 It refuses while the member is busy, because the current turn would be lost.
 Prompt the member to commit and finish, or pass `--stop` and tell the user you
-stopped it. It always refuses over uncommitted work. The branch is kept, and so
+stopped it. tmux cannot say whether a pane is busy, so close asks Claude's
+session status instead. When neither can tell, a whole-team close refuses;
+remove that member alone with `--role <role> --stop`, which then stops it and
+says its state was unknown. It always refuses over uncommitted work. The branch is kept, and so
 are the brief and the reports.
 
 Start a new team when the new work would not be integrated with this team's
