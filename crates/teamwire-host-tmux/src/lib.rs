@@ -420,10 +420,13 @@ impl Host for Tmux {
 
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError> {
         let pane = Self::pane(place)?;
+        // Two commands run one after the other (tmux, then `ps`), so each
+        // gets half: the whole call stays inside the caller's `timeout`.
+        let each = timeout / 2;
         let text = self.run_at(
             &pane,
             &["display-message", "-p", "-t", pane.id, "#{pane_pid}"],
-            timeout,
+            each,
         )?;
         // tmux 3.x prints nothing and exits 0 for a pane that is not there.
         let Ok(root) = text.trim().parse::<u32>() else {
@@ -432,7 +435,7 @@ impl Host for Tmux {
                 format!("tmux has no pane {}", place.id),
             ));
         };
-        let pids: Vec<Pid> = tree::tree_of(self.platform.as_ref(), Pid::new(root), timeout)?;
+        let pids: Vec<Pid> = tree::tree_of(self.platform.as_ref(), Pid::new(root), each)?;
         Ok(Occupant {
             session: None,
             pids,
@@ -522,6 +525,35 @@ fn last_lines(screen: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use teamwire_core::RunOutput;
+    use teamwire_fakes::FakePlatform;
+
+    fn ok(stdout: &str) -> Result<RunOutput, teamwire_core::PlatformError> {
+        Ok(RunOutput {
+            exit_code: 0,
+            stdout: stdout.as_bytes().to_vec(),
+            stderr: Vec::new(),
+            timed_out: false,
+        })
+    }
+
+    #[test]
+    fn occupant_keeps_both_commands_inside_the_callers_timeout() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(ok("10\n"));
+        platform.queue_run(ok("10 1\n11 10\n"));
+        let tmux = Tmux::new(platform.clone());
+        let place = Place {
+            host: tmux.id(),
+            id: "%1".to_owned(),
+        };
+        let got = tmux.occupant(&place, Duration::from_secs(8)).unwrap();
+        assert_eq!(got.pids.len(), 2);
+        let runs = platform.runs();
+        let total: Duration = runs.iter().map(|(_, t)| *t).sum();
+        assert_eq!(runs.len(), 2, "one tmux call and one process listing");
+        assert!(total <= Duration::from_secs(8), "{runs:?}");
+    }
 
     #[test]
     fn last_lines_drops_padding_then_takes_the_end() {
