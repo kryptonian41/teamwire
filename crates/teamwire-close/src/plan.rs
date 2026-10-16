@@ -63,12 +63,17 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
     if team.state == TeamState::Open {
         plan.refusals
             .extend(facts::member_refusals(ctx, &team.name, members));
+        let checked = live(members).count();
         plan.steps.push(step(
             "check",
-            format!(
-                "{} member(s) idle, no uncommitted work",
-                live(members).count()
-            ),
+            if plan.refusals.is_empty() {
+                format!("{checked} member(s) checked: all idle, no uncommitted work")
+            } else {
+                format!(
+                    "{checked} member(s) checked, {} refusal(s)",
+                    plan.refusals.len()
+                )
+            },
         ));
         plan.steps.push(step(
             "lock",

@@ -81,7 +81,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         claude.clone(),
     )))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
-    registry.add_host(Arc::new(Tmux::new(Arc::clone(&platform))))?;
+    registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
     registry.add_host(Arc::new(NoHost))?;
     Ok(Wiring {
         registry,
@@ -91,6 +91,18 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_host: lead_host(env),
         claude,
     })
+}
+
+/// The tmux adapter. Inside a tmux client it takes that client's server for
+/// every place that records none (an older team, or `TMUX_PANE` from a
+/// process); a place a launch recorded names its own server, so a command
+/// from outside tmux still reaches the team.
+fn tmux_host(platform: Arc<dyn Platform>, env: &WiringEnv) -> Tmux {
+    let tmux = Tmux::new(platform);
+    match env.tmux.as_deref() {
+        Some(client) => tmux.with_client(client),
+        None => tmux,
+    }
 }
 
 /// `herdr` inside a herdr pane (`HERDR_ENV=1`), else `tmux` inside a tmux
@@ -164,6 +176,33 @@ mod tests {
         assert_eq!(
             lead_of(&env_in_tmux(Some("0"), Some("/tmp/tmux-1/default,42,0"))),
             "tmux"
+        );
+    }
+
+    #[test]
+    fn the_tmux_adapter_asks_the_server_the_tmux_variable_names() {
+        use teamwire_core::{Host, Place};
+        use teamwire_fakes::FakePlatform;
+        let asked = |tmux: Option<&str>| {
+            let platform = Arc::new(FakePlatform::new());
+            let host = tmux_host(platform.clone(), &env_in_tmux(None, tmux));
+            drop(host.state(
+                &Place {
+                    host: HostId::from_static("tmux"),
+                    id: "%1".to_owned(),
+                },
+                std::time::Duration::from_secs(1),
+            ));
+            platform.runs().first().unwrap().0.args.clone()
+        };
+        assert_eq!(
+            asked(Some("/tmp/tmux-1/team,42,0")).first_chunk::<2>(),
+            Some(&["-S".to_owned(), "/tmp/tmux-1/team".to_owned()])
+        );
+        assert_ne!(
+            asked(None).first().map(String::as_str),
+            Some("-S"),
+            "outside tmux there is no server to name"
         );
     }
 

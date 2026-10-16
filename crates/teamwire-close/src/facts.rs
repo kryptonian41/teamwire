@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Address, HostErrorCode, Member, MemberState, Mode, PlaceState, Role, TeamName, TeamState,
+    Address, Harness, HostErrorCode, Liveness, Member, MemberState, Mode, PlaceState, Role,
+    TeamName, TeamState,
 };
 use teamwire_store::{Ctx, TeamRow};
 
@@ -27,7 +28,8 @@ pub(crate) enum Busy {
     Working,
     /// A dialog waits for an answer.
     Blocked,
-    /// The host could not say. Close refuses rather than guess.
+    /// Neither the host nor the harness could say. Close refuses rather than
+    /// guess, unless `--stop` accepts that on a single removal.
     Unknown(String),
 }
 
@@ -36,12 +38,13 @@ pub(crate) fn live(members: &[Member]) -> impl Iterator<Item = &Member> {
     members.iter().filter(|m| m.state != MemberState::Removed)
 }
 
-/// Asks the member's own host about the member's own place (CLS-7).
+/// Asks the member's own host about the member's own place (CLS-7). A host
+/// that reports no state (tmux) leaves the question to the member's harness.
 pub(crate) fn busy_state(ctx: &Ctx<'_>, member: &Member) -> Busy {
     let Some(place) = &member.place else {
         return Busy::Idle;
     };
-    let (_, host) = match ctx.adapters(&teamwire_store::Party::Member(member.role.clone())) {
+    let (harness, host) = match ctx.adapters(&teamwire_store::Party::Member(member.role.clone())) {
         Ok(pair) => pair,
         Err(e) => return Busy::Unknown(e.to_string()),
     };
@@ -49,21 +52,39 @@ pub(crate) fn busy_state(ctx: &Ctx<'_>, member: &Member) -> Busy {
         Ok(PlaceState::Idle | PlaceState::Gone) => Busy::Idle,
         Ok(PlaceState::Working) => Busy::Working,
         Ok(PlaceState::Blocked) => Busy::Blocked,
-        Ok(PlaceState::Unknown) => Busy::Unknown("the host reports no state".to_owned()),
+        Ok(PlaceState::Unknown) => harness_busy(harness, member),
         Err(e) if e.code == HostErrorCode::NotFound => Busy::Idle,
         Err(e) => Busy::Unknown(e.to_string()),
     }
 }
 
+/// The harness's answer for a member whose host cannot say: Claude's session
+/// status. A session the harness cannot read, or reports dead while the place
+/// is still there, is no answer.
+fn harness_busy(harness: &dyn Harness, member: &Member) -> Busy {
+    let unknown =
+        || Busy::Unknown("the host reports no state and the harness cannot tell".to_owned());
+    let Some(session) = &member.session_id else {
+        return unknown();
+    };
+    match harness.is_alive(session, HOST_TIMEOUT) {
+        Ok(Liveness::Alive(PlaceState::Idle)) => Busy::Idle,
+        Ok(Liveness::Alive(PlaceState::Working)) => Busy::Working,
+        Ok(Liveness::Alive(PlaceState::Blocked)) => Busy::Blocked,
+        _ => unknown(),
+    }
+}
+
 /// Why this member must not be closed now, if it is busy or unreadable.
-/// `stop_allowed` is `--stop` on a single removal: a running turn or a dialog
-/// is then accepted, but an unknown state never is.
+/// `stop_allowed` is `--stop` on a single removal: a running turn, a dialog
+/// or a state nobody can read is then accepted, and the removal says which.
 pub(crate) fn busy_refusal(ctx: &Ctx<'_>, member: &Member, stop_allowed: bool) -> Option<String> {
     let role = &member.role;
     match busy_state(ctx, member) {
         Busy::Idle => None,
         Busy::Working if stop_allowed => None,
         Busy::Blocked if stop_allowed => None,
+        Busy::Unknown(_) if stop_allowed => None,
         Busy::Working => Some(format!(
             "{role} is busy: its current turn is lost if its place closes. Wait for it, or \
              remove it alone with --role {role} --stop"

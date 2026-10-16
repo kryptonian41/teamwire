@@ -1,4 +1,4 @@
-//! One tmux call: run `tmux [-L socket] <args>` through `Platform::run` with
+//! One tmux call: run `tmux [-L name | -S path] <args>` through `Platform::run` with
 //! a timeout and turn what came back into text or a failure.
 //!
 //! tmux has no error codes, only a message on stderr and exit 1, so this is
@@ -12,6 +12,31 @@ use teamwire_core::{Command, HostError, HostErrorCode, Platform};
 
 /// Longest tmux text copied into an error detail.
 const DETAIL_MAX: usize = 300;
+
+/// Which tmux server a call goes to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Socket<'a> {
+    /// `-L <name>`: a socket in tmux's own directory.
+    Name(&'a str),
+    /// `-S <path>`: a socket at a full path, as `TMUX` and `#{socket_path}`
+    /// give it.
+    Path(&'a str),
+}
+
+impl Socket<'_> {
+    fn flag(self) -> &'static str {
+        match self {
+            Self::Name(_) => "-L",
+            Self::Path(_) => "-S",
+        }
+    }
+
+    fn value(self) -> String {
+        match self {
+            Self::Name(v) | Self::Path(v) => v.to_owned(),
+        }
+    }
+}
 
 /// Why a tmux call gave no output.
 #[derive(Debug)]
@@ -41,14 +66,14 @@ pub(crate) fn clip(text: &str) -> String {
 /// standard output.
 pub(crate) fn call(
     platform: &dyn Platform,
-    socket: Option<&str>,
+    socket: Option<Socket<'_>>,
     args: &[&str],
     stdin: Option<&[u8]>,
     timeout: Duration,
 ) -> Result<String, Failure> {
     let mut cmd = Command::new("tmux");
-    if let Some(name) = socket {
-        cmd = cmd.args(["-L", name]);
+    if let Some(socket) = socket {
+        cmd = cmd.arg(socket.flag()).arg(socket.value());
     }
     cmd = cmd.args(args.iter().copied());
     cmd.stdin = stdin.map(<[u8]>::to_vec);

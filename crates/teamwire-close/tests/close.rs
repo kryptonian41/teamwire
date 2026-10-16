@@ -56,6 +56,30 @@ fn busy_member_refuses() {
 }
 
 #[test]
+fn the_dry_run_header_counts_what_it_checked() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    rig.add_pane_member("rev", MemberKind::Reviewer);
+    let header = |plan: &teamwire_close::ClosePlan| {
+        plan.steps
+            .iter()
+            .find(|s| s.step == "check")
+            .unwrap()
+            .detail
+            .clone()
+    };
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert_eq!(
+        header(&plan),
+        "2 member(s) checked: all idle, no uncommitted work"
+    );
+
+    rig.set_place_state("scout", PlaceState::Unknown);
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert_eq!(header(&plan), "2 member(s) checked, 1 refusal(s)");
+}
+
+#[test]
 fn a_dialog_waiting_for_an_answer_refuses_too() {
     let mut rig = Rig::without_repo();
     rig.add_pane_member("scout", MemberKind::Investigator);
