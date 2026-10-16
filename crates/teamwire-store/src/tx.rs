@@ -23,7 +23,8 @@ use crate::error::StoreError;
 ///   `remove_member`, `bump_generation`, `restore_generation`, `hold_member`,
 ///   `hold_member_unread`.
 /// - message and delivery: `insert_message`, `set_delivery_state` (forward
-///   moves only), `ack_delivery`, `begin_resend`, `mark_reminded`.
+///   moves only), `ack_delivery`, `begin_resend`, `mark_reminded`,
+///   `record_delivery_reentered`.
 /// - completion: `insert_completion`, `claim_completion_for_delivery`,
 ///   `finish_completion_delivery`, `deliver_completion_via_watch`,
 ///   `interrupt_stale_delivery`.

@@ -683,7 +683,7 @@ fn a_delivery_reentered_event_is_exported_and_does_not_stop_the_metrics_export()
         .lines()
         .map(|l| serde_json::from_str::<Value>(l).unwrap())
         .find(|r| r["type"] == "teamwire.delivery.reentered")
-        .unwrap_or_else(|| panic!("no reentered record in {}", run.out));
+        .unwrap();
     assert_eq!(record["role"], "api");
     assert_eq!(record["data"]["place"], "%3");
 
