@@ -16,10 +16,11 @@
 )]
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, HarnessId, HostId, LeadRoute, Pid, PlatformError, PlatformErrorCode, RunOutput,
-    TeamName, Timestamp,
+    Clock, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Pid, PlatformError,
+    PlatformErrorCode, Registry, Role, RunOutput, TeamName, Timestamp,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
@@ -49,6 +50,8 @@ mod wiring {
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
+        pub(crate) registry: teamwire_core::Registry,
+        pub(crate) clock: teamwire_fakes::FakeClock,
     }
 }
 
@@ -97,6 +100,8 @@ struct Bed {
     claude_help: String,
     /// The environment variables that are set.
     env_names: Vec<String>,
+    registry: Registry,
+    clock: FakeClock,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -122,6 +127,13 @@ impl Bed {
             host: Host::Herdr,
             claude_help: ALL_FLAGS.to_owned(),
             env_names: Vec::new(),
+            registry: {
+                let mut registry = Registry::new();
+                registry.add_harness(Arc::new(FakeHarness::new())).unwrap();
+                registry.add_host(Arc::new(FakeHost::new())).unwrap();
+                registry
+            },
+            clock: FakeClock::new(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -212,6 +224,8 @@ impl Bed {
             host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
+            registry: &self.registry,
+            clock: &self.clock,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
             claude: self.claude_config(),
             lead_entry: Ok(self.lead_entry()),
@@ -589,6 +603,8 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         host: bed.host,
         home: bed.home.path().to_path_buf(),
         platform: &bed.platform,
+        registry: &bed.registry,
+        clock: &bed.clock,
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
         lead_entry: Err("cannot find this binary".to_owned()),
@@ -810,4 +826,75 @@ fn a_credential_variable_warns_by_name_and_a_clean_environment_passes() {
         "{detail}"
     );
     assert!(!detail.contains("HOME"), "{detail}");
+}
+
+/// Starts member `role` on `store`, which writes `version` as the writer of
+/// the `member.started` event.
+fn start_member(store: &mut Store, role: &str) {
+    let role = Role::parse(role).unwrap();
+    let now = FakeClock::new().now();
+    let new = teamwire_store::NewMember {
+        role: role.clone(),
+        title: "T".to_owned(),
+        kind: MemberKind::Implementer,
+        mode: Mode::Pane,
+        harness: HarnessId::from_static(FakeHarness::ID),
+        host: HostId::from_static(FakeHost::ID),
+        cwd: PathBuf::from("/tmp"),
+        repo: None,
+        branch: None,
+        base: None,
+        base_sha: None,
+        check: None,
+        owns: vec![],
+        deadline_s: 1800,
+    };
+    store
+        .write(|tx| {
+            tx.insert_member(now, &new)?;
+            tx.set_member_state(now, &role, MemberState::Started, &serde_json::json!({}))
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    let mut older = Store::open(bed.home.path(), &TeamName::parse("alpha").unwrap())
+        .unwrap()
+        .with_writer_version("0.0.0+aaaaaaaaaaaa");
+    start_member(&mut older, "web");
+    drop(older);
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
+    let detail = &checks
+        .iter()
+        .find(|c| c.name == "team alpha older members")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains("web (0.0.0+aaaaaaaaaaaa)") && !detail.contains("api"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("relaunch the member, or ignore if its wiring did not change"),
+        "{detail}"
+    );
+    assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn members_of_this_build_pass_the_older_members_check() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    start_member(&mut store, "api");
+    drop(store);
+    assert_eq!(
+        level_of(&bed.checks(), "team alpha older members"),
+        Level::Pass
+    );
 }

@@ -11,8 +11,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
-use teamwire_core::{Command, Platform, TeamName, TeamState};
-use teamwire_store::{SCHEMA_VERSION, Store};
+use teamwire_core::{Clock, Command, Config, Platform, Registry, TeamName, TeamState};
+use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 
 use crate::Global;
 use crate::cmd::install::wanted_entry;
@@ -127,6 +127,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) host: Host,
     pub(crate) home: PathBuf,
     pub(crate) platform: &'a dyn Platform,
+    /// The adapters and the clock `status` reads members with.
+    pub(crate) registry: &'a Registry,
+    pub(crate) clock: &'a dyn Clock,
     /// `$PATH`, where the harness and host binaries are looked for.
     pub(crate) path_var: Option<OsString>,
     /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
@@ -190,7 +193,7 @@ fn disk_checks(inputs: &Inputs<'_>) -> Vec<Check> {
 /// the watch lease.
 fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
     let name = |what: &str| format!("team {team} {what}");
-    let store = match Store::open_read_only(&inputs.home, team) {
+    let mut store = match Store::open_read_only(&inputs.home, team) {
         Ok(store) => store,
         Err(e) => return vec![Check::fail(name("database"), e.to_string())],
     };
@@ -218,6 +221,12 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
     let rows = store.read(|tx| Ok((tx.team()?, tx.watch_lease()?)));
     match rows {
         Ok((team_row, lease)) => {
+            if team_row
+                .as_ref()
+                .is_some_and(|r| r.state == TeamState::Open)
+            {
+                checks.push(older_members_check(inputs, &mut store, team));
+            }
             // The pid with its recorded start time: a pid that a later
             // process reused is gone, as `close --clear-stale-lock` judges it.
             if let Some(row) = team_row
@@ -251,6 +260,46 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
         Err(e) => checks.push(Check::fail(name("rows"), e.to_string())),
     }
     checks
+}
+
+/// The members `status` marks as started by another build of teamwire. The
+/// check reuses the status view, so doctor and `status` cannot disagree.
+fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) -> Check {
+    let name = format!("team {team} older members");
+    let config = Config::default();
+    let ctx = Ctx {
+        home: &inputs.home,
+        store,
+        registry: inputs.registry,
+        platform: inputs.platform,
+        clock: inputs.clock,
+        config: &config,
+    };
+    let view = teamwire_watch::status_with(&ctx, None);
+    if !view.errors.is_empty() {
+        return Check::warn(
+            name,
+            format!("could not read the members: {}", view.errors.join("; ")),
+        );
+    }
+    let older: Vec<String> = view
+        .members
+        .iter()
+        .filter(|m| m.older_build)
+        .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
+        .collect();
+    if older.is_empty() {
+        return Check::pass(name, "no member was started by another build");
+    }
+    Check::warn(
+        name,
+        format!(
+            "{} started by a build other than {}; relaunch the member, or ignore if its \
+             wiring did not change",
+            older.join(", "),
+            teamwire_store::WRITER_VERSION
+        ),
+    )
 }
 
 fn database_checks(inputs: &Inputs<'_>) -> Vec<Check> {
@@ -488,6 +537,8 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         ),
         home,
         platform: wiring.platform.as_ref(),
+        registry: &wiring.registry,
+        clock: &wiring.clock,
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
         running_a_build: lead_entry
