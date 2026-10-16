@@ -40,8 +40,9 @@ crates are not published to crates.io.
   for you.
 - git
 - Claude Code, with `claude` on `PATH`
-- herdr, with `herdr` on `PATH` and its session hook in your Claude Code
-  settings. The lead session must run in a herdr pane of its own.
+- herdr or tmux. With herdr: `herdr` on `PATH` and its session hook in your
+  Claude Code settings. With tmux: `tmux` on `PATH`. The lead session must run
+  in a herdr pane or a tmux window of its own.
 
 ## Install
 
@@ -52,13 +53,15 @@ teamwire install
 ```
 
 `teamwire doctor` checks the state directory, the disk, the herdr session
-hook, the `claude` and `herdr` binaries, and that the repository ignores
-`.worktrees/`. It changes nothing.
+hook, the `claude` binary and its flags, the host binary in use, the teamwire
+plugin, and that the repository ignores `.worktrees/`. It changes nothing.
 
-`teamwire install` writes the `teamwire` skill to
-`~/.claude/skills/teamwire/` and registers the lead's MCP server with
-`claude mcp`. Run it again after every `cargo install`, so both match the new
-binary. `teamwire uninstall` removes both.
+`teamwire install` writes the teamwire plugin to `$TEAMWIRE_HOME/claude-plugin/`
+and registers it with `claude plugin`. The plugin holds the lead's skill
+(`/teamwire:teamwire`), its MCP server and its Stop hook (ADR 0018). Install
+also removes the skill and MCP entry an older teamwire installed. Run it again
+after every `cargo install`, so the plugin matches the new binary, then start
+a new Claude Code session. `teamwire uninstall` removes the plugin.
 
 Before you rely on teamwire, run the live checks in
 [docs/test-strategy.md](docs/test-strategy.md), section 6. The full setup
@@ -67,7 +70,7 @@ teamwire".
 
 ## Quick start
 
-Run these from the lead's Claude Code session, inside a herdr pane.
+Run these from the lead's Claude Code session, inside a herdr pane or a tmux window.
 
 ```bash
 teamwire preset                    # list the six team shapes

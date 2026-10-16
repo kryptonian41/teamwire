@@ -28,15 +28,17 @@ worked in tests and failed in use:
    markers are checked first and a dialog is still refused at once. A screen
    that shows `esc to interrupt` is not idle by the shape rule.
 2. **An unclear screen is read again.** On a host that does not guard dialogs,
-   a screen read of `Unknown` is repeated up to 3 times, about 750 ms in all,
-   inside the delivery budget, before delivery is refused as
+   the screen is read up to 3 times in all, with pauses of 250 ms and 500 ms,
+   inside the delivery budget, while it reads `Unknown`, before delivery is refused as
    `not_at_input_prompt`.
 3. **One more Enter where the host gives no acknowledgement.** On a host whose
    `submit_ack` is `none` (tmux), teamwire reads the screen once after the
    submit. When the line it typed still sits in the input box, it presses
    Enter once more. It never types the text again, so ADR 0003 point 7 holds:
    the text is never sent twice. `handed_off` on such a host means the host
-   took the text and teamwire looked once.
+   took the text and teamwire looked once. The second Enter is logged at
+   `info` level only, which the CLI does not print by default; a durable
+   record needs a new event type.
 4. **A tmux place names its server.** A place is `%<n>@<socket path>`, and
    every call for that place goes to that server with `tmux -S`. The adapter
    takes its default server from the lead's `TMUX` value. A bare `%<n>` from an
@@ -50,9 +52,12 @@ worked in tests and failed in use:
 
 ## Consequences
 
-- A lead located from a shell outside tmux still uses the bare `TMUX_PANE` its
-  process holds, and so the default server. Members started by this build are
-  found wherever the command runs.
+- Close, state and the watch use the recorded place, so they reach a member
+  started by this build from any shell. Delivery does not yet: the locator
+  reads the bare `TMUX_PANE` from the target's processes, so `teamwire send`
+  to a tmux agent from a shell outside tmux asks the default server and fails
+  as `host_no_session`. It never types into the wrong pane. Building the
+  candidate place from the same process's `TMUX` value would close this.
 - The "line still in the box" test lives in `teamwire-deliver` and knows
   Claude's pointer glyphs. A `Harness` method should own it before a second
   harness is added.

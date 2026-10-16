@@ -23,8 +23,8 @@ and prompt it yourself; that is simpler.
 - teamwire agent names are `tw_<team>_<role>` and never contain a hyphen.
 - teamwire's wake-up and watch lines start with `[teamwire:<team>]`.
 - teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
-  `teamwire install` changes Claude Code's setup, and only through
-  `claude plugin`. It writes one plugin, `teamwire@teamwire`, to
+  `teamwire install` changes Claude Code's setup, through `claude plugin`,
+  plus `claude mcp remove` and deleting the skill folder of an older install. It writes one plugin, `teamwire@teamwire`, to
   `$TEAMWIRE_HOME/claude-plugin/` and registers it at user scope. The plugin
   carries this skill, the lead's MCP server and the lead's Stop hook. After a
   new `cargo install`, run `teamwire install` again to update it.
@@ -657,7 +657,7 @@ you forgot to restart:
 | `LATE <role>` | Past its deadline with nothing recorded. |
 | `SILENT <role>` | Went quiet without recording a completion. Ask it directly. |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. Read it with `teamwire log`. |
-| `UNREAD <id> -> <role> <age>` | A member took a message 10 minutes ago and has not read it. Once per message and member. Check `teamwire status`, then `resend` or ask it directly. |
+| `UNREAD <id> -> <role> <age>` | A message to a member has waited 10 minutes since it was sent or resent, and the member has not read it. Once per message and member. Check `teamwire status`, then `resend` or ask it directly. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has had no answer for 10 minutes. Once per question. Answer it with `--type answer --re <id>`. |
 | `TEAM-STALLED` | Every remaining member is stuck. Nothing will move. |
 | `TEAM-CLOSED` | The team was closed while the watch ran, before `TEAM-COMPLETE`. The watch has exited. If you did not close it, another session did: run `teamwire status` before you act on the team. |

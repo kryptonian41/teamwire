@@ -35,9 +35,12 @@ removed with `claude plugin`, and can be switched off per session with
    Claude Code names the lead's tools `mcp__plugin_teamwire_teamwire__<tool>`
    and the skill `teamwire:teamwire`.
 2. **Registered only through `claude plugin`.** Install and uninstall change
-   Claude Code's configuration only by running `claude plugin marketplace`
-   and `claude plugin install|uninstall|update` with `--scope user`, and
-   `claude mcp remove` for the migration below. teamwire still never writes
+   Claude Code's configuration only by running
+   `claude plugin marketplace add|remove --scope user`,
+   `claude plugin marketplace update` (which takes no scope),
+   `claude plugin install|update|enable|uninstall --scope user`, and
+   `claude mcp remove` for the migration below. Deleting the old skill folder
+   in point 3 is the one file teamwire removes under `~/.claude/` itself. teamwire still never writes
    `~/.claude/settings.json`, `~/.claude.json` or Claude's plugin directory
    itself. The rules of ADR 0012 points 4 to 6 apply to the plugin: absolute
    binary path, no install from `target/`, every check before the first write.

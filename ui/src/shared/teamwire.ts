@@ -1,7 +1,8 @@
 // Schemas for the JSON that the `teamwire` CLI prints. These are the only
 // shapes this app accepts from teamwire. Each one was written from the
 // teamwire source (crates/teamwire-watch/src/lib.rs, teamwire-core enums)
-// and checked against real output on 2026-10-13 (teamwire 0.0.0, schema 3).
+// and checked against real output on 2026-10-13 (teamwire 0.0.0, schema 3);
+// teamwire now prints its version as `0.0.0+<commit>`.
 //
 // Unknown object keys are dropped, so teamwire may add fields freely. A new
 // enum value or a changed type fails the parse on purpose: the server then

@@ -32,7 +32,8 @@ The user's priorities decide every trade-off, in this order:
 | Metrics | Every state change writes an event row. Metrics are computed from those rows, shown by the CLI, and exported to OpenTelemetry by a separate step. |
 
 teamwire is a separate project. It keeps all state under `$TEAMWIRE_HOME`
-(default `~/.teamwire`), never writes under `~/.claude/` itself, and registers
+(default `~/.teamwire`), never writes under `~/.claude/` itself (except that
+install deletes an older install's skill folder), and registers
 nothing in the user's global configuration. The one exception is
 `teamwire install`, which writes the teamwire plugin (the lead's skill, MCP
 server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
@@ -337,7 +338,7 @@ the database itself. This section says what is enforced.
 | A member forges a watch line or a second message | Every agent string is sanitised to one printable, capped line | DEL-11 |
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
 | A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
-| teamwire breaks the user's own Claude Code setup | teamwire writes nothing under `~/.claude/` or to `~/.claude.json` itself; only `teamwire install` changes Claude Code's setup, through `claude plugin` and `claude mcp`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
+| teamwire breaks the user's own Claude Code setup | teamwire writes nothing under `~/.claude/` or to `~/.claude.json` itself, except deleting an ADR 0012 skill folder on install; only `teamwire install` changes Claude Code's setup, through `claude plugin` and `claude mcp`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
 | A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*` variable are filtered everywhere | SEC-1 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
@@ -355,7 +356,8 @@ The steps to set teamwire up on a machine, in order:
      proves the per-run `--settings` hooks and `--mcp-config` work with the
      installed Claude Code.
    - The host adapter's check for the host in use
-     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
+     (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr, or
+     `crates/teamwire-host-tmux/examples/tmux_live_check.rs` for tmux).
 3. Run `teamwire install`. It registers the teamwire plugin, which holds the
    lead's skill, MCP server and Stop hook (ADR 0018). Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
