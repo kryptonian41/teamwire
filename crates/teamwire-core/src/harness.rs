@@ -40,6 +40,13 @@ pub trait Harness: Send + Sync {
     fn hold_reply(&self, note: &str) -> Vec<u8>;
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
     fn screen_state(&self, tail: &str) -> ScreenState;
+    /// Whether `line`, just submitted, still sits unsent in the input box
+    /// shown by `tail`. The default is `false`: a harness that cannot tell
+    /// never gets a second Enter, which can only delay a line, never send it
+    /// twice.
+    fn line_pending(&self, _tail: &str, _line: &OneLine) -> bool {
+        false
+    }
     /// Handle a startup dialog on the member's screen, if the harness has one.
     fn answer_startup(
         &self,

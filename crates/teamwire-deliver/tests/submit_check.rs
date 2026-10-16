@@ -35,6 +35,16 @@ fn a_line_still_in_the_box_gets_one_more_enter_and_is_not_typed_twice() {
 }
 
 #[test]
+fn a_harness_that_cannot_tell_never_gets_a_second_enter() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    no_ack(&rig);
+    rig.harness.set_detects_pending(false);
+    deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello there", 80));
+    assert!(rig.host.keys_sent(&place).is_empty());
+}
+
+#[test]
 fn a_line_the_session_took_gets_no_second_enter() {
     let mut rig = Rig::new();
     let place = rig.healthy("lead-1", 100);

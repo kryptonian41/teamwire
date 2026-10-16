@@ -61,6 +61,7 @@ struct State {
     sessions: HashMap<SessionId, SessionRec>,
     caller: Option<CallerSession>,
     listing_fault: Option<HarnessError>,
+    detects_pending: bool,
     pushed: Vec<(SessionId, String)>,
 }
 
@@ -105,6 +106,7 @@ impl FakeHarness {
                 sessions: HashMap::new(),
                 caller: None,
                 listing_fault: None,
+                detects_pending: true,
                 pushed: Vec::new(),
             }),
         }
@@ -151,6 +153,12 @@ impl FakeHarness {
     }
 
     /// `processes_for_session` and `is_alive` fail with `err` until cleared.
+    /// Whether `line_pending` can tell (the default) or, like a harness that
+    /// cannot read its screen, always answers `false`.
+    pub fn set_detects_pending(&self, detects: bool) {
+        lock(&self.state).detects_pending = detects;
+    }
+
     pub fn fail_listing(&self, err: Option<HarnessError>) {
         lock(&self.state).listing_fault = err;
     }
@@ -321,6 +329,18 @@ impl Harness for FakeHarness {
         } else {
             ScreenState::Unknown
         }
+    }
+
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
+        self.log.record("line_pending", CallKind::Read, "");
+        let squash = |t: &str| t.split_whitespace().collect::<Vec<_>>().join(" ");
+        let wanted: String = squash(line.as_str()).chars().take(40).collect();
+        lock(&self.state).detects_pending
+            && tail
+                .lines()
+                .rev()
+                .find_map(|l| l.trim().strip_prefix('>').map(squash))
+                .is_some_and(|text| text.contains(&wanted))
     }
 
     fn answer_startup(

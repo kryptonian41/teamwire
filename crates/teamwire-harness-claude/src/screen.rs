@@ -2,7 +2,7 @@
 //! dialog? The answer decides whether a host may type into the session, so
 //! `InputPrompt` needs positive evidence and nothing else is trusted.
 
-use teamwire_core::ScreenState;
+use teamwire_core::{OneLine, ScreenState};
 
 /// Text of the plain folder-trust dialog.
 pub(crate) const PLAIN_TRUST_MARKERS: [&str; 2] =
@@ -73,6 +73,24 @@ fn pointer_rest(line: &str) -> Option<&str> {
 /// current selection.
 pub(crate) fn last_pointer_text(screen: &str) -> Option<String> {
     screen.lines().rev().find_map(pointer_rest).map(squash)
+}
+
+/// How much of a submitted line is looked for in the input box. The box
+/// wraps a long line, but its first row holds the start.
+const PREFIX_CHARS: usize = 40;
+
+/// The text after the last pointer line of the screen. That line is the input
+/// box: a line Claude echoed into its transcript is always followed by the
+/// box's own pointer line.
+fn input_box_text(tail: &str) -> Option<String> {
+    tail.lines().rev().find_map(pointer_rest).map(squash)
+}
+
+/// Whether `line` still sits in the input box, unsent. Used after a submit
+/// to decide on one more Enter.
+pub(crate) fn line_pending(tail: &str, line: &OneLine) -> bool {
+    let wanted: String = squash(line.as_str()).chars().take(PREFIX_CHARS).collect();
+    input_box_text(tail).is_some_and(|text| text.contains(&wanted))
 }
 
 /// The non-empty lines at the end of the screen that can belong to the

@@ -33,8 +33,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome,
-    TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
+    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -165,6 +165,10 @@ impl Harness for ClaudeCode {
 
     fn screen_state(&self, tail: &str) -> ScreenState {
         screen::classify(tail)
+    }
+
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
+        screen::line_pending(tail, line)
     }
 
     fn answer_startup(
