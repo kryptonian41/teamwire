@@ -50,11 +50,11 @@ fn lead_and_member_on_different_harnesses_route_per_party() {
     assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), lead_place);
     assert_eq!(locate(&rig.ctx(), &member).unwrap(), member_place);
     assert_eq!(
-        deliver_line(&rig.ctx(), &Party::Lead, &one_line("to lead", 80)),
+        deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("to lead", 80)),
         DeliveryOutcome::HandedOff
     );
     assert_eq!(
-        deliver_line(&rig.ctx(), &member, &one_line("to member", 80)),
+        deliver_line(&mut rig.ctx(), &member, &one_line("to member", 80)),
         DeliveryOutcome::HandedOff
     );
     assert_eq!(rig.host.submitted(&lead_place), ["to lead"]);
@@ -78,7 +78,7 @@ fn unknown_member_harness_is_undelivered() {
     let mut rig = Rig::new();
     let member = rig.add_member("api", "not-in-this-binary", "member-1");
     rig.healthy("lead-1", 100);
-    let outcome = deliver_line(&rig.ctx(), &member, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &member, &one_line("hello", 80));
     let DeliveryOutcome::Undelivered(e) = outcome else {
         unreachable!("an unknown adapter must not hand off");
     };

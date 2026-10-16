@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, ScreenState};
+use teamwire_core::{Harness, ScreenState, one_line};
 use teamwire_fakes::{
     ESCALATED_TRUST_TEXT, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT,
 };
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
-fn state(tail: &str) -> ScreenState {
+fn claude() -> ClaudeCode {
     ClaudeCode::new(
         Arc::new(FakePlatform::new()),
         ClaudeConfig {
@@ -17,7 +17,14 @@ fn state(tail: &str) -> ScreenState {
             claude_bin: "claude".into(),
         },
     )
-    .screen_state(tail)
+}
+
+fn state(tail: &str) -> ScreenState {
+    claude().screen_state(tail)
+}
+
+fn pending(tail: &str, text: &str) -> bool {
+    claude().line_pending(tail, &one_line(text, 200))
 }
 
 const BOX: &str =
@@ -184,4 +191,54 @@ fn a_pointer_line_without_a_ruled_box_or_footer_is_unknown() {
         state("❯ No, exit\n  some text\n  more text"),
         ScreenState::Unknown
     );
+}
+
+#[test]
+fn a_line_in_the_input_box_is_pending() {
+    assert!(pending(
+        "done\n❯ hello there\n  ? for shortcuts",
+        "hello there"
+    ));
+    assert!(pending(
+        "╭────╮\n│ > hello   there │\n╰────╯",
+        "hello there"
+    ));
+}
+
+#[test]
+fn a_line_that_only_the_transcript_echoes_is_not_pending() {
+    // The session took the line: its echo is followed by the box's own empty pointer.
+    assert!(!pending("❯ hello there\n⏺ Working\n❯ ", "hello there"));
+    assert!(!pending("ready\n❯ ", "hello there"));
+    assert!(!pending("no pointer at all", "hello there"));
+}
+
+#[test]
+fn only_the_first_forty_characters_are_matched() {
+    let long = "word ".repeat(30);
+    let first_row: String = long.chars().take(60).collect();
+    assert!(pending(&format!("❯ {first_row}\n"), &long));
+}
+
+#[test]
+fn a_box_holding_only_a_paste_marker_is_pending() {
+    for marker in [
+        "[Pasted text #1]",
+        "[Pasted text #12 +34 lines]",
+        "[Pasted text #2 +1 line]",
+    ] {
+        let tail = format!("done\n❯ {marker}\n  ? for shortcuts");
+        assert!(
+            pending(&tail, "a long line the box did not show"),
+            "{marker}"
+        );
+    }
+}
+
+#[test]
+fn text_that_only_mentions_a_paste_marker_is_not_pending() {
+    assert!(!pending("❯ see [Pasted text #1] above\n", "something else"));
+    assert!(!pending("❯ [Pasted text #]\n", "something else"));
+    assert!(!pending("❯ [Pasted text #1 +x lines]\n", "something else"));
+    assert!(!pending("[Pasted text #1]\n❯ \n", "something else"));
 }

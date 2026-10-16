@@ -15,6 +15,7 @@ use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnR
 use teamwire_fakes::contract::{HostSetup, host_contract};
 
 use server::{PrivateServer, request, screen_shows};
+use teamwire_host_tmux::Tmux;
 
 const T: Duration = Duration::from_secs(10);
 
@@ -276,6 +277,32 @@ fn spawn_needs_a_program_and_a_sane_environment_name() {
         HostErrorCode::BadArgument
     );
     assert_eq!(tmux.list(T).unwrap(), []);
+}
+
+#[test]
+fn a_place_composed_from_a_process_env_works_from_outside_tmux() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    let placed = server
+        .tmux()
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    let socket = server.raw(&["display-message", "-p", "#{socket_path}"]);
+    let tmux_value = format!("{},123,0", socket.trim());
+    let read = |var: &str| match var {
+        "TMUX_PANE" => Some(bare(&placed).to_owned()),
+        "TMUX" => Some(tmux_value.clone()),
+        _ => None,
+    };
+    // A client with no socket of its own: the shell the CLI runs in.
+    let outside = Tmux::new(server.platform.clone());
+    let id = outside.place_from_env(&read).unwrap();
+    assert_eq!(id, placed.id);
+    let place = Place {
+        host: outside.id(),
+        id,
+    };
+    assert!(outside.occupant(&place, T).is_ok());
 }
 
 #[test]

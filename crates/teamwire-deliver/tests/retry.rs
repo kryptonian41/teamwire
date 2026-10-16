@@ -36,7 +36,7 @@ fn error_code(outcome: &DeliveryOutcome) -> DeliveryErrorCode {
 fn line_is_typed_once_into_the_located_place() {
     let mut rig = Rig::new();
     let place = rig.healthy("lead-1", 100);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert_eq!(rig.host.submitted(&place), ["hello"]);
 }
@@ -47,7 +47,7 @@ fn busy_twice_then_success_is_handed_off() {
     let place = rig.healthy("lead-1", 100);
     rig.host.inject("submit", fail(HostErrorCode::Busy), 1);
     rig.host.inject("submit", fail(HostErrorCode::NotReady), 1);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert_eq!(rig.host.log().count_named("submit"), 3);
     assert_eq!(rig.host.submitted(&place), ["hello"]);
@@ -58,7 +58,7 @@ fn busy_forever_stops_after_three_tries() {
     let mut rig = Rig::new();
     let place = rig.healthy("lead-1", 100);
     rig.host.inject_always("submit", fail(HostErrorCode::Busy));
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert!(matches!(outcome, DeliveryOutcome::Undelivered(_)));
     assert_eq!(error_code(&outcome), DeliveryErrorCode::HostBusy);
     assert_eq!(rig.host.log().count_named("submit"), 3);
@@ -76,7 +76,7 @@ fn stall_is_unconfirmed_and_not_retried() {
             Fault::AcceptedButFail(HostError::new(code, "no state change")),
             1,
         );
-        let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+        let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
         assert!(
             matches!(outcome, DeliveryOutcome::Unconfirmed(_)),
             "{outcome:?}"
@@ -98,7 +98,7 @@ fn unknown_error_not_retried() {
         "submit",
         Fault::Fail(HostError::new(HostErrorCode::Other, "something odd")),
     );
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     let DeliveryOutcome::Undelivered(e) = outcome else {
         panic!("expected undelivered");
     };
@@ -120,7 +120,7 @@ fn other_refusals_are_not_retried() {
         let mut rig = Rig::new();
         rig.healthy("lead-1", 100);
         rig.host.inject_always("submit", fail(code));
-        let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+        let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
         assert_eq!(error_code(&outcome), want);
         assert_eq!(rig.host.log().count_named("submit"), 1);
     }
@@ -146,7 +146,7 @@ fn retries_stop_when_the_five_second_window_is_spent() {
     rig.healthy("lead-1", 100);
     rig.host.inject_always("submit", fail(HostErrorCode::Busy));
     let clock = SteppingClock(FakeClock::new());
-    let ctx = Ctx {
+    let mut ctx = Ctx {
         home: rig.home.path(),
         store: &mut rig.store,
         registry: &rig.registry,
@@ -154,7 +154,7 @@ fn retries_stop_when_the_five_second_window_is_spent() {
         clock: &clock,
         config: &rig.config,
     };
-    let outcome = deliver_line(&ctx, &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut ctx, &Party::Lead, &one_line("hello", 80));
     assert_eq!(error_code(&outcome), DeliveryErrorCode::HostBusy);
     // Start at 0 s; the check after try 1 reads 3 s (retry), after try 2 reads 6 s (stop).
     assert_eq!(rig.host.log().count_named("submit"), 2);
@@ -164,7 +164,7 @@ fn retries_stop_when_the_five_second_window_is_spent() {
 fn empty_line_is_never_submitted() {
     let mut rig = Rig::new();
     rig.healthy("lead-1", 100);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("  \n\t ", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("  \n\t ", 80));
     assert_eq!(error_code(&outcome), DeliveryErrorCode::HostBadArgument);
     assert_eq!(rig.host.log().count_named("submit"), 0);
 }
@@ -176,7 +176,7 @@ fn host_without_typing_is_no_host() {
     let mut caps = teamwire_fakes::FakeHost::caps();
     caps.can_type = false;
     rig.host.set_caps(caps);
-    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
     assert_eq!(error_code(&outcome), DeliveryErrorCode::NoHost);
     assert_eq!(rig.host.log().count_named("submit"), 0);
 }
