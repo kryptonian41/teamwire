@@ -120,20 +120,187 @@ fn the_refuse_policy_answers_nothing_on_a_plain_dialog() {
 }
 
 #[test]
-fn each_plain_marker_alone_is_a_plain_dialog() {
+fn each_plain_marker_alone_types_nothing_because_no_selection_is_shown() {
     for marker in [TRUST_OPTION_TEXT, "Is this a project you created"] {
         let (got, keys) = answer(marker, TrustPolicy::Accept);
-        // The static screen never shows the prompt afterwards, so the
-        // confirmation times out; the keys still prove the answer.
+        // Without a visible pointer there is nothing to confirm, so no key
+        // is sent: an Enter could pick "No, exit".
         assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout, "{marker}");
-        assert_eq!(keys, [Key::Down, Key::Enter], "{marker}");
+        assert!(keys.is_empty(), "{marker}");
     }
+}
+
+// ---- a dialog that answers the keys, with a slow start ------------------------
+
+/// A host whose screen is the trust dialog. `drop_downs` Down presses do
+/// nothing, as when the dialog is not taking keys yet, and the screen shows
+/// each change `lag` reads late. `chosen` is what Enter picked.
+struct SlowDialog {
+    host: FakeHost,
+    place: Place,
+    state: std::sync::Mutex<Slow>,
+}
+
+struct Slow {
+    drop_downs: u32,
+    lag: u32,
+    cursor: usize,
+    shown: usize,
+    reads_since_change: u32,
+    chosen: Option<usize>,
+}
+
+impl SlowDialog {
+    fn new(drop_downs: u32, lag: u32) -> Self {
+        let (host, place) = host_with_screen("");
+        let dialog = Self {
+            host,
+            place,
+            state: std::sync::Mutex::new(Slow {
+                drop_downs,
+                lag,
+                cursor: 0,
+                shown: 0,
+                reads_since_change: 0,
+                chosen: None,
+            }),
+        };
+        dialog.render(0);
+        dialog
+    }
+
+    fn render(&self, cursor: usize) {
+        let mark = |i: usize| if i == cursor { "❯" } else { " " };
+        self.host.set_screen(
+            &self.place,
+            &format!(
+                "Quick safety check: Is this a project you created or one you trust?\n {} No, exit\n {} {TRUST_OPTION_TEXT}\n Enter to confirm · Esc to cancel",
+                mark(0),
+                mark(1)
+            ),
+        );
+    }
+}
+
+impl Host for SlowDialog {
+    fn id(&self) -> HostId {
+        self.host.id()
+    }
+    fn capabilities(&self) -> HostCaps {
+        self.host.capabilities()
+    }
+    fn spawn(&self, r: &SpawnRequest, t: Duration) -> Result<Place, HostError> {
+        self.host.spawn(r, t)
+    }
+    fn submit(&self, p: &Place, x: &OneLine, t: Duration) -> Result<(), HostError> {
+        self.host.submit(p, x, t)
+    }
+    fn state(&self, p: &Place, t: Duration) -> Result<PlaceState, HostError> {
+        self.host.state(p, t)
+    }
+    fn occupant(&self, p: &Place, t: Duration) -> Result<Occupant, HostError> {
+        self.host.occupant(p, t)
+    }
+    fn read_tail(&self, p: &Place, lines: u16, t: Duration) -> Result<String, HostError> {
+        let mut st = self.state.lock().unwrap();
+        st.reads_since_change += 1;
+        if st.shown != st.cursor && st.reads_since_change > st.lag {
+            st.shown = st.cursor;
+            let shown = st.shown;
+            drop(st);
+            self.render(shown);
+        }
+        self.host.read_tail(p, lines, t)
+    }
+    fn send_keys(&self, p: &Place, keys: &[Key], t: Duration) -> Result<(), HostError> {
+        self.host.send_keys(p, keys, t)?;
+        let mut st = self.state.lock().unwrap();
+        for key in keys {
+            match key {
+                Key::Down if st.drop_downs > 0 => st.drop_downs -= 1,
+                Key::Down => {
+                    st.cursor = 1;
+                    st.reads_since_change = 0;
+                }
+                Key::Enter => {
+                    st.chosen = Some(st.cursor);
+                    if st.cursor == 1 {
+                        drop(st);
+                        self.host
+                            .set_screen(&self.place, "welcome\n❯ \n  ? for shortcuts");
+                        st = self.state.lock().unwrap();
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+    fn close(&self, p: &Place, t: Duration) -> Result<(), HostError> {
+        self.host.close(p, t)
+    }
+    fn list(&self, t: Duration) -> Result<Vec<Place>, HostError> {
+        self.host.list(t)
+    }
+    fn live_agent_names(&self, t: Duration) -> Result<Vec<String>, HostError> {
+        self.host.live_agent_names(t)
+    }
+    fn place_env_var(&self) -> Option<&'static str> {
+        self.host.place_env_var()
+    }
+}
+
+fn slow_answer(
+    drop_downs: u32,
+    lag: u32,
+) -> (
+    Result<StartupOutcome, teamwire_core::HarnessError>,
+    Vec<Key>,
+    Option<usize>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let dialog = SlowDialog::new(drop_downs, lag);
+    let got = claude_in(dir.path())
+        .with_startup_poll(StartupPoll {
+            step: Duration::from_millis(1),
+            steps: 12,
+        })
+        .answer_startup(&dialog, &dialog.place.clone(), TrustPolicy::Accept);
+    let keys = dialog.host.keys_sent(&dialog.place);
+    let chosen = dialog.state.lock().unwrap().chosen;
+    (got, keys, chosen)
 }
 
 #[test]
 fn the_answer_is_down_then_enter_and_never_a_digit() {
-    let (_, keys) = answer(PLAIN_DIALOG, TrustPolicy::Accept);
+    let (got, keys, chosen) = slow_answer(0, 0);
+    assert_eq!(got.unwrap(), StartupOutcome::AnsweredPlainTrust);
     assert_eq!(keys, [Key::Down, Key::Enter]);
+    assert_eq!(chosen, Some(1));
+}
+
+#[test]
+fn a_late_redraw_does_not_get_an_enter_on_no_exit() {
+    let (got, keys, chosen) = slow_answer(0, 3);
+    assert_eq!(got.unwrap(), StartupOutcome::AnsweredPlainTrust);
+    assert_eq!(keys, [Key::Down, Key::Enter]);
+    assert_eq!(chosen, Some(1));
+}
+
+#[test]
+fn a_dropped_down_is_sent_again_before_any_enter() {
+    let (got, keys, chosen) = slow_answer(1, 0);
+    assert_eq!(got.unwrap(), StartupOutcome::AnsweredPlainTrust);
+    assert_eq!(keys, [Key::Down, Key::Down, Key::Enter]);
+    assert_eq!(chosen, Some(1));
+}
+
+#[test]
+fn a_dialog_that_never_moves_gets_no_enter_and_times_out() {
+    let (got, keys, chosen) = slow_answer(99, 0);
+    assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout);
+    assert!(!keys.contains(&Key::Enter));
+    assert_eq!(chosen, None);
 }
 
 #[test]

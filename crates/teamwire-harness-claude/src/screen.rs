@@ -68,6 +68,13 @@ fn pointer_rest(line: &str) -> Option<&str> {
         .map(str::trim)
 }
 
+/// What the last pointer line of the screen says, such as `No, exit`. A
+/// dialog redraws its pointer as the selection moves, and the last one is the
+/// current selection.
+pub(crate) fn last_pointer_text(screen: &str) -> Option<String> {
+    screen.lines().rev().find_map(pointer_rest).map(squash)
+}
+
 /// The non-empty lines at the end of the screen that can belong to the
 /// input box, its footer, or a dialog drawn over them.
 fn last_lines(tail: &str) -> Vec<&str> {
