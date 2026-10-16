@@ -149,6 +149,17 @@ fn exclude_path(platform: &dyn Platform, worktree: &Path) -> Result<PathBuf, Str
 
 /// Adds `TASK.md` to the repository's `info/exclude` (LCH-24), once.
 pub(crate) fn exclude_task_md(platform: &dyn Platform, worktree: &Path) -> Result<(), String> {
+    exclude_lines(platform, worktree, &["TASK.md".to_owned()]).map(|_| ())
+}
+
+/// Appends each entry to the repository's `info/exclude` unless a line
+/// already names it (with or without a leading `/`). Existing lines are never
+/// rewritten or reordered. Returns the file and the entries that were added.
+fn exclude_lines(
+    platform: &dyn Platform,
+    worktree: &Path,
+    entries: &[String],
+) -> Result<(PathBuf, Vec<String>), String> {
     let path = exclude_path(platform, worktree)?;
     // Only a missing file is empty. Any other read error, or text that is not
     // UTF-8, must not turn into a fresh file that replaces the repository's
@@ -158,21 +169,106 @@ pub(crate) fn exclude_task_md(platform: &dyn Platform, worktree: &Path) -> Resul
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
     };
-    if bytes
-        .split(|b| *b == b'\n')
-        .any(|l| matches!(l.trim_ascii(), b"TASK.md" | b"/TASK.md"))
-    {
-        return Ok(());
+    let mut added: Vec<String> = Vec::new();
+    let mut tail = Vec::new();
+    for entry in entries {
+        let bare = entry.strip_prefix('/').unwrap_or(entry).as_bytes();
+        let present = bytes.split(|b| *b == b'\n').any(|l| {
+            let l = l.trim_ascii();
+            l.strip_prefix(b"/").unwrap_or(l) == bare
+        });
+        if !present && !added.contains(entry) {
+            tail.extend_from_slice(entry.as_bytes());
+            tail.push(b'\n');
+            added.push(entry.clone());
+        }
+    }
+    if added.is_empty() {
+        return Ok((path, added));
     }
     if !bytes.is_empty() && !bytes.ends_with(b"\n") {
         bytes.push(b'\n');
     }
-    bytes.extend_from_slice(b"TASK.md\n");
+    bytes.extend_from_slice(&tail);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
     }
     platform
         .write_atomic(&path, &bytes)
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))
+        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
+    Ok((path, added))
+}
+
+/// Tells git to ignore what a member's setup command created: every
+/// untracked, not-ignored path of the worktree, anchored to the repository
+/// root. Without this, `teamwire close` finds the files and refuses the
+/// worktree as holding uncommitted work. Returns notes for the launch output
+/// naming every path added or skipped; a failure is a note, not a launch
+/// failure, because the member can still work.
+pub(crate) fn exclude_setup_files(platform: &dyn Platform, worktree: &Path) -> Vec<String> {
+    // `-z` gives raw names, so quote-escaping never reaches the exclude file.
+    let listed = run(
+        platform,
+        worktree,
+        &[
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--directory",
+            "--no-empty-directory",
+            "-z",
+        ],
+    );
+    let out = match listed {
+        Ok(out) if out.success() => out,
+        Ok(out) => return vec![list_failed(&failure_text(&out))],
+        Err(e) => return vec![list_failed(&e)],
+    };
+    let mut notes = Vec::new();
+    let mut entries = Vec::new();
+    for raw in out.stdout.split(|b| *b == 0).filter(|p| !p.is_empty()) {
+        match std::str::from_utf8(raw) {
+            Ok("TASK.md") => {}
+            // A newline would split into two rules, so such a name is never written.
+            Ok(p) if !p.contains('\n') => entries.push(anchored(p)),
+            _ => notes.push(format!(
+                "setup created {:?}, whose name cannot be written to the exclude file, so git does not ignore it",
+                String::from_utf8_lossy(raw)
+            )),
+        }
+    }
+    if entries.is_empty() {
+        return notes;
+    }
+    match exclude_lines(platform, worktree, &entries) {
+        Ok((_, added)) if added.is_empty() => {}
+        Ok((file, added)) => notes.push(format!(
+            "setup created {}; launch added them to {} so git ignores them (every worktree of the repository shares that file)",
+            added.join(", "),
+            file.display()
+        )),
+        Err(e) => notes.push(format!("setup created files git does not ignore: {e}")),
+    }
+    notes
+}
+
+fn list_failed(why: &str) -> String {
+    format!("could not list what setup created, so none of it is ignored: {why}")
+}
+
+/// A path as an `info/exclude` line: anchored at the root, with glob
+/// characters, a leading `#` or `!`, and a trailing space escaped.
+fn anchored(path: &str) -> String {
+    let mut line = String::from("/");
+    for (i, c) in path.chars().enumerate() {
+        if matches!(c, '*' | '?' | '[' | '\\') || (i == 0 && matches!(c, '#' | '!')) {
+            line.push('\\');
+        }
+        line.push(c);
+    }
+    if line.ends_with(' ') {
+        line.insert(line.len() - 1, '\\');
+    }
+    line
 }

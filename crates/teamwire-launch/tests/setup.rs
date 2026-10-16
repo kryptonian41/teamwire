@@ -193,3 +193,120 @@ fn a_modified_tracked_file_is_named_in_full() {
     let reason = format!("{:?}", report.members.first().unwrap().outcome);
     assert!(reason.contains("still holds README.md"), "{reason}");
 }
+
+const MAKES_FILES: &str = "touch .setup-marker; mkdir -p cache/deep; touch cache/deep/x";
+
+#[test]
+fn files_setup_created_are_ignored_and_named() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let (report, _store) = {
+        let plan = rig
+            .validate(&common::with(spec, "setup", json!(MAKES_FILES)), false)
+            .unwrap();
+        rig.launch("demo", plan)
+    };
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let dir = repo.join(".worktrees/api");
+    // Close asks `git status --porcelain --untracked-files=normal` and
+    // refuses a worktree that prints anything (teamwire-close/src/facts.rs).
+    assert_eq!(
+        git(&dir, &["status", "--porcelain", "--untracked-files=normal"]),
+        ""
+    );
+    let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert!(exclude.lines().any(|l| l == "/.setup-marker"), "{exclude}");
+    assert!(exclude.lines().any(|l| l == "/cache/"), "{exclude}");
+    let note = report
+        .warnings
+        .iter()
+        .find(|w| w.contains(".setup-marker"))
+        .unwrap();
+    assert!(
+        note.contains("/cache/") && note.contains("info/exclude"),
+        "{note}"
+    );
+}
+
+#[test]
+fn a_second_member_adds_no_duplicate_lines_and_old_lines_stay() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let exclude = repo.join(".git/info/exclude");
+    common::write(&exclude, "# mine\n*.log");
+    let spec = common::team_spec(
+        "demo",
+        &[
+            common::worktree_member("api", "API", &repo),
+            common::worktree_member("web", "Web", &repo),
+        ],
+    );
+    let (report, _store) = {
+        let plan = rig
+            .validate(&common::with(spec, "setup", json!(MAKES_FILES)), false)
+            .unwrap();
+        rig.launch("demo", plan)
+    };
+    assert!(
+        report
+            .members
+            .iter()
+            .all(|m| m.outcome == LaunchOutcome::Started),
+        "{report:?}"
+    );
+    let text = std::fs::read_to_string(&exclude).unwrap();
+    assert!(text.starts_with("# mine\n*.log\n"), "{text}");
+    for line in ["/.setup-marker", "/cache/", "TASK.md"] {
+        assert_eq!(text.lines().filter(|l| *l == line).count(), 1, "{text}");
+    }
+}
+
+#[test]
+fn setup_that_writes_nothing_changes_no_exclude_file() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let exclude = repo.join(".git/info/exclude");
+    let before = std::fs::read_to_string(&exclude).ok();
+    let (report, _store) = {
+        let plan = rig
+            .validate(&common::with(spec, "setup", json!("true")), false)
+            .unwrap();
+        rig.launch("demo", plan)
+    };
+    assert!(
+        report.warnings.iter().all(|w| !w.contains("setup created")),
+        "{:?}",
+        report.warnings
+    );
+    let after = std::fs::read_to_string(&exclude).unwrap();
+    // Only the brief is added, as before.
+    assert_eq!(after, format!("{}TASK.md\n", before.unwrap_or_default()));
+}
+
+#[test]
+fn a_file_name_with_a_newline_is_named_and_never_written() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let script = "touch 'a\nb' 'sp ace' '#hash'";
+    let (report, _store) = {
+        let plan = rig
+            .validate(&common::with(spec, "setup", json!(script)), false)
+            .unwrap();
+        rig.launch("demo", plan)
+    };
+    let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert!(
+        !exclude.contains("a\nb") && !exclude.lines().any(|l| l == "/a" || l == "b"),
+        "{exclude}"
+    );
+    assert!(exclude.lines().any(|l| l == "/sp ace"), "{exclude}");
+    assert!(exclude.lines().any(|l| l == "/\\#hash"), "{exclude}");
+    assert!(
+        report.warnings.iter().any(|w| w.contains("a\\nb")),
+        "{:?}",
+        report.warnings
+    );
+}
