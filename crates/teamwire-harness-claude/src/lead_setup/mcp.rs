@@ -1,5 +1,6 @@
-//! The lead's MCP server entry in Claude Code's user configuration: reading
-//! it from `.claude.json` and the `claude mcp` commands that change it.
+//! The lead's MCP server entry that ADR 0012 put in Claude Code's user
+//! configuration, which install now removes (ADR 0018): reading it from
+//! `.claude.json` and the `claude mcp` command that removes it.
 //! Claude Code rewrites `.claude.json` from every running session, so this
 //! module only reads that file and leaves every write to `claude mcp`.
 
@@ -41,6 +42,14 @@ impl McpEntry {
             command: teamwire_bin.display().to_string(),
             args,
         }
+    }
+
+    /// The arguments before `mcp --lead`: `--home DIR` or nothing. The lead
+    /// plugin's hook command takes the same global arguments.
+    pub(crate) fn home_args(&self) -> &[String] {
+        self.args
+            .get(..self.args.len().saturating_sub(2))
+            .unwrap_or_default()
     }
 
     /// True for any `teamwire [--home DIR] mcp --lead`, whichever binary
@@ -197,25 +206,13 @@ pub(crate) fn read(claude_json: &Path, want: &McpEntry) -> Result<McpState, Lead
 /// `CLAUDE_CONFIG_DIR` layout, so the variable is set and `claude` writes
 /// where this module reads. The default layout keeps `.claude.json` beside
 /// `~/.claude`, and there the variable must stay unset.
-fn claude(config: &ClaudeConfig) -> Command {
+pub(crate) fn claude(config: &ClaudeConfig) -> Command {
     let cmd = Command::new(config.claude_bin.clone());
     if config.claude_json == config.claude_dir.join(".claude.json") {
         cmd.env("CLAUDE_CONFIG_DIR", config.claude_dir.display().to_string())
     } else {
         cmd
     }
-}
-
-/// `claude --version`: proves `claude` runs before anything is written.
-pub(crate) fn version_command(config: &ClaudeConfig) -> Command {
-    claude(config).arg("--version")
-}
-
-pub(crate) fn add_command(config: &ClaudeConfig, entry: &McpEntry) -> Command {
-    claude(config)
-        .args(["mcp", "add", "--scope", "user", NAME, "--"])
-        .arg(entry.command.clone())
-        .args(entry.args.iter().cloned())
 }
 
 pub(crate) fn remove_command(config: &ClaudeConfig) -> Command {
@@ -318,22 +315,19 @@ mod tests {
             claude_bin: "claude".to_owned(),
         };
         assert_eq!(
-            add_command(&dir, &want()).env,
+            remove_command(&dir).env,
             [("CLAUDE_CONFIG_DIR".to_owned(), "/c".to_owned())]
         );
         assert_eq!(
-            add_command(&dir, &want()).args,
-            [
-                "mcp",
-                "add",
-                "--scope",
-                "user",
-                "teamwire",
-                "--",
-                "/opt/bin/teamwire",
-                "mcp",
-                "--lead"
-            ]
+            remove_command(&dir).args,
+            ["mcp", "remove", "--scope", "user", "teamwire"]
         );
+    }
+
+    #[test]
+    fn home_args_are_what_comes_before_mcp_lead() {
+        assert!(want().home_args().is_empty());
+        let e = McpEntry::lead(Path::new("/b/teamwire"), Some(Path::new("/h")));
+        assert_eq!(e.home_args(), ["--home", "/h"]);
     }
 }

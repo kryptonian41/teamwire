@@ -1,6 +1,7 @@
-//! `teamwire install` and `teamwire uninstall`: write or remove the lead
-//! setup in Claude Code's user configuration (ADR 0012). The only commands
-//! that write there.
+//! `teamwire install` and `teamwire uninstall`: register or remove the
+//! teamwire plugin in Claude Code, and remove the skill and MCP entry that
+//! ADR 0012 wrote (ADR 0018). The only commands that change Claude Code's
+//! configuration, and only through `claude plugin` and `claude mcp remove`.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -9,6 +10,8 @@ use crate::cmd::lead_setup_check::is_build_output;
 use crate::cmd::send::{REFUSED, fail, state_home};
 use crate::wiring::{ApplyError, Change, LeadSetup, McpEntry, Wiring};
 use crate::{Global, InstallArgs, UninstallArgs};
+
+const NO_HOME: &str = "no state directory: set --home, TEAMWIRE_HOME or HOME";
 
 /// A change failed after the checks passed (`docs/api/cli.md`).
 const PARTIAL: u8 = 2;
@@ -30,8 +33,7 @@ pub(crate) fn this_binary() -> Result<PathBuf, String> {
 
 /// The entry `doctor` and `install` compare against, or why there is none.
 pub(crate) fn wanted_entry(global: &Global) -> Result<McpEntry, String> {
-    let home = state_home(global)
-        .ok_or_else(|| "no state directory: set --home, TEAMWIRE_HOME or HOME".to_owned())?;
+    let home = state_home(global).ok_or_else(|| NO_HOME.to_owned())?;
     let user_home = std::env::var_os("HOME").map(PathBuf::from);
     Ok(lead_entry(&this_binary()?, &home, user_home.as_deref()))
 }
@@ -60,8 +62,11 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
             REFUSED,
         );
     }
+    let Some(home) = state_home(global) else {
+        return fail("install", NO_HOME, REFUSED);
+    };
     let claude = wiring.lead_setup();
-    match claude.plan_install(&want, args.force) {
+    match claude.plan_install(&want, &home, args.force) {
         Ok(changes) if changes.is_empty() => {
             say("the lead setup is already installed");
             ExitCode::SUCCESS
@@ -71,9 +76,12 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
     }
 }
 
-pub(crate) fn run_uninstall(args: &UninstallArgs, _global: &Global, wiring: &Wiring) -> ExitCode {
+pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiring) -> ExitCode {
+    let Some(home) = state_home(global) else {
+        return fail("uninstall", NO_HOME, REFUSED);
+    };
     let claude = wiring.lead_setup();
-    match claude.plan_uninstall(args.force) {
+    match claude.plan_uninstall(&home, args.force) {
         Ok(changes) if changes.is_empty() => {
             say("no lead setup to remove");
             ExitCode::SUCCESS
@@ -97,9 +105,9 @@ fn finish(command: &str, claude: &LeadSetup, changes: &[Change], dry_run: bool) 
             for change in changes {
                 say(&format!("did {change}"));
             }
-            if changes.iter().any(Change::is_mcp) {
+            if changes.iter().any(Change::is_claude) {
                 say(
-                    "Claude Code reads MCP servers at start: new sessions see the change, open ones do not",
+                    "Claude Code loads plugins at start: new sessions see the change, open ones do not",
                 );
             }
             ExitCode::SUCCESS
@@ -107,11 +115,7 @@ fn finish(command: &str, claude: &LeadSetup, changes: &[Change], dry_run: bool) 
         // Exit 2 says some change was made. A failure with nothing changed is a
         // plain refusal, so a script does not read it as a half-done setup.
         Err(e) => {
-            let code = if e.done.is_empty() && !e.entry_removed {
-                REFUSED
-            } else {
-                PARTIAL
-            };
+            let code = if e.done.is_empty() { REFUSED } else { PARTIAL };
             fail(command, &partial_text(command, &e), code)
         }
     }
@@ -121,9 +125,6 @@ fn finish(command: &str, claude: &LeadSetup, changes: &[Change], dry_run: bool) 
 fn partial_text(command: &str, e: &ApplyError) -> String {
     let mut lines = vec![e.to_string()];
     lines.extend(e.done.iter().map(|c| format!("already done: {c}")));
-    if e.entry_removed {
-        lines.push("the old MCP server entry was removed and the new one was not added".to_owned());
-    }
     lines.push(format!(
         "run `teamwire {command}` again; it skips what is already done"
     ));
