@@ -233,6 +233,28 @@ fn a_conflict_on_the_first_look_is_said_at_once() {
 }
 
 #[test]
+fn a_blocked_or_draft_pull_request_is_said_once_and_the_done_line_names_the_state() {
+    for state in ["BLOCKED", "DRAFT"] {
+        let bed = Bed::new();
+        bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", state));
+        bed.answer("view", 7, 2, &view("OPEN", "MERGEABLE", state));
+        bed.answer("checks", 7, 1, &checks(&[("build", "pending")]));
+        bed.answer("checks", 7, 2, &checks(&[("build", "pass")]));
+        let run = bed.watch(&["7"]);
+        assert_eq!(
+            run.lines.get(1..),
+            Some(
+                [
+                    format!("o/r#7 MERGEABLE: MERGEABLE/{state}"),
+                    format!("o/r#7 DONE: 1 passed, 0 failed, 0 skipped (merge state: {state})"),
+                ]
+                .as_slice()
+            )
+        );
+    }
+}
+
+#[test]
 fn a_call_that_prints_no_json_is_skipped_and_tried_again() {
     let bed = Bed::new();
     bed.answer("checks", 7, 1, "gh: HTTP 502");

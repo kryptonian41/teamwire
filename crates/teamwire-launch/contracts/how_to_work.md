@@ -20,3 +20,8 @@ HOW TO WORK
   is the parent's problem to
   fix, not yours to route around. A check that runs and fails is
   different: that is your work to fix, within your role's limits.
+- Never run `git worktree add`, `remove`, `move` or `prune`, and never
+  write into another member's directory. Every member's checkout is shared
+  state: one member that removes a worktree can delete a teammate's
+  checkout mid-run. If you need a second checkout, report blocked to the
+  lead and carry on with what does not need it.
