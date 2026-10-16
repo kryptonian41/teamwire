@@ -61,9 +61,9 @@ teamwire/
 └── examples/
     ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
     ├── presets/*.json             the six team shapes
-    └── mcp/lead.json              the lead MCP server, which `teamwire install`
-                                   registers for the user; never merged into
-                                   a project's .mcp.json (ADR 0012)
+    └── mcp/lead.json              the lead MCP server, which the teamwire
+                                   plugin carries; never merged into a
+                                   project's .mcp.json (ADR 0018)
 ```
 
 Layout rules, each checked by `cargo xtask tidy`:

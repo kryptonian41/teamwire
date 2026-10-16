@@ -1,7 +1,8 @@
 # ADR 0018: teamwire installs into Claude Code as a plugin with a lead Stop hook
 
 Status: accepted, 2026-10-16. Supersedes points 1 and 2 of ADR 0012, point 4
-of ADR 0017 for one plugin id, and the text of STO-12, SEC-3 and SEC-4 of
+of ADR 0017 for one plugin id, the sentence of ADR 0017 point 3 that says an
+empty map writes no key, and the text of STO-12, SEC-3 and SEC-4 of
 `docs/requirements.md`. Points 3 to 6 of ADR 0012 still hold.
 
 ## Context

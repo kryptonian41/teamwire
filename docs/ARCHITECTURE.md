@@ -32,9 +32,11 @@ The user's priorities decide every trade-off, in this order:
 | Metrics | Every state change writes an event row. Metrics are computed from those rows, shown by the CLI, and exported to OpenTelemetry by a separate step. |
 
 teamwire is a separate project. It keeps all state under `$TEAMWIRE_HOME`
-(default `~/.teamwire`), never writes under `~/.claude/`, and registers nothing
-in the user's global configuration. The one exception is `teamwire install`,
-which writes the lead's skill and MCP server entry (ADR 0012).
+(default `~/.teamwire`), never writes under `~/.claude/` itself, and registers
+nothing in the user's global configuration. The one exception is
+`teamwire install`, which writes the teamwire plugin (the lead's skill, MCP
+server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
+through `claude plugin` (ADR 0018).
 
 ## Components
 
@@ -92,7 +94,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `team.db` (with `-wal`, `-shm`) | teamwire only | Every record below |
 | `briefs/<role>.md` | launch | The brief as sent (a worktree member also gets a copy at `<worktree>/TASK.md`, listed in the repository's `info/exclude`) |
 | `contract/<role>.md` | launch | The rendered system-prompt contract |
-| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), the merged `plugins` map as `enabledPlugins` (only when non-empty, ADR 0017), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
+| `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), the merged `plugins` map as `enabledPlugins`, always holding `teamwire@teamwire: false` so a member never loads the lead's plugin (ADR 0017, ADR 0018), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
 | `setup/<role>.log` | launch | Output of the setup command |
 | `comms/<display-id>.md` | send | Full message text (copy; the store has the original) |
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |
@@ -335,7 +337,7 @@ the database itself. This section says what is enforced.
 | A member forges a watch line or a second message | Every agent string is sanitised to one printable, capped line | DEL-11 |
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
 | A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
-| teamwire breaks the user's own Claude Code setup | Nothing is written under `~/.claude/` or to `~/.claude.json` except by `teamwire install`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
+| teamwire breaks the user's own Claude Code setup | teamwire writes nothing under `~/.claude/` or to `~/.claude.json` itself; only `teamwire install` changes Claude Code's setup, through `claude plugin` and `claude mcp`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
 | A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*` variable are filtered everywhere | SEC-1 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
@@ -354,8 +356,8 @@ The steps to set teamwire up on a machine, in order:
      installed Claude Code.
    - The host adapter's check for the host in use
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr).
-3. Run `teamwire install`. It writes the `teamwire` skill and registers the
-   lead's MCP server for the user (ADR 0012). Start a session, launch a throwaway team, and
+3. Run `teamwire install`. It registers the teamwire plugin, which holds the
+   lead's skill, MCP server and Stop hook (ADR 0018). Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
    id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.

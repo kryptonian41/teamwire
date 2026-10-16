@@ -602,7 +602,10 @@ teamwire status <team>
 One screen: the lead's session, then per member its state, age against its
 deadline, the delivery state of its newest result, its branch and title, then
 the last five messages, deliveries that need attention and results you have not
-received. Run it after a compaction, when the user asks for status, or before
+received. It also shows whether the team's watch is `running`, `stale` or
+`none`, deliveries a member took but has not read after 10 minutes,
+questions nobody has answered, and any member that another teamwire build
+started (`started by teamwire X, not this build`). Run it after a compaction, when the user asks for status, or before
 deciding anything about a member. It only reads. `teamwire status` alone lists
 every team. `--role R` adds the command that resumes that member's session with
 its per-run configuration; a session resumed without them has no Stop hook, no
@@ -622,6 +625,18 @@ It prints at most one line per poll, with everything one poll found joined by
 through the Stop hook, so the watch stays silent about it. Only one watch runs
 per team, and a second refuses to start and names the first one's pid.
 
+`Monitor` stops any command after 30 minutes at most. When it reports that the
+watch expired, start `teamwire watch <team>` again at once, unless the watch
+already printed `TEAM-COMPLETE` and no wave is due. Two things catch a watch
+you forgot to restart:
+
+- The lead Stop hook. When you end a turn while a member is still working and
+  no watch is running, it holds your stop once with
+  `[teamwire:<team>] no watch is running; start \`teamwire watch <team>\` with Monitor before you stop.`
+  Start the watch, then stop.
+- A member's result line. When no watch is running, the line typed into your
+  pane ends with `(no watch is running: teamwire watch <team>)`.
+
 | Line | Meaning |
 | --- | --- |
 | `DECLARED <role>` | A completion is recorded, but its turn is still running. The report lands at turn end. |
@@ -632,6 +647,8 @@ per team, and a second refuses to start and names the first one's pid.
 | `LATE <role>` | Past its deadline with nothing recorded. |
 | `SILENT <role>` | Went quiet without recording a completion. Ask it directly. |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. Read it with `teamwire log`. |
+| `UNREAD <id> -> <role> <age>` | A member took a message 10 minutes ago and has not read it. Once per message and member. Check `teamwire status`, then `resend` or ask it directly. |
+| `UNANSWERED <id> from <role> <age>` | A question to you has had no answer for 10 minutes. Once per question. Answer it with `--type answer --re <id>`. |
 | `TEAM-STALLED` | Every remaining member is stuck. Nothing will move. |
 | `TEAM-CLOSED` | The team was closed while the watch ran, before `TEAM-COMPLETE`. The watch has exited. If you did not close it, another session did: run `teamwire status` before you act on the team. |
 | `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done`, and each other member is named. The plan may not be finished: a later wave, a reviewer or the closer may still be due. |
@@ -692,7 +709,9 @@ Steps:
 
    For each member it runs `check` itself and records the real exit code. It
    also flags every change outside `owns`, every deleted, skipped or silenced
-   test, and every edit to lint, type, test or CI configuration. Verdicts are
+   test, and every edit to lint, type, test or CI configuration. It flags
+   `no-commits` when an implementer said `done` while its branch has no commit
+   beyond its base. Verdicts are
    `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and `SKIPPED`. A flag is not always
    wrong, because a brief may have asked for it. Read each one, and never merge
    past one you have not read. `--waive FLAG --reason TEXT` records a waiver for
@@ -715,8 +734,10 @@ Steps:
    ```
 
    Run it as a persistent background monitor. It prints one line per poll at
-   most: a check's first failure, a mergeability change, then
-   `DONE: n passed, m failed` per pull request. It exits when every pull request
+   most: a check's first failure, a mergeability change, a first `BLOCKED` or
+   `DRAFT` merge state, then `DONE: n passed, m failed` per pull request. A
+   `DONE` line that ends `(merge state: BLOCKED)` or `DRAFT` means the checks
+   finished but the pull request still cannot merge. It exits when every pull request
    is done, with exit 1 when any check failed.
 
 Mechanical work over the reports, such as turning them into a table or a digest,
