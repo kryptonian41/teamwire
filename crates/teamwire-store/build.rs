@@ -65,8 +65,11 @@ fn main() {
         .and_then(git_dir)
         .and_then(|git| head_commit(&git, &mut watch))
         .map_or_else(|| "unknown".to_owned(), |sha| sha[..12].to_owned());
-    for path in watch {
-        println!("cargo:rerun-if-changed={}", path.display());
-    }
+    // Watching `watch` would rerun this script on every commit and rebuild
+    // every crate above the store. `cargo install` builds in a fresh target
+    // directory, so an installed binary still names its own commit; a
+    // development build keeps the commit it was first built at.
+    drop(watch);
+    println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rustc-env=TEAMWIRE_BUILD_COMMIT={commit}");
 }
