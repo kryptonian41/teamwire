@@ -112,16 +112,25 @@ fn check_input_ready(
     if host.capabilities().guards_dialogs {
         return Ok(());
     }
-    let tail = host
-        .read_tail(place, TAIL_LINES, budget.call()?)
-        .map_err(DeliveryError::from)?;
-    match harness.screen_state(&tail) {
-        ScreenState::InputPrompt => Ok(()),
-        ScreenState::Dialog | ScreenState::Unknown => Err(DeliveryError::new(
-            DeliveryErrorCode::NotAtInputPrompt,
-            "the screen does not show the input prompt",
-        )),
+    // A screen the harness cannot read yet (a redraw, a slow start) is read
+    // again a few times, as a busy host is. A dialog is final at once.
+    for tries in 1..=MAX_TRIES {
+        let tail = host
+            .read_tail(place, TAIL_LINES, budget.call()?)
+            .map_err(DeliveryError::from)?;
+        match harness.screen_state(&tail) {
+            ScreenState::InputPrompt => return Ok(()),
+            ScreenState::Unknown if tries < MAX_TRIES => {
+                let pause = RETRY_PAUSE * tries;
+                thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
+            }
+            ScreenState::Dialog | ScreenState::Unknown => break,
+        }
     }
+    Err(DeliveryError::new(
+        DeliveryErrorCode::NotAtInputPrompt,
+        "the screen does not show the input prompt",
+    ))
 }
 
 fn submit_with_retries(

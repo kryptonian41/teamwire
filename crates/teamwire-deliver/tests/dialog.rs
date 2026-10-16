@@ -116,3 +116,44 @@ fn host_refusing_a_dialog_at_submit_is_a_blocked_session() {
     assert_eq!(refused_with(outcome), DeliveryErrorCode::SessionBlocked);
     assert_eq!(rig.host.log().count_named("submit"), 1);
 }
+
+#[test]
+fn an_unreadable_screen_is_read_again_and_typed_into_once_it_shows_the_prompt() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    unguarded(&rig);
+    rig.host.set_screen(&place, "redrawing...");
+    let host = rig.host.clone();
+    let later = place.clone();
+    let redraw = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        host.set_screen(&later, "ready\n> ");
+    });
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    redraw.join().unwrap();
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert_eq!(rig.host.submitted(&place), ["hello"]);
+}
+
+#[test]
+fn a_screen_that_stays_unreadable_is_read_three_times_then_refused() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    unguarded(&rig);
+    rig.host.set_screen(&place, "compiling...");
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    assert_eq!(refused_with(outcome), DeliveryErrorCode::NotAtInputPrompt);
+    assert_eq!(rig.host.log().count_named("read_tail"), 3);
+    assert_eq!(rig.host.log().count_named("submit"), 0);
+}
+
+#[test]
+fn a_dialog_is_refused_at_once_without_a_second_read() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    unguarded(&rig);
+    rig.host.set_screen(&place, PLAIN_TRUST_TEXT);
+    let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello", 80));
+    assert_eq!(refused_with(outcome), DeliveryErrorCode::NotAtInputPrompt);
+    assert_eq!(rig.host.log().count_named("read_tail"), 1);
+}
