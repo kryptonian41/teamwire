@@ -565,6 +565,19 @@ fn the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_not
 }
 
 #[test]
+fn the_dry_run_of_a_pane_member_removal_names_no_worktree() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    let plan = plan_close_with(
+        &rig.ctx(),
+        CloseTarget::Member(role("scout")),
+        &CloseOpts::default(),
+    );
+    let names: Vec<&str> = plan.steps.iter().map(|s| s.step.as_str()).collect();
+    assert_eq!(names, ["close_place", "mark_removed"], "{plan:?}");
+}
+
+#[test]
 fn a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop() {
     // The first checks pass; then a turn starts. The re-check right before
     // the place closes sees it (CLS-3, CLS-4).

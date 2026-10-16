@@ -188,13 +188,16 @@ fn member_plan(
     }));
     plan.steps
         .push(step("close_place", format!("close {role}'s own place")));
-    plan.steps.push(step(
-        "remove_worktree",
-        format!(
-            "git worktree remove, without force: {}",
-            member.cwd.display()
-        ),
-    ));
+    // A pane member shares a directory it does not own; only a worktree goes.
+    if member.mode == teamwire_core::Mode::Worktree {
+        plan.steps.push(step(
+            "remove_worktree",
+            format!(
+                "git worktree remove, without force: {}",
+                member.cwd.display()
+            ),
+        ));
+    }
     plan.steps.push(step(
         "mark_removed",
         format!("keep {role}'s row, marked removed"),
