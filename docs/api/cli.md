@@ -61,8 +61,9 @@ to every member of the same spec file, and a member's value wins per key
 none. Keys starting with `_` are ignored.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
-<reason>`), the warnings of LCH-9 and LCH-18, and the watch command to
-run. Exit 2 when any member did not start (including when none started).
+<reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
+member's setup created that launch added to `info/exclude` (LCH-24), and the
+watch command to run. Exit 2 when any member did not start (including when none started).
 
 ### `teamwire watch <team> [--interval SECONDS] [--once]`
 
@@ -187,9 +188,16 @@ prints the old and new session ids (ADR 0008).
 EXT-1. One line per poll at most: a check's first failure, a mergeability
 change (a first `CONFLICTING`, `BLOCKED` or `DRAFT` merge state is said once),
 then `DONE: n passed, m failed` per PR, ending ` (merge state: <state>)` when
-the state is neither `CLEAN` nor `DIRTY`. Exits when every PR is done;
-exit 1 when any check failed. Ignores `gh`'s own exit code; a failed `gh`
-call is skipped. A PR with no checks is done only after three polls in a row
+the state is neither `CLEAN` nor `DIRTY`. A `BLOCKED` state at DONE is read
+once more after half the interval (at most 5 s), because GitHub recomputes it
+after the last check finishes. The DONE line also names required checks that
+never reported, `(required, never reported: a, b)`. The required set is read
+once per PR from the base branch's branch endpoint and rules endpoint (all
+pages). It is unknown, and the line says `(required checks unknown)`, when
+either endpoint fails with anything but HTTP 404. Exits when every PR is done;
+exit 1 when any check failed, or when a required check never reported and
+the merge state is not `CLEAN`. Ignores the exit code of `gh pr checks` and
+`gh pr view`; a failed call of either is skipped. A PR with no checks is done only after three polls in a row
 find none, because GitHub has no check runs for a few seconds after a push.
 
 ### `teamwire preset [NAME]`
