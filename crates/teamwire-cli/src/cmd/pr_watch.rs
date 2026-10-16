@@ -15,8 +15,8 @@ use serde_json::Value;
 use teamwire_core::{Command, Platform};
 
 use crate::wiring::Wiring;
-use required::Required;
 use crate::{Global, PrWatchArgs, USAGE};
+use required::Required;
 
 mod required;
 
@@ -126,6 +126,8 @@ impl Memory {
             .flatten()
             .map(String::as_str)
             .collect();
+        let reported: Vec<String> = buckets.values().flatten().cloned().collect();
+        let missing = self.required.get(&pr).and_then(|r| r.missing(&reported));
         let mut line = format!(
             "{label} DONE: {} passed, {} failed, {} skipped",
             count("pass"),
@@ -135,13 +137,23 @@ impl Memory {
         if !failed.is_empty() {
             line = format!("{line} [{}]", failed.join(", "));
         }
+        // A required check that never started is not a pass: the pull request
+        // cannot merge, yet `gh pr checks` does not list it.
+        match &missing {
+            Some(names) if !names.is_empty() => {
+                line = format!("{line} (required, never reported: {})", names.join(", "));
+            }
+            Some(_) => {}
+            None => line = format!("{line} (required checks unknown)"),
+        }
         // DIRTY was already said as a conflict; the other states are news.
         if let Some((_, state)) = self.mergeable.get(&pr).and_then(|v| v.split_once('/'))
             && !matches!(state, "CLEAN" | "DIRTY" | "")
         {
             line = format!("{line} (merge state: {state})");
         }
-        self.done.insert(pr, failed.len());
+        self.done
+            .insert(pr, failed.len() + missing.map_or(0, |m| m.len()));
         events.push(line);
         events
     }

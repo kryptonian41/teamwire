@@ -62,9 +62,19 @@ pub(super) fn read(platform: &dyn Platform, repo: &str, base: &str) -> Required 
         .into_iter()
         .flatten()
     {
-        names.extend(check.get("context").and_then(Value::as_str).map(str::to_owned));
+        names.extend(
+            check
+                .get("context")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+        );
     }
-    for rule in rules.as_ref().and_then(Value::as_array).into_iter().flatten() {
+    for rule in rules
+        .as_ref()
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
         if rule.get("type").and_then(Value::as_str) != Some("required_status_checks") {
             continue;
         }
@@ -75,8 +85,46 @@ pub(super) fn read(platform: &dyn Platform, repo: &str, base: &str) -> Required 
             .into_iter()
             .flatten()
         {
-            names.extend(check.get("context").and_then(Value::as_str).map(str::to_owned));
+            names.extend(
+                check
+                    .get("context")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
+            );
         }
     }
     Required::Known(names)
+}
+
+/// A check name reduced to what the two sides agree on. GitHub prints a
+/// required check as the bare job name, while `gh pr checks` may print it
+/// behind a workflow or app prefix such as `CI / build`, and case differs
+/// between tools. Two names are the same check when the last
+/// ` / `-separated part matches, ignoring case.
+/// shortcut: two workflows with the same job name count as one check; split
+/// the match on the full name if a repository needs to tell them apart.
+fn same_check_key(name: &str) -> String {
+    name.rsplit(" / ")
+        .next()
+        .unwrap_or(name)
+        .trim()
+        .to_lowercase()
+}
+
+impl Required {
+    /// The required checks absent from `reported`, in name order; `None`
+    /// when the required set is unknown.
+    pub(super) fn missing(&self, reported: &[String]) -> Option<Vec<String>> {
+        let Self::Known(names) = self else {
+            return None;
+        };
+        let seen: BTreeSet<String> = reported.iter().map(|n| same_check_key(n)).collect();
+        Some(
+            names
+                .iter()
+                .filter(|n| !seen.contains(&same_check_key(n)))
+                .cloned()
+                .collect(),
+        )
+    }
 }

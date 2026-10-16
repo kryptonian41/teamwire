@@ -61,7 +61,11 @@ impl Bed {
         let gh = dir.path().join("gh");
         std::fs::write(&gh, FAKE_GH).unwrap();
         std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
-        Self { dir }
+        let bed = Self { dir };
+        // By default the base branch `main` requires nothing.
+        bed.api("repos/o/r/branches/main", "{}");
+        bed.api("repos/o/r/rules/branches/main", "[]");
+        bed
     }
 
     fn answer(&self, kind: &str, pr: u64, n: u32, body: &str) {
@@ -129,7 +133,9 @@ fn checks(items: &[(&str, &str)]) -> String {
 }
 
 fn view(state: &str, mergeable: &str, merge_state: &str) -> String {
-    format!(r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}","baseRefName":"main"}}"#)
+    format!(
+        r#"{{"state":"{state}","mergeable":"{mergeable}","mergeStateStatus":"{merge_state}","baseRefName":"main"}}"#
+    )
 }
 
 #[test]
@@ -200,6 +206,7 @@ fn a_failure_is_said_once_and_the_run_exits_one() {
 #[test]
 fn skipped_checks_are_counted_and_pending_ones_keep_the_watch_going() {
     let bed = Bed::new();
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     bed.answer("checks", 7, 1, &checks(&[("a", "pending"), ("b", "pass")]));
     bed.answer(
         "checks",
@@ -281,11 +288,13 @@ fn a_call_that_prints_no_json_is_skipped_and_tried_again() {
     bed.answer("checks", 7, 2, &checks(&[("a", "pass")]));
     let run = bed.watch(&["7"]);
     assert_eq!(run.code, 0);
+    // The view never answered, so the base branch and its required checks
+    // stay unknown.
     assert_eq!(
         run.lines,
         [
             "WATCHING o/r#7 (poll 1s)",
-            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped"
+            "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required checks unknown)"
         ]
     );
     assert!(bed.calls().len() >= 4, "{:?}", bed.calls());
@@ -304,6 +313,8 @@ fn a_merged_pull_request_is_done_without_checks() {
 #[test]
 fn several_pull_requests_share_one_line_per_poll_and_a_done_one_is_not_asked_again() {
     let bed = Bed::new();
+    bed.answer("view", 1, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("view", 2, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
     bed.answer("checks", 1, 1, &checks(&[("a", "pass")]));
     bed.answer("checks", 2, 1, &checks(&[("a", "pending")]));
     bed.answer("checks", 2, 2, &checks(&[("a", "fail")]));
@@ -476,4 +487,110 @@ fn the_required_set_is_read_once_per_pull_request_for_the_whole_watch() {
     bed.watch(&["7"]);
     let api_calls = bed.calls().iter().filter(|c| c.starts_with("api ")).count();
     assert_eq!(api_calls, 2, "{:?}", bed.calls());
+}
+
+fn done_line(run: &Run) -> &str {
+    run.lines.last().unwrap()
+}
+
+#[test]
+fn a_required_check_that_never_reported_is_named_and_fails_the_run() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build","build-macos"]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("lint", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 2 passed, 0 failed, 0 skipped (required, never reported: build-macos)"
+    );
+    assert_eq!(run.code, 1);
+}
+
+#[test]
+fn every_required_check_present_leaves_the_done_line_and_exit_code_alone() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["build"],"checks":[{"context":"lint","app_id":1}]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("lint", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(done_line(&run), "o/r#7 DONE: 2 passed, 0 failed, 0 skipped");
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn when_neither_endpoint_answers_the_done_line_says_the_required_set_is_unknown() {
+    let bed = Bed::new();
+    std::fs::remove_file(bed.dir.path().join("api-repos_o_r_branches_main-1.json")).unwrap();
+    std::fs::remove_file(
+        bed.dir
+            .path()
+            .join("api-repos_o_r_rules_branches_main-1.json"),
+    )
+    .unwrap();
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required checks unknown)"
+    );
+    // Unknown is not a failure: nothing is known to be missing.
+    assert_eq!(run.code, 0);
+}
+
+#[test]
+fn a_repository_with_only_rules_names_what_its_rules_require() {
+    let bed = Bed::new();
+    // The branch endpoint fails (no protection API access); the rules answer.
+    std::fs::remove_file(bed.dir.path().join("api-repos_o_r_branches_main-1.json")).unwrap();
+    bed.api(
+        "repos/o/r/rules/branches/main",
+        r#"[{"type":"pull_request","parameters":{}},
+            {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"build"},{"context":"deploy-preview"}]}}]"#,
+    );
+    bed.answer("checks", 7, 1, &checks(&[("build", "pass")]));
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(
+        done_line(&run),
+        "o/r#7 DONE: 1 passed, 0 failed, 0 skipped (required, never reported: deploy-preview)"
+    );
+    assert_eq!(run.code, 1);
+}
+
+/// Names match ignoring case and any `Workflow / ` prefix in front of the job.
+#[test]
+fn a_check_reported_with_another_case_or_a_prefix_counts_as_reported() {
+    let bed = Bed::new();
+    bed.api(
+        "repos/o/r/branches/main",
+        r#"{"protection":{"required_status_checks":{"contexts":["Build","test"]}}}"#,
+    );
+    bed.answer(
+        "checks",
+        7,
+        1,
+        &checks(&[("build", "pass"), ("CI / test", "pass")]),
+    );
+    bed.answer("view", 7, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(done_line(&run), "o/r#7 DONE: 2 passed, 0 failed, 0 skipped");
+    assert_eq!(run.code, 0);
 }
