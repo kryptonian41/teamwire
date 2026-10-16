@@ -5,13 +5,14 @@ use std::time::{Duration, Instant};
 
 use teamwire_core::{
     DeliveryError, DeliveryErrorCode, Harness, Host, HostError, HostErrorCode, Liveness, OneLine,
-    Place, PlaceState, ScreenState,
+    Place, PlaceState, ScreenState, SubmitAck,
 };
 use teamwire_store::{Ctx, Party};
 
 use crate::DeliveryOutcome;
 use crate::budget::Budget;
 use crate::locate::{Located, locate_with, recheck};
+use crate::unsent::enter_again_if_unsent;
 
 /// A submit is tried at most this many times (ADR 0003 point 7).
 const MAX_TRIES: u32 = 3;
@@ -80,7 +81,7 @@ fn try_deliver(
     // first. The occupant recheck comes last, with only the submit after it
     // (ADR 0006 point 3); a retry repeats it.
     check_input_ready(harness, host, &found.place, &found.session, budget)?;
-    submit_with_retries(ctx, host, &found, line, budget)
+    submit_with_retries(ctx, harness, host, &found, line, budget)
 }
 
 /// ADR 0006 point 3a: never type into a dialog.
@@ -135,6 +136,7 @@ fn check_input_ready(
 
 fn submit_with_retries(
     ctx: &Ctx<'_>,
+    harness: &dyn Harness,
     host: &dyn Host,
     found: &Located,
     line: &OneLine,
@@ -153,7 +155,14 @@ fn submit_with_retries(
             Err(e) => return Ok(DeliveryOutcome::Undelivered(e)),
         };
         let err = match host.submit(place, line, timeout) {
-            Ok(()) => return Ok(DeliveryOutcome::HandedOff),
+            Ok(()) => {
+                // ADR 0003 point 5: with no acknowledgement, `Ok` proves
+                // only that the keys were accepted.
+                if host.capabilities().submit_ack == SubmitAck::None {
+                    enter_again_if_unsent(harness, host, place, line, budget);
+                }
+                return Ok(DeliveryOutcome::HandedOff);
+            }
             Err(e) => e,
         };
         match err.code {

@@ -15,6 +15,7 @@ mod lease;
 mod lines;
 mod locate;
 mod pending;
+mod unsent;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::DeliveryError;
