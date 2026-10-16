@@ -11,7 +11,7 @@ mod rig;
 use std::time::Duration;
 
 use teamwire_core::{Key, SubmitAck, one_line};
-use teamwire_deliver::{DeliveryOutcome, deliver_line};
+use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_noting_reentry};
 use teamwire_fakes::{FakeHost, PLAIN_TRUST_TEXT};
 use teamwire_store::Party;
 
@@ -84,4 +84,20 @@ fn a_host_that_acknowledges_the_submit_is_not_checked() {
     let outcome = deliver_line(&rig.ctx(), &Party::Lead, &one_line("hello there", 80));
     assert_eq!(outcome, DeliveryOutcome::HandedOff);
     assert!(rig.host.keys_sent(&place).is_empty());
+}
+
+#[test]
+fn the_caller_is_told_whether_the_second_enter_was_pressed() {
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    no_ack(&rig);
+    let line = one_line("hello there", 80);
+    let (outcome, reentered) = deliver_line_noting_reentry(&rig.ctx(), &Party::Lead, &line, None);
+    assert_eq!(outcome, DeliveryOutcome::HandedOff);
+    assert!(reentered);
+    assert_eq!(rig.host.keys_sent(&place), [Key::Enter]);
+
+    rig.harness.set_detects_pending(false);
+    let (_, reentered) = deliver_line_noting_reentry(&rig.ctx(), &Party::Lead, &line, None);
+    assert!(!reentered);
 }

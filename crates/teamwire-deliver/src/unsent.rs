@@ -18,24 +18,30 @@ const TAIL_LINES: u16 = 40;
 /// Presses Enter once more when the typed line is still in the input box and
 /// the screen is not a dialog. Never types the text again (INV-5). Any
 /// failure here leaves the delivery as it was: the host already accepted the
-/// text.
+/// text. Returns whether Enter was pressed.
 pub(crate) fn enter_again_if_unsent(
     harness: &dyn Harness,
     host: &dyn Host,
     place: &Place,
     line: &OneLine,
     budget: &Budget<'_>,
-) {
+) -> bool {
     thread::sleep(budget.left().map_or(SETTLE, |left| SETTLE.min(left)));
-    let Ok(timeout) = budget.call() else { return };
+    let Ok(timeout) = budget.call() else {
+        return false;
+    };
     let Ok(tail) = host.read_tail(place, TAIL_LINES, timeout) else {
-        return;
+        return false;
     };
     if harness.screen_state(&tail) == ScreenState::Dialog || !harness.line_pending(&tail, line) {
-        return;
+        return false;
     }
-    let Ok(timeout) = budget.call() else { return };
-    if host.send_keys(place, &[Key::Enter], timeout).is_ok() {
+    let Ok(timeout) = budget.call() else {
+        return false;
+    };
+    let pressed = host.send_keys(place, &[Key::Enter], timeout).is_ok();
+    if pressed {
         tracing::info!(place = %place.id, "the typed line was still in the input box; pressed Enter once more");
     }
+    pressed
 }

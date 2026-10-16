@@ -30,7 +30,7 @@ const TAIL_LINES: u16 = 40;
 /// proves nothing was submitted is retried, at most 3 tries in about 5
 /// seconds. A stall or timeout is `Unconfirmed` and never retried.
 pub fn deliver_line(ctx: &Ctx<'_>, party: &Party, line: &OneLine) -> DeliveryOutcome {
-    run(ctx, party, line, None)
+    run(ctx, party, line, None).0
 }
 
 /// Like `deliver_line`, for a caller with a time limit (the turn-end hook's
@@ -45,14 +45,31 @@ pub fn deliver_line_within(
     line: &OneLine,
     deadline: Instant,
 ) -> DeliveryOutcome {
-    run(ctx, party, line, Some(deadline))
+    run(ctx, party, line, Some(deadline)).0
 }
 
-fn run(ctx: &Ctx<'_>, party: &Party, line: &OneLine, deadline: Option<Instant>) -> DeliveryOutcome {
+/// Like `deliver_line_within` (no deadline when `None`), and also says
+/// whether a second Enter was pressed because the line still sat in the
+/// input box, so the caller can record it.
+pub fn deliver_line_noting_reentry(
+    ctx: &Ctx<'_>,
+    party: &Party,
+    line: &OneLine,
+    deadline: Option<Instant>,
+) -> (DeliveryOutcome, bool) {
+    run(ctx, party, line, deadline)
+}
+
+fn run(
+    ctx: &Ctx<'_>,
+    party: &Party,
+    line: &OneLine,
+    deadline: Option<Instant>,
+) -> (DeliveryOutcome, bool) {
     let budget = Budget::new(ctx.clock, deadline);
     match try_deliver(ctx, party, line, &budget) {
-        Ok(outcome) => outcome,
-        Err(e) => DeliveryOutcome::Undelivered(e),
+        Ok(done) => done,
+        Err(e) => (DeliveryOutcome::Undelivered(e), false),
     }
 }
 
@@ -61,7 +78,7 @@ fn try_deliver(
     party: &Party,
     line: &OneLine,
     budget: &Budget<'_>,
-) -> Result<DeliveryOutcome, DeliveryError> {
+) -> Result<(DeliveryOutcome, bool), DeliveryError> {
     let (harness, host) = ctx.adapters(party)?;
     if !host.capabilities().can_type {
         return Err(DeliveryError::new(
@@ -141,7 +158,7 @@ fn submit_with_retries(
     found: &Located,
     line: &OneLine,
     budget: &Budget<'_>,
-) -> Result<DeliveryOutcome, DeliveryError> {
+) -> Result<(DeliveryOutcome, bool), DeliveryError> {
     let place = &found.place;
     let started = ctx.clock.monotonic();
     let mut tries = 0;
@@ -152,16 +169,15 @@ fn submit_with_retries(
         recheck(host, found, budget)?;
         let timeout = match budget.call() {
             Ok(t) => t,
-            Err(e) => return Ok(DeliveryOutcome::Undelivered(e)),
+            Err(e) => return Ok((DeliveryOutcome::Undelivered(e), false)),
         };
         let err = match host.submit(place, line, timeout) {
             Ok(()) => {
                 // ADR 0003 point 5: with no acknowledgement, `Ok` proves
                 // only that the keys were accepted.
-                if host.capabilities().submit_ack == SubmitAck::None {
-                    enter_again_if_unsent(harness, host, place, line, budget);
-                }
-                return Ok(DeliveryOutcome::HandedOff);
+                let reentered = host.capabilities().submit_ack == SubmitAck::None
+                    && enter_again_if_unsent(harness, host, place, line, budget);
+                return Ok((DeliveryOutcome::HandedOff, reentered));
             }
             Err(e) => e,
         };
@@ -171,20 +187,22 @@ fn submit_with_retries(
                 let in_time =
                     ctx.clock.monotonic().saturating_duration_since(started) < RETRY_WINDOW;
                 if tries >= MAX_TRIES || !in_time {
-                    return Ok(DeliveryOutcome::Undelivered(err.into()));
+                    return Ok((DeliveryOutcome::Undelivered(err.into()), false));
                 }
                 let pause = RETRY_PAUSE * tries;
                 thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
             }
             // The text may be on screen: never send it again (INV-5).
             HostErrorCode::Stalled | HostErrorCode::Timeout => {
-                return Ok(DeliveryOutcome::Unconfirmed(err.into()));
+                return Ok((DeliveryOutcome::Unconfirmed(err.into()), false));
             }
             HostErrorCode::Blocked
             | HostErrorCode::NotFound
             | HostErrorCode::BadArgument
             | HostErrorCode::Unsupported
-            | HostErrorCode::Other => return Ok(DeliveryOutcome::Undelivered(refused(err))),
+            | HostErrorCode::Other => {
+                return Ok((DeliveryOutcome::Undelivered(refused(err)), false));
+            }
         }
     }
 }
