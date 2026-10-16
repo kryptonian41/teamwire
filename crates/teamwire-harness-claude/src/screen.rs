@@ -37,6 +37,9 @@ const FOOTER_MARKERS: [&str; 4] = [
     "auto-accept edits on",
 ];
 
+/// Text only a working session prints in its footer or status line.
+const BUSY_MARKERS: [&str; 1] = ["esc to interrupt"];
+
 /// How many non-empty lines at the end of the screen can belong to the
 /// input box and its footer.
 const BOX_LINES: usize = 8;
@@ -107,9 +110,35 @@ fn dialog_near_the_end(last: &[&str]) -> bool {
         || last.iter().any(|l| is_selected_option(l))
 }
 
+/// A line of box-drawing dashes that closes Claude's input box.
+fn is_rule(line: &str) -> bool {
+    let line = inner(line);
+    line.chars().count() >= 3 && line.chars().all(|c| "─━".contains(c))
+}
+
+/// The box Claude draws today: the pointer line, a rule, then the status and
+/// footer lines. The footer text changes with the mode and with what runs in
+/// the background, so the shape is the evidence, not the words. A working
+/// session prints `esc to interrupt` and is not ready to be typed into.
+fn is_ruled_box(last: &[&str]) -> bool {
+    let busy = last
+        .iter()
+        .filter(|l| !is_transcript_line(l))
+        .any(|l| BUSY_MARKERS.iter().any(|m| l.contains(m)));
+    !busy
+        && last.iter().enumerate().any(|(i, line)| {
+            pointer_rest(line).is_some()
+                && last.get(i + 1).is_some_and(|rule| is_rule(rule))
+                && i + 2 < last.len()
+        })
+}
+
 fn at_input_prompt(last: &[&str]) -> bool {
     // An empty pointer line as the last thing on screen.
     if last.last().and_then(|l| pointer_rest(l)) == Some("") {
+        return true;
+    }
+    if is_ruled_box(last) {
         return true;
     }
     // A pointer line (empty, or holding a suggestion or typed text) with the
