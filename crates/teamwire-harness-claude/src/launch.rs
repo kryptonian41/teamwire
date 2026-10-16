@@ -20,6 +20,10 @@ const STOP_HOOK_TIMEOUT_S: u64 = 60;
 
 const PRIVATE: u32 = 0o600;
 
+/// The lead's plugin (ADR 0018), the one plugin id in Rust. Every member's
+/// settings switch it off.
+pub(crate) const LEAD_PLUGIN_ID: &str = "teamwire@teamwire";
+
 /// Which flag names the session: a fresh id, or one to resume.
 pub(crate) enum SessionArg<'a> {
     New,
@@ -106,7 +110,7 @@ fn home_from_member_dir(member_dir: &Path) -> Option<String> {
 
 /// Quote `text` for `sh -c` only when it holds a character the shell would
 /// treat specially, so plain paths stay readable in the file.
-fn shell_word(text: &str) -> String {
+pub(crate) fn shell_word(text: &str) -> String {
     let plain = !text.is_empty()
         && text
             .chars()
@@ -171,10 +175,12 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
             "PostToolUse": hook_entry(m, "claude-post-tool", None),
         }),
     );
-    // Absent when empty, so teams that set no plugins keep the same file.
-    if !m.plugins.is_empty() {
-        settings.insert("enabledPlugins".to_owned(), json!(m.plugins));
-    }
+    // The lead plugin is always off in a member, whatever the spec says: a
+    // member must never load the lead's skill, MCP server or Stop hook
+    // (ADR 0018). The spec's other plugins keep their switch.
+    let mut plugins = m.plugins.clone();
+    plugins.insert(LEAD_PLUGIN_ID.to_owned(), false);
+    settings.insert("enabledPlugins".to_owned(), json!(plugins));
     Ok(Value::Object(settings))
 }
 
