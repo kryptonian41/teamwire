@@ -219,14 +219,14 @@ fn files_setup_created_are_ignored_and_named() {
     );
     let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
     assert!(exclude.lines().any(|l| l == "/.setup-marker"), "{exclude}");
-    assert!(exclude.lines().any(|l| l == "/cache/"), "{exclude}");
+    assert!(exclude.lines().any(|l| l == "/cache/deep/x"), "{exclude}");
     let note = report
         .warnings
         .iter()
         .find(|w| w.contains(".setup-marker"))
         .unwrap();
     assert!(
-        note.contains("/cache/") && note.contains("info/exclude"),
+        note.contains("/cache/deep/x") && note.contains("info/exclude"),
         "{note}"
     );
 }
@@ -259,7 +259,7 @@ fn a_second_member_adds_no_duplicate_lines_and_old_lines_stay() {
     );
     let text = std::fs::read_to_string(&exclude).unwrap();
     assert!(text.starts_with("# mine\n*.log\n"), "{text}");
-    for line in ["/.setup-marker", "/cache/", "TASK.md"] {
+    for line in ["/.setup-marker", "/cache/deep/x", "TASK.md"] {
         assert_eq!(text.lines().filter(|l| *l == line).count(), 1, "{text}");
     }
 }
@@ -308,5 +308,20 @@ fn a_file_name_with_a_newline_is_named_and_never_written() {
         report.warnings.iter().any(|w| w.contains("a\\nb")),
         "{:?}",
         report.warnings
+    );
+}
+
+#[test]
+fn a_file_written_later_in_a_setup_made_directory_stays_visible() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let spec = common::with(spec, "setup", json!("mkdir -p gen; touch gen/cache"));
+    let plan = rig.validate(&spec, false).unwrap();
+    let (_report, _store) = rig.launch("demo", plan);
+    let dir = repo.join(".worktrees/api");
+    common::write(&dir.join("gen/work.rs"), "fn main() {}\n");
+    assert_eq!(
+        git(&dir, &["status", "--porcelain", "--untracked-files=normal"]),
+        "?? gen/"
     );
 }

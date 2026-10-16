@@ -207,18 +207,13 @@ fn exclude_lines(
 /// naming every path added or skipped; a failure is a note, not a launch
 /// failure, because the member can still work.
 pub(crate) fn exclude_setup_files(platform: &dyn Platform, worktree: &Path) -> Vec<String> {
+    // One entry per file, never per directory: a directory line would also hide
+    // files a member writes there later, and close would then delete them.
     // `-z` gives raw names, so quote-escaping never reaches the exclude file.
     let listed = run(
         platform,
         worktree,
-        &[
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "--directory",
-            "--no-empty-directory",
-            "-z",
-        ],
+        &["ls-files", "--others", "--exclude-standard", "-z"],
     );
     let out = match listed {
         Ok(out) if out.success() => out,
