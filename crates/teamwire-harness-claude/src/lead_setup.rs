@@ -398,8 +398,16 @@ fn describe(state: &McpState) -> String {
 }
 
 /// Removes the skill file, then its directory when nothing else is in it,
-/// so files the user put beside the skill stay.
+/// so files the user put beside the skill stay. A skill folder that is a
+/// symlink loses only the link: following it would delete a file in the
+/// link's target, which may be the user's own.
 fn remove_skill(path: &Path) -> Result<(), String> {
+    if let Some(dir) = path.parent()
+        && std::fs::symlink_metadata(dir).is_ok_and(|m| m.is_symlink())
+    {
+        return std::fs::remove_file(dir)
+            .map_err(|e| format!("cannot remove {}: {e}", dir.display()));
+    }
     match std::fs::remove_file(path) {
         Ok(()) => {}
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -410,4 +418,52 @@ fn remove_skill(path: &Path) -> Result<(), String> {
         std::fs::remove_dir(dir).ok();
     }
     Ok(())
+}
+
+#[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes the user's files as the user would, not through the platform"
+)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_real_folder_loses_the_file_and_itself() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("skill");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), "x").unwrap();
+        remove_skill(&dir.join("SKILL.md")).unwrap();
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn a_symlinked_folder_loses_only_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("mine");
+        std::fs::create_dir(&target).unwrap();
+        std::fs::write(target.join("SKILL.md"), "keep").unwrap();
+        let link = tmp.path().join("skill");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        remove_skill(&link.join("SKILL.md")).unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(
+            std::fs::read_to_string(target.join("SKILL.md")).unwrap(),
+            "keep"
+        );
+    }
+
+    #[test]
+    fn a_symlinked_file_in_a_real_folder_loses_only_the_link() {
+        let tmp = tempfile::tempdir().unwrap();
+        let mine = tmp.path().join("mine.md");
+        std::fs::write(&mine, "keep").unwrap();
+        let dir = tmp.path().join("skill");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(&mine, dir.join("SKILL.md")).unwrap();
+        remove_skill(&dir.join("SKILL.md")).unwrap();
+        assert_eq!(std::fs::read_to_string(&mine).unwrap(), "keep");
+        assert!(!dir.exists());
+    }
 }

@@ -9,7 +9,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "teamwire",
-    version,
+    version = teamwire_store::WRITER_VERSION,
     about = "Runs teams of coding agents: launch, messages, completions, watch, verify, close."
 )]
 pub(crate) struct Cli {

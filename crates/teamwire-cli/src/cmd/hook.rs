@@ -110,14 +110,9 @@ fn lead_stop_hook(global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
     let home = state_home(global)?;
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
-    let (tx, rx) = mpsc::channel();
-    // The thread is left behind when the budget runs out; the process exits
-    // right after, which ends it.
-    std::thread::spawn(move || {
-        let teams = teamwire_report::teams_without_watch(&home, &turn.session, &*platform, &clock);
-        tx.send(teams).ok();
-    });
-    let teams = rx.recv_timeout(LEAD_STOP_BUDGET).ok()?;
+    let teams = within(LEAD_STOP_BUDGET, move || {
+        teamwire_report::teams_without_watch(&home, &turn.session, &*platform, &clock)
+    })?;
     if teams.is_empty() {
         return None;
     }
@@ -126,6 +121,20 @@ fn lead_stop_hook(global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
         .map(teamwire_report::watch_missing_note)
         .collect();
     Some(harness.hold_reply(&note.join("\n")))
+}
+
+/// Runs `work` on a thread and gives up after `budget`. The thread is left
+/// behind when the budget runs out; the process exits right after, which ends
+/// it.
+fn within<T: Send + 'static>(
+    budget: Duration,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        tx.send(work()).ok();
+    });
+    rx.recv_timeout(budget).ok()
 }
 
 /// The in-turn reminder, for the member's own session only.
@@ -149,5 +158,24 @@ fn write_stdout(bytes: &[u8]) {
     // A closed pipe cannot fail the harness turn.
     if out.write_all(bytes).and_then(|()| out.flush()).is_err() {
         tracing::debug!("the hook reply could not be written");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn work_that_outlasts_the_budget_is_given_up_on() {
+        // The work waits for a message that the test never sends, so only the
+        // budget can end the wait.
+        let (_keep, never) = mpsc::channel::<()>();
+        let got = within(Duration::from_millis(50), move || never.recv().ok());
+        assert!(got.is_none());
+    }
+
+    #[test]
+    fn work_inside_the_budget_returns_its_value() {
+        assert_eq!(within(Duration::from_secs(10), || 7), Some(7));
     }
 }
