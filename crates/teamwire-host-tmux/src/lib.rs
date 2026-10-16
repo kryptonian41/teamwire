@@ -8,13 +8,11 @@
 //! with a timeout.
 //!
 //! Invariants: every call after `spawn` names its pane by its `%` id and
-//! nothing else, so a session or window name is never taken for a place;
-//! a place records the socket path of the server that holds it
-//! (`%<n>@<path>`), and every call for it goes to that server, so the
-//! caller's own `TMUX` does not matter; a bare `%<n>` goes to the adapter's
-//! own server; `spawn` and `list` leave the choice of session to tmux; `list` and
-//! `live_agent_names` report only panes this adapter started, marked with
-//! the pane option `@teamwire_name`, never the user's own panes.
+//! nothing else, never a session or window name; a place is
+//! `%<n>@<socket path>` and every call for it goes to that server, whatever
+//! the caller's `TMUX`; a bare `%<n>` goes to the adapter's own server;
+//! `list` and `live_agent_names` report only panes this adapter started,
+//! marked with the pane option `@teamwire_name`.
 
 mod call;
 mod keys;
@@ -528,20 +526,20 @@ mod tests {
     use teamwire_core::RunOutput;
     use teamwire_fakes::FakePlatform;
 
-    fn ok(stdout: &str) -> Result<RunOutput, teamwire_core::PlatformError> {
-        Ok(RunOutput {
+    fn ok(stdout: &str) -> RunOutput {
+        RunOutput {
             exit_code: 0,
             stdout: stdout.as_bytes().to_vec(),
             stderr: Vec::new(),
             timed_out: false,
-        })
+        }
     }
 
     #[test]
     fn occupant_keeps_both_commands_inside_the_callers_timeout() {
         let platform = Arc::new(FakePlatform::new());
-        platform.queue_run(ok("10\n"));
-        platform.queue_run(ok("10 1\n11 10\n"));
+        platform.queue_run(Ok(ok("10\n")));
+        platform.queue_run(Ok(ok("10 1\n11 10\n")));
         let tmux = Tmux::new(platform.clone());
         let place = Place {
             host: tmux.id(),
