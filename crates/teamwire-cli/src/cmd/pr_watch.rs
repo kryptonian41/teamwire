@@ -78,7 +78,11 @@ impl Memory {
                 text(view, "mergeStateStatus")
             );
             if !verdict.contains("UNKNOWN") && self.mergeable.get(&pr) != Some(&verdict) {
-                if self.mergeable.contains_key(&pr) || verdict.contains("CONFLICTING") {
+                if self.mergeable.contains_key(&pr)
+                    || ["CONFLICTING", "BLOCKED", "DRAFT"]
+                        .iter()
+                        .any(|first| verdict.contains(first))
+                {
                     events.push(format!("{label} MERGEABLE: {verdict}"));
                 }
                 self.mergeable.insert(pr, verdict);
@@ -125,6 +129,12 @@ impl Memory {
         );
         if !failed.is_empty() {
             line = format!("{line} [{}]", failed.join(", "));
+        }
+        // DIRTY was already said as a conflict; the other states are news.
+        if let Some((_, state)) = self.mergeable.get(&pr).and_then(|v| v.split_once('/'))
+            && !matches!(state, "CLEAN" | "DIRTY" | "")
+        {
+            line = format!("{line} (merge state: {state})");
         }
         self.done.insert(pr, failed.len());
         events.push(line);
