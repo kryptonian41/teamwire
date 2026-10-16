@@ -48,7 +48,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -60,6 +60,10 @@ pub const SCHEMA_V2_SQL: &str = include_str!("schema/v2.sql");
 /// The step from schema version 2 to 3: senders and recipients in another
 /// team. It changes no table; it only moves the version.
 pub const SCHEMA_V3_SQL: &str = include_str!("schema/v3.sql");
+
+/// The step from schema version 3 to 4: the `events` table rebuilt with the
+/// `delivery.reentered` type in its CHECK list. Every row is kept.
+pub const SCHEMA_V4_SQL: &str = include_str!("schema/v4.sql");
 
 #[cfg(test)]
 mod tests {
@@ -90,6 +94,7 @@ mod tests {
         conn.execute_batch(SCHEMA_V1_SQL).unwrap();
         conn.execute_batch(SCHEMA_V2_SQL).unwrap();
         conn.execute_batch(SCHEMA_V3_SQL).unwrap();
+        conn.execute_batch(SCHEMA_V4_SQL).unwrap();
         conn
     }
 

@@ -10,7 +10,7 @@ use teamwire_core::TeamName;
 use crate::error::StoreError;
 use crate::older::show_missing_columns;
 use crate::tx::{ReadTx, Tx};
-use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_VERSION};
+use crate::{SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_VERSION};
 
 /// `PRAGMA application_id` of every teamwire database: the ASCII bytes
 /// `tWIR`. A file with another id (including 0 with tables in it) is not ours.
@@ -30,7 +30,8 @@ pub const WRITER_VERSION: &str = concat!(
 pub const BUSY_TIMEOUT_MS: u32 = 5000;
 
 /// `MIGRATIONS[i]` takes a database from schema version `i` to `i + 1`.
-const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL];
+const MIGRATIONS: [&str; SCHEMA_VERSION as usize] =
+    [SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL];
 
 /// One team's database. One `rusqlite::Connection`, never shared across
 /// processes.
