@@ -112,7 +112,7 @@ fn a_version_3_database_keeps_every_event_and_never_reuses_a_seq() {
         .write(|tx| {
             tx.record_event(
                 at,
-                EventType::WatchStarted,
+                EventType::DeliveryReentered,
                 None,
                 None,
                 &serde_json::json!({}),
@@ -122,7 +122,7 @@ fn a_version_3_database_keeps_every_event_and_never_reuses_a_seq() {
         .unwrap();
     let after = event_rows(&path);
     assert_eq!(after.last().unwrap().0, 6);
-    assert_eq!(after.last().unwrap().3, "watch.started");
+    assert_eq!(after.last().unwrap().3, "delivery.reentered");
 
     let conn = Connection::open(&path).unwrap();
     let indexes: i64 = conn

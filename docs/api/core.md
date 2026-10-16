@@ -164,7 +164,7 @@ team.created team.closing team.closed team.lead_adopted
 member.creating member.started member.failed member.replaced member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
-delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent
+delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
 result.delivering result.delivered result.undelivered result.unconfirmed
 watch.started watch.line watch.stopped
 verify.recorded verify.waived

@@ -656,3 +656,49 @@ fn metrics_status_and_export_read_a_schema_1_team_and_archive_and_change_neither
     assert_eq!(files(&[&live, &archived]), before, "a read changed a file");
     assert_eq!((user_version(&live), user_version(&archived)), (1, 1));
 }
+
+/// A second Enter that tmux delivery pressed is a durable event. The export
+/// lists it with its role and place, and the metrics export sends the team
+/// on its way without a metric for it, as for `delivery.resent`.
+#[test]
+fn a_delivery_reentered_event_is_exported_and_does_not_stop_the_metrics_export() {
+    let home = TestHome::new().unwrap();
+    let mut s = busy_team(&home, "alpha");
+    s.write(|tx| {
+        tx.record_event(
+            at(12),
+            EventType::DeliveryReentered,
+            Some(&Role::parse("api").unwrap()),
+            None,
+            &json!({"place": "%3"}),
+        )
+        .map(|_| ())
+    })
+    .unwrap();
+
+    let run = teamwire(&home, &[], &["export", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    let record: Value = run
+        .out
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r["type"] == "teamwire.delivery.reentered")
+        .unwrap_or_else(|| panic!("no reentered record in {}", run.out));
+    assert_eq!(record["role"], "api");
+    assert_eq!(record["data"]["place"], "%3");
+
+    let rx = receiver(200);
+    let url = rx.url();
+    let sent = teamwire(
+        &home,
+        &[("OTEL_EXPORTER_OTLP_ENDPOINT", url.as_str())],
+        &["metrics", "export", "--once"],
+    );
+    assert_eq!(sent.code, 0, "{}{}", sent.out, sent.err);
+    assert!(
+        sent.out.contains("alpha: sent events 1 to 6"),
+        "{}",
+        sent.out
+    );
+    assert_eq!(mark(&home, "alpha"), 6);
+}
