@@ -159,6 +159,13 @@ impl Address {
             role.as_str()
         ))
     }
+
+    /// The tab name of a team's lead when `reopen` resumes it. No member can
+    /// have this name, because the role `lead` is reserved, so `Address::parse`
+    /// refuses it and nothing reads it back as a member.
+    pub fn lead(team: &TeamName) -> Self {
+        Self(format!("{}{}_lead", Self::PREFIX, team.as_str()))
+    }
 }
 
 checked_name! {
@@ -289,6 +296,13 @@ mod tests {
         let team = TeamName::parse("tw").unwrap();
         let role = Role::parse("api_2").unwrap();
         assert_eq!(Address::of(&team, &role).as_str(), "tw_tw_api_2");
+    }
+
+    #[test]
+    fn lead_address_is_the_one_no_member_can_have() {
+        let team = TeamName::parse("alpha").unwrap();
+        assert_eq!(Address::lead(&team).as_str(), "tw_alpha_lead");
+        assert!(Address::parse("tw_alpha_lead").is_err());
     }
 
     #[test]

@@ -13,6 +13,7 @@
 //! them at a temporary directory; the member's identity travels in the
 //! `env` key of its own `settings.json`.
 
+mod cwd;
 mod hook;
 mod launch;
 mod lead_setup;
@@ -129,6 +130,18 @@ impl Harness for ClaudeCode {
 
     fn current_session(&self) -> Option<CallerSession> {
         self.session_from_env(|name| std::env::var(name).ok())
+    }
+
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Ok(vec![
+            self.config.claude_bin.clone(),
+            "--resume".to_owned(),
+            s.as_str().to_owned(),
+        ])
+    }
+
+    fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        Ok(cwd::session_cwd(&self.config.claude_dir, s))
     }
 
     fn processes_for_session(

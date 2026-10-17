@@ -23,6 +23,7 @@ mod member;
 mod message;
 mod older;
 mod received;
+mod reopen;
 mod store;
 mod team;
 #[cfg(test)]
@@ -39,6 +40,7 @@ pub use export::{ExportClaim, ExportHolder, ExportMark};
 pub use member::NewMember;
 pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};
 pub use received::ReceivedMessage;
+pub use reopen::RunOptions;
 pub use store::{
     APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path, team_names,
 };

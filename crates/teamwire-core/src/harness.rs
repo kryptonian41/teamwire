@@ -28,6 +28,18 @@ pub trait Harness: Send + Sync {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;
+    /// The argv that resumes the lead's own session: a plain resume, with no
+    /// per-run files, because the lead loads the teamwire plugin itself. The
+    /// default is `Unsupported`.
+    fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
+    /// The folder a session runs in, read without writing: the live session
+    /// first, then the session's own record. `None` when neither names it.
+    /// A resume only finds a session from that folder.
+    fn session_cwd(&self, _s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        Ok(None)
+    }
     fn processes_for_session(
         &self,
         s: &SessionId,
