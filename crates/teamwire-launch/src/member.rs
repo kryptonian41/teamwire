@@ -112,7 +112,7 @@ fn create_team(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
                 .ok()?
         })
         .map(|p| p.display().to_string());
-    let extra = json!({ "lead_cwd": cwd });
+    let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
     ctx.store
         .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
         .map_err(|e| e.to_string())

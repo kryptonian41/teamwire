@@ -260,17 +260,11 @@ impl Tx<'_> {
             [session.as_str(), kind.as_str()],
         )?;
         exactly_one(rows, "team")?;
-        self.record_event(
-            at,
-            EventType::TeamLeadAdopted,
-            None,
-            None,
-            &json!({
-                "old_session": old,
-                "new_session": session.as_str(),
-                "lead_cwd": cwd.map(|p| p.to_string_lossy()),
-            }),
-        )?;
+        let mut data = json!({ "old_session": old, "new_session": session.as_str() });
+        if let (Some(cwd), Some(map)) = (cwd, data.as_object_mut()) {
+            map.insert("lead_cwd".to_owned(), json!(cwd.to_string_lossy()));
+        }
+        self.record_event(at, EventType::TeamLeadAdopted, None, None, &data)?;
         old.map(|s| SessionId::parse(&s).map_err(|e| StoreError::bad_value("team", "1", e)))
             .transpose()
     }
