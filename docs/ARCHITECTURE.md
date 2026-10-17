@@ -153,13 +153,15 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
    place (ADR 0006). A refusal marks the row `undelivered` with the reason.
 4. **Type.** The host view is checked once more, then one sanitised line is
    submitted:
-   `[teamwire:tw msg m014 finding from specmsg] <excerpt> ... Full text: teamwire inbox. <tail>`.
-   Host success marks `handed_off`. A stall or timeout marks `unconfirmed`
+   `[teamwire:tw msg m014 finding from specmsg] <excerpt> ... Full text: teamwire inbox. <tail>`,
+   or `<body>. <tail>` with no pointer when the whole body fits in the
+   300-character excerpt (ADR 0021). Host success marks `handed_off`. A stall or timeout marks `unconfirmed`
    and is not retried. A "not submitted" code is retried at most 3 times in
    about 5 seconds, then marks `undelivered`.
 5. **Remind.** If the recipient was working, its PostToolUse hook reminds it
    of unread ids once; its Stop hook holds it once if it tries to stop with
-   unread messages (ADR 0003, point 8).
+   unread messages (ADR 0003, point 8). A `handed_off` message whose typed
+   line held the whole body is not unread (ADR 0021).
 6. **Read.** The recipient calls `teamwire inbox` or `team_inbox`, which
    checks each body's hash, returns unread messages oldest first, and marks
    them `acked`.

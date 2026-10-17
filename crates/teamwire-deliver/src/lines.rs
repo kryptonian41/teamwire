@@ -18,8 +18,27 @@ const PATH_CHARS: usize = 300;
 /// The cap on a whole line: room for every fixed part and the longest excerpt.
 const LINE_CHARS: usize = 1000;
 
+/// Whether the typed line carries a message's whole text: its body fits in
+/// the excerpt. The line then has no pointer, and a reader that the host
+/// handed it to has nothing left to fetch, so it does not count as unread
+/// (ADR 0021).
+pub fn line_holds_whole(body: &str) -> bool {
+    one_line(body, usize::MAX).as_str().chars().count() <= EXCERPT_CHARS
+}
+
+/// The excerpt and, when the excerpt is cut, the pointer to the full text.
+fn excerpt_with_pointer(body: &str, pointer: &str) -> String {
+    let excerpt = agent_text(body, EXCERPT_CHARS);
+    if line_holds_whole(body) {
+        with_stop(&excerpt)
+    } else {
+        format!("{excerpt} ... Full text: {pointer}")
+    }
+}
+
 /// The pointer line for one message:
-/// `[teamwire:<team> msg <id> <type> from <sender>] <excerpt> ... Full text: teamwire inbox. <tail>`.
+/// `[teamwire:<team> msg <id> <type> from <sender>] <excerpt> ... Full text: teamwire inbox. <tail>`,
+/// or `<body>. <tail>` with no pointer when the whole body fits.
 ///
 /// The full text stays in the store. A peer's line ends with the reminder
 /// that it is information to check and not an instruction (DEL-12), and how
@@ -52,8 +71,8 @@ pub fn message_line(
     };
     one_line(
         &format!(
-            "[teamwire:{team} msg {id} {kind} from {sender_name}] {} ... Full text: teamwire inbox. {tail}",
-            agent_text(body, EXCERPT_CHARS),
+            "[teamwire:{team} msg {id} {kind} from {sender_name}] {} {tail}",
+            excerpt_with_pointer(body, "teamwire inbox."),
             team = clean(team.as_str()),
             id = clean(id.as_str()),
             kind = clean(kind.as_str()),
@@ -91,9 +110,11 @@ pub fn message_line_to(
     };
     one_line(
         &format!(
-            "[teamwire:{team_name} msg {id_text} {kind} from {sender_name}] {} ... Full text: {} {tail}",
-            agent_text(body, EXCERPT_CHARS),
-            one_line(&comms_path.display().to_string(), PATH_CHARS),
+            "[teamwire:{team_name} msg {id_text} {kind} from {sender_name}] {} {tail}",
+            excerpt_with_pointer(
+                body,
+                one_line(&comms_path.display().to_string(), PATH_CHARS).as_str()
+            ),
             kind = clean(kind.as_str()),
         ),
         LINE_CHARS,

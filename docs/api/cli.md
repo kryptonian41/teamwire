@@ -88,7 +88,7 @@ Events, each announced once per occurrence:
 | `UNCONFIRMED <role> Result: <path>` | A result whose typing stalled or timed out; it may or may not be on the lead's screen |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to the lead that could not be typed |
 | `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
-| `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes (`UNREAD_AFTER`), counted from its latest attempt. Once per message and recipient |
+| `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes (`UNREAD_AFTER`), counted from its latest attempt. A message whose whole body fit in the typed line is never unread (ADR 0021). Once per message and recipient |
 | `UNANSWERED <id> from <role> <age>` | A question to the lead, handed off or acknowledged, has no `answer` whose `re` points at it after 10 minutes (`UNANSWERED_AFTER`). Once per question. Questions between members appear only in `status` |
 | `STORE-ERROR <code>` | The store could not be read; once per code |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |
@@ -249,7 +249,7 @@ These are started by a harness, not typed by people.
 | Command | Started by | Does |
 | --- | --- | --- |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
-| `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. Always exits 0. |
+| `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
 | `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
 | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 

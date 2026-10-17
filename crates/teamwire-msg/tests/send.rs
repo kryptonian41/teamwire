@@ -467,12 +467,13 @@ fn a_send_is_stored_typed_and_recorded() {
     assert_eq!(report.deliveries.len(), 1);
     assert_eq!(only(&report).state, RecipientState::HandedOff);
     assert_eq!(only(&report).attempts, Some(1));
-    // The line typed to the recipient is the pointer with the excerpt.
+    // The line typed to the recipient carries the short body whole, with no
+    // pointer to the rest.
     let typed: Vec<String> = all_submitted(&rig);
     assert_eq!(typed.len(), 1);
     let line = typed.first().unwrap();
     assert!(
-        line.starts_with("[teamwire:alpha msg m001 finding from scout] the answer is 42 ..."),
+        line.starts_with("[teamwire:alpha msg m001 finding from scout] the answer is 42. This is"),
         "{line}"
     );
     // A second message gets the next display id and the sender's next seq.
@@ -739,7 +740,8 @@ fn a_question_to_the_lead_tells_the_lead_how_to_answer_and_where_the_text_is() {
         "web",
         &["lead"],
         MessageType::Question,
-        "which schema version?",
+        // Past the excerpt, so the line points at the stored copy.
+        &format!("which schema version? {}", "and more ".repeat(40)),
     );
     send(&mut rig.ctx(), req).unwrap();
     let typed = rig.host.submitted(&lead_place);

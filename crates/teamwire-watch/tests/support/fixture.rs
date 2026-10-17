@@ -333,6 +333,13 @@ impl Bed {
 
     /// A message from the lead to member `to`, which the host took (`handed_off`).
     pub fn send(&mut self, kind: MessageType, to: &str, re: Option<Ulid>) -> Ulid {
+        // Longer than the typed line's excerpt, so the line cannot carry the
+        // whole text and the delivery stays unread until it is acked.
+        self.send_body(kind, to, re, &"text ".repeat(80))
+    }
+
+    /// `send` with a chosen body.
+    pub fn send_body(&mut self, kind: MessageType, to: &str, re: Option<Ulid>, body: &str) -> Ulid {
         let now = self.clock.now();
         let to = Recipient::Member(role(to));
         let new = NewMessage {
@@ -340,7 +347,7 @@ impl Bed {
             kind,
             re,
             commit: None,
-            body: "text".to_owned(),
+            body: body.to_owned(),
             client_key: None,
             recipients: vec![to.clone()],
         };

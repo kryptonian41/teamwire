@@ -8,7 +8,7 @@ use teamwire_core::{
     Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
     Ulid,
 };
-use teamwire_deliver::attempt_started;
+use teamwire_deliver::{attempt_started, line_holds_whole};
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
@@ -19,7 +19,8 @@ pub(crate) struct Snapshot {
     /// Members still to be waited for: launching or running.
     pub members: Vec<MemberInfo>,
     pub questions: Vec<Question>,
-    /// Deliveries to a member that the host took and nobody acknowledged.
+    /// Deliveries to a member that the host took and nobody acknowledged,
+    /// leaving out a message whose whole text the typed line carried.
     pub unread: Vec<Unread>,
     /// Questions to the lead that no answer points at.
     pub unanswered: Vec<Unanswered>,
@@ -142,6 +143,10 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
+        // The host took a line that held the whole text: nothing is unread.
+        if line_holds_whole(&message.body) {
+            continue;
+        }
         found.push(Unread {
             since: attempt_started(tx, &message, &d.recipient)?,
             message: message.ulid,

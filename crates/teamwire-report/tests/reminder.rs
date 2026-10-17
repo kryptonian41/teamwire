@@ -99,3 +99,31 @@ fn a_pending_delivery_older_than_a_minute_is_reminded_once() {
     assert!(note.contains(&display), "{note}");
     assert_eq!(on_tool_use(&mut rig.ctx(), &api), None, "each id once");
 }
+
+#[test]
+fn a_message_the_typed_line_carried_whole_is_not_reminded() {
+    let (mut rig, api) = team();
+    rig.message_from_lead(
+        &api,
+        "rebase on main",
+        teamwire_core::DeliveryState::HandedOff,
+    );
+    assert_eq!(
+        on_tool_use(&mut rig.ctx(), &api),
+        None,
+        "the line held it all"
+    );
+    assert!(rig.events(EventType::DeliveryReminded).is_empty());
+}
+
+#[test]
+fn a_short_message_the_host_never_took_is_still_reminded() {
+    let (mut rig, api) = team();
+    let id = rig.message_from_lead(
+        &api,
+        "rebase on main",
+        teamwire_core::DeliveryState::Undelivered,
+    );
+    let note = on_tool_use(&mut rig.ctx(), &api).unwrap();
+    assert!(note.contains(&id), "{note}");
+}

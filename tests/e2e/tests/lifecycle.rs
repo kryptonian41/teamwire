@@ -10,14 +10,16 @@ use teamwire_fakes::{ClaudeScript, Step};
 
 /// What every member does on its first turn. It waits for the `go` file so
 /// that no message reaches a member that has not started yet (a message to
-/// such a member is correctly `undelivered`).
+/// such a member is correctly `undelivered`). Each message is longer than the
+/// typed line's excerpt, so it stays unread until the hold reads the inbox.
 const WORK: &str = r#"
 while [ ! -f "$TEAMWIRE_HOME/go" ]; do sleep 0.1; done
 R=$TEAMWIRE_ROLE
+PAD=$(printf 'and more %.0s' $(seq 40))
 case $R in
-  a) teamwire send --to inv --type question --text "a to inv" ;;
-  b) teamwire send --to lead --type question --text "b to lead" ;;
-  inv) teamwire send --to a --type finding --text "inv to a" ;;
+  a) teamwire send --to inv --type question --text "a to inv $PAD" ;;
+  b) teamwire send --to lead --type question --text "b to lead $PAD" ;;
+  inv) teamwire send --to a --type finding --text "inv to a $PAD" ;;
 esac
 sha=none
 if [ "$R" != inv ]; then

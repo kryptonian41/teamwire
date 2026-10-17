@@ -120,8 +120,22 @@ impl Rig {
         self.host.submitted(&self.lead_place())
     }
 
-    /// A message from the lead to `who`, handed off and not read.
+    /// A message from the lead to `who`, handed off and not read. The body is
+    /// padded past the typed line's excerpt, because a line that carried the
+    /// whole text would leave nothing unread.
     pub(crate) fn unread_from_lead(&mut self, who: &Role, body: &str) -> String {
+        let body = format!("{body} {}", "and more ".repeat(40));
+        self.message_from_lead(who, &body, DeliveryState::HandedOff)
+    }
+
+    /// A message from the lead to `who` with this exact body, its delivery
+    /// left in `state`.
+    pub(crate) fn message_from_lead(
+        &mut self,
+        who: &Role,
+        body: &str,
+        state: DeliveryState,
+    ) -> String {
         let at = at(2);
         let recipient = Recipient::Member(who.clone());
         self.store
@@ -143,7 +157,7 @@ impl Rig {
                     &stored.message.ulid,
                     &recipient,
                     &DeliveryUpdate {
-                        state: DeliveryState::HandedOff,
+                        state,
                         route: Some(Route::HostTyping),
                         error: None,
                         attempts: 1,

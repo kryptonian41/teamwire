@@ -303,3 +303,12 @@ fn a_member_started_by_another_version_is_flagged() {
     assert_eq!(of("old").started_by.as_deref(), Some("0.0.1"));
     assert!(of("old").older_build);
 }
+
+#[test]
+fn a_message_the_typed_line_carried_whole_is_not_listed_as_unread() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.send_body(MessageType::Note, "api", None, "rebase on main");
+    bed.age(secs(601));
+    assert!(status_of(&bed, None).unread_deliveries.is_empty());
+}

@@ -222,7 +222,9 @@ fn post_tool_reminds_once_per_unread_message() {
                     kind: MessageType::Note,
                     re: None,
                     commit: None,
-                    body: "read this".to_owned(),
+                    // Past the typed line's excerpt, so the message is unread
+                    // until acked (a line that held it whole leaves nothing).
+                    body: "read this ".repeat(40),
                     client_key: None,
                     recipients: vec![recipient.clone()],
                 },

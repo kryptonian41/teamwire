@@ -8,7 +8,7 @@ use teamwire_core::{
     Address, DeliveryState, Liveness, Member, MemberState, OtelConfig, Recipient, ReportState,
     Role, SessionId, Timestamp, one_line,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started, watch_lease_is_dead};
+use teamwire_deliver::{PENDING_STALE, attempt_started, line_holds_whole, watch_lease_is_dead};
 use teamwire_store::{
     CompletionRecord, Ctx, Party, ReadTx, StoreError, WRITER_VERSION, database_path,
 };
@@ -150,6 +150,10 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
+        // The host took a line that held the whole text: nothing is unread.
+        if line_holds_whole(&message.body) {
+            continue;
+        }
         let age = now.saturating_since(attempt_started(tx, &message, &d.recipient)?);
         if age > UNREAD_AFTER {
             view.unread_deliveries.push(UnreadDelivery {

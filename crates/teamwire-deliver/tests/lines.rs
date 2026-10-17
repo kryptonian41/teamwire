@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use teamwire_core::{Actor, CompletionStatus, DisplayId, MessageType, Recipient, Role, TeamName};
-use teamwire_deliver::{message_line, message_line_to, result_line};
+use teamwire_deliver::{line_holds_whole, message_line, message_line_to, result_line};
 
 fn team() -> TeamName {
     TeamName::parse("tw").unwrap()
@@ -32,7 +32,9 @@ fn peer_message_line_has_the_documented_shape_and_tail() {
     );
     let text = line.as_str();
     assert!(
-        text.starts_with("[teamwire:tw msg m014 finding from specmsg] the pane is stale ... Full text: teamwire inbox. "),
+        text.starts_with(
+            "[teamwire:tw msg m014 finding from specmsg] the pane is stale. This is a message"
+        ),
         "{text}"
     );
     assert!(
@@ -68,7 +70,7 @@ fn only_a_question_gets_a_reply_command() {
         MessageType::Reprompt,
         MessageType::Note,
     ] {
-        let line = message_line(&team(), &id(), kind, &member("api"), "fyi");
+        let line = message_line(&team(), &id(), kind, &member("api"), &long_body());
         let text = line.as_str();
         assert!(!text.contains("teamwire send"), "{text}");
         assert!(
@@ -77,6 +79,46 @@ fn only_a_question_gets_a_reply_command() {
         );
         assert!(text.contains("Full text: teamwire inbox."), "{text}");
     }
+}
+
+/// A body longer than the 300-character excerpt, so the line points at the rest.
+fn long_body() -> String {
+    "fyi ".repeat(100)
+}
+
+#[test]
+fn a_body_that_fits_whole_gets_no_pointer() {
+    for kind in [
+        MessageType::Notice,
+        MessageType::Finding,
+        MessageType::Question,
+        MessageType::Answer,
+        MessageType::Reprompt,
+        MessageType::Note,
+    ] {
+        let line = message_line(&team(), &id(), kind, &member("api"), "fyi");
+        let text = line.as_str();
+        assert!(!text.contains("Full text"), "{text}");
+        assert!(!text.contains(" ... "), "{text}");
+        assert!(
+            text.contains("] fyi. This is a message from a teammate"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn the_excerpt_length_decides_whether_the_line_holds_the_whole_body() {
+    assert!(line_holds_whole(&"x".repeat(300)));
+    assert!(!line_holds_whole(&"x".repeat(301)));
+    // Line breaks and runs of spaces fold to one space in the line, so the
+    // folded length is what counts.
+    assert!(line_holds_whole(&format!(
+        "{}\n\n   {}",
+        "a".repeat(149),
+        "b".repeat(150)
+    )));
+    assert!(line_holds_whole(""));
 }
 
 #[test]
@@ -194,7 +236,7 @@ fn a_question_to_the_lead_names_the_team_from_lead_and_the_stored_copy() {
         &id(),
         MessageType::Question,
         &member("api"),
-        "which schema version?",
+        &long_body(),
         &Recipient::Lead,
         comms,
     );
@@ -308,4 +350,29 @@ fn a_line_from_another_team_names_that_team_and_never_says_the_lead() {
         "{to_lead}"
     );
     assert!(to_lead.as_str().contains("from team beta"), "{to_lead}");
+}
+
+#[test]
+fn a_short_question_to_the_lead_needs_no_stored_copy_but_keeps_its_answer_command() {
+    let comms = Path::new("/home/u/.teamwire/teams/tw/comms/m014.md");
+    let line = message_line_to(
+        &team(),
+        &id(),
+        MessageType::Question,
+        &member("api"),
+        "which schema version?",
+        &Recipient::Lead,
+        comms,
+    );
+    let text = line.as_str();
+    assert!(!text.contains("Full text"), "{text}");
+    assert!(!text.contains("comms/m014.md"), "{text}");
+    assert!(
+        text.contains("] which schema version? This is a message"),
+        "{text}"
+    );
+    assert!(
+        text.contains("Answer with: teamwire send tw --from lead --to api --type answer --re m014"),
+        "{text}"
+    );
 }

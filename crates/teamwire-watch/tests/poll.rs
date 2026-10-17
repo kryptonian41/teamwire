@@ -908,3 +908,22 @@ fn a_question_between_the_lead_and_a_member_is_not_unanswered_news() {
     assert!(line.contains("UNREAD"), "{line}");
     assert!(!line.contains("UNANSWERED"), "{line}");
 }
+
+#[test]
+fn a_message_the_typed_line_carried_whole_is_never_unread() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.send_body(
+        teamwire_core::MessageType::Note,
+        "api",
+        None,
+        "rebase on main",
+    );
+    bed.poll();
+    bed.age(secs(601));
+    assert!(
+        !bed.poll().unwrap_or_default().contains("UNREAD"),
+        "the line held the whole text"
+    );
+}

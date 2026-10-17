@@ -657,7 +657,7 @@ you forgot to restart:
 | `LATE <role>` | Past its deadline with nothing recorded. |
 | `SILENT <role>` | Went quiet without recording a completion. Ask it directly. |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. Read it with `teamwire log`. |
-| `UNREAD <id> -> <role> <age>` | A message to a member has waited 10 minutes since it was sent or resent, and the member has not read it. Once per message and member. Check `teamwire status`, then `resend` or ask it directly. |
+| `UNREAD <id> -> <role> <age>` | A message to a member has waited 10 minutes since it was sent or resent, and the member has not read it. A message short enough to arrive whole in the typed line (300 characters) never counts. Once per message and member. Check `teamwire status`, then `resend` or ask it directly. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has had no answer for 10 minutes. Once per question. Answer it with `--type answer --re <id>`. |
 | `TEAM-STALLED` | Every remaining member is stuck. Nothing will move. |
 | `TEAM-CLOSED` | The team was closed while the watch ran, before `TEAM-COMPLETE`. The watch has exited. If you did not close it, another session did: run `teamwire status` before you act on the team. |
