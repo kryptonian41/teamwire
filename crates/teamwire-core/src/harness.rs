@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
-use crate::member::MemberKind;
+use crate::member::{Member, MemberKind};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
@@ -167,6 +167,39 @@ pub struct MemberLaunch {
     /// without plugins ignores it.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+}
+
+impl MemberLaunch {
+    /// The launch of a member that already ran, for `Harness::resume_spec`.
+    /// Its settings, MCP configuration and contract are already on disk under
+    /// `team_dir`, so only their paths matter and the token is a placeholder.
+    /// `model` and `effort` are the ones recorded when the member started.
+    pub fn for_resume(
+        team_dir: &Path,
+        team: &TeamName,
+        member: &Member,
+        session: &SessionId,
+        (model, effort): (Option<String>, Option<String>),
+    ) -> Self {
+        Self {
+            team: team.clone(),
+            role: member.role.clone(),
+            address: Address::of(team, &member.role),
+            kind: member.kind,
+            cwd: member.cwd.clone(),
+            session_id: session.clone(),
+            model,
+            effort,
+            member_dir: team_dir.join("members").join(member.role.as_str()),
+            contract_path: team_dir
+                .join("contract")
+                .join(format!("{}.md", member.role)),
+            identity: vec![("TEAMWIRE_TOKEN".to_owned(), "-".to_owned())],
+            otel: OtelConfig::default(),
+            teamwire_bin: PathBuf::from("teamwire"),
+            plugins: BTreeMap::new(),
+        }
+    }
 }
 
 /// What the harness returns. Files are written by launch (mode given) before spawn.
