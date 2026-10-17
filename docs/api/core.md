@@ -172,6 +172,21 @@ close.step close.refused
 store.error
 ```
 
+Some `data` keys are read back by `teamwire reopen`. They live in event data,
+so they need no schema change:
+
+| Event | Key | Meaning |
+| --- | --- | --- |
+| `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
+| `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
+| `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
+
+`ReadTx::lead_cwd` returns the `lead_cwd` of the newest `team.created` or
+`team.lead_adopted` event, even when that event holds none, because an older
+folder belongs to an older lead session. `ReadTx::run_options` returns a
+member's recorded `model` and `effort`, and whether either key was recorded.
+`Tx::create_team_with` and `Tx::adopt_lead_in` write the extra keys.
+
 ## 6. Traits
 
 All methods take a `timeout` or are bounded inside the adapter. Every error is
@@ -223,10 +238,18 @@ pub trait Harness: Send + Sync {
     /// under the team directory before spawn; nothing outside it.
     fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError>;
     /// argv to resume an existing member session with the same per-run
-    /// configuration (shown by `status --role`, never run by teamwire).
+    /// configuration (shown by `status --role`, run by `reopen`). Build the
+    /// `MemberLaunch` of a member that already ran with `MemberLaunch::for_resume`.
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;   // id + kind (interactive | background)
+    /// argv that resumes the lead's own session: a plain resume with no per-run
+    /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
+    /// The folder a session runs in, read without writing: the live session
+    /// first, then the session's own record. `None` when neither names it.
+    /// Default `Ok(None)`.
+    fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError>;
     fn processes_for_session(&self, s: &SessionId, timeout: Duration) -> Result<Vec<Pid>, HarnessError>;
     fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError>;
     /// Parse turn-end hook stdin into the neutral form.
