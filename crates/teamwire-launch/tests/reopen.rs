@@ -57,6 +57,8 @@ fn closed_team(rig: &Rig, roles: &[&str]) -> Store {
         close_tab(rig, &store, r);
     }
     rig.host.log().clear();
+    // The session that runs reopen is not the lead's.
+    rig.harness.set_interactive_caller(sid("other"));
     store
 }
 
@@ -164,6 +166,7 @@ fn role_picks_one_member_and_leaves_the_lead_alone() {
     let only = ReopenOpts {
         role: Some(role("web")),
         dry_run: false,
+        ..ReopenOpts::default()
     };
     let report = run(&rig, &mut store, &only).unwrap();
     assert_eq!(report.lead, None);
@@ -172,6 +175,7 @@ fn role_picks_one_member_and_leaves_the_lead_alone() {
     let missing = ReopenOpts {
         role: Some(role("nobody")),
         dry_run: false,
+        ..ReopenOpts::default()
     };
     assert_eq!(
         run(&rig, &mut store, &missing).unwrap_err(),
@@ -201,6 +205,7 @@ fn a_dry_run_spawns_nothing_and_writes_nothing() {
     let dry = ReopenOpts {
         role: None,
         dry_run: true,
+        ..ReopenOpts::default()
     };
     let report = run(&rig, &mut store, &dry).unwrap();
     assert!(report.dry_run);
@@ -231,6 +236,7 @@ fn a_member_without_its_files_or_folder_is_refused_with_the_reason() {
         close_tab(&rig, &store, r);
     }
     rig.host.log().clear();
+    rig.harness.set_interactive_caller(sid("other"));
     let settings = rig
         .home
         .path()
@@ -335,6 +341,7 @@ fn a_host_that_fails_to_spawn_fails_that_member_only() {
         &ReopenOpts {
             role: None,
             dry_run: false,
+            ..ReopenOpts::default()
         },
     )
     .unwrap();
@@ -399,6 +406,7 @@ fn a_lead_with_no_folder_found_is_refused_with_the_manual_command() {
     // No folder recorded and the harness does not know the session.
     let spec = team_spec("demo", &[pane_member("api", "api", rig.work.path())]);
     let (_, mut store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    rig.harness.set_interactive_caller(sid("other"));
     let report = run(&rig, &mut store, &all()).unwrap();
     let Some(ReopenOutcome::Refused(why)) = &report.lead else {
         unreachable!("{:?}", report.lead)
@@ -415,6 +423,7 @@ fn the_harness_fills_in_a_folder_an_older_team_never_recorded() {
     let (_, mut store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
     rig.harness
         .set_session_cwd(sid("lead-session"), rig.work.path());
+    rig.harness.set_interactive_caller(sid("other"));
     let report = run(&rig, &mut store, &all()).unwrap();
     assert_eq!(report.lead, Some(ReopenOutcome::Reopened));
 }
@@ -451,6 +460,7 @@ fn seeded_lead(rig: &Rig, host: &'static str, kind: SessionKind) -> Store {
 fn a_lead_on_host_none_is_refused_with_the_manual_command() {
     let rig = Rig::new();
     let mut store = seeded_lead(&rig, "none", SessionKind::Interactive);
+    rig.harness.set_interactive_caller(sid("other"));
     let report = run(&rig, &mut store, &all()).unwrap();
     let Some(ReopenOutcome::Refused(why)) = &report.lead else {
         unreachable!("{:?}", report.lead)
@@ -484,4 +494,89 @@ fn a_hold_that_cannot_be_taken_is_a_warning_not_a_failure() {
     assert!(!report.has_problem());
     assert!(report.warnings.iter().any(|w| w.contains("no sleep hold")));
     assert!(member_row(&store, "api").unwrap().state == MemberState::Started);
+}
+
+fn fail_trust_read(rig: &Rig) {
+    rig.host.inject(
+        "read_tail",
+        teamwire_fakes::Fault::Fail(teamwire_core::HostError::new(
+            teamwire_core::HostErrorCode::Other,
+            "screen unreadable",
+        )),
+        1,
+    );
+}
+
+fn closed_places(rig: &Rig) -> Vec<String> {
+    rig.host
+        .log()
+        .calls()
+        .into_iter()
+        .filter(|c| c.name == "close")
+        .map(|c| c.detail)
+        .collect()
+}
+
+#[test]
+fn a_member_whose_trust_step_fails_has_its_new_tab_closed_and_its_place_kept() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    let before = member_row(&store, "api").unwrap().place;
+    fail_trust_read(&rig);
+    let only = ReopenOpts {
+        role: Some(role("api")),
+        dry_run: false,
+        ..ReopenOpts::default()
+    };
+    let report = run(&rig, &mut store, &only).unwrap();
+    let ReopenOutcome::Failed(why) = outcome(&report, "api") else {
+        unreachable!("{:?}", report.members);
+    };
+    assert!(why.contains("the new tab was closed"), "{why}");
+    assert_eq!(closed_places(&rig).len(), 1, "the new tab was closed");
+    assert_eq!(member_row(&store, "api").unwrap().place, before);
+}
+
+#[test]
+fn a_lead_whose_trust_step_fails_has_its_new_tab_closed() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    fail_trust_read(&rig);
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert!(matches!(&report.lead, Some(ReopenOutcome::Failed(why)) if why.contains("closed")));
+    assert_eq!(closed_places(&rig).len(), 1);
+}
+
+#[test]
+fn a_caller_that_is_the_lead_is_skipped_whatever_the_registry_says() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    // The registry calls the lead's session dead, but the caller is that session.
+    rig.harness.set_interactive_caller(sid("lead-session"));
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(
+        report.lead,
+        Some(ReopenOutcome::Skipped(
+            "already open (this session)".to_owned()
+        ))
+    );
+    assert_eq!(spawned(&rig), ["tw_demo_api"]);
+}
+
+#[test]
+fn a_lead_whose_folder_is_the_home_directory_is_refused_and_nothing_is_spawned() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    // The lead's recorded folder is the work directory; make it the user's home.
+    let opts = ReopenOpts {
+        user_home: Some(rig.work.path().to_path_buf()),
+        ..ReopenOpts::default()
+    };
+    let report = run(&rig, &mut store, &opts).unwrap();
+    let Some(ReopenOutcome::Refused(why)) = &report.lead else {
+        unreachable!("{:?}", report.lead)
+    };
+    assert!(why.contains("home directory"), "{why}");
+    assert!(why.contains("fake-claude --resume lead-session"), "{why}");
+    assert!(!spawned(&rig).contains(&"tw_demo_lead".to_owned()));
 }

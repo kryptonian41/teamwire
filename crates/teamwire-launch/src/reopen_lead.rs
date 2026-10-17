@@ -7,8 +7,7 @@ use std::time::Duration;
 use teamwire_core::{Address, LaunchSpec, Liveness, SessionKind, SpawnRequest};
 use teamwire_store::{Ctx, TeamRow};
 
-use crate::member_steps::spawn;
-use crate::reopen::{ReopenOpts, ReopenOutcome, answer_trust};
+use crate::reopen::{ReopenOpts, ReopenOutcome, open_tab};
 
 const ALIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -28,6 +27,13 @@ pub(crate) fn reopen_lead(ctx: &mut Ctx<'_>, team: &TeamRow, opts: &ReopenOpts) 
         Ok(harness) => harness,
         Err(e) => return ReopenOutcome::refused(e.to_string()),
     };
+    // The caller is the lead: it runs, whatever the session registry says.
+    if harness
+        .current_session()
+        .is_some_and(|caller| caller.id == *session)
+    {
+        return ReopenOutcome::skipped("already open (this session)");
+    }
     match harness.is_alive(session, ALIVE_TIMEOUT) {
         Ok(Liveness::Dead) => {}
         Ok(Liveness::Alive(_)) => return ReopenOutcome::skipped("already open"),
@@ -75,6 +81,14 @@ pub(crate) fn reopen_lead(ctx: &mut Ctx<'_>, team: &TeamRow, opts: &ReopenOpts) 
         Ok(host) => host,
         Err(e) => return ReopenOutcome::refused(e.to_string()),
     };
+    if crate::plan::is_home_dir(opts.user_home.as_deref(), &cwd) {
+        return ReopenOutcome::refused(format!(
+            "the lead's folder {} is your home directory, and reopen will not answer Claude's \
+             folder-trust dialog for it; to resume it by hand run: {}",
+            cwd.display(),
+            manual(Some(&cwd))
+        ));
+    }
     if !cwd.is_dir() {
         return ReopenOutcome::refused(format!(
             "the lead's folder {} is gone; to resume it by hand run: {}",
@@ -92,13 +106,5 @@ pub(crate) fn reopen_lead(ctx: &mut Ctx<'_>, team: &TeamRow, opts: &ReopenOpts) 
         argv: argv.clone(),
         env: Vec::new(),
     };
-    let place = match spawn(host, &request) {
-        Ok(place) => place,
-        Err(stop) if stop.refused => return ReopenOutcome::Refused(stop.reason),
-        Err(stop) => return ReopenOutcome::Failed(stop.reason),
-    };
-    match answer_trust(harness, host, &place, &cwd) {
-        Ok(()) => ReopenOutcome::Reopened,
-        Err(why) => ReopenOutcome::Failed(why),
-    }
+    open_tab(harness, host, &request, &cwd, |_| Ok(()))
 }

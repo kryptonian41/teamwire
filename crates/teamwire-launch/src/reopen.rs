@@ -10,10 +10,11 @@
 //! resume reuses as they are; the session id never changes; only the
 //! member's recorded place does.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use teamwire_core::{
-    Address, Harness, Host, Liveness, Member, MemberLaunch, MemberState, Role, SpawnRequest,
+    Address, Harness, Host, Liveness, Member, MemberLaunch, MemberState, Place, Role, SpawnRequest,
     StartupOutcome, TeamState, TrustPolicy,
 };
 use teamwire_store::{Ctx, RunOptions};
@@ -24,6 +25,7 @@ use crate::reopen_lead::reopen_lead;
 use crate::{hold, watch_command};
 
 const ALIVE_TIMEOUT: Duration = Duration::from_secs(5);
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// What to reopen.
 #[derive(Debug, Clone, Default)]
@@ -32,6 +34,9 @@ pub struct ReopenOpts {
     pub role: Option<Role>,
     /// Say what would happen; open nothing and write nothing.
     pub dry_run: bool,
+    /// The user's home directory. The lead is never reopened there, because
+    /// reopen would answer Claude's folder-trust dialog for it (LCH-15).
+    pub user_home: Option<PathBuf>,
 }
 
 /// How one session's reopen ended. On a dry run `Reopened` means "would be".
@@ -236,50 +241,58 @@ fn reopen_member(
         argv: spec.argv,
         env: Vec::new(),
     };
-    let place = match spawn(host, &request) {
-        Ok(place) => place,
-        Err(stop) if stop.refused => return ReopenOutcome::Refused(stop.reason),
-        Err(stop) => return ReopenOutcome::Failed(stop.reason),
-    };
-    if let Err(e) = ctx
-        .store
-        .write(|tx| tx.set_member_place(&member.role, &place))
-    {
-        return ReopenOutcome::failed(format!(
-            "it was reopened in {} but the place could not be recorded: {e}",
-            place.id
-        ));
-    }
-    match answer_trust(
+    open_tab(
         harness,
         host,
-        &place,
+        &request,
         member.repo.as_ref().unwrap_or(&member.cwd),
-    ) {
-        Ok(()) => ReopenOutcome::Reopened,
-        Err(why) => ReopenOutcome::Failed(why),
-    }
+        |place| {
+            ctx.store
+                .write(|tx| tx.set_member_place(&member.role, place))
+                .map_err(|e| format!("the place could not be recorded: {e}"))
+        },
+    )
 }
 
 const UNKNOWN: &str = "it is not known whether the session runs";
 
-/// Answers a plain folder-trust dialog, as launch does by default. The
-/// stronger dialog is never answered: the tab stays open at it.
-pub(crate) fn answer_trust(
+/// Starts `request` in a new tab, answers a plain folder-trust dialog as
+/// launch does by default, then runs `record`. On any failure after the
+/// spawn the new tab is closed, as launch's undo does, so a second reopen
+/// cannot start the same session twice. `record` runs last, so a failed
+/// reopen leaves the old record as it was. The stronger trust dialog is never
+/// answered.
+pub(crate) fn open_tab(
     harness: &dyn Harness,
     host: &dyn Host,
-    place: &teamwire_core::Place,
+    request: &SpawnRequest,
     folder: &std::path::Path,
-) -> Result<(), String> {
-    match harness.answer_startup(host, place, TrustPolicy::Accept) {
-        Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => Ok(()),
-        Ok(StartupOutcome::RefusedEscalated) => Err(format!(
+    record: impl FnOnce(&Place) -> Result<(), String>,
+) -> ReopenOutcome {
+    let place = match spawn(host, request) {
+        Ok(place) => place,
+        Err(stop) if stop.refused => return ReopenOutcome::Refused(stop.reason),
+        Err(stop) => return ReopenOutcome::Failed(stop.reason),
+    };
+    let failed = match harness.answer_startup(host, &place, TrustPolicy::Accept) {
+        Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => match record(&place) {
+            Ok(()) => return ReopenOutcome::Reopened,
+            Err(why) => why,
+        },
+        Ok(StartupOutcome::RefusedEscalated) => format!(
             "the folder's own settings ask for extra permissions, so the trust dialog was not \
-             answered; the tab {} is still open at it: open Claude Code yourself in {}, review \
-             and accept that dialog there, then run reopen again",
-            place.id,
+             answered; open Claude Code yourself in {}, review and accept that dialog there, \
+             then run reopen again",
             folder.display()
+        ),
+        Err(e) => format!("the trust step failed: {e}"),
+    };
+    match host.close(&place, CLOSE_TIMEOUT) {
+        Ok(()) => ReopenOutcome::Failed(format!("{failed}; the new tab was closed")),
+        Err(e) => ReopenOutcome::Failed(format!(
+            "{failed}; the new tab {} could not be closed ({e}): close it by hand before running \
+             reopen again",
+            place.id
         )),
-        Err(e) => Err(format!("the trust step failed: {e}")),
     }
 }
