@@ -2,8 +2,8 @@
 //! `fake-claude` first on `PATH` and a temporary home. Exit codes and output
 //! lines are those of `docs/api/cli.md`.
 
-#![cfg(test)]
 #![expect(
+    clippy::unwrap_used,
     clippy::indexing_slicing,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
