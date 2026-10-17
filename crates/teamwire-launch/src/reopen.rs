@@ -1,6 +1,8 @@
-//! Reopen: resume the sessions of a team whose sessions are gone. The lead
-//! first, so a host that groups a team's tabs puts the members beside it,
-//! then each member that started and is no longer running.
+//! Reopen: resume the sessions of a team whose sessions are gone. Every
+//! session is checked first. The first tab then opens alone, the lead when it
+//! is reopened, so a host that groups a team's tabs has a live tab to put the
+//! others beside. The rest open at the same time: each waits seconds for its
+//! session to load, and those waits do not depend on each other.
 //!
 //! Never: type into a reopened session; reopen a session that is running or
 //! whose state is unknown (two processes on one session would make delivery
@@ -135,8 +137,12 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
         watch_command: watch_command(&team.name),
         dry_run: opts.dry_run,
     };
+    // `None` is the lead. Each entry passed every check and waits for its tab.
+    let mut ready: Vec<(Option<Role>, Ready<'_>)> = Vec::new();
     if opts.role.is_none() {
-        report.lead = Some(reopen_lead(ctx, &team, opts));
+        let mut lead = None;
+        report.lead = Some(reopen_lead(ctx, &team, opts, &mut lead));
+        ready.extend(lead.map(|r| (None, r)));
     }
     for member in members
         .iter()
@@ -146,8 +152,34 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
             .store
             .read(|tx| tx.run_options(&member.role))
             .map_err(store_error)?;
-        let outcome = reopen_member(ctx, &team, member, &options, opts, &mut report.warnings);
+        let mut one = None;
+        let outcome = reopen_member(
+            ctx,
+            &team,
+            member,
+            &options,
+            opts,
+            &mut report.warnings,
+            &mut one,
+        );
+        ready.extend(one.map(|r| (Some(member.role.clone()), r)));
         report.members.push((member.role.clone(), outcome));
+    }
+    let opened = open_all(&ready);
+    for ((who, r), result) in ready.iter().zip(opened) {
+        let outcome = match (result, who) {
+            (Err(outcome), _) => outcome,
+            (Ok(_), None) => ReopenOutcome::Reopened,
+            (Ok(place), Some(role)) => record_place(ctx, role, r, &place),
+        };
+        match who {
+            None => report.lead = Some(outcome),
+            Some(role) => {
+                if let Some(entry) = report.members.iter_mut().find(|(r, _)| r == role) {
+                    entry.1 = outcome;
+                }
+            }
+        }
     }
     let opened = report.lead == Some(ReopenOutcome::Reopened)
         || report
@@ -161,13 +193,16 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
     Ok(report)
 }
 
-fn reopen_member(
-    ctx: &mut Ctx<'_>,
+/// Checks one member. A member that passes is `Reopened` (on a dry run, "would
+/// be") and, unless this is a dry run, leaves its tab request in `ready`.
+fn reopen_member<'r>(
+    ctx: &Ctx<'r>,
     team: &teamwire_store::TeamRow,
     member: &Member,
     options: &RunOptions,
     opts: &ReopenOpts,
     warnings: &mut Vec<String>,
+    ready: &mut Option<Ready<'r>>,
 ) -> ReopenOutcome {
     match member.state {
         MemberState::Started => {}
@@ -241,53 +276,103 @@ fn reopen_member(
         argv: spec.argv,
         env: Vec::new(),
     };
-    open_tab(
+    *ready = Some(Ready {
         harness,
         host,
-        &request,
-        member.repo.as_ref().unwrap_or(&member.cwd),
-        |place| {
-            ctx.store
-                .write(|tx| tx.set_member_place(&member.role, place))
-                .map_err(|e| format!("the place could not be recorded: {e}"))
-        },
-    )
+        request,
+        folder: member.repo.clone().unwrap_or_else(|| member.cwd.clone()),
+    });
+    ReopenOutcome::Reopened
 }
 
 const UNKNOWN: &str = "it is not known whether the session runs";
 
-/// Starts `request` in a new tab, answers a plain folder-trust dialog as
-/// launch does by default, then runs `record`. On any failure after the
-/// spawn the new tab is closed, as launch's undo does, so a second reopen
-/// cannot start the same session twice. `record` runs last, so a failed
-/// reopen leaves the old record as it was. The stronger trust dialog is never
-/// answered.
-pub(crate) fn open_tab(
-    harness: &dyn Harness,
-    host: &dyn Host,
-    request: &SpawnRequest,
-    folder: &std::path::Path,
-    record: impl FnOnce(&Place) -> Result<(), String>,
-) -> ReopenOutcome {
-    let place = match spawn(host, request) {
+/// A session that passed every check, with what its new tab needs.
+pub(crate) struct Ready<'r> {
+    pub(crate) harness: &'r dyn Harness,
+    pub(crate) host: &'r dyn Host,
+    pub(crate) request: SpawnRequest,
+    /// Named in the advice when the folder's settings escalate the trust dialog.
+    pub(crate) folder: PathBuf,
+}
+
+/// Opens one tab per entry, in order, and returns one result per entry. Tabs
+/// open one at a time until one is up; the rest then open at the same time.
+/// herdr puts a new tab beside a live agent of the team, so tabs opened
+/// together before any is live would each start a workspace of their own.
+fn open_all(ready: &[(Option<Role>, Ready<'_>)]) -> Vec<Result<Place, ReopenOutcome>> {
+    let mut opened = Vec::with_capacity(ready.len());
+    let mut rest = ready.iter();
+    for (_, r) in rest.by_ref() {
+        let result = open_place(r);
+        let up = result.is_ok();
+        opened.push(result);
+        if up {
+            break;
+        }
+    }
+    let rest: Vec<_> = rest.collect();
+    std::thread::scope(|s| {
+        let threads: Vec<_> = rest
+            .iter()
+            .map(|entry| {
+                let r = &entry.1;
+                s.spawn(move || open_place(r))
+            })
+            .collect();
+        opened.extend(threads.into_iter().map(|t| {
+            t.join().unwrap_or_else(|_| {
+                Err(ReopenOutcome::failed(
+                    "the step that opened this tab stopped; look for a new tab in the host and \
+                     close it before running reopen again",
+                ))
+            })
+        }));
+    });
+    opened
+}
+
+/// Starts the request in a new tab and answers a plain folder-trust dialog as
+/// launch does by default. On a failure after the spawn the new tab is
+/// closed, as launch's undo does, so a second reopen cannot start the same
+/// session twice. The stronger trust dialog is never answered.
+pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
+    let place = match spawn(r.host, &r.request) {
         Ok(place) => place,
-        Err(stop) if stop.refused => return ReopenOutcome::Refused(stop.reason),
-        Err(stop) => return ReopenOutcome::Failed(stop.reason),
+        Err(stop) if stop.refused => return Err(ReopenOutcome::Refused(stop.reason)),
+        Err(stop) => return Err(ReopenOutcome::Failed(stop.reason)),
     };
-    let failed = match harness.answer_startup(host, &place, TrustPolicy::Accept) {
-        Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => match record(&place) {
-            Ok(()) => return ReopenOutcome::Reopened,
-            Err(why) => why,
-        },
+    let failed = match r
+        .harness
+        .answer_startup(r.host, &place, TrustPolicy::Accept)
+    {
+        Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => return Ok(place),
         Ok(StartupOutcome::RefusedEscalated) => format!(
             "the folder's own settings ask for extra permissions, so the trust dialog was not \
              answered; open Claude Code yourself in {}, review and accept that dialog there, \
              then run reopen again",
-            folder.display()
+            r.folder.display()
         ),
         Err(e) => format!("the trust step failed: {e}"),
     };
-    match host.close(&place, CLOSE_TIMEOUT) {
+    Err(close_new_tab(r.host, &place, &failed))
+}
+
+/// Records a member's new place. It runs after its tab is up, so a failed
+/// reopen leaves the old record as it was.
+fn record_place(ctx: &mut Ctx<'_>, role: &Role, r: &Ready<'_>, place: &Place) -> ReopenOutcome {
+    match ctx.store.write(|tx| tx.set_member_place(role, place)) {
+        Ok(()) => ReopenOutcome::Reopened,
+        Err(e) => close_new_tab(
+            r.host,
+            place,
+            &format!("the place could not be recorded: {e}"),
+        ),
+    }
+}
+
+fn close_new_tab(host: &dyn Host, place: &Place, failed: &str) -> ReopenOutcome {
+    match host.close(place, CLOSE_TIMEOUT) {
         Ok(()) => ReopenOutcome::Failed(format!("{failed}; the new tab was closed")),
         Err(e) => ReopenOutcome::Failed(format!(
             "{failed}; the new tab {} could not be closed ({e}): close it by hand before running \

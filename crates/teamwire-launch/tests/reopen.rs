@@ -378,6 +378,41 @@ fn the_lead_comes_back_first_in_its_folder_under_its_own_name() {
 }
 
 #[test]
+fn after_the_first_tab_is_up_the_others_open_at_the_same_time() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api", "web", "db"]);
+    let before: Vec<_> = ["api", "web", "db"]
+        .iter()
+        .map(|r| member_row(&store, r).unwrap().place)
+        .collect();
+    // Each trust step reads the screen once. The lead's read is alone and
+    // waits out the limit; the members' three reads meet only if they run
+    // at the same time.
+    rig.host.meet_reads(3, Duration::from_secs(3));
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(report.lead, Some(ReopenOutcome::Reopened));
+    for (r, old) in ["api", "web", "db"].iter().zip(before) {
+        assert_eq!(*outcome(&report, r), ReopenOutcome::Reopened, "{r}");
+        assert_ne!(
+            member_row(&store, r).unwrap().place,
+            old,
+            "{r} has its new tab"
+        );
+    }
+    assert_eq!(rig.host.read_peak(), 3, "the members' tabs opened together");
+    let calls = rig.host.log().calls();
+    let lead_read = calls.iter().position(|c| c.name == "read_tail").unwrap();
+    let first_member_spawn = calls
+        .iter()
+        .position(|c| c.name == "spawn" && c.detail != "tw_demo_lead")
+        .unwrap();
+    assert!(
+        lead_read < first_member_spawn,
+        "the lead's tab was up first"
+    );
+}
+
+#[test]
 fn a_running_or_background_lead_is_skipped() {
     let rig = Rig::new();
     let mut store = closed_team(&rig, &["api"]);

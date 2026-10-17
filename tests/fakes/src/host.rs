@@ -13,6 +13,7 @@ use teamwire_core::{
 };
 
 use crate::calls::{CallKind, CallLog, lock};
+use crate::meeting::Meeting;
 
 /// What can go wrong with one call. Scripted per method name with
 /// `FakeHost::inject`.
@@ -68,6 +69,7 @@ pub struct FakeHost {
     log: CallLog,
     next: AtomicU64,
     state: Mutex<State>,
+    reads: Meeting,
 }
 
 impl FakeHost {
@@ -105,6 +107,7 @@ impl FakeHost {
                 foreign_agents: Vec::new(),
                 faults: Vec::new(),
             }),
+            reads: Meeting::default(),
         }
     }
 
@@ -137,6 +140,19 @@ impl FakeHost {
     /// Like `inject` for every later call.
     pub fn inject_always(&self, op: &'static str, fault: Fault) {
         self.inject(op, fault, u32::MAX);
+    }
+
+    /// Makes each `read_tail` wait, up to `wait`, until `want` reads are in
+    /// progress at once. `read_peak` is the most it saw. Reads made one by one
+    /// never get past one, so a test proves calls run at the same time
+    /// without measuring wall time.
+    pub fn meet_reads(&self, want: usize, wait: Duration) {
+        self.reads.set(want, wait);
+    }
+
+    /// The most `read_tail` calls in progress at once since `meet_reads`.
+    pub fn read_peak(&self) -> usize {
+        self.reads.peak()
     }
 
     pub fn clear_faults(&self) {
@@ -400,6 +416,7 @@ impl Host for FakeHost {
     ) -> Result<String, HostError> {
         self.log
             .record("read_tail", CallKind::Read, place.id.as_str());
+        let _met = self.reads.join();
         self.before("read_tail")?;
         self.check_place(place)?;
         let screen = self
