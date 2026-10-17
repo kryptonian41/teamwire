@@ -12,6 +12,11 @@
     reason = "these tests run the real teamwire binary"
 )]
 
+#[path = "../../teamwire-watch/tests/support/fixture.rs"]
+pub mod fixture;
+#[path = "support/schema_1.rs"]
+mod schema_1;
+
 use std::io::Write as _;
 use std::path::Path;
 use std::process::Output;
@@ -104,7 +109,7 @@ fn an_unknown_team_is_refused_with_exit_1() {
 fn the_lead_and_the_dead_member_come_back_and_exit_is_0() {
     let rig = Rig::new();
     rig.closed_team("lead-sess");
-    let out = rig.teamwire(&["reopen", "demo"], "lead-sess", None);
+    let out = rig.teamwire(&["reopen", "demo"], "other-sess", None);
     let shown = text(&out.stdout);
     assert_eq!(
         out.status.code(),
@@ -116,10 +121,6 @@ fn the_lead_and_the_dead_member_come_back_and_exit_is_0() {
     assert_eq!(lines[..2], ["lead reopened", "a reopened"], "{shown}");
     assert!(shown.contains("watch: teamwire watch demo"), "{shown}");
     assert!(shown.contains("reprompt or a note"), "{shown}");
-    assert!(
-        !shown.contains("lead --adopt"),
-        "the caller is the lead: {shown}"
-    );
     // The host started both agents, the lead first, each with a resume.
     let starts: Vec<String> = rig
         .herdr
@@ -132,6 +133,25 @@ fn the_lead_and_the_dead_member_come_back_and_exit_is_0() {
     assert_eq!(resumes.len(), 2, "{starts:?}");
     assert!(resumes[0].contains("tw_demo_lead"), "{resumes:?}");
     assert!(resumes[1].contains("tw_demo_a"), "{resumes:?}");
+}
+
+#[test]
+fn a_caller_that_is_the_lead_is_skipped_by_session_id() {
+    let rig = Rig::new();
+    rig.closed_team("lead-sess");
+    let out = rig.teamwire(&["reopen", "demo"], "lead-sess", None);
+    let shown = text(&out.stdout);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{shown} / {}",
+        text(&out.stderr)
+    );
+    assert!(
+        shown.starts_with("lead skipped: already open (this session)\na reopened\n"),
+        "{shown}"
+    );
+    assert!(!shown.contains("lead --adopt"), "{shown}");
 }
 
 #[test]
@@ -155,7 +175,7 @@ fn a_dry_run_opens_nothing_and_writes_nothing() {
     let rig = Rig::new();
     rig.closed_team("lead-sess");
     let before = rig.herdr.calls().len();
-    let out = rig.teamwire(&["reopen", "demo", "--dry-run"], "lead-sess", None);
+    let out = rig.teamwire(&["reopen", "demo", "--dry-run"], "other-sess", None);
     let shown = text(&out.stdout);
     assert_eq!(out.status.code(), Some(0), "{shown}");
     assert!(shown.starts_with("lead reopened\na reopened\n"), "{shown}");
@@ -176,4 +196,46 @@ fn a_refused_session_makes_the_exit_2() {
     let shown = text(&out.stdout);
     assert_eq!(out.status.code(), Some(2), "{shown}");
     assert!(shown.starts_with("a refused: its file "), "{shown}");
+}
+
+#[test]
+fn a_dry_run_leaves_an_older_database_byte_for_byte() {
+    let rig = Rig::new();
+    let db = schema_1::version_1_team(rig.home.path(), "old", 1).unwrap();
+    let before = std::fs::read(&db).unwrap();
+    let out = rig.teamwire(&["reopen", "old", "--dry-run"], "lead-sess", None);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert_eq!(std::fs::read(&db).unwrap(), before, "the dry run migrated");
+}
+
+#[test]
+fn results_the_lead_never_received_are_listed_with_their_paths() {
+    let mut bed = fixture::Bed::new();
+    bed.add("api");
+    let done = bed.complete("api", teamwire_core::CompletionStatus::Done);
+    bed.finish(&done, teamwire_core::ReportState::Undelivered, None);
+    let run = |extra: &[&str]| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(["--home"])
+            .arg(bed.home.path())
+            .args(["reopen", "alpha"])
+            .args(extra)
+            .env_clear()
+            .env("TEAMWIRE_HOME", bed.home.path())
+            .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
+            .output()
+            .unwrap();
+        text(&out.stdout)
+    };
+    for shown in [run(&["--dry-run"]), run(&["--role", "api"])] {
+        assert!(
+            shown.contains("results the lead has not received:"),
+            "{shown}"
+        );
+        assert!(shown.contains("api #1 undelivered "), "{shown}");
+        assert!(
+            shown.contains("the lead should read those files"),
+            "{shown}"
+        );
+    }
 }
