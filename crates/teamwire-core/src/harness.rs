@@ -202,6 +202,27 @@ impl MemberLaunch {
     }
 }
 
+impl LaunchSpec {
+    /// `argv` as one shell command line, for a command teamwire only prints:
+    /// a word with anything but plain characters is single-quoted.
+    pub fn shell_line(argv: &[String]) -> String {
+        argv.iter()
+            .map(|text| {
+                let plain = !text.is_empty()
+                    && text
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
+                if plain {
+                    text.clone()
+                } else {
+                    format!("'{}'", text.replace('\'', "'\\''"))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
 /// What the harness returns. Files are written by launch (mode given) before spawn.
 /// `env` and the files can hold the token, so `Debug` hides secret values and
 /// prints each file's size, never its bytes.

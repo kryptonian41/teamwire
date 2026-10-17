@@ -262,24 +262,7 @@ fn resume_command(
     let spec = harness
         .resume_spec(&launch, session)
         .map_err(|e| e.to_string())?;
-    Ok(spec
-        .argv
-        .iter()
-        .map(|a| shell_word(a))
-        .collect::<Vec<_>>()
-        .join(" "))
-}
-
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
+    Ok(teamwire_core::LaunchSpec::shell_line(&spec.argv))
 }
 
 /// The status view. `role` adds the resume command of that member. Reads only.

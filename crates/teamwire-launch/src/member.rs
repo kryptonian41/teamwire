@@ -66,7 +66,11 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
         .iter()
         .any(|m| matches!(m.outcome, LaunchOutcome::Started));
     if started {
-        hold::ensure_hold(ctx, plan, &mut warnings);
+        let lead = (
+            &plan.lead.harness,
+            plan.lead.session.as_ref().map(|(s, _)| s),
+        );
+        hold::ensure_hold(ctx, &plan.spec.team, lead, &mut warnings);
     }
     LaunchReport {
         members,
