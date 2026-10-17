@@ -30,6 +30,7 @@ mod cmd {
     pub(crate) mod metrics;
     pub(crate) mod pr_watch;
     pub(crate) mod preset;
+    pub(crate) mod reopen;
     pub(crate) mod resend;
     pub(crate) mod send;
     pub(crate) mod status;
@@ -47,8 +48,8 @@ const USAGE: u8 = 3;
 pub(crate) use args::{
     AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
     HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
-    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ResendArgs, SendArgs, StatusArgs,
-    TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReopenArgs, ResendArgs, SendArgs,
+    StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -65,6 +66,7 @@ fn main() -> ExitCode {
     let global = &cli.global;
     match &cli.command {
         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
+        Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
         Command::Status(a) => cmd::status::run(a, global, &wiring),
         Command::Verify(a) => cmd::verify::run(a, global, &wiring),

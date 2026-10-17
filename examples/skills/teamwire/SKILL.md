@@ -79,6 +79,7 @@ lead (you)
   │                                  or to another team's agents
   ├── teamwire teams            ──► every team on this machine and its members
   ├── teamwire status           ──► "where are we?" after a compaction
+  ├── teamwire reopen           ──► bring back a team whose sessions were closed
   ├── teamwire verify           ──► run each member's check and diff rules
   └── teamwire close            ──► archive, remove worktrees, close tabs
 ```
@@ -115,7 +116,7 @@ refusals.
   Pass `team` in every call. Each tool returns JSON, and a refusal carries
   the same code as the CLI's.
 - **The shell**, for everything else. The lifecycle commands (`launch`,
-  `watch`, `verify`, `close`, `lead --adopt`) and `doctor`, `preset`,
+  `watch`, `verify`, `close`, `reopen`, `lead --adopt`) and `doctor`, `preset`,
   `export`, `metrics` and `pr-watch` exist only here. A member's server must
   never be able to run the lifecycle commands.
 
@@ -621,6 +622,12 @@ every team. `--role R` adds the command that resumes that member's session with
 its per-run configuration; a session resumed without them has no Stop hook, no
 identity and no MCP tools.
 
+A team whose sessions were closed comes back with `teamwire reopen <team>`.
+`teamwire teams` lists the team names. Reopen resumes the lead and each member
+whose session is gone, and it does not touch a session that still runs. It
+types nothing into the sessions it opens. A member that was killed in the
+middle of a turn sits idle until you send it a `reprompt` or a `note`.
+
 ## Watching for the failures nobody sees
 
 Start this right after launching, as a persistent background monitor:
@@ -797,6 +804,7 @@ Run close again after that and it continues from the first step.
 | Command | Does |
 | --- | --- |
 | `teamwire resend <team> <id> [--to ROLES]` | Retry one stored message to the recipients it did not reach. Same message, a new delivery attempt. |
+| `teamwire reopen <team> [--role R] [--dry-run]` | Resume the lead and every member whose session is gone, each in a new tab and its own folder. Types nothing into them, so send a `reprompt` or `note` to a member that was killed mid-turn. `--role` reopens one member. |
 | `teamwire lead --adopt <team>` | Run from a new lead session to make it the team's lead. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows. |

@@ -35,6 +35,8 @@ pub(crate) struct Global {
 pub(crate) enum Command {
     /// Validate a team spec, then start its members.
     Launch(LaunchArgs),
+    /// Resume the lead and the members of a team whose sessions are gone.
+    Reopen(ReopenArgs),
     /// Print one line when something needs the lead, until the team completes.
     Watch(WatchArgs),
     /// Show teams, or one team's members, messages and results. Reads only.
@@ -95,6 +97,17 @@ pub(crate) struct LaunchArgs {
     /// Read the spec from FILE instead of stdin.
     #[arg(long, value_name = "FILE")]
     pub(crate) spec: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub(crate) struct ReopenArgs {
+    pub(crate) team: String,
+    /// Reopen only this member; the lead is left alone.
+    #[arg(long, value_name = "R")]
+    pub(crate) role: Option<String>,
+    /// Print what would be reopened; open and write nothing.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Args)]

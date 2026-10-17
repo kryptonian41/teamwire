@@ -13,7 +13,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
+| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered` |
