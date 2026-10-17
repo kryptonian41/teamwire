@@ -258,7 +258,7 @@ fn a_member_without_its_files_or_folder_is_refused_with_the_reason() {
 }
 
 #[test]
-fn a_member_with_no_model_recorded_is_warned_about() {
+fn a_member_launched_without_a_model_is_not_warned_about() {
     let rig = Rig::new();
     let with_model = with(
         with(
@@ -278,14 +278,43 @@ fn a_member_with_no_model_recorded_is_warned_about() {
         close_tab(&rig, &store, r);
     }
     rig.host.log().clear();
+    rig.harness.set_interactive_caller(sid("other"));
     let report = run(&rig, &mut store, &all()).unwrap();
+    // A recorded `null` means the member ran on the default.
+    assert!(
+        report.warnings.iter().all(|w| !w.contains("no model")),
+        "{:?}",
+        report.warnings
+    );
+}
+
+#[test]
+fn a_member_an_older_build_started_is_warned_about() {
+    let rig = Rig::new();
+    let dir = rig.home.path().join("teams/demo/members/old");
+    std::fs::create_dir_all(&dir).unwrap();
+    common::write(&dir.join("settings.json"), "{}");
+    common::seed_team(&rig, "demo", |tx, at| {
+        let old = role("old");
+        tx.insert_member(at, &common::new_member("old", "old", rig.work.path()))?;
+        tx.set_member_session(&old, &sid("old-session"))?;
+        // An older build wrote no model or effort key.
+        tx.set_member_state(at, &old, MemberState::Started, &json!({}))
+    });
+    let mut store = Store::open(
+        rig.home.path(),
+        &teamwire_core::TeamName::parse("demo").unwrap(),
+    )
+    .unwrap();
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "old"), &ReopenOutcome::Reopened);
     let unrecorded: Vec<_> = report
         .warnings
         .iter()
         .filter(|w| w.contains("no model or effort"))
         .collect();
     assert_eq!(unrecorded.len(), 1, "{:?}", report.warnings);
-    assert!(unrecorded[0].starts_with("b has no model or effort"));
+    assert!(unrecorded[0].starts_with("old has no model or effort"));
 }
 
 #[test]

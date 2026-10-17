@@ -10,12 +10,15 @@ use crate::error::StoreError;
 use crate::tx::ReadTx;
 
 /// The model and effort a member's newest `member.started` event recorded.
-/// `None` means the member was launched without one, or by a build that did
-/// not record it.
+/// `None` means the member ran on the default.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RunOptions {
     pub model: Option<String>,
     pub effort: Option<String>,
+    /// The event has the `model` or `effort` key, even as `null`. False for a
+    /// member started by a build that did not record them: whether it ran on
+    /// the default is then unknown.
+    pub recorded: bool,
 }
 
 fn text(data: &serde_json::Value, key: &str) -> Option<String> {
@@ -54,6 +57,7 @@ impl ReadTx<'_> {
         Ok(started.map_or_else(RunOptions::default, |e| RunOptions {
             model: text(&e.data, "model"),
             effort: text(&e.data, "effort"),
+            recorded: e.data.get("model").is_some() || e.data.get("effort").is_some(),
         }))
     }
 }
@@ -124,7 +128,8 @@ mod tests {
             got,
             RunOptions {
                 model: Some("opus".to_owned()),
-                effort: Some("high".to_owned())
+                effort: Some("high".to_owned()),
+                recorded: true,
             }
         );
         assert_eq!(

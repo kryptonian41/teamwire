@@ -220,9 +220,9 @@ fn reopen_member(
     if let Some(file) = spec.files.iter().find(|f| !f.path.is_file()) {
         return ReopenOutcome::refused(format!("its file {} is missing", file.path.display()));
     }
-    if options.model.is_none() && options.effort.is_none() {
+    if !options.recorded {
         warnings.push(format!(
-            "{} has no model or effort recorded, so it resumes on Claude's default",
+            "{} has no model or effort recorded (an older build started it), so it resumes on Claude's default",
             member.role
         ));
     }
