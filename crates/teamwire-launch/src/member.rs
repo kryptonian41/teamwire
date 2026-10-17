@@ -66,7 +66,11 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
         .iter()
         .any(|m| matches!(m.outcome, LaunchOutcome::Started));
     if started {
-        hold::ensure_hold(ctx, plan, &mut warnings);
+        let lead = (
+            &plan.lead.harness,
+            plan.lead.session.as_ref().map(|(s, _)| s),
+        );
+        hold::ensure_hold(ctx, &plan.spec.team, lead, &mut warnings);
     }
     LaunchReport {
         members,
@@ -94,8 +98,23 @@ fn create_team(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
         lead_route: plan.lead.route,
         lead_session: plan.lead.session.clone(),
     };
+    // The folder lets `reopen` resume the lead from where it runs. A lead
+    // with no session, or one the harness cannot place, leaves it out.
+    let cwd = plan
+        .lead
+        .session
+        .as_ref()
+        .and_then(|(session, _)| {
+            ctx.registry
+                .harness(&plan.lead.harness)
+                .ok()?
+                .session_cwd(session)
+                .ok()?
+        })
+        .map(|p| p.display().to_string());
+    let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
     ctx.store
-        .write(|tx| tx.create_team(at, &team).map(|_| ()))
+        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
         .map_err(|e| e.to_string())
 }
 
@@ -399,6 +418,9 @@ fn run_member(
     steps.mark(ctx, "trust_done");
     let mut data = extra.clone();
     put(&mut data, "steps", steps.json());
+    // `reopen` resumes with these; a resume without them runs on the default.
+    put(&mut data, "model", json!(m.spec.model));
+    put(&mut data, "effort", json!(m.spec.effort));
     put(
         &mut data,
         "session_id",

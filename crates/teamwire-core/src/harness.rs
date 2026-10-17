@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use thiserror::Error;
 
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
-use crate::member::MemberKind;
+use crate::member::{Member, MemberKind};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
@@ -28,6 +28,18 @@ pub trait Harness: Send + Sync {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;
+    /// The argv that resumes the lead's own session: a plain resume, with no
+    /// per-run files, because the lead loads the teamwire plugin itself. The
+    /// default is `Unsupported`.
+    fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
+    /// The folder a session runs in, read without writing: the live session
+    /// first, then the session's own record. `None` when neither names it.
+    /// A resume only finds a session from that folder.
+    fn session_cwd(&self, _s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        Ok(None)
+    }
     fn processes_for_session(
         &self,
         s: &SessionId,
@@ -155,6 +167,60 @@ pub struct MemberLaunch {
     /// without plugins ignores it.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+}
+
+impl MemberLaunch {
+    /// The launch of a member that already ran, for `Harness::resume_spec`.
+    /// Its settings, MCP configuration and contract are already on disk under
+    /// `team_dir`, so only their paths matter and the token is a placeholder.
+    /// `model` and `effort` are the ones recorded when the member started.
+    pub fn for_resume(
+        team_dir: &Path,
+        team: &TeamName,
+        member: &Member,
+        session: &SessionId,
+        (model, effort): (Option<String>, Option<String>),
+    ) -> Self {
+        Self {
+            team: team.clone(),
+            role: member.role.clone(),
+            address: Address::of(team, &member.role),
+            kind: member.kind,
+            cwd: member.cwd.clone(),
+            session_id: session.clone(),
+            model,
+            effort,
+            member_dir: team_dir.join("members").join(member.role.as_str()),
+            contract_path: team_dir
+                .join("contract")
+                .join(format!("{}.md", member.role)),
+            identity: vec![("TEAMWIRE_TOKEN".to_owned(), "-".to_owned())],
+            otel: OtelConfig::default(),
+            teamwire_bin: PathBuf::from("teamwire"),
+            plugins: BTreeMap::new(),
+        }
+    }
+}
+
+impl LaunchSpec {
+    /// `argv` as one shell command line, for a command teamwire only prints:
+    /// a word with anything but plain characters is single-quoted.
+    pub fn shell_line(argv: &[String]) -> String {
+        argv.iter()
+            .map(|text| {
+                let plain = !text.is_empty()
+                    && text
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
+                if plain {
+                    text.clone()
+                } else {
+                    format!("'{}'", text.replace('\'', "'\\''"))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
 }
 
 /// What the harness returns. Files are written by launch (mode given) before spawn.

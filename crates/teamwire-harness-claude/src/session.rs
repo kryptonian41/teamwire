@@ -5,7 +5,7 @@
 //! for a session no live file names (a background session, or a file the
 //! program has not written yet). Neither source is ever written.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
@@ -36,6 +36,8 @@ pub(crate) struct SessionFile {
     pub(crate) kind: Option<String>,
     /// `startedAt`: when the session started, in the file's milliseconds.
     pub(crate) started_at: Option<Timestamp>,
+    /// `cwd`: the folder the session runs in.
+    pub(crate) cwd: Option<PathBuf>,
 }
 
 /// The caller's own session. The lookup is a parameter so a test never has
@@ -104,6 +106,7 @@ fn parse_session_file(bytes: &[u8]) -> Option<SessionFile> {
         status: doc.get("status").and_then(Value::as_str).map(str::to_owned),
         kind: doc.get("kind").and_then(Value::as_str).map(str::to_owned),
         started_at: started_at(&doc),
+        cwd: doc.get("cwd").and_then(Value::as_str).map(PathBuf::from),
     })
 }
 

@@ -3,6 +3,7 @@
 //! turn-end hook).
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -63,6 +64,7 @@ struct State {
     listing_fault: Option<HarnessError>,
     detects_pending: bool,
     pushed: Vec<(SessionId, String)>,
+    cwds: HashMap<SessionId, PathBuf>,
 }
 
 /// An in-process `Harness`.
@@ -108,6 +110,7 @@ impl FakeHarness {
                 listing_fault: None,
                 detects_pending: true,
                 pushed: Vec::new(),
+                cwds: HashMap::new(),
             }),
         }
     }
@@ -161,6 +164,11 @@ impl FakeHarness {
     /// `processes_for_session` and `is_alive` fail with `err` until cleared.
     pub fn fail_listing(&self, err: Option<HarnessError>) {
         lock(&self.state).listing_fault = err;
+    }
+
+    /// The folder `session_cwd` reports for `id`.
+    pub fn set_session_cwd(&self, id: SessionId, cwd: impl Into<PathBuf>) {
+        lock(&self.state).cwds.insert(id, cwd.into());
     }
 
     /// Lines `push` accepted, per session.
@@ -262,6 +270,21 @@ impl Harness for FakeHarness {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
         self.log.record("resume_spec", CallKind::Read, s.as_str());
         self.spec(m, Some(s))
+    }
+
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        self.log
+            .record("lead_resume_argv", CallKind::Read, s.as_str());
+        Ok(vec![
+            "fake-claude".to_owned(),
+            "--resume".to_owned(),
+            s.as_str().to_owned(),
+        ])
+    }
+
+    fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        self.log.record("session_cwd", CallKind::Read, s.as_str());
+        Ok(lock(&self.state).cwds.get(s).cloned())
     }
 
     fn current_session(&self) -> Option<CallerSession> {

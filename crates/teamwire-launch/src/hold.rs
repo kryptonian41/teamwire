@@ -4,27 +4,30 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HoldInfo, Pid, SessionId, TeamName, TeamState};
+use teamwire_core::{HarnessId, HoldInfo, Pid, SessionId, TeamName, TeamState};
 use teamwire_store::{Ctx, Store};
-
-use crate::ValidPlan;
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Starts or reuses the hold and records it on the team. Every way this can
 /// go wrong is said in `warnings`, because a missing hold is a laptop that
 /// sleeps under a running team.
-pub(crate) fn ensure_hold(ctx: &mut Ctx<'_>, plan: &ValidPlan, warnings: &mut Vec<String>) {
+pub(crate) fn ensure_hold(
+    ctx: &mut Ctx<'_>,
+    team: &TeamName,
+    lead: (&HarnessId, Option<&SessionId>),
+    warnings: &mut Vec<String>,
+) {
     let Some(hold) = ctx.platform.sleep_hold() else {
         warnings.push(
             "no sleep hold on this platform: the machine may sleep under the team".to_owned(),
         );
         return;
     };
-    let Some((session, _)) = &plan.lead.session else {
+    let (harness, Some(session)) = lead else {
         return;
     };
-    let Some(lead_pid) = lead_process(ctx, plan, session, warnings) else {
+    let Some(lead_pid) = lead_process(ctx, harness, session, warnings) else {
         return;
     };
     let mine = team_of(ctx.store).and_then(|t| t.sleep_hold);
@@ -32,7 +35,7 @@ pub(crate) fn ensure_hold(ctx: &mut Ctx<'_>, plan: &ValidPlan, warnings: &mut Ve
         // A process list cannot say who started a hold, so `found.owned` is
         // not believed: this team owns it only if a team already recorded so.
         let owned = mine.is_some_and(|m| m.pid == found.pid && m.owned)
-            || another_team_owns(ctx, &plan.spec.team, session, found.pid);
+            || another_team_owns(ctx, team, session, found.pid);
         HoldInfo {
             pid: found.pid,
             owned,
@@ -62,13 +65,13 @@ pub(crate) fn ensure_hold(ctx: &mut Ctx<'_>, plan: &ValidPlan, warnings: &mut Ve
 /// The lead's harness process, found from the lead's session.
 fn lead_process(
     ctx: &Ctx<'_>,
-    plan: &ValidPlan,
+    harness: &HarnessId,
     session: &SessionId,
     warnings: &mut Vec<String>,
 ) -> Option<Pid> {
     let found = ctx
         .registry
-        .harness(&plan.lead.harness)
+        .harness(harness)
         .map_err(|e| e.to_string())
         .and_then(|h| {
             h.processes_for_session(session, LIST_TIMEOUT)

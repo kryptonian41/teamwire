@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
-use teamwire_watch::{StatusView, WatchState};
+use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
@@ -71,6 +71,24 @@ fn summary_line(name: &TeamName, view: &StatusView) -> String {
         line = format!("{line} ({})", view.errors.join("; "));
     }
     line
+}
+
+/// The lines that list results the lead has not received. Empty when none.
+pub(crate) fn results_block(results: &[UndeliveredResult]) -> Vec<String> {
+    if results.is_empty() {
+        return Vec::new();
+    }
+    let mut out = vec!["results the lead has not received:".to_owned()];
+    for r in results {
+        out.push(format!(
+            "  {} #{} {} {}",
+            r.role.as_str(),
+            r.n,
+            r.report_state.as_str(),
+            r.path.display()
+        ));
+    }
+    out
 }
 
 fn render(view: &StatusView) -> String {
@@ -177,18 +195,7 @@ fn render(view: &StatusView) -> String {
             ));
         }
     }
-    if !view.undelivered_results.is_empty() {
-        out.push("results the lead has not received:".to_owned());
-        for r in &view.undelivered_results {
-            out.push(format!(
-                "  {} #{} {} {}",
-                r.role.as_str(),
-                r.n,
-                r.report_state.as_str(),
-                r.path.display()
-            ));
-        }
-    }
+    out.extend(results_block(&view.undelivered_results));
     for e in &view.errors {
         out.push(format!("problem: {e}"));
     }

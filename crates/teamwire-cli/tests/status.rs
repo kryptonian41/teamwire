@@ -255,3 +255,42 @@ fn role_reports_why_a_resume_command_is_missing() {
     assert_eq!(run.code, 0, "{}", run.err);
     assert!(run.out.contains("no resume command for api"), "{}", run.out);
 }
+
+#[test]
+fn role_shows_the_model_and_effort_the_member_was_launched_with() {
+    let mut bed = team();
+    let now = teamwire_core::Clock::now(&bed.clock);
+    let role = teamwire_core::Role::parse("cc").unwrap();
+    let new = teamwire_store::NewMember {
+        role: role.clone(),
+        title: "the cc".to_owned(),
+        kind: teamwire_core::MemberKind::Implementer,
+        mode: teamwire_core::Mode::Pane,
+        harness: teamwire_core::HarnessId::from_static("claude-code"),
+        host: teamwire_core::HostId::from_static("herdr"),
+        cwd: bed.home.path().to_path_buf(),
+        repo: None,
+        branch: None,
+        base: None,
+        base_sha: None,
+        check: None,
+        owns: vec![],
+        deadline_s: 1800,
+    };
+    bed.store
+        .write(|tx| {
+            tx.insert_member(now, &new)?;
+            tx.set_member_session(&role, &Bed::session("cc"))?;
+            tx.set_member_state(
+                now,
+                &role,
+                teamwire_core::MemberState::Started,
+                &serde_json::json!({ "model": "opus", "effort": "high" }),
+            )
+        })
+        .unwrap();
+    let run = teamwire(&bed, &["status", "alpha", "--role", "cc"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(run.out.contains("--model opus"), "{}", run.out);
+    assert!(run.out.contains("--effort high"), "{}", run.out);
+}

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use teamwire_core::{
-    Address, DeliveryState, Liveness, Member, MemberState, OtelConfig, Recipient, ReportState,
-    Role, SessionId, Timestamp, one_line,
+    DeliveryState, Liveness, Member, MemberState, Recipient, ReportState, Role, SessionId,
+    Timestamp, one_line,
 };
 use teamwire_deliver::{PENDING_STALE, attempt_started, line_holds_whole, watch_lease_is_dead};
 use teamwire_store::{
@@ -248,46 +248,21 @@ fn resume_command(
     let (harness, _) = ctx
         .adapters(&Party::Member(member.role.clone()))
         .map_err(|e| e.to_string())?;
-    let launch = teamwire_core::MemberLaunch {
-        team: team.clone(),
-        role: member.role.clone(),
-        address: Address::of(team, &member.role),
-        kind: member.kind,
-        cwd: member.cwd.clone(),
-        session_id: session.clone(),
-        model: None,
-        effort: None,
-        member_dir: team_dir.join("members").join(member.role.as_str()),
-        contract_path: team_dir
-            .join("contract")
-            .join(format!("{}.md", member.role)),
-        identity: vec![("TEAMWIRE_TOKEN".to_owned(), "-".to_owned())],
-        otel: OtelConfig::default(),
-        teamwire_bin: PathBuf::from("teamwire"),
-        // Resume reads the settings file written at launch; only argv is used.
-        plugins: std::collections::BTreeMap::new(),
-    };
+    let options = ctx
+        .store
+        .read(|tx| tx.run_options(&member.role))
+        .map_err(|e| e.to_string())?;
+    let launch = teamwire_core::MemberLaunch::for_resume(
+        team_dir,
+        team,
+        member,
+        session,
+        (options.model, options.effort),
+    );
     let spec = harness
         .resume_spec(&launch, session)
         .map_err(|e| e.to_string())?;
-    Ok(spec
-        .argv
-        .iter()
-        .map(|a| shell_word(a))
-        .collect::<Vec<_>>()
-        .join(" "))
-}
-
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
+    Ok(teamwire_core::LaunchSpec::shell_line(&spec.argv))
 }
 
 /// The status view. `role` adds the resume command of that member. Reads only.

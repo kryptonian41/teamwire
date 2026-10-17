@@ -62,7 +62,12 @@ fn absolute(path: &Path) -> PathBuf {
 }
 
 fn is_home(env: &ValidateEnv<'_>, path: &Path) -> bool {
-    let Some(home) = &env.user_home else {
+    is_home_dir(env.user_home.as_deref(), path)
+}
+
+/// True when `path` is the user's home directory, whatever way it is spelled.
+pub(crate) fn is_home_dir(home: Option<&Path>, path: &Path) -> bool {
+    let Some(home) = home else {
         return false;
     };
     match (path.canonicalize(), home.canonicalize()) {

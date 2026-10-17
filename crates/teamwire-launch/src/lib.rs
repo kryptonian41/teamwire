@@ -1,7 +1,8 @@
 //! Launch: whole-spec validation before anything is created, worktrees,
 //! setup, the contract text (data files in `contracts/`), member tokens,
 //! spawning through each member's host, the trust step, the dispatch
-//! message, and the sleep hold.
+//! message, and the sleep hold. `reopen` resumes the sessions of a team whose
+//! sessions are gone.
 //!
 //! Never: create anything before the whole spec is valid; start a member
 //! that has no identity channel; reuse a role unless its earlier launch
@@ -21,6 +22,8 @@ mod member_steps;
 mod plan;
 mod plan_rules;
 mod plan_worktree;
+mod reopen;
+mod reopen_lead;
 mod spec;
 mod validate;
 mod worktree;
@@ -36,6 +39,7 @@ use teamwire_store::Ctx;
 
 pub use contract::{ContractParts, render_contract};
 pub use env::ValidateEnv;
+pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 pub use spec::parse_spec;
 pub use validate::validate;
 

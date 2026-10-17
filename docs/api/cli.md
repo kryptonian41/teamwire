@@ -13,7 +13,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
+| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered` |
@@ -115,7 +115,64 @@ binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
 --append-system-prompt-file ...`), because a session resumed without them has
-no Stop hook, no identity and no MCP tools.
+no Stop hook, no identity and no MCP tools. The command carries the
+`--model` and `--effort` the member was launched with, when launch recorded
+them. A member started by an older build resumes on Claude's default.
+
+### `teamwire reopen <team> [--role R] [--dry-run]`
+
+Resumes the sessions of a team whose sessions are gone, for example after the
+terminal was closed. A caller that carries a member identity is refused with
+`refused.identity`, exit 1. A team that is unknown, `closing` or `closed`, or a
+`--role` that names no member, is refused with exit 1.
+
+The command reopens the lead first, so a host that groups a team's tabs puts
+the members beside it. Then it reopens every member in state `started` whose
+session is gone (`Harness::is_alive` says `Dead`), whether or not that member
+reported done. `--role R` reopens only that member and leaves the lead alone.
+Each session is resumed in a new tab named `tw_<team>_lead` or
+`tw_<team>_<role>`, in its own folder, by its own session id. A member's argv
+is the one `status --role` shows, with the recorded model and effort. The
+lead's argv is `claude --resume <session id>`, because the lead loads the
+teamwire plugin itself. A plain folder-trust dialog is answered as launch
+answers it. The stronger dialog is never answered. When the trust step fails,
+the new tab is closed and the session is reported `failed`; the member's
+recorded place changes only after the trust step succeeds. Nothing is typed
+into a reopened session. A member that was killed mid-turn sits idle until the
+lead sends it a `reprompt` or a `note`.
+
+The lead's folder is the newest `lead_cwd` that `launch` or `lead --adopt`
+recorded. For a team with none, the harness reads it from the session's live
+record, then from its transcript. A resume only finds a session from that
+folder. A lead whose folder is the user's home directory is refused, because
+reopen would answer the folder-trust dialog for it (LCH-15).
+
+Each session gets one line on stdout: `lead reopened`, `<role> reopened`,
+`<role> skipped: <why>`, `<role> refused: <why>` or `<role> failed: <why>`.
+A session is skipped when it is already open, when it is not known whether it
+runs (two processes on one session would make delivery refuse with
+`two_places`), when the member is removed or failed to start, or when the lead
+is a background session, has no session recorded, or is the calling session
+(`already open (this session)`). A session is refused when it has no session
+id, or its folder or one of its per-run files is gone, or the lead's host is
+`none`, or the lead's folder cannot be found or is the home directory. For the
+lead, the reason then carries the command to run by hand. A member whose
+`member.started` event has no `model` or `effort` key (an older build) gets
+one `warning:` line on stderr.
+
+After the sessions, the command lists the results the lead has not received,
+in the form `status` uses, with a line telling the lead to read those files,
+because teamwire never sends a result again by itself. The sleep hold is
+started or reused as launch does; a hold that cannot be taken is a warning.
+Then come the line `watch: teamwire watch <team>` and a line that says a
+member killed mid-turn needs a `reprompt` or a `note`. When the caller is not
+the team's lead session, a last line says that results go to the reopened lead
+and that `teamwire lead --adopt <team>` makes the caller the lead instead.
+
+`--dry-run` prints the same lines as a plan, then `dry run: nothing was opened
+and nothing was written`. It starts no tab, writes no row, and opens the
+database read-only, so it does not migrate an older database. Exit 0 when no
+session was refused or failed, and 2 otherwise.
 
 ### `teamwire verify <team> [--role R] [--waive FLAG --reason TEXT] [--deep] [--repair-files]`
 

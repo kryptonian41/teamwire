@@ -21,11 +21,14 @@ pub fn adopt_lead(ctx: &mut Ctx<'_>, env: &CallerEnv) -> Result<AdoptReport, Sen
     if env.is_member_session() {
         return Err(Refusal::Identity.into());
     }
-    let session = {
+    let (session, cwd) = {
         let (harness, _) = ctx.adapters(&Party::Lead).map_err(|e| {
             SendError::Internal(format!("the lead's harness is not available: {e}"))
         })?;
-        harness.current_session().ok_or(Refusal::Identity)?
+        let session = harness.current_session().ok_or(Refusal::Identity)?;
+        // Recorded so `reopen` can resume the lead from its own folder.
+        let cwd = harness.session_cwd(&session.id).ok().flatten();
+        (session, cwd)
     };
     if session.kind != SessionKind::Interactive {
         return Err(Refusal::Identity.into());
@@ -33,7 +36,7 @@ pub fn adopt_lead(ctx: &mut Ctx<'_>, env: &CallerEnv) -> Result<AdoptReport, Sen
     let now = ctx.clock.now();
     let old = ctx
         .store
-        .write(|tx| tx.adopt_lead(now, &session.id, session.kind))?;
+        .write(|tx| tx.adopt_lead_in(now, &session.id, session.kind, cwd.as_deref()))?;
     Ok(AdoptReport {
         old,
         new: session.id,

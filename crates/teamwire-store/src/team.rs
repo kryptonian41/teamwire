@@ -1,8 +1,10 @@
 //! The single `team` row: creation, the close lock, lead adoption and the
 //! sleep-hold record.
 
+use std::path::Path;
+
 use rusqlite::{OptionalExtension, Row};
-use serde_json::json;
+use serde_json::{Value, json};
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
     EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName,
@@ -91,6 +93,24 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
 impl Tx<'_> {
     /// Inserts the team row, `open`, and writes `team.created`.
     pub fn create_team(&self, at: Timestamp, team: &NewTeam) -> Result<Ulid, StoreError> {
+        self.create_team_with(at, team, &Value::Null)
+    }
+
+    /// `create_team`, with `extra` merged into the `team.created` event's
+    /// data (launch adds `lead_cwd`).
+    pub fn create_team_with(
+        &self,
+        at: Timestamp,
+        team: &NewTeam,
+        extra: &Value,
+    ) -> Result<Ulid, StoreError> {
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.extend([
+            ("title".to_owned(), json!(team.title)),
+            ("harness".to_owned(), json!(team.lead_harness.as_str())),
+            ("host".to_owned(), json!(team.lead_host.as_str())),
+            ("lead_route".to_owned(), json!(team.lead_route.as_str())),
+        ]);
         let ulid = self.new_ulid(at);
         let (session, kind) = match &team.lead_session {
             Some((id, kind)) => (Some(id.as_str()), Some(kind.as_str())),
@@ -117,12 +137,7 @@ impl Tx<'_> {
             EventType::TeamCreated,
             None,
             Some(&ulid),
-            &json!({
-                "title": team.title,
-                "harness": team.lead_harness.as_str(),
-                "host": team.lead_host.as_str(),
-                "lead_route": team.lead_route.as_str(),
-            }),
+            &Value::Object(data),
         )?;
         Ok(ulid)
     }
@@ -219,6 +234,18 @@ impl Tx<'_> {
         session: &SessionId,
         kind: SessionKind,
     ) -> Result<Option<SessionId>, StoreError> {
+        self.adopt_lead_in(at, session, kind, None)
+    }
+
+    /// `adopt_lead`, recording the new lead's folder in the event's data as
+    /// `lead_cwd`, when it is known.
+    pub fn adopt_lead_in(
+        &self,
+        at: Timestamp,
+        session: &SessionId,
+        kind: SessionKind,
+        cwd: Option<&Path>,
+    ) -> Result<Option<SessionId>, StoreError> {
         let old: Option<Option<String>> = self
             .connection()
             .query_row("SELECT lead_session_id FROM team WHERE id = 1", [], |r| {
@@ -233,13 +260,11 @@ impl Tx<'_> {
             [session.as_str(), kind.as_str()],
         )?;
         exactly_one(rows, "team")?;
-        self.record_event(
-            at,
-            EventType::TeamLeadAdopted,
-            None,
-            None,
-            &json!({ "old_session": old, "new_session": session.as_str() }),
-        )?;
+        let mut data = json!({ "old_session": old, "new_session": session.as_str() });
+        if let (Some(cwd), Some(map)) = (cwd, data.as_object_mut()) {
+            map.insert("lead_cwd".to_owned(), json!(cwd.to_string_lossy()));
+        }
+        self.record_event(at, EventType::TeamLeadAdopted, None, None, &data)?;
         old.map(|s| SessionId::parse(&s).map_err(|e| StoreError::bad_value("team", "1", e)))
             .transpose()
     }
