@@ -259,12 +259,14 @@ pub(crate) fn write_file(
         .map_err(|e| format!("cannot set the mode of {}: {e}", path.display()))
 }
 
-pub(crate) fn write_member_files(
+/// Writes the member directory and the contract. A harness may read the
+/// contract while it builds the launch (Codex puts its text in argv), so this
+/// runs before `launch_spec`.
+pub(crate) fn write_contract(
     ctx: &Ctx<'_>,
     dirs: &Dirs,
     m: &PlannedMember,
     launch: &MemberLaunch,
-    files: &[teamwire_core::LaunchFile],
 ) -> Result<(), Stop> {
     use std::os::unix::fs::PermissionsExt;
     let role = &m.spec.role;
@@ -293,6 +295,31 @@ pub(crate) fn write_member_files(
         0o644,
     )
     .map_err(fail)?;
+    write_file(
+        ctx.platform,
+        &launch.contract_path,
+        contract.as_bytes(),
+        0o644,
+    )
+    .map_err(fail)
+}
+
+pub(crate) fn write_member_files(
+    ctx: &Ctx<'_>,
+    dirs: &Dirs,
+    m: &PlannedMember,
+    launch: &MemberLaunch,
+    files: &[teamwire_core::LaunchFile],
+) -> Result<(), Stop> {
+    use std::os::unix::fs::PermissionsExt;
+    let role = &m.spec.role;
+    let fail = |e: String| Stop::fail(ReasonCode::Files, e);
+    // The member directory holds the token, so it is private too.
+    std::fs::create_dir_all(&launch.member_dir)
+        .and_then(|()| {
+            std::fs::set_permissions(&launch.member_dir, std::fs::Permissions::from_mode(0o700))
+        })
+        .map_err(|e| fail(format!("cannot make {}: {e}", launch.member_dir.display())))?;
     write_file(ctx.platform, &dirs.brief(role), m.brief.as_bytes(), 0o644).map_err(fail)?;
     if m.worktree.is_some() {
         write_file(

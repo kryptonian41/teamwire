@@ -16,7 +16,8 @@ use teamwire_store::{Ctx, NewMember, NewTeam};
 
 use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
-    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
+    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_contract,
+    write_member_files,
 };
 use crate::worktree;
 use crate::{
@@ -331,6 +332,7 @@ fn run_member(
         plugins: merged_plugins(&plan.spec.plugins, &m.spec.plugins),
         accept_trust: m.spec.accept_trust,
     };
+    write_contract(ctx, dirs, m, &launch)?;
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(
             ReasonCode::Harness,

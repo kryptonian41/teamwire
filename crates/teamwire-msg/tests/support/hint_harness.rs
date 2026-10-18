@@ -12,9 +12,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OneLine, OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
+    LaunchSpec, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Role, ScreenState,
+    SessionId, SessionKind, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 use teamwire_fakes::FakeHarness;
 
@@ -24,6 +24,7 @@ pub(crate) struct HintHarness {
     inner: Arc<FakeHarness>,
     key: &'static str,
     on_startup: Option<StartupFn>,
+    reads_contract: bool,
 }
 
 impl HintHarness {
@@ -32,7 +33,15 @@ impl HintHarness {
             inner,
             key,
             on_startup: None,
+            reads_contract: false,
         }
+    }
+
+    /// `launch_spec` reads the contract file, as Codex does, and fails when
+    /// it is not there yet.
+    pub(crate) fn reading_contract(mut self) -> Self {
+        self.reads_contract = true;
+        self
     }
 
     pub(crate) fn on_startup(mut self, f: impl Fn(&Place) + Send + Sync + 'static) -> Self {
@@ -49,6 +58,17 @@ impl Harness for HintHarness {
         self.inner.capabilities()
     }
     fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        if self.reads_contract {
+            std::fs::read_to_string(&m.contract_path).map_err(|e| {
+                HarnessError::new(
+                    HarnessErrorCode::Io,
+                    format!(
+                        "cannot read the contract {}: {e}",
+                        m.contract_path.display()
+                    ),
+                )
+            })?;
+        }
         self.inner.launch_spec(m)
     }
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {

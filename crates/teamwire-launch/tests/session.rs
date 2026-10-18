@@ -83,3 +83,20 @@ fn a_session_the_hook_recorded_is_kept() {
         Some(session("hook-session"))
     );
 }
+
+#[test]
+fn the_contract_is_on_disk_before_the_harness_builds_its_launch() {
+    let mut rig = Rig::new();
+    let harness = HintHarness::new(Arc::clone(&rig.harness), "unused").reading_contract();
+    let mut registry = Registry::new();
+    registry.add_harness(Arc::new(harness)).unwrap();
+    registry.add_host(rig.host.clone()).unwrap();
+    rig.registry = registry;
+    let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, _) = rig.launch("demo", plan);
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        teamwire_launch::LaunchOutcome::Started
+    );
+}
