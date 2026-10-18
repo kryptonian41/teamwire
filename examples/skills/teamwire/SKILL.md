@@ -23,13 +23,13 @@ with machine setup and the reference tables at the end.
 
 ## Your tools
 
-The lead's MCP server, in the teamwire plugin, gives you six tools named
-`mcp__plugin_teamwire_teamwire__<tool>`: `team_send`, `team_resend`,
-`team_log`, `team_members` (`of` reads another team), `team_status`
-(`teamwire status --json`) and `team_teams` (`teamwire teams --json`). Each
-applies its CLI command's rules and refusal codes, and returns JSON. Claude
-Code loads these tools only on request, so load all six in one call before
-the first use in a session:
+The lead's MCP server, in the teamwire plugin, lists nine tools named
+`mcp__plugin_teamwire_teamwire__<tool>`. Six are yours, for messages and
+reads: `team_send`, `team_resend`, `team_log`, `team_members` (`of` reads
+another team), `team_status` (`teamwire status --json`) and `team_teams`
+(`teamwire teams --json`). Each applies its CLI command's rules and refusal
+codes, and returns JSON. Claude Code loads these tools only on request, so
+load all six in one call before the first use in a session:
 
 ```
 ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams"  max_results: 6
@@ -37,8 +37,9 @@ ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_
 
 Pass `team` in every call, `team_teams` included. It must be a team this
 session leads, because the server proves you are its lead. Before your first
-launch, use `teamwire teams` from the shell. The server refuses the member
-tools `team_inbox`, `team_ack` and `team_done` with `invalid.argument`.
+launch, use `teamwire teams` from the shell. The other three tools,
+`team_inbox`, `team_ack` and `team_done`, are a member's, and the server
+refuses them for you with `invalid.argument`.
 `examples/mcp/lead.json` shows the same server for reference only, and
 registering it beside the plugin starts a second server. Everything else
 (`launch`, `watch`, `verify`, `close`, `reopen`, `lead --adopt`, `doctor`,
@@ -80,12 +81,13 @@ fill in.
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
 | `closer` | The last step from about four members up. One agent verifies the team's claims and writes one report. |
 
-**Route `model` and `effort` per member** with the role table's values. This
-is the largest cost lever in a run. Plan on `opus` yourself. Extra thinking
-buys little in an implementer's routine edits, and a lot in a reviewer's or
-closer's judgement of other agents' work. Raise one member to `max` only for
-a task that is hard to reason about, such as a race or a data-loss path,
-because slower turns use up its `deadline_s`.
+**Route `model` and `effort` per member** with the role table's values. The
+model is the largest cost lever in a run. Plan on `opus` yourself. The effort
+levels are teamwire's defaults, and no measured source backs them. The
+reasoning behind them: extra thinking buys little in an implementer's routine
+edits, and a lot in a reviewer's or closer's judgement of other agents' work.
+Raise one member to `max` only for a task that is hard to reason about, such
+as a race or a data-loss path, because slower turns use up its `deadline_s`.
 
 ## Plan the work, then check the plan
 
@@ -101,8 +103,9 @@ settle by guessing becomes the same guess in several fresh contexts.
 - Devin does best on "clear, upfront requirements and verifiable outcomes
   that would take a junior engineer 4-8 hrs of work".
 - Anthropic's agent-teams docs suggest 3-5 teammates with 5-6 tasks each.
-  Size the team to what will be reviewed, with at most five open implementer
-  branches. Launch warns above that.
+  Those tasks are items on a teammate's shared task list, not units in one
+  brief. Size the team to what will be reviewed, with at most five open
+  implementer branches. Launch warns above that.
 - From about four same-shaped members up, pilot one first. Read its result,
   run `teamwire verify`, fix the brief, then add the rest with `--add`.
 
@@ -112,12 +115,15 @@ brings in new work. Fix what it finds first.
 1. Each implementer has a runnable `check` that you have run once.
 2. Each `check` covers what CI covers. Compare it with the repository's CI
    jobs: lint scope, duplication and rule gates, type checks, tests that need
-   a database. In six of teamwire's own runs, a gate outside `check` failed at
-   or after pull request time.
+   a database. In teamwire's own runs, gates outside a member's `check`
+   failed at or after pull request time.
 3. Each `check` passes in a fresh worktree of the base after the spec's
    `setup`, because a shared virtual environment or `node_modules` can differ
    from the lockfile. Make one with `git worktree add`, run `setup` in it with
-   its path as the first argument, run the checks, then remove it.
+   its path as the first argument, run the checks, then remove it. Launch
+   also gives `setup` the variables `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`,
+   `TEAMWIRE_HOME` and `TEAMWIRE_CHILD_CWD`, so set them by hand when the
+   script reads them.
 4. No two members of one wave have overlapping `owns`. Launch compares `owns`
    only within one spec file, so check an `--add` against the running members
    yourself.
@@ -157,10 +163,11 @@ to a file, then start a clean lead session with a first message like this:
 
 ```
 You are the lead for <ticket>. Read ./<TICKET>-BRIEF.md in full first; it
-assumes no prior conversation. Then lead a team with the teamwire skill: one
-implementer per unit in its own worktree with explicit file ownership, plus
-the reviewer or closer the skill calls for. Re-run the checks yourself after
-integrating. Do not push or open a pull request without asking.
+assumes no prior conversation. Then plan the work, and lead a team with
+the teamwire skill: one implementer per unit in its own worktree with
+explicit file ownership, plus the reviewer or closer the skill calls for.
+Re-run the checks yourself after integrating. Do not push or open a pull
+request without asking.
 ```
 
 The new session runs `teamwire lead --adopt <team>` for each team it takes
@@ -175,16 +182,17 @@ them runs on Claude Code's defaults, so set the last three columns.
 
 | Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
 | --- | --- | --- | --- | --- | --- |
-| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) | `sonnet` | `medium` |
+| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) | `sonnet` | `medium` |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` | `opus` | `xhigh` |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` | `high` |
-| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In a temporary clone it makes itself, reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, names its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
+| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In a temporary clone it makes itself, runs the member's `setup` with the clone's path as its first argument (an install allowed there), or copies an existing `target/` or `node_modules` folder in. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode. Every member is
 told that the brief is the agreed plan, to list any choice the brief does not
-cover under **Decisions I made**, to record a question the brief marks open
-without answering it, and to talk only through `teamwire send`.
+cover under **Decisions I made**, and to record a question the brief marks
+open without answering it. Implementers and investigators talk only through
+`teamwire send`. Reviewers and closers send nothing.
 
 ## Skills and plugins in members
 
@@ -238,8 +246,9 @@ has a hyphen, and `lead` is reserved.
   of a contract split and of stacked branches, so `verify` reads the right
   diff.
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
-  starts a member idle, for you to prompt. `"accept_trust": false` stops
-  launch from answering the folder-trust prompt.
+  starts a member idle, for you to prompt. With `"accept_trust": false`,
+  launch does not answer the folder-trust prompt, and it fails the member
+  when that prompt appears.
 
 Add `.worktrees/` to `.gitignore` before any `git add -A`, or you commit every
 member's checkout. Launch refuses a worktree member until git ignores it, and
@@ -255,12 +264,14 @@ only its own spec file, so repeat it in every `--add` spec.
 **Every coding member needs `setup`.** A fresh worktree has no dependencies
 and no environment files, so a member without `setup` burns its budget on a
 broken checkout. `setup` runs in the member's directory, with that directory
-as its first argument, before the tab opens. Set it once at the top of the
-spec or per member. `"setup": ""` opts a member out. A non-zero exit prints
-`failed:` and removes the worktree, so the same role, branch and path can be
-used again. The removal is not forced, so remove a worktree left behind with
-untracked files yourself. Then read the setup log that launch names, fix the
-environment, and add the member again with `--add`.
+as its first argument, before the tab opens. A `setup` at the top of the spec
+covers the worktree members of that spec file only, so repeat it in every
+`--add` spec, or set it per member. `"setup": ""` opts a member out. A
+non-zero exit prints `failed:` and removes the worktree, so the same role,
+branch and path can be used again. The removal is not forced, so remove a
+worktree left behind with untracked files yourself. Then read the setup log
+that launch names, fix the environment, and add the member again with
+`--add`.
 
 ## Write the brief as a file
 
@@ -269,8 +280,8 @@ Launch keeps a copy with the team, and writes it as `TASK.md` into a worktree
 member's checkout with git set to ignore it. It sends a pointer to the brief
 as the member's first message, so the member starts at once.
 
-State the end state, not the steps. Anthropic, OpenAI, GitHub and Spotify all
-ask for acceptance criteria and clear boundaries. OpenAI's Codex guide names a
+State the end state, not the steps. Anthropic, OpenAI and GitHub all ask for
+acceptance criteria and clear boundaries, and OpenAI's Codex guide names a
 "Done when" section. Spotify found Claude Code does better with prompts that
 "describe the end state", and says: "State preconditions." Give every brief
 these sections:
@@ -356,8 +367,10 @@ Right after launch, start the watch (next section). Then call `team_status`
 once with the team, as after any `teamwire lead --adopt`. A
 `refused.identity` that says no harness session id reached the server means
 the server cannot prove you are the lead, so use the shell for the rest of
-the session. Any other `refused.identity` means this session is not the
-team's recorded lead. Run `teamwire lead --adopt <team>`, then call again.
+the session. One that says "no such team, or not yours" also comes from a
+mistyped or closed team, so check the name with `teamwire teams` first. Any
+other `refused.identity` means this session is not the team's recorded lead.
+Run `teamwire lead --adopt <team>`, then call again.
 
 ## While the team runs
 
@@ -373,8 +386,10 @@ teamwire watch <team>
 The watch prints at most one line per poll, joining what one poll found with
 ` | `, and announces each event once. Each line costs you a full turn, so a
 healthy wave wakes you twice: `WATCHING` and `TEAM-COMPLETE`. On herdr and
-tmux, completions arrive through the Stop hook, so the watch stays silent
-about them. "Watch lines" near the end explains each line.
+tmux, a completion arrives through the Stop hook, so the watch prints nothing
+for a result typed into your pane. It still prints `DECLARED`, `UNDELIVERED`
+or `UNCONFIRMED` when delivery lags or fails. "Watch lines" near the end
+explains each line.
 
 `Monitor` stops a command after 5 minutes by default and 30 at most. When it
 reports that the watch expired, restart it at once, unless it printed
@@ -439,11 +454,14 @@ teamwire log <team> [--role ROLE]
 
 `send` stores the message under the team's `comms/` directory, even when
 delivery fails. Then it types one line into each recipient's pane: the whole
-body up to 300 characters, or else a pointer to the stored copy. Exit code 1
-is a refusal, 4 is `NOT DELIVERED`, 5 is `UNCONFIRMED`, and 6 is a store
-error. After `UNCONFIRMED` the text may be on screen already. Check
-`teamwire status`, and only if it did not arrive run
-`teamwire resend <team> <id>`, never a second `send`. Each member's identity
+body up to 300 characters, or else a 300-character excerpt followed by a
+pointer to the stored copy. Exit code 1 is a refusal, 4 is `NOT DELIVERED`,
+5 is `UNCONFIRMED`, and 6 is a store error. After `UNCONFIRMED` the text may
+be on screen already. Check `teamwire status`, and only if it did not arrive
+run
+`teamwire resend <team> <id> [--to ROLES]`, never a second `send`. Resend
+retries the same message to the recipients it did not reach, limited to the
+roles `--to` names, and never types a line twice. Each member's identity
 comes from its own token, so nobody can speak as another member or as you.
 
 A question to you arrives with its answer command:
@@ -458,9 +476,9 @@ acted on, or a question answered by a guess, is where a bug between members
 hides.
 
 `send` also refuses a notice without a commit, a message over its limit, a
-`reprompt` or `note` to another team's agent or to a member that is not
-running, more than 5 messages to one recipient in one minute, the same text
-to the same recipient within 10 minutes, a message to yourself or to a
+`reprompt` or `note` to another team's agent, a `reprompt` to a member that is
+not running, more than 5 messages to one recipient in one minute, the same
+text to the same recipient within 10 minutes, a message to yourself or to a
 removed member, and a message to a team that is closing, closed or unknown.
 
 ### Talking to other teams
@@ -481,7 +499,9 @@ A message from another team, even from its lead, arrives marked as
 information to check, and only a member's own lead sends it a `reprompt` or a
 `note`. A question from another team arrives with a reply command that
 already names the asker, such as `--to api@search`. Both teams' logs keep a
-copy. Retry from the sending team with
+copy. The sender's log shows it as sent to `db@billing`, and the receiving
+team's log, the copy that counts, as from `<role>@<your team>`. Retry from the
+sending team with
 `teamwire resend <your team> <id>`, which writes any missing copy and never
 types a line twice. Use this for facts that cross teams, such as a changed
 interface, a shared table or a port. To change what another team builds, ask
@@ -497,10 +517,12 @@ member. Without a team it lists every team. `--role R` adds the command that
 resumes that member's session with its per-run configuration. A session
 resumed without it has no Stop hook, no identity and no MCP tools.
 
-`teamwire reopen <team>` brings back a team whose sessions were closed. It
-resumes the lead and each member whose session is gone, and leaves running
-sessions alone. It types nothing, so a member killed mid-turn sits idle until
-you send it a `reprompt` or a `note`.
+`teamwire reopen <team> [--role R] [--dry-run]` brings back a team whose
+sessions were closed. It resumes the lead and each member whose session is
+gone, each in a new tab, and leaves running sessions alone. `--role R`
+reopens only that member and leaves the lead alone. `--dry-run` prints the
+plan and opens nothing. Reopen types nothing, so a member killed mid-turn
+sits idle until you send it a `reprompt` or a `note`.
 
 ### Changing the team while it runs
 
@@ -530,7 +552,8 @@ an implementer with no passing verify at its current HEAD, and any member
 while the team's closer has not reported, unless you pass `--unverified`. A
 commit after verify passed makes it refuse again until verify runs again. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
-Prompt it to commit and finish, or pass `--stop` and tell the user. When
+Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`
+gets past only that refusal, not the missing verify or closer. When
 neither the host nor Claude's session status can say whether a member is
 busy, a whole-team close refuses, and `--role <role> --stop` stops the member.
 Close always refuses over uncommitted work. It keeps the branch, the brief
@@ -565,18 +588,21 @@ becomes one tree that passes the full gate.
    preset, add it to the finished team with `--add`, and start a new watch.
    The closer runs `teamwire verify` and every claimed check, on each
    member's branch and again on the joined head when one exists, and records
-   real exit codes. In a temporary clone it makes itself, it reverts the fix
-   behind each claimed new test and each finding graded wrong conclusion, and
-   confirms the test then fails. A passing test can prove nothing: in at
-   least six of teamwire's own runs, a closer found a test that passed without
-   its fix. Spotify calls code that "passes CI but is functionally incorrect"
-   "the most serious error". At Bun, Claude read "get all the crates to
-   compile" as "stub out the functions with compilation errors". The closer
-   names contradictions, writes one report, and cannot send work. Read its
-   report, then a member's result only where it points. Below four members,
-   read every result yourself. Either way, compare every **Decisions I made**
-   list side by side. Two members that decided one question differently are a
-   bug waiting to happen.
+   real exit codes. In a temporary clone it makes itself, it first runs the
+   member's `setup` with the clone's path as its first argument, an install
+   allowed there, or copies an existing `target/` or `node_modules` folder in.
+   Then it reverts the fix behind each claimed new test and each finding
+   graded wrong conclusion, and confirms the test then fails. A passing test
+   can prove nothing: in at least six of teamwire's own runs, a closer found a
+   test that passed without its fix. Spotify calls code that "passes CI but is
+   functionally incorrect" "the most serious error". At Bun, Claude read "get
+   all the crates to compile" as "stub out the functions with compilation
+   errors". The closer names contradictions, writes one report, and cannot
+   send work. Read its report, then a member's result only where it points.
+   Below four members, read every result and report yourself before touching
+   a branch. Either way, compare every **Decisions I made** list side by
+   side. Two members that decided one question differently are a bug waiting
+   to happen.
 2. **Triage, then run the fix round.** The closer grades each finding (wrong
    conclusion, wrong detail, or wording) and names its member. Decide which
    findings hold first. In a study of LLM code reviewers (Jin and Chen, 2026),
@@ -610,12 +636,14 @@ becomes one tree that passes the full gate.
    ```
 
    Verify runs each `check` itself and records the real exit code. It flags
-   changes outside `owns`, deleted, skipped or silenced tests, and edits to
-   lint, type, test or CI configuration. It flags `no-commits` when an
-   implementer said `done` with no commit beyond its base. Verdicts are
-   `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and `SKIPPED`. A brief may have asked
-   for a flagged change, so read every flag, and never merge past one you
-   have not read. `teamwire verify <team> --role R --waive FLAG --reason TEXT`
+   every change outside `owns`, with an extra flag when that change edits
+   lint, type, test or CI configuration. Even inside `owns`, it flags a
+   deleted or removed test and an added line that skips or silences a check.
+   It flags `no-commits` when an implementer said `done` with no commit
+   beyond its base. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
+   `SKIPPED`. A brief may have asked for a flagged change, so read every
+   flag, and never merge past one you have not read.
+   `teamwire verify <team> --role R --waive FLAG --reason TEXT`
    waives one flag, named as verify prints it in brackets, at the member's
    current HEAD. A later commit needs a new waiver. `--deep` adds the database
    integrity check and a check of every message hash.
@@ -627,8 +655,9 @@ becomes one tree that passes the full gate.
    names that branch, so set `base` on stacked branches. In the same turn,
    waive the flags your commit caused, and send the member a `note` asking
    for a progress line that names the commit. In teamwire's own runs,
-   `verify` recorded 426 outside-owns flags in 21 teams, which closers traced
-   to the lead's own merges and commits.
+   `verify` recorded 426 outside-owns flags in 21 teams. Those runs' closers
+   traced them to the lead's own merges and commits, a tracing nobody has
+   re-checked.
 4. **Make an integration worktree** off the base branch, and merge each branch
    in the plan's order. A clean merge is not evidence, because parts that pass
    alone can fail together.
@@ -646,12 +675,15 @@ becomes one tree that passes the full gate.
    teamwire pr-watch -R OWNER/REPO -i 45 3453 3454
    ```
 
-   It prints at most one line per poll: a check's first failure, a first
-   `CONFLICTING`, `BLOCKED` or `DRAFT` merge state, then a `DONE` line per
-   pull request. A `DONE` line that ends with `(merge state: ...)` means the
-   checks finished but the pull request still cannot merge. It exits when
-   every pull request is done, with code 1 when a check failed, or when a
-   required check never reported and the merge state is not clean.
+   It prints `WATCHING` first, then at most one line per poll: a check's
+   first failure, a first `CONFLICTING`, `BLOCKED` or `DRAFT` merge state,
+   and in the end a `DONE` line per pull request, or `MERGED` or `CLOSED`
+   when that happened first. A `DONE` line that ends with
+   `(merge state: ...)` names a state other than clean, such as `BLOCKED`, so
+   read it before you merge. One that adds `(required, never reported: ...)`
+   names required checks that never ran. It exits when every pull request is
+   done, with code 1 when a check failed, or when a required check never
+   reported and the merge state is not clean.
 8. **Run one more round on the pull request.** Send each owner its share of
    the bot and CI comments as one more reprompt. Keep the owners open until
    this round is done.
@@ -668,12 +700,15 @@ Close when the plan is finished and integration is done, or tell the user why
 you are not. `TEAM-COMPLETE` alone is not that signal. Closing after wave 1
 would archive the team before wave 2 could join it.
 
-First read each member's token use with `teamwire metrics <team>`. Close
-deletes the team's database, and the command then cannot find the team. The
-counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`,
-`model` and `type` (`input`, `output`, `cache_read`, `cache_creation`). A
-team whose results reach you as `COMPLETED` watch lines, because your host
-cannot type into your pane, records no tokens.
+Read each member's token use with `teamwire metrics <team>` before you close,
+because that form reads only a team that still has its state directory.
+After close, `teamwire metrics` with no team name still shows the team's
+counts, read from `$TEAMWIRE_HOME/archive/`. An archive put elsewhere with
+`--archive-to` is not read. The counter `teamwire.member.tokens` has the
+labels `team`, `role`, `kind`, `model` and `type` (`input`, `output`,
+`cache_read`, `cache_creation`). A team whose results reach you as
+`COMPLETED` watch lines, because your host cannot type into your pane,
+records no tokens.
 
 ```bash
 teamwire close <team> --dry-run    # print the plan
@@ -684,12 +719,14 @@ Close runs in the only safe order and stops at the first step that fails:
 
 1. It refuses while a member is `busy`, at a dialog, or in a state it cannot
    read. To stop one, run `teamwire close <team> --role <role> --stop` first,
-   and tell the user plainly.
+   adding `--unverified` when its verify or the closer has not passed, and
+   tell the user plainly.
 2. It refuses while a worktree has uncommitted changes. Commit them or copy
    them out, then run again.
 3. It archives the team (briefs, contracts, messages, results, reports, setup
-   logs) to `$TEAMWIRE_HOME/archive/<team>-<date>`, or into
-   `--archive-to DIR`, and verifies the copy before removing anything.
+   logs) to `$TEAMWIRE_HOME/archive/<team>-<date>`, or to
+   `DIR/<team>-<date>` with `--archive-to DIR`, and adds a time to the name
+   when it is taken. It verifies the copy before removing anything.
 4. It removes worktrees and tabs, and keeps the branches. For parallel
    tickets the branch is the deliverable, so delete branches yourself only
    for throwaway teams.
@@ -713,8 +750,11 @@ install's skill folder. Install writes one plugin, `teamwire@teamwire`, to
 this skill, the lead's MCP server and the lead's Stop hook.
 
 1. Install the binary (`cargo install --locked --path crates/teamwire-cli`)
-   and run `teamwire doctor`, which changes nothing. Until step 3 it prints
-   one `FAIL` line saying the teamwire plugin is not installed. Go on.
+   and run `teamwire doctor`, which changes nothing. Until step 3 it prints a
+   `FAIL` line saying the teamwire plugin is not installed, and one for an
+   older install's skill or MCP entry if there is one. Step 3 clears both.
+   Fix any other `FAIL` line, such as `.worktrees/` not ignored or a binary
+   missing from `PATH`.
 2. Run the live checks by hand (`docs/test-strategy.md`, section 6). The
    Claude adapter's check
    (`crates/teamwire-harness-claude/examples/live_check.rs`) proves the per-run
@@ -751,11 +791,12 @@ lead (you)
 
 ## Watch lines
 
-`DIED` (the session is gone with no completion), `BLOCKED` (at a dialog),
-`LATE` (past its deadline with nothing recorded), `SILENT` (quiet with no
-completion, so ask it) and `TEAM-STALLED` (every remaining member stuck)
-report trouble to act on. `STORE-ERROR <code>` means the watch could not read
-or write the team's database, so run `teamwire doctor`. The other lines:
+`DIED <role>` (the session is gone with no completion), `BLOCKED <role>` (at
+a dialog), `LATE <role> <age>` (past its deadline with nothing recorded),
+`SILENT <role>` (quiet with no completion, so ask it) and
+`TEAM-STALLED <roles>` (every remaining member stuck) report trouble to act
+on. `STORE-ERROR <code>` means the watch could not read or write the team's
+database, so run `teamwire doctor`. The other lines:
 
 | Line | Meaning |
 | --- | --- |
@@ -768,7 +809,7 @@ or write the team's database, so run `teamwire doctor`. The other lines:
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
-| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` leaves out refused, failed and removed members. A later wave, a reviewer or the closer may still be due. |
+| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. A later wave, a reviewer or the closer may still be due. |
 
 ## Other commands
 
@@ -783,6 +824,6 @@ When a member sits at a dialog the launcher does not answer, read its pane
 with the host's own tools, and do not retry in a loop. When a member is idle
 for 30 minutes with no completion, run `teamwire status` and read its pane:
 it may be running the full suite, or stuck on a failing command from its
-brief. On a database problem, run `teamwire doctor`, then
-`teamwire verify <team> --deep`. `--repair-files` rewrites `comms/` copies
-that are missing or differ from the database.
+brief. On a database problem, such as damage or a newer schema, run
+`teamwire doctor`, then `teamwire verify <team> --deep`. `--repair-files`
+rewrites `comms/` copies that are missing or differ from the database.
