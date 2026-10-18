@@ -277,14 +277,15 @@ fn counters_check(store: &mut Store, team: &TeamName) -> Check {
     let damaged: Vec<String> = floors
         .iter()
         .filter_map(|(counter, used)| {
-            let stored = counters
-                .iter()
-                .find(|(n, _)| n == counter)
-                .map_or(0, |c| c.1);
-            (stored < *used).then(|| {
+            let stored = counters.iter().find(|(n, _)| n == counter).map(|c| c.1);
+            (stored.unwrap_or(0) < *used).then(|| {
+                let now = stored.map_or_else(|| "missing".to_owned(), |v| v.to_string());
+                // An upsert, because a missing row is also damage and an
+                // UPDATE of it would change nothing.
                 format!(
-                    "counter {counter} is {stored} but {used} is in use; repair with: \
-                     UPDATE counters SET value = {used} WHERE name = '{counter}';"
+                    "counter {counter} is {now} but {used} is in use; repair with: \
+                     INSERT INTO counters (name, value) VALUES ('{counter}', {used}) \
+                     ON CONFLICT (name) DO UPDATE SET value = excluded.value;"
                 )
             })
         })
