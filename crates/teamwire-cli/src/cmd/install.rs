@@ -261,7 +261,8 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiri
     if version_of(wiring, &wiring.codex.codex_bin).is_some() {
         match wiring.codex_setup().plan_uninstall(&home, args.force) {
             Ok(changes) => plans.push(Plan::Codex(changes)),
-            Err(e) => return fail("uninstall", &e.to_string(), REFUSED),
+            // An old or broken `codex` must not keep the Claude setup in place.
+            Err(e) => skipped("uninstall", &e.to_string()),
         }
     }
     if plans.iter().all(|p| p.lines().is_empty()) {
@@ -269,6 +270,14 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiri
         return ExitCode::SUCCESS;
     }
     finish("uninstall", wiring, &plans, args.dry_run)
+}
+
+#[expect(
+    clippy::print_stderr,
+    reason = "the skipped part is told on stderr, beside the other part's output"
+)]
+fn skipped(command: &str, why: &str) {
+    eprintln!("teamwire {command}: skipped the Codex part: {why}");
 }
 
 /// Prints the plan for a dry run; otherwise makes the changes and prints
