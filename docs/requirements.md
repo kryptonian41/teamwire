@@ -183,7 +183,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | WAT-13 | MUST | `BLOCKED` is announced once when the host reports the member blocked by a dialog. | specmsg E9 |
 | WAT-14 | MUST | A gap between polls much longer than the interval (the machine slept) resets quiet counters instead of producing SILENT or DIED for everyone. | architect, from rust 1.9 and INV-10 |
 | WAT-15 | SHOULD | Use host events where the host offers them; polling stays as the fallback. | speclife LC-29, F10 |
-| WAT-16 | MUST | Only one watch per team is active at a time. What it announced is kept in the store, so a restarted watch does not repeat a line, with one exception: a restarted watch prints `TEAM-COMPLETE` again for a team that already finished, and this is intended. | architect, from INV-9 |
+| WAT-16 | MUST | Only one watch per team is active at a time. What it announced is kept in the store, so a restarted watch repeats no announcement. It prints its `WATCHING` start line again, and `TEAM-COMPLETE` again for a team that already finished. Both are intended. | architect, from INV-9 |
 
 ### Launch (LCH)
 
