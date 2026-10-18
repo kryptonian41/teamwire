@@ -70,3 +70,16 @@ fn a_credential_variable_is_named_and_its_value_is_never_printed() {
     );
     assert!(!out.contains("sk-secret-value"), "{out}");
 }
+
+#[test]
+fn the_host_line_says_which_host_and_why() {
+    let out = doctor(&[]);
+    assert!(out.contains("ok   host: herdr (HERDR_ENV is 1)"), "{out}");
+    // Both set: the parents decide, and which they name depends on where this
+    // test runs, so only the reason's start is fixed.
+    let out = doctor(&[("TMUX", "/tmp/tmux-1/default,42,0")]);
+    assert!(
+        out.contains("ok   host: ") && out.contains("(both HERDR_ENV and TMUX are set; "),
+        "{out}"
+    );
+}

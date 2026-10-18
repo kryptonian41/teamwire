@@ -338,6 +338,9 @@ fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
     );
 }
 
+/// With both variables set, herdr is the fallback; the parents of the test
+/// decide first, so this holds only when no `tmux` or `herdr` process is
+/// among them. The walk itself is tested with a fake lookup in `doctor.rs`.
 #[test]
 fn herdr_env_wins_over_tmux() {
     let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"));
