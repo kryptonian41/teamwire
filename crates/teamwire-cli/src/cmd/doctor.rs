@@ -101,6 +101,14 @@ pub(crate) enum Host {
 }
 
 impl Host {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Herdr => "herdr",
+            Self::Tmux => "tmux",
+            Self::None => "none",
+        }
+    }
+
     fn from_id(id: &str) -> Self {
         match id {
             "herdr" => Self::Herdr,
@@ -164,19 +172,20 @@ pub(crate) fn pick_host(
     tmux: Option<&str>,
     parent_of: &dyn Fn(Pid) -> Option<(Pid, String)>,
 ) -> HostPick {
-    let herdr = herdr_env == Some("1");
-    let tmux = tmux.is_some_and(|t| !t.is_empty());
-    let (id, why) = match (herdr, tmux) {
-        (true, false) => ("herdr", "HERDR_ENV is 1".to_owned()),
-        (false, true) => ("tmux", "TMUX is set".to_owned()),
-        (false, false) => ("none", "neither HERDR_ENV nor TMUX is set".to_owned()),
-        (true, true) => match nearest_host(Pid::new(std::process::id()), parent_of) {
+    // The rule when the parents cannot tell: herdr first.
+    let first = Host::detect(herdr_env, tmux).id();
+    let both = herdr_env == Some("1") && tmux.is_some_and(|t| !t.is_empty());
+    let (id, why) = match (both, first) {
+        (false, "herdr") => (first, "HERDR_ENV is 1".to_owned()),
+        (false, "tmux") => (first, "TMUX is set".to_owned()),
+        (false, _) => (first, "neither HERDR_ENV nor TMUX is set".to_owned()),
+        (true, _) => match nearest_host(Pid::new(std::process::id()), parent_of) {
             Some(id) => (
                 id,
                 format!("both HERDR_ENV and TMUX are set; the nearest parent is {id}"),
             ),
             None => (
-                "herdr",
+                first,
                 "both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first"
                     .to_owned(),
             ),
@@ -739,8 +748,13 @@ mod tests {
 
     #[test]
     fn one_variable_decides_without_looking_at_parents() {
-        let never = |_: Pid| -> Option<(Pid, String)> { panic!("no lookup expected") };
-        assert_eq!(pick_host(Some("1"), None, &never).id, "herdr");
-        assert_eq!(pick_host(None, Some("/tmp/t,1,0"), &never).id, "tmux");
+        let calls = std::cell::Cell::new(0);
+        let lookup = |_: Pid| {
+            calls.set(calls.get() + 1);
+            None
+        };
+        assert_eq!(pick_host(Some("1"), None, &lookup).id, "herdr");
+        assert_eq!(pick_host(None, Some("/tmp/t,1,0"), &lookup).id, "tmux");
+        assert_eq!(calls.get(), 0);
     }
 }

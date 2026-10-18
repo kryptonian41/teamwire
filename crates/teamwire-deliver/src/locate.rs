@@ -56,6 +56,10 @@ pub fn locate_session(
         .map(|found| found.place)
 }
 
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
 pub(crate) fn locate_with(
     ctx: &Ctx<'_>,
     party: &Party,
