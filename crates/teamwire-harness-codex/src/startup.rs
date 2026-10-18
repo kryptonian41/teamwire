@@ -7,7 +7,8 @@
 use std::time::Duration;
 
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
+    HarnessError, HarnessErrorCode, Host, HostErrorCode, Key, Place, ScreenState, StartupOutcome,
+    TrustPolicy,
 };
 
 use crate::screen::{
@@ -148,7 +149,17 @@ pub(crate) fn answer_startup(
     let mut trusted = false;
     let mut sent: Option<(Dialog, u32, Option<String>)> = None;
     for _ in 0..poll.steps {
-        let screen = host.read_tail(place, TAIL_LINES, HOST_TIMEOUT)?;
+        // A read that ran out of its time, or that herdr refused because the
+        // agent is working, is "no screen this time": read again. Any other
+        // host error ends the step.
+        let screen = match host.read_tail(place, TAIL_LINES, HOST_TIMEOUT) {
+            Ok(screen) => screen,
+            Err(e) if matches!(e.code, HostErrorCode::Timeout | HostErrorCode::Busy) => {
+                std::thread::sleep(poll.step);
+                continue;
+            }
+            Err(e) => return Err(e.into()),
+        };
         match dialog_on(&screen) {
             Some(Dialog::Login) => {
                 return Err(HarnessError::new(

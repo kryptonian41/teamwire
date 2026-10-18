@@ -7,10 +7,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Harness, HarnessError, HarnessErrorCode, Key, Occupant, Pid, Place, PlaceState, StartupOutcome,
-    TrustPolicy,
+    Harness, HarnessError, HarnessErrorCode, HostError, HostErrorCode, Key, Occupant, Pid, Place,
+    PlaceState, StartupOutcome, TrustPolicy,
 };
-use teamwire_fakes::{FakeHost, FakePlatform};
+use teamwire_fakes::{FakeHost, FakePlatform, Fault};
 use teamwire_harness_codex::{CodexCli, CodexConfig, StartupPoll};
 
 const IDLE: &str = "\n› Ask Codex to do anything\n\n  ? for shortcuts            100% context left";
@@ -93,7 +93,26 @@ fn run(
     policy: TrustPolicy,
     steps: u32,
 ) -> (Result<StartupOutcome, HarnessError>, Vec<Key>) {
+    run_failing(first, script, policy, steps, &[])
+}
+
+/// Like `run`, with one failing read per entry of `failing`: it fails the
+/// next read once `keys` keys were sent (0 is before the first read).
+fn run_failing(
+    first: &str,
+    script: &[(usize, String)],
+    policy: TrustPolicy,
+    steps: u32,
+    failing: &[(usize, HostErrorCode)],
+) -> (Result<StartupOutcome, HarnessError>, Vec<Key>) {
     let host = FakeHost::new();
+    let inject = |code: HostErrorCode| {
+        host.inject("read_tail", Fault::Fail(HostError::new(code, "slow")), 1);
+    };
+    for (_, code) in failing.iter().filter(|(n, _)| *n == 0) {
+        inject(*code);
+    }
+    let mut pending: Vec<_> = failing.iter().filter(|(n, _)| *n > 0).collect();
     let place: Place = host.add_place(
         "tw_demo_api",
         PlaceState::Blocked,
@@ -109,6 +128,13 @@ fn run(
             let mut shown = 0;
             while !done.load(Ordering::Relaxed) {
                 let keys = host.keys_sent(&place).len();
+                pending.retain(|(n, code)| {
+                    let due = *n <= keys;
+                    if due {
+                        inject(*code);
+                    }
+                    !due
+                });
                 if let Some((i, (_, screen))) =
                     script.iter().enumerate().rfind(|(_, (n, _))| *n <= keys)
                     && i + 1 > shown
@@ -143,6 +169,41 @@ fn the_trust_dialog_is_accepted_with_enter_on_the_first_option() {
     let (got, keys) = run(&first, &[after(1, IDLE)], TrustPolicy::Accept, 200);
     assert_eq!(got.unwrap(), StartupOutcome::AnsweredPlainTrust);
     assert_eq!(keys, [Key::Enter]);
+}
+
+// A read that times out or finds the agent working is "no screen this time":
+// the loop reads again. Any other host error ends it at once.
+
+#[test]
+fn a_read_that_times_out_or_finds_the_agent_busy_is_read_again() {
+    let dialog = format!("{TRUST_TEXT}\n{TRUST}");
+    for code in [HostErrorCode::Timeout, HostErrorCode::Busy] {
+        let (got, keys) = run_failing(IDLE, &[], TrustPolicy::Accept, 5, &[(0, code)]);
+        assert_eq!(got.unwrap(), StartupOutcome::NoDialog, "{code:?}");
+        assert!(keys.is_empty());
+        // The read right after Enter on the trust dialog.
+        let (got, keys) = run_failing(
+            &dialog,
+            &[after(1, IDLE)],
+            TrustPolicy::Accept,
+            200,
+            &[(1, code)],
+        );
+        assert_eq!(got.unwrap(), StartupOutcome::AnsweredPlainTrust, "{code:?}");
+        assert_eq!(keys, [Key::Enter]);
+    }
+}
+
+#[test]
+fn any_other_read_error_ends_the_loop_at_once() {
+    let (got, _) = run_failing(
+        IDLE,
+        &[],
+        TrustPolicy::Accept,
+        5,
+        &[(0, HostErrorCode::NotFound)],
+    );
+    assert!(got.is_err(), "the retry would have found the composer");
 }
 
 #[test]
