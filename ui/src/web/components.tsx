@@ -20,7 +20,7 @@ export const DELIVERY_CATEGORY: Record<DeliveryState, StateCategory> = {
 
 export function DeliveryChip({ to, state }: { to: string; state: DeliveryState }) {
   return (
-    <span className={`chip small cat-${DELIVERY_CATEGORY[state]}`} title={`${to}: ${state}`}>
+    <span className={`chip cat-${DELIVERY_CATEGORY[state]}`} title={`${to}: ${state}`}>
       {to} · {state}
     </span>
   );
