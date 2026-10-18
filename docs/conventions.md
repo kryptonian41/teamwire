@@ -97,7 +97,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 1 | `cargo fmt --all -- --check` | Format changes |
 | 2 | `cargo xtask tidy --base main` | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
-| 4 | `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
+| 4 | `cargo build --workspace --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
@@ -130,7 +130,7 @@ other dependency features, and cargo replaces the files every time, even when
 nothing changed (`tests/fakes/src/bins.rs`). The end-to-end and crash tests also use
 `target/<profile>/teamwire` without building it when the variable is set. So
 whoever sets the variable must have built the whole workspace first, including
-the CLI binary; `scripts/test-changed.sh` does that. A run that forgot fails
+the CLI binary; the gate and `scripts/test-changed.sh` both do that. A run that forgot fails
 at once: each binary is checked against the dep-info file cargo wrote beside
 it, and one older than any of its source files is refused, with the file
 named (`teamwire_fakes::teamwire_cli` and `FakeBins::ensure`). A plain `cargo test -p <crate>`

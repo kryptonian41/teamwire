@@ -41,8 +41,9 @@ step 3 clippy cargo clippy --workspace --all-targets --locked -- -D warnings
 if [ "$last" -eq 3 ]; then
   exit 0
 fi
-# The workspace build makes the fake binaries, so the tests skip their own
-# rebuild of them (tests/fakes/src/bins.rs).
-step 4 test env TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked
+# cargo build, not cargo test, writes the dep-info files that the prebuilt
+# fakes are checked against (tests/fakes/src/bins.rs), so a fresh checkout
+# needs it before the tests skip their own rebuild of the fakes.
+step 4 test sh -c 'cargo build --workspace --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked'
 step 5 doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 step 6 docs scripts/check-docs.sh
