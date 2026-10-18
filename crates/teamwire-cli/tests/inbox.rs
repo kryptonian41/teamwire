@@ -346,6 +346,9 @@ fn log_filters_by_the_lead_and_by_an_agent_of_another_team() {
         ("lead", "from the lead", "from a peer"),
         ("db@beta", "from another team", "from the lead"),
         ("scout", "from a peer", "from the lead"),
+        // An address that names the team itself is the local one.
+        ("lead@alpha", "from the lead", "from a peer"),
+        ("scout@alpha", "from a peer", "from the lead"),
     ] {
         let out = rig.run_at_terminal(&["log", "alpha", "--role", role]);
         let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
