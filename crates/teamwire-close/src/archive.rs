@@ -179,8 +179,12 @@ pub(crate) fn write(
     if dest.symlink_metadata().is_ok() {
         return Err(format!("{} already exists", dest.display()));
     }
-    std::fs::rename(&tmp, dest)
-        .map_err(|e| format!("cannot move {} to {}: {e}", tmp.display(), dest.display()))?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "renaming a finished folder is the one atomic step that names the archive; write_atomic writes a file"
+    )]
+    let moved = std::fs::rename(&tmp, dest);
+    moved.map_err(|e| format!("cannot move {} to {}: {e}", tmp.display(), dest.display()))?;
     Ok(summary)
 }
 

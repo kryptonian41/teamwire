@@ -224,7 +224,7 @@ pub(crate) fn unexclude(platform: &dyn Platform, excluded: &Excluded) -> String 
         Ok(bytes) => bytes,
         Err(e) => return format!("could not read {file} to take back its added lines: {e}"),
     };
-    let mut pending: Vec<&[u8]> = excluded.lines.iter().map(|l| l.as_bytes()).collect();
+    let mut pending: Vec<&[u8]> = excluded.lines.iter().map(String::as_bytes).collect();
     let mut kept: Vec<&[u8]> = Vec::new();
     for line in bytes.split_inclusive(|b| *b == b'\n') {
         let bare = line.strip_suffix(b"\n").unwrap_or(line);
