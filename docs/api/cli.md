@@ -49,6 +49,9 @@ characters or repeated; an implementer in
 ignore `.worktrees/` (`worktree_not_ignored`, LCH-10); a member whose host
 is `none` (v1 cannot start one); less than 200 MB free.
 
+With the `tmux` host and no running tmux server, launch and reopen open the tabs
+in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
+
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `claude-code`), `host` (default: detected; `herdr` when `HERDR_ENV=1`),
 `children`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
@@ -179,7 +182,8 @@ member killed mid-turn needs a `reprompt` or a `note`. When the caller is not
 the team's lead session, a last line says that results go to the reopened lead
 and that `teamwire lead --adopt <team>` makes the caller the lead instead.
 
-`--dry-run` prints the same lines as a plan, then `dry run: nothing was opened
+`--dry-run` prints the same lines as a plan, with `<who> would reopen` in
+place of `<who> reopened`, then `dry run: nothing was opened
 and nothing was written`. It starts no tab, writes no row, and opens the
 database read-only, so it does not migrate an older database. Exit 0 when no
 session was refused or failed, and 2 otherwise.
@@ -212,8 +216,17 @@ directory is deleted last: it is first renamed to
 removes any directory there whose pid is dead. Prints the
 branches kept and any unpushed commits. `--clear-stale-lock` clears a close
 lock whose owner is gone: its pid is dead, or now belongs to a process that
-started at another time. When another close took the lock after its owner
-was found dead, nothing is cleared and the command refuses with that reason.
+started at another time. When the lock changed after it was checked, nothing is cleared and the
+command refuses with `the close lock changed after it was checked (another close took it, or it was already cleared or released); nothing was cleared`.
+
+A store with no team row and no member rows holds nothing to archive. Close
+deletes `teams/<team>`, takes no archive, and prints
+`<team>: nothing was recorded; deleted <path>`. A store with member rows and
+no team row is still refused.
+
+For each worktree that holds ignored files, the dry run and the real run print
+`<role>: removal deletes ignored files: <path>, ...`, at most 10 paths, then
+`and <n> more`. Close still removes the worktree.
 
 ### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
 
@@ -229,6 +242,9 @@ exits 4. A recipient whose delivery record could not be written is left
 `pending`, named on stderr as `NOT RECORDED for <role>`, and exits 6; retry
 it with `resend`. `--type reprompt` (lead only) starts the member's next
 generation and says whether a watch is running, or that it could not tell.
+A resume with the same `--key` retries at once, with no 60 s wait. So a crash
+after the host call can type the line a second time. That is the one
+duplicate ADR 0003 allows.
 
 ### `teamwire resend <team> <ID> [--to ROLES]`
 
@@ -275,7 +291,10 @@ pages). It is unknown, and the line says `(required checks unknown)`, when
 either endpoint fails with anything but HTTP 404. Exits when every PR is done;
 exit 1 when any check failed, or when a required check never reported and
 the merge state is not `CLEAN`. Ignores the exit code of `gh pr checks` and
-`gh pr view`; a failed call of either is skipped. A PR with no checks is done only after three polls in a row
+`gh pr view`; a failed call of either is skipped. When `gh` gave no answer for 3 polls in a
+row, the command prints `<repo>#<pr> UNREADABLE: gh gave no answer for 3 polls`
+once per outage. The line prints again only after `gh` answered once and then
+failed 3 polls in a row again. The exit code does not change. A PR with no checks is done only after three polls in a row
 find none, because GitHub has no check runs for a few seconds after a push.
 
 ### `teamwire preset [NAME]`
@@ -342,10 +361,10 @@ These are started by a harness, not typed by people.
 
 | Command | Does |
 | --- | --- |
-| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. Exit 0 when all pass, 2 otherwise. When `codex` is on PATH, doctor also lists a `codex on PATH` line with its version, and checks the Codex plugin: a missing plugin is ok and names `teamwire install --harness codex`, a stale one is a warning. Without `codex` on PATH, doctor says nothing about Codex. |
+| `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use, and prints the SQL `UPDATE` that repairs the row (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. Exit 0 when all pass, 2 otherwise. When `codex` is on PATH, doctor also lists a `codex on PATH` line with its version, and checks the Codex plugin: a missing plugin is ok and names `teamwire install --harness codex`, a stale one is a warning. Without `codex` on PATH, doctor says nothing about Codex. |
 | `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skill, the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`) and refuses one that is not on PATH. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/` and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. |
 | `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/`, and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `codex` is on PATH, it also removes the Codex plugin and marketplace through `codex plugin`. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). |
-| `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. |
+| `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. It also exits 0 when one team's store cannot be opened; that is intended, so one damaged team cannot stop the repeating exporter. |
 | `teamwire version` | Binary version, as `<crate version>+<12 hex commit>` (or `+unknown` when the build found no git commit), and the schema version it writes. |
