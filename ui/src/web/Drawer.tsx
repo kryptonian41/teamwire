@@ -4,6 +4,7 @@ import { StateChip } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
+import { href } from "./model/route.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
 export function Drawer({
@@ -25,10 +26,17 @@ export function Drawer({
   const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
-  // Move focus into the dialog so the keyboard starts where the eye does.
+  // Move focus into the dialog so the keyboard starts where the eye does, and
+  // give it back on close. Opened from a URL there is no opener, so fall back
+  // to the member's link in the table.
   useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     closeRef.current?.focus();
-  }, [member.role]);
+    return () => {
+      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href="${href.member(team, member.role)}"]`);
+      back?.focus();
+    };
+  }, [team, member.role]);
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
