@@ -498,13 +498,40 @@ fn agent_start_refuses_bad_input_like_herdr() {
         no_pane.error_code().as_deref(),
         Some("agent_pane_not_found")
     );
-    let codex = env
-        .run(&["agent", "start", "x", "--kind", "codex", "--pane", &pane_id])
+    let other = env
+        .run(&[
+            "agent", "start", "x", "--kind", "gemini", "--pane", &pane_id,
+        ])
         .unwrap();
     assert_eq!(
-        codex.error_code().as_deref(),
+        other.error_code().as_deref(),
         Some("unsupported_agent_kind")
     );
+}
+
+#[test]
+fn a_codex_agent_meets_the_same_newline_rule() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let run = |arg: &str| {
+        env.run(&[
+            "agent",
+            "start",
+            "tw_demo_api",
+            "--kind",
+            "codex",
+            "--pane",
+            &pane_id,
+            "--",
+            arg,
+        ])
+        .unwrap()
+    };
+    assert_eq!(
+        run("a=\"\"\"\nb\"\"\"").error_code().as_deref(),
+        Some("invalid_agent_argument")
+    );
+    assert_eq!(run("a=\"b\\nc\"").code, Some(0));
 }
 
 #[test]

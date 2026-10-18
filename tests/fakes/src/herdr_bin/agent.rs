@@ -53,11 +53,18 @@ fn claude_program() -> PathBuf {
     }
 }
 
+/// What `--kind codex` runs: a shell that draws Codex's composer, reports
+/// itself idle, and waits. It ignores the arguments, which the newline rule
+/// and the recorded `argv` already cover.
+const CODEX_SCRIPT: &str = r#"printf '› \n  gpt-5 · ? for shortcuts\n'
+printf '{"status":"idle","seq":1}' > "$FAKE_PANE_DIR/status.json"
+exec sleep 300"#;
+
 #[expect(
     clippy::disallowed_methods,
     reason = "fake-herdr is the fake terminal host: starting the agent process is its whole job"
 )]
-fn spawn_agent(dir: &Path, pane: &Pane, tail: &[String]) -> Result<u32, CliError> {
+fn spawn_agent(dir: &Path, pane: &Pane, kind: &str, tail: &[String]) -> Result<u32, CliError> {
     std::fs::create_dir_all(dir).map_err(|e| fail("internal_error", e.to_string()))?;
     let screen = std::fs::OpenOptions::new()
         .append(true)
@@ -67,8 +74,16 @@ fn spawn_agent(dir: &Path, pane: &Pane, tail: &[String]) -> Result<u32, CliError
     let screen_err = screen
         .try_clone()
         .map_err(|e| fail("internal_error", e.to_string()))?;
-    let mut cmd = std::process::Command::new(claude_program());
-    cmd.args(tail).env_clear();
+    let mut cmd = if kind == "codex" {
+        let mut sh = std::process::Command::new("sh");
+        sh.args(["-c", CODEX_SCRIPT]);
+        sh
+    } else {
+        let mut claude = std::process::Command::new(claude_program());
+        claude.args(tail);
+        claude
+    };
+    cmd.env_clear();
     // A cleared environment plus the pane's HERDR_* variables. A real pane
     // also has the login environment, so this is stricter on purpose: a member's identity
     // must arrive through its own config, and a test fails if it does not.
@@ -111,10 +126,10 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         .ok_or_else(|| fail("invalid_params", "agent start needs a name"))?
         .to_owned();
     let kind = args.value("kind").unwrap_or("claude");
-    if kind != "claude" {
+    if !matches!(kind, "claude" | "codex") {
         return Err(fail(
             "unsupported_agent_kind",
-            format!("fake-herdr starts only claude, not {kind}"),
+            format!("fake-herdr starts only claude and codex, not {kind}"),
         ));
     }
     let pane_id = args
@@ -155,7 +170,7 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     }
     let dir = pane_dir(ctx.state_path, &pane_id);
     std::fs::remove_dir_all(&dir).ok();
-    let pid = spawn_agent(&dir, &pane, &args.tail)?;
+    let pid = spawn_agent(&dir, &pane, kind, &args.tail)?;
     let hint = args
         .tail
         .windows(2)
@@ -200,7 +215,12 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         std::thread::sleep(Duration::from_millis(20));
     }
     let pane = pane_now(ctx, &pane_id)?;
-    let mut argv = vec![claude_program().display().to_string()];
+    let program = if kind == "codex" {
+        "codex".to_owned()
+    } else {
+        claude_program().display().to_string()
+    };
+    let mut argv = vec![program];
     argv.extend(args.tail.iter().cloned());
     Ok(json!({
         "type": "agent_started",
