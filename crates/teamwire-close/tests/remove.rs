@@ -709,11 +709,9 @@ fn mark_removed_checks_the_lock_inside_its_own_write() {
 fn a_removed_members_deleted_branch_is_not_reported_kept() {
     let mut rig = verified_implementer();
     let api = rig.member("api");
-    git(
-        &rig.repo,
-        &["worktree", "remove", &api.cwd.display().to_string()],
-    );
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
     git(&rig.repo, &["branch", "-D", "br-api"]);
     let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
     assert!(report.branches_kept.is_empty(), "{report:?}");
 }
