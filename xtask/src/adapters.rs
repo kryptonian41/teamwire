@@ -16,6 +16,7 @@ const ADAPTERS: &[&str] = &[
     "teamwire_host_herdr",
     "teamwire_host_tmux",
     "teamwire_harness_claude",
+    "teamwire_harness_codex",
 ];
 const CLI_SRC: &str = "crates/teamwire-cli/src";
 const WIRING: &str = "crates/teamwire-cli/src/wiring.rs";

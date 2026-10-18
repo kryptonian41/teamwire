@@ -21,6 +21,7 @@ mod resend;
 mod roster;
 mod rules;
 mod send;
+mod token;
 
 use std::fmt;
 
@@ -42,6 +43,7 @@ pub use roster::{RosterEntry, roster};
 pub use send::{
     Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with, watch_running,
 };
+pub use token::caller_token;
 
 /// What the calling process says about itself, read from its environment
 /// and arguments. `prove_actor` turns it into a proven `Actor` (ADR 0008).

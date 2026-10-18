@@ -91,6 +91,7 @@ impl FakeHarness {
             choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
+            reads_watch_lines: true,
         }
     }
 

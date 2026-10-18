@@ -117,6 +117,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         team,
         interval,
         once,
+        ..
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,

@@ -329,6 +329,7 @@ fn run_member(
         otel: ctx.config.otel.clone(),
         teamwire_bin: plan.teamwire_bin.clone(),
         plugins: merged_plugins(&plan.spec.plugins, &m.spec.plugins),
+        accept_trust: m.spec.accept_trust,
     };
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(

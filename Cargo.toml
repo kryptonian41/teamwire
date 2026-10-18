@@ -17,6 +17,7 @@ teamwire-platform = { path = "crates/teamwire-platform" }
 teamwire-host-herdr = { path = "crates/teamwire-host-herdr" }
 teamwire-host-tmux = { path = "crates/teamwire-host-tmux" }
 teamwire-harness-claude = { path = "crates/teamwire-harness-claude" }
+teamwire-harness-codex = { path = "crates/teamwire-harness-codex" }
 teamwire-deliver = { path = "crates/teamwire-deliver" }
 teamwire-verify = { path = "crates/teamwire-verify" }
 teamwire-msg = { path = "crates/teamwire-msg" }

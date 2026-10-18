@@ -79,6 +79,7 @@ fn claude_code_passes_the_harness_contract() {
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
+        accept_trust: false,
     };
     harness_contract(&HarnessSetup {
         harness: &claude,

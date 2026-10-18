@@ -24,9 +24,14 @@ const STDIN_LIMIT: u64 = 1 << 20;
 pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     // A hook never fails the harness turn: every path below returns here.
     let reply = match &args.hook {
-        HookCommand::ClaudeStop(t) => member_hook(t, false, global, wiring),
-        HookCommand::ClaudePostTool(t) => member_hook(t, true, global, wiring),
-        HookCommand::ClaudeLeadStop => lead_stop_hook(global, wiring),
+        HookCommand::ClaudeStop(t) | HookCommand::TurnEnd(t) => {
+            member_hook(t, false, global, wiring)
+        }
+        HookCommand::ClaudePostTool(t) | HookCommand::PostTool(t) => {
+            member_hook(t, true, global, wiring)
+        }
+        HookCommand::SessionStart(_) => None,
+        HookCommand::ClaudeLeadStop | HookCommand::LeadStop(_) => lead_stop_hook(global, wiring),
     };
     if let Some(reply) = reply {
         write_stdout(&reply);

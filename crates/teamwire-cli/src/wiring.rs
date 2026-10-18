@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use teamwire_core::{HarnessId, HostId, NoHost, Platform, Registry, RegistryError};
 use teamwire_harness_claude::ClaudeCode;
+use teamwire_harness_codex::{CodexCli, CodexConfig};
 use teamwire_host_herdr::Herdr;
 use teamwire_host_tmux::Tmux;
 use teamwire_platform::SystemClock;
@@ -56,6 +57,10 @@ pub(crate) struct WiringEnv {
     pub(crate) claude_dir: Option<PathBuf>,
     /// `CLAUDE_CONFIG_DIR`: Claude Code's own setting for the same thing.
     pub(crate) claude_config_dir: Option<PathBuf>,
+    /// `TEAMWIRE_CODEX_HOME`: where tests put Codex's files.
+    pub(crate) codex_test_home: Option<PathBuf>,
+    /// `CODEX_HOME`: Codex's own setting for the same thing.
+    pub(crate) codex_home: Option<PathBuf>,
 }
 
 impl WiringEnv {
@@ -66,6 +71,10 @@ impl WiringEnv {
             user_home: std::env::var_os("HOME").map(PathBuf::from),
             claude_dir: std::env::var_os("TEAMWIRE_CLAUDE_DIR").map(PathBuf::from),
             claude_config_dir: std::env::var_os("CLAUDE_CONFIG_DIR")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
+            codex_test_home: std::env::var_os("TEAMWIRE_CODEX_HOME").map(PathBuf::from),
+            codex_home: std::env::var_os("CODEX_HOME")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
         }
@@ -80,6 +89,10 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         Arc::clone(&platform),
         claude.clone(),
     )))?;
+    registry.add_harness(Arc::new(CodexCli::new(
+        Arc::clone(&platform),
+        codex_config(env),
+    )))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
     registry.add_host(Arc::new(NoHost))?;
@@ -91,6 +104,22 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_host: lead_host(env),
         claude,
     })
+}
+
+/// `TEAMWIRE_CODEX_HOME`, else `CODEX_HOME`, else `~/.codex`.
+fn codex_config(env: &WiringEnv) -> CodexConfig {
+    let codex_home = match (
+        env.codex_test_home.as_ref().or(env.codex_home.as_ref()),
+        &env.user_home,
+    ) {
+        (Some(dir), _) => dir.clone(),
+        (None, Some(home)) => home.join(".codex"),
+        (None, None) => PathBuf::from(".codex"),
+    };
+    CodexConfig {
+        codex_home,
+        codex_bin: "codex".to_owned(),
+    }
 }
 
 /// The tmux adapter. Inside a tmux client it takes that client's server for
@@ -146,6 +175,8 @@ mod tests {
             user_home: Some(PathBuf::from("/home/u")),
             claude_dir: None,
             claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
         }
     }
 
@@ -219,7 +250,7 @@ mod tests {
     #[test]
     fn registry_holds_every_adapter_of_this_binary() {
         let wiring = wire(&env(None)).unwrap();
-        assert_eq!(wiring.registry.harness_ids(), ["claude-code"]);
+        assert_eq!(wiring.registry.harness_ids(), ["claude-code", "codex"]);
         assert_eq!(wiring.registry.host_ids(), ["herdr", "none", "tmux"]);
         assert!(wiring.registry.harness(&wiring.lead_harness).is_ok());
         assert!(wiring.registry.host(&wiring.lead_host).is_ok());
