@@ -72,9 +72,9 @@ pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Resul
 }
 
 /// Takes the worktree back without force, so uncommitted work is never
-/// thrown away. Returns what happened, in words, and whether the worktree is
-/// still there.
-pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool) {
+/// thrown away. Returns what happened, in words, whether the worktree is
+/// still there, and whether the branch launch created was deleted.
+pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool, bool) {
     let path = made.path.display().to_string();
     let mut left = true;
     let mut note = match run(platform, &made.repo, &["worktree", "remove", &path]) {
@@ -89,15 +89,19 @@ pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool) {
         ),
         Err(e) => format!("could not remove worktree {path}: {e}"),
     };
+    let mut deleted = false;
     if let Some(branch) = &made.new_branch {
         // `-d` refuses a branch with commits that are not merged, which keeps
         // any work a member managed to commit.
         match run(platform, &made.repo, &["branch", "-d", branch]) {
-            Ok(out) if out.success() => note = format!("{note}; branch {branch} deleted"),
+            Ok(out) if out.success() => {
+                deleted = true;
+                note = format!("{note}; branch {branch} deleted");
+            }
             _ => note = format!("{note}; branch {branch} left in place"),
         }
     }
-    (note, left)
+    (note, left, deleted)
 }
 
 /// The paths a failed removal left, from `git status`, and the step that

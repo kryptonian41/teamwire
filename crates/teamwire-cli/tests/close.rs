@@ -20,7 +20,7 @@ use std::process::Output;
 
 use serde_json::{Value, json};
 use teamwire_core::{TeamName, TeamState};
-use teamwire_fakes::{FakeHerdrEnv, TestHome};
+use teamwire_fakes::{FakeHerdrEnv, HerdrFaults, TestHome};
 use teamwire_store::Store;
 
 struct Rig {
@@ -628,4 +628,26 @@ fn a_member_cannot_watch_or_add_members() {
     // The refused watch took no lease.
     let lease = rig.store().read(|tx| tx.watch_lease()).unwrap();
     assert!(lease.is_none());
+}
+
+#[test]
+fn a_member_whose_start_failed_leaves_no_branch_in_status_or_close() {
+    let mut rig = Rig::new();
+    rig.herdr
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        .unwrap();
+    let repo = rig.repo();
+    let spec = json!({"team": "alpha", "title": "Alpha", "children": [
+        {"role": "api", "title": "API work", "mode": "worktree", "repo": repo,
+         "branch": "feat-x", "task": "build", "check": "true", "owns": ["src/"]}]});
+    let launch = rig.teamwire(&["launch"], Some(&spec.to_string()));
+    assert_eq!(launch.code, 2, "{}{}", launch.out, launch.err);
+    assert_eq!(git(&repo, &["branch", "--list", "feat-x"]).trim(), "");
+
+    let status = rig.teamwire(&["status", "alpha", "--json"], None);
+    assert_eq!(status.code, 0, "{}{}", status.out, status.err);
+    assert!(!status.out.contains("feat-x"), "{}", status.out);
+    let close = rig.teamwire(&["close", "alpha"], None);
+    assert_eq!(close.code, 0, "{}{}", close.out, close.err);
+    assert!(!close.out.contains("branches kept"), "{}", close.out);
 }

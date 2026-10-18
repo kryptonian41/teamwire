@@ -391,3 +391,25 @@ fn the_exclude_note_agrees_in_number() {
         "{note}"
     );
 }
+
+#[test]
+fn a_deleted_branch_is_cleared_from_the_member_row() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(HostErrorCode::Other, "boom")),
+        1,
+    );
+    let plan = rig.validate(&spec, false).unwrap();
+    let (_report, store) = rig.launch("demo", plan);
+    assert!(
+        git(&repo, &["branch", "--list", "api"]).trim().is_empty(),
+        "the branch was deleted"
+    );
+    let row = member_row(&store, "api").unwrap();
+    assert_eq!(row.state, MemberState::Failed);
+    assert_eq!(row.branch, None);
+}

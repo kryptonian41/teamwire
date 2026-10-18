@@ -83,7 +83,7 @@ impl Steps {
 /// Takes back what was made: the place, then the worktree (no force), then
 /// the exclude lines setup added.
 /// The second value is true when the worktree could not be removed.
-pub(crate) fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
+pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
     let mut left = false;
     let mut notes = Vec::new();
     if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
@@ -96,9 +96,25 @@ pub(crate) fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String
         }
     }
     if let Some(w) = &made.worktree {
-        let (note, still_there) = worktree::remove(ctx.platform, w);
+        let (note, still_there, branch_deleted) = worktree::remove(ctx.platform, w);
         left = still_there;
         notes.push(note);
+        // A deleted branch must not stay in the member row: `status` would
+        // show it and `close` would list it as kept.
+        if branch_deleted && made.recorded {
+            let cleared = ctx.store.write(|tx| {
+                tx.connection()
+                    .execute(
+                        "UPDATE members SET branch = NULL WHERE role = ?1",
+                        [m.spec.role.as_str()],
+                    )
+                    .map(|_| ())
+                    .map_err(Into::into)
+            });
+            if let Err(e) = cleared {
+                notes.push(format!("could not clear the stored branch: {e}"));
+            }
+        }
     }
     for e in &made.excluded {
         notes.push(worktree::unexclude(ctx.platform, e));

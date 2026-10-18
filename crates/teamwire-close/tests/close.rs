@@ -1186,3 +1186,16 @@ fn untracked_subtask_md_counts_as_dirty() {
         );
     }
 }
+
+#[test]
+fn a_branch_the_user_deleted_is_not_reported_kept() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(
+        &rig.repo,
+        &["worktree", "remove", &api.cwd.display().to_string()],
+    );
+    git(&rig.repo, &["branch", "-D", "br-api"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(report.branches_kept.is_empty(), "{report:?}");
+}

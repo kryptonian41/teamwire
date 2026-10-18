@@ -267,7 +267,12 @@ impl Seq<'_, '_> {
         let mut notes = Vec::new();
         let mut repos: Vec<&Path> = Vec::new();
         for member in live(&members).filter(|m| m.mode == Mode::Worktree) {
-            if let Some(branch) = &member.branch {
+            if let Some(branch) = member.branch.as_ref().filter(|b| {
+                !member
+                    .repo
+                    .as_deref()
+                    .is_some_and(|r| git::branch_is_gone(self.ctx.platform, r, b))
+            }) {
                 self.report.branches_kept.push(branch.clone());
                 self.report
                     .unpushed
