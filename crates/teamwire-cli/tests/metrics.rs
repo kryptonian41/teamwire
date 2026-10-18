@@ -371,9 +371,8 @@ fn a_team_closed_for_real_is_read_from_the_archive_close_wrote() {
     let alpha = TeamName::parse("alpha").unwrap();
     let members = Store::open_read_only(home.path(), &alpha)
         .unwrap()
-        .read(|tx| tx.members())
-        .unwrap()
-        .items;
+        .read(|tx| Ok(tx.members()?.items))
+        .unwrap();
     for member in members {
         let Some(place) = member.place else { continue };
         let file = fakes
