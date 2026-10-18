@@ -28,6 +28,9 @@ const GH_TIMEOUT: Duration = Duration::from_secs(60);
 /// then says the same as for a pull request that never gets any.
 const EMPTY_POLLS_FOR_DONE: u32 = 3;
 
+/// How many polls in a row `gh` may give no answer before the watch says so.
+const SILENT_POLLS_FOR_UNREADABLE: u32 = 3;
+
 /// What the watch remembers between polls, so it can stay quiet.
 #[derive(Debug, Default)]
 struct Memory {
@@ -39,6 +42,8 @@ struct Memory {
     done: HashMap<u64, usize>,
     /// How many polls in a row found no checks on each PR.
     empty_polls: HashMap<u64, u32>,
+    /// How many polls in a row `gh` gave no answer for each PR.
+    silent_polls: HashMap<u64, u32>,
     /// The required checks of each PR's base branch, read once per PR.
     required: HashMap<u64, Required>,
 }
@@ -68,6 +73,19 @@ impl Memory {
     ) -> Vec<String> {
         let label = label(repo, pr);
         let mut events = Vec::new();
+        // Said once per outage: only the poll that makes the third in a row
+        // says it, and an answer from `gh` resets the count.
+        if checks.is_none() && view.is_none() {
+            let polls = self.silent_polls.entry(pr).or_default();
+            *polls += 1;
+            if *polls == SILENT_POLLS_FOR_UNREADABLE {
+                events.push(format!(
+                    "{label} UNREADABLE: gh gave no answer for {SILENT_POLLS_FOR_UNREADABLE} polls"
+                ));
+            }
+        } else {
+            self.silent_polls.remove(&pr);
+        }
         // Where this poll said the verdict, and what the watch knew before,
         // so a re-read at DONE can take the saying back.
         let mut verdict_at = None;

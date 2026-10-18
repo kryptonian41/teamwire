@@ -247,6 +247,7 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
                     ),
                 ));
             }
+            checks.push(counters_check(&mut store, team));
             if let Some(lease) = lease
                 && !inputs.platform.pid_alive(lease.pid)
             {
@@ -262,6 +263,36 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
         Err(e) => checks.push(Check::fail(name("rows"), e.to_string())),
     }
     checks
+}
+
+/// A message counter below the largest value in use makes every later send
+/// collide. Doctor only prints the repair, so the user decides to run it.
+fn counters_check(store: &mut Store, team: &TeamName) -> Check {
+    let name = format!("team {team} counters");
+    let found = store.read(|tx| Ok((tx.counter_floors()?, tx.counters()?.all_or_corrupt()?)));
+    let (floors, counters) = match found {
+        Ok(found) => found,
+        Err(e) => return Check::fail(name, e.to_string()),
+    };
+    let damaged: Vec<String> = floors
+        .iter()
+        .filter_map(|(counter, used)| {
+            let stored = counters
+                .iter()
+                .find(|(n, _)| n == counter)
+                .map_or(0, |c| c.1);
+            (stored < *used).then(|| {
+                format!(
+                    "counter {counter} is {stored} but {used} is in use; repair with: \
+                     UPDATE counters SET value = {used} WHERE name = '{counter}';"
+                )
+            })
+        })
+        .collect();
+    if damaged.is_empty() {
+        return Check::pass(name, "every message counter is at or above its largest id");
+    }
+    Check::fail(name, damaged.join(" "))
 }
 
 /// The members `status` marks as started by another build of teamwire. The
