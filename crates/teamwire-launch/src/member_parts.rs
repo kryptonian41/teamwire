@@ -9,7 +9,7 @@ use teamwire_core::{HostErrorCode, Place, Role};
 use teamwire_store::Ctx;
 
 use crate::PlannedMember;
-use crate::worktree::{self, Made};
+use crate::worktree::{self, Excluded, Made};
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -19,6 +19,7 @@ pub(crate) struct Progress {
     pub(crate) recorded: bool,
     pub(crate) place: Option<Place>,
     pub(crate) worktree: Option<Made>,
+    pub(crate) excluded: Vec<Excluded>,
 }
 
 /// The paths of one team's directory.
@@ -79,7 +80,8 @@ impl Steps {
     }
 }
 
-/// Takes back what was made: the place, then the worktree (no force).
+/// Takes back what was made: the place, then the worktree (no force), then
+/// the exclude lines setup added.
 /// The second value is true when the worktree could not be removed.
 pub(crate) fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
     let mut left = false;
@@ -97,6 +99,9 @@ pub(crate) fn undo(ctx: &Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String
         let (note, still_there) = worktree::remove(ctx.platform, w);
         left = still_there;
         notes.push(note);
+    }
+    for e in &made.excluded {
+        notes.push(worktree::unexclude(ctx.platform, e));
     }
     (notes.join("; "), left)
 }

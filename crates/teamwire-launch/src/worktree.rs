@@ -18,6 +18,14 @@ pub(crate) struct Made {
     pub(crate) new_branch: Option<String>,
 }
 
+/// The `info/exclude` lines one launch added, so a failed launch can take
+/// exactly those back and leave every earlier line.
+#[derive(Debug, Clone)]
+pub(crate) struct Excluded {
+    pub(crate) file: PathBuf,
+    pub(crate) lines: Vec<String>,
+}
+
 /// The commit the member starts from: the branch's tip when the branch
 /// exists (the base is ignored then), else the base, else `HEAD`.
 pub(crate) fn start_commit(platform: &dyn Platform, w: &WorktreePlan) -> Result<String, String> {
@@ -148,8 +156,12 @@ fn exclude_path(platform: &dyn Platform, worktree: &Path) -> Result<PathBuf, Str
 }
 
 /// Adds `TASK.md` to the repository's `info/exclude` (LCH-24), once.
-pub(crate) fn exclude_task_md(platform: &dyn Platform, worktree: &Path) -> Result<(), String> {
-    exclude_lines(platform, worktree, &["TASK.md".to_owned()]).map(|_| ())
+pub(crate) fn exclude_task_md(
+    platform: &dyn Platform,
+    worktree: &Path,
+) -> Result<Option<Excluded>, String> {
+    let (file, lines) = exclude_lines(platform, worktree, &["TASK.md".to_owned()])?;
+    Ok((!lines.is_empty()).then_some(Excluded { file, lines }))
 }
 
 /// Appends each entry to the repository's `info/exclude` unless a line
@@ -200,13 +212,42 @@ fn exclude_lines(
     Ok((path, added))
 }
 
+/// Removes the lines `excluded` added, one occurrence each; every other line
+/// stays as it was. Returns a note for the undo output.
+pub(crate) fn unexclude(platform: &dyn Platform, excluded: &Excluded) -> String {
+    let file = excluded.file.display();
+    let bytes = match std::fs::read(&excluded.file) {
+        Ok(bytes) => bytes,
+        Err(e) => return format!("could not read {file} to take back its added lines: {e}"),
+    };
+    let mut pending: Vec<&[u8]> = excluded.lines.iter().map(|l| l.as_bytes()).collect();
+    let mut kept: Vec<&[u8]> = Vec::new();
+    for line in bytes.split_inclusive(|b| *b == b'\n') {
+        let bare = line.strip_suffix(b"\n").unwrap_or(line);
+        match pending.iter().position(|p| *p == bare) {
+            Some(i) => {
+                pending.swap_remove(i);
+            }
+            None => kept.push(line),
+        }
+    }
+    match platform.write_atomic(&excluded.file, &kept.concat()) {
+        Ok(()) => format!("lines launch added to {file} removed"),
+        Err(e) => format!("could not take back the lines launch added to {file}: {e}"),
+    }
+}
+
 /// Tells git to ignore what a member's setup command created: every
 /// untracked, not-ignored path of the worktree, anchored to the repository
 /// root. Without this, `teamwire close` finds the files and refuses the
 /// worktree as holding uncommitted work. Returns notes for the launch output
 /// naming every path added or skipped; a failure is a note, not a launch
-/// failure, because the member can still work.
-pub(crate) fn exclude_setup_files(platform: &dyn Platform, worktree: &Path) -> Vec<String> {
+/// failure, because the member can still work. Also returns the lines it
+/// added, for the undo.
+pub(crate) fn exclude_setup_files(
+    platform: &dyn Platform,
+    worktree: &Path,
+) -> (Vec<String>, Option<Excluded>) {
     // One entry per file, never per directory: a directory line would also hide
     // files a member writes there later, and close would then delete them.
     // `-z` gives raw names, so quote-escaping never reaches the exclude file.
@@ -217,8 +258,8 @@ pub(crate) fn exclude_setup_files(platform: &dyn Platform, worktree: &Path) -> V
     );
     let out = match listed {
         Ok(out) if out.success() => out,
-        Ok(out) => return vec![list_failed(&failure_text(&out))],
-        Err(e) => return vec![list_failed(&e)],
+        Ok(out) => return (vec![list_failed(&failure_text(&out))], None),
+        Err(e) => return (vec![list_failed(&e)], None),
     };
     let mut notes = Vec::new();
     let mut entries = Vec::new();
@@ -234,18 +275,23 @@ pub(crate) fn exclude_setup_files(platform: &dyn Platform, worktree: &Path) -> V
         }
     }
     if entries.is_empty() {
-        return notes;
+        return (notes, None);
     }
+    let mut excluded = None;
     match exclude_lines(platform, worktree, &entries) {
         Ok((_, added)) if added.is_empty() => {}
-        Ok((file, added)) => notes.push(format!(
-            "setup created {}; launch added them to {} so git ignores them (every worktree of the repository shares that file)",
-            added.join(", "),
-            file.display()
-        )),
+        Ok((file, added)) => {
+            let them = if added.len() == 1 { "it" } else { "them" };
+            notes.push(format!(
+                "setup created {}; launch added {them} to {} so git ignores {them} (every worktree of the repository shares that file)",
+                added.join(", "),
+                file.display()
+            ));
+            excluded = Some(Excluded { file, lines: added });
+        }
         Err(e) => notes.push(format!("setup created files git does not ignore: {e}")),
     }
-    notes
+    (notes, excluded)
 }
 
 fn list_failed(why: &str) -> String {
