@@ -76,6 +76,10 @@ pub(crate) fn session_usage(path: &Path) -> Option<Value> {
 }
 
 #[cfg(test)]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes a transcript file, which is not teamwire state"
+)]
 mod tests {
     use super::*;
 

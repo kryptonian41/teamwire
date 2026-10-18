@@ -394,13 +394,21 @@ fn no_write_lock_held_during_lead_delivery() {
     );
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes a transcript file, which is not teamwire state"
+)]
+fn write_transcript(path: &std::path::Path, text: &str) {
+    std::fs::write(path, text).unwrap();
+}
+
 #[test]
 fn delivering_event_carries_the_sessions_token_usage() {
     let (mut rig, api) = finished_member();
     rig.complete_now(&api);
     let path = rig.home.path().join("transcript.jsonl");
     let one = r#"{"type":"assistant","message":{"id":"m1","model":"opus","usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}"#;
-    std::fs::write(&path, format!("{one}\n{one}\n")).unwrap();
+    write_transcript(&path, &format!("{one}\n{one}\n"));
     let mut t = stop("api-1");
     t.transcript = Some(path);
     assert_eq!(
