@@ -133,6 +133,16 @@ fn timeout() -> HarnessError {
     )
 }
 
+/// The steps a read that ran out of `HOST_TIMEOUT` uses up: the steps that time
+/// covers. At most a sixth of the loop, so a loop always allows six such reads
+/// whatever `step` is.
+fn timed_out_steps(poll: StartupPoll) -> u32 {
+    let covered = HOST_TIMEOUT.as_millis() / poll.step.as_millis().max(1);
+    u32::try_from(covered)
+        .unwrap_or(u32::MAX)
+        .clamp(1, (poll.steps / 6).max(1))
+}
+
 /// Watches the member's screen until it shows the composer. Folder trust is
 /// answered when `policy` allows. The update prompt is skipped and the resume
 /// folder prompt keeps the session's folder. The hooks review is never
@@ -148,13 +158,21 @@ pub(crate) fn answer_startup(
     let patience = (poll.steps / 3).max(1);
     let mut trusted = false;
     let mut sent: Option<(Dialog, u32, Option<String>)> = None;
-    for _ in 0..poll.steps {
+    let mut left = poll.steps;
+    while left > 0 {
+        left -= 1;
         // A read that ran out of its time, or that herdr refused because the
-        // agent is working, is "no screen this time": read again. Any other
-        // host error ends the step.
+        // agent is working, is "no screen this time": read again. A timed-out
+        // read also uses up the steps its 5 s covered, so the loop still ends
+        // after about `poll.steps * poll.step` plus one read; a busy read
+        // returns at once and costs nothing more. Any other host error ends
+        // the step.
         let screen = match host.read_tail(place, TAIL_LINES, HOST_TIMEOUT) {
             Ok(screen) => screen,
             Err(e) if matches!(e.code, HostErrorCode::Timeout | HostErrorCode::Busy) => {
+                if e.code == HostErrorCode::Timeout {
+                    left = left.saturating_sub(timed_out_steps(poll) - 1);
+                }
                 std::thread::sleep(poll.step);
                 continue;
             }

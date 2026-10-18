@@ -15,8 +15,8 @@ use teamwire_core::{
     Occupant, OneLine, Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
 };
 use teamwire_fakes::{
-    ClaudeScript, ESCALATED_TRUST_TEXT, FakeHerdrEnv, FakeHost, FakePlatform, PLAIN_TRUST_TEXT,
-    Startup, TRUST_ESCALATION_MARKERS, TRUST_OPTION_TEXT,
+    ClaudeScript, ESCALATED_TRUST_TEXT, FakeHerdrEnv, FakeHost, FakePlatform, Fault,
+    PLAIN_TRUST_TEXT, Startup, TRUST_ESCALATION_MARKERS, TRUST_OPTION_TEXT,
 };
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, StartupPoll};
 
@@ -367,6 +367,29 @@ fn reads_that_keep_timing_out_end_in_a_timeout_when_the_steps_run_out() {
     let (got, keys, _) = slow_answer_failing(0, 0, failing);
     assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout);
     assert!(keys.is_empty());
+}
+
+/// Reads `answer_startup` makes of a host whose every read fails with `code`.
+fn reads_until_the_end(code: HostErrorCode) -> usize {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, place) = host_with_screen("starting up...");
+    host.inject_always("read_tail", Fault::Fail(HostError::new(code, "slow")));
+    let got = claude_in(dir.path())
+        .with_startup_poll(StartupPoll {
+            step: Duration::from_millis(1),
+            steps: 60,
+        })
+        .answer_startup(&host, &place, TrustPolicy::Accept);
+    assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout);
+    host.log().count_named("read_tail")
+}
+
+#[test]
+fn a_read_that_times_out_uses_up_the_steps_its_time_covers() {
+    // 60 steps of 0.5 s are 30 s; a read takes 5 s, which is 10 steps, so
+    // six reads fill the loop. A busy read returns at once and is one step.
+    assert_eq!(reads_until_the_end(HostErrorCode::Timeout), 6);
+    assert_eq!(reads_until_the_end(HostErrorCode::Busy), 60);
 }
 
 #[test]
