@@ -16,11 +16,16 @@ use teamwire_platform::SystemClock;
 // name. They are re-exported here so no other file names an adapter crate.
 pub(crate) use teamwire_harness_claude::ClaudeCode as LeadSetup;
 pub(crate) use teamwire_harness_claude::{
-    ApplyError, Change, ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill,
-    mcp_state, shadowing_entries, skill_state,
+    Change, ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill, mcp_state,
+    shadowing_entries, skill_state,
 };
 
 /// The harness whose hook commands this binary serves.
+pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
+pub(crate) use teamwire_harness_codex::lead_setup::{
+    Change as CodexChange, LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
+};
+
 pub(crate) fn claude_harness_id() -> HarnessId {
     HarnessId::from_static(ClaudeCode::ID)
 }
@@ -35,9 +40,16 @@ pub(crate) struct Wiring {
     /// Where Claude Code keeps its files, for the commands that read or
     /// write the lead setup.
     pub(crate) claude: ClaudeConfig,
+    /// Where Codex keeps its files, for the same commands.
+    pub(crate) codex: CodexConfig,
 }
 
 impl Wiring {
+    /// The Codex adapter that adds and removes the lead plugin.
+    pub(crate) fn codex_setup(&self) -> CodexSetup {
+        CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
+    }
+
     /// The Claude Code adapter that reads and writes the lead setup.
     pub(crate) fn lead_setup(&self) -> LeadSetup {
         LeadSetup::new(Arc::clone(&self.platform), self.claude.clone())
@@ -93,6 +105,7 @@ impl WiringEnv {
 pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     let platform = teamwire_platform::native();
     let claude = claude_config(env);
+    let codex = codex_config(env);
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
@@ -100,7 +113,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     )))?;
     registry.add_harness(Arc::new(CodexCli::new(
         Arc::clone(&platform),
-        codex_config(env),
+        codex.clone(),
     )))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
@@ -112,6 +125,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_harness: lead_harness(env),
         lead_host: lead_host(env),
         claude,
+        codex,
     })
 }
 
