@@ -749,3 +749,42 @@ fn a_state_that_is_still_blocked_after_the_second_read_is_reported_as_before() {
         )
     );
 }
+
+#[test]
+fn a_pull_request_that_does_not_exist_is_said_once_and_ends_the_watch_failed() {
+    let bed = Bed::new();
+    bed.answer("view", 7, 1, "");
+    std::fs::write(
+        bed.dir.path().join("view-7-1.err"),
+        "GraphQL: Could not resolve to a PullRequest with the number of 7. (repository.pullRequest)\n",
+    )
+    .unwrap();
+    bed.answer("view", 8, 1, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("checks", 8, 1, &checks(&[("a", "pass")]));
+    let run = bed.watch(&["7", "8"]);
+    assert_eq!(run.code, 1, "{:?}", run.lines);
+    let said = "o/r#7 NOT-FOUND: GraphQL: Could not resolve to a PullRequest with the number of 7. (repository.pullRequest)";
+    let count = run
+        .lines
+        .iter()
+        .flat_map(|l| l.split(" | "))
+        .filter(|l| *l == said)
+        .count();
+    assert_eq!(count, 1, "{:?}", run.lines);
+}
+
+#[test]
+fn another_gh_failure_keeps_polling() {
+    let bed = Bed::new();
+    bed.answer("view", 7, 1, "");
+    std::fs::write(bed.dir.path().join("view-7-1.err"), "gh: HTTP 401\n").unwrap();
+    bed.answer("view", 7, 2, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("checks", 7, 2, &checks(&[("a", "pass")]));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0, "{:?}", run.lines);
+    assert!(
+        run.lines.iter().all(|l| !l.contains("NOT-FOUND")),
+        "{:?}",
+        run.lines
+    );
+}
