@@ -98,6 +98,18 @@ fn shared_rules_are_in_every_kind() {
 }
 
 #[test]
+fn closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail() {
+    let closer = render(MemberKind::Closer, None, &[]);
+    assert!(closer.contains("the fix in a scratch checkout and confirm the test fails"));
+    assert!(closer.contains("joined head when one exists"));
+    let reviewer = render(MemberKind::Reviewer, None, &[]);
+    assert!(reviewer.contains("stubbed, empty or hard-coded code"));
+    assert!(reviewer.contains("findings only, no fixes"));
+    let implementer = render(MemberKind::Implementer, None, &[]);
+    assert!(implementer.contains("`git checkout -- .`"));
+}
+
+#[test]
 fn reviewer_and_closer_send_and_receive_no_messages() {
     for kind in [MemberKind::Reviewer, MemberKind::Closer] {
         let text = render(kind, None, &[]);
