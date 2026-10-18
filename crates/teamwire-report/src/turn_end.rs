@@ -249,6 +249,8 @@ fn deliver(
     };
 
     // No host for the lead: the watch prints the result (DEL-17).
+    // shortcut: this route writes no `result.delivering`, so no usage is
+    // recorded; read the transcript in the watch's delivery path to cover it.
     if team.lead_route == LeadRoute::Watch {
         return Ok(());
     }

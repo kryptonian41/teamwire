@@ -27,7 +27,9 @@ const KEYS: [(&str, &str); 4] = [
 // shortcut: subagent transcripts are separate files and are not counted; read
 // them too when a member's subagent spend matters.
 pub(crate) fn session_usage(path: &Path) -> Option<Value> {
-    if std::fs::metadata(path).ok()?.len() > MAX_TRANSCRIPT_BYTES {
+    // Only a regular file: opening a FIFO would block the Stop hook.
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() > MAX_TRANSCRIPT_BYTES {
         return None;
     }
     let bytes = std::fs::read(path).ok()?;
@@ -116,6 +118,8 @@ mod tests {
     #[test]
     fn a_missing_file_or_one_without_usage_gives_none() {
         let dir = tempfile::tempdir().unwrap();
+        // A path that is not a regular file is never opened.
+        assert_eq!(session_usage(dir.path()), None);
         assert_eq!(session_usage(&dir.path().join("none")), None);
         let path = dir.path().join("t.jsonl");
         std::fs::write(&path, "{\"type\":\"user\"}\n").unwrap();
