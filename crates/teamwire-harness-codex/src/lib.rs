@@ -17,6 +17,7 @@ mod hook;
 mod launch;
 pub mod lead_setup;
 mod screen;
+mod session;
 mod startup;
 
 pub use startup::StartupPoll;
@@ -114,19 +115,41 @@ impl Harness for CodexCli {
     }
 
     fn current_session(&self) -> Option<CallerSession> {
-        None
+        self.caller_session(&|name| std::env::var(name).ok())
+    }
+
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        session::caller_session(&self.config.codex_home, get)
+    }
+
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Ok(vec![
+            self.config.codex_bin.clone(),
+            "--no-daemon".to_owned(),
+            "resume".to_owned(),
+            s.as_str().to_owned(),
+        ])
+    }
+
+    fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        Ok(session::session_cwd(&self.config.codex_home, s))
     }
 
     fn processes_for_session(
         &self,
-        _s: &SessionId,
-        _timeout: Duration,
+        s: &SessionId,
+        timeout: Duration,
     ) -> Result<Vec<Pid>, HarnessError> {
-        Ok(Vec::new())
+        session::processes(self.platform.as_ref(), &self.config.codex_home, s, timeout)
     }
 
-    fn is_alive(&self, _s: &SessionId, _timeout: Duration) -> Result<Liveness, HarnessError> {
-        Ok(Liveness::Unknown)
+    fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError> {
+        Ok(session::liveness(
+            self.platform.as_ref(),
+            &self.config.codex_home,
+            s,
+            timeout,
+        ))
     }
 
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
