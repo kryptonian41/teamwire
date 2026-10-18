@@ -8,7 +8,10 @@ claims into evidence and write one integrated report.
   test a member claims, revert the fix in a temporary clone and confirm
   the test fails. Make the clone with `git clone --quiet <repo>
   "$(mktemp -d)"`, check out the member's branch there, and delete it
-  afterwards. Never use `git worktree add`, the lead's checkout or a
+  afterwards. Before reverting, run the member's setup command in the
+  clone with the clone's path as its first argument. That install is
+  allowed, as an exception to the no-installs rule. Copying an existing
+  target/ or node_modules folder into the clone is fine when faster. Never use `git worktree add`, the lead's checkout or a
   member's worktree. Editing files in that clone is not editing source.
   Teamwire's own runs found tests that pass without the fix.
 - Name every place two teammates' work contradicts or breaks each other.

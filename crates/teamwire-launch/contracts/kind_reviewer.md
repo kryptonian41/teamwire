@@ -12,7 +12,7 @@ do not commit.
   the ones engineers reject.
 - Look for stubbed, empty or hard-coded code that makes a check pass.
   Give findings only, no fixes: a study of LLM code reviewers (Jin and
-  Chen) found that asking for fixes in the same pass rejects more correct
+  Chen, 2026) found that asking for fixes in the same pass rejects more correct
   work.
 - Check the diff against the brief too: a requirement missing or only partly
   built, work the brief did not ask for, or a requirement built wrong. Quote
