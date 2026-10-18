@@ -212,6 +212,22 @@ async fn inbox_returns_unread_messages_once_and_marks_them_read() {
 }
 
 #[tokio::test]
+async fn the_inbox_note_is_left_out_when_only_the_lead_wrote() {
+    let (rig, _api, web) = two_members().await;
+    let lead = rig.client(McpCaller::Lead).await;
+    call(
+        &lead,
+        "team_send",
+        json!({"team": "alpha", "to": ["web"], "type": "note", "text": "ship it"}),
+    )
+    .await;
+    let result = call(&web, "team_inbox", json!({})).await;
+    let out = ok(&result);
+    assert_eq!(out["messages"][0]["from"], "lead");
+    assert!(out.get("note").is_none(), "{out}");
+}
+
+#[tokio::test]
 async fn the_lead_has_no_inbox() {
     let rig = Rig::new();
     let lead = rig.client(McpCaller::Lead).await;
