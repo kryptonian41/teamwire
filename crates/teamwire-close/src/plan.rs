@@ -16,6 +16,14 @@ fn step(name: &str, detail: impl Into<String>) -> CloseStep {
 
 /// The plan for `target`, judged with the flags the close will run with.
 pub fn plan_close_with(ctx: &Ctx<'_>, target: CloseTarget, opts: &CloseOpts) -> ClosePlan {
+    if target == CloseTarget::Team
+        && let Some((team, dir)) = crate::empty::nothing_recorded(ctx, opts)
+    {
+        return ClosePlan {
+            steps: vec![crate::empty::plan(&team, &dir)],
+            refusals: Vec::new(),
+        };
+    }
     let (team, members) = match read(ctx) {
         Ok(pair) => pair,
         Err(why) => {

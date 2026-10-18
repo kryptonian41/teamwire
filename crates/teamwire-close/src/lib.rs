@@ -12,11 +12,12 @@
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
-use teamwire_core::{EventType, Role};
+use teamwire_core::{EventType, Role, TeamName};
 use teamwire_store::Ctx;
 
 mod archive;
 mod delete;
+mod empty;
 mod facts;
 mod git;
 mod hold;
@@ -52,6 +53,9 @@ pub struct CloseOpts {
     pub archive_to: Option<PathBuf>,
     /// Clear a close lock whose owner pid is dead, and nothing else.
     pub clear_stale_lock: bool,
+    /// The team being closed. Only a store with no team row needs it, to
+    /// find the directory; without it that store is refused.
+    pub team: Option<TeamName>,
 }
 
 /// One step of a close, as planned.
@@ -112,6 +116,17 @@ pub fn close_observed(
         return team_close::clear_stale_lock(ctx);
     }
     let plan = plan_close_with(ctx, target.clone(), &opts);
+    if target == CloseTarget::Team
+        && plan.refusals.is_empty()
+        && let Some((team, dir)) = empty::nothing_recorded(ctx, &opts)
+    {
+        let outcome = empty::run(ctx, &team, &dir);
+        return CloseReport {
+            stopped_at: (!outcome.ok).then(|| outcome.step.clone()),
+            steps: vec![outcome],
+            ..CloseReport::default()
+        };
+    }
     if !plan.refusals.is_empty() {
         record_refusal(ctx, &plan.refusals);
         return CloseReport {

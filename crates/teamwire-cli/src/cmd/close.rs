@@ -43,6 +43,7 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         keep_state: *keep_state,
         archive_to: archive_to.clone(),
         clear_stale_lock: *clear_stale_lock,
+        team: Some(team.clone()),
     };
     if !*dry_run && let Some(code) = refuse_member("close") {
         return code;

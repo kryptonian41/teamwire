@@ -116,16 +116,21 @@ impl Default for Rig {
 
 impl Rig {
     pub fn new() -> Self {
-        Self::build(true)
+        Self::build(true, true)
+    }
+
+    /// A store `Store::open` made and nothing wrote to: no team row, no member.
+    pub fn without_team_row() -> Self {
+        Self::build(false, false)
     }
 
     /// A rig whose `repo` path does not exist, for tests that only use panes.
     /// Starting git there fails, and `add_worktree_member` refuses to run.
     pub fn without_repo() -> Self {
-        Self::build(false)
+        Self::build(false, true)
     }
 
-    fn build(with_repo: bool) -> Self {
+    fn build(with_repo: bool, with_team: bool) -> Self {
         let home = TestHome::new().unwrap();
         let work = tempfile::tempdir().unwrap();
         let repo = work.path().join("proj");
@@ -149,25 +154,27 @@ impl Rig {
         let team = TeamName::parse(TEAM).unwrap();
         let mut store = Store::open(home.path(), &team).unwrap();
         let clock = FakeClock::new();
-        store
-            .write(|tx| {
-                tx.create_team(
-                    clock.now(),
-                    &NewTeam {
-                        name: team.clone(),
-                        title: "Alpha".to_owned(),
-                        lead_harness: HarnessId::from_static("claude-code"),
-                        lead_host: HostId::from_static("herdr"),
-                        lead_route: LeadRoute::Sink,
-                        lead_session: Some((
-                            SessionId::parse("lead-1").unwrap(),
-                            SessionKind::Interactive,
-                        )),
-                    },
-                )?;
-                Ok(())
-            })
-            .unwrap();
+        if with_team {
+            store
+                .write(|tx| {
+                    tx.create_team(
+                        clock.now(),
+                        &NewTeam {
+                            name: team.clone(),
+                            title: "Alpha".to_owned(),
+                            lead_harness: HarnessId::from_static("claude-code"),
+                            lead_host: HostId::from_static("herdr"),
+                            lead_route: LeadRoute::Sink,
+                            lead_session: Some((
+                                SessionId::parse("lead-1").unwrap(),
+                                SessionKind::Interactive,
+                            )),
+                        },
+                    )?;
+                    Ok(())
+                })
+                .unwrap();
+        }
         Self {
             home,
             store,
