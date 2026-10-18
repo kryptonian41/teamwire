@@ -159,7 +159,7 @@ fn a_rust_weakening_inside_a_string_literal_is_fixture_text() {
         r##"    std::fs::write(dir.join("a.rs"), "#[allow(dead_code)]\nfn f() {}\n").unwrap();"##,
         r#"    let q = "a \" b #[allow(x)]";"#,
         r##"let s = r"#[allow(dead_code)]";"##,
-        r####"        r#"let e = "\""; #[allow(dead_code)] fn f() {}"#,"####,
+        r##"        r#"let e = "\""; #[allow(dead_code)] fn f() {}"#,"##,
     ] {
         assert!(r.weakening("src/lib.rs", line).is_none(), "{line}");
     }

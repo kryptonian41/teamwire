@@ -198,15 +198,14 @@ fn ends_inside_string(text: &str) -> bool {
                 chars.next();
                 chars.next();
             }
-            'r' if !open => match skip_raw_string(&mut chars) {
-                Some(unclosed) => {
+            'r' if !open => {
+                if let Some(unclosed) = skip_raw_string(&mut chars) {
                     open = unclosed;
                     if open {
                         break;
                     }
                 }
-                None => {}
-            },
+            }
             '"' => open = !open,
             _ => {}
         }
