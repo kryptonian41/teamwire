@@ -440,3 +440,39 @@ fn delivery_still_happens_when_the_transcript_is_missing() {
             .is_none()
     );
 }
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test makes a named pipe, which only mkfifo can"
+)]
+fn make_fifo(path: &std::path::Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn a_transcript_that_is_a_named_pipe_is_never_opened() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    // A regression blocks on the open, so the body runs in a thread that the
+    // test stops waiting for.
+    std::thread::spawn(move || {
+        let (mut rig, api) = finished_member();
+        rig.complete_now(&api);
+        let path = rig.home.path().join("pipe.jsonl");
+        make_fifo(&path);
+        let mut t = stop("api-1");
+        t.transcript = Some(path);
+        let reply = on_turn_end(&mut rig.ctx(), &api, &t);
+        let delivering = rig.events(EventType::ResultDelivering);
+        tx.send((reply, delivering[0].data.get("usage").is_none()))
+            .ok();
+    });
+    let (reply, no_usage) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the hook blocked on the pipe");
+    assert_eq!(reply, TurnEndReply::Continue);
+    assert!(no_usage);
+}
