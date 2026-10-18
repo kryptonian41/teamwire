@@ -252,6 +252,18 @@ SEATS is `crates/teamwire-launch/contracts/`. PRESETS is `examples/presets/`.
 | 16 | One sentence says agents may read, research and review in parallel, and one agent writes each piece of code. | L15, L3, S22 | SKILL |
 | 20 | At the turn end that hands over a member's completion, the member's Stop hook adds up the tokens in the transcript. `teamwire metrics` reports them per member under `teamwire.member.tokens`. The skill tells the lead to read `teamwire metrics <team>` after a run. | O17 (not checked by the closer), B16 | The token-recording code; SKILL |
 
+Amendments after review, on 2026-10-18:
+
+- A1 (item 1). The closer runs the revert step in a temporary clone that the
+  closer makes itself with `git clone`. The closer never uses `git worktree add`
+  and never touches the lead's checkout or a member's worktree. The closer
+  deletes the clone afterwards. "Each high finding's fix" means the fix behind
+  each finding graded wrong conclusion, and each new test a member claims.
+- A2 (item 20). A team whose lead route is the watch records no usage. Section 6
+  gives the reason.
+- A3 (item 5). The member rules name the source for "a reviewer asked to
+  propose fixes rejects more correct work": Jin and Chen, 2026 (S11).
+
 Corrected evidence behind item 15: Bun ran 4 worktrees with 16 Claudes each. The
 member's claim of "64 worktrees" was wrong. The `git stash` collision happened
 in one shared checkout. Each teamwire implementer has its own worktree.
@@ -284,8 +296,13 @@ Gaps in teamwire's own data:
 
 - Subagent tokens are not counted. Item 20 adds the tokens in each member's own
   transcript. Tokens spent by subagents that a member starts are outside it.
-- The archive has no model or effort column (O17, not checked by the closer).
-  Only a record of the spec could answer which role ran at which effort.
+- The 57 archived runs have no model or effort record (O17, not checked by
+  the closer). Launch has recorded `model` and `effort` in each member's
+  `member.started` event data since 2026-10-17. Teams launched from that day
+  have both, so item 20 adds only token counts.
+- A team whose lead route is the watch (host `none`) records no token usage
+  (amendment A2). That route writes no `result.delivering` event, and a new
+  event needs a schema change. The limit is accepted and documented.
 - "Replace rather than rescue" has no instance in 57 runs (O16, not checked by
   the closer). Item 8 therefore rests on S18 and practice, not on the archive.
 
