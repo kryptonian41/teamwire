@@ -18,7 +18,8 @@ pub(crate) struct ErrorBody {
 /// The `HostErrorCode` for one herdr `error.code`.
 pub(crate) fn map_code(code: &str) -> HostErrorCode {
     match code {
-        "agent_pane_busy" => HostErrorCode::Busy,
+        // `agent_not_idle`: a long read of an agent that is working.
+        "agent_pane_busy" | "agent_not_idle" => HostErrorCode::Busy,
         "agent_not_ready" => HostErrorCode::NotReady,
         "agent_blocked" => HostErrorCode::Blocked,
         "agent_prompt_stalled" => HostErrorCode::Stalled,

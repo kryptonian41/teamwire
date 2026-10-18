@@ -119,6 +119,17 @@ fn code_agent_prompt_stalled_is_stalled() {
 }
 
 #[test]
+fn code_agent_not_idle_on_a_read_is_busy() {
+    // herdr 0.9.3 answers a long read of a working agent this way.
+    let world = failing("agent read", "agent_not_idle");
+    let err = world
+        .herdr
+        .read_tail(&place(&world, "w1:p1"), 100, T)
+        .expect_err("the read is failed by the fault");
+    assert_eq!(err.code, HostErrorCode::Busy);
+}
+
+#[test]
 fn code_timeout_is_timeout() {
     assert_eq!(prompt_code("timeout").code, HostErrorCode::Timeout);
 }
