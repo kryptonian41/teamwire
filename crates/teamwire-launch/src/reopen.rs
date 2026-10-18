@@ -174,7 +174,18 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
         let outcome = match (result, who) {
             (Err(outcome), _) => outcome,
             (Ok(_), None) => ReopenOutcome::Reopened,
-            (Ok(place), Some(role)) => record_place(ctx, role, r, &place),
+            (Ok(place), Some(role)) => {
+                let outcome = record_place(ctx, role, r, &place);
+                if outcome == ReopenOutcome::Reopened
+                    && let Some(old) = members
+                        .iter()
+                        .find(|m| &m.role == role)
+                        .and_then(|m| m.place.as_ref().map(|p| (m, p)))
+                {
+                    close_old_place(r, old.0, old.1, &place, &mut report.warnings);
+                }
+                outcome
+            }
         };
         match who {
             None => report.lead = Some(outcome),
@@ -402,6 +413,65 @@ fn record_place(ctx: &mut Ctx<'_>, role: &Role, r: &Ready<'_>, place: &Place) ->
             place,
             &format!("the place could not be recorded: {e}"),
         ),
+    }
+}
+
+/// Closes the tab a member had before reopen, once the new one runs and is
+/// recorded: `close` knows only the recorded place, so the old tab would stay
+/// as a dead `claude` and a bare shell. A tab the host no longer lists is
+/// done. A tab that holds another live session is left open, and a failure to
+/// close is a warning, never a failed reopen.
+fn close_old_place(
+    r: &Ready<'_>,
+    member: &Member,
+    old: &Place,
+    new: &Place,
+    warnings: &mut Vec<String>,
+) {
+    let role = &member.role;
+    if old.id == new.id {
+        return;
+    }
+    match r.host.list(CLOSE_TIMEOUT) {
+        Ok(places) if !places.iter().any(|p| p.id == old.id) => return,
+        Ok(_) => {}
+        Err(e) => {
+            warnings.push(format!(
+                "{role}: reopened, but the old tab {} could not be checked ({e}); close it by hand if it is still there",
+                old.id
+            ));
+            return;
+        }
+    }
+    match r.host.occupant(old, CLOSE_TIMEOUT) {
+        Ok(occupant) => {
+            if let Some(other) = occupant
+                .session
+                .filter(|s| member.session_id.as_ref() != Some(s))
+            {
+                warnings.push(format!(
+                    "{role}: reopened, but the old tab {} holds session {other}, so it was left open",
+                    old.id
+                ));
+                return;
+            }
+        }
+        Err(e) if e.code == teamwire_core::HostErrorCode::NotFound => return,
+        Err(e) => {
+            warnings.push(format!(
+                "{role}: reopened, but who is in the old tab {} is not known ({e}), so it was left open",
+                old.id
+            ));
+            return;
+        }
+    }
+    match r.host.close(old, CLOSE_TIMEOUT) {
+        Ok(()) => {}
+        Err(e) if e.code == teamwire_core::HostErrorCode::NotFound => {}
+        Err(e) => warnings.push(format!(
+            "{role}: reopened, but the old tab {} could not be closed ({e}); close it by hand",
+            old.id
+        )),
     }
 }
 
