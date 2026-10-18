@@ -127,6 +127,11 @@ fn print_report(
         block.push_str(
             "\nthe lead should read those files: teamwire never sends a result again by itself\n",
         );
+        writeln!(
+            block,
+            "after reading them, run: teamwire received {team} <role>..."
+        )
+        .ok();
         say(&block);
     }
     let mut tail = format!("watch: {}\n", report.watch_command);

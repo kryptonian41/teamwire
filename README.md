@@ -235,6 +235,7 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire watch` | Print one line when something needs the lead, until the team completes. |
 | `teamwire status` | Show every team, or one team's members, messages and results. Reads only. |
 | `teamwire send` / `resend` | Send one checked message, or retry one that did not arrive. |
+| `teamwire received` | Record that you read a result the hook could not type into your pane. |
 | `teamwire log` | List every message with its delivery state. |
 | `teamwire verify` | Run each member's check and the diff rules, and print a verdict per member. |
 | `teamwire close` | Close the team, or remove one member, in a fixed safe order. |

@@ -19,7 +19,8 @@ use std::path::Path;
 
 use fixture::{Bed, role};
 use teamwire_core::{
-    Actor, CompletionStatus, DeliveryState, MessageType, PlaceState, Recipient, ReportState,
+    Actor, Clock as _, CompletionStatus, DeliveryState, MessageType, PlaceState, Recipient,
+    ReportState,
 };
 use teamwire_store::{Ctx, Store};
 use teamwire_watch::{StatusView, WatchState};
@@ -327,4 +328,39 @@ fn a_message_the_member_finished_after_is_not_listed_as_unread() {
     bed.send(MessageType::Note, "api", None);
     bed.age(secs(601));
     assert_eq!(status_of(&bed, None).unread_deliveries.len(), 1);
+}
+
+#[test]
+fn only_the_newest_result_of_a_member_is_listed_as_not_received() {
+    let mut bed = busy_team();
+    bed.age(secs(1));
+    let newer = bed.complete("web", CompletionStatus::Done);
+    assert!(status_of(&bed, None).undelivered_results.is_empty());
+
+    bed.finish(&newer, ReportState::Unconfirmed, None);
+    let view = status_of(&bed, None);
+    assert_eq!(view.undelivered_results.len(), 1);
+    assert_eq!(view.undelivered_results[0].n, 2);
+}
+
+#[test]
+fn a_result_the_lead_marked_received_is_not_listed() {
+    let mut bed = busy_team();
+    bed.idle("web");
+    let web = status_of(&bed, None).undelivered_results[0].clone();
+    let now = bed.clock.now();
+    let c = bed
+        .store
+        .read(|tx| tx.latest_completion(&web.role))
+        .unwrap()
+        .unwrap();
+    assert!(
+        bed.store
+            .write(|tx| tx.mark_result_received(now, &c.completion.ulid))
+            .unwrap()
+    );
+    let view = status_of(&bed, None);
+    assert!(view.undelivered_results.is_empty());
+    let state = view.members.iter().find(|m| m.role == web.role).unwrap();
+    assert_eq!(state.state, "done(failed)");
 }

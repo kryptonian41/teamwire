@@ -49,6 +49,8 @@ pub(crate) enum Command {
     Send(SendArgs),
     /// Retry one stored message to the recipients it did not reach.
     Resend(ResendArgs),
+    /// Record that the lead read results it was not typed (lead).
+    Received(ReceivedArgs),
     /// Every message with its delivery state.
     Log(LogArgs),
     /// Record this session as the team's lead.
@@ -217,6 +219,14 @@ pub(crate) struct SendArgs {
         help = "The sender: your role, or lead. A member's defaults to $TEAMWIRE_ROLE."
     )]
     pub(crate) from: Option<String>,
+}
+
+#[derive(Args)]
+pub(crate) struct ReceivedArgs {
+    pub(crate) team: String,
+    /// The members whose newest result the lead read from its file.
+    #[arg(value_name = "ROLE", required = true)]
+    pub(crate) roles: Vec<String>,
 }
 
 #[derive(Args)]
