@@ -260,7 +260,8 @@ fn deliver(
     let stale = Duration::ZERO;
     // The session's token usage rides on the claim event. A transcript that
     // cannot be read leaves the key out and never stops the delivery.
-    let mut claim_data = json!({});
+    // `session` lets the metrics tell one session's running totals from the next.
+    let mut claim_data = json!({ "session": t.session.to_string() });
     if let (Some(usage), Some(data)) = (
         t.transcript
             .as_deref()
