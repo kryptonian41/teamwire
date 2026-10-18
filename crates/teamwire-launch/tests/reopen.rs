@@ -615,3 +615,105 @@ fn a_lead_whose_folder_is_the_home_directory_is_refused_and_nothing_is_spawned()
     assert!(why.contains("fake-claude --resume lead-session"), "{why}");
     assert!(!spawned(&rig).contains(&"tw_demo_lead".to_owned()));
 }
+
+/// A launched team whose session is dead but whose recorded tab is still
+/// listed, under a name no agent uses any more (a bare shell the dead
+/// session left behind). The fake host refuses a second agent under a live
+/// name, so the real tab is closed and the shell tab is recorded instead.
+fn dead_session_in_a_live_tab(rig: &Rig) -> (Store, teamwire_core::Place) {
+    rig.harness
+        .set_session_cwd(sid("lead-session"), rig.work.path());
+    let spec = team_spec("demo", &[pane_member("api", "api", rig.work.path())]);
+    let (_, mut store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    let row = member_row(&store, "api").unwrap();
+    rig.harness
+        .set_liveness(&row.session_id.unwrap(), Liveness::Dead);
+    rig.host.close(&row.place.unwrap(), T).unwrap();
+    let shell = rig.host.add_place(
+        "left-over-shell",
+        PlaceState::Idle,
+        teamwire_core::Occupant {
+            session: None,
+            pids: vec![Pid::new(4242)],
+        },
+    );
+    store
+        .write(|tx| tx.set_member_place(&role("api"), &shell))
+        .unwrap();
+    rig.harness.set_interactive_caller(sid("other"));
+    (store, shell)
+}
+
+#[test]
+fn the_old_tab_is_closed_after_the_new_one_started() {
+    let rig = Rig::new();
+    let (mut store, old) = dead_session_in_a_live_tab(&rig);
+    rig.host.log().clear();
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+    assert!(
+        report.warnings.iter().all(|w| !w.contains("old tab")),
+        "{:?}",
+        report.warnings
+    );
+    let new = member_row(&store, "api").unwrap().place.unwrap();
+    assert_ne!(new, old);
+    let places = rig.host.list(T).unwrap();
+    assert!(!places.contains(&old), "the old tab is gone: {places:?}");
+    assert!(places.contains(&new));
+    let order: Vec<_> = rig
+        .host
+        .log()
+        .calls()
+        .into_iter()
+        .map(|c| c.name)
+        .filter(|n| *n == "spawn" || *n == "close")
+        .collect();
+    // The lead's tab opens first, then the member's; the close comes last.
+    assert_eq!(order, ["spawn", "spawn", "close"]);
+}
+
+#[test]
+fn a_failure_to_close_the_old_tab_is_a_warning_and_the_reopen_stands() {
+    let rig = Rig::new();
+    let (mut store, old) = dead_session_in_a_live_tab(&rig);
+    rig.host.inject(
+        "close",
+        teamwire_fakes::Fault::Fail(teamwire_core::HostError::new(
+            teamwire_core::HostErrorCode::Other,
+            "boom",
+        )),
+        1,
+    );
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+    assert!(!report.has_problem());
+    let warning = report
+        .warnings
+        .iter()
+        .find(|w| w.contains("api") && w.contains("could not be closed"))
+        .unwrap();
+    assert!(warning.contains(&old.id), "{warning}");
+    assert!(rig.host.list(T).unwrap().contains(&old));
+}
+
+#[test]
+fn an_old_tab_that_holds_another_session_is_left_open_with_a_warning() {
+    let rig = Rig::new();
+    let (mut store, old) = dead_session_in_a_live_tab(&rig);
+    rig.host.set_occupant(
+        &old,
+        teamwire_core::Occupant {
+            session: Some(sid("someone-else")),
+            pids: Vec::new(),
+        },
+    );
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+    assert!(
+        report.warnings.iter().any(|w| w.contains("left open")),
+        "{:?}",
+        report.warnings
+    );
+    assert!(rig.host.list(T).unwrap().contains(&old));
+}

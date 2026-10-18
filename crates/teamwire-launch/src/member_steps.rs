@@ -8,7 +8,7 @@ use teamwire_core::{Command, HostError, HostErrorCode, MemberLaunch, Place, one_
 use teamwire_store::Ctx;
 
 use crate::contract::{ContractParts, render_contract};
-use crate::member_parts::Dirs;
+use crate::member_parts::{Dirs, Progress};
 use crate::worktree;
 use crate::{PlannedMember, ValidPlan};
 
@@ -175,6 +175,7 @@ pub(crate) fn run_setup(
     plan: &ValidPlan,
     dirs: &Dirs,
     m: &PlannedMember,
+    made: &mut Progress,
     warnings: &mut Vec<String>,
 ) -> Result<(), Stop> {
     let script = m.spec.setup.clone().or_else(|| {
@@ -225,7 +226,8 @@ pub(crate) fn run_setup(
     }
     if ok {
         if m.worktree.is_some() {
-            let notes = worktree::exclude_setup_files(ctx.platform, &m.cwd);
+            let (notes, excluded) = worktree::exclude_setup_files(ctx.platform, &m.cwd);
+            made.excluded.extend(excluded);
             warnings.extend(notes.into_iter().map(|n| format!("member {role}: {n}")));
         }
         Ok(())
@@ -310,6 +312,7 @@ pub(crate) fn write_member_files(
     m: &PlannedMember,
     launch: &MemberLaunch,
     files: &[teamwire_core::LaunchFile],
+    made: &mut Progress,
 ) -> Result<(), Stop> {
     use std::os::unix::fs::PermissionsExt;
     let role = &m.spec.role;
@@ -329,7 +332,8 @@ pub(crate) fn write_member_files(
             0o644,
         )
         .map_err(fail)?;
-        worktree::exclude_task_md(ctx.platform, &m.cwd).map_err(fail)?;
+        made.excluded
+            .extend(worktree::exclude_task_md(ctx.platform, &m.cwd).map_err(fail)?);
     }
     for file in files {
         if !file.path.starts_with(&launch.member_dir) {

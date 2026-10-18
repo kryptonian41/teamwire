@@ -325,3 +325,91 @@ fn a_file_written_later_in_a_setup_made_directory_stays_visible() {
         "?? gen/"
     );
 }
+
+#[test]
+fn a_member_that_fails_after_setup_takes_its_exclude_lines_back() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let exclude = repo.join(".git/info/exclude");
+    common::write(&exclude, "# mine\n*.log\n");
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(HostErrorCode::Other, "boom")),
+        1,
+    );
+    let plan = rig
+        .validate(&common::with(spec, "setup", json!("touch made.txt")), false)
+        .unwrap();
+    let (report, _store) = rig.launch("demo", plan);
+    assert!(
+        matches!(
+            report.members.first().unwrap().outcome,
+            LaunchOutcome::Failed(_)
+        ),
+        "{report:?}"
+    );
+    let text = std::fs::read_to_string(&exclude).unwrap();
+    assert_eq!(text, "# mine\n*.log\n");
+}
+
+#[test]
+fn the_exclude_note_agrees_in_number() {
+    let rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    let one = rig
+        .validate(
+            &common::with(spec.clone(), "setup", json!("touch a.txt")),
+            false,
+        )
+        .unwrap();
+    let (report, _store) = rig.launch("demo", one);
+    let note = report
+        .warnings
+        .iter()
+        .find(|w| w.contains("a.txt"))
+        .unwrap();
+    assert!(note.contains("a.txt; launch added it to"), "{note}");
+
+    let rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    let two = rig
+        .validate(
+            &common::with(spec, "setup", json!("touch a.txt b.txt")),
+            false,
+        )
+        .unwrap();
+    let (report, _store) = rig.launch("demo", two);
+    let note = report
+        .warnings
+        .iter()
+        .find(|w| w.contains("a.txt"))
+        .unwrap();
+    assert!(
+        note.contains("/a.txt, /b.txt; launch added them to"),
+        "{note}"
+    );
+}
+
+#[test]
+fn a_deleted_branch_is_cleared_from_the_member_row() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(HostErrorCode::Other, "boom")),
+        1,
+    );
+    let plan = rig.validate(&spec, false).unwrap();
+    let (_report, store) = rig.launch("demo", plan);
+    assert!(
+        git(&repo, &["branch", "--list", "api"]).trim().is_empty(),
+        "the branch was deleted"
+    );
+    let row = member_row(&store, "api").unwrap();
+    assert_eq!(row.state, MemberState::Failed);
+    assert_eq!(row.branch, None);
+}

@@ -83,6 +83,23 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
             return ExitCode::from(REFUSED);
         }
     };
+    // Only the plan's own members: `--add` does not recheck the ones already running.
+    let found = crate::cmd::install::found(wiring);
+    let missing: Vec<_> = plan
+        .members
+        .iter()
+        .filter(|m| !found.contains(&m.harness.as_str()))
+        .collect();
+    if !missing.is_empty() {
+        for m in missing {
+            eprintln!(
+                "refused: member {}: harness {} is not on PATH",
+                m.spec.role, m.harness
+            );
+        }
+        eprintln!("nothing was created");
+        return ExitCode::from(REFUSED);
+    }
     for warning in &plan.warnings {
         eprintln!("warning: {warning}");
     }
@@ -131,6 +148,11 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         eprintln!("warning: {w}");
     }
     println!("watch: {}", report.watch_command);
+    if started == 0 {
+        println!(
+            "no member started; fix the cause and run teamwire launch --add --spec <spec>, or teamwire close {team}"
+        );
+    }
     if started == report.members.len() {
         ExitCode::SUCCESS
     } else {

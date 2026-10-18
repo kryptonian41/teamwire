@@ -52,3 +52,12 @@ pub(crate) fn stdout_of(
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
 }
+
+/// True only when git answers that `branch` is not in `repo`. A repository
+/// or git that cannot answer counts as "still there", so a kept branch is
+/// never left out of the report by a failed check.
+pub(crate) fn branch_is_gone(platform: &dyn Platform, repo: &Path, branch: &str) -> bool {
+    let name = format!("refs/heads/{branch}");
+    run(platform, repo, &["rev-parse", "--verify", "--quiet", &name])
+        .is_ok_and(|out| !out.success() && out.exit_code == 1)
+}

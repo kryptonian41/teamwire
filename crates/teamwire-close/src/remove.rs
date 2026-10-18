@@ -187,7 +187,12 @@ pub(crate) fn run(
         )),
         Busy::Idle => {}
     }
-    if let Some(branch) = &member.branch {
+    if let Some(branch) = member.branch.as_ref().filter(|b| {
+        !member
+            .repo
+            .as_deref()
+            .is_some_and(|r| git::branch_is_gone(ctx.platform, r, b))
+    }) {
         report.branches_kept.push(branch.clone());
         report
             .unpushed

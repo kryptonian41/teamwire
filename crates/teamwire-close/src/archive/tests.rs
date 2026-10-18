@@ -52,7 +52,7 @@ fn every_state_of_the_second_backup_verifies() {
         clock: &clock,
         config: &config,
     };
-    write(&ctx, &team_dir, &dest).unwrap();
+    write(&ctx, &TeamName::parse("alpha").unwrap(), &team_dir, &dest).unwrap();
     verify_files(&team_dir, &dest).unwrap();
     let old_db = std::fs::read(dest.join("team.db")).unwrap();
 
