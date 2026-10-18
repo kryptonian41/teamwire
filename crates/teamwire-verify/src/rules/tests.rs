@@ -158,6 +158,8 @@ fn a_rust_weakening_inside_a_string_literal_is_fixture_text() {
         r#"            "//! Purpose.\n#[test]\n#[cfg_attr(unix, ignore = \"x\")]\nfn one() {}\n","#,
         r##"    std::fs::write(dir.join("a.rs"), "#[allow(dead_code)]\nfn f() {}\n").unwrap();"##,
         r#"    let q = "a \" b #[allow(x)]";"#,
+        r##"let s = r"#[allow(dead_code)]";"##,
+        r##"        r#"let e = "\""; #[allow(dead_code)] fn f() {}"#,"##,
     ] {
         assert!(r.weakening("src/lib.rs", line).is_none(), "{line}");
     }
@@ -170,6 +172,9 @@ fn a_real_rust_weakening_after_a_string_on_the_same_line_is_flagged() {
         r#"let s = "x"; #[allow(dead_code)] fn f() {}"#,
         r#"let q = '"'; #[allow(dead_code)] fn f() {}"#,
         r#"#[allow(dead_code)] // "quoted""#,
+        r#"let e = "\""; #[allow(dead_code)] fn f() {}"#,
+        r#"let p = r"C:\"; #[allow(dead_code)] fn f() {}"#,
+        r##"let p = r#"a"b"#; #[allow(dead_code)] fn f() {}"##,
     ] {
         assert!(r.weakening("src/lib.rs", line).is_some(), "{line}");
     }

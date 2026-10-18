@@ -55,7 +55,7 @@ paths never appear as labels.
 | `teamwire.holds` | counter | `{hold}` | `team`, `reason` (`progress_lines`, `decisions`, `report_missing`, `unread`) | How often does the report check fire, and for what? |
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
-| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. Subagent transcripts are not counted. A team whose lead route is the watch (host `none`) records no tokens. |
+| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A team whose lead route is the watch (host `none`) records no tokens. |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
 | `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `failed`; a launch refused before any member was recorded writes no event), `reason` (the event's `reason_code`: `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started` and `member.failed`. |
@@ -71,6 +71,10 @@ paths never appear as labels.
 `teamwire metrics` prints these per team, plus three derived lines the lead
 asks most: wake-ups per member, the share of messages read, and the share of
 results delivered on the first try.
+
+With a team name, a team that is closed is read from its newest archive under
+`$TEAMWIRE_HOME/archive/`, found by the name in the archive's team row. A team
+never seen is refused.
 
 ## 3. Traces
 
@@ -101,7 +105,9 @@ On teamwire's own export: `service.name=teamwire`, `service.version`,
 An export claims the events up to the first unsent event whose 60-second
 bucket has not ended. That event and the ones after it wait for a later
 export, so one bucket of one series is always one delta point (ADR 0005,
-point 4). While the watch runs, each export request has the whole configured
+point 4). An event's time is read before its write waits for the lock, so a
+writer that waits across a minute's end can add a second point for that
+minute. While the watch runs, each export request has the whole configured
 timeout. Once the watch stops, a request still waiting gets at most 3 s more,
 so the watch exits within about 6 s: an export makes up to two requests, traces then metrics, and each gets its own 3 s. A batch cut off that way stays unsent
 until the next `teamwire metrics export` or watch.

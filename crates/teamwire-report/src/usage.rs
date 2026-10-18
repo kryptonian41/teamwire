@@ -24,19 +24,43 @@ const KEYS: [(&str, &str); 4] = [
 /// One API response is split over several lines that repeat `message.id`
 /// and its usage, so each id counts once. A line that does not parse is
 /// skipped.
-// shortcut: subagent transcripts are separate files and are not counted; read
-// them too when a member's subagent spend matters.
+///
+/// Subagent transcripts sit in `<session-id>/subagents/*.jsonl` beside the
+/// main file and use the same line shape. They count too, while the sum of
+/// the sizes stays under the size cap. A subagent file that would pass the cap,
+/// is not a regular file or cannot be read is skipped; the rest still count.
 pub(crate) fn session_usage(path: &Path) -> Option<Value> {
-    // Only a regular file: opening a FIFO would block the Stop hook.
-    let meta = std::fs::metadata(path).ok()?;
-    if !meta.is_file() || meta.len() > MAX_TRANSCRIPT_BYTES {
-        return None;
+    let mut files = vec![path.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(path.with_extension("").join("subagents")) {
+        let mut subagents: Vec<_> = entries
+            .filter_map(|e| Some(e.ok()?.path()))
+            .filter(|p| p.extension().is_some_and(|x| x == "jsonl"))
+            .collect();
+        subagents.sort();
+        files.extend(subagents);
     }
-    let bytes = std::fs::read(path).ok()?;
-    let text = String::from_utf8_lossy(&bytes);
+    let mut size = 0_u64;
+    let mut texts = Vec::new();
+    for (i, file) in files.iter().enumerate() {
+        // Only a regular file: opening a FIFO would block the Stop hook.
+        let read = std::fs::metadata(file)
+            .ok()
+            .filter(|m| m.is_file() && size.saturating_add(m.len()) <= MAX_TRANSCRIPT_BYTES)
+            .and_then(|m| Some((m.len(), std::fs::read(file).ok()?)));
+        match read {
+            Some((len, bytes)) => {
+                size += len;
+                texts.push(String::from_utf8_lossy(&bytes).into_owned());
+            }
+            // The main transcript decides whether the session has usage; a
+            // subagent file that is too big or unreadable is only left out.
+            None if i == 0 => return None,
+            None => {}
+        }
+    }
     // The last line of an id wins: a streamed response ends with its final count.
     let mut by_id: HashMap<String, (String, [u64; 4])> = HashMap::new();
-    for line in text.lines() {
+    for line in texts.iter().flat_map(|t| t.lines()) {
         let Ok(record) = serde_json::from_str::<Value>(line) else {
             continue;
         };
@@ -112,6 +136,57 @@ mod tests {
                 "opus": {"input": 3, "output": 30, "cache_read": 150, "cache_creation": 5},
                 "haiku": {"input": 7, "output": 3, "cache_read": 0, "cache_creation": 9},
             }))
+        );
+    }
+
+    #[test]
+    fn subagent_transcripts_add_to_the_sum_and_a_repeated_id_counts_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, line("m1", "opus", 1, 10, 0, 0)).unwrap();
+        let sub = dir.path().join("t").join("subagents");
+        std::fs::create_dir_all(&sub).unwrap();
+        let body = [
+            line("m1", "opus", 1, 10, 0, 0),
+            line("s1", "opus", 2, 5, 0, 0),
+        ]
+        .join("\n");
+        std::fs::write(sub.join("agent-x.jsonl"), body).unwrap();
+        std::fs::write(sub.join("agent-x.meta.json"), "{}").unwrap();
+        assert_eq!(
+            session_usage(&path),
+            Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))
+        );
+    }
+
+    #[test]
+    fn a_subagent_file_that_is_unreadable_or_not_a_file_is_skipped_and_the_rest_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, line("m1", "opus", 1, 10, 0, 0)).unwrap();
+        let sub = dir.path().join("t").join("subagents");
+        std::fs::create_dir_all(sub.join("agent-dir.jsonl")).unwrap();
+        std::fs::write(sub.join("agent-ok.jsonl"), line("s1", "opus", 2, 5, 0, 0)).unwrap();
+        assert_eq!(
+            session_usage(&path),
+            Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))
+        );
+    }
+
+    #[test]
+    fn a_subagent_file_that_would_pass_the_cap_is_skipped_and_the_main_file_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, line("m1", "opus", 1, 10, 0, 0)).unwrap();
+        let sub = dir.path().join("t").join("subagents");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("agent-ok.jsonl"), line("s1", "opus", 2, 5, 0, 0)).unwrap();
+        // A sparse file: it takes no disk, and its length alone passes the cap.
+        let big = std::fs::File::create(sub.join("agent-big.jsonl")).unwrap();
+        big.set_len(MAX_TRANSCRIPT_BYTES).unwrap();
+        assert_eq!(
+            session_usage(&path),
+            Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))
         );
     }
 

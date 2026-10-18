@@ -8,7 +8,7 @@ use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::{close_place, remove_worktree, unpushed};
+use crate::member_close::{close_place, ignored_warning, remove_worktree, unpushed};
 use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, git, hold};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
@@ -33,10 +33,11 @@ pub(crate) fn clear_stale_lock(ctx: &mut Ctx<'_>) -> CloseReport {
         }
         let now = ctx.clock.now();
         return match ctx.store.write(|tx| tx.clear_stale_close_lock(now, owner)) {
-            // A close that took the lock after its owner was found dead keeps it.
+            // The update matched no row: another close took the lock, another
+            // clear got there first, or the close finished.
             Ok(false) => {
                 report.refusals.push(
-                    "another close took the close lock after it was checked; nothing was cleared"
+                    "the close lock changed after it was checked (another close took it, or it was already cleared or released); nothing was cleared"
                         .to_owned(),
                 );
                 report
@@ -271,6 +272,13 @@ impl Seq<'_, '_> {
                 self.report
                     .unpushed
                     .extend(unpushed(self.ctx, member, branch));
+            }
+            if let Some(detail) = ignored_warning(self.ctx, member) {
+                self.report.steps.push(StepOutcome {
+                    step: member.role.to_string(),
+                    ok: true,
+                    detail,
+                });
             }
             match remove_worktree(self.ctx, member) {
                 Ok(note) => notes.push(note),

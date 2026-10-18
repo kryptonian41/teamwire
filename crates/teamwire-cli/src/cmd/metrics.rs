@@ -51,6 +51,7 @@ fn show(
     };
     if let Some(team) = &team
         && !database_path(home, team).is_file()
+        && !teamwire_otel::team_is_known(home, team)
     {
         return fail(&format!("no database for team {team}"), REFUSED);
     }

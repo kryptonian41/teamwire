@@ -973,3 +973,59 @@ fn member_tokens_take_the_newest_totals_not_a_sum_of_cumulative_events() {
     assert_eq!(value("cache_read"), Some(7.0));
     assert_eq!(value("cache_creation"), None);
 }
+
+#[test]
+fn member_tokens_carry_the_effort_the_member_started_with_or_unset() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    let usage = json!({"session": "s1", "usage": {"opus": {"input": 4, "output": 0, "cache_read": 0, "cache_creation": 0}}});
+    for (secs, role) in [(1, "api"), (2, "web")] {
+        ev(
+            &mut s,
+            secs,
+            EventType::MemberCreating,
+            Some(role),
+            None,
+            &json!({"kind": "implementer"}),
+        );
+    }
+    ev(
+        &mut s,
+        3,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        &json!({"effort": "high"}),
+    );
+    ev(
+        &mut s,
+        4,
+        EventType::MemberStarted,
+        Some("web"),
+        None,
+        &json!({}),
+    );
+    for (secs, role) in [(10, "api"), (11, "web")] {
+        ev(
+            &mut s,
+            secs,
+            EventType::ResultDelivering,
+            Some(role),
+            Some(&ulid(secs)),
+            &usage,
+        );
+    }
+    let v = view(&home, &query(Some("alpha")), 100);
+    let effort_of = |role: &str| {
+        v.metrics
+            .iter()
+            .find(|m| {
+                m.name == "teamwire.member.tokens"
+                    && m.labels.contains(&("role".to_owned(), role.to_owned()))
+            })
+            .and_then(|m| m.labels.iter().find(|(k, _)| k == "effort"))
+            .map(|(_, v)| v.clone())
+    };
+    assert_eq!(effort_of("api").as_deref(), Some("high"));
+    assert_eq!(effort_of("web").as_deref(), Some("unset"));
+}

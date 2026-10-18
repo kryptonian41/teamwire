@@ -178,7 +178,7 @@ so they need no schema change:
 | Event | Key | Meaning |
 | --- | --- | --- |
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
-| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` in the member's main transcript. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
+| `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
@@ -559,6 +559,9 @@ pub fn status(ctx: &Ctx) -> StatusView;                                  // read
 
 // teamwire-otel
 pub fn metrics(ctx: &Ctx, q: MetricsQuery) -> MetricsView;
+/// With a team named and no live database, `metrics_at` reads the newest
+/// archive whose team row names it. `team_is_known` says whether one exists.
+pub fn team_is_known(home: &Path, team: &TeamName) -> bool;
 pub fn export_once(ctx: &mut Ctx, exporter: &OtlpConfig) -> Result<ExportReport, ExportError>;
 /// The watch's export: once `stopping` is set, a request still waiting gets
 /// at most `grace` more.

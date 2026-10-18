@@ -344,7 +344,9 @@ the database itself. This section says what is enforced.
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
 | A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
 | teamwire breaks the user's own Claude Code setup | teamwire writes nothing under `~/.claude/` or to `~/.claude.json` itself, except deleting an ADR 0012 skill folder on install; only `teamwire install` changes Claude Code's setup, through `claude plugin` and `claude mcp`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
-| A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*` variable are filtered everywhere | SEC-1 |
+| A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*`, `*PASSWORD*`, `*PASSWD*`, `*CREDENTIAL*`, `*AUTHORIZATION*` variable are filtered everywhere | SEC-1 |
+| The lead's MCP server skips the member-environment check | The session id check already refuses a member | ADR 0018 |
+| A member moves the base ref and shifts the diff that verify reads | Nothing: this is outside the threat model of a confused agent | ADR 0009 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
 

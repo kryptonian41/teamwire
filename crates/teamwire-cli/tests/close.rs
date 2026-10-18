@@ -530,6 +530,32 @@ fn stop_is_the_only_way_to_remove_a_busy_member() {
 }
 
 #[test]
+fn a_store_with_no_team_row_is_deleted_and_the_dry_run_changes_nothing() {
+    let rig = Rig::new();
+    let team = TeamName::parse("alpha").unwrap();
+    drop(Store::open(rig.home.path(), &team).unwrap());
+    let dir = rig.team_dir("alpha");
+    let line = format!(
+        "alpha: no team or member was recorded; deleted {}",
+        dir.display()
+    );
+
+    let dry = rig.teamwire(&["close", "alpha", "--dry-run"], None);
+    assert_eq!(dry.code, 0, "{}{}", dry.out, dry.err);
+    let would = format!(
+        "[dry-run] alpha: no team or member was recorded; would delete {}",
+        dir.display()
+    );
+    assert!(dry.out.lines().any(|l| l == would), "{}", dry.out);
+    assert!(dir.join("team.db").is_file());
+
+    let run = rig.teamwire(&["close", "alpha"], None);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(run.out.lines().any(|l| l == line), "{}", run.out);
+    assert!(!dir.exists());
+}
+
+#[test]
 fn usage_and_missing_state_have_their_own_exit_codes() {
     let rig = Rig::new();
     let bad_name = rig.teamwire(&["close", "my-team"], None);

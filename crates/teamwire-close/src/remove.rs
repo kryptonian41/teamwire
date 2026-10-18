@@ -200,6 +200,9 @@ pub(crate) fn run(
         report.refusals.push(why);
         return report;
     }
+    if let Some(detail) = crate::member_close::ignored_warning(ctx, &member) {
+        report.steps.push(step(role.as_str(), true, detail));
+    }
     let mut go = |name: &str,
                   report: &mut CloseReport,
                   work: &dyn Fn(&mut Ctx<'_>) -> Result<String, String>|

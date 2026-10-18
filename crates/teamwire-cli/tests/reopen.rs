@@ -178,7 +178,10 @@ fn a_dry_run_opens_nothing_and_writes_nothing() {
     let out = rig.teamwire(&["reopen", "demo", "--dry-run"], "other-sess", None);
     let shown = text(&out.stdout);
     assert_eq!(out.status.code(), Some(0), "{shown}");
-    assert!(shown.starts_with("lead reopened\na reopened\n"), "{shown}");
+    assert!(
+        shown.starts_with("lead would reopen\na would reopen\n"),
+        "{shown}"
+    );
     assert!(shown.contains("dry run"), "{shown}");
     let started = rig.herdr.calls()[before..]
         .iter()

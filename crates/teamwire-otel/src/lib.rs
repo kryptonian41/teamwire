@@ -106,7 +106,7 @@ pub enum ExportError {
     Internal(String),
 }
 
-pub use local::metrics_at;
+pub use local::{metrics_at, team_is_known};
 
 /// The metrics for `q`. With a team named, `ctx.store` is that team's
 /// database; without one, every team and archive under `ctx.home` is read.

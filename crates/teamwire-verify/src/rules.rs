@@ -184,7 +184,8 @@ fn contains(line: &str, needle: &str, word_start: bool, ignore_in_strings: bool)
 }
 
 /// True when `text` leaves a `"` string literal open: an odd number of
-/// quotes that are not escaped and not the char literal `'"'`.
+/// quotes that are not escaped and not the char literal `'"'`. A raw string
+/// (`r"..."`, `r#"..."#`) on the line is skipped as one unit.
 fn ends_inside_string(text: &str) -> bool {
     let mut open = false;
     let mut chars = text.chars().peekable();
@@ -197,11 +198,52 @@ fn ends_inside_string(text: &str) -> bool {
                 chars.next();
                 chars.next();
             }
+            'r' if !open => {
+                if let Some(unclosed) = skip_raw_string(&mut chars) {
+                    open = unclosed;
+                    if open {
+                        break;
+                    }
+                }
+            }
             '"' => open = !open,
             _ => {}
         }
     }
     open
+}
+
+/// After an `r` outside a string: if `#`s and a `"` follow, consume the raw
+/// string through its closing `"` and `#`s. Returns `None` when no raw string
+/// starts here, else whether it is still open at the end of `text`. A marker
+/// after an open one is inside the string, as it is on a multi-line raw
+/// string's first line.
+fn skip_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<bool> {
+    let rest = chars.clone();
+    let hashes = rest.clone().take_while(|&c| c == '#').count();
+    if rest.clone().nth(hashes) != Some('"') {
+        return None;
+    }
+    let mut body = rest.skip(hashes + 1);
+    let mut taken = hashes + 1;
+    let close: Vec<char> = std::iter::once('"')
+        .chain(std::iter::repeat_n('#', hashes))
+        .collect();
+    let mut window = Vec::new();
+    let mut closed = false;
+    for c in body.by_ref() {
+        taken += 1;
+        window.push(c);
+        if window.len() > close.len() {
+            window.remove(0);
+        }
+        if window == close {
+            closed = true;
+            break;
+        }
+    }
+    chars.nth(taken - 1);
+    Some(!closed)
 }
 
 #[cfg(test)]
