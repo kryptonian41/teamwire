@@ -16,6 +16,7 @@
 mod hook;
 mod launch;
 pub mod lead_setup;
+mod screen;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -24,8 +25,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome,
-    TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
+    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Codex keeps its files, and how to start it.
@@ -121,8 +122,12 @@ impl Harness for CodexCli {
         hook::hold_reply(note)
     }
 
-    fn screen_state(&self, _tail: &str) -> ScreenState {
-        ScreenState::Unknown
+    fn screen_state(&self, tail: &str) -> ScreenState {
+        screen::classify(tail)
+    }
+
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
+        screen::line_pending(tail, line)
     }
 
     fn answer_startup(
