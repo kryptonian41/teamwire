@@ -28,7 +28,7 @@ impl Caller {
         Self {
             team: var("TEAMWIRE_TEAM"),
             role: var("TEAMWIRE_ROLE"),
-            token: var("TEAMWIRE_TOKEN"),
+            token: teamwire_msg::caller_token(|name| std::env::var(name).ok()),
         }
     }
 }

@@ -412,7 +412,13 @@ fn run_member(
     };
     if let (false, Some(s)) = (chosen, &session_known) {
         let s = s.clone();
-        if let Err(e) = ctx.store.write(|tx| tx.set_member_session(role, &s)) {
+        // The session-start hook may have recorded the session already; it
+        // knows the real one, so a value on the row stays.
+        let kept = ctx.store.write(|tx| match tx.reader().member(role)? {
+            Some(row) if row.session_id.is_some() => Ok(()),
+            _ => tx.set_member_session(role, &s),
+        });
+        if let Err(e) = kept {
             tracing::warn!(%role, error = %e, "could not record the session id");
         }
     }

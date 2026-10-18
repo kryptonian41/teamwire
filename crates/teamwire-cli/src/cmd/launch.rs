@@ -61,6 +61,7 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         home: &home,
         registry: &wiring.registry,
         platform: &*wiring.platform,
+        clock: &wiring.clock,
         config: &config,
         lead_harness: wiring.lead_harness.clone(),
         lead_host: wiring.lead_host.clone(),

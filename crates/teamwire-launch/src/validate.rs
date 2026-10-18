@@ -93,6 +93,9 @@ pub fn validate(
                 .to_owned(),
         );
     }
+    if existing.is_none() {
+        lead_must_be_locatable(env, &lead, &mut errors);
+    }
     team_title(spec, existing.as_ref(), &mut errors);
     plugin_keys(&spec.plugins, None, &mut errors);
     if spec.children.is_empty() {
@@ -129,6 +132,41 @@ pub fn validate(
         members,
         teamwire_bin: env.teamwire_bin.clone(),
     })
+}
+
+/// A lead whose harness cannot read `teamwire watch` is reached only by
+/// typing into its pane, so it must be found there before anything is made
+/// (ADR 0023 point 9). A harness that reads watch lines is not checked.
+fn lead_must_be_locatable(env: &ValidateEnv<'_>, lead: &LeadPlan, errors: &mut Vec<SpecError>) {
+    let (Ok(harness), Ok(host)) = (
+        env.registry.harness(&lead.harness),
+        env.registry.host(&lead.host),
+    ) else {
+        return;
+    };
+    if harness.capabilities().reads_watch_lines {
+        return;
+    }
+    let found = match &lead.session {
+        Some((session, _)) => {
+            teamwire_deliver::locate_session(env.platform, env.clock, session, harness, host)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        }
+        None => Err("the lead's session id could not be read".to_owned()),
+    };
+    if let Err(why) = found {
+        errors.push(SpecError::new(
+            None,
+            None,
+            "lead_not_locatable",
+            format!(
+                "teamwire cannot find the lead's pane ({why}), and this lead cannot read \
+                 `teamwire watch`, so results would reach nobody. Start the lead so its session \
+                 runs inside its own pane: for Codex, run `codex --no-daemon`."
+            ),
+        ));
+    }
 }
 
 fn session_missing(lead: &LeadPlan) -> bool {

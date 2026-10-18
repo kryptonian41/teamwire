@@ -100,6 +100,7 @@ fn validates(name: &str, work: &Path) {
         home: home.path(),
         registry: &registry,
         platform: &platform,
+        clock: &teamwire_fakes::FakeClock::new(),
         config: &config,
         lead_harness: HarnessId::from_static(FakeHarness::ID),
         lead_host: HostId::from_static(FakeHost::ID),

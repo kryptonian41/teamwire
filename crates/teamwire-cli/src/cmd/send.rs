@@ -236,13 +236,15 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
         role: std::env::var("TEAMWIRE_ROLE").ok(),
         token: member_token(),
         from,
+        hints: Vec::new(),
     }
 }
 
 /// The member token the process carries. Every command reads it here, so
-/// they agree on what counts as having one: set and valid UTF-8, even empty.
+/// they agree on what counts as having one: the variable, else the file
+/// `TEAMWIRE_TOKEN_FILE` names (ADR 0023 point 4).
 pub(crate) fn member_token() -> Option<String> {
-    std::env::var("TEAMWIRE_TOKEN").ok()
+    teamwire_msg::caller_token(|name| std::env::var(name).ok())
 }
 
 /// Whether the process runs inside a member's session. The rule is

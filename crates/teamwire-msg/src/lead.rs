@@ -25,7 +25,9 @@ pub fn adopt_lead(ctx: &mut Ctx<'_>, env: &CallerEnv) -> Result<AdoptReport, Sen
         let (harness, _) = ctx.adapters(&Party::Lead).map_err(|e| {
             SendError::Internal(format!("the lead's harness is not available: {e}"))
         })?;
-        let session = harness.current_session().ok_or(Refusal::Identity)?;
+        let session = harness
+            .caller_session(&|name| env.lookup(name))
+            .ok_or(Refusal::Identity)?;
         // Recorded so `reopen` can resume the lead from its own folder.
         let cwd = harness.session_cwd(&session.id).ok().flatten();
         (session, cwd)

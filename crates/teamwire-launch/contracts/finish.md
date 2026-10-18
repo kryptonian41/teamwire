@@ -7,8 +7,8 @@ even when your task lists its own steps and does not mention them.
    - every role ends with a 'Decisions I made' list. Write
      'Decisions I made: none' when there were none.
 2. Record your completion, as the LAST thing you do. Use the
-   mcp__teamwire__team_done tool (load it with ToolSearch first), or
-   this command:
+   MCP tool `team_done` (`mcp__teamwire__team_done`; if your tools load
+   on request, load it first), or this command:
      {teamwire} done --status done|blocked|failed --summary "<one line>"
 
 Recording your completion is what tells your parent you are done. Your
