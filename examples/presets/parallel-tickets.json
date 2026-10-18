@@ -4,6 +4,7 @@
   "_rules": [
     "Tickets must not touch the same modules. Two tickets in one file belong to ONE member, done in order.",
     "Paste the full acceptance criteria into the brief. A member cannot read your issue tracker or see your screen.",
+    "Write each brief with three sections: 'Done when' (acceptance criteria you can check), 'Out of scope', and 'When to do nothing' (the preconditions under which the member changes nothing and reports why). State the end state, not the steps.",
     "One branch per ticket, and each branch becomes its own pull request. Members' branches are never merged into each other. That is the point of this shape.",
     "Every worktree member needs the repository's setup command in the `setup` field. Launch runs it before the agent starts and refuses the member if it fails. Without it a member has no dependencies installed and spends its time on a broken checkout.",
     "Write each brief as a file and pass it with task_file. Inline task strings are for one-paragraph jobs.",
@@ -11,7 +12,7 @@
     "Route implementers to sonnet at medium effort and keep the lead on opus for planning and review. Raise one implementer's effort only when its ticket is hard to reason about.",
     "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest with `teamwire launch --add`.",
-    "One coherent change per branch. Agent pull requests succeed less often as they grow. A ticket that touches more than one module is two members, or one member with two units.",
+    "One coherent change per branch. Agent pull requests succeed less often as they grow. A ticket that touches more than one module is two members, or one member with two units. Size each task by its reference fix: in SWE-bench Live, a task whose fix was one file under five lines was solved 48% of the time, and one needing three or more files or over 100 lines under 10%. Devin does best on \"clear, upfront requirements and verifiable outcomes that would take a junior engineer 4-8 hrs of work\". Anthropic's agent-teams docs advise 3-5 teammates with 5-6 tasks each.",
     "Size the team to what will actually be reviewed. Five open implementer branches is a sensible ceiling per run; launch warns above it."
   ],
   "team": "myteam",

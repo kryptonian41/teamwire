@@ -4,6 +4,7 @@
   "_input": "Tickets, not a spec and not a plan. Each ticket is a thin vertical slice that names the tickets that block it. Given a spec or a bare conversation instead, stop and ask the user to write tickets first.",
   "_rules": [
     "Read every ticket IN FULL before scheduling. Titles and blocking edges alone will mis-schedule the waves.",
+    "Write each brief with three sections: 'Done when' (acceptance criteria you can check), 'Out of scope', and 'When to do nothing' (the preconditions under which the member changes nothing and reports why). State the end state, not the steps.",
     "Work out each ticket's file ownership by reading the codebase, never by paraphrasing the ticket. That footprint goes in the brief under 'Files you own' and is the hard boundary.",
     "Wave 1 is every ticket whose blockers are all done. Cap a wave at five members. More than that and the lead spends its whole context on reports.",
     "Two tickets in one wave that touch the same files go in DIFFERENT waves. Worktrees remove the write race, not the merge conflict.",
@@ -14,7 +15,7 @@
     "On the merged result run the full gate once and review the whole change. Each member reviewed its own slice alone, so the merge is still unreviewed.",
     "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest.",
-    "One coherent change per branch. A ticket that touches more than one module is two members, or one member with two units."
+    "One coherent change per branch. A ticket that touches more than one module is two members, or one member with two units. Size each task by its reference fix: in SWE-bench Live, a task whose fix was one file under five lines was solved 48% of the time, and one needing three or more files or over 100 lines under 10%. Devin does best on \"clear, upfront requirements and verifiable outcomes that would take a junior engineer 4-8 hrs of work\". Anthropic's agent-teams docs advise 3-5 teammates with 5-6 tasks each."
   ],
   "team": "myteam",
   "title": "CHANGEME ticket chain",
