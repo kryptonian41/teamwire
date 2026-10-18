@@ -393,3 +393,42 @@ fn no_write_lock_held_during_lead_delivery() {
         ReportState::Delivered
     );
 }
+
+#[test]
+fn delivering_event_carries_the_sessions_token_usage() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    let path = rig.home.path().join("transcript.jsonl");
+    let one = r#"{"type":"assistant","message":{"id":"m1","model":"opus","usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}"#;
+    std::fs::write(&path, format!("{one}\n{one}\n")).unwrap();
+    let mut t = stop("api-1");
+    t.transcript = Some(path);
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &t),
+        TurnEndReply::Continue
+    );
+    let delivering = &rig.events(EventType::ResultDelivering)[0];
+    assert_eq!(
+        delivering.data["usage"],
+        serde_json::json!({"opus": {"input": 2, "output": 10, "cache_read": 100, "cache_creation": 5}})
+    );
+}
+
+#[test]
+fn delivery_still_happens_when_the_transcript_is_missing() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    let mut t = stop("api-1");
+    t.transcript = Some(rig.home.path().join("no-such-file.jsonl"));
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &t),
+        TurnEndReply::Continue
+    );
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert!(
+        rig.events(EventType::ResultDelivering)[0]
+            .data
+            .get("usage")
+            .is_none()
+    );
+}

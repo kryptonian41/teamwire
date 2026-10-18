@@ -258,9 +258,20 @@ fn deliver(
     // one member never overlap: a `delivering` row seen here is a crash left
     // over, at any age, and is delivered once more (REP-2).
     let stale = Duration::ZERO;
-    let claimed = ctx
-        .store
-        .write(|tx| tx.claim_completion_for_delivery(ctx.clock.now(), &ulid, stale))?;
+    // The session's token usage rides on the claim event. A transcript that
+    // cannot be read leaves the key out and never stops the delivery.
+    let mut claim_data = json!({});
+    if let (Some(usage), Some(data)) = (
+        t.transcript
+            .as_deref()
+            .and_then(crate::usage::session_usage),
+        claim_data.as_object_mut(),
+    ) {
+        data.insert("usage".to_owned(), usage);
+    }
+    let claimed = ctx.store.write(|tx| {
+        tx.claim_completion_for_delivery_with(ctx.clock.now(), &ulid, stale, &claim_data)
+    })?;
     if claimed.is_none() {
         return Ok(());
     }

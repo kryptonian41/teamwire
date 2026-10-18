@@ -197,6 +197,18 @@ impl Tx<'_> {
         completion: &Ulid,
         stale_after: Duration,
     ) -> Result<Option<ReportState>, StoreError> {
+        self.claim_completion_for_delivery_with(at, completion, stale_after, &Value::Null)
+    }
+
+    /// `claim_completion_for_delivery`, and the keys of the object `extra`
+    /// are added to the `result.delivering` event's data.
+    pub fn claim_completion_for_delivery_with(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+        stale_after: Duration,
+        extra: &Value,
+    ) -> Result<Option<ReportState>, StoreError> {
         let Some(current) = self.reader().completion(completion)? else {
             return Ok(None);
         };
@@ -214,15 +226,18 @@ impl Tx<'_> {
             return Ok(None);
         }
         let c = &current.completion;
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("route".to_owned(), json!(c.route.map(Route::as_str)));
+        data.insert(
+            "seconds".to_owned(),
+            json!(seconds_between(c.created_at, at)),
+        );
         self.record_event(
             at,
             EventType::ResultDelivering,
             Some(&c.role),
             Some(completion),
-            &json!({
-                "route": c.route.map(Route::as_str),
-                "seconds": seconds_between(c.created_at, at),
-            }),
+            &Value::Object(data),
         )?;
         Ok(Some(c.report_state))
     }
