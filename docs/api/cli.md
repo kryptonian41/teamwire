@@ -65,13 +65,18 @@ Prints one line per member (`started`, `refused: <reason>`, `failed:
 member's setup created that launch added to `info/exclude` (LCH-24), and the
 watch command to run. Exit 2 when any member did not start (including when none started).
 
-### `teamwire watch <team> [--interval SECONDS] [--once]`
+### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
 
 Runs until the team completes or closes. Prints at most one line per poll,
 events joined by ` | `, each starting `[teamwire:<team>]` (WAT-1). Default
 interval 20 s. `--once` runs one poll and exits (for tests and scripts).
 Refuses to start when another live watch holds the team's lease, and names
-its pid.
+its pid. `--deliver` also types each printed line, with its `[teamwire:<team>]`
+prefix, into the lead's place, for a lead whose harness cannot read the
+watch's output as it is printed (a Codex lead, ADR 0023). Each delivery ends
+within 15 s. A line that cannot be delivered is still printed, and the watch
+keeps polling. A lead without that limit starts it as
+`nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`.
 
 Events, each announced once per occurrence:
 
@@ -272,6 +277,9 @@ Each reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`, `TEAMWIRE_TOKEN` and
 `TEAMWIRE_HOME` from its environment. Launch puts them there through the
 member's identity channel (ADR 0008): for Claude Code, the `env` key of the
 per-member `settings.json`, which reaches the Bash tool and the hooks.
+`TEAMWIRE_TOKEN_FILE`, a path to a file that holds the token, stands in for
+`TEAMWIRE_TOKEN` when the harness cannot put the token in a session's
+environment (Codex, [ADR 0023](../adr/0023-codex-cli-is-a-harness.md)).
 
 ### `teamwire done --status done|blocked|failed --summary TEXT`
 
@@ -309,6 +317,10 @@ These are started by a harness, not typed by people.
 
 | Command | Started by | Does |
 | --- | --- | --- |
+| `teamwire hook turn-end [--team T --role R]` | a member's Stop hook | Like `claude-stop`, on the harness the member row names. `claude-stop` is the older name of the same hook. |
+| `teamwire hook post-tool [--team T --role R]` | a member's PostToolUse hook | Like `claude-post-tool`, on the member's harness. A harness without an in-turn hook gets no reply. |
+| `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing and always exits 0. |
+| `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
 | `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |

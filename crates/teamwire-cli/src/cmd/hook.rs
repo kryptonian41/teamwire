@@ -214,6 +214,10 @@ fn lead_stop_in(
 /// Whether the team's recorded lead harness reads a command's output as it is
 /// printed. A team that cannot be read gets the Monitor wording, which is the
 /// older one.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
 fn lead_reads_watch_lines(home: &Path, team: &TeamName, wiring: &Wiring) -> bool {
     Store::open_read_only(home, team)
         .ok()

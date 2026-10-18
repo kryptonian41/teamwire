@@ -338,7 +338,9 @@ fn deliver_types_each_printed_line_into_the_leads_pane() {
     let typed = rig.typed();
     assert_eq!(typed.len(), 1, "{typed:?}");
     assert!(
-        typed[0].contains("[teamwire:alpha] WATCHING 1 members"),
+        typed
+            .iter()
+            .all(|t| t.contains("[teamwire:alpha] WATCHING 1 members")),
         "{typed:?}"
     );
 }
