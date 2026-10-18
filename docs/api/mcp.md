@@ -134,6 +134,9 @@ Output:
 }
 ```
 
+The `note` key is present only when at least one listed message is from someone
+other than the member's own lead. It is left out otherwise.
+
 A body whose hash does not match is returned with `hash_ok: false` and a
 `store.error` event is recorded.
 
@@ -193,7 +196,8 @@ session ids.
 
 ## `team_log`
 
-Message log. Input: `{"role": "specmsg", "limit": 50}` (both optional).
+Message log. Input: `{"role": "specmsg", "limit": 50}` (both optional). `role` takes the same
+address as `team_send`'s `to`: `<role>`, `lead`, `<role>@<team>` or `lead@<team>`.
 Output per row: `display_id`, `time`, `type`, `from`, `to`, `excerpt` (300
 chars, sanitised), and each recipient's delivery state. Members see only
 messages they sent or received; the lead sees all.

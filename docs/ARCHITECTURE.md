@@ -35,7 +35,8 @@ teamwire is a separate project. It keeps all state under `$TEAMWIRE_HOME`
 (default `~/.teamwire`), never writes under `~/.claude/` itself (except that
 install deletes an older install's skill folder), and registers
 nothing in the user's global configuration. The one exception is
-`teamwire install`, which writes the teamwire plugin (the lead's skill, MCP
+`teamwire install`, which writes the teamwire plugin (the lead's skill in
+`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`, MCP
 server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
 through `claude plugin` (ADR 0018).
 
@@ -279,7 +280,11 @@ Three traits keep the core free of product names (ADR 0004):
 
 - **Harness**: the agent program. Claude Code is the v1 implementation.
 - **Host**: where the program runs. herdr is the v1 implementation; tmux
-  follows in wave 5. No host at all is a valid configuration.
+  follows in wave 5. No host at all is a valid configuration. The lead's host
+  is herdr when `HERDR_ENV=1`, else tmux when `TMUX` is set. When both are
+  set, teamwire walks its own parent processes (own pid first, at most 64
+  steps) and the nearest program named `tmux` or `herdr` decides; with
+  neither found, herdr wins.
 - **Platform**: the operating system. macOS and Linux.
 
 Adapters are identified by string ids (`claude-code`, `herdr`, `tmux`,
@@ -319,7 +324,7 @@ Claude Code specifics that the adapter owns:
   output are parsed and produced here.
 
 herdr specifics that the adapter owns: the JSON result and error envelope,
-`error.code` mapping, `agent start` retries on `agent_pane_busy` (a bounded
+`error.code` mapping (`agent_not_idle`, a read refused because the agent is working, maps to `busy` like `agent_pane_busy`), `agent start` retries on `agent_pane_busy` (a bounded
 number of times) and counts `agent_not_ready` as started (LCH-13),
 `agent prompt`, `agent get` for the session in a pane,
 one workspace per team and one tab per member, and labels set once at launch.
