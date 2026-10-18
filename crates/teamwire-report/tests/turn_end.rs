@@ -162,7 +162,7 @@ fn delivers_the_result_and_writes_the_file_first() {
     // The file was written before the claim, and the outcome event carries
     // the hook's name and duration.
     let delivered = &rig.events(EventType::ResultDelivered)[0];
-    assert_eq!(data_str(delivered, "hook"), Some("claude-stop"));
+    assert_eq!(data_str(delivered, "hook"), Some("fake-stop"));
     assert!(delivered.data.get("hook_ms").is_some());
     assert_eq!(rig.events(EventType::ResultDelivering).len(), 1);
 }

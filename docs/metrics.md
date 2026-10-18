@@ -129,9 +129,10 @@ wave-1 contract:
   `teamwire.launch.members` `outcome=refused`; only refusals of single
   members inside a launch that also stored something are.
 - The last event a hook run writes (the `result.*` outcome or `member.held`)
-  carries `data.hook` (`claude-stop`, `claude-post-tool`) and
-  `data.hook_ms`; only then is the run's duration known. In v1 only
-  `claude-stop` is measured: the post-tool hook's reminder event
+  carries `data.hook` (`claude-stop` for a `claude-code` member,
+  `codex-stop` for a `codex` member, else `<harness id>-stop`) and
+  `data.hook_ms`; only then is the run's duration known. Only the turn-end
+  hook is measured: the post-tool hook's reminder event
   (`delivery.reminded`) carries no duration.
 - A `member.reprompted` event with `data.undone: true` records an undone
   reprompt and is not counted as a reprompt. A `team.closed` event carries
