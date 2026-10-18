@@ -921,3 +921,55 @@ fn a_launch_failure_reason_label_is_a_short_code_never_free_text() {
         "{reasons:?}"
     );
 }
+
+#[test]
+fn member_tokens_take_the_newest_totals_not_a_sum_of_cumulative_events() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    ev(
+        &mut s,
+        1,
+        EventType::MemberCreating,
+        Some("api"),
+        None,
+        &json!({"kind": "implementer"}),
+    );
+    let usage = |i: u64, o: u64| json!({"session": "s1", "usage": {"opus": {"input": i, "output": o, "cache_read": 7, "cache_creation": 0}}});
+    for (secs, i, o) in [(10, 5, 50), (20, 8, 90)] {
+        ev(
+            &mut s,
+            secs,
+            EventType::ResultDelivering,
+            Some("api"),
+            Some(&ulid(secs)),
+            &usage(i, o),
+        );
+    }
+    // A later session starts again from zero.
+    ev(
+        &mut s,
+        30,
+        EventType::ResultDelivering,
+        Some("api"),
+        Some(&ulid(30)),
+        &json!({"session": "s2", "usage": {"opus": {"input": 1, "output": 2, "cache_read": 0, "cache_creation": 0}}}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    let value = |ty: &str| {
+        v.metrics
+            .iter()
+            .find(|m| {
+                m.name == "teamwire.member.tokens"
+                    && m.labels.contains(&("type".to_owned(), ty.to_owned()))
+                    && m.labels.contains(&("model".to_owned(), "opus".to_owned()))
+                    && m.labels.contains(&("role".to_owned(), "api".to_owned()))
+                    && m.labels
+                        .contains(&("kind".to_owned(), "implementer".to_owned()))
+            })
+            .map(|m| m.value)
+    };
+    assert_eq!(value("input"), Some(9.0)); // 8 in s1, 1 in s2
+    assert_eq!(value("output"), Some(92.0)); // 90 + 2
+    assert_eq!(value("cache_read"), Some(7.0));
+    assert_eq!(value("cache_creation"), None);
+}

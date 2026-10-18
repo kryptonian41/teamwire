@@ -70,6 +70,7 @@ pub(crate) static HOLDS: Def = counter("teamwire.holds", "{hold}");
 pub(crate) static MEMBER_RUN_DURATION: Def =
     histogram("teamwire.member.run.duration", "s", SECONDS);
 pub(crate) static MEMBER_REPROMPTS: Def = counter("teamwire.member.reprompts", "{reprompt}");
+pub(crate) static MEMBER_TOKENS: Def = counter("teamwire.member.tokens", "{token}");
 pub(crate) static MEMBERS_LIVE: Def = gauge("teamwire.members.live", "{member}");
 pub(crate) static LAUNCH_MEMBERS: Def = counter("teamwire.launch.members", "{member}");
 pub(crate) static LAUNCH_DURATION: Def = histogram("teamwire.launch.duration", "s", SECONDS);

@@ -393,3 +393,86 @@ fn no_write_lock_held_during_lead_delivery() {
         ReportState::Delivered
     );
 }
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test writes a transcript file, which is not teamwire state"
+)]
+fn write_transcript(path: &std::path::Path, text: &str) {
+    std::fs::write(path, text).unwrap();
+}
+
+#[test]
+fn delivering_event_carries_the_sessions_token_usage() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    let path = rig.home.path().join("transcript.jsonl");
+    let one = r#"{"type":"assistant","message":{"id":"m1","model":"opus","usage":{"input_tokens":2,"output_tokens":10,"cache_read_input_tokens":100,"cache_creation_input_tokens":5}}}"#;
+    write_transcript(&path, &format!("{one}\n{one}\n"));
+    let mut t = stop("api-1");
+    t.transcript = Some(path);
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &t),
+        TurnEndReply::Continue
+    );
+    let delivering = &rig.events(EventType::ResultDelivering)[0];
+    assert_eq!(
+        delivering.data["usage"],
+        serde_json::json!({"opus": {"input": 2, "output": 10, "cache_read": 100, "cache_creation": 5}})
+    );
+}
+
+#[test]
+fn delivery_still_happens_when_the_transcript_is_missing() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    let mut t = stop("api-1");
+    t.transcript = Some(rig.home.path().join("no-such-file.jsonl"));
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &t),
+        TurnEndReply::Continue
+    );
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert!(
+        rig.events(EventType::ResultDelivering)[0]
+            .data
+            .get("usage")
+            .is_none()
+    );
+}
+
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test makes a named pipe, which only mkfifo can"
+)]
+fn make_fifo(path: &std::path::Path) {
+    let status = std::process::Command::new("mkfifo")
+        .arg(path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+}
+
+#[test]
+fn a_transcript_that_is_a_named_pipe_is_never_opened() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    // A regression blocks on the open, so the body runs in a thread that the
+    // test stops waiting for.
+    std::thread::spawn(move || {
+        let (mut rig, api) = finished_member();
+        rig.complete_now(&api);
+        let path = rig.home.path().join("pipe.jsonl");
+        make_fifo(&path);
+        let mut t = stop("api-1");
+        t.transcript = Some(path);
+        let reply = on_turn_end(&mut rig.ctx(), &api, &t);
+        let delivering = rig.events(EventType::ResultDelivering);
+        tx.send((reply, delivering[0].data.get("usage").is_none()))
+            .ok();
+    });
+    let (reply, no_usage) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the hook blocked on the pipe");
+    assert_eq!(reply, TurnEndReply::Continue);
+    assert!(no_usage);
+}
