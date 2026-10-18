@@ -1,6 +1,10 @@
 //! A new team whose lead cannot read `teamwire watch` is refused before
 //! anything is created when teamwire cannot find the lead's pane
 //! (ADR 0023 point 9).
+#![expect(
+    clippy::unwrap_used,
+    reason = "a helper in an integration-test file unwraps; a failure there fails the test"
+)]
 
 #[expect(
     dead_code,
@@ -63,4 +67,38 @@ fn a_lead_that_reads_watch_lines_is_not_checked() {
     let rig = Rig::new();
     let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
     assert!(rig.validate(&spec, false).is_ok());
+}
+
+fn launched_watch_command(rig: &Rig) -> String {
+    let spec = team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]);
+    let plan = rig.validate(&spec, false).unwrap();
+    rig.launch("demo", plan).0.watch_command
+}
+
+#[test]
+fn the_watch_command_follows_what_the_leads_harness_reads() {
+    assert_eq!(launched_watch_command(&Rig::new()), "teamwire watch demo");
+    let rig = rig_without_watch_reading();
+    let session = SessionId::parse("lead-session").unwrap();
+    let place = rig.host.add_place(
+        "lead-pane",
+        PlaceState::Idle,
+        Occupant {
+            session: Some(session.clone()),
+            pids: vec![],
+        },
+    );
+    rig.harness.add_session(
+        session,
+        vec![Pid::new(500)],
+        Liveness::Alive(PlaceState::Idle),
+    );
+    rig.platform.inner.set_alive(Pid::new(500), true);
+    rig.platform
+        .inner
+        .set_env(Pid::new(500), "FAKE_PLACE_ID", &place.id);
+    assert_eq!(
+        launched_watch_command(&rig),
+        "nohup teamwire watch demo --deliver >/dev/null 2>&1 &"
+    );
 }
