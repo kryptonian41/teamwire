@@ -535,15 +535,18 @@ fn a_store_with_no_team_row_is_deleted_and_the_dry_run_changes_nothing() {
     let team = TeamName::parse("alpha").unwrap();
     drop(Store::open(rig.home.path(), &team).unwrap());
     let dir = rig.team_dir("alpha");
-    let line = format!("alpha: nothing was recorded; deleted {}", dir.display());
+    let line = format!(
+        "alpha: no team or member was recorded; deleted {}",
+        dir.display()
+    );
 
     let dry = rig.teamwire(&["close", "alpha", "--dry-run"], None);
     assert_eq!(dry.code, 0, "{}{}", dry.out, dry.err);
-    assert!(
-        dry.out.contains(&format!("[dry-run] {line}")),
-        "{}",
-        dry.out
+    let would = format!(
+        "[dry-run] alpha: no team or member was recorded; would delete {}",
+        dir.display()
     );
+    assert!(dry.out.lines().any(|l| l == would), "{}", dry.out);
     assert!(dir.join("team.db").is_file());
 
     let run = rig.teamwire(&["close", "alpha"], None);

@@ -40,10 +40,14 @@ pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, 
 /// How many ignored entries the warning names before it counts the rest.
 const IGNORED_SHOWN: usize = 10;
 
+/// Top-level build folders every checkout regenerates. Naming them would put
+/// a warning on nearly every close, and people learn to skip such a line.
+const BUILD_DIRS: [&str; 2] = ["target/", "node_modules/"];
+
 /// The warning for a worktree whose removal deletes gitignored files, such
 /// as `.env.local`: `git worktree remove` keeps no copy of them, and the
 /// dirty check does not list them. `TASK.md` is the brief's own copy, which
-/// launch excludes and the dirty check ignores, so it is not named. `None` when there are none, or when git
+/// launch excludes and the dirty check ignores, so it is not named. Nor are the top-level `BUILD_DIRS`. `None` when there are none, or when git
 /// cannot say (the dirty check has already refused in that case).
 pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
     if member.mode != Mode::Worktree || !member.cwd.is_dir() {
@@ -61,6 +65,7 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
         .lines()
         .filter(|l| !teamwire_verify::is_task_file_status(l))
         .filter_map(|l| l.strip_prefix("!! "))
+        .filter(|p| !BUILD_DIRS.contains(p))
         .collect();
     if ignored.is_empty() {
         return None;
