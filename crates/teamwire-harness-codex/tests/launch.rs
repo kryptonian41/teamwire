@@ -127,6 +127,42 @@ fn the_contract_text_survives_toml_escaping() {
     assert_eq!(o["tui.disable_paste_burst"].as_bool(), Some(true));
 }
 
+/// A contract with every character that needs an escape in a TOML string.
+const AWKWARD: &str = "line one\n\tTabbed \"quoted\" back\\slash\r\nbell\u{7} end \u{e9}\n";
+
+#[test]
+fn no_argument_holds_a_newline_or_other_control_character() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = member(dir.path());
+    std::fs::write(&m.contract_path, AWKWARD).unwrap();
+    let spec = codex().launch_spec(&m).unwrap();
+    // herdr refuses an argument it cannot encode for the shell.
+    for arg in &spec.argv {
+        assert!(!arg.chars().any(char::is_control), "{arg:?}");
+    }
+}
+
+#[test]
+fn every_override_parses_back_to_its_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = member(dir.path());
+    std::fs::write(&m.contract_path, AWKWARD).unwrap();
+    m.accept_trust = true;
+    m.plugins.insert("a.b@c d".into(), true);
+    let o = overrides(&codex().launch_spec(&m).unwrap());
+    assert_eq!(o["developer_instructions"].as_str(), Some(AWKWARD));
+    assert_eq!(
+        o["projects"]["/work"]["trust_level"].as_str(),
+        Some("trusted")
+    );
+    // A key that is not a bare key is quoted, then read back whole.
+    assert_eq!(o["plugins"]["a.b@c d"]["enabled"].as_bool(), Some(true));
+    assert_eq!(
+        o["plugins"]["teamwire@teamwire"]["enabled"].as_bool(),
+        Some(false)
+    );
+}
+
 #[test]
 fn model_and_effort_appear_only_when_set() {
     let dir = tempfile::tempdir().unwrap();

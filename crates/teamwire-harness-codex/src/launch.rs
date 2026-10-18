@@ -76,7 +76,7 @@ pub(crate) fn build(
         argv.extend(["-m".to_owned(), model.clone()]);
     }
     let mut set = |key: &str, value: Value| {
-        argv.extend(["-c".to_owned(), format!("{key}={value}")]);
+        argv.extend(["-c".to_owned(), format!("{key}={}", inline(&value))]);
     };
     if let Some(effort) = &m.effort {
         set("model_reasoning_effort", text(effort));
@@ -146,6 +146,57 @@ pub(crate) fn build(
         }],
         identity_channel: IdentityChannel::HarnessConfig,
     })
+}
+
+/// `value` as TOML on one line. `Value`'s `Display` prints a multi-line string
+/// as a `"""` block with raw newlines, and herdr refuses an argument that
+/// holds one.
+fn inline(value: &Value) -> String {
+    match value {
+        Value::String(s) => quoted(s),
+        Value::Array(items) => {
+            let items: Vec<String> = items.iter().map(inline).collect();
+            format!("[{}]", items.join(", "))
+        }
+        Value::Table(t) if t.is_empty() => "{}".to_owned(),
+        Value::Table(t) => {
+            let pairs: Vec<String> = t
+                .iter()
+                .map(|(k, v)| format!("{} = {}", key(k), inline(v)))
+                .collect();
+            format!("{{ {} }}", pairs.join(", "))
+        }
+        // These print on one line already.
+        Value::Boolean(_) | Value::Integer(_) | Value::Float(_) | Value::Datetime(_) => {
+            value.to_string()
+        }
+    }
+}
+
+/// A basic string with every control character escaped.
+fn quoted(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            '\r' => out.push_str("\\r"),
+            c if c.is_control() => out.extend(format!("\\u{:04X}", u32::from(c)).chars()),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn key(k: &str) -> String {
+    let bare = !k.is_empty()
+        && k.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-');
+    if bare { k.to_owned() } else { quoted(k) }
 }
 
 fn path_text(p: &Path) -> String {
