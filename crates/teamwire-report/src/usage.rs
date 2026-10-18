@@ -26,8 +26,9 @@ const KEYS: [(&str, &str); 4] = [
 /// skipped.
 ///
 /// Subagent transcripts sit in `<session-id>/subagents/*.jsonl` beside the
-/// main file and use the same line shape. They count too, and the size cap
-/// applies to the sum of all the files.
+/// main file and use the same line shape. They count too, while the sum of
+/// the sizes stays under the size cap. A subagent file that would pass the cap,
+/// is not a regular file or cannot be read is skipped; the rest still count.
 pub(crate) fn session_usage(path: &Path) -> Option<Value> {
     let mut files = vec![path.to_path_buf()];
     if let Ok(entries) = std::fs::read_dir(path.with_extension("").join("subagents")) {
@@ -40,14 +41,22 @@ pub(crate) fn session_usage(path: &Path) -> Option<Value> {
     }
     let mut size = 0_u64;
     let mut texts = Vec::new();
-    for file in &files {
+    for (i, file) in files.iter().enumerate() {
         // Only a regular file: opening a FIFO would block the Stop hook.
-        let meta = std::fs::metadata(file).ok()?;
-        size = size.saturating_add(meta.len());
-        if !meta.is_file() || size > MAX_TRANSCRIPT_BYTES {
-            return None;
+        let read = std::fs::metadata(file)
+            .ok()
+            .filter(|m| m.is_file() && size.saturating_add(m.len()) <= MAX_TRANSCRIPT_BYTES)
+            .and_then(|m| Some((m.len(), std::fs::read(file).ok()?)));
+        match read {
+            Some((len, bytes)) => {
+                size += len;
+                texts.push(String::from_utf8_lossy(&bytes).into_owned());
+            }
+            // The main transcript decides whether the session has usage; a
+            // subagent file that is too big or unreadable is only left out.
+            None if i == 0 => return None,
+            None => {}
         }
-        texts.push(String::from_utf8_lossy(&std::fs::read(file).ok()?).into_owned());
     }
     // The last line of an id wins: a streamed response ends with its final count.
     let mut by_id: HashMap<String, (String, [u64; 4])> = HashMap::new();
@@ -144,6 +153,37 @@ mod tests {
         .join("\n");
         std::fs::write(sub.join("agent-x.jsonl"), body).unwrap();
         std::fs::write(sub.join("agent-x.meta.json"), "{}").unwrap();
+        assert_eq!(
+            session_usage(&path),
+            Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))
+        );
+    }
+
+    #[test]
+    fn a_subagent_file_that_is_unreadable_or_not_a_file_is_skipped_and_the_rest_count() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, line("m1", "opus", 1, 10, 0, 0)).unwrap();
+        let sub = dir.path().join("t").join("subagents");
+        std::fs::create_dir_all(sub.join("agent-dir.jsonl")).unwrap();
+        std::fs::write(sub.join("agent-ok.jsonl"), line("s1", "opus", 2, 5, 0, 0)).unwrap();
+        assert_eq!(
+            session_usage(&path),
+            Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))
+        );
+    }
+
+    #[test]
+    fn a_subagent_file_that_would_pass_the_cap_is_skipped_and_the_main_file_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        std::fs::write(&path, line("m1", "opus", 1, 10, 0, 0)).unwrap();
+        let sub = dir.path().join("t").join("subagents");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(sub.join("agent-ok.jsonl"), line("s1", "opus", 2, 5, 0, 0)).unwrap();
+        // A sparse file: it takes no disk, and its length alone passes the cap.
+        let big = std::fs::File::create(sub.join("agent-big.jsonl")).unwrap();
+        big.set_len(MAX_TRANSCRIPT_BYTES).unwrap();
         assert_eq!(
             session_usage(&path),
             Some(json!({"opus": {"input": 3, "output": 15, "cache_read": 0, "cache_creation": 0}}))

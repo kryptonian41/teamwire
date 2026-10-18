@@ -23,7 +23,7 @@ use teamwire_core::{
     TeamName, Timestamp, Ulid,
 };
 use teamwire_fakes::TestHome;
-use teamwire_store::{NewMember, NewMessage, NewTeam, Store, Waiver};
+use teamwire_store::{NewMember, NewMessage, NewTeam, Store, Waiver, database_path};
 
 #[path = "support/schema_1.rs"]
 mod schema_1;
@@ -312,6 +312,91 @@ fn a_closed_team_is_read_from_its_archive_by_the_name_in_its_team_row() {
         "{}",
         never.err
     );
+}
+
+/// Launches a one-member pane team on the fakes, waits for its first turn to
+/// end (`close` refuses a busy member), then closes it with the archive on.
+/// The archive is the one a real close writes, so a change to close's layout
+/// fails here.
+#[test]
+fn a_team_closed_for_real_is_read_from_the_archive_close_wrote() {
+    let fakes = teamwire_fakes::FakeHerdrEnv::new().unwrap();
+    let home = TestHome::new().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let git = |args: &[&str]| {
+        let out = std::process::Command::new("git")
+            .arg("-C")
+            .arg(work.path())
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "t")
+            .env("GIT_AUTHOR_EMAIL", "t@example.com")
+            .env("GIT_COMMITTER_NAME", "t")
+            .env("GIT_COMMITTER_EMAIL", "t@example.com")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "git {args:?}");
+    };
+    git(&["init", "-q", "-b", "main"]);
+    git(&["commit", "-q", "--allow-empty", "-m", "first"]);
+    let spec = json!({"team": "alpha", "title": "Alpha", "children": [
+        {"role": "scout", "title": "Scout", "mode": "pane", "cwd": work.path(), "task": "look around"}]});
+    let real = |args: &[&str], stdin: &str| {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(args)
+            .env_clear()
+            .envs(fakes.env())
+            .env("TEAMWIRE_HOME", home.path())
+            .env("HERDR_ENV", "1")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(stdin.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{args:?}: {}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    real(&["launch"], &spec.to_string());
+    let alpha = TeamName::parse("alpha").unwrap();
+    let members = Store::open_read_only(home.path(), &alpha)
+        .unwrap()
+        .read(|tx| Ok(tx.members()?.items))
+        .unwrap();
+    for member in members {
+        let Some(place) = member.place else { continue };
+        let file = fakes
+            .root()
+            .join("fake-herdr-panes")
+            .join(place.id.replace(':', "_"))
+            .join("status.json");
+        // 30 seconds, counted in polls so the test needs no clock.
+        let ended = (0..1500).any(|_| {
+            let text = std::fs::read_to_string(&file).unwrap_or_default();
+            let done = serde_json::from_str::<Value>(&text)
+                .is_ok_and(|s| s.get("status").is_some_and(|v| v == "done"));
+            if !done {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            done
+        });
+        assert!(ended, "the first turn did not end");
+    }
+    real(&["close", "alpha"], "");
+    assert!(!database_path(home.path(), &alpha).exists());
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(run.out.contains("team=alpha"), "{}", run.out);
 }
 
 #[test]
