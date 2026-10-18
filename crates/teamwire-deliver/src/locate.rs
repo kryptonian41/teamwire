@@ -68,21 +68,15 @@ pub(crate) fn locate_with(
     budget: &Budget<'_>,
 ) -> Result<Located, DeliveryError> {
     let session = recorded_session(ctx, party)?;
-    let (subject, recovery) = match party {
-        Party::Lead => (
-            "the lead's",
-            "end that process and start the lead again".to_owned(),
-        ),
-        Party::Member(role) => (
-            "the member's",
-            match ctx.store.read(|tx| tx.team()) {
-                Ok(Some(team)) => format!(
-                    "end that process, then run teamwire reopen {} --role {role}",
-                    team.name
-                ),
-                _ => format!("end that process, then run teamwire reopen <team> --role {role}"),
-            },
-        ),
+    let recovery = match party {
+        Party::Lead => "end that process and start the lead again".to_owned(),
+        Party::Member(role) => match ctx.store.read(|tx| tx.team()) {
+            Ok(Some(team)) => format!(
+                "end that process, then run teamwire reopen {} --role {role}",
+                team.name
+            ),
+            _ => format!("end that process, then run teamwire reopen <team> --role {role}"),
+        },
     };
     locate_session_with(
         ctx.platform,
@@ -90,7 +84,7 @@ pub(crate) fn locate_with(
         harness,
         host,
         budget,
-        Some((subject, &recovery)),
+        Some(&recovery),
     )
 }
 
@@ -100,7 +94,7 @@ fn locate_session_with(
     harness: &dyn Harness,
     host: &dyn Host,
     budget: &Budget<'_>,
-    stopped: Option<(&str, &str)>,
+    stopped: Option<&str>,
 ) -> Result<Located, DeliveryError> {
     let Some(place_var) = host.place_env_var() else {
         return Err(DeliveryError::new(
@@ -155,14 +149,16 @@ fn locate_session_with(
         }),
         0 => Err(other.map_or_else(
             || {
-                // The process lives, yet the host lists no session: a process
-                // that was stopped and resumed looks like this, and only the
-                // user can end it (ADR 0006 keeps delivery refusing).
+                // The process lives, yet the host lists no session. A stopped
+                // and resumed process looks like this, and so does a herdr
+                // without its session hook; only the user can end the process
+                // (ADR 0006 keeps delivery refusing).
+                let host_detail = nothing.unwrap_or_else(|| "the host names no place".to_owned());
                 let detail = match (stopped, pids.first()) {
-                    (Some((subject, recovery)), Some(pid)) => format!(
-                        "{subject} session still runs (pid {pid}) but the host shows no session at any place, for example after the process was stopped and resumed; {recovery}"
+                    (Some(recovery), Some(pid)) => format!(
+                        "{host_detail}; the session still runs (pid {pid}) but the host shows it at no place. This follows a stop and resume of the process, or a herdr without its session hook (run teamwire doctor). After a stop and resume, {recovery}"
                     ),
-                    _ => nothing.unwrap_or_else(|| "the host names no place".to_owned()),
+                    _ => host_detail,
                 };
                 DeliveryError::new(DeliveryErrorCode::HostNoSession, detail)
             },
