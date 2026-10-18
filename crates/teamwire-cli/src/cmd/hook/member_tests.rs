@@ -13,6 +13,7 @@ use teamwire_store::{NewMember, NewTeam};
 
 use super::*;
 use crate::wiring::{WiringEnv, wire};
+use teamwire_core::SessionKind;
 
 const TOKEN: &str = "member-token";
 
@@ -60,7 +61,10 @@ fn bed(session: Option<&str>) -> Bed {
                     lead_harness: HarnessId::from_static("fake-a"),
                     lead_host: HostId::from_static("none"),
                     lead_route: LeadRoute::Sink,
-                    lead_session: None,
+                    lead_session: Some((
+                        SessionId::parse("lead-1").unwrap(),
+                        SessionKind::Interactive,
+                    )),
                 },
             )?;
             tx.insert_member(
@@ -212,4 +216,50 @@ fn a_second_call_replaces_the_first_session() {
     run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1"));
     run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-2"));
     assert_eq!(recorded(&bed), Some(SessionId::parse("s-2").unwrap()));
+}
+
+fn lead_stop(bed: &Bed, harness: Option<&str>) -> Option<Vec<u8>> {
+    lead_stop_in(
+        harness,
+        bed.home.path(),
+        &bed.wiring,
+        &mut input("lead-1").as_bytes(),
+    )
+}
+
+#[test]
+fn the_lead_stop_hook_parses_and_holds_with_the_named_harness() {
+    let bed = bed(None);
+    let reply = lead_stop(&bed, Some("fake-b")).unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&reply)
+            .unwrap()
+            .get("decision"),
+        Some(&json!("block"))
+    );
+    assert_eq!(bed.b.log().count_named("hold_reply"), 1);
+    assert_eq!(bed.a.log().count_named("hold_reply"), 0);
+    assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
+}
+
+#[test]
+fn the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines() {
+    let bed = bed(None);
+    // The team's recorded lead harness is `fake-a`.
+    let mut caps = bed.a.capabilities();
+    caps.reads_watch_lines = false;
+    bed.a.set_caps(caps);
+    let reply = lead_stop(&bed, Some("fake-a")).unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
+    let note = doc.get("reason").and_then(|n| n.as_str()).unwrap();
+    assert!(
+        note.contains("nohup teamwire watch alpha --deliver"),
+        "{note}"
+    );
+}
+
+#[test]
+fn the_lead_stop_hook_with_an_unknown_harness_says_nothing() {
+    let bed = bed(None);
+    assert_eq!(lead_stop(&bed, Some("no-such-harness")), None);
 }

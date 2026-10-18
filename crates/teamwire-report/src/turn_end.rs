@@ -12,6 +12,7 @@ use teamwire_deliver::{
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
+use crate::lead_stop::watch_command;
 use crate::note::{gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
@@ -274,8 +275,14 @@ fn deliver(
     // itself says that nothing is watching (ADR 0018 point 6). The note is
     // advice: a lease that cannot be read skips it and never stops delivery.
     if watch_is_dead(ctx).unwrap_or(false) {
+        let reads = ctx
+            .adapters(&Party::Lead)
+            .is_ok_and(|(harness, _)| harness.capabilities().reads_watch_lines);
         line = one_line(
-            &format!("{line} (no watch is running: teamwire watch {})", team.name),
+            &format!(
+                "{line} (no watch is running: {})",
+                watch_command(&team.name, reads)
+            ),
             NOTE_LINE_CHARS,
         );
     }

@@ -227,9 +227,18 @@ fn only_the_teams_that_need_a_watch_are_named() {
 
 #[test]
 fn the_note_names_the_team_and_the_command() {
-    let note = watch_missing_note(&TeamName::parse("alpha").unwrap());
+    let note = watch_missing_note(&TeamName::parse("alpha").unwrap(), true);
     assert_eq!(
         note,
         "[teamwire:alpha] no watch is running; start `teamwire watch alpha` with Monitor before you stop."
+    );
+}
+
+#[test]
+fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
+    let note = watch_missing_note(&TeamName::parse("alpha").unwrap(), false);
+    assert_eq!(
+        note,
+        "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop."
     );
 }

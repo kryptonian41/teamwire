@@ -8,7 +8,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use serde_json::json;
-use teamwire_core::{Config, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
+use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_store::{Ctx, Store};
 
 use crate::cmd::send::state_home;
@@ -32,7 +32,8 @@ pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode
             member_hook(t, MemberHook::PostTool, global, wiring)
         }
         HookCommand::SessionStart(t) => member_hook(t, MemberHook::SessionStart, global, wiring),
-        HookCommand::ClaudeLeadStop | HookCommand::LeadStop(_) => lead_stop_hook(global, wiring),
+        HookCommand::ClaudeLeadStop => lead_stop_hook(None, global, wiring),
+        HookCommand::LeadStop(a) => lead_stop_hook(a.harness.as_deref(), global, wiring),
     };
     if let Some(reply) = reply {
         write_stdout(&reply);
@@ -161,36 +162,64 @@ fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
 /// team that has working members and no running watch. It reads stores and
 /// writes nothing.
-fn lead_stop_hook(global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
+fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
     // A member never runs this hook; the plugin is also switched off for it.
     if std::env::var_os("TEAMWIRE_TEAM").is_some() {
         return None;
     }
+    let home = state_home(global)?;
+    lead_stop_in(
+        harness,
+        &home,
+        wiring,
+        &mut std::io::stdin().lock().take(STDIN_LIMIT),
+    )
+}
+
+fn lead_stop_in(
+    harness: Option<&str>,
+    home: &Path,
+    wiring: &Wiring,
+    stdin: &mut dyn Read,
+) -> Option<Vec<u8>> {
     let mut input = Vec::new();
-    std::io::stdin()
-        .lock()
-        .take(STDIN_LIMIT)
-        .read_to_end(&mut input)
-        .ok()?;
-    let harness = wiring.registry.harness(&claude_harness_id()).ok()?;
+    stdin.read_to_end(&mut input).ok()?;
+    let id = match harness {
+        Some(id) => HarnessId::parse(id).ok()?,
+        None => claude_harness_id(),
+    };
+    let harness = wiring.registry.harness(&id).ok()?;
     let turn = harness.parse_turn_end(&input).ok()?;
     if turn.subagent || turn.hold_already_active {
         return None;
     }
-    let home = state_home(global)?;
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
+    let at = home.to_path_buf();
     let teams = within(LEAD_STOP_BUDGET, move || {
-        teamwire_report::teams_without_watch(&home, &turn.session, &*platform, &clock)
+        teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
     })?;
     if teams.is_empty() {
         return None;
     }
     let note: Vec<String> = teams
         .iter()
-        .map(teamwire_report::watch_missing_note)
+        .map(|team| {
+            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(home, team, wiring))
+        })
         .collect();
     Some(harness.hold_reply(&note.join("\n")))
+}
+
+/// Whether the team's recorded lead harness reads a command's output as it is
+/// printed. A team that cannot be read gets the Monitor wording, which is the
+/// older one.
+fn lead_reads_watch_lines(home: &Path, team: &TeamName, wiring: &Wiring) -> bool {
+    Store::open_read_only(home, team)
+        .ok()
+        .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
+        .and_then(|row| wiring.registry.harness(&row.lead_harness).ok())
+        .is_none_or(|harness| harness.capabilities().reads_watch_lines)
 }
 
 /// Runs `work` on a thread and gives up after `budget`. The thread is left

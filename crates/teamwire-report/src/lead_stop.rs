@@ -73,10 +73,29 @@ fn needs_watch(
     })
 }
 
-/// The line the hold carries for one team.
+/// How the lead starts the watch. A lead that cannot read a command's output
+/// as it is printed (ADR 0023) runs it in the background, and the watch types
+/// each line into the lead's pane.
+pub(crate) fn watch_command(team: &TeamName, reads_watch_lines: bool) -> String {
+    if reads_watch_lines {
+        format!("teamwire watch {team}")
+    } else {
+        format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
+    }
+}
+
+/// The line the hold carries for one team. `reads_watch_lines` is the lead's
+/// harness capability of the same name.
 #[must_use]
-pub fn watch_missing_note(team: &TeamName) -> String {
-    format!(
-        "[teamwire:{team}] no watch is running; start `teamwire watch {team}` with Monitor before you stop."
-    )
+pub fn watch_missing_note(team: &TeamName, reads_watch_lines: bool) -> String {
+    let command = watch_command(team, reads_watch_lines);
+    if reads_watch_lines {
+        format!(
+            "[teamwire:{team}] no watch is running; start `{command}` with Monitor before you stop."
+        )
+    } else {
+        format!(
+            "[teamwire:{team}] no watch is running; start it in the background with `{command}` before you stop."
+        )
+    }
 }
