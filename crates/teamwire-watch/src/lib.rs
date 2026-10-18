@@ -2,13 +2,14 @@
 //! view. Both derive each member's state the same way.
 //!
 //! Never: call a writing host method; print more than one line per poll;
-//! announce the same key twice (a restarted watch repeats only
-//! `TEAM-COMPLETE`); write anything from `status` (WAT-11).
+//! announce the same key twice (a restarted watch prints
+//! its `WATCHING` line again, and `TEAM-COMPLETE` for a finished team); write anything from `status` (WAT-11).
 //!
 //! Invariants: announcements are stored before they are printed, and each
 //! key carries its generation or episode number; `TEAM-COMPLETE` is printed
 //! once per watch, when every live member is settled. A restarted watch
-//! prints it again for a finished team; that is intended.
+//! prints it again for a finished team, and `WATCHING` on its first poll;
+//! both are intended.
 
 mod apply;
 mod lease;
