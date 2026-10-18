@@ -93,8 +93,9 @@ fn caller_is_lead(ctx: &Ctx<'_>) -> bool {
     }
 }
 
-fn line(who: &str, outcome: &ReopenOutcome) -> String {
+fn line(who: &str, outcome: &ReopenOutcome, dry_run: bool) -> String {
     match outcome {
+        ReopenOutcome::Reopened if dry_run => format!("{who} would reopen\n"),
         ReopenOutcome::Reopened => format!("{who} reopened\n"),
         ReopenOutcome::Skipped(why) => format!("{who} skipped: {why}\n"),
         ReopenOutcome::Refused(why) => format!("{who} refused: {why}\n"),
@@ -110,10 +111,10 @@ fn print_report(
 ) {
     let mut out = String::new();
     if let Some(lead) = &report.lead {
-        out.push_str(&line("lead", lead));
+        out.push_str(&line("lead", lead, report.dry_run));
     }
     for (role, outcome) in &report.members {
-        out.push_str(&line(role.as_str(), outcome));
+        out.push_str(&line(role.as_str(), outcome, report.dry_run));
     }
     if report.dry_run {
         out.push_str("dry run: nothing was opened and nothing was written\n");
