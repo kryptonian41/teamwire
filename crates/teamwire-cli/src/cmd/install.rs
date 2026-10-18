@@ -127,31 +127,41 @@ fn ask(found: &[&'static str]) -> Result<Vec<&'static str>, String> {
 }
 
 /// The harnesses to install for: `--harness`, else the selector in a
-/// terminal, else `claude-code` so a script keeps its behaviour.
-fn choose(args: &InstallArgs, wiring: &Wiring) -> Result<Vec<&'static str>, String> {
+/// terminal, else `claude-code` so a script keeps its behaviour. The error
+/// carries its exit code: a harness that is not on PATH is a refusal, a name
+/// or an answer that makes no sense is a usage error.
+fn choose(args: &InstallArgs, wiring: &Wiring) -> Result<Vec<&'static str>, (String, u8)> {
     if args.harness.is_empty() {
         if !(std::io::stdin().is_terminal() && std::io::stdout().is_terminal()) {
             return Ok(vec![CLAUDE]);
         }
         let found = found(wiring);
         if found.is_empty() {
-            return Err("neither `claude` nor `codex` is on PATH".to_owned());
+            return Err((
+                "neither `claude` nor `codex` is on PATH".to_owned(),
+                REFUSED,
+            ));
         }
-        return ask(&found).map_err(|e| e + "; nothing was changed");
+        return ask(&found).map_err(|e| (e + "; nothing was changed", USAGE));
     }
     let mut chosen = Vec::new();
     for name in &args.harness {
         let id = [CLAUDE, CODEX]
             .into_iter()
             .find(|id| id == name)
-            .ok_or_else(|| format!("unknown harness `{name}`; choose claude-code or codex"))?;
+            .ok_or_else(|| {
+                (
+                    format!("unknown harness `{name}`; choose claude-code or codex"),
+                    USAGE,
+                )
+            })?;
         if !chosen.contains(&id) {
             chosen.push(id);
         }
     }
     let found = found(wiring);
     match chosen.iter().find(|id| !found.contains(id)) {
-        Some(id) => Err(format!("harness `{id}` is not on PATH")),
+        Some(id) => Err((format!("harness `{id}` is not on PATH"), REFUSED)),
         None => Ok(chosen),
     }
 }
@@ -214,7 +224,7 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
     };
     let chosen = match choose(args, wiring) {
         Ok(chosen) => chosen,
-        Err(e) => return fail("install", &e, USAGE),
+        Err((e, code)) => return fail("install", &e, code),
     };
     let user_home = std::env::var_os("HOME").map(PathBuf::from);
     // Every harness is planned before any is changed, so one refusal leaves

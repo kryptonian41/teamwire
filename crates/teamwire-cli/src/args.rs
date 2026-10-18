@@ -76,9 +76,10 @@ pub(crate) enum Command {
     Mcp(McpArgs),
     /// Read-only checks of the state, the disk and the tools teamwire needs.
     Doctor,
-    /// Install the lead setup: the teamwire skill and the lead's MCP server.
+    /// Install the lead setup: the plugin `teamwire@teamwire`, with the skill,
+    /// the lead's MCP server and the Stop hook.
     Install(InstallArgs),
-    /// Remove the lead setup that `install` wrote.
+    /// Remove the plugin `teamwire@teamwire` that `install` wrote.
     Uninstall(UninstallArgs),
     /// Every record of a team as JSON lines.
     Export(ExportArgs),
@@ -276,8 +277,9 @@ pub(crate) struct InstallArgs {
     /// Print the changes without making them.
     #[arg(long)]
     pub(crate) dry_run: bool,
-    /// Replace or remove a skill or MCP entry that is not teamwire's, and
-    /// install from a binary inside a `target/` directory.
+    /// Replace a marketplace `teamwire` from another source, remove an edited
+    /// old skill or a foreign MCP entry, and install from a binary inside a
+    /// `target/` directory.
     #[arg(long)]
     pub(crate) force: bool,
     /// The harnesses to install the lead setup for, comma-separated
@@ -292,7 +294,8 @@ pub(crate) struct UninstallArgs {
     /// Print the changes without making them.
     #[arg(long)]
     pub(crate) dry_run: bool,
-    /// Also remove a skill or MCP entry that is not teamwire's.
+    /// Also remove a marketplace `teamwire` from another source, an edited old
+    /// skill, or a foreign MCP entry.
     #[arg(long)]
     pub(crate) force: bool,
 }

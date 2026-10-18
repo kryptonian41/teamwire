@@ -181,7 +181,7 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
         unreachable!("{changes:?}")
     };
     assert_eq!(dir, &bed.plugin_dir());
-    assert_eq!(files.len(), 5);
+    assert_eq!(files.len(), 6);
     assert_eq!(
         rest,
         [
@@ -200,6 +200,14 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
     let skill = std::fs::read_to_string(bed.plugin_dir().join("teamwire/skills/teamwire/SKILL.md"))
         .unwrap();
     assert!(skill.contains("\nmetadata:\n  teamwire-sha256: "));
+    assert!(
+        std::fs::read_to_string(
+            bed.plugin_dir()
+                .join("teamwire/skills/teamwire/reference.md")
+        )
+        .unwrap()
+        .contains("## Watch lines")
+    );
     let hooks: Value = serde_json::from_str(
         &std::fs::read_to_string(bed.plugin_dir().join("teamwire/hooks/hooks.json")).unwrap(),
     )

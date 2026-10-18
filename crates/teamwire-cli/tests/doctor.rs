@@ -118,6 +118,9 @@ struct Bed {
     /// platform of its own so its replies do not mix with doctor's probes.
     codex_list: String,
     codex_platform: Arc<FakePlatform>,
+    /// The state directory of the doctor run, when it is not `home`, the one
+    /// the plugin was installed for.
+    run_home: Option<PathBuf>,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -152,6 +155,7 @@ impl Bed {
             clock: FakeClock::new(),
             codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
             codex_platform: Arc::new(FakePlatform::new()),
+            run_home: None,
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -187,7 +191,10 @@ impl Bed {
     /// bed's state directory.
     fn lead_entry(&self) -> McpEntry {
         let bin = std::fs::canonicalize(env!("CARGO_BIN_EXE_teamwire")).unwrap();
-        McpEntry::lead(&bin, Some(self.home.path()))
+        McpEntry::lead(
+            &bin,
+            Some(self.run_home.as_deref().unwrap_or(self.home.path())),
+        )
     }
 
     /// Writes the plugin files through the harness, on a platform of its own
@@ -256,7 +263,10 @@ impl Bed {
         diagnose(&Inputs {
             codex: self.codex_setup(),
             host: self.host,
-            home: self.home.path().to_path_buf(),
+            home: self
+                .run_home
+                .clone()
+                .unwrap_or_else(|| self.home.path().to_path_buf()),
             platform: &self.platform,
             registry: &self.registry,
             clock: &self.clock,
@@ -609,6 +619,41 @@ fn a_missing_plugin_fails_and_names_install_as_the_fix() {
     assert!(detail_of(&checks, "teamwire plugin").contains("not installed"));
     assert!(detail_of(&checks, "teamwire plugin").contains("run `teamwire install`"));
     assert_eq!(exit_code(&checks), 2);
+}
+
+#[test]
+fn a_plugin_installed_for_another_home_warns_naming_both_and_gives_no_install_advice() {
+    let mut bed = Bed::healthy();
+    let other = TestHome::new().unwrap();
+    bed.run_home = Some(other.path().to_path_buf());
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "teamwire plugin"),
+        Level::Warn,
+        "{checks:?}"
+    );
+    let detail = detail_of(&checks, "teamwire plugin");
+    assert_eq!(
+        detail,
+        format!(
+            "installed for state directory {}; this run uses {}",
+            bed.home.path().display(),
+            other.path().display()
+        )
+    );
+    assert!(!detail.contains("install`"), "{detail}");
+    assert!(checks.iter().all(|c| c.level != Level::Fail), "{checks:?}");
+}
+
+#[test]
+fn a_plugin_that_differs_in_more_than_its_home_still_fails_in_another_home() {
+    let mut bed = Bed::healthy();
+    let other = TestHome::new().unwrap();
+    bed.run_home = Some(other.path().to_path_buf());
+    std::fs::write(bed.plugin_root().join("hooks/hooks.json"), "{}").unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["teamwire plugin"]);
+    assert!(detail_of(&checks, "teamwire plugin").contains("another version"));
 }
 
 #[test]

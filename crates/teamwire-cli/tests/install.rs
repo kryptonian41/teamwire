@@ -479,17 +479,27 @@ fn a_codex_dry_run_prints_the_changes_and_makes_none() {
 }
 
 #[test]
-fn an_unknown_harness_or_one_not_on_path_is_a_usage_error_that_names_it() {
+fn an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it() {
     let bed = Bed::new();
     let run = bed.teamwire_codex(&["install", "--harness", "gemini"], &[]);
     assert_eq!(run.code, 3, "{}", run.err);
     assert!(run.err.contains("`gemini`"), "{}", run.err);
     // `teamwire` without the fake `codex` on PATH.
     let run = bed.teamwire(&["install", "--harness", "codex"], &[]);
-    assert_eq!(run.code, 3, "{}", run.err);
+    assert_eq!(run.code, 1, "a refusal, not a usage error: {}", run.err);
     assert!(run.err.contains("`codex` is not on PATH"), "{}", run.err);
     assert!(!bed.codex_plugin_dir().exists());
     assert!(bed.installed_root().is_none(), "nothing was changed");
+}
+
+#[test]
+fn the_help_of_install_and_uninstall_names_the_plugin() {
+    let bed = Bed::new();
+    for command in ["install", "uninstall"] {
+        let run = bed.teamwire(&[command, "--help"], &[]);
+        assert_eq!(run.code, 0, "{}", run.err);
+        assert!(run.out.contains("`teamwire@teamwire`"), "{}", run.out);
+    }
 }
 
 #[test]

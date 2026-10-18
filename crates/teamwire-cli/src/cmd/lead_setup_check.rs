@@ -56,7 +56,16 @@ fn plugin_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
         Ok(_) if inputs.running_a_build => Outcome::Pass(format!(
             "`teamwire@teamwire` is installed and enabled; {LOOSE}"
         )),
-        Ok(_) => Outcome::Pass(format!("installed and enabled: {want}")),
+        // Installing here would repoint the user's one plugin at this home.
+        Ok(_) => match inputs.claude.plugin_other_home(want) {
+            Ok(Some(theirs)) => Outcome::Warn(format!(
+                "installed for state directory {}; this run uses {}",
+                theirs.as_deref().unwrap_or("~/.teamwire (the default)"),
+                inputs.home.display()
+            )),
+            Err(e) => Outcome::Fail(e.to_string()),
+            Ok(None) => Outcome::Pass(format!("installed and enabled: {want}")),
+        },
     }
 }
 

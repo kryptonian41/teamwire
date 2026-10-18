@@ -21,6 +21,10 @@ const PLUGIN_DIR: &str = "teamwire";
 /// describes. It goes between the frontmatter and the shared text.
 const CODEX_PART: &str = include_str!("../../../../examples/skills/codex-lead.md");
 
+/// The sections `SKILL.md` leaves to a second file. They need no Codex part,
+/// so the plugin carries the text as it is.
+const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/reference.md");
+
 const STAMP_KEY: &str = "  teamwire-sha256: ";
 
 /// The program the plugin runs: `<bin> [--home DIR]`, then `mcp --lead` or
@@ -104,6 +108,17 @@ impl PluginFiles {
     /// The files for the marketplace at `dir`, running `want`. Fails when the
     /// shared skill has no frontmatter.
     pub(crate) fn render(dir: &Path, want: &LeadCommand, shared: &str) -> Result<Self, String> {
+        Self::render_with(dir, want, shared, REFERENCE_TEXT)
+    }
+
+    /// `render` with the text of `reference.md` given, so a test can change it
+    /// alone.
+    fn render_with(
+        dir: &Path,
+        want: &LeadCommand,
+        shared: &str,
+        reference: &str,
+    ) -> Result<Self, String> {
         let skill =
             skill(shared).ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut mcp_args = want.words().split_off(1);
@@ -127,6 +142,10 @@ impl PluginFiles {
                 }]}]}})),
             ),
             (format!("{PLUGIN_DIR}/skills/teamwire/SKILL.md"), skill),
+            (
+                format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
+                reference.to_owned(),
+            ),
         ];
         let mut content = String::new();
         for (path, text) in &body {
@@ -218,6 +237,7 @@ mod tests {
                 "teamwire/.mcp.json",
                 "teamwire/hooks/hooks.json",
                 "teamwire/skills/teamwire/SKILL.md",
+                "teamwire/skills/teamwire/reference.md",
             ]
         );
         assert_eq!(
@@ -281,6 +301,19 @@ mod tests {
         );
         let codex = text.find("codex --no-daemon").unwrap();
         assert!(codex < text.find("# Body").unwrap());
+    }
+
+    #[test]
+    fn the_reference_file_is_the_compiled_in_text_and_changes_the_version() {
+        let render = |reference: &str| {
+            PluginFiles::render_with(Path::new("/x"), &want(None), SHARED, reference).unwrap()
+        };
+        let a = render(REFERENCE_TEXT);
+        assert_eq!(
+            file(&a, "teamwire/skills/teamwire/reference.md"),
+            REFERENCE_TEXT
+        );
+        assert_ne!(a.version, render(&format!("{REFERENCE_TEXT}x")).version);
     }
 
     #[test]
