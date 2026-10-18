@@ -317,6 +317,26 @@ fn a_call_that_prints_no_json_is_skipped_and_tried_again() {
 }
 
 #[test]
+fn an_outage_of_gh_is_said_once_per_run_of_three_failed_polls() {
+    let bed = Bed::new();
+    // Polls 1-5 fail (the line comes at the third, not again at the fourth
+    // or fifth), poll 6 answers, polls 7-9 fail again, poll 10 finishes.
+    for n in [1, 2, 3, 4, 5, 7, 8, 9] {
+        bed.answer("checks", 7, n, "gh: HTTP 502");
+        bed.answer("view", 7, n, "");
+    }
+    bed.answer("checks", 7, 6, &checks(&[("a", "pending")]));
+    bed.answer("view", 7, 6, &view("OPEN", "MERGEABLE", "CLEAN"));
+    bed.answer("checks", 7, 10, &checks(&[("a", "pass")]));
+    bed.answer("view", 7, 10, &view("OPEN", "MERGEABLE", "CLEAN"));
+    let run = bed.watch(&["7"]);
+    assert_eq!(run.code, 0);
+    let said = "o/r#7 UNREADABLE: gh gave no answer for 3 polls";
+    let count = run.lines.iter().filter(|l| l.as_str() == said).count();
+    assert_eq!(count, 2, "{:?}", run.lines);
+}
+
+#[test]
 fn a_merged_pull_request_is_done_without_checks() {
     let bed = Bed::new();
     bed.answer("view", 7, 1, &view("MERGED", "UNKNOWN", "UNKNOWN"));
