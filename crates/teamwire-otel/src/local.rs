@@ -167,8 +167,8 @@ fn newest_archive_of(home: &Path, team: &TeamName, errors: &mut Vec<String>) -> 
     let all = MetricsQuery::default();
     let named = |source: &Source| {
         Store::open_read_only_at(&source.path)
-            .and_then(|store| store.read(|tx| tx.team()))
-            .is_ok_and(|row| row.is_some_and(|t| t.name == *team))
+            .and_then(|store| store.read(|tx| Ok(tx.team()?.map(|t| t.name))))
+            .is_ok_and(|name| name.is_some_and(|n| n == *team))
     };
     sources(home, &all, errors)
         .into_iter()

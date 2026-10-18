@@ -307,7 +307,11 @@ fn a_closed_team_is_read_from_its_archive_by_the_name_in_its_team_row() {
     );
     let never = teamwire(&home, &[], &["metrics", "zz"]);
     assert_eq!(never.code, 1);
-    assert!(never.err.contains("no database for team zz"), "{}", never.err);
+    assert!(
+        never.err.contains("no database for team zz"),
+        "{}",
+        never.err
+    );
 }
 
 #[test]
