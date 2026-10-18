@@ -41,8 +41,8 @@
   --t-small: 13px;
   --t-body: 15px;
   --t-lead: 18px;
-  --t-head: 28px;
-  --t-display: 40px;
+  --t-head: 24px;
+  --t-display: clamp(30px, 22px + 1.6vw, 44px);
   --sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --ease: cubic-bezier(.2, 0, 0, 1);
 }
@@ -146,45 +146,64 @@ main:focus { outline: none; }
 
 .note { color: var(--muted); }
 .note.error { color: var(--c-failed); }
-.empty { color: var(--muted); font-style: italic; }
+.quiet { color: var(--muted); margin: 0; }
+.empty { padding: var(--s5) 0; max-width: 62ch; color: var(--muted); }
+.empty p { margin: 0; }
+.empty-title { font-size: var(--t-lead); font-weight: 600; color: var(--ink); margin-bottom: var(--s1) !important; }
 
 /* Chips: the colour comes from the category, the text is the raw state word. */
 .chip {
-  display: inline-block; padding: 1px 8px; border-radius: 999px; border: 1px solid currentColor;
-  font-size: var(--t-small); line-height: 1.5; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
-  vertical-align: middle;
+  display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm);
+  font-size: var(--t-small); font-weight: 500; line-height: 1.5;
+  white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
 }
-.chip.small { font-size: var(--t-small); padding: 0 6px; }
 .cat-done { color: var(--c-done); background: var(--bg-done); }
 .cat-active { color: var(--c-active); background: var(--bg-active); }
 .cat-idle { color: var(--c-idle); background: var(--bg-idle); }
 .cat-attention { color: var(--c-attention); background: var(--bg-attention); }
 .cat-failed { color: var(--c-failed); background: var(--bg-failed); }
 .cat-unknown { color: var(--c-unknown); background: var(--bg-unknown); }
-
-/* Overview */
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 12px; }
-.card {
-  display: block; text-decoration: none; color: inherit; background: var(--surface);
-  border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px;
-}
-.card:hover, .card:focus-visible { border-color: var(--accent); }
-.card.problem { border-left: 4px solid var(--c-attention); }
-.card-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
-.card h2 { margin: 0; font-size: var(--t-lead); }
-.sub { color: var(--muted); font-size: var(--t-small); }
-.row { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 8px; }
-.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--c-idle); }
+.dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c-idle); }
 .dot.cat-done { background: var(--c-done); }
 .dot.cat-active { background: var(--c-active); }
 .dot.cat-idle { background: var(--c-idle); }
 .dot.cat-attention { background: var(--c-attention); }
 .dot.cat-failed { background: var(--c-failed); }
 .dot.cat-unknown { background: var(--c-unknown); }
-.badge { font-size: var(--t-small); padding: 0 6px; border-radius: 4px; background: var(--bg-attention); color: var(--c-attention); }
-.badge.bad { background: var(--bg-failed); color: var(--c-failed); }
-.counts { color: var(--muted); font-size: var(--t-small); }
-.errors { margin: 8px 0 0; padding-left: 18px; color: var(--c-failed); font-size: var(--t-small); }
+/* A flag names a problem count; it reads stronger than a state chip. */
+.flag {
+  display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm); font-size: var(--t-small);
+  font-weight: 600; background: var(--c-attention); color: var(--surface);
+}
+.flag.bad { background: var(--c-failed); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--s1) 6px; align-items: center; margin: 0; }
+.sub { color: var(--muted); font-size: var(--t-small); }
+.live { display: inline-flex; align-items: center; gap: 6px; }
+.errors { margin: 0; padding-left: var(--s4); color: var(--c-failed); font-size: var(--t-small); }
+.count { color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+
+/* Page heads */
+.page-head { margin-bottom: var(--s4); }
+.page-head h1 { font-size: var(--t-display); letter-spacing: -0.03em; line-height: 1.05; }
+.lede { margin: var(--s2) 0 0; color: var(--muted); font-size: var(--t-lead); max-width: 62ch; }
+.page-head + section > h2:first-child { margin-top: var(--s4); }
+
+/* Overview: one full-width row per team. A team with a problem sits on a
+   raised surface under "Needs a look"; a healthy team sits on the ground. */
+.teams { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
+.team {
+  display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: var(--s3) var(--s4);
+  padding: var(--s3) var(--s4) 20px; border-radius: var(--r-lg);
+  color: inherit; text-decoration: none;
+}
+.team-id, .team-body { display: grid; gap: var(--s2); align-content: start; min-width: 0; }
+.team h3 { margin: 0; font-size: var(--t-lead); letter-spacing: -0.01em; }
+.team .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: 0; color: var(--muted); font-size: var(--t-small); }
+.team.problem { background: var(--surface); }
+a.team:hover { background: var(--surface-2); }
+@media (max-width: 720px) {
+  .team { grid-template-columns: 1fr; padding: var(--s3); }
+}
 
 /* Tables */
 .table-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); }
@@ -200,7 +219,6 @@ tr.clickable:hover, tr.clickable:focus-visible { background: var(--surface-2); }
 .bar > em { position: relative; font-style: normal; font-size: var(--t-small); padding: 0 4px; }
 
 .crumbs { margin-bottom: 8px; font-size: var(--t-small); }
-.page-head { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: baseline; }
 details { margin-top: 16px; }
 summary { cursor: pointer; font-weight: 600; }
 

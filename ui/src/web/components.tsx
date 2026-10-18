@@ -34,6 +34,16 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
+/** A view with nothing to show: what is missing, then what to do about it. */
+export function Empty({ title, children }: { title: string; children?: ReactNode }) {
+  return (
+    <div className="empty">
+      <p className="empty-title">{title}</p>
+      {children && <p>{children}</p>}
+    </div>
+  );
+}
+
 export function Loading({ what }: { what: string }) {
   return <p className="note">Loading {what}…</p>;
 }
