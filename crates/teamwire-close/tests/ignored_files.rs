@@ -91,3 +91,27 @@ fn the_briefs_own_copy_is_not_named() -> std::io::Result<()> {
     assert!(warning(plan.steps.into_iter().map(|s| (s.step, s.detail))).is_empty());
     Ok(())
 }
+
+#[test]
+fn build_folders_are_not_named_but_everything_else_is() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let api = rig.member("api");
+    std::fs::write(
+        rig.repo.join(".git/info/exclude"),
+        "*.local\ntarget/\nnode_modules/\n",
+    )?;
+    std::fs::create_dir_all(api.cwd.join("target"))?;
+    std::fs::write(api.cwd.join("target/out"), "x")?;
+    std::fs::create_dir_all(api.cwd.join("node_modules"))?;
+    std::fs::write(api.cwd.join("node_modules/m"), "x")?;
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert!(warning(plan.steps.into_iter().map(|s| (s.step, s.detail))).is_empty());
+
+    std::fs::write(api.cwd.join(".env.local"), "secret\n")?;
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert_eq!(
+        warning(plan.steps.into_iter().map(|s| (s.step, s.detail))),
+        ["api: removal deletes ignored files: .env.local"]
+    );
+    Ok(())
+}
