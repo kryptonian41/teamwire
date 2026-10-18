@@ -13,7 +13,14 @@
 //! tools, hooks and MCP server through `-c` values that name the 0600 token
 //! file, never the token itself.
 
+mod hook;
+mod launch;
 pub mod lead_setup;
+mod screen;
+mod session;
+mod startup;
+
+pub use startup::StartupPoll;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -22,8 +29,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome,
-    TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
+    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Codex keeps its files, and how to start it.
@@ -41,13 +48,25 @@ pub struct CodexConfig {
 pub struct CodexCli {
     platform: Arc<dyn Platform>,
     config: CodexConfig,
+    startup_poll: StartupPoll,
 }
 
 impl CodexCli {
     pub const ID: &'static str = "codex";
 
     pub fn new(platform: Arc<dyn Platform>, config: CodexConfig) -> Self {
-        Self { platform, config }
+        Self {
+            platform,
+            config,
+            startup_poll: StartupPoll::default(),
+        }
+    }
+
+    /// How long `answer_startup` waits for the composer or a dialog.
+    #[must_use]
+    pub fn with_startup_poll(mut self, poll: StartupPoll) -> Self {
+        self.startup_poll = poll;
+        self
     }
 
     pub fn config(&self) -> &CodexConfig {
@@ -87,49 +106,75 @@ impl Harness for CodexCli {
         }
     }
 
-    fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.codex_bin, m, &launch::Start::New)
     }
 
-    fn resume_spec(&self, _m: &MemberLaunch, _s: &SessionId) -> Result<LaunchSpec, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.codex_bin, m, &launch::Start::Resume(s))
     }
 
     fn current_session(&self) -> Option<CallerSession> {
-        None
+        self.caller_session(&|name| std::env::var(name).ok())
+    }
+
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        session::caller_session(&self.config.codex_home, get)
+    }
+
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Ok(vec![
+            self.config.codex_bin.clone(),
+            "--no-daemon".to_owned(),
+            "resume".to_owned(),
+            s.as_str().to_owned(),
+        ])
+    }
+
+    fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
+        Ok(session::session_cwd(&self.config.codex_home, s))
     }
 
     fn processes_for_session(
         &self,
-        _s: &SessionId,
-        _timeout: Duration,
+        s: &SessionId,
+        timeout: Duration,
     ) -> Result<Vec<Pid>, HarnessError> {
-        Ok(Vec::new())
+        session::processes(self.platform.as_ref(), &self.config.codex_home, s, timeout)
     }
 
-    fn is_alive(&self, _s: &SessionId, _timeout: Duration) -> Result<Liveness, HarnessError> {
-        Ok(Liveness::Unknown)
+    fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError> {
+        Ok(session::liveness(
+            self.platform.as_ref(),
+            &self.config.codex_home,
+            s,
+            timeout,
+        ))
     }
 
-    fn parse_turn_end(&self, _stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        hook::parse_turn_end(stdin)
     }
 
-    fn hold_reply(&self, _note: &str) -> Vec<u8> {
-        Vec::new()
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        hook::hold_reply(note)
     }
 
-    fn screen_state(&self, _tail: &str) -> ScreenState {
-        ScreenState::Unknown
+    fn screen_state(&self, tail: &str) -> ScreenState {
+        screen::classify(tail)
+    }
+
+    fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
+        screen::line_pending(tail, line)
     }
 
     fn answer_startup(
         &self,
-        _host: &dyn Host,
-        _place: &Place,
-        _policy: TrustPolicy,
+        host: &dyn Host,
+        place: &Place,
+        policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
-        Ok(StartupOutcome::NoDialog)
+        startup::answer_startup(host, place, policy, self.startup_poll)
     }
 
     fn otel_env(
