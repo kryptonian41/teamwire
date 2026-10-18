@@ -16,7 +16,8 @@ use teamwire_store::{Ctx, NewMember, NewTeam};
 
 use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
-    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_member_files,
+    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_contract,
+    write_member_files,
 };
 use crate::worktree;
 use crate::{
@@ -48,7 +49,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
             return LaunchReport {
                 members,
                 warnings,
-                watch_command: watch_command(&plan.spec.team),
+                watch_command: watch_command(ctx.registry, &plan.lead.harness, &plan.spec.team),
             };
         }
     }
@@ -75,7 +76,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     LaunchReport {
         members,
         warnings,
-        watch_command: watch_command(&plan.spec.team),
+        watch_command: watch_command(ctx.registry, &plan.lead.harness, &plan.spec.team),
     }
 }
 
@@ -329,7 +330,9 @@ fn run_member(
         otel: ctx.config.otel.clone(),
         teamwire_bin: plan.teamwire_bin.clone(),
         plugins: merged_plugins(&plan.spec.plugins, &m.spec.plugins),
+        accept_trust: m.spec.accept_trust,
     };
+    write_contract(ctx, dirs, m, &launch)?;
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(
             ReasonCode::Harness,
@@ -411,7 +414,13 @@ fn run_member(
     };
     if let (false, Some(s)) = (chosen, &session_known) {
         let s = s.clone();
-        if let Err(e) = ctx.store.write(|tx| tx.set_member_session(role, &s)) {
+        // The session-start hook may have recorded the session already; it
+        // knows the real one, so a value on the row stays.
+        let kept = ctx.store.write(|tx| match tx.reader().member(role)? {
+            Some(row) if row.session_id.is_some() => Ok(()),
+            _ => tx.set_member_session(role, &s),
+        });
+        if let Err(e) = kept {
             tracing::warn!(%role, error = %e, "could not record the session id");
         }
     }
@@ -421,6 +430,7 @@ fn run_member(
     // `reopen` resumes with these; a resume without them runs on the default.
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
+    put(&mut data, "plugins", json!(launch.plugins));
     put(
         &mut data,
         "session_id",

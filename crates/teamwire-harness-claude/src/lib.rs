@@ -117,6 +117,7 @@ impl Harness for ClaudeCode {
             choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
+            reads_watch_lines: true,
         }
     }
 
@@ -130,6 +131,10 @@ impl Harness for ClaudeCode {
 
     fn current_session(&self) -> Option<CallerSession> {
         self.session_from_env(|name| std::env::var(name).ok())
+    }
+
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.session_from_env(get)
     }
 
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {

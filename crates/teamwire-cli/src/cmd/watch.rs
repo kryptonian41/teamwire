@@ -6,9 +6,10 @@ use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use teamwire_core::{Config, Pid, TeamName};
+use teamwire_core::{Config, OneLine, Pid, TeamName};
+use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_within};
 use teamwire_otel::{OtlpConfig, StopCutoff};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
 use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
@@ -29,6 +30,10 @@ const EXPORT_SLICE: Duration = Duration::from_millis(200);
 /// that never answers would otherwise hold the exit for the whole configured
 /// timeout. While the watch runs, each request has that whole timeout.
 const WATCH_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// How long one `--deliver` delivery may take. The poll waits for it, so a
+/// stuck host must not hold the next poll for longer than this.
+const DELIVER_BUDGET: Duration = Duration::from_secs(15);
 
 /// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
 /// the same keys in `$TEAMWIRE_HOME/config.toml` (ADR 0005 point 4a), read
@@ -117,6 +122,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         team,
         interval,
         once,
+        deliver,
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
@@ -176,7 +182,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         if let Some(target) = &exporter {
             scope.spawn(|| export_loop(&home, &team, wiring, &config, target, &stop));
         }
-        let code = poll_loop(&mut ctx, &mut memory, *once);
+        let code = poll_loop(&mut ctx, &mut memory, *once, *deliver);
         stop.store(true, Ordering::Relaxed);
         code
     });
@@ -186,10 +192,29 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     code
 }
 
-fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool) -> ExitCode {
+/// Types a printed line into the lead's place, for a lead that cannot read the
+/// watch's output (ADR 0023). The line is already printed, so a line that
+/// cannot be delivered is only logged and the next poll goes on.
+fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
+    let outcome = match ctx.clock.monotonic().checked_add(DELIVER_BUDGET) {
+        Some(deadline) => deliver_line_within(ctx, &Party::Lead, line, deadline),
+        None => deliver_line(ctx, &Party::Lead, line),
+    };
+    match outcome {
+        DeliveryOutcome::HandedOff => {}
+        DeliveryOutcome::Unconfirmed(e) | DeliveryOutcome::Undelivered(e) => {
+            tracing::warn!(error = %e, "a watch line was not delivered to the lead");
+        }
+    }
+}
+
+fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: bool) -> ExitCode {
     loop {
         if let Some(line) = teamwire_watch::poll(ctx, memory) {
             say(line.as_str());
+            if deliver {
+                deliver_to_lead(ctx, &line);
+            }
         }
         match memory.end {
             Some(WatchEnd::TeamComplete | WatchEnd::TeamClosed) => return ExitCode::SUCCESS,

@@ -90,7 +90,7 @@ pub(crate) fn reopen_lead<'r>(
     };
     if crate::plan::is_home_dir(opts.user_home.as_deref(), &cwd) {
         return ReopenOutcome::refused(format!(
-            "the lead's folder {} is your home directory, and reopen will not answer Claude's \
+            "the lead's folder {} is your home directory, and reopen will not answer the harness's \
              folder-trust dialog for it; to resume it by hand run: {}",
             cwd.display(),
             manual(Some(&cwd))

@@ -21,6 +21,7 @@ mod resend;
 mod roster;
 mod rules;
 mod send;
+mod token;
 
 use std::fmt;
 
@@ -42,6 +43,7 @@ pub use roster::{RosterEntry, roster};
 pub use send::{
     Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with, watch_running,
 };
+pub use token::caller_token;
 
 /// What the calling process says about itself, read from its environment
 /// and arguments. `prove_actor` turns it into a proven `Actor` (ADR 0008).
@@ -55,9 +57,20 @@ pub struct CallerEnv {
     pub token: Option<String>,
     /// The claimed sender: `--from`, a role or `lead`.
     pub from: Option<String>,
+    /// `MCP_META_<key>` values: the string fields of the MCP request's
+    /// `_meta`. Only the lead's server fills them (ADR 0023 point 8).
+    pub hints: Vec<(String, String)>,
 }
 
 impl CallerEnv {
+    /// A variable by name: a hint first, then the process environment. The
+    /// lookup a harness reads its caller's session through.
+    pub fn lookup(&self, name: &str) -> Option<String> {
+        let hint = self.hints.iter().find(|(key, _)| key == name);
+        hint.map(|(_, value)| value.clone())
+            .or_else(|| std::env::var(name).ok())
+    }
+
     /// True when the environment says this process runs inside a member's
     /// session: it names a role or a team, or carries a token. A member can
     /// drop its token with `env -u`, so the token alone proves nothing about
@@ -74,6 +87,7 @@ impl fmt::Debug for CallerEnv {
             .field("role", &self.role)
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
             .field("from", &self.from)
+            .field("hints", &self.hints)
             .finish()
     }
 }

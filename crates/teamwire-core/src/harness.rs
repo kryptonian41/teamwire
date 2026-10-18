@@ -28,6 +28,14 @@ pub trait Harness: Send + Sync {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;
+    /// The caller's session, read through `get` instead of the process
+    /// environment. `get` also answers `MCP_META_<key>` with a string field of
+    /// the MCP request's `_meta`, for a harness that names the session only
+    /// there (Codex, ADR 0023). The default ignores `get` and reads the
+    /// process environment.
+    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.current_session()
+    }
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The
     /// default is `Unsupported`.
@@ -88,6 +96,11 @@ pub struct HarnessCaps {
     /// Environment for the session can be set in a per-run
     /// config file (Claude Code `settings.json` `env`).
     pub session_env_via_config: bool,
+    /// A lead on this harness can run `teamwire watch` and read each line as
+    /// it is printed (Claude Code's Monitor tool). Without it the lead needs
+    /// `teamwire watch --deliver`, which types the lines into its pane, so
+    /// launch refuses such a lead when it cannot be located (ADR 0023).
+    pub reads_watch_lines: bool,
 }
 
 /// A turn-end hook's input, in neutral form.
@@ -167,6 +180,10 @@ pub struct MemberLaunch {
     /// without plugins ignores it.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+    /// The spec's `accept_trust`. Read by a harness that takes folder trust
+    /// as a start option rather than answering a dialog (Codex, ADR 0023).
+    #[serde(default)]
+    pub accept_trust: bool,
 }
 
 impl MemberLaunch {
@@ -198,7 +215,25 @@ impl MemberLaunch {
             otel: OtelConfig::default(),
             teamwire_bin: PathBuf::from("teamwire"),
             plugins: BTreeMap::new(),
+            // The member started once, so its folder was accepted then.
+            accept_trust: true,
         }
+    }
+}
+
+impl MemberLaunch {
+    /// A resume's launch with what the first start recorded beyond the model:
+    /// the `teamwire` binary and the plugin switches. A harness that carries
+    /// hook and MCP commands in argv (Codex) needs both to match the start.
+    #[must_use]
+    pub fn with_run_context(
+        mut self,
+        teamwire_bin: PathBuf,
+        plugins: BTreeMap<String, bool>,
+    ) -> Self {
+        self.teamwire_bin = teamwire_bin;
+        self.plugins = plugins;
+        self
     }
 }
 
@@ -325,6 +360,7 @@ impl fmt::Debug for MemberLaunch {
             .field("otel", &self.otel)
             .field("teamwire_bin", &self.teamwire_bin)
             .field("plugins", &self.plugins)
+            .field("accept_trust", &self.accept_trust)
             .finish()
     }
 }

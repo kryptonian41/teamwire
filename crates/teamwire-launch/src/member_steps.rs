@@ -144,7 +144,7 @@ fn orphan_note(host: &dyn teamwire_core::Host, request: &teamwire_core::SpawnReq
 pub(crate) fn escalated_trust_message(repo: &Path) -> String {
     format!(
         "the repository's own settings ask for extra permissions, so the trust dialog was not \
-         answered; open Claude Code yourself in {}, review and accept that dialog there, then \
+         answered; open the member's harness yourself in {}, review and accept that dialog there, then \
          launch the member again with --add (the role is reusable because it never started)",
         repo.display()
     )
@@ -259,12 +259,14 @@ pub(crate) fn write_file(
         .map_err(|e| format!("cannot set the mode of {}: {e}", path.display()))
 }
 
-pub(crate) fn write_member_files(
+/// Writes the member directory and the contract. A harness may read the
+/// contract while it builds the launch (Codex puts its text in argv), so this
+/// runs before `launch_spec`.
+pub(crate) fn write_contract(
     ctx: &Ctx<'_>,
     dirs: &Dirs,
     m: &PlannedMember,
     launch: &MemberLaunch,
-    files: &[teamwire_core::LaunchFile],
 ) -> Result<(), Stop> {
     use std::os::unix::fs::PermissionsExt;
     let role = &m.spec.role;
@@ -293,6 +295,31 @@ pub(crate) fn write_member_files(
         0o644,
     )
     .map_err(fail)?;
+    write_file(
+        ctx.platform,
+        &launch.contract_path,
+        contract.as_bytes(),
+        0o644,
+    )
+    .map_err(fail)
+}
+
+pub(crate) fn write_member_files(
+    ctx: &Ctx<'_>,
+    dirs: &Dirs,
+    m: &PlannedMember,
+    launch: &MemberLaunch,
+    files: &[teamwire_core::LaunchFile],
+) -> Result<(), Stop> {
+    use std::os::unix::fs::PermissionsExt;
+    let role = &m.spec.role;
+    let fail = |e: String| Stop::fail(ReasonCode::Files, e);
+    // The member directory holds the token, so it is private too.
+    std::fs::create_dir_all(&launch.member_dir)
+        .and_then(|()| {
+            std::fs::set_permissions(&launch.member_dir, std::fs::Permissions::from_mode(0o700))
+        })
+        .map_err(|e| fail(format!("cannot make {}: {e}", launch.member_dir.display())))?;
     write_file(ctx.platform, &dirs.brief(role), m.brief.as_bytes(), 0o644).map_err(fail)?;
     if m.worktree.is_some() {
         write_file(
@@ -371,7 +398,7 @@ mod tests {
     #[test]
     fn escalated_message_names_the_main_checkout_and_add() {
         let text = escalated_trust_message(Path::new("/work/proj"));
-        assert!(text.contains("open Claude Code yourself in /work/proj"));
+        assert!(text.contains("open the member's harness yourself in /work/proj"));
         assert!(text.contains("--add") && text.contains("never started"));
         assert!(!text.contains("answer it yourself"));
     }

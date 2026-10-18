@@ -10,7 +10,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | Who | How it starts | How it knows who is calling |
 | --- | --- | --- |
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
-| The lead | `teamwire install` registers `teamwire mcp --lead` as a user MCP server through `claude mcp` (ADR 0012). Nothing else registers it. | The harness session id in the server's environment, checked against the team's recorded lead session per call. The `team` argument picks the team. |
+| The lead | `teamwire install` registers `teamwire mcp --lead` through the plugin that `teamwire install` adds: the Claude plugin (ADR 0018) or the Codex plugin (ADR 0023). Nothing else registers it. | The harness session id, checked against the team's recorded lead session per call. The harness reads it from the server's environment. A harness that gives the session only in the request (Codex, ADR 0023) gets it from the string fields of the call's `_meta`: the server passes each one to the harness as `MCP_META_<key>`, and the harness's `caller_session` reads them through a lookup. The Codex harness reads `CODEX_SESSION_ID`, then `CODEX_THREAD_ID`, then `MCP_META_sessionId`, then `MCP_META_threadId`, so a `CODEX_*` variable in the server's environment wins over the hints. A member's server ignores `_meta`. The `team` argument picks the team. |
 
 Every server lists all nine tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's

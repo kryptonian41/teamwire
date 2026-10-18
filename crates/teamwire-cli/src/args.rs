@@ -121,6 +121,10 @@ pub(crate) struct WatchArgs {
     /// Run one poll and exit.
     #[arg(long)]
     pub(crate) once: bool,
+    /// Also type each line into the lead's pane, for a lead that cannot read
+    /// the watch's output as it is printed (a Codex lead, ADR 0023).
+    #[arg(long)]
+    pub(crate) deliver: bool,
 }
 
 #[derive(Args)]
@@ -276,6 +280,11 @@ pub(crate) struct InstallArgs {
     /// install from a binary inside a `target/` directory.
     #[arg(long)]
     pub(crate) force: bool,
+    /// The harnesses to install the lead setup for, comma-separated
+    /// (`claude-code`, `codex`). Without it, a terminal shows a selector of
+    /// the harnesses found on PATH, and anything else installs `claude-code`.
+    #[arg(long, value_delimiter = ',', value_name = "ID")]
+    pub(crate) harness: Vec<String>,
 }
 
 #[derive(Args)]
@@ -336,12 +345,18 @@ pub(crate) struct HookArgs {
     pub(crate) hook: HookCommand,
 }
 
+/// The `claude-*` names are the ones per-run settings written before ADR
+/// 0022 spell, so they stay for teams that are still open.
 #[derive(Subcommand)]
-#[expect(
-    clippy::enum_variant_names,
-    reason = "the variant names are the command names Claude Code's hook settings spell"
-)]
 pub(crate) enum HookCommand {
+    /// A member's turn-end (Stop) hook, on the member's own harness.
+    TurnEnd(HookTarget),
+    #[command(about = "A member's PostToolUse hook, on the member's own harness.")]
+    PostTool(HookTarget),
+    #[command(about = "A member's SessionStart hook: record the session id the harness chose.")]
+    SessionStart(HookTarget),
+    #[command(about = "The lead's Stop hook, on the named harness.")]
+    LeadStop(LeadStopArgs),
     /// A member's Stop hook: hold once for gaps or unread messages, else deliver the result.
     ClaudeStop(HookTarget),
     #[command(about = "A member's PostToolUse hook: remind it of unread message ids.")]
@@ -350,6 +365,13 @@ pub(crate) enum HookCommand {
         about = "The lead's Stop hook: hold once when a team has working members and no watch."
     )]
     ClaudeLeadStop,
+}
+
+/// Which harness's input the lead's Stop hook reads; `claude-code` when absent.
+#[derive(Args)]
+pub(crate) struct LeadStopArgs {
+    #[arg(long)]
+    pub(crate) harness: Option<String>,
 }
 
 /// Who the hook runs for. The per-run settings put both in the command.

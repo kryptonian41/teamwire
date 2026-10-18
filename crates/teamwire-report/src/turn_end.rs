@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{
-    LeadRoute, Member, MemberState, ReportState, Role, Route, TurnEnd, TurnEndReply, one_line,
+    HarnessId, LeadRoute, Member, MemberState, Registry, ReportState, Role, Route, TeamName,
+    TurnEnd, TurnEndReply, one_line,
 };
 use teamwire_deliver::{
     DeliveryOutcome, deliver_line, deliver_line_within, result_line, watch_lease_is_dead,
@@ -12,6 +13,7 @@ use teamwire_deliver::{
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
+use crate::lead_stop::watch_command;
 use crate::note::{gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
@@ -21,8 +23,15 @@ use crate::result_file::{MISSING_FROM_HARNESS, write_current};
 /// characters `result_line` allows, and room for the note after them.
 const NOTE_LINE_CHARS: usize = 1200;
 
-/// The name a hook run gives its events (`docs/metrics.md` section 5).
-const HOOK: &str = "claude-stop";
+/// The name a hook run gives its events (`docs/metrics.md` section 5). The
+/// two harnesses that existed before this name was derived keep theirs.
+fn hook_name(harness: &HarnessId) -> String {
+    match harness.as_str() {
+        "claude-code" => "claude-stop".to_owned(),
+        "codex" => "codex-stop".to_owned(),
+        other => format!("{other}-stop"),
+    }
+}
 
 /// Route A of ADR 0007: hold once for gaps or unread messages, else write
 /// the result and deliver it.
@@ -45,8 +54,8 @@ fn deadline_after(started: std::time::Instant, budget: Duration) -> Option<std::
     started.checked_add(budget)
 }
 
-fn hook_data(ctx: &Ctx<'_>, started: std::time::Instant) -> serde_json::Value {
-    json!({ "hook": HOOK, "hook_ms": hook_ms(ctx, started) })
+fn hook_data(ctx: &Ctx<'_>, member: &Member, started: std::time::Instant) -> serde_json::Value {
+    json!({ "hook": hook_name(&member.harness), "hook_ms": hook_ms(ctx, started) })
 }
 
 fn hook_ms(ctx: &Ctx<'_>, started: std::time::Instant) -> u64 {
@@ -109,6 +118,15 @@ fn run(
         }
     }
     Ok(TurnEndReply::Continue)
+}
+
+/// The command that starts the watch for this team's lead. A lead harness
+/// that cannot be found gets the Monitor wording, as the lead Stop hook does.
+fn lead_watch_command(registry: &Registry, harness: &HarnessId, team: &TeamName) -> String {
+    let reads = registry
+        .harness(harness)
+        .map_or(true, |h| h.capabilities().reads_watch_lines);
+    watch_command(team, reads)
 }
 
 /// True when no live watch holds the lease: none was ever taken, its process
@@ -178,7 +196,7 @@ fn hold(
     }
     let at = ctx.clock.now();
     let mut data = json!({
-        "hook": HOOK,
+        "hook": hook_name(&member.harness),
         "hook_ms": hook_ms(ctx, started),
         "gaps": gaps,
         "unread": ids,
@@ -288,8 +306,9 @@ fn deliver(
     // itself says that nothing is watching (ADR 0018 point 6). The note is
     // advice: a lease that cannot be read skips it and never stops delivery.
     if watch_is_dead(ctx).unwrap_or(false) {
+        let command = lead_watch_command(ctx.registry, &team.lead_harness, &team.name);
         line = one_line(
-            &format!("{line} (no watch is running: teamwire watch {})", team.name),
+            &format!("{line} (no watch is running: {command})"),
             NOTE_LINE_CHARS,
         );
     }
@@ -318,7 +337,7 @@ fn deliver(
             result_sha256: written.as_ref().map(|w| w.sha256),
         },
     };
-    let mut extra = hook_data(ctx, started);
+    let mut extra = hook_data(ctx, member, started);
     if let (Some(error), Some(data)) = (check_error, extra.as_object_mut()) {
         data.insert("report_check_error".to_owned(), json!(error));
     }
@@ -332,6 +351,24 @@ fn deliver(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
+        let command = lead_watch_command(
+            &Registry::new(),
+            &HarnessId::from_static("unknown"),
+            &TeamName::parse("alpha").unwrap(),
+        );
+        assert_eq!(command, "teamwire watch alpha");
+    }
+
+    #[test]
+    fn the_hook_name_follows_the_harness() {
+        let name = |id: &'static str| hook_name(&HarnessId::from_static(id));
+        assert_eq!(name("claude-code"), "claude-stop");
+        assert_eq!(name("codex"), "codex-stop");
+        assert_eq!(name("other"), "other-stop");
+    }
 
     #[test]
     #[expect(

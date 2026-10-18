@@ -29,6 +29,7 @@ impl Harness for Stub {
             choose_session_id: false,
             can_push: false,
             session_env_via_config: false,
+            reads_watch_lines: true,
         }
     }
     fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {

@@ -176,6 +176,13 @@ impl Rig {
                     .env("TEAMWIRE_ROLE", role)
                     .env("TEAMWIRE_TOKEN", token_of(role));
             }
+            Identity::TokenFile(role) => {
+                let file = self.home.path().join(format!("token-{role}"));
+                std::fs::write(&file, format!("{}\n", token_of(role))).unwrap();
+                cmd.env("TEAMWIRE_TEAM", "alpha")
+                    .env("TEAMWIRE_ROLE", role)
+                    .env("TEAMWIRE_TOKEN_FILE", file);
+            }
             Identity::WrongToken(role) => {
                 cmd.env("TEAMWIRE_TEAM", "alpha")
                     .env("TEAMWIRE_ROLE", role)
@@ -200,6 +207,8 @@ impl Rig {
 enum Identity {
     Member(&'static str),
     WrongToken(&'static str),
+    /// A member that has only `TEAMWIRE_TOKEN_FILE` (ADR 0023 point 4).
+    TokenFile(&'static str),
     /// A member's session after `env -u TEAMWIRE_TOKEN`.
     TokenlessMember(&'static str),
     Lead(&'static str),
@@ -213,6 +222,24 @@ fn live_rig() -> Rig {
     rig.add_member("scout", MemberKind::Investigator, true);
     rig.add_member("api", MemberKind::Implementer, true);
     rig
+}
+
+#[test]
+fn a_member_with_only_a_token_file_can_send() {
+    let rig = live_rig();
+    let out = rig.run(
+        &[
+            "send", "alpha", "--to", "api", "--type", "finding", "--text", "via file",
+        ],
+        &Identity::TokenFile("scout"),
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}{}",
+        text(&out.stdout),
+        text(&out.stderr)
+    );
 }
 
 #[test]

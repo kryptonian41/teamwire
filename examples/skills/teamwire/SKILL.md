@@ -178,7 +178,9 @@ over, so results reach it and not the old session.
 Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets it. Every member
 needs `mode`. Launch sets no model or effort by kind, and a member without
-them runs on Claude Code's defaults, so set the last three columns.
+them runs on its harness's defaults, so set the last three columns. A member
+without `harness` runs on the lead's harness; `"harness": "codex"` or
+`"harness": "claude-code"` picks one.
 
 | Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
 | --- | --- | --- | --- | --- | --- |

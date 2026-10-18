@@ -244,6 +244,9 @@ pub trait Harness: Send + Sync {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read from its environment.
     fn current_session(&self) -> Option<CallerSession>;   // id + kind (interactive | background)
+    // The same through a lookup; MCP_META_<key> answers a field of an MCP request's _meta
+    // (ADR 0023). The default reads the process environment.
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
@@ -278,7 +281,8 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          pub can_push: bool,
                          /// Environment for the session can be set in a per-run
                          /// config file (Claude Code `settings.json` `env`).
-                         pub session_env_via_config: bool }
+                         pub session_env_via_config: bool,
+                         pub reads_watch_lines: bool }   // lead can read `teamwire watch` lines (ADR 0023)
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      pub transcript: Option<PathBuf> }

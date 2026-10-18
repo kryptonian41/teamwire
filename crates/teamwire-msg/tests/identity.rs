@@ -9,6 +9,13 @@ use teamwire_core::{Actor, EventType, MemberKind, Refusal};
 use teamwire_msg::{CallerEnv, prove_actor};
 
 use rig::{Rig, role, sid, token_of};
+use std::sync::Arc;
+use teamwire_core::Registry;
+
+#[expect(dead_code, reason = "only the launch tests set a startup function")]
+#[path = "support/hint_harness.rs"]
+mod hint_harness;
+use hint_harness::HintHarness;
 
 fn member_env(name: &str, token: &str) -> CallerEnv {
     CallerEnv {
@@ -16,6 +23,7 @@ fn member_env(name: &str, token: &str) -> CallerEnv {
         role: Some(name.to_owned()),
         token: Some(token.to_owned()),
         from: None,
+        hints: Vec::new(),
     }
 }
 
@@ -62,6 +70,7 @@ fn wrong_token_refused() {
             role: Some("api".to_owned()),
             token,
             from: None,
+            hints: Vec::new(),
         };
         assert_eq!(prove_actor(&rig.ctx(), &env), Err(Refusal::Identity));
     }
@@ -210,6 +219,7 @@ fn a_member_session_without_its_token_cannot_adopt() {
         role: Some("api".to_owned()),
         token: None,
         from: Some("lead".to_owned()),
+        hints: Vec::new(),
     };
     let refused = teamwire_msg::adopt_lead(&mut rig.ctx(), &env);
     assert_eq!(
@@ -225,4 +235,43 @@ fn a_member_session_without_its_token_cannot_adopt() {
     assert_eq!(after, before);
     // The lead's own session, with none of the three variables, still adopts.
     assert!(teamwire_msg::adopt_lead(&mut rig.ctx(), &lead_env()).is_ok());
+}
+
+#[test]
+fn a_lead_whose_harness_reads_a_hint_is_proven_through_it() {
+    let mut rig = Rig::new();
+    // The process environment names no session; only the hint does.
+    rig.harness.set_caller(None);
+    let hinted = Arc::new(HintHarness::new(rig.harness.clone(), "MCP_META_sessionId"));
+    let mut registry = Registry::new();
+    registry.add_harness(hinted).unwrap();
+    registry.add_host(rig.host.clone()).unwrap();
+    rig.registry = registry;
+    let hint = |value: &str| CallerEnv {
+        hints: vec![("MCP_META_sessionId".to_owned(), value.to_owned())],
+        ..lead_env()
+    };
+    assert_eq!(prove_actor(&rig.ctx(), &hint("lead-1")), Ok(Actor::Lead));
+    assert_eq!(
+        prove_actor(&rig.ctx(), &hint("someone-else")),
+        Err(Refusal::Identity)
+    );
+    assert_eq!(prove_actor(&rig.ctx(), &lead_env()), Err(Refusal::Identity));
+}
+
+#[test]
+fn adopt_reads_the_session_through_a_hint() {
+    let mut rig = Rig::new();
+    rig.harness.set_caller(None);
+    let hinted = Arc::new(HintHarness::new(rig.harness.clone(), "MCP_META_sessionId"));
+    let mut registry = Registry::new();
+    registry.add_harness(hinted).unwrap();
+    registry.add_host(rig.host.clone()).unwrap();
+    rig.registry = registry;
+    let env = CallerEnv {
+        hints: vec![("MCP_META_sessionId".to_owned(), "lead-2".to_owned())],
+        ..lead_env()
+    };
+    let report = teamwire_msg::adopt_lead(&mut rig.ctx(), &env).unwrap();
+    assert_eq!(report.new, sid("lead-2"));
 }

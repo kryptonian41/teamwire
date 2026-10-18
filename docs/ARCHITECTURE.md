@@ -52,6 +52,7 @@ and no host (ADP-1).
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
 | `teamwire-host-tmux` | The `Host` trait for tmux (wave 5). |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
+| `teamwire-harness-codex` | The `Harness` trait for the Codex CLI: launch and resume argv from `-c` overrides, the member's token file, Stop, PostToolUse and SessionStart hook input, the TUI screen, rollout files and thread locks, and the Codex lead plugin (ADR 0023). |
 | `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
 | `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |

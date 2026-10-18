@@ -116,7 +116,7 @@ fn hold_once_then_deliver() {
         ReportState::Pending
     );
     let held = &rig.events(EventType::MemberHeld)[0];
-    assert_eq!(data_str(held, "hook"), Some("claude-stop"));
+    assert_eq!(data_str(held, "hook"), Some("fake-stop"));
     assert!(held.data.get("hook_ms").is_some());
 
     // The next stop delivers whatever the report says.
@@ -366,4 +366,20 @@ fn a_message_body_that_fails_its_hash_does_not_stop_the_result() {
         .unwrap();
     assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
     assert_eq!(rig.typed_to_lead().len(), 1, "the result was delivered");
+}
+
+/// The hook's name in the metrics follows the member's own harness.
+#[test]
+fn the_hold_event_names_the_hook_of_the_members_harness() {
+    for (harness, hook) in [("codex", "codex-stop"), ("claude-code", "claude-stop")] {
+        let (mut rig, _) = team();
+        let teamwire_store::Party::Member(web) = rig.add_member("web", harness, "web-1") else {
+            unreachable!("add_member returns a member")
+        };
+        rig.complete_now(&web);
+        let reply = on_turn_end(&mut rig.ctx(), &web, &stop("web-1"));
+        assert!(matches!(reply, TurnEndReply::Hold(_)), "{harness}");
+        let held = &rig.events(EventType::MemberHeld)[0];
+        assert_eq!(data_str(held, "hook"), Some(hook));
+    }
 }

@@ -40,6 +40,7 @@ pub(crate) fn run(args: &ReopenArgs, global: &Global, wiring: &Wiring) -> ExitCo
         role,
         dry_run: *dry_run,
         user_home: std::env::var_os("HOME").map(PathBuf::from),
+        teamwire_bin: std::env::current_exe().ok(),
     };
     let work = |ctx: &mut Ctx<'_>| {
         let result = reopen(ctx, &opts);

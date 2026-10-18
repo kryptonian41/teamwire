@@ -12,6 +12,7 @@
 //! resume reuses as they are; the session id never changes; only the
 //! member's recorded place does.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -39,6 +40,9 @@ pub struct ReopenOpts {
     /// The user's home directory. The lead is never reopened there, because
     /// reopen would answer Claude's folder-trust dialog for it (LCH-15).
     pub user_home: Option<PathBuf>,
+    /// The running `teamwire` binary, which a resumed member's hook and MCP
+    /// commands name. `None` is the bare name `teamwire`.
+    pub teamwire_bin: Option<PathBuf>,
 }
 
 /// How one session's reopen ended. On a dry run `Reopened` means "would be".
@@ -134,7 +138,7 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
         lead: None,
         members: Vec::new(),
         warnings: Vec::new(),
-        watch_command: watch_command(&team.name),
+        watch_command: watch_command(ctx.registry, &team.lead_harness, &team.name),
         dry_run: opts.dry_run,
     };
     // `None` is the lead. Each entry passed every check and waits for its tab.
@@ -239,12 +243,24 @@ fn reopen_member<'r>(
         ));
     }
     let team_dir = ctx.home.join("teams").join(team.name.as_str());
+    let plugins = match recorded_plugins(ctx, &member.role) {
+        Ok(plugins) => plugins,
+        Err(e) => {
+            return ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"));
+        }
+    };
     let launch = MemberLaunch::for_resume(
         &team_dir,
         &team.name,
         member,
         session,
         (options.model.clone(), options.effort.clone()),
+    )
+    .with_run_context(
+        opts.teamwire_bin
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("teamwire")),
+        plugins,
     );
     let spec = match harness.resume_spec(&launch, session) {
         Ok(spec) => spec,
@@ -262,7 +278,7 @@ fn reopen_member<'r>(
     }
     if !options.recorded {
         warnings.push(format!(
-            "{} has no model or effort recorded (an older build started it), so it resumes on Claude's default",
+            "{} has no model or effort recorded (an older build started it), so it resumes on the harness's default",
             member.role
         ));
     }
@@ -349,13 +365,31 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => return Ok(place),
         Ok(StartupOutcome::RefusedEscalated) => format!(
             "the folder's own settings ask for extra permissions, so the trust dialog was not \
-             answered; open Claude Code yourself in {}, review and accept that dialog there, \
+             answered; open the member's harness yourself in {}, review and accept that dialog there, \
              then run reopen again",
             r.folder.display()
         ),
         Err(e) => format!("the trust step failed: {e}"),
     };
     Err(close_new_tab(r.host, &place, &failed))
+}
+
+/// The plugin switches the member's newest `member.started` event recorded.
+/// An older event has none, which is an empty map.
+fn recorded_plugins(
+    ctx: &Ctx<'_>,
+    role: &Role,
+) -> Result<BTreeMap<String, bool>, teamwire_store::StoreError> {
+    let events = ctx
+        .store
+        .read(|tx| tx.events_of_role(role))?
+        .all_or_corrupt()?;
+    Ok(events
+        .into_iter()
+        .rev()
+        .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
+        .and_then(|e| serde_json::from_value(e.data.get("plugins")?.clone()).ok())
+        .unwrap_or_default())
 }
 
 /// Records a member's new place. It runs after its tab is up, so a failed

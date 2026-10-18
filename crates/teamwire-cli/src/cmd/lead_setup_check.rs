@@ -7,8 +7,8 @@
 use std::path::Path;
 
 use crate::wiring::{
-    ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state, shadowing_entries,
-    skill_state,
+    ClaudeConfig, CodexCommand, CodexPluginStatus, CodexSetup, McpEntry, McpState, SKILL_TEXT,
+    SkillState, edited_skill, mcp_state, shadowing_entries, skill_state,
 };
 
 /// One check's verdict and its detail.
@@ -30,6 +30,11 @@ pub(crate) struct LeadInputs<'a> {
     pub(crate) running_a_build: bool,
     /// The directory whose local and project scopes are checked.
     pub(crate) dir: &'a Path,
+    /// The Codex adapter, when `codex` is on PATH; without it Codex has no
+    /// check.
+    pub(crate) codex: Option<&'a CodexSetup>,
+    /// The state directory, which holds the Codex plugin's files.
+    pub(crate) home: &'a Path,
 }
 
 /// True when the binary sits under a `target/` directory: a cargo build,
@@ -115,6 +120,40 @@ fn shadow_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
     }
 }
 
+/// The command the Codex plugin runs, from the entry install would register:
+/// the same binary, and `--home` when the entry names one.
+fn codex_command(want: &McpEntry) -> CodexCommand {
+    let home = match want.args.as_slice() {
+        [flag, home, ..] if flag == "--home" => Some(Path::new(home).to_path_buf()),
+        _ => None,
+    };
+    CodexCommand {
+        bin: Path::new(&want.command).to_path_buf(),
+        home,
+    }
+}
+
+/// A missing plugin is fine: Codex is optional. A stale one is a warning.
+fn codex_check(inputs: &LeadInputs<'_>, codex: &CodexSetup, want: &McpEntry) -> Outcome {
+    const ADD: &str = "run `teamwire install --harness codex`";
+    let status = codex.plugin_status(
+        &codex_command(want),
+        SKILL_TEXT,
+        inputs.home,
+        !inputs.running_a_build,
+    );
+    match status {
+        Err(e) => Outcome::Warn(e.to_string()),
+        Ok(CodexPluginStatus::Missing) => {
+            Outcome::Pass(format!("not installed; to lead from Codex, {ADD}"))
+        }
+        Ok(CodexPluginStatus::Stale(problems)) => {
+            Outcome::Warn(format!("{}; {ADD}", problems.join("; ")))
+        }
+        Ok(CodexPluginStatus::Current) => Outcome::Pass("installed".to_owned()),
+    }
+}
+
 /// Each check's name and outcome. The leftover check does not need the
 /// entry, so it runs even when the entry cannot be worked out.
 pub(crate) fn run(inputs: &LeadInputs<'_>) -> Vec<(&'static str, Outcome)> {
@@ -124,6 +163,9 @@ pub(crate) fn run(inputs: &LeadInputs<'_>) -> Vec<(&'static str, Outcome)> {
             checks.push(("teamwire plugin", plugin_check(inputs, want)));
             checks.push(("old lead setup", leftover_check(inputs)));
             checks.push(("lead MCP server scope", shadow_check(inputs, want)));
+            if let Some(codex) = inputs.codex {
+                checks.push(("codex plugin", codex_check(inputs, codex, want)));
+            }
         }
         Err(e) => {
             checks.push(("teamwire plugin", Outcome::Fail(e.clone())));

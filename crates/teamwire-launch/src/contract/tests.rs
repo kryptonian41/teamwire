@@ -189,7 +189,16 @@ fn names_and_paths_are_filled_and_no_placeholder_is_left() {
 fn text_names_only_teamwire_commands() {
     for kind in MemberKind::ALL {
         let text = render(*kind, Some("true"), &["a/".to_owned()]);
-        for banned in ["team-msg", ".py", "python", "~/.claude", "herdr", "done/"] {
+        for banned in [
+            "team-msg",
+            ".py",
+            "python",
+            "~/.claude",
+            "herdr",
+            "done/",
+            "ToolSearch",
+            "Claude",
+        ] {
             assert!(!text.contains(banned), "{kind}: mentions {banned}");
         }
         assert!(text.contains("/opt/x/teamwire done --status done|blocked|failed"));

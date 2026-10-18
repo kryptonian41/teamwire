@@ -10,7 +10,7 @@ use teamwire_msg::{
     CallerEnv, RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged,
     send_with, watch_running,
 };
-use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
+use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
 
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
@@ -96,8 +96,12 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         });
         match sent {
             Ok(report) => {
-                let watching =
-                    (kind == MessageType::Reprompt).then(|| watch_state(watch_running(ctx)));
+                let watching = (kind == MessageType::Reprompt).then(|| {
+                    let reads = ctx
+                        .adapters(&Party::Lead)
+                        .map_or(true, |(h, _)| h.capabilities().reads_watch_lines);
+                    (watch_state(watch_running(ctx)), reads)
+                });
                 Outcome::Sent(Box::new(report), watching)
             }
             Err(e) => Outcome::Failed(e),
@@ -111,8 +115,8 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(Outcome::Failed(e)) => fail("send", &e.to_string(), error_code(&e)),
         Ok(Outcome::Sent(report, watching)) => {
             print_report(&team, &report);
-            if let Some(watching) = watching {
-                say(&watch_line(&team, &watching));
+            if let Some((watching, reads)) = watching {
+                say(&watch_line(&team, &watching, reads));
             }
             ExitCode::from(exit_of(&report))
         }
@@ -137,18 +141,25 @@ fn watch_state(lease: Result<Option<teamwire_core::Pid>, SendError>) -> Watch {
     }
 }
 
-fn watch_line(team: &TeamName, watching: &Watch) -> String {
+/// `reads_watch_lines` is the lead's harness capability of that name: a lead
+/// without it runs the watch in the background (ADR 0023).
+fn watch_line(team: &TeamName, watching: &Watch, reads_watch_lines: bool) -> String {
     match watching {
         Watch::Running(pid) => format!("a watch is running (pid {pid})\n"),
         Watch::NotRunning => {
-            format!("no watch is running: start one with `teamwire watch {team}`\n")
+            let command = if reads_watch_lines {
+                format!("teamwire watch {team}")
+            } else {
+                format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
+            };
+            format!("no watch is running: start one with `{command}`\n")
         }
         Watch::Unknown(why) => format!("could not tell whether a watch is running: {why}\n"),
     }
 }
 
 enum Outcome {
-    Sent(Box<SendReport>, Option<Watch>),
+    Sent(Box<SendReport>, Option<(Watch, bool)>),
     Failed(SendError),
     Unknown(String),
 }
@@ -236,13 +247,15 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
         role: std::env::var("TEAMWIRE_ROLE").ok(),
         token: member_token(),
         from,
+        hints: Vec::new(),
     }
 }
 
 /// The member token the process carries. Every command reads it here, so
-/// they agree on what counts as having one: set and valid UTF-8, even empty.
+/// they agree on what counts as having one: the variable, else the file
+/// `TEAMWIRE_TOKEN_FILE` names (ADR 0023 point 4).
 pub(crate) fn member_token() -> Option<String> {
-    std::env::var("TEAMWIRE_TOKEN").ok()
+    teamwire_msg::caller_token(|name| std::env::var(name).ok())
 }
 
 /// Whether the process runs inside a member's session. The rule is
@@ -449,14 +462,24 @@ mod tests {
         let unreadable = watch_state(Err(SendError::Store(StoreError::Corrupt(
             "bad lease row".to_owned(),
         ))));
-        let line = watch_line(&team(), &unreadable);
+        let line = watch_line(&team(), &unreadable, true);
         assert!(
             line.starts_with("could not tell whether a watch is running:"),
             "{line}"
         );
         assert!(line.contains("bad lease row"), "{line}");
         assert!(!line.contains("no watch is running"), "{line}");
-        let none = watch_line(&team(), &watch_state(Ok(None)));
+        let none = watch_line(&team(), &watch_state(Ok(None)), true);
         assert!(none.starts_with("no watch is running"), "{none}");
+        assert!(none.contains("`teamwire watch "), "{none}");
+    }
+
+    #[test]
+    fn a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background() {
+        let line = watch_line(&team(), &watch_state(Ok(None)), false);
+        assert!(
+            line.contains("`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`"),
+            "{line}"
+        );
     }
 }
