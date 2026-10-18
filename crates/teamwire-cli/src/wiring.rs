@@ -5,7 +5,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use teamwire_core::{HarnessId, HostId, NoHost, Platform, Registry, RegistryError};
+use teamwire_core::{HarnessId, HostId, NoHost, Pid, Platform, Registry, RegistryError};
+
+use crate::cmd::doctor::pick_host;
 use teamwire_harness_claude::ClaudeCode;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
 use teamwire_host_herdr::Herdr;
@@ -119,12 +121,13 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
     registry.add_host(Arc::new(NoHost))?;
+    let lead_host = lead_host(env, &|pid| platform.parent_of(pid));
     Ok(Wiring {
         registry,
         platform,
         clock: SystemClock,
         lead_harness: lead_harness(env),
-        lead_host: lead_host(env),
+        lead_host,
         claude,
         codex,
     })
@@ -175,17 +178,8 @@ fn tmux_host(platform: Arc<dyn Platform>, env: &WiringEnv) -> Tmux {
     }
 }
 
-/// `herdr` inside a herdr pane (`HERDR_ENV=1`), else `tmux` inside a tmux
-/// client (`TMUX` set), otherwise `none`. herdr wins when both are set,
-/// because a herdr pane can itself be started from a tmux session.
-fn lead_host(env: &WiringEnv) -> HostId {
-    if env.herdr_env.as_deref() == Some("1") {
-        HostId::from_static(Herdr::ID)
-    } else if env.tmux.as_deref().is_some_and(|t| !t.is_empty()) {
-        HostId::from_static(Tmux::ID)
-    } else {
-        HostId::from_static(NoHost::ID)
-    }
+fn lead_host(env: &WiringEnv, parent_of: &dyn Fn(Pid) -> Option<(Pid, String)>) -> HostId {
+    HostId::from_static(pick_host(env.herdr_env.as_deref(), env.tmux.as_deref(), parent_of).id)
 }
 
 /// Claude's files: `TEAMWIRE_CLAUDE_DIR`, else `CLAUDE_CONFIG_DIR`, holds
@@ -309,7 +303,11 @@ mod tests {
     #[test]
     fn herdr_wins_over_tmux_and_an_empty_tmux_is_not_tmux() {
         assert_eq!(
-            lead_of(&env_in_tmux(Some("1"), Some("/tmp/tmux-1/default,42,0"))),
+            lead_host(
+                &env_in_tmux(Some("1"), Some("/tmp/tmux-1/default,42,0")),
+                &|_| None
+            )
+            .as_str(),
             "herdr"
         );
         assert_eq!(lead_of(&env_in_tmux(None, Some(""))), "none");

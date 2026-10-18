@@ -437,3 +437,36 @@ fn a_host_that_joins_two_variables_gets_the_joined_place() {
         .set_env(Pid::new(100), "FAKE_SOCKET", "/tmp/sock");
     assert_eq!(locate(&rig.ctx(), &Party::Lead).unwrap(), place);
 }
+
+#[test]
+fn a_live_process_the_host_shows_no_session_for_names_the_recovery() {
+    let mut rig = Rig::new();
+    let member = rig.add_member("api", "fake", "member-1");
+    let place = rig.healthy("member-1", 200);
+    // A stopped and resumed `claude`: the host still has the pane, with no session.
+    rig.host.set_occupant(
+        &place,
+        Occupant {
+            session: None,
+            pids: vec![],
+        },
+    );
+    let err = locate(&rig.ctx(), &member).unwrap_err();
+    assert_eq!(err.code, DeliveryErrorCode::HostNoSession);
+    assert_eq!(
+        err.detail,
+        "the member's session still runs (pid 200) but the host shows no session at any place, for example after the process was stopped and resumed; end that process, then run teamwire reopen alpha --role api"
+    );
+}
+
+#[test]
+fn a_dead_process_keeps_the_plain_no_live_process_detail() {
+    let mut rig = Rig::new();
+    let member = rig.add_member("api", "fake", "member-1");
+    rig.healthy("member-1", 200);
+    rig.harness
+        .add_session(sid("member-1"), vec![], teamwire_core::Liveness::Dead);
+    let err = locate(&rig.ctx(), &member).unwrap_err();
+    assert_eq!(err.code, DeliveryErrorCode::NoLiveProcess);
+    assert!(!err.detail.contains("teamwire reopen"), "{}", err.detail);
+}
