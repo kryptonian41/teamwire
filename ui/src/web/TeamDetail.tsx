@@ -204,7 +204,7 @@ function MemberTable({ team }: { team: TeamModel }) {
                 <td>
                   <a href={href.member(name, m.role)}>{m.role}</a>
                 </td>
-                <td>{m.title}</td>
+                <td className="title">{m.title}</td>
                 <td>{m.kind ?? "?"}</td>
                 <td>
                   <StateChip word={m.state} category={m.category} />
