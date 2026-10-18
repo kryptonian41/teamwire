@@ -344,8 +344,8 @@ Check three things first:
   inside the pane you lead from, because its `.worktrees/` and host checks
   read where it runs. A `warn` line also makes it exit 2. Read each one, but a
   warning alone is no reason to stop. A `host none` line shows `ok`, yet
-  launch refuses with `no_host`. The warning `installed for state directory
-  <A>; this run uses <B>` is harmless: `teamwire install` would repoint it.
+  launch refuses with `no_host`. `installed for state directory <A>; this run
+  uses <B>` is harmless, and install is not the fix.
 - Claude Code trusts each member's folder. Launch answers the plain
   folder-trust prompt itself. It refuses the stronger prompt that also grants
   the folder's own settings, so open Claude Code in that repository yourself,
@@ -358,15 +358,14 @@ teamwire launch --spec team.json
 ```
 
 Launch validates the whole spec first, so a spec that fails starts no member
-and exits 1. So does a member whose harness program does not run
-(`harness <id> is not on PATH`), even with `--dry-run`. Then it prints one
-line per member (`started`, `refused: <reason>`, `failed: <reason>`) and the
-watch command. When none started, a last line says `no member started; fix
-the cause and run teamwire launch --add --spec <spec>, or teamwire close
-<team>`. The team stays open. A failure
-while running, such as a host timeout or a failed setup, stops only that
-member. Launch tries every later member, records the team after each one,
-and exits 2, so re-add only the members that did not start. Launch also
+and exits 1. So does a member whose harness program does not run (`harness <id>
+is not on PATH`), even with `--dry-run`. Then it prints one line per member
+(`started`, `refused: <reason>`, `failed: <reason>`) and the watch command.
+When none started, a last line says `no member started; fix the cause and run
+teamwire launch --add --spec <spec>, or teamwire close <team>`. The team stays
+open. A failure while running, such as a host timeout or a failed setup, stops
+only that member. Launch tries every later member, records the team after each
+one, and exits 2, so re-add only the members that did not start. Launch also
 starts or reuses a sleep hold for your session, so the team survives idle
 sleep, and says so when it cannot find your process. Closing the lid still
 sleeps a Mac.
@@ -530,9 +529,10 @@ sessions were closed. It resumes the lead and each member whose session is
 gone, each in a new tab, and leaves running sessions alone. `--role R`
 reopens only that member and leaves the lead alone. `--dry-run` prints the
 plan and opens nothing. Reopen types nothing, so a member killed mid-turn
-sits idle until you send it a `reprompt` or a `note`. A send that fails with
-`host_no_session` means the member's process was stopped and resumed, and the
-host shows no session for it. End that process, then run
+sits idle until you send it a `reprompt` or a `note`. `host_no_session` with
+"the session still runs (pid N)" follows a stop and resume of the member's
+process, or a herdr without its session hook (`teamwire doctor` checks it).
+After a stop and resume, end that process, then run
 `teamwire reopen <team> --role <role>`.
 
 ### Changing the team while it runs
@@ -695,9 +695,9 @@ becomes one tree that passes the full gate.
    names required checks that never ran. After 3 polls with no answer from
    `gh`, it prints `UNREADABLE` once per outage. A pull request or repo that
    does not exist prints `NOT-FOUND` and counts as done and failed. It exits
-   when every pull request is done, with code 1 when a check failed or was
-   `NOT-FOUND`, or when a required check never reported and the merge state is
-   not clean.
+   when every pull request is done, with code 1 when a check failed, a pull
+   request was `NOT-FOUND`, or a required check never reported and the merge
+   state is not clean.
 8. **Run one more round on the pull request.** Send each owner its share of
    the bot and CI comments as one more reprompt. Keep the owners open until
    this round is done.
@@ -755,5 +755,5 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 
 ## Reference
 
-The file `reference.md`, next to this one, holds "Setting up a machine", "How
-it fits together", "Watch lines" and "Other commands".
+`reference.md`, next to this file, holds "Setting up a machine", "How it fits
+together", "Watch lines" and "Other commands".
