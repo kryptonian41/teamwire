@@ -304,3 +304,25 @@ fn a_relative_home_reaches_members_as_an_absolute_path() {
         );
     }
 }
+
+#[test]
+fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_created() {
+    let rig = Rig::new();
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "cx", "title": "Codex work", "mode": "pane", "cwd": rig.work.path(),
+         "task": "look around", "harness": "codex"}]});
+    let file = rig.spec_file(&spec);
+    for extra in [&["--dry-run"][..], &[][..]] {
+        let mut args = extra.to_vec();
+        args.extend(["--spec", file.to_str().unwrap()]);
+        let out = rig.launch(&args, None, false);
+        assert_eq!(out.status.code(), Some(1), "{extra:?}: {}", text(&out.stdout));
+        let err = text(&out.stderr);
+        assert!(
+            err.contains("refused: member cx: harness codex is not on PATH"),
+            "{err}"
+        );
+        assert!(!text(&out.stdout).contains("would launch"));
+        assert!(rig.home_is_empty(), "{extra:?}: no team directory");
+    }
+}
