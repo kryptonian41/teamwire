@@ -60,7 +60,7 @@ fn plugin_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
         Ok(_) => match inputs.claude.plugin_other_home(want) {
             Ok(Some(theirs)) => Outcome::Warn(format!(
                 "installed for state directory {}; this run uses {}",
-                theirs.as_deref().unwrap_or("the default (~/.teamwire)"),
+                theirs.as_deref().unwrap_or("~/.teamwire (the default)"),
                 inputs.home.display()
             )),
             Err(e) => Outcome::Fail(e.to_string()),
