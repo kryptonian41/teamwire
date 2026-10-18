@@ -196,3 +196,166 @@ fn an_export_endpoint_does_not_change_the_output() {
         "[teamwire:alpha] WATCHING 1 members | [teamwire:alpha] TEAM-COMPLETE 1/1 done\n"
     );
 }
+
+/// A team whose lead may be a live `fake-claude` session in a `fake-herdr`
+/// pane, and one started member with no session yet.
+struct LeadRig {
+    herdr: teamwire_fakes::FakeHerdrEnv,
+    home: teamwire_fakes::TestHome,
+}
+
+impl LeadRig {
+    fn new(lead_live: bool) -> Self {
+        use teamwire_core::{
+            HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Role, SessionId,
+            SessionKind, TeamName,
+        };
+        let mut herdr = teamwire_fakes::FakeHerdrEnv::new().unwrap();
+        herdr
+            .set_script(&teamwire_fakes::ClaudeScript::default())
+            .unwrap();
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        if lead_live {
+            let ws = herdr
+                .run(&[
+                    "workspace",
+                    "create",
+                    "--cwd",
+                    "/tmp",
+                    "--label",
+                    "lead",
+                    "--no-focus",
+                ])
+                .unwrap();
+            let pane = ws
+                .result()
+                .and_then(|r| r.pointer("/root_pane/pane_id")?.as_str().map(str::to_owned))
+                .unwrap();
+            let settings = herdr
+                .write_file("lead-settings.json", r#"{"env":{},"hooks":{}}"#)
+                .unwrap();
+            let started = herdr
+                .run(&[
+                    "agent",
+                    "start",
+                    "lead-agent",
+                    "--kind",
+                    "claude",
+                    "--pane",
+                    &pane,
+                    "--timeout",
+                    "20000",
+                    "--",
+                    "-n",
+                    "lead-agent",
+                    "--session-id",
+                    "lead-1",
+                    "--settings",
+                    &settings.display().to_string(),
+                ])
+                .unwrap();
+            assert_eq!(started.code, Some(0), "{started:?}");
+        }
+        let at = teamwire_platform::SystemClock.now();
+        let mut store =
+            teamwire_store::Store::open(home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
+        store
+            .write(|tx| {
+                tx.create_team(
+                    at,
+                    &teamwire_store::NewTeam {
+                        name: TeamName::parse("alpha").unwrap(),
+                        title: "Alpha".to_owned(),
+                        lead_harness: HarnessId::from_static("claude-code"),
+                        lead_host: HostId::from_static("herdr"),
+                        lead_route: LeadRoute::Sink,
+                        lead_session: Some((
+                            SessionId::parse("lead-1").unwrap(),
+                            SessionKind::Interactive,
+                        )),
+                    },
+                )?;
+                let api = Role::parse("api").unwrap();
+                tx.insert_member(
+                    at,
+                    &teamwire_store::NewMember {
+                        role: api.clone(),
+                        title: "api".to_owned(),
+                        kind: MemberKind::Implementer,
+                        mode: Mode::Pane,
+                        harness: HarnessId::from_static("claude-code"),
+                        host: HostId::from_static("herdr"),
+                        cwd: "/tmp".into(),
+                        repo: None,
+                        branch: None,
+                        base: None,
+                        base_sha: None,
+                        check: None,
+                        owns: vec![],
+                        deadline_s: 1_000_000_000,
+                    },
+                )?;
+                tx.set_member_state(at, &api, MemberState::Started, &serde_json::json!({}))
+            })
+            .unwrap();
+        Self { herdr, home }
+    }
+
+    fn watch(&self, args: &[&str]) -> Run {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(["watch", "alpha", "--once"])
+            .args(args)
+            .env_clear()
+            .envs(self.herdr.env())
+            .env("TEAMWIRE_HOME", self.home.path())
+            .env("HERDR_ENV", "1")
+            .output()
+            .unwrap();
+        Run {
+            code: out.status.code().unwrap(),
+            out: String::from_utf8(out.stdout).unwrap(),
+            err: String::from_utf8(out.stderr).unwrap(),
+        }
+    }
+
+    /// The arguments of every `agent prompt` call, joined.
+    fn typed(&self) -> Vec<String> {
+        self.herdr
+            .calls()
+            .into_iter()
+            .filter(|c| c.command() == "agent prompt")
+            .map(|c| c.argv.join(" "))
+            .collect()
+    }
+}
+
+#[test]
+fn deliver_types_each_printed_line_into_the_leads_pane() {
+    let rig = LeadRig::new(true);
+    let run = rig.watch(&["--deliver"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out, "[teamwire:alpha] WATCHING 1 members\n");
+    let typed = rig.typed();
+    assert_eq!(typed.len(), 1, "{typed:?}");
+    assert!(
+        typed[0].contains("[teamwire:alpha] WATCHING 1 members"),
+        "{typed:?}"
+    );
+}
+
+#[test]
+fn without_deliver_nothing_is_typed() {
+    let rig = LeadRig::new(true);
+    let run = rig.watch(&[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(rig.typed().is_empty());
+}
+
+#[test]
+fn a_line_that_cannot_be_delivered_is_still_printed() {
+    let rig = LeadRig::new(false);
+    let run = rig.watch(&["--deliver"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out, "[teamwire:alpha] WATCHING 1 members\n");
+    assert!(rig.typed().is_empty());
+}
