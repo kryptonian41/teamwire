@@ -539,3 +539,42 @@ fn uninstall_removes_the_codex_setup_it_finds_and_ignores_it_without_codex() {
     let again = bed.teamwire_codex(&["uninstall"], &[]);
     assert_eq!(again.out, "no lead setup to remove\n");
 }
+
+#[test]
+fn an_old_codex_does_not_block_the_claude_uninstall() {
+    let bed = Bed::new();
+    assert_eq!(bed.teamwire(&["install"], &[]).code, 0);
+    // A codex that runs `--version` but has no `plugin` command.
+    let old = TestHome::new().unwrap();
+    let script = "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo codex-cli 0.39.0; exit 0; fi\necho 'unrecognized subcommand' >&2\nexit 2\n";
+    let path = old.path().join("codex");
+    std::fs::write(&path, script).unwrap();
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let on_path = format!("{}:{}", old.path().display(), bed.bins.path().display());
+    for dry in [true, false] {
+        let args: &[&str] = if dry {
+            &["uninstall", "--dry-run"]
+        } else {
+            &["uninstall"]
+        };
+        let run = bed.teamwire(args, &[("PATH", on_path.as_str())]);
+        assert_eq!(run.code, 0, "{}", run.err);
+        assert!(run.err.contains("skipped the Codex part"), "{}", run.err);
+        assert!(
+            run.out.contains("the plugin `teamwire@teamwire`"),
+            "{}",
+            run.out
+        );
+    }
+    assert!(bed.installed_root().is_none());
+    // Asking for Codex by name still fails clearly.
+    let run = bed.teamwire(
+        &["install", "--harness", "codex"],
+        &[("PATH", on_path.as_str())],
+    );
+    assert_eq!(run.code, 1, "{}", run.err);
+    assert!(run.err.contains("codex plugin list --json"), "{}", run.err);
+}
