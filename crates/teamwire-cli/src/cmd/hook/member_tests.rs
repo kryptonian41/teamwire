@@ -266,3 +266,14 @@ fn the_lead_stop_hook_with_an_unknown_harness_says_nothing() {
     let bed = bed(None);
     assert_eq!(lead_stop(&bed, Some("no-such-harness")), None);
 }
+
+#[test]
+fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
+    let mut bed = bed(None);
+    bed.wiring.registry = Registry::new();
+    assert!(lead_reads_watch_lines(
+        bed.home.path(),
+        &bed.team,
+        &bed.wiring
+    ));
+}
