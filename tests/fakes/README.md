@@ -390,8 +390,9 @@ herdr:
 - A real pane runs the login shell environment plus `HERDR_*` variables. The
   fake starts agents with a **cleared** environment on purpose: stricter, so a
   member that relies on inherited variables fails in a test.
-- The fake runs only `--kind claude` (`fake-claude`). Real herdr detects and
-  starts codex, gemini and others.
+- The fake runs `--kind claude` (`fake-claude`) and `--kind codex` (a `sh`
+  script that draws a Codex composer and ignores its arguments). Real herdr
+  detects and starts gemini and others too.
 - `agent start` has no shell in between: the agent is started directly with
   the arguments after `--`. Real herdr types a command into the pane's shell
   and rejects arguments it cannot quote (the fake rejects only a newline).
