@@ -329,11 +329,14 @@ fn shown_commands(skill: &str) -> Vec<(String, String)> {
 
 #[test]
 fn the_skill_names_only_commands_and_tools_that_exist() {
+    // A command named only in the reference file is checked too.
     let skill = example("skills/teamwire/SKILL.md");
+    let reference = example("skills/teamwire/reference.md");
     assert!(
         skill.starts_with("---\nname: teamwire\ndescription: "),
         "the front matter names the skill"
     );
+    let skill = format!("{skill}\n{reference}");
 
     let commands = subcommands();
     assert!(commands.iter().any(|c| c == "launch"), "{commands:?}");

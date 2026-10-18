@@ -11,6 +11,10 @@ use super::LeadSetupError;
 /// matches its own commands.
 pub const SKILL_TEXT: &str = include_str!("../../../../examples/skills/teamwire/SKILL.md");
 
+/// The sections `SKILL.md` leaves to a second file, written beside it in the
+/// plugin.
+pub const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/reference.md");
+
 /// The frontmatter key of the stamp. It sits under `metadata`, the map the
 /// skill format leaves for a tool's own keys.
 const STAMP_KEY: &str = "  teamwire-sha256: ";

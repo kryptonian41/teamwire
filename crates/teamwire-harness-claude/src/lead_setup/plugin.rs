@@ -11,6 +11,7 @@ use teamwire_core::Command;
 
 use super::mcp::{McpEntry, claude};
 use super::skill;
+use super::skill::REFERENCE_TEXT;
 use super::{LeadSetupError, SKILL_TEXT};
 use crate::ClaudeConfig;
 use crate::launch::shell_word;
@@ -48,6 +49,12 @@ impl PluginFiles {
     /// The files for the marketplace at `dir`, running `want`'s binary with
     /// its `--home`. Fails when the compiled-in skill has no frontmatter.
     pub(crate) fn render(dir: &Path, want: &McpEntry) -> Result<Self, String> {
+        Self::render_with(dir, want, REFERENCE_TEXT)
+    }
+
+    /// `render` with the text of `reference.md` given, so a test can change it
+    /// alone.
+    fn render_with(dir: &Path, want: &McpEntry, reference: &str) -> Result<Self, String> {
         let skill = skill::stamp(SKILL_TEXT)
             .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut hook_words = vec![shell_word(&want.command)];
@@ -70,6 +77,10 @@ impl PluginFiles {
                 }]}]}})),
             ),
             (format!("{PLUGIN_DIR}/skills/teamwire/SKILL.md"), skill),
+            (
+                format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
+                reference.to_owned(),
+            ),
         ];
         // The version changes with the content, so `claude plugin update`
         // sees a new binary or skill as a new version and refreshes its copy.
@@ -264,7 +275,7 @@ mod tests {
     }
 
     #[test]
-    fn the_five_files_name_the_binary_and_the_hook() {
+    fn the_six_files_name_the_binary_and_the_hook() {
         let files = PluginFiles::render(Path::new("/h/claude-plugin"), &want(None)).unwrap();
         let paths: Vec<_> = files
             .files
@@ -279,6 +290,7 @@ mod tests {
                 "teamwire/.mcp.json",
                 "teamwire/hooks/hooks.json",
                 "teamwire/skills/teamwire/SKILL.md",
+                "teamwire/skills/teamwire/reference.md",
             ]
         );
         let market = json_of(&files, ".claude-plugin/marketplace.json");
@@ -298,6 +310,21 @@ mod tests {
                 "timeout": 10}]}]}})
         );
         assert!(file(&files, "teamwire/skills/teamwire/SKILL.md").contains("teamwire-sha256: "));
+    }
+
+    #[test]
+    fn the_reference_file_is_the_compiled_in_text_and_changes_the_version() {
+        let version = |reference: &str| {
+            let files = PluginFiles::render_with(Path::new("/x"), &want(None), reference).unwrap();
+            let manifest = json_of(&files, "teamwire/.claude-plugin/plugin.json");
+            let text = file(&files, "teamwire/skills/teamwire/reference.md").to_owned();
+            (manifest["version"].as_str().unwrap().to_owned(), text)
+        };
+        let (a, text) = version(REFERENCE_TEXT);
+        assert_eq!(text, REFERENCE_TEXT);
+        assert!(text.contains("## Watch lines"));
+        let (b, _) = version(&format!("{REFERENCE_TEXT}x"));
+        assert_ne!(a, b);
     }
 
     #[test]
