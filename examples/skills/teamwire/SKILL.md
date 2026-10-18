@@ -337,13 +337,15 @@ amended files as outside `owns`.
 Check three things first:
 
 - You run in a terminal pane of your own, in herdr (`HERDR_ENV=1`, picked
-  first) or in tmux (`TMUX` set). Members open beside you. Launch refuses a
-  background session, because reports would be typed into another session.
+  first) or in tmux (`TMUX` set). Members open beside you, or, with no tmux
+  server running, in a detached session: `tmux attach -t teamwire`. Launch
+  refuses a background session, because reports would go to another session.
 - `teamwire doctor` shows no `FAIL` line. Run it from the target repository,
   inside the pane you lead from, because its `.worktrees/` and host checks
   read where it runs. A `warn` line also makes it exit 2. Read each one, but a
   warning alone is no reason to stop. A `host none` line shows `ok`, yet
-  launch refuses with `no_host`.
+  launch refuses with `no_host`. The warning `installed for state directory
+  <A>; this run uses <B>` is harmless: `teamwire install` would repoint it.
 - Claude Code trusts each member's folder. Launch answers the plain
   folder-trust prompt itself. It refuses the stronger prompt that also grants
   the folder's own settings, so open Claude Code in that repository yourself,
@@ -356,8 +358,12 @@ teamwire launch --spec team.json
 ```
 
 Launch validates the whole spec first, so a spec that fails starts no member
-and exits 1. Then it prints one line per member (`started`,
-`refused: <reason>`, `failed: <reason>`) and the watch command. A failure
+and exits 1. So does a member whose harness program does not run
+(`harness <id> is not on PATH`), even with `--dry-run`. Then it prints one
+line per member (`started`, `refused: <reason>`, `failed: <reason>`) and the
+watch command. When none started, a last line says `no member started; fix
+the cause and run teamwire launch --add --spec <spec>, or teamwire close
+<team>`. The team stays open. A failure
 while running, such as a host timeout or a failed setup, stops only that
 member. Launch tries every later member, records the team after each one,
 and exits 2, so re-add only the members that did not start. Launch also
@@ -478,8 +484,8 @@ acted on, or a question answered by a guess, is where a bug between members
 hides.
 
 `send` also refuses a notice without a commit, a message over its limit, a
-`reprompt` or `note` to another team's agent, a `reprompt` to a member that is
-not running, more than 5 messages to one recipient in one minute, the same
+`reprompt` or `note` to another team's agent, a `reprompt` to a member whose
+launch failed or that was removed, more than 5 messages to one recipient in one minute, the same
 text to the same recipient within 10 minutes, a message to yourself or to a
 removed member, and a message to a team that is closing, closed or unknown.
 
@@ -524,7 +530,10 @@ sessions were closed. It resumes the lead and each member whose session is
 gone, each in a new tab, and leaves running sessions alone. `--role R`
 reopens only that member and leaves the lead alone. `--dry-run` prints the
 plan and opens nothing. Reopen types nothing, so a member killed mid-turn
-sits idle until you send it a `reprompt` or a `note`.
+sits idle until you send it a `reprompt` or a `note`. A send that fails with
+`host_no_session` means the member's process was stopped and resumed, and the
+host shows no session for it. End that process, then run
+`teamwire reopen <team> --role <role>`.
 
 ### Changing the team while it runs
 
@@ -683,9 +692,12 @@ becomes one tree that passes the full gate.
    when that happened first. A `DONE` line that ends with
    `(merge state: ...)` names a state other than clean, such as `BLOCKED`, so
    read it before you merge. One that adds `(required, never reported: ...)`
-   names required checks that never ran. It exits when every pull request is
-   done, with code 1 when a check failed, or when a required check never
-   reported and the merge state is not clean.
+   names required checks that never ran. After 3 polls with no answer from
+   `gh`, it prints `UNREADABLE` once per outage. A pull request or repo that
+   does not exist prints `NOT-FOUND` and counts as done and failed. It exits
+   when every pull request is done, with code 1 when a check failed or was
+   `NOT-FOUND`, or when a required check never reported and the merge state is
+   not clean.
 8. **Run one more round on the pull request.** Send each owner its share of
    the bot and CI comments as one more reprompt. Keep the owners open until
    this round is done.
@@ -702,11 +714,10 @@ Close when the plan is finished and integration is done, or tell the user why
 you are not. `TEAM-COMPLETE` alone is not that signal. Closing after wave 1
 would archive the team before wave 2 could join it.
 
-Read each member's token use with `teamwire metrics <team>` before you close,
-because that form reads only a team that still has its state directory.
-After close, `teamwire metrics` with no team name still shows the team's
-counts, read from `$TEAMWIRE_HOME/archive/`. An archive put elsewhere with
-`--archive-to` is not read. The counter `teamwire.member.tokens` has the
+Read each member's token use with `teamwire metrics <team>`. After close,
+that form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but
+an archive put elsewhere with `--archive-to` is not read, so read it before
+you close in that case. The counter `teamwire.member.tokens` has the
 labels `team`, `role`, `kind`, `model` and `type` (`input`, `output`,
 `cache_read`, `cache_creation`). A team whose results reach you as
 `COMPLETED` watch lines, because your host cannot type into your pane,
@@ -744,6 +755,5 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 
 ## Reference
 
-The file `reference.md`, next to this one, holds four sections: "Setting up a
-machine", "How it fits together", "Watch lines" and "Other commands". Open it
-when you need one of them.
+The file `reference.md`, next to this one, holds "Setting up a machine", "How
+it fits together", "Watch lines" and "Other commands".
