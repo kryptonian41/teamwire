@@ -17,6 +17,9 @@ mod hook;
 mod launch;
 pub mod lead_setup;
 mod screen;
+mod startup;
+
+pub use startup::StartupPoll;
 
 use std::fmt;
 use std::path::PathBuf;
@@ -44,13 +47,25 @@ pub struct CodexConfig {
 pub struct CodexCli {
     platform: Arc<dyn Platform>,
     config: CodexConfig,
+    startup_poll: StartupPoll,
 }
 
 impl CodexCli {
     pub const ID: &'static str = "codex";
 
     pub fn new(platform: Arc<dyn Platform>, config: CodexConfig) -> Self {
-        Self { platform, config }
+        Self {
+            platform,
+            config,
+            startup_poll: StartupPoll::default(),
+        }
+    }
+
+    /// How long `answer_startup` waits for the composer or a dialog.
+    #[must_use]
+    pub fn with_startup_poll(mut self, poll: StartupPoll) -> Self {
+        self.startup_poll = poll;
+        self
     }
 
     pub fn config(&self) -> &CodexConfig {
@@ -132,11 +147,11 @@ impl Harness for CodexCli {
 
     fn answer_startup(
         &self,
-        _host: &dyn Host,
-        _place: &Place,
-        _policy: TrustPolicy,
+        host: &dyn Host,
+        place: &Place,
+        policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
-        Ok(StartupOutcome::NoDialog)
+        startup::answer_startup(host, place, policy, self.startup_poll)
     }
 
     fn otel_env(

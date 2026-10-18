@@ -74,7 +74,7 @@ pub(crate) fn last_pointer_text(screen: &str) -> Option<String> {
 
 /// A selected dialog choice, such as `› 1. Yes, proceed (y)`. The composer's
 /// own pointer line never starts with a number and a dot.
-fn is_selected_option(line: &str) -> bool {
+pub(crate) fn is_selected_option(line: &str) -> bool {
     let Some(rest) = pointer_rest(line) else {
         return false;
     };
