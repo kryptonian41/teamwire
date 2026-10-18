@@ -90,6 +90,8 @@ body {
 }
 ::selection { background: var(--accent); color: var(--accent-ink); }
 a { color: var(--accent); text-underline-offset: 0.18em; text-decoration-thickness: 0.07em; }
+/* Hover thickens the underline; a press dims the link while it is held. */
+a:hover { text-decoration-thickness: 0.14em; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* Real code only: paths, commands, branch names, CLI text. */
 code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); } /* taste-skill-ignore */
@@ -117,6 +119,7 @@ main:focus { outline: none; }
   max-width: 1240px; margin: 0 auto; padding: 0 var(--s3);
 }
 .top-in { display: flex; align-items: center; gap: var(--s4); min-height: 56px; flex-wrap: wrap; }
+.brand:hover { color: var(--accent); }
 .brand {
   font-size: var(--t-lead); font-weight: 650; letter-spacing: -0.02em;
   text-decoration: none; color: var(--ink);
@@ -128,6 +131,7 @@ main:focus { outline: none; }
 }
 .top nav a:hover { color: var(--ink); }
 .top nav a[aria-current] { color: var(--ink); background: var(--surface-2); }
+.top nav a[aria-current]:hover { background: color-mix(in srgb, var(--surface-2), var(--ink) 8%); }
 
 /* The connection line: quiet while all is well, a full tinted field when not. */
 .banner { font-size: var(--t-small); }
@@ -222,7 +226,7 @@ a.team:hover { background: var(--surface-2); }
 
 /* Team page head */
 .crumbs { margin: 0 0 var(--s3); font-size: var(--t-small); }
-.crumbs a { text-decoration: none; font-weight: 500; }
+.crumbs a { display: inline-block; text-decoration: none; font-weight: 500; }
 .crumbs a:hover { text-decoration: underline; }
 .page-head { display: grid; gap: var(--s2); }
 .page-head .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: 0; color: var(--muted); }
@@ -279,6 +283,7 @@ pre.text {
   background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-align: left;
   text-decoration: underline; text-underline-offset: 0.18em; text-decoration-thickness: 0.07em;
 }
+.link-btn:hover { text-decoration-thickness: 0.14em; }
 .link-btn[aria-expanded="true"] { color: var(--ink); text-decoration: none; font-weight: 500; }
 
 /* Drawer: the one thing that floats, so the one thing with a shadow. */
@@ -333,13 +338,16 @@ pre.text {
 
 details { margin-top: var(--s5); }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-lead); margin-bottom: var(--s3); }
+summary:hover { color: var(--accent); }
 
 /* Motion: feedback only, transform and opacity, 200 ms at most. */
-.btn, .tabs button, .top nav a, .link-btn, a.team, .skip, .crumbs a {
+a, summary, tr.clickable, .btn, .tabs button, .link-btn, .skip {
   transition: transform 120ms var(--ease), opacity 120ms var(--ease);
 }
 .btn:active, .tabs button:active, .top nav a:active, .link-btn:active, .crumbs a:active { transform: scale(.97); }
 a.team:active, tr.clickable:active { transform: scale(.995); }
+/* Inline links cannot scale, so they dim while pressed instead. */
+a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7; }
 .drawer { animation: slide-in 200ms var(--ease); }
 .scrim { animation: fade-in 200ms var(--ease); }
 @keyframes slide-in { from { transform: translateX(32px); opacity: 0; } }
