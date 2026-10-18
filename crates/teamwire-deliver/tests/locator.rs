@@ -455,7 +455,30 @@ fn a_live_process_the_host_shows_no_session_for_names_the_recovery() {
     assert_eq!(err.code, DeliveryErrorCode::HostNoSession);
     assert_eq!(
         err.detail,
-        "the member's session still runs (pid 200) but the host shows no session at any place, for example after the process was stopped and resumed; end that process, then run teamwire reopen alpha --role api"
+        "place p1 holds nothing; the session still runs (pid 200) but the host shows it at no place. This follows a stop and resume of the process, or a herdr without its session hook (run teamwire doctor). After a stop and resume, end that process, then run teamwire reopen alpha --role api"
+    );
+    // The lead's variant keeps the host's detail and ends differently.
+    let mut rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    rig.host.set_occupant(
+        &place,
+        Occupant {
+            session: None,
+            pids: vec![],
+        },
+    );
+    let err = locate(&rig.ctx(), &Party::Lead).unwrap_err();
+    assert!(
+        err.detail
+            .starts_with("place p1 holds nothing; the session still runs (pid 100)"),
+        "{}",
+        err.detail
+    );
+    assert!(
+        err.detail
+            .ends_with("After a stop and resume, end that process and start the lead again"),
+        "{}",
+        err.detail
     );
 }
 
