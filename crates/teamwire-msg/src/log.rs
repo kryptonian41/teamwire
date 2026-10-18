@@ -1,6 +1,6 @@
 //! `log`: every message with each recipient's delivery state.
 
-use teamwire_core::{Actor, Message, Recipient, one_line};
+use teamwire_core::{Actor, Message, NameError, Recipient, TeamName, one_line};
 use teamwire_store::{Ctx, MessageFilter};
 
 use crate::attempt::report_of;
@@ -8,6 +8,13 @@ use crate::{LogFilter, LogRow, RecipientReport, SendError};
 
 /// The longest excerpt a row carries.
 const EXCERPT_CHARS: usize = 300;
+
+/// The `--role` address as `send --to` reads it, with a name that points back
+/// at `own` turned into the local one, so `lead@alpha` in team `alpha` is `lead`.
+pub fn log_party(text: &str, own: &TeamName) -> Result<Actor, NameError> {
+    let local = Recipient::parse(text)?.local_to(own);
+    Actor::parse(local.as_str())
+}
 
 /// The messages the viewer may see, oldest first. A member sees only
 /// messages it sent or received; the lead sees all. `role` keeps only

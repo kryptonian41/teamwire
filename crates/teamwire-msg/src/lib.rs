@@ -36,7 +36,7 @@ use thiserror::Error;
 pub use directory::{TeamEntry, describe, roster_of, teams};
 pub use inbox::{ack, inbox};
 pub use lead::{AdoptReport, adopt_lead};
-pub use log::log;
+pub use log::{log, log_party};
 pub use prove::{prove_actor, token_hash};
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};

@@ -247,6 +247,24 @@ async fn log_accepts_the_lead_and_another_teams_agent_as_the_role() {
 }
 
 #[tokio::test]
+async fn log_reads_an_address_that_names_the_own_team_as_the_local_one() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Investigator);
+    rig.add_member("web", MemberKind::Implementer);
+    let api = rig.member_client("api", &token_of("api")).await;
+    call(
+        &api,
+        "team_send",
+        json!({"to": ["web"], "type": "finding", "text": "between api and web"}),
+    )
+    .await;
+    for role in ["web", "web@alpha"] {
+        let result = call(&api, "team_log", json!({"role": role})).await;
+        assert_eq!(ok(&result)["messages"][0]["display_id"], "m001", "{role}");
+    }
+}
+
+#[tokio::test]
 async fn ack_sorts_ids_into_acked_already_and_unknown() {
     let (_rig, api, web) = two_members().await;
     call(
