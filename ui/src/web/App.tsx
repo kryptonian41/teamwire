@@ -35,6 +35,14 @@ export function App({ client }: { client: ApiClient }) {
       <header className="top">
         <div className="top-in">
           <a className="brand" href={href.overview()}>
+            {/* The lead in the accent, wired to three members: docs/assets/teamwire-mark.svg. */}
+            <svg className="mark" viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" focusable="false">
+              <path d="M16 16 L6 7 M16 16 L27 9 M16 16 L13 27" fill="none" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="6" cy="7" r="3.5" />
+              <circle cx="27" cy="9" r="3.5" />
+              <circle cx="13" cy="27" r="3.5" />
+              <circle className="mark-lead" cx="16" cy="16" r="5.5" />
+            </svg>
             teamwire
           </a>
           <nav aria-label="Main">
