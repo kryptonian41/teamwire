@@ -56,6 +56,7 @@ pub(crate) fn build(
         )
     })?;
     let token_path = m.member_dir.join("token");
+    refuse_own_codex_config(&m.cwd)?;
 
     let mut argv = vec![codex_bin.to_owned()];
     if let Start::Resume(id) = start {
@@ -183,6 +184,36 @@ fn trust_root(cwd: &Path) -> PathBuf {
         Some(dot_git.parent()?.to_path_buf())
     };
     from_git_file().unwrap_or_else(|| cwd.to_path_buf())
+}
+
+/// Files that make Codex run what the repository declares. The member's
+/// `--dangerously-bypass-hook-trust` runs a hook from either one without
+/// review, so teamwire will not start a member in such a folder (the
+/// counterpart of INV-25 for Claude members).
+const OWN_CONFIG_FILES: [&str; 2] = [".codex/config.toml", ".codex/hooks.json"];
+
+/// Refuses when any folder from the trust root down to `cwd`, inclusive,
+/// holds one of `OWN_CONFIG_FILES`.
+fn refuse_own_codex_config(cwd: &Path) -> Result<(), HarnessError> {
+    let root = trust_root(cwd);
+    let mut folders: Vec<&Path> = cwd.ancestors().collect();
+    // A root that is not above `cwd` leaves only `cwd` to check.
+    folders.truncate(folders.iter().position(|f| *f == root).map_or(1, |i| i + 1));
+    for folder in folders {
+        for name in OWN_CONFIG_FILES {
+            let file = folder.join(name);
+            if file.exists() {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Refused,
+                    format!(
+                        "{} exists: teamwire will not start a Codex member whose folder declares its own Codex config, because the bypass flag would run it unreviewed",
+                        file.display()
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Quote `text` for `sh -c` only when it holds a character the shell would

@@ -52,7 +52,7 @@ enum Dialog {
     Trust,
     /// "Update available": skip this version.
     Update,
-    /// "Codex just got an upgrade": keep the model the spec asked for.
+    /// "Codex just got an upgrade": refused, never answered.
     Migration,
     /// The resume picker: continue in the session's folder.
     Cwd,
@@ -64,9 +64,8 @@ impl Dialog {
         match self {
             Self::Trust => Some("Trust and continue"),
             Self::Update => Some("Skip"),
-            Self::Migration => Some("Use existing model"),
             Self::Cwd => Some("Use session directory"),
-            Self::Login | Self::HooksReview => None,
+            Self::Login | Self::HooksReview | Self::Migration => None,
         }
     }
 }
@@ -134,9 +133,9 @@ fn timeout() -> HarnessError {
 }
 
 /// Watches the member's screen until it shows the composer. Folder trust is
-/// answered when `policy` allows. The update prompt and the model upgrade
-/// are declined and the resume folder prompt keeps the session's folder. The
-/// hooks review is never answered, and a sign-in screen is an error.
+/// answered when `policy` allows. The update prompt is skipped and the resume
+/// folder prompt keeps the session's folder. The hooks review is never
+/// answered, and the model-upgrade prompt and a sign-in screen are errors.
 pub(crate) fn answer_startup(
     host: &dyn Host,
     place: &Place,
@@ -155,6 +154,16 @@ pub(crate) fn answer_startup(
                 return Err(HarnessError::new(
                     HarnessErrorCode::Refused,
                     "Codex is not signed in; run `codex login` and start the team again",
+                ));
+            }
+            // Declining it makes Codex write the acknowledgement into the
+            // user's `~/.codex/config.toml` (`tui/src/app/startup_prompts.rs`
+            // `PersistModelMigrationPromptAcknowledged`), and no `-c` value
+            // hides it for a model we cannot name in advance.
+            Some(Dialog::Migration) => {
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Refused,
+                    "Codex shows its \"Codex just got an upgrade\" prompt; open Codex once yourself and answer it, then start the team again",
                 ));
             }
             Some(Dialog::HooksReview) => return Ok(StartupOutcome::RefusedEscalated),
