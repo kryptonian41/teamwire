@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use teamwire_core::{Event, EventType, Timestamp};
+use teamwire_core::{Event, EventType, TeamName, Timestamp};
 use teamwire_store::{Store, StoreError, database_path};
 
 use crate::defs::{self, Kind};
@@ -112,12 +112,19 @@ struct Source {
 
 fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Source> {
     if let Some(team) = &q.team {
-        return vec![Source {
-            path: database_path(home, team),
-            team: Some(team.as_str().to_owned()),
-            live: true,
-            rank: None,
-        }];
+        let path = database_path(home, team);
+        if path.is_file() {
+            return vec![Source {
+                path,
+                team: Some(team.as_str().to_owned()),
+                live: true,
+                rank: None,
+            }];
+        }
+        // A closed team: close deleted its database, so read its newest
+        // archive. The team row names the team; the folder name cannot, since
+        // `a-2026` is a team and also the start of `a-2026-2026-09-30`.
+        return newest_archive_of(home, team, errors);
     }
     let mut list = Vec::new();
     for (dir, live) in [("teams", true), ("archive", false)] {
@@ -154,6 +161,38 @@ fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Sourc
         }
     }
     list
+}
+
+fn newest_archive_of(home: &Path, team: &TeamName, errors: &mut Vec<String>) -> Vec<Source> {
+    let all = MetricsQuery::default();
+    let named = |source: &Source| {
+        Store::open_read_only_at(&source.path)
+            .and_then(|store| store.read(|tx| tx.team()))
+            .is_ok_and(|row| row.is_some_and(|t| t.name == *team))
+    };
+    sources(home, &all, errors)
+        .into_iter()
+        .filter(|s| !s.live && named(s))
+        .max_by_key(|s| s.rank)
+        .map(|s| Source {
+            team: Some(team.as_str().to_owned()),
+            ..s
+        })
+        .into_iter()
+        .collect()
+}
+
+/// Whether `team` has a live database or an archive to read.
+pub fn team_is_known(home: &Path, team: &TeamName) -> bool {
+    !sources(
+        home,
+        &MetricsQuery {
+            team: Some(team.clone()),
+            since: None,
+        },
+        &mut Vec::new(),
+    )
+    .is_empty()
 }
 
 fn analyze(

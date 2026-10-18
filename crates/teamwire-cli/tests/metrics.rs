@@ -289,6 +289,28 @@ fn without_a_team_every_team_and_archive_is_read() {
 }
 
 #[test]
+fn a_closed_team_is_read_from_its_archive_by_the_name_in_its_team_row() {
+    let home = TestHome::new().unwrap();
+    let other = TestHome::new().unwrap();
+    let alpha = busy_team(&other, "alpha");
+    // The folder name does not start with the team name: only the row can say.
+    let dir = home.path().join("archive").join("zz-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    alpha.backup_to(&dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(
+        run.out.contains("teamwire.watch.lines{team=alpha} 2"),
+        "{}",
+        run.out
+    );
+    let never = teamwire(&home, &[], &["metrics", "zz"]);
+    assert_eq!(never.code, 1);
+    assert!(never.err.contains("no database for team zz"), "{}", never.err);
+}
+
+#[test]
 fn since_leaves_out_older_events() {
     let home = TestHome::new().unwrap();
     // The events are years in the past, so a short window holds none.
