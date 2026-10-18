@@ -126,10 +126,14 @@ terminal was closed. A caller that carries a member identity is refused with
 `refused.identity`, exit 1. A team that is unknown, `closing` or `closed`, or a
 `--role` that names no member, is refused with exit 1.
 
-The command reopens the lead first, so a host that groups a team's tabs puts
-the members beside it. Then it reopens every member in state `started` whose
+The command reopens the lead and every member in state `started` whose
 session is gone (`Harness::is_alive` says `Dead`), whether or not that member
 reported done. `--role R` reopens only that member and leaves the lead alone.
+It checks every session before it opens any tab. Tabs then open one at a time
+until one is up, the lead's first, so a host that groups a team's tabs puts
+the others beside it. The remaining tabs open at the same time, because each
+waits several seconds for its session to load. The store records each new tab
+after all of them are up.
 Each session is resumed in a new tab named `tw_<team>_lead` or
 `tw_<team>_<role>`, in its own folder, by its own session id. A member's argv
 is the one `status --role` shows, with the recorded model and effort. The

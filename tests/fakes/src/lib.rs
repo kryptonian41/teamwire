@@ -19,6 +19,7 @@ mod fsutil;
 mod harness;
 pub mod herdr_bin;
 mod host;
+mod meeting;
 mod owner;
 mod platform;
 mod tmux_config;

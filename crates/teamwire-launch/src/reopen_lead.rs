@@ -7,7 +7,7 @@ use std::time::Duration;
 use teamwire_core::{Address, LaunchSpec, Liveness, SessionKind, SpawnRequest};
 use teamwire_store::{Ctx, TeamRow};
 
-use crate::reopen::{ReopenOpts, ReopenOutcome, open_tab};
+use crate::reopen::{Ready, ReopenOpts, ReopenOutcome};
 
 const ALIVE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -15,7 +15,14 @@ const ALIVE_TIMEOUT: Duration = Duration::from_secs(5);
     clippy::redundant_closure_for_method_calls,
     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
 )]
-pub(crate) fn reopen_lead(ctx: &mut Ctx<'_>, team: &TeamRow, opts: &ReopenOpts) -> ReopenOutcome {
+/// Checks the lead. A lead that passes is `Reopened` (on a dry run, "would
+/// be") and, unless this is a dry run, leaves its tab request in `ready`.
+pub(crate) fn reopen_lead<'r>(
+    ctx: &Ctx<'r>,
+    team: &TeamRow,
+    opts: &ReopenOpts,
+    ready: &mut Option<Ready<'r>>,
+) -> ReopenOutcome {
     let Some(session) = &team.lead_session else {
         return ReopenOutcome::skipped("no lead session is recorded");
     };
@@ -106,5 +113,11 @@ pub(crate) fn reopen_lead(ctx: &mut Ctx<'_>, team: &TeamRow, opts: &ReopenOpts) 
         argv: argv.clone(),
         env: Vec::new(),
     };
-    open_tab(harness, host, &request, &cwd, |_| Ok(()))
+    *ready = Some(Ready {
+        harness,
+        host,
+        request,
+        folder: cwd,
+    });
+    ReopenOutcome::Reopened
 }
