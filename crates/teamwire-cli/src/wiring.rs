@@ -16,8 +16,8 @@ use teamwire_platform::SystemClock;
 // name. They are re-exported here so no other file names an adapter crate.
 pub(crate) use teamwire_harness_claude::ClaudeCode as LeadSetup;
 pub(crate) use teamwire_harness_claude::{
-    ApplyError, Change, ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state,
-    shadowing_entries, skill_state,
+    ApplyError, Change, ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill,
+    mcp_state, shadowing_entries, skill_state,
 };
 
 /// The harness whose hook commands this binary serves.
@@ -61,6 +61,12 @@ pub(crate) struct WiringEnv {
     pub(crate) codex_test_home: Option<PathBuf>,
     /// `CODEX_HOME`: Codex's own setting for the same thing.
     pub(crate) codex_home: Option<PathBuf>,
+    /// `TEAMWIRE_LEAD_HARNESS`: the lead's harness id, when the user names it.
+    pub(crate) lead_harness: Option<String>,
+    /// `CLAUDE_CODE_SESSION_ID`: set inside a Claude Code session.
+    pub(crate) claude_session: Option<String>,
+    /// `CODEX_THREAD_ID`: set inside a Codex session.
+    pub(crate) codex_thread: Option<String>,
 }
 
 impl WiringEnv {
@@ -77,6 +83,9 @@ impl WiringEnv {
             codex_home: std::env::var_os("CODEX_HOME")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
+            lead_harness: std::env::var("TEAMWIRE_LEAD_HARNESS").ok(),
+            claude_session: std::env::var("CLAUDE_CODE_SESSION_ID").ok(),
+            codex_thread: std::env::var("CODEX_THREAD_ID").ok(),
         }
     }
 }
@@ -100,10 +109,27 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         registry,
         platform,
         clock: SystemClock,
-        lead_harness: HarnessId::from_static(ClaudeCode::ID),
+        lead_harness: lead_harness(env),
         lead_host: lead_host(env),
         claude,
     })
+}
+
+/// `TEAMWIRE_LEAD_HARNESS` when it names a harness of this binary, else the
+/// harness whose session the command runs in: `claude-code` when
+/// `CLAUDE_CODE_SESSION_ID` is set, `codex` when `CODEX_THREAD_ID` is set,
+/// and `claude-code` otherwise. An id this binary lacks is ignored, so a typo
+/// cannot leave the lead without an adapter.
+fn lead_harness(env: &WiringEnv) -> HarnessId {
+    let set = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.is_empty());
+    let id = match env.lead_harness.as_deref() {
+        Some(CodexCli::ID) => CodexCli::ID,
+        Some(ClaudeCode::ID) => ClaudeCode::ID,
+        _ if set(&env.claude_session) => ClaudeCode::ID,
+        _ if set(&env.codex_thread) => CodexCli::ID,
+        _ => ClaudeCode::ID,
+    };
+    HarnessId::from_static(id)
 }
 
 /// `TEAMWIRE_CODEX_HOME`, else `CODEX_HOME`, else `~/.codex`.
@@ -177,7 +203,32 @@ mod tests {
             claude_config_dir: None,
             codex_test_home: None,
             codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
         }
+    }
+
+    fn lead_with(var: Option<&str>, claude: Option<&str>, codex: Option<&str>) -> String {
+        let e = WiringEnv {
+            lead_harness: var.map(str::to_owned),
+            claude_session: claude.map(str::to_owned),
+            codex_thread: codex.map(str::to_owned),
+            ..env(None)
+        };
+        wire(&e).unwrap().lead_harness.as_str().to_owned()
+    }
+
+    #[test]
+    fn the_lead_harness_follows_the_variable_then_the_session() {
+        assert_eq!(lead_with(None, None, None), "claude-code");
+        assert_eq!(lead_with(None, None, Some("t1")), "codex");
+        assert_eq!(lead_with(None, Some("s1"), Some("t1")), "claude-code");
+        assert_eq!(lead_with(Some("codex"), Some("s1"), None), "codex");
+        assert_eq!(lead_with(Some("claude-code"), None, Some("t1")), "claude-code");
+        // An empty or unknown value does not decide.
+        assert_eq!(lead_with(Some("nope"), None, Some("t1")), "codex");
+        assert_eq!(lead_with(None, Some(""), Some("t1")), "codex");
     }
 
     #[test]
