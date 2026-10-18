@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    Harness, HarnessErrorCode, Host, HostCaps, HostError, HostId, Key, NoHost, Occupant, OneLine,
-    Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
+    Harness, HarnessErrorCode, Host, HostCaps, HostError, HostErrorCode, HostId, Key, NoHost,
+    Occupant, OneLine, Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
 };
 use teamwire_fakes::{
     ClaudeScript, ESCALATED_TRUST_TEXT, FakeHerdrEnv, FakeHost, FakePlatform, PLAIN_TRUST_TEXT,
@@ -148,6 +148,9 @@ struct Slow {
     shown: usize,
     reads_since_change: u32,
     chosen: Option<usize>,
+    /// Reads made so far, and the errors that replace given reads (1-based).
+    reads: u32,
+    fail_reads: Vec<(u32, HostError)>,
 }
 
 impl SlowDialog {
@@ -163,6 +166,8 @@ impl SlowDialog {
                 shown: 0,
                 reads_since_change: 0,
                 chosen: None,
+                reads: 0,
+                fail_reads: Vec::new(),
             }),
         };
         dialog.render(0);
@@ -203,6 +208,11 @@ impl Host for SlowDialog {
     }
     fn read_tail(&self, p: &Place, lines: u16, t: Duration) -> Result<String, HostError> {
         let mut st = self.state.lock().unwrap();
+        st.reads += 1;
+        let nth = st.reads;
+        if let Some(at) = st.fail_reads.iter().position(|(n, _)| *n == nth) {
+            return Err(st.fail_reads.remove(at).1);
+        }
         st.reads_since_change += 1;
         if st.shown != st.cursor && st.reads_since_change > st.lag {
             st.shown = st.cursor;
@@ -268,8 +278,22 @@ fn slow_answer(
     Vec<Key>,
     Option<usize>,
 ) {
+    slow_answer_failing(drop_downs, lag, Vec::new())
+}
+
+/// Like `slow_answer`, with the given reads (1-based) failing.
+fn slow_answer_failing(
+    drop_downs: u32,
+    lag: u32,
+    fail_reads: Vec<(u32, HostError)>,
+) -> (
+    Result<StartupOutcome, teamwire_core::HarnessError>,
+    Vec<Key>,
+    Option<usize>,
+) {
     let dir = tempfile::tempdir().unwrap();
     let dialog = SlowDialog::new(drop_downs, lag);
+    dialog.state.lock().unwrap().fail_reads = fail_reads;
     let got = claude_in(dir.path())
         .with_startup_poll(StartupPoll {
             step: Duration::from_millis(1),
@@ -311,6 +335,47 @@ fn a_dialog_that_never_moves_gets_no_enter_and_times_out() {
     assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout);
     assert!(!keys.contains(&Key::Enter));
     assert_eq!(chosen, None);
+}
+
+// The answer is Down, then Enter, and the dialog is read four times (the
+// startup loop, two reads in the accepting loop, one after Enter). A read
+// that times out or finds the agent working is "no screen this time": the
+// step reads again and still ends in the trust answer.
+
+#[test]
+fn a_read_that_times_out_or_finds_the_agent_busy_is_read_again() {
+    for code in [HostErrorCode::Timeout, HostErrorCode::Busy] {
+        for nth in 1..=4 {
+            let failing = vec![(nth, HostError::new(code, "slow"))];
+            let (got, keys, chosen) = slow_answer_failing(0, 0, failing);
+            assert_eq!(
+                got.unwrap(),
+                StartupOutcome::AnsweredPlainTrust,
+                "{code:?} on read {nth}"
+            );
+            assert_eq!(keys, [Key::Down, Key::Enter], "{code:?} on read {nth}");
+            assert_eq!(chosen, Some(1));
+        }
+    }
+}
+
+#[test]
+fn reads_that_keep_timing_out_end_in_a_timeout_when_the_steps_run_out() {
+    let failing = (1..=12)
+        .map(|n| (n, HostError::new(HostErrorCode::Timeout, "slow")))
+        .collect();
+    let (got, keys, _) = slow_answer_failing(0, 0, failing);
+    assert_eq!(got.unwrap_err().code, HarnessErrorCode::Timeout);
+    assert!(keys.is_empty());
+}
+
+#[test]
+fn any_other_read_error_ends_the_step_at_once() {
+    for nth in [1, 3, 4] {
+        let failing = vec![(nth, HostError::new(HostErrorCode::NotFound, "gone"))];
+        let (got, _, _) = slow_answer_failing(0, 0, failing);
+        assert!(got.is_err(), "read {nth} failed with NotFound");
+    }
 }
 
 #[test]

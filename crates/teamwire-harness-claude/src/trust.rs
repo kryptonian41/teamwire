@@ -8,7 +8,8 @@
 use std::time::Duration;
 
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
+    HarnessError, HarnessErrorCode, Host, HostErrorCode, Key, Place, ScreenState, StartupOutcome,
+    TrustPolicy,
 };
 
 use crate::screen::{
@@ -43,8 +44,15 @@ impl Default for StartupPoll {
     }
 }
 
-fn read(host: &dyn Host, place: &Place) -> Result<String, HarnessError> {
-    Ok(host.read_tail(place, TAIL_LINES, HOST_TIMEOUT)?)
+/// The screen, or `None` for "no screen this time": a read that ran out of
+/// its time (a slow start) or that herdr refused because the agent is working.
+/// The loops read again on their next step. Any other host error ends the step.
+fn read(host: &dyn Host, place: &Place) -> Result<Option<String>, HarnessError> {
+    match host.read_tail(place, TAIL_LINES, HOST_TIMEOUT) {
+        Ok(screen) => Ok(Some(screen)),
+        Err(e) if matches!(e.code, HostErrorCode::Timeout | HostErrorCode::Busy) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Watches the member's screen until it shows the input prompt, the plain
@@ -58,7 +66,10 @@ pub(crate) fn answer_startup(
     poll: StartupPoll,
 ) -> Result<StartupOutcome, HarnessError> {
     for _ in 0..poll.steps {
-        let raw = read(host, place)?;
+        let Some(raw) = read(host, place)? else {
+            std::thread::sleep(poll.step);
+            continue;
+        };
         let tail = squash(&raw);
         // The stronger dialog reuses the plain dialog's title and its "Yes, I
         // trust this folder" button, so escalation is checked first and
@@ -117,7 +128,10 @@ fn accept(
     let mut downs = 0;
     let mut since_down = 0;
     for _ in 0..poll.steps {
-        let screen = read(host, place)?;
+        let Some(screen) = read(host, place)? else {
+            std::thread::sleep(poll.step);
+            continue;
+        };
         if classify(&after_dialog(&screen)) == ScreenState::InputPrompt {
             return Ok(StartupOutcome::NoDialog);
         }
@@ -146,7 +160,9 @@ fn confirm(
 ) -> Result<StartupOutcome, HarnessError> {
     host.send_keys(place, &[Key::Enter], HOST_TIMEOUT)?;
     for _ in 0..poll.steps {
-        if classify(&after_dialog(&read(host, place)?)) == ScreenState::InputPrompt {
+        if let Some(screen) = read(host, place)?
+            && classify(&after_dialog(&screen)) == ScreenState::InputPrompt
+        {
             return Ok(StartupOutcome::AnsweredPlainTrust);
         }
         std::thread::sleep(poll.step);
