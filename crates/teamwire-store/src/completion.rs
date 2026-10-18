@@ -355,6 +355,42 @@ impl Tx<'_> {
         )?;
         Ok(true)
     }
+
+    /// `teamwire received` (ADR 0023): the lead read an `undelivered` or
+    /// `unconfirmed` result from its file, so it becomes `delivered` with
+    /// route `inbox`, and one `result.delivered` event is written. The
+    /// reason stays as the record of why the typing failed. False when the
+    /// result is in any other state.
+    pub fn mark_result_received(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+    ) -> Result<bool, StoreError> {
+        let Some(current) = self.reader().completion(completion)? else {
+            return Ok(false);
+        };
+        let rows = self.connection().execute(
+            "UPDATE completions SET report_state = 'delivered', route = 'inbox'
+             WHERE ulid = ?1 AND report_state IN ('undelivered', 'unconfirmed')",
+            [completion.to_string()],
+        )?;
+        if rows == 0 {
+            return Ok(false);
+        }
+        let c = &current.completion;
+        self.record_event(
+            at,
+            EventType::ResultDelivered,
+            Some(&c.role),
+            Some(completion),
+            &json!({
+                "route": Route::Inbox.as_str(),
+                "code": null,
+                "seconds": seconds_between(c.created_at, at),
+            }),
+        )?;
+        Ok(true)
+    }
 }
 
 impl ReadTx<'_> {

@@ -83,6 +83,13 @@ describe("readKindFile", () => {
     expect(r.ok && r.file.bytes).toBe(MAX_FILE_BYTES + 10);
   });
 
+  test("a Markdown kind carries its parsed tree and a log does not", async () => {
+    const md = await readKindFile(team, "brief", "impl");
+    expect(md.ok && md.file.doc).toEqual([{ t: "paragraph", c: [{ t: "text", v: "brief text" }] }]);
+    const log = await readKindFile(team, "verify", "impl");
+    expect(log.ok && log.file.doc).toBeNull();
+  });
+
   test("a small file is not truncated", async () => {
     const r = await readKindFile(team, "brief", "impl");
     expect(r.ok && r.file.truncated).toBe(false);

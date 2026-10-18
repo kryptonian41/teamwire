@@ -294,3 +294,35 @@ fn role_shows_the_model_and_effort_the_member_was_launched_with() {
     assert!(run.out.contains("--model opus"), "{}", run.out);
     assert!(run.out.contains("--effort high"), "{}", run.out);
 }
+
+#[test]
+fn received_clears_a_result_from_status_and_a_second_run_changes_nothing() {
+    let mut bed = team();
+    let id = bed.complete("web", CompletionStatus::Done);
+    bed.finish(&id, teamwire_core::ReportState::Undelivered, None);
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(
+        shown.contains("results the lead has not received:"),
+        "{shown}"
+    );
+
+    let run = teamwire(&bed, &["received", "alpha", "web"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out, "web #1 received\n");
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(
+        !shown.contains("results the lead has not received:"),
+        "{shown}"
+    );
+
+    let again = teamwire(&bed, &["received", "alpha", "web", "api"]);
+    assert_eq!(again.code, 0, "{}{}", again.out, again.err);
+    assert_eq!(
+        again.out,
+        "web unchanged: its newest result is delivered\napi unchanged: its newest result is delivered\n"
+    );
+
+    let unknown = teamwire(&bed, &["received", "alpha", "nobody"]);
+    assert_eq!(unknown.code, 1, "{}{}", unknown.out, unknown.err);
+    assert_eq!(unknown.out, "nobody refused: no member has this role\n");
+}

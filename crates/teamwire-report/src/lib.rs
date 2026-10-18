@@ -20,6 +20,7 @@ mod final_message;
 mod lead_stop;
 mod note;
 mod paths;
+mod received;
 mod reminder;
 mod result_file;
 mod turn_end;
@@ -27,6 +28,7 @@ mod usage;
 
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use lead_stop::{teams_without_watch, watch_missing_note};
+pub use received::{Received, mark_received};
 pub use reminder::on_tool_use;
 pub use turn_end::on_turn_end;
 

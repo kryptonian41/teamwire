@@ -241,6 +241,59 @@ fn an_undelivered_result_can_be_claimed_again() {
 }
 
 #[test]
+fn the_lead_marks_an_undelivered_or_unconfirmed_result_received() {
+    for state in [ReportState::Undelivered, ReportState::Unconfirmed] {
+        let mut f = with_members(&["api"]);
+        let c = done(&mut f, 10);
+        // A pending result has not been tried, so the lead cannot claim it.
+        assert!(
+            !f.store
+                .write(|tx| tx.mark_result_received(at(11), &c))
+                .unwrap()
+        );
+        f.store
+            .write(|tx| tx.claim_completion_for_delivery(at(11), &c, STALE))
+            .unwrap();
+        let error = DeliveryError::new(DeliveryErrorCode::SessionBlocked, "a dialog");
+        let outcome = ResultOutcome {
+            state,
+            route: None,
+            error: Some(error.clone()),
+            result_sha256: None,
+        };
+        f.store
+            .write(|tx| tx.finish_completion_delivery(at(12), &c, &outcome))
+            .unwrap();
+        assert!(
+            f.store
+                .write(|tx| tx.mark_result_received(at(40), &c))
+                .unwrap()
+        );
+        let r = record(&f, &c);
+        assert_eq!(
+            (r.completion.report_state, r.completion.route),
+            (ReportState::Delivered, Some(Route::Inbox))
+        );
+        assert_eq!(
+            r.completion.reason,
+            Some(error),
+            "why the typing failed stays"
+        );
+        let e = last_event(&f.store);
+        assert_eq!(e.kind, EventType::ResultDelivered);
+        assert_eq!(e.data["route"], "inbox");
+        assert_eq!(e.data["seconds"], 30.0);
+        assert!(
+            !f.store
+                .write(|tx| tx.mark_result_received(at(41), &c))
+                .unwrap(),
+            "a second mark changes nothing"
+        );
+        assert_eq!(count_events(&f.store, EventType::ResultDelivered), 1);
+    }
+}
+
+#[test]
 fn the_watch_interrupts_a_stale_delivering_result_once() {
     let mut f = with_members(&["api"]);
     let c = done(&mut f, 10);

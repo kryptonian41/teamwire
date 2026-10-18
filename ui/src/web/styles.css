@@ -276,6 +276,32 @@ pre.text {
   background: var(--surface-2); border-radius: var(--r-sm); max-height: 60vh; overflow: auto; line-height: 1.55;
 }
 
+/* Rendered Markdown: a readable measure, the page's own type steps, and a
+   tone step instead of rules for quotes and breaks. */
+.view-switch { display: flex; gap: var(--s1); margin-bottom: var(--s2); }
+.md { max-width: 75ch; line-height: 1.6; overflow-wrap: anywhere; }
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p, .md ul, .md ol, .md blockquote, .md pre, .md .table-wrap { margin: 0 0 var(--s3); }
+.md h3, .md h4, .md h5, .md h6 { margin: var(--s4) 0 var(--s2); line-height: 1.25; letter-spacing: -0.01em; }
+.md h3 { font-size: var(--t-lead); }
+.md h4 { font-size: var(--t-body); }
+.md h5, .md h6 { font-size: var(--t-body); color: var(--muted); }
+.md ul, .md ol { padding-left: var(--s4); }
+.md li + li { margin-top: var(--s1); }
+.md li > ul, .md li > ol, .md li > p { margin: var(--s1) 0 0; }
+.md li.task { list-style: none; margin-left: calc(-1 * var(--s4) + 2px); }
+.md li.task input { margin: 0 6px 0 0; vertical-align: -1px; accent-color: var(--accent); }
+.md blockquote { padding: var(--s2) var(--s3); background: var(--surface-2); border-radius: var(--r-sm); color: var(--muted); }
+.md blockquote > :last-child { margin-bottom: 0; }
+.md hr { height: 4px; margin: var(--s4) 0; border: 0; border-radius: 2px; background: var(--surface-2); }
+.md :not(pre) > code { padding: 1px 5px; border-radius: var(--r-sm); background: var(--surface-2); }
+.md pre.text { max-height: none; }
+.md .table-wrap { background: var(--surface-2); }
+.md td { border-top-color: color-mix(in srgb, var(--surface-2), var(--ink) 10%); }
+.md blockquote :not(pre) > code, .md td code { background: var(--surface); }
+.md .md-dead { text-decoration: underline dotted; text-underline-offset: 0.18em; cursor: help; }
+
 /* Controls */
 .btn {
   display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px;

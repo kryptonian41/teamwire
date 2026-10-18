@@ -105,7 +105,8 @@ member identity); per member: state
 `quiet`, `late`, `prompted outside teamwire`), generation, age against
 deadline, delivery state of its newest result, branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
-`undelivered`, and undelivered results. It also shows the team's watch
+`undelivered`, and results the lead has not received: a member's newest
+completion when it is `undelivered` or `unconfirmed` (ADR 0023). It also shows the team's watch
 (`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
@@ -232,6 +233,17 @@ id, a new delivery attempt, no burst or repeat check. The sender or the lead
 only. For a recipient in another team it writes that team's copy if it is
 missing, and never types a line that team already handed off. Exit codes as
 for `send`.
+
+### `teamwire received <team> <ROLE>...`
+
+Records that the lead read each member's newest result from its file, after
+the typing failed or stalled (ADR 0023). A result that is `undelivered` or
+`unconfirmed` becomes `delivered` with route `inbox`, and `status` stops
+listing it. Prints `<role> #<n> received` per marked result, or
+`<role> unchanged: its newest result is <state>` and changes nothing. A
+caller that carries a member identity is refused with `refused.identity`,
+exit 1. A role that names no member is refused, exit 1, after the other
+roles are marked.
 
 ### `teamwire log <team> [--role ROLE] [--json]`
 

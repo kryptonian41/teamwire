@@ -15,6 +15,7 @@ import {
   type Problem,
 } from "../shared/api.ts";
 import { DISPLAY_ID_RE, NAME_RE } from "../shared/teamwire.ts";
+import { parseMarkdownBounded } from "./markdown.ts";
 
 export type FileResult = { ok: true; file: FileText } | { ok: false; problem: Problem };
 
@@ -67,6 +68,7 @@ export async function readKindFile(base: string, kind: string, name: string): Pr
     const info = await stat(real);
     if (!info.isFile()) return notFound(`no ${kind} file named ${name}`);
     const bytes = await Bun.file(real).slice(0, MAX_FILE_BYTES).arrayBuffer();
+    const text = new TextDecoder().decode(bytes);
     return {
       ok: true,
       file: {
@@ -74,8 +76,9 @@ export async function readKindFile(base: string, kind: string, name: string): Pr
         name,
         bytes: info.size,
         modifiedAt: info.mtime.toISOString(),
-        text: new TextDecoder().decode(bytes),
+        text,
         truncated: info.size > MAX_FILE_BYTES,
+        doc: FILE_KINDS[kind].ext === ".md" ? await parseMarkdownBounded(text) : null,
       },
     };
   } catch {
