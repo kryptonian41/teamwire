@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FileRef } from "../shared/api.ts";
 import { StateChip } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
@@ -28,11 +29,16 @@ export function Drawer({
 
   // Move focus into the dialog so the keyboard starts where the eye does, and
   // give it back on close. Opened from a URL there is no opener, so fall back
-  // to the member's link in the table.
+  // to the member's link in the table. The page behind is inert while the
+  // dialog is open, which keeps Tab inside it and backs up aria-modal; the
+  // dialog is portalled out of #root so it is not inert itself.
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const page = document.getElementById("root");
+    if (page) page.inert = true;
     closeRef.current?.focus();
     return () => {
+      if (page) page.inert = false;
       const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href="${href.member(team, member.role)}"]`);
       back?.focus();
     };
@@ -58,7 +64,7 @@ export function Drawer({
     }
   };
 
-  return (
+  return createPortal(
     <>
       <div className="scrim" onClick={onClose} />
       <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Member ${member.role}`}>
@@ -124,6 +130,7 @@ export function Drawer({
           </>
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }
