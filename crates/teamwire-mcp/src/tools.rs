@@ -235,8 +235,11 @@ fn run(
             let role = member_only(actor, "inbox; its messages are typed into its session")?;
             let items = teamwire_msg::inbox(ctx, role, input.all)?;
             let mut value = json!({ "messages": to_value(&items)? });
-            if items.iter().any(|i| i.from != Actor::Lead) {
-                value["note"] = json!(INBOX_NOTE);
+            if let (Some(map), true) = (
+                value.as_object_mut(),
+                items.iter().any(|i| i.from != Actor::Lead),
+            ) {
+                map.insert("note".to_owned(), json!(INBOX_NOTE));
             }
             Ok(Reply {
                 summary: format!("{} message(s)", items.len()),

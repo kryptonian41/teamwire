@@ -40,8 +40,8 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
             let peer = items.iter().any(|i| i.from != Actor::Lead);
             if *json {
                 let mut value = json!({ "messages": items });
-                if peer {
-                    value["note"] = json!(NOTE);
+                if let (Some(map), true) = (value.as_object_mut(), peer) {
+                    map.insert("note".to_owned(), json!(NOTE));
                 }
                 say(&format!("{value}\n"));
             } else if items.is_empty() {
