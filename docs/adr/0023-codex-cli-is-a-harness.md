@@ -33,7 +33,10 @@ The last section lists the ones most likely to be wrong.
    `codex`) and `CodexConfig { codex_home, codex_bin }`. `codex_home` is
    `TEAMWIRE_CODEX_HOME` (tests), else `CODEX_HOME`, else `~/.codex`.
    teamwire only reads it. A spec picks Codex with `"harness": "codex"` on
-   the team or a member (`plan.rs` already reads the field).
+   the team or a member (`plan.rs` already reads the field). A member with
+   no `harness` runs on the lead's harness, so a Codex lead's members run on
+   Codex unless the spec names `claude-code` (user decision, 2026-10-18). A
+   member that keeps a Claude model name such as `sonnet` needs that.
 
 2. **Capabilities.**
 
