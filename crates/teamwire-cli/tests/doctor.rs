@@ -359,6 +359,14 @@ fn doctor_reports_quick_check_failure() {
     assert_eq!(exit_code(&checks), 2);
 }
 
+/// Runs the statement a counters line prints after "repair with: ".
+fn apply_repair(store: &mut Store, text: &str) {
+    let sql = text.split_once("repair with: ").unwrap().1.to_owned();
+    store
+        .write(|tx| Ok(tx.connection().execute(&sql, ())?))
+        .unwrap();
+}
+
 #[test]
 fn a_message_counter_below_an_id_in_use_fails_and_prints_the_repair() {
     let bed = Bed::healthy();
@@ -400,12 +408,31 @@ fn a_message_counter_below_an_id_in_use_fails_and_prints_the_repair() {
     let text = detail_of(&checks, "team alpha counters");
     assert!(
         text.contains("display_id is 1 but 2 is in use")
-            && text.contains("UPDATE counters SET value = 2 WHERE name = 'display_id';"),
+            && text.contains("INSERT INTO counters (name, value) VALUES ('display_id', 2)"),
         "{text}"
     );
     // Doctor only prints the repair: the row is still damaged.
-    let still = store.read(|tx| tx.counter("display_id")).unwrap();
-    assert_eq!(still, Some(1));
+    assert_eq!(store.read(|tx| tx.counter("display_id")).unwrap(), Some(1));
+    apply_repair(&mut store, text);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha counters"), Level::Pass);
+
+    // A deleted row is reported as missing, and the same kind of statement fixes it.
+    store
+        .write(|tx| {
+            Ok(tx
+                .connection()
+                .execute("DELETE FROM counters WHERE name = 'display_id'", ())?)
+        })
+        .unwrap();
+    let checks = bed.checks();
+    let text = detail_of(&checks, "team alpha counters");
+    assert!(
+        text.contains("display_id is missing but 2 is in use"),
+        "{text}"
+    );
+    apply_repair(&mut store, text);
+    assert_eq!(level_of(&bed.checks(), "team alpha counters"), Level::Pass);
 }
 
 #[test]
