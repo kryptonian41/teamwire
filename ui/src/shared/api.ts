@@ -104,10 +104,27 @@ export interface FileRef {
   modifiedAt: string;
 }
 
+/**
+ * One node of a parsed Markdown file. The server parses with
+ * `Bun.markdown.render`, and the page builds React elements from the tree,
+ * so no Markdown string is ever parsed as HTML in the page.
+ */
+export interface MdNode {
+  /** `text`, or the name of the `Bun.markdown` render callback that made the node. */
+  t: string;
+  /** The text of a `text` node. */
+  v?: string;
+  c?: MdNode[];
+  /** The callback's metadata, such as `level`, `href`, `src`, `language`, `align` or `checked`. */
+  m?: Record<string, string | number | boolean>;
+}
+
 /** The text of one file. */
 export interface FileText extends FileRef {
   text: string;
   truncated: boolean;
+  /** The Markdown tree of `text` for a `.md` kind, or null for a log or when parsing failed. */
+  doc: MdNode[] | null;
 }
 
 /** `GET /api/teams/:team/resume/:role`. */

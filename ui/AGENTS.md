@@ -48,6 +48,12 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
   anything under a team's `members/` directory: it holds member tokens.
 - The server binds `127.0.0.1` only. API routes check the `Host` header and
   the token cookie.
+- File text is untrusted. The page never parses a string as HTML: no
+  `dangerouslySetInnerHTML`, no `innerHTML`. Markdown reaches the page as the
+  `MdNode` tree that `src/server/markdown.ts` builds with raw HTML kept as
+  text, and `src/web/Markdown.tsx` turns it into React elements. A link is
+  made only for an http, https or mailto URL (`safeHref`), and an image is
+  never loaded.
 - Do not add dependencies or change `bun.lock`. Ask the lead.
 - Do not edit `src/shared/`, `fixtures/`, `package.json`, `tsconfig.json`
   or this file unless the lead asks. Ask the lead for a change instead.
