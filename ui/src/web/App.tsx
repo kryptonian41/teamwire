@@ -20,36 +20,57 @@ export function App({ client }: { client: ApiClient }) {
 
   return (
     <ClientContext.Provider value={client}>
+      <a
+        className="skip"
+        href="#main"
+        onClick={(e) => {
+          // The hash is the router, so jump by focus instead of changing it.
+          e.preventDefault();
+          document.getElementById("main")?.focus();
+        }}
+      >
+        Skip to content
+      </a>
       <header className="top">
-        <a className="brand" href={href.overview()}>
-          teamwire
-        </a>
-        <nav>
-          <a href={href.overview()} aria-current={route.page === "overview" ? "page" : undefined}>
-            Teams
+        <div className="top-in">
+          <a className="brand" href={href.overview()}>
+            teamwire
           </a>
-          <a href={href.history()} aria-current={route.page === "history" || route.page === "archive" ? "page" : undefined}>
-            History
-          </a>
-        </nav>
+          <nav aria-label="Main">
+            <a href={href.overview()} aria-current={current(route, "overview", "team")}>
+              Teams
+            </a>
+            <a href={href.history()} aria-current={current(route, "history", "archive")}>
+              History
+            </a>
+          </nav>
+        </div>
       </header>
       <div className={`banner banner-${banner.kind}`} role="status">
-        <span>{banner.text}</span>
-        {banner.problems.length > 0 && (
-          <ul>
-            {banner.problems.map((p, i) => (
-              <li key={i}>
-                <code>{p.code}</code> {p.detail}
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="banner-in">
+          <p>{banner.text}</p>
+          {banner.problems.length > 0 && (
+            <ul>
+              {banner.problems.map((p, i) => (
+                <li key={i}>
+                  <code>{p.code}</code> {p.detail}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-      <main>
+      <main id="main" tabIndex={-1}>
         <Routes route={route} teams={teams} snapshot={snapshot} />
       </main>
     </ClientContext.Provider>
   );
+}
+
+/** "page" on the section's own page, "true" on a page inside the section. */
+function current(route: Route, page: Route["page"], inside: Route["page"]): "page" | "true" | undefined {
+  if (route.page === page) return "page";
+  return route.page === inside ? "true" : undefined;
 }
 
 function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; snapshot: Snapshot | null }) {
