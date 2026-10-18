@@ -293,6 +293,23 @@ Nobody found these.
 
 - **Effort levels per role.** No source supports the effort levels in the
   skill (D11). Model routing has support (L2, B16).
+  A measurement of effort needs five things:
+  - Effort on every token count: the `effort` label on the token metric, or a
+    join on `member.started`.
+  - A task-matched comparison. The lead picks effort by hand and gives higher
+    effort to harder tasks, so a plain comparison of high against medium
+    measures task difficulty. It needs the same kind of member on a comparable
+    task, with effort assigned at random or alternated by a fixed rule.
+  - An outcome that does not come from the same agent. The store records
+    completion status, reprompts, first-try results, verify flags and run
+    duration. It does not record whether a reviewer's finding was true or
+    whether a test could fail. Reviewers and closers need a seeded defect set
+    or closer grades written as data.
+  - Enough members. Only 18 members have effort recorded. A rough floor is a
+    few dozen members per kind and effort level.
+  - A cost measure: tokens priced by model, plus wall time
+    (`teamwire.member.run.duration`), because higher effort can hit
+    `deadline_s`.
 - **A measured review limit.** No source measured a loop against a single review
   pass, or found where extra fix rounds stop paying (D2).
 - **Attempt 3 against attempt 2.** The sources give a cap of two (B3, L10). None
