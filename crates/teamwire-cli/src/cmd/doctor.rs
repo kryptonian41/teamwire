@@ -18,7 +18,7 @@ use crate::Global;
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check::{self, Outcome};
 use crate::cmd::send::home_or_refuse;
-use crate::wiring::{ClaudeConfig, McpEntry, Wiring};
+use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, Wiring};
 
 /// Exit code of a doctor run that found a problem (`docs/api/cli.md`).
 const PARTIAL: u8 = 2;
@@ -134,6 +134,8 @@ pub(crate) struct Inputs<'a> {
     pub(crate) path_var: Option<OsString>,
     /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
     pub(crate) claude: ClaudeConfig,
+    /// The Codex adapter, whose plugin is checked when `codex` is on PATH.
+    pub(crate) codex: CodexSetup,
     /// The MCP entry `teamwire install` would register from this binary, or
     /// why it cannot be worked out.
     pub(crate) lead_entry: Result<McpEntry, String>,
@@ -455,6 +457,14 @@ fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
             )),
         }
     }
+    // Codex is optional: without it on PATH, doctor says nothing about it.
+    if let Some(path) = on_path(inputs.path_var.as_ref(), "codex") {
+        checks.push(Check::pass(
+            "codex on PATH",
+            format!("harness binary at {}", path.display()),
+        ));
+        checks.push(version_check(inputs, "codex", &path, "--version"));
+    }
     if inputs.host == Host::None {
         checks.push(Check::pass(
             "host",
@@ -492,6 +502,8 @@ fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         entry: &inputs.lead_entry,
         running_a_build: inputs.running_a_build,
         dir: &inputs.repo,
+        codex: on_path(inputs.path_var.as_ref(), "codex").map(|_| &inputs.codex),
+        home: &inputs.home,
     };
     lead_setup_check::run(&lead)
         .into_iter()
@@ -553,6 +565,7 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         clock: &wiring.clock,
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
+        codex: wiring.codex_setup(),
         running_a_build: lead_entry
             .as_ref()
             .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
