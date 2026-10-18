@@ -738,7 +738,7 @@ you forgot to restart:
 | `SILENT <role>` | Went quiet without recording a completion. Ask it directly. |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. `teamwire log` shows an excerpt; the full text is in the team's `comms/` directory. |
 | `QUESTION-UNCONFIRMED <id> from <role>` | Typing a question to you stalled. It may or may not be on your screen. Read it the same way. |
-| `UNREAD <id> -> <role> <age>` | A message to a member has waited 10 minutes since it was sent or resent, and the member has not read it. A message short enough to arrive whole in the typed line (300 characters) never counts. Once per message and member. The member's session already took the message, so `resend` refuses it. Check `teamwire status`, then send a short `note` telling the member to read its inbox, or ask it directly. |
+| `UNREAD <id> -> <role> <age>` | A message to a member has waited 10 minutes since it was sent or resent, and the member has not read it. A message short enough to arrive whole in the typed line (300 characters) never counts, and neither does one the member reported `done`, `blocked` or `failed` after. Once per message and member. The member's session already took the message, so `resend` refuses it. Check `teamwire status`, then send a short `note` telling the member to read its inbox, or ask it directly. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has had no answer for 10 minutes. Once per question. Answer it with `--type answer --re <id>`. |
 | `STORE-ERROR <code>` | The watch could not read or write the team's database. Run `teamwire doctor`. |
 | `TEAM-STALLED <roles>` | Every remaining member is stuck. Nothing will move. |

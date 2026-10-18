@@ -312,3 +312,19 @@ fn a_message_the_typed_line_carried_whole_is_not_listed_as_unread() {
     bed.age(secs(601));
     assert!(status_of(&bed, None).unread_deliveries.is_empty());
 }
+
+#[test]
+fn a_message_the_member_finished_after_is_not_listed_as_unread() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.send(MessageType::Note, "api", None);
+    bed.age(secs(1));
+    bed.complete("api", teamwire_core::CompletionStatus::Done);
+    bed.age(secs(601));
+    assert!(status_of(&bed, None).unread_deliveries.is_empty());
+
+    // A later message is unread again: the report came before it.
+    bed.send(MessageType::Note, "api", None);
+    bed.age(secs(601));
+    assert_eq!(status_of(&bed, None).unread_deliveries.len(), 1);
+}

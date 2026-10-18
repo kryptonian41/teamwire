@@ -927,3 +927,32 @@ fn a_message_the_typed_line_carried_whole_is_never_unread() {
         "the line held the whole text"
     );
 }
+
+#[test]
+fn a_message_the_member_finished_after_is_not_unread() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    // A report from before the message does not count as reading it.
+    bed.delivered("api", CompletionStatus::Done);
+    bed.age(secs(1));
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    bed.age(secs(1));
+    bed.delivered("api", CompletionStatus::Done);
+    bed.age(secs(601));
+    let lines = bed.ticks(3);
+    assert_eq!(count(&lines, "UNREAD"), 0, "{lines:?}");
+}
+
+#[test]
+fn a_report_from_before_the_message_leaves_it_unread() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.delivered("api", CompletionStatus::Done);
+    bed.age(secs(1));
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    bed.age(secs(601));
+    let lines = bed.ticks(3);
+    assert_eq!(count(&lines, "UNREAD"), 1, "{lines:?}");
+}

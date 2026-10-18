@@ -15,6 +15,7 @@ mod lease;
 mod lines;
 mod locate;
 mod pending;
+mod unread;
 mod unsent;
 
 use serde::{Deserialize, Serialize};
@@ -25,6 +26,7 @@ pub use lease::{WATCH_LEASE_STALE, watch_lease_is_dead};
 pub use lines::{agent_text, line_holds_whole, message_line, message_line_to, result_line};
 pub use locate::locate;
 pub use pending::{PENDING_STALE, attempt_started, is_pending_stale};
+pub use unread::unread_since;
 
 /// What happened to one typed line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
