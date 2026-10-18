@@ -151,7 +151,10 @@ session is gone (`Harness::is_alive` says `Dead`), whether or not that member
 reported done. `--role R` reopens only that member and leaves the lead alone.
 It checks every session before it opens any tab. Tabs then open one at a time
 until one is up, the lead's first, so a host that groups a team's tabs puts
-the others beside it. The remaining tabs open at the same time, because each
+the others beside it. The anchor differs by host. On tmux, `new-window` is called
+with no `-t` target, so each window opens in the tmux session of the caller,
+which need not be the lead's. On herdr, a tab opens in the workspace of a live
+agent of the team, and a new workspace labelled with the team is made when none is live. The remaining tabs open at the same time, because each
 waits several seconds for its session to load. The store records each new tab
 after all of them are up.
 Each session is resumed in a new tab named `tw_<team>_lead` or
@@ -221,7 +224,7 @@ hash, not its bytes (STO-10).
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
 same checks plus CLS-5; `--stop` allows removing a busy member;
-`--unverified` overrides CLS-5 and prints why. `--dry-run` prints the plan.
+`--unverified` overrides CLS-5 and prints why. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
 `--keep-state` leaves `$TEAMWIRE_HOME/teams/<team>` in place, marked closed.
 The archive goes to `$TEAMWIRE_HOME/archive/<team>-<date>` (a `-HHMMSS`
 suffix when taken) unless `--archive-to` names a directory. The state

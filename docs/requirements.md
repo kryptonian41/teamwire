@@ -189,7 +189,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| LCH-1 | MUST | Refuse to launch from a session with no terminal of its own. The harness adapter detects it (Claude: `CLAUDE_CODE_SESSION_KIND=bg`). Nothing is created and the host gets zero calls. | speclife LC-1, L1; INV-3 |
+| LCH-1 | MUST | Refuse to launch from a session with no terminal of its own. The harness adapter detects it (Claude: the `kind` in the session file of `CLAUDE_PID` when `CLAUDE_PID` is set, and that file wins over any variable; else `CLAUDE_CODE_SESSION_KIND=bg`, or an unattended session, `CLAUDE_CODE_SESSION_ATTENDED=0`). Nothing is created and the host gets zero calls. | speclife LC-1, L1; INV-3 |
 | LCH-2 | MUST | Validate the whole spec, and every path the launch will touch, before creating anything. | speclife LC-2, L2 |
 | LCH-3 | MUST | Record each resource (worktree, place, agent) with a state such as `creating` or `started` before the next step that cannot be undone. A crash leaves a resource close can find. | speclife LC-4, F3, L18 |
 | LCH-4 | MUST | A host timeout during launch is a failure of that member, with the same cleanup as any other, never an abort of the team. | speclife LC-5, F4 |
@@ -232,7 +232,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| CLS-1 | MUST | Close order is fixed: refuse if any member is busy or busy state is unknown; refuse over uncommitted work; archive and verify the archive; remove worktrees without force and keep branches; close places; release the sleep hold (only if every earlier step succeeded); delete the team state last. Each failing step stops the sequence with state intact. The hold is released before the state that records it is deleted, so a crash between the two leaves a record of a released hold, never a running hold with no record. | speclife LC-45, C1-C7; INV-31 |
+| CLS-1 | MUST | Close order is fixed: refuse if any member is busy or busy state is unknown; refuse over uncommitted work; archive and verify the archive; remove worktrees without force and keep branches; close places; release the sleep hold (only if every earlier step succeeded); delete the team state last. A member that ended its turn while its own background job ran looks idle to the host, so the busy check passes and `close --role` removes it without `--stop`; closing a member ends its background jobs with its tab. Each failing step stops the sequence with state intact. The hold is released before the state that records it is deleted, so a crash between the two leaves a record of a released hold, never a running hold with no record. | speclife LC-45, C1-C7; INV-31 |
 | CLS-2 | MUST | The archive is verified by content (a hash per file), not by count and size. An existing archive path is never overwritten. | speclife LC-46, F8, C10 |
 | CLS-3 | MUST | A close lock stops launch, reprompt and removal from running during a close. Busy and dirty state are re-checked under the lock right before each destructive step. | speclife LC-47, F2, F9 |
 | CLS-4 | MUST | Removing one member runs the same checks for that member; `--stop` is the only way to remove a busy member. | speclife C8 |
