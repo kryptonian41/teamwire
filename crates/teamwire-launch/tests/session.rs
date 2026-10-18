@@ -13,6 +13,7 @@
 #[cfg(test)]
 #[path = "support/common.rs"]
 mod common;
+#[expect(dead_code, reason = "this file uses part of the shared harness")]
 #[path = "../../teamwire-msg/tests/support/hint_harness.rs"]
 mod hint_harness;
 

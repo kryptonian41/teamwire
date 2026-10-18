@@ -18,6 +18,9 @@ use teamwire_core::{
 };
 use teamwire_fakes::FakeHarness;
 
+/// Where a harness puts the launches it was asked to resume.
+pub(crate) type Resumes = Arc<std::sync::Mutex<Vec<MemberLaunch>>>;
+
 type StartupFn = Box<dyn Fn(&Place) + Send + Sync>;
 
 pub(crate) struct HintHarness {
@@ -25,6 +28,7 @@ pub(crate) struct HintHarness {
     key: &'static str,
     on_startup: Option<StartupFn>,
     reads_contract: bool,
+    resumes: Option<Resumes>,
 }
 
 impl HintHarness {
@@ -34,6 +38,7 @@ impl HintHarness {
             key,
             on_startup: None,
             reads_contract: false,
+            resumes: None,
         }
     }
 
@@ -41,6 +46,11 @@ impl HintHarness {
     /// it is not there yet.
     pub(crate) fn reading_contract(mut self) -> Self {
         self.reads_contract = true;
+        self
+    }
+
+    pub(crate) fn recording_resumes(mut self, into: Resumes) -> Self {
+        self.resumes = Some(into);
         self
     }
 
@@ -72,6 +82,9 @@ impl Harness for HintHarness {
         self.inner.launch_spec(m)
     }
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        if let Some(into) = &self.resumes {
+            into.lock().unwrap().push(m.clone());
+        }
         self.inner.resume_spec(m, s)
     }
     fn current_session(&self) -> Option<CallerSession> {

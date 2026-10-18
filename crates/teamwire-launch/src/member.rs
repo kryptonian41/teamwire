@@ -430,6 +430,7 @@ fn run_member(
     // `reopen` resumes with these; a resume without them runs on the default.
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
+    put(&mut data, "plugins", json!(launch.plugins));
     put(
         &mut data,
         "session_id",
