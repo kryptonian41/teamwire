@@ -13,6 +13,7 @@
 //! tools, hooks and MCP server through `-c` values that name the 0600 token
 //! file, never the token itself.
 
+mod hook;
 mod launch;
 pub mod lead_setup;
 
@@ -112,12 +113,12 @@ impl Harness for CodexCli {
         Ok(Liveness::Unknown)
     }
 
-    fn parse_turn_end(&self, _stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        hook::parse_turn_end(stdin)
     }
 
-    fn hold_reply(&self, _note: &str) -> Vec<u8> {
-        Vec::new()
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        hook::hold_reply(note)
     }
 
     fn screen_state(&self, _tail: &str) -> ScreenState {
