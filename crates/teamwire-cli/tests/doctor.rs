@@ -24,6 +24,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
+use teamwire_harness_codex::{CodexCli, CodexConfig};
 use teamwire_store::{NewTeam, Store};
 
 #[path = "support/schema_1.rs"]
@@ -43,15 +44,26 @@ mod wiring {
 
     use teamwire_core::Platform;
     pub(crate) use teamwire_harness_claude::{
-        ClaudeConfig, McpEntry, McpState, SkillState, edited_skill, mcp_state, shadowing_entries,
-        skill_state,
+        ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill, mcp_state,
+        shadowing_entries, skill_state,
+    };
+    pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
+    pub(crate) use teamwire_harness_codex::lead_setup::{
+        LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
     };
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
+        pub(crate) codex: teamwire_harness_codex::CodexConfig,
         pub(crate) registry: teamwire_core::Registry,
         pub(crate) clock: teamwire_fakes::FakeClock,
+    }
+
+    impl Wiring {
+        pub(crate) fn codex_setup(&self) -> CodexSetup {
+            CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
+        }
     }
 }
 
@@ -102,6 +114,10 @@ struct Bed {
     env_names: Vec<String>,
     registry: Registry,
     clock: FakeClock,
+    /// What `codex plugin list --json` prints; the Codex adapter has a
+    /// platform of its own so its replies do not mix with doctor's probes.
+    codex_list: String,
+    codex_platform: Arc<FakePlatform>,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -134,6 +150,8 @@ impl Bed {
                 registry
             },
             clock: FakeClock::new(),
+            codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
+            codex_platform: Arc::new(FakePlatform::new()),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -145,6 +163,16 @@ impl Bed {
         }
         bed.install_lead_setup();
         bed
+    }
+
+    fn codex_setup(&self) -> CodexCli {
+        CodexCli::new(
+            self.codex_platform.clone(),
+            CodexConfig {
+                codex_home: self.home.path().join("codex-home"),
+                codex_bin: "codex".to_owned(),
+            },
+        )
     }
 
     fn claude_config(&self) -> ClaudeConfig {
@@ -220,7 +248,13 @@ impl Bed {
         self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
         self.platform.queue_run(Ok(answer(&self.claude_help)));
         self.platform.queue_run(Ok(answer("host 1.2.3\n")));
+        let codex_on_path = self.bin.path().join("codex").exists();
+        if codex_on_path {
+            self.platform.queue_run(Ok(answer("codex-cli 0.163.0\n")));
+            self.codex_platform.queue_run(Ok(answer(&self.codex_list)));
+        }
         diagnose(&Inputs {
+            codex: self.codex_setup(),
             host: self.host,
             home: self.home.path().to_path_buf(),
             platform: &self.platform,
@@ -607,6 +641,7 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         clock: &bed.clock,
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
+        codex: bed.codex_setup(),
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
@@ -935,4 +970,48 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
         "{detail}"
     );
     assert!(detail.contains("shows as 0.0.0"), "{detail}");
+}
+
+#[test]
+fn without_codex_on_path_doctor_says_nothing_about_codex() {
+    let bed = Bed::healthy();
+    let checks = bed.checks();
+    assert!(names(&checks).iter().all(|n| !n.contains("codex")));
+    assert_eq!(failing(&checks), Vec::<&str>::new());
+}
+
+#[test]
+fn codex_on_path_is_reported_with_its_version_and_a_missing_plugin_is_ok() {
+    let bed = Bed::healthy();
+    std::fs::write(bed.bin.path().join("codex"), "#!/bin/sh\n").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "codex on PATH"), Level::Pass);
+    assert_eq!(detail_of(&checks, "codex version"), "codex-cli 0.163.0");
+    assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
+    assert!(
+        detail_of(&checks, "codex plugin").contains("teamwire install --harness codex"),
+        "{}",
+        detail_of(&checks, "codex plugin")
+    );
+    assert_eq!(exit_code(&checks), 0);
+}
+
+#[test]
+fn a_stale_codex_plugin_is_a_warning_that_names_the_fix() {
+    let mut bed = Bed::healthy();
+    std::fs::write(bed.bin.path().join("codex"), "#!/bin/sh\n").unwrap();
+    bed.codex_list =
+        r#"{"installed":[{"pluginId":"teamwire@teamwire","version":"old","enabled":true}]}"#
+            .to_owned();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "codex plugin"), Level::Warn);
+    let detail = detail_of(&checks, "codex plugin");
+    assert!(
+        detail.contains("version old") && detail.contains("teamwire install --harness codex"),
+        "{detail}"
+    );
+    // A cargo build's text differs by design, so only a disabled plugin warns.
+    bed.codex_platform.queue_run(Ok(answer(&bed.codex_list)));
+    let checks = bed.checks_as(true);
+    assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
 }
