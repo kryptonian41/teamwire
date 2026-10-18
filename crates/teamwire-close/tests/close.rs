@@ -889,7 +889,13 @@ fn a_lock_taken_by_another_close_after_the_check_is_reported_not_cleared() {
             .all(|s| !s.detail.contains("was cleared")),
         "{report:?}"
     );
-    assert!(asks(&report.refusals, "another close"), "{report:?}");
+    assert!(
+        asks(
+            &report.refusals,
+            "the close lock changed after it was checked (another close took it, or it was already cleared or released); nothing was cleared"
+        ),
+        "{report:?}"
+    );
     let team = rig.team();
     assert_eq!(
         (team.state, team.closing_pid),
