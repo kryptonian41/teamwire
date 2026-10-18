@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use serde_json::json;
-use teamwire_core::{Actor, Role, TeamName};
+use teamwire_core::{Actor, TeamName};
 use teamwire_msg::{LogFilter, LogRow, SendError, prove_actor};
 
 use crate::cmd::send::{caller_env, carries_member_identity, error_code, fail, say, with_read_ctx};
@@ -17,7 +17,7 @@ pub(crate) fn run(args: &LogArgs, global: &Global, wiring: &Wiring) -> ExitCode 
         .and_then(|team| {
             let role = role
                 .as_deref()
-                .map(|r| Role::parse(r).map_err(|e| e.to_string()))
+                .map(|r| Actor::parse(r).map_err(|e| e.to_string()))
                 .transpose()?;
             Ok((team, role))
         });

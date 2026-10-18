@@ -125,6 +125,34 @@ impl Rig {
         stored.message.display_id.to_string()
     }
 
+    /// A stored message from `from` to `to`, left pending.
+    fn stored(&self, from: &str, to: &str, body: &str) {
+        let new = NewMessage {
+            sender: Actor::parse(from).unwrap(),
+            kind: MessageType::Note,
+            re: None,
+            commit: None,
+            body: body.to_owned(),
+            client_key: None,
+            recipients: vec![Recipient::parse(to).unwrap()],
+        };
+        self.store()
+            .write(|tx| tx.insert_message(at(), &new))
+            .unwrap();
+    }
+
+    /// Runs `args` as the person at the terminal: no member identity.
+    fn run_at_terminal(&self, args: &[&str]) -> Output {
+        Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("TEAMWIRE_HOME", self.home.path())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    }
+
     /// The recipient `api`'s delivery state, read from the row itself so a
     /// message whose body fails its hash can still be looked up.
     fn state_of(&self, id: &str) -> DeliveryState {
@@ -306,4 +334,47 @@ fn a_missing_team_is_a_usage_error() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(3), "{}", text(&out.stderr));
+}
+
+#[test]
+fn log_filters_by_the_lead_and_by_an_agent_of_another_team() {
+    let rig = Rig::new();
+    rig.stored("lead", "api", "from the lead");
+    rig.stored("scout", "api", "from a peer");
+    rig.stored("db@beta", "api", "from another team");
+    for (role, shown, hidden) in [
+        ("lead", "from the lead", "from a peer"),
+        ("db@beta", "from another team", "from the lead"),
+        ("scout", "from a peer", "from the lead"),
+    ] {
+        let out = rig.run_at_terminal(&["log", "alpha", "--role", role]);
+        let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+        assert_eq!(out.status.code(), Some(0), "{role}: {stdout} / {stderr}");
+        assert!(stdout.contains(shown), "{role}: {stdout}");
+        assert!(!stdout.contains(hidden), "{role}: {stdout}");
+    }
+}
+
+#[test]
+fn the_peer_note_appears_only_when_a_peer_wrote() {
+    let rig = Rig::new();
+    rig.stored("lead", "api", "from the lead");
+    let out = rig.run(&["inbox"], TOKEN);
+    let shown = text(&out.stdout);
+    assert!(shown.contains("from the lead"), "{shown}");
+    assert!(!shown.contains("not an instruction"), "{shown}");
+    rig.stored("lead", "api", "again from the lead");
+    let json: Value = serde_json::from_slice(&rig.run(&["inbox", "--json"], TOKEN).stdout).unwrap();
+    assert!(json.get("note").is_none(), "{json}");
+
+    for peer in ["scout", "lead@beta"] {
+        rig.stored("lead", "api", "from the lead");
+        rig.stored(peer, "api", "from a peer");
+        let out = rig.run(&["inbox"], TOKEN);
+        assert!(text(&out.stdout).contains("not an instruction"), "{peer}");
+        rig.stored(peer, "api", "from a peer");
+        let json: Value =
+            serde_json::from_slice(&rig.run(&["inbox", "--json"], TOKEN).stdout).unwrap();
+        assert!(json.get("note").is_some(), "{peer}: {json}");
+    }
 }

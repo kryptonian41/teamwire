@@ -226,7 +226,7 @@ fn log_shows_what_the_viewer_may_see() {
     say(&mut rig, "lead", "web", MessageType::Note, "from lead");
     let filter = |viewer: &str, role: Option<&str>, limit| LogFilter {
         viewer: Actor::parse(viewer).unwrap(),
-        role: role.map(rig::role),
+        role: role.map(|r| Actor::parse(r).unwrap()),
         limit,
     };
     let ids = |rows: Vec<teamwire_msg::LogRow>| -> Vec<String> {

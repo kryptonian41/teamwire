@@ -220,6 +220,17 @@ async fn the_lead_has_no_inbox() {
 }
 
 #[tokio::test]
+async fn log_accepts_the_lead_and_another_teams_agent_as_the_role() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Investigator);
+    let api = rig.member_client("api", &token_of("api")).await;
+    for role in ["lead", "db@beta"] {
+        let result = call(&api, "team_log", json!({"role": role})).await;
+        assert_eq!(ok(&result)["messages"], json!([]), "{role}");
+    }
+}
+
+#[tokio::test]
 async fn ack_sorts_ids_into_acked_already_and_unknown() {
     let (_rig, api, web) = two_members().await;
     call(

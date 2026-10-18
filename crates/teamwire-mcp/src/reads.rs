@@ -4,7 +4,7 @@
 
 use rmcp::model::JsonObject;
 use serde_json::json;
-use teamwire_core::{Actor, Role, TeamName};
+use teamwire_core::{Actor, TeamName};
 use teamwire_msg::{LogFilter, roster, roster_of, teams};
 use teamwire_store::Ctx;
 
@@ -60,7 +60,7 @@ pub(crate) fn run(
             let role = input
                 .role
                 .as_deref()
-                .map(|r| Role::parse(r).map_err(|e| ToolFailure::invalid(e.to_string())))
+                .map(|r| Actor::parse(r).map_err(|e| ToolFailure::invalid(e.to_string())))
                 .transpose()?;
             let rows = teamwire_msg::log(
                 ctx,

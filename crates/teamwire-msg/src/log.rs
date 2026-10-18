@@ -11,7 +11,7 @@ const EXCERPT_CHARS: usize = 300;
 
 /// The messages the viewer may see, oldest first. A member sees only
 /// messages it sent or received; the lead sees all. `role` keeps only
-/// messages to or from that role. `limit` keeps the newest rows.
+/// messages to or from that party. `limit` keeps the newest rows.
 ///
 /// A message whose body fails its hash cannot be shown as it is stored. It
 /// is left out here and `verify --deep` names it.
@@ -26,9 +26,7 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
         other @ (Actor::Member(_) | Actor::Other(_)) => Some(other),
     };
     let query = MessageFilter {
-        involving: viewer_scope
-            .clone()
-            .or_else(|| role.clone().map(Actor::Member)),
+        involving: viewer_scope.clone().or_else(|| role.clone()),
         ..MessageFilter::default()
     };
     let mut rows = ctx.store.read(|tx| {
@@ -71,7 +69,7 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
 fn involves<'a>(
     message: &Message,
     mut to: impl Iterator<Item = &'a Recipient>,
-    role: &teamwire_core::Role,
+    role: &Actor,
 ) -> bool {
     message.sender.as_str() == role.as_str() || to.any(|r| r.as_str() == role.as_str())
 }
