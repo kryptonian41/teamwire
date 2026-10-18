@@ -262,7 +262,7 @@ fn reopen_member<'r>(
     }
     if !options.recorded {
         warnings.push(format!(
-            "{} has no model or effort recorded (an older build started it), so it resumes on Claude's default",
+            "{} has no model or effort recorded (an older build started it), so it resumes on the harness's default",
             member.role
         ));
     }
@@ -349,7 +349,7 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         Ok(StartupOutcome::NoDialog | StartupOutcome::AnsweredPlainTrust) => return Ok(place),
         Ok(StartupOutcome::RefusedEscalated) => format!(
             "the folder's own settings ask for extra permissions, so the trust dialog was not \
-             answered; open Claude Code yourself in {}, review and accept that dialog there, \
+             answered; open the member's harness yourself in {}, review and accept that dialog there, \
              then run reopen again",
             r.folder.display()
         ),

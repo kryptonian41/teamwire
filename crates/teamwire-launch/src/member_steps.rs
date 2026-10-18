@@ -144,7 +144,7 @@ fn orphan_note(host: &dyn teamwire_core::Host, request: &teamwire_core::SpawnReq
 pub(crate) fn escalated_trust_message(repo: &Path) -> String {
     format!(
         "the repository's own settings ask for extra permissions, so the trust dialog was not \
-         answered; open Claude Code yourself in {}, review and accept that dialog there, then \
+         answered; open the member's harness yourself in {}, review and accept that dialog there, then \
          launch the member again with --add (the role is reusable because it never started)",
         repo.display()
     )
@@ -371,7 +371,7 @@ mod tests {
     #[test]
     fn escalated_message_names_the_main_checkout_and_add() {
         let text = escalated_trust_message(Path::new("/work/proj"));
-        assert!(text.contains("open Claude Code yourself in /work/proj"));
+        assert!(text.contains("open the member's harness yourself in /work/proj"));
         assert!(text.contains("--add") && text.contains("never started"));
         assert!(!text.contains("answer it yourself"));
     }
