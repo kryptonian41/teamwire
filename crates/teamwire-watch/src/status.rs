@@ -23,10 +23,20 @@ use crate::{
 /// The longest message excerpt status shows.
 const EXCERPT: usize = 80;
 
+/// A member with its completion, run start, the version that started it, and
+/// whether it was started without a first prompt and never reprompted.
+type MemberRow = (
+    Member,
+    Option<CompletionRecord>,
+    Timestamp,
+    Option<String>,
+    bool,
+);
+
 /// The rows status shows, read in one transaction.
 struct Rows {
     view: StatusView,
-    members: Vec<(Member, Option<CompletionRecord>, Timestamp, Option<String>)>,
+    members: Vec<MemberRow>,
     team_dir: PathBuf,
 }
 
@@ -74,12 +84,18 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         if member.state == MemberState::Removed {
             continue;
         }
-        let started = tx
-            .events_of_role(&member.role)?
-            .all_or_corrupt()?
-            .into_iter()
+        let events = tx.events_of_role(&member.role)?.all_or_corrupt()?;
+        let started = events
+            .iter()
             .rev()
             .find(|e| e.kind == teamwire_core::EventType::MemberStarted);
+        // An older build's event has no `dispatch` key and keeps the grace period.
+        let unprompted = started.is_some_and(|s| {
+            s.data.get("dispatch") == Some(&serde_json::Value::Bool(false))
+                && !events
+                    .iter()
+                    .any(|e| e.kind == teamwire_core::EventType::MemberReprompted && e.seq > s.seq)
+        });
         let run_start = started
             .as_ref()
             .map_or(member.gen_started_at, |e| e.time.max(member.gen_started_at));
@@ -90,7 +106,8 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             member,
             completion,
             run_start,
-            started.map(|e| e.writer_version),
+            started.map(|e| e.writer_version.clone()),
+            unprompted,
         ));
     }
 
@@ -204,12 +221,15 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
 }
 
 /// The word `status` shows for a member, from its records and one look at it.
+/// A member started without a first prompt has no startup to wait out, so it
+/// reads `quiet` when idle.
 fn state_word(
     ctx: &Ctx<'_>,
     member: &Member,
     completion: Option<&CompletionRecord>,
     seen: Seen,
     age: Duration,
+    unprompted: bool,
 ) -> String {
     match member.state {
         MemberState::Creating => return "not started".to_owned(),
@@ -235,7 +255,7 @@ fn state_word(
         Seen::Absent => "died?".to_owned(),
         _ if age > Duration::from_secs(member.deadline_s) => "late".to_owned(),
         Seen::Alive(Activity::Blocked) => "blocked".to_owned(),
-        Seen::Alive(Activity::Idle) if age >= grace => "quiet".to_owned(),
+        Seen::Alive(Activity::Idle) if age >= grace || unprompted => "quiet".to_owned(),
         Seen::Alive(_) | Seen::NoInfo => "working".to_owned(),
     }
 }
@@ -288,7 +308,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         team_dir,
     } = rows;
     let mut listings = Listings::default();
-    for (member, completion, run_start, started_by) in &members {
+    for (member, completion, run_start, started_by, unprompted) in &members {
         let seen = observe(ctx, member, &mut listings);
         let age = now.saturating_since(*run_start);
         let resume = match (role, &view.team, &member.session_id) {
@@ -312,7 +332,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         view.members.push(MemberView {
             role: member.role.clone(),
             title: member.title.clone(),
-            state: state_word(ctx, member, completion.as_ref(), seen, age),
+            state: state_word(ctx, member, completion.as_ref(), seen, age, *unprompted),
             generation: member.generation,
             age_s: seconds(age),
             deadline_s: member.deadline_s,

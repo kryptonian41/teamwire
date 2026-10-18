@@ -212,11 +212,38 @@ async fn inbox_returns_unread_messages_once_and_marks_them_read() {
 }
 
 #[tokio::test]
+async fn the_inbox_note_is_left_out_when_only_the_lead_wrote() {
+    let (rig, _api, web) = two_members().await;
+    let lead = rig.client(McpCaller::Lead).await;
+    call(
+        &lead,
+        "team_send",
+        json!({"team": "alpha", "to": ["web"], "type": "note", "text": "ship it"}),
+    )
+    .await;
+    let result = call(&web, "team_inbox", json!({})).await;
+    let out = ok(&result);
+    assert_eq!(out["messages"][0]["from"], "lead");
+    assert!(out.get("note").is_none(), "{out}");
+}
+
+#[tokio::test]
 async fn the_lead_has_no_inbox() {
     let rig = Rig::new();
     let lead = rig.client(McpCaller::Lead).await;
     let result = call(&lead, "team_inbox", json!({"team": "alpha"})).await;
     assert_eq!(refused(&result), "invalid.argument");
+}
+
+#[tokio::test]
+async fn log_accepts_the_lead_and_another_teams_agent_as_the_role() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Investigator);
+    let api = rig.member_client("api", &token_of("api")).await;
+    for role in ["lead", "db@beta"] {
+        let result = call(&api, "team_log", json!({"role": role})).await;
+        assert_eq!(ok(&result)["messages"], json!([]), "{role}");
+    }
 }
 
 #[tokio::test]

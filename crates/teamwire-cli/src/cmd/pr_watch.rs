@@ -247,6 +247,28 @@ fn gh(platform: &dyn Platform, args: &[&str]) -> Option<Value> {
     serde_json::from_slice(&out.stdout).ok()
 }
 
+/// What `gh pr view` says on stderr when the pull request or the repository
+/// does not exist, after a `GraphQL: ` prefix.
+const NOT_FOUND_TEXTS: [&str; 2] = [
+    "Could not resolve to a PullRequest",
+    "Could not resolve to a Repository",
+];
+
+/// `gh pr view`'s JSON, or else the one-line reason it gave for a pull
+/// request or repository that does not exist. Any other failure is `Err(None)`.
+fn gh_view(platform: &dyn Platform, args: &[&str]) -> Result<Value, Option<String>> {
+    let out = platform
+        .run(&Command::new("gh").args(args.iter().copied()), GH_TIMEOUT)
+        .map_err(|_| None)?;
+    if let Ok(json) = serde_json::from_slice(&out.stdout) {
+        return Ok(json);
+    }
+    Err(String::from_utf8_lossy(&out.stderr)
+        .lines()
+        .find(|l| NOT_FOUND_TEXTS.iter().any(|t| l.contains(t)))
+        .map(|l| l.trim().to_owned()))
+}
+
 /// What `gh pr checks` prints on stderr, with exit 1 and nothing on stdout,
 /// for a pull request that has no checks at all.
 const NO_CHECKS_TEXT: &str = "no checks reported";
@@ -327,7 +349,16 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
                 wiring.platform.as_ref(),
                 &["pr", "checks", &number, "-R", repo, "--json", "name,bucket"],
             );
-            let view = gh(wiring.platform.as_ref(), &view_args(&number, repo));
+            let view = match gh_view(wiring.platform.as_ref(), &view_args(&number, repo)) {
+                Ok(view) => Some(view),
+                Err(Some(reason)) => {
+                    // Done and failed, so the watch ends once every pull request is done.
+                    memory.done.insert(*pr, 1);
+                    events.push(format!("{} NOT-FOUND: {reason}", label(repo, *pr)));
+                    continue;
+                }
+                Err(None) => None,
+            };
             if let Some(base) = view.as_ref().map(|v| text(v, "baseRefName"))
                 && !base.is_empty()
                 && !memory.required.contains_key(pr)

@@ -27,8 +27,8 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
-    Actor, DeliveryErrorCode, DeliveryState, DisplayId, MessageType, Recipient, Refusal, Role,
-    Timestamp, Ulid,
+    Actor, DeliveryErrorCode, DeliveryState, DisplayId, MessageType, Recipient, Refusal, Timestamp,
+    Ulid,
 };
 use teamwire_store::StoreError;
 use thiserror::Error;
@@ -177,8 +177,8 @@ pub struct AckResult {
 pub struct LogFilter {
     /// A member sees only messages it sent or received; the lead sees all.
     pub viewer: Actor,
-    /// Only messages to or from this role.
-    pub role: Option<Role>,
+    /// Only messages to or from this party: the lead, a role, or an agent of another team.
+    pub role: Option<Actor>,
     pub limit: Option<usize>,
 }
 
