@@ -12,6 +12,7 @@ use rig::{Rig, role, sid, token_of};
 use std::sync::Arc;
 use teamwire_core::Registry;
 
+#[expect(dead_code, reason = "only the launch tests set a startup function")]
 #[path = "support/hint_harness.rs"]
 mod hint_harness;
 use hint_harness::HintHarness;

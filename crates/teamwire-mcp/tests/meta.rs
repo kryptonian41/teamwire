@@ -5,6 +5,7 @@
     reason = "an integration test unwraps; a failure there fails the test"
 )]
 
+#[expect(dead_code, reason = "only the launch tests set a startup function")]
 #[path = "../../teamwire-msg/tests/support/hint_harness.rs"]
 mod hint_harness;
 #[expect(dead_code, reason = "this file uses part of the shared rig")]

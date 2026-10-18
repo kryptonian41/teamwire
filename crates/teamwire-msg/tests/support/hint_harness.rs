@@ -1,5 +1,7 @@
 //! A harness that names the caller's session only through one lookup key,
-//! as Codex does through `MCP_META_sessionId`. Everything else is the fake's.
+//! as Codex does through `MCP_META_sessionId`, and that can run a function
+//! when its startup dialog is answered, as a session-start hook would.
+//! Everything else is the fake's.
 #![expect(
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
@@ -16,14 +18,26 @@ use teamwire_core::{
 };
 use teamwire_fakes::FakeHarness;
 
+type StartupFn = Box<dyn Fn(&Place) + Send + Sync>;
+
 pub(crate) struct HintHarness {
     inner: Arc<FakeHarness>,
     key: &'static str,
+    on_startup: Option<StartupFn>,
 }
 
 impl HintHarness {
     pub(crate) fn new(inner: Arc<FakeHarness>, key: &'static str) -> Self {
-        Self { inner, key }
+        Self {
+            inner,
+            key,
+            on_startup: None,
+        }
+    }
+
+    pub(crate) fn on_startup(mut self, f: impl Fn(&Place) + Send + Sync + 'static) -> Self {
+        self.on_startup = Some(Box::new(f));
+        self
     }
 }
 
@@ -76,6 +90,9 @@ impl Harness for HintHarness {
         place: &Place,
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
+        if let Some(f) = &self.on_startup {
+            f(place);
+        }
         self.inner.answer_startup(host, place, policy)
     }
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
