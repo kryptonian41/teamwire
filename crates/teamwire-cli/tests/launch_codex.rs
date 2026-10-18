@@ -13,6 +13,9 @@ struct Rig {
     herdr: FakeHerdrEnv,
     home: TestHome,
     work: tempfile::TempDir,
+    /// Holds a stub `codex`, because launch refuses a harness program that
+    /// does not answer `--version`.
+    bin: tempfile::TempDir,
 }
 
 #[expect(
@@ -29,6 +32,7 @@ impl Rig {
             herdr: FakeHerdrEnv::new().unwrap(),
             home: TestHome::new().unwrap(),
             work: tempfile::tempdir().unwrap(),
+            bin: stub_codex(),
         }
     }
 
@@ -39,6 +43,7 @@ impl Rig {
             .arg("launch")
             .env_clear()
             .envs(self.herdr.env())
+            .env("PATH", self.path())
             .env("TEAMWIRE_HOME", self.home.path())
             .env("HERDR_ENV", "1")
             .stdin(std::process::Stdio::piped())
@@ -53,6 +58,29 @@ impl Rig {
         }
         child.wait_with_output().unwrap()
     }
+
+    /// The fakes' `PATH` with the stub `codex` first.
+    fn path(&self) -> std::ffi::OsString {
+        let fakes = self
+            .herdr
+            .env()
+            .into_iter()
+            .find(|(k, _)| k == "PATH")
+            .map(|(_, v)| v)
+            .unwrap_or_default();
+        let mut dirs = vec![self.bin.path().to_path_buf()];
+        dirs.extend(std::env::split_paths(&fakes));
+        std::env::join_paths(dirs).unwrap()
+    }
+}
+
+fn stub_codex() -> tempfile::TempDir {
+    use std::os::unix::fs::PermissionsExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("codex");
+    std::fs::write(&path, "#!/bin/sh\necho codex-cli 0.0.0\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    dir
 }
 
 fn spec(cwd: &Path) -> Value {
