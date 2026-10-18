@@ -44,6 +44,9 @@ fn bed(session: Option<&str>) -> Bed {
         claude_config_dir: None,
         codex_test_home: None,
         codex_home: None,
+        lead_harness: None,
+        claude_session: None,
+        codex_thread: None,
     })
     .unwrap();
     wiring.registry = Registry::new();
