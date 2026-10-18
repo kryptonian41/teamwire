@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use teamwire_core::{
-    DeliveryError, DeliveryErrorCode, Harness, Host, HostErrorCode, Pid, Place, SessionId,
-    SessionKind, one_line,
+    Clock, DeliveryError, DeliveryErrorCode, Harness, Host, HostErrorCode, Pid, Place, Platform,
+    SessionId, SessionKind, one_line,
 };
 use teamwire_store::{Ctx, Party, StoreError};
 
@@ -41,6 +41,20 @@ pub fn locate(ctx: &Ctx<'_>, party: &Party) -> Result<Place, DeliveryError> {
     locate_with(ctx, party, harness, host, &budget).map(|found| found.place)
 }
 
+/// The place where `session` runs now, by the same two views as `locate`,
+/// for a session no store records yet: the lead of a team that launch has
+/// not created (ADR 0023 point 9).
+pub fn locate_session(
+    platform: &dyn Platform,
+    clock: &dyn Clock,
+    session: &SessionId,
+    harness: &dyn Harness,
+    host: &dyn Host,
+) -> Result<Place, DeliveryError> {
+    let budget = Budget::new(clock, None);
+    locate_session_with(platform, session.clone(), harness, host, &budget).map(|found| found.place)
+}
+
 pub(crate) fn locate_with(
     ctx: &Ctx<'_>,
     party: &Party,
@@ -49,6 +63,16 @@ pub(crate) fn locate_with(
     budget: &Budget<'_>,
 ) -> Result<Located, DeliveryError> {
     let session = recorded_session(ctx, party)?;
+    locate_session_with(ctx.platform, session, harness, host, budget)
+}
+
+fn locate_session_with(
+    platform: &dyn Platform,
+    session: SessionId,
+    harness: &dyn Harness,
+    host: &dyn Host,
+    budget: &Budget<'_>,
+) -> Result<Located, DeliveryError> {
     let Some(place_var) = host.place_env_var() else {
         return Err(DeliveryError::new(
             DeliveryErrorCode::SingleSource,
@@ -72,7 +96,7 @@ pub(crate) fn locate_with(
             format!("no live process runs session {session}"),
         ));
     }
-    let candidates = candidate_places(ctx, host, &pids, place_var)?;
+    let candidates = candidate_places(platform, host, &pids, place_var)?;
 
     let mut confirmed = Vec::new();
     let mut other = None;
@@ -198,7 +222,7 @@ fn recorded_session(ctx: &Ctx<'_>, party: &Party) -> Result<SessionId, DeliveryE
 
 /// The distinct places the session's processes name for themselves.
 fn candidate_places(
-    ctx: &Ctx<'_>,
+    platform: &dyn Platform,
     host: &dyn Host,
     pids: &[Pid],
     place_var: &str,
@@ -207,7 +231,7 @@ fn candidate_places(
     let mut unreadable = Vec::new();
     for pid in pids {
         let failure = std::cell::RefCell::new(None);
-        let id = host.place_from_env(&|var| match ctx.platform.env_of(*pid, var) {
+        let id = host.place_from_env(&|var| match platform.env_of(*pid, var) {
             Ok(value) => value,
             Err(e) => {
                 failure.borrow_mut().get_or_insert(e);

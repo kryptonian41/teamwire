@@ -24,7 +24,7 @@ use teamwire_core::DeliveryError;
 pub use deliver::{deliver_line, deliver_line_within};
 pub use lease::{WATCH_LEASE_STALE, watch_lease_is_dead};
 pub use lines::{agent_text, line_holds_whole, message_line, message_line_to, result_line};
-pub use locate::locate;
+pub use locate::{locate, locate_session};
 pub use pending::{PENDING_STALE, attempt_started, is_pending_stale};
 pub use unread::unread_since;
 
