@@ -312,6 +312,11 @@ pre.text {
 .legend { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 6px; margin-top: var(--s3); }
 .legend .sub { margin-left: var(--s2); }
 
+/* History and archive */
+.history-team h2 { margin-bottom: var(--s1); }
+.summary { margin: 0 0 var(--s3); color: var(--muted); max-width: 72ch; font-variant-numeric: tabular-nums; }
+.file-group h3 { margin-top: var(--s4); }
+
 details { margin-top: var(--s5); }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-lead); margin-bottom: var(--s3); }
 
