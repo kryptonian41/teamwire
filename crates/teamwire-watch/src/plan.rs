@@ -272,10 +272,11 @@ fn judge(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict
     }
     if info.member.state != MemberState::Started {
         // Launch keeps a member `creating` while its setup command and the
-        // host spawn run, and each has its own time limit. Only a launch that
-        // is still `creating` after the grace and both limits has stopped
-        // part-way. Nothing moves it without the lead, so it counts as stuck.
-        // It is not settled: launch may still finish it.
+        // host spawn run, and each has its own time limit. A launch still
+        // `creating` after the grace and both limits counts as stuck. The
+        // waits for the worktree, the trust dialog and the occupant are not
+        // in the sum, so an extreme launch can still raise a false
+        // TEAM-STALLED. It is not settled: launch may still finish it.
         let cfg = &env.ctx.config;
         let limit = cfg.startup_grace_s + cfg.setup_timeout_s + cfg.spawn_timeout_s;
         let late = env.now.saturating_since(info.run_start) >= Duration::from_secs(limit);
