@@ -198,7 +198,14 @@ fn ends_inside_string(text: &str) -> bool {
                 chars.next();
                 chars.next();
             }
-            'r' if !open && skip_raw_string(&mut chars) => {}
+            'r' if !open => {
+                if let Some(unclosed) = skip_raw_string(&mut chars) {
+                    open = unclosed;
+                    if open {
+                        break;
+                    }
+                }
+            }
             '"' => open = !open,
             _ => {}
         }
@@ -207,13 +214,15 @@ fn ends_inside_string(text: &str) -> bool {
 }
 
 /// After an `r` outside a string: if `#`s and a `"` follow, consume the raw
-/// string through its closing `"` and `#`s and return true. An unclosed one
-/// (it spans lines) consumes the rest of the line, as the rule's note says.
-fn skip_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> bool {
+/// string through its closing `"` and `#`s. Returns `None` when no raw string
+/// starts here, else whether it is still open at the end of `text`. A marker
+/// after an open one is inside the string, as it is on a multi-line raw
+/// string's first line.
+fn skip_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<bool> {
     let rest = chars.clone();
     let hashes = rest.clone().take_while(|&c| c == '#').count();
     if rest.clone().nth(hashes) != Some('"') {
-        return false;
+        return None;
     }
     let mut body = rest.skip(hashes + 1);
     let mut taken = hashes + 1;
@@ -221,6 +230,7 @@ fn skip_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> bool
         .chain(std::iter::repeat_n('#', hashes))
         .collect();
     let mut window = Vec::new();
+    let mut closed = false;
     for c in body.by_ref() {
         taken += 1;
         window.push(c);
@@ -228,11 +238,12 @@ fn skip_raw_string(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> bool
             window.remove(0);
         }
         if window == close {
+            closed = true;
             break;
         }
     }
     chars.nth(taken - 1);
-    true
+    Some(!closed)
 }
 
 #[cfg(test)]
