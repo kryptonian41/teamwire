@@ -356,7 +356,7 @@ impl Tx<'_> {
         Ok(true)
     }
 
-    /// `teamwire received` (ADR 0023): the lead read an `undelivered` or
+    /// `teamwire received` (ADR 0024): the lead read an `undelivered` or
     /// `unconfirmed` result from its file, so it becomes `delivered` with
     /// route `inbox`, and one `result.delivered` event is written. The
     /// reason stays as the record of why the typing failed. False when the

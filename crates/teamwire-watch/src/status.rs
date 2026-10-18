@@ -184,7 +184,7 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
     {
         let c = record.completion;
         // A newer completion replaces this one as the member's result (ADR
-        // 0007 point 2), and its file overwrote this one's (ADR 0023).
+        // 0007 point 2), and its file overwrote this one's (ADR 0024).
         let newest = tx.latest_completion(&c.role)?.map(|r| r.completion.ulid);
         if newest.as_ref() != Some(&c.ulid) {
             continue;

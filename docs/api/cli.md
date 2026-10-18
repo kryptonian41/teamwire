@@ -106,7 +106,7 @@ member identity); per member: state
 deadline, delivery state of its newest result, branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
 `undelivered`, and results the lead has not received: a member's newest
-completion when it is `undelivered` or `unconfirmed` (ADR 0023). It also shows the team's watch
+completion when it is `undelivered` or `unconfirmed` (ADR 0024). It also shows the team's watch
 (`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
@@ -237,7 +237,7 @@ for `send`.
 ### `teamwire received <team> <ROLE>...`
 
 Records that the lead read each member's newest result from its file, after
-the typing failed or stalled (ADR 0023). A result that is `undelivered` or
+the typing failed or stalled (ADR 0024). A result that is `undelivered` or
 `unconfirmed` becomes `delivered` with route `inbox`, and `status` stops
 listing it. Prints `<role> #<n> received` per marked result, or
 `<role> unchanged: its newest result is <state>` and changes nothing. A

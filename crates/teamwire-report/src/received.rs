@@ -1,4 +1,4 @@
-//! `teamwire received` (ADR 0023): the lead says it read a member's result
+//! `teamwire received` (ADR 0024): the lead says it read a member's result
 //! from its file, after the typing failed or stalled.
 
 use serde::{Deserialize, Serialize};

@@ -1,4 +1,4 @@
-# ADR 0023: The lead marks a result received, and a newer result replaces an older one
+# ADR 0024: The lead marks a result received, and a newer result replaces an older one
 
 Status: accepted, 2026-10-18. Adds a way out of `undelivered` and
 `unconfirmed` to ADR 0007 point 2, and narrows which results `teamwire status`
