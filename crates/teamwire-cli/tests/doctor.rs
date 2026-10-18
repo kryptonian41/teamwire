@@ -360,6 +360,55 @@ fn doctor_reports_quick_check_failure() {
 }
 
 #[test]
+fn a_message_counter_below_an_id_in_use_fails_and_prints_the_repair() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    let send = |store: &mut Store| {
+        store
+            .write(|tx| {
+                tx.insert_message(
+                    FakeClock::new().now(),
+                    &teamwire_store::NewMessage {
+                        sender: teamwire_core::Actor::Lead,
+                        kind: teamwire_core::MessageType::Note,
+                        re: None,
+                        commit: None,
+                        body: "x".to_owned(),
+                        client_key: None,
+                        recipients: vec![teamwire_core::Recipient::Lead],
+                    },
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+    };
+    send(&mut store);
+    send(&mut store);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha counters"), Level::Pass);
+    // Damaged by raw SQL, as the store's corrupt test does it.
+    store
+        .write(|tx| {
+            Ok(tx.connection().execute(
+                "UPDATE counters SET value = 1 WHERE name = 'display_id'",
+                (),
+            )?)
+        })
+        .unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha counters"), Level::Fail);
+    let text = detail_of(&checks, "team alpha counters");
+    assert!(
+        text.contains("display_id is 1 but 2 is in use")
+            && text.contains("UPDATE counters SET value = 2 WHERE name = 'display_id';"),
+        "{text}"
+    );
+    // Doctor only prints the repair: the row is still damaged.
+    let still = store.read(|tx| tx.counter("display_id")).unwrap();
+    assert_eq!(still, Some(1));
+}
+
+#[test]
 fn a_database_of_another_schema_version_fails() {
     let bed = Bed::healthy();
     drop(bed.team("alpha"));

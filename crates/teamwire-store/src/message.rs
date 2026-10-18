@@ -373,6 +373,25 @@ impl ReadTx<'_> {
         })
     }
 
+    /// The largest value each message counter must at least hold, by counter
+    /// name: `display_id` and one `seq:<sender>` per sender with a message.
+    /// A counter below its entry makes every later send collide (`doctor`).
+    pub fn counter_floors(&self) -> Result<Vec<(String, u64)>, StoreError> {
+        let mut stmt = self.connection().prepare(
+            "SELECT 'display_id', max(CAST(substr(display_id, 2) AS INTEGER)) FROM messages
+             HAVING count(*) > 0
+             UNION ALL
+             SELECT 'seq:' || sender, max(seq) FROM messages GROUP BY sender
+             ORDER BY 1",
+        )?;
+        listing("messages", &mut stmt, [], |row| {
+            let name: String = col(row, 0)?;
+            let v: i64 = col(row, 1)?;
+            Ok((name, u64::try_from(v).map_err(|e| bad("counter", e))?))
+        })?
+        .all_or_corrupt()
+    }
+
     /// The value of a named counter, or `None` if it was never used.
     pub fn counter(&self, name: &str) -> Result<Option<u64>, StoreError> {
         let mut stmt = self
