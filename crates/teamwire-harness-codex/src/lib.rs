@@ -13,6 +13,7 @@
 //! tools, hooks and MCP server through `-c` values that name the 0600 token
 //! file, never the token itself.
 
+mod launch;
 pub mod lead_setup;
 
 use std::fmt;
@@ -87,12 +88,12 @@ impl Harness for CodexCli {
         }
     }
 
-    fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.codex_bin, m, &launch::Start::New)
     }
 
-    fn resume_spec(&self, _m: &MemberLaunch, _s: &SessionId) -> Result<LaunchSpec, HarnessError> {
-        Err(HarnessError::unsupported())
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        launch::build(&self.config.codex_bin, m, &launch::Start::Resume(s))
     }
 
     fn current_session(&self) -> Option<CallerSession> {
