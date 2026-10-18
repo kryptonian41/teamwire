@@ -226,7 +226,7 @@ fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     assert!(shown.contains("0/1 members started"), "{shown}");
     assert!(shown.contains("watch: teamwire watch demo"), "{shown}");
     assert!(
-        shown.contains("no member started; fix the cause and run teamwire launch --add --spec <spec>, or teamwire close demo"),
+        shown.contains("no member started; fix the cause and run teamwire launch --add --spec <file>, or teamwire close demo"),
         "{shown}"
     );
     assert!(
@@ -366,4 +366,20 @@ fn the_unverifiable_implementer_warning_names_what_is_missing() {
     ] {
         assert!(err.contains(line), "{err}");
     }
+}
+
+#[test]
+fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
+    let mut rig = Rig::new();
+    rig.herdr
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        .unwrap();
+    let file = rig.spec_file(&pane_spec("demo", rig.work.path()));
+    let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);
+    let shown = text(&out.stdout);
+    let want = format!(
+        "teamwire launch --add --spec {}, or teamwire close demo",
+        file.display()
+    );
+    assert!(shown.contains(&want), "{shown}");
 }

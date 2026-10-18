@@ -149,8 +149,12 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
     }
     println!("watch: {}", report.watch_command);
     if started == 0 {
+        let spec = args
+            .spec
+            .as_ref()
+            .map_or_else(|| "<file>".to_owned(), |f| f.display().to_string());
         println!(
-            "no member started; fix the cause and run teamwire launch --add --spec <spec>, or teamwire close {team}"
+            "no member started; fix the cause and run teamwire launch --add --spec {spec}, or teamwire close {team}"
         );
     }
     if started == report.members.len() {
