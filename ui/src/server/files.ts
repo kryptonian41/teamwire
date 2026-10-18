@@ -15,7 +15,7 @@ import {
   type Problem,
 } from "../shared/api.ts";
 import { DISPLAY_ID_RE, NAME_RE } from "../shared/teamwire.ts";
-import { parseMarkdown } from "./markdown.ts";
+import { parseMarkdownBounded } from "./markdown.ts";
 
 export type FileResult = { ok: true; file: FileText } | { ok: false; problem: Problem };
 
@@ -78,7 +78,7 @@ export async function readKindFile(base: string, kind: string, name: string): Pr
         modifiedAt: info.mtime.toISOString(),
         text,
         truncated: info.size > MAX_FILE_BYTES,
-        doc: FILE_KINDS[kind].ext === ".md" ? parseMarkdown(text) : null,
+        doc: FILE_KINDS[kind].ext === ".md" ? await parseMarkdownBounded(text) : null,
       },
     };
   } catch {

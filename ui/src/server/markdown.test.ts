@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MdNode } from "../shared/api.ts";
-import { parseMarkdown } from "./markdown.ts";
+import { MAX_MD_CHARS, MAX_MD_DEPTH, parseMarkdown, parseMarkdownBounded } from "./markdown.ts";
 
 const all = (nodes: MdNode[]): MdNode[] => nodes.flatMap((n) => [n, ...all(n.c ?? [])]);
 
@@ -48,4 +48,30 @@ test("the mock page's hand-written tree matches the parser", async () => {
   const { mockMarkdown } = await import("../web/mockMarkdown.ts");
   const { text, doc } = mockMarkdown("brief for api", "payments");
   expect(parseMarkdown(text)).toEqual(doc);
+});
+
+describe("limits", () => {
+  test("a tree deeper than the limit falls back to plain text", () => {
+    expect(parseMarkdown("> ".repeat(MAX_MD_DEPTH + 5) + "x")).toBeNull();
+    expect(parseMarkdown("> ".repeat(10) + "x")).not.toBeNull();
+  });
+
+  test("www and email autolinks stay text, so no dead link is made", () => {
+    const nodes = all(parseMarkdown("www.example.com and a@example.com") ?? []);
+    expect(nodes.some((n) => n.t === "link")).toBe(false);
+  });
+
+  test("the bounded parse returns the tree off the server's thread", async () => {
+    expect(await parseMarkdownBounded("**hi**")).toEqual([{ t: "paragraph", c: [{ t: "strong", c: [{ t: "text", v: "hi" }] }] }]);
+  });
+
+  test("a slow parse is stopped and gives null", async () => {
+    const started = performance.now();
+    expect(await parseMarkdownBounded("[".repeat(30000) + "]".repeat(30000), 200)).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1500);
+  });
+
+  test("a file over the size limit is not parsed", async () => {
+    expect(await parseMarkdownBounded("x".repeat(MAX_MD_CHARS + 1))).toBeNull();
+  });
 });
