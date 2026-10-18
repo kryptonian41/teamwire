@@ -57,9 +57,6 @@ const MIGRATION_HEAD: &str = "
 ";
 const MIGRATION_1: &str =
     "› 1. Try new model\n  2. Use existing model\n\n  enter/esc confirm · ⌃c quit";
-const MIGRATION_2: &str =
-    "  1. Try new model\n› 2. Use existing model\n\n  enter/esc confirm · ⌃c quit";
-
 // snapshots/codex_tui__cwd_prompt__tests__cwd_prompt_modal.snap
 const CWD: &str = "
   Working directory · resume
@@ -203,17 +200,13 @@ fn the_update_prompt_is_skipped() {
 }
 
 #[test]
-fn the_model_upgrade_is_declined() {
+fn the_model_upgrade_is_refused_and_never_answered() {
     let one = format!("{MIGRATION_HEAD}\n{MIGRATION_1}");
-    let two = format!("{MIGRATION_HEAD}\n{MIGRATION_2}");
-    let (got, keys) = run(
-        &one,
-        &[after(1, &two), after(2, IDLE)],
-        TrustPolicy::Accept,
-        200,
-    );
-    assert_eq!(got.unwrap(), StartupOutcome::NoDialog);
-    assert_eq!(keys, [Key::Down, Key::Enter]);
+    let (got, keys) = run(&one, &[], TrustPolicy::Accept, 5);
+    let err = got.unwrap_err();
+    assert_eq!(err.code, HarnessErrorCode::Refused);
+    assert!(err.detail.contains("open Codex once"), "{err}");
+    assert!(keys.is_empty());
 }
 
 #[test]

@@ -351,3 +351,57 @@ fn resume_puts_the_session_after_resume_and_lists_the_token_file() {
     assert_eq!(spec.files.len(), 1);
     assert_eq!(spec.files[0].path, m.member_dir.join("token"));
 }
+
+fn declare(dir: &Path, rel: &str) {
+    let file = dir.join(rel);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(file, "").unwrap();
+}
+
+#[test]
+fn a_folder_that_declares_its_own_codex_config_is_refused() {
+    let id = SessionId::parse(SESSION).unwrap();
+    for file in [".codex/config.toml", ".codex/hooks.json"] {
+        // In the cwd itself.
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = member(dir.path());
+        m.cwd = dir.path().join("work");
+        declare(&m.cwd, file);
+        for err in [
+            codex().launch_spec(&m).unwrap_err(),
+            codex().resume_spec(&m, &id).unwrap_err(),
+        ] {
+            assert_eq!(err.code, HarnessErrorCode::Refused);
+            assert!(err.detail.contains(file), "{err}");
+            assert!(err.detail.contains("unreviewed"), "{err}");
+        }
+        // At the main repository's root, above a worktree cwd.
+        let dir = tempfile::tempdir().unwrap();
+        let mut m = member(dir.path());
+        let repo = dir.path().join("repo");
+        let tree = repo.join(".worktrees/api");
+        std::fs::create_dir_all(&tree).unwrap();
+        std::fs::write(
+            tree.join(".git"),
+            format!("gitdir: {}/.git/worktrees/api\n", repo.display()),
+        )
+        .unwrap();
+        declare(&repo, file);
+        m.cwd = tree;
+        assert_eq!(
+            codex().launch_spec(&m).unwrap_err().code,
+            HarnessErrorCode::Refused
+        );
+    }
+}
+
+#[test]
+fn a_clean_folder_and_a_config_above_the_trust_root_are_accepted() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut m = member(dir.path());
+    m.cwd = dir.path().join("work");
+    std::fs::create_dir_all(&m.cwd).unwrap();
+    // Above the cwd, which is its own trust root: not checked.
+    declare(dir.path(), ".codex/config.toml");
+    assert!(codex().launch_spec(&m).is_ok());
+}
