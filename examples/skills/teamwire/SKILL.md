@@ -94,10 +94,10 @@ settle by guessing becomes the same guess in several fresh contexts.
 
 **Size each task.**
 
-- One coherent change per branch, as one thin vertical slice, not across
-  layers. On SWE-bench Live, a task whose reference fix is one file under
-  five lines was solved 48% of the time. With three or more files or over 100
-  lines, under 10% were solved.
+- One coherent change per branch, small enough for one fresh context, and
+  sliced as one thin vertical piece, not across layers. On SWE-bench Live, a
+  task whose reference fix is one file under five lines was solved 48% of the
+  time. With three or more files or over 100 lines, under 10% were solved.
 - Devin does best on "clear, upfront requirements and verifiable outcomes
   that would take a junior engineer 4-8 hrs of work".
 - Anthropic's agent-teams docs suggest 3-5 teammates with 5-6 tasks each.
@@ -146,9 +146,10 @@ you would otherwise answer yourself, each with your recommended answer. Show
 one numbered entry per member: kind, task, blockers, owned files and wave.
 Ask about unclear acceptance criteria, a blocking edge that looks missing or
 spurious, each policy rule's example, and anything you would have to invent
-for a brief. Use the `grilling` skill if you have it. With no user present,
-put each question in the affected brief under "Open questions you must not
-answer", and list them in your final report.
+for a brief. Use the `grilling` skill if you have it. Launch once every
+question has an answer. With no user present, put each question in the
+affected brief under "Open questions you must not answer", and list them in
+your final report.
 
 **Plan in one session, lead from a fresh one.** Every report and watch line
 costs you a full turn against your whole context. Write the plan and a brief
@@ -181,10 +182,9 @@ them runs on Claude Code's defaults, so set the last three columns.
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode. Every member is
-told that the brief is the agreed plan, and that a choice the brief does not
-cover goes under **Decisions I made** in its report. A question the brief
-marks open is recorded, not answered. A member talks only through
-`teamwire send`.
+told that the brief is the agreed plan, to list any choice the brief does not
+cover under **Decisions I made**, to record a question the brief marks open
+without answering it, and to talk only through `teamwire send`.
 
 ## Skills and plugins in members
 
@@ -349,7 +349,8 @@ while running, such as a host timeout or a failed setup, stops only that
 member. Launch tries every later member, records the team after each one,
 and exits 2, so re-add only the members that did not start. Launch also
 starts or reuses a sleep hold for your session, so the team survives idle
-sleep, but closing the lid still sleeps a Mac.
+sleep, and says so when it cannot find your process. Closing the lid still
+sleeps a Mac.
 
 Right after launch, start the watch (next section). Then call `team_status`
 once with the team, as after any `teamwire lead --adopt`. A
@@ -371,17 +372,18 @@ teamwire watch <team>
 
 The watch prints at most one line per poll, joining what one poll found with
 ` | `, and announces each event once. Each line costs you a full turn, so a
-healthy wave wakes you twice: `WATCHING` and `TEAM-COMPLETE`. Completions
-arrive through the Stop hook, so the watch stays silent about them. "Watch
-lines" near the end explains each line.
+healthy wave wakes you twice: `WATCHING` and `TEAM-COMPLETE`. On herdr and
+tmux, completions arrive through the Stop hook, so the watch stays silent
+about them. "Watch lines" near the end explains each line.
 
 `Monitor` stops a command after 5 minutes by default and 30 at most. When it
 reports that the watch expired, restart it at once, unless it printed
 `TEAM-COMPLETE` and no wave is due. A running watch picks up members added
 with `--add`, but a watch that printed `TEAM-COMPLETE` has exited, so start a
 new one after a later `--add`. If you end a turn while a member works and no
-watch runs, your Stop hook holds your stop once with the line below. A
-result line then ends with `(no watch is running: teamwire watch <team>)`.
+watch runs, your Stop hook holds your stop once with the line below. While no
+watch runs, a member's result line also ends with
+`(no watch is running: teamwire watch <team>)`.
 
 ```
 [teamwire:<team>] no watch is running; start `teamwire watch <team>` with Monitor before you stop.
@@ -468,8 +470,8 @@ team has, message that team's agents directly. Members are told how at
 launch. `teamwire teams` lists every team and its members, and
 `teamwire members <other team>` shows one roster (`team_teams`, or
 `team_members` with `of`). Address `<role>@<team>`, or `lead@<team>` for its
-lead. When your session leads both teams, `lead@<team>` is refused as a
-message to yourself.
+lead. Your own team needs no suffix. When your session leads both teams,
+`lead@<team>` is refused as a message to yourself.
 
 ```bash
 teamwire send <your team> --to db@billing --type finding --text "the users table moved to schema v2"
@@ -477,7 +479,9 @@ teamwire send <your team> --to db@billing --type finding --text "the users table
 
 A message from another team, even from its lead, arrives marked as
 information to check, and only a member's own lead sends it a `reprompt` or a
-`note`. Both teams' logs keep a copy. Retry from the sending team with
+`note`. A question from another team arrives with a reply command that
+already names the asker, such as `--to api@search`. Both teams' logs keep a
+copy. Retry from the sending team with
 `teamwire resend <your team> <id>`, which writes any missing copy and never
 types a line twice. Use this for facts that cross teams, such as a changed
 interface, a shared table or a port. To change what another team builds, ask
@@ -697,7 +701,7 @@ Close runs in the only safe order and stops at the first step that fails:
 Close prints the branches kept and any unpushed commits. A close that crashed
 leaves a lock, and `teamwire doctor` reports it.
 `teamwire close <team> --clear-stale-lock` clears a lock whose owner process
-is gone, and nothing else. Close then continues from step 1.
+is gone, and nothing else. Run close again, and it continues from step 1.
 
 ## Setting up a machine
 
@@ -712,27 +716,26 @@ this skill, the lead's MCP server and the lead's Stop hook.
    and run `teamwire doctor`, which changes nothing. Until step 3 it prints
    one `FAIL` line saying the teamwire plugin is not installed. Go on.
 2. Run the live checks by hand (`docs/test-strategy.md`, section 6). The
-   Claude adapter's check,
-   `crates/teamwire-harness-claude/examples/live_check.rs`, proves the
-   per-run `--settings` hooks and `--mcp-config` work with the installed
-   Claude Code. Run it with
+   Claude adapter's check
+   (`crates/teamwire-harness-claude/examples/live_check.rs`) proves the per-run
+   `--settings` hooks and `--mcp-config` work with the installed Claude Code:
    `cargo run -p teamwire-harness-claude --example live_check --locked`. Then
-   run your host's check: inside a herdr pane,
+   run the host's check: inside a herdr pane,
    `cargo run -p teamwire-host-herdr --example live_check --locked`, or for
    tmux, `cargo run -p teamwire-host-tmux --example tmux_live_check --locked`.
 3. Run `teamwire install`. It registers the plugin, and removes an older
-   install's skill and MCP server entry. Start a new Claude Code session
-   afterwards, because an open session does not load the plugin.
-4. Run one throwaway team in a scratch repository, and call `team_status` on
-   it from the lead's session. A reply that is not refused shows the lead's
-   MCP server sees `CLAUDE_CODE_SESSION_ID`, so the lead's calls are accepted.
+   install's skill and MCP server entry. Start a new Claude Code session,
+   because an open session does not load the plugin.
+4. Run a throwaway team in a scratch repository, and call `team_status` on it
+   from the lead's session. A reply that is not refused shows the lead's MCP
+   server sees `CLAUDE_CODE_SESSION_ID`, so the lead's calls are accepted.
    Until then, use the CLI.
 5. Check that `teamwire doctor` reports the teamwire plugin as `ok`.
 
 After a new `cargo install`, run `teamwire install` again. `teamwire uninstall`
 removes the plugin, its marketplace, `$TEAMWIRE_HOME/claude-plugin/` and any
-skill or MCP entry of an older install. Team state stays in `$TEAMWIRE_HOME`
-either way.
+skill or MCP entry of an older install, and leaves team state in
+`$TEAMWIRE_HOME`.
 
 ## How it fits together
 
@@ -761,8 +764,7 @@ or write the team's database, so run `teamwire doctor`. The other lines:
 | `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. |
 | `UNDELIVERED <role> <reason> Result: <path>` | The hook did not type the result into your pane. This line is your only notice. |
 | `UNCONFIRMED <role> ...` | Typing the result stalled. It may or may not be on your screen. |
-| `QUESTION-UNDELIVERED <id> from <role>` | A question to you could not be typed. `teamwire log` shows an excerpt, and the team's `comms/` directory holds the text. |
-| `QUESTION-UNCONFIRMED <id> from <role>` | Typing a question to you stalled. Read it the same way. |
+| `QUESTION-UNDELIVERED <id> from <role>` or `QUESTION-UNCONFIRMED <id> from <role>` | A question to you could not be typed, or its typing stalled. `teamwire log` shows an excerpt, and the team's `comms/` directory holds the full text. |
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
