@@ -60,6 +60,10 @@ macro_rules! platform_impl {
                 process::process_started(pid)
             }
 
+            fn parent_of(&self, pid: Pid) -> Option<(Pid, String)> {
+                process::parent_of(pid)
+            }
+
             fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
                 process::env_of(pid, var)
             }

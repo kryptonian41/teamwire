@@ -61,6 +61,12 @@ pub trait Platform: Send + Sync {
             _ => true,
         }
     }
+    /// The parent pid and program name (the last part of the path) of the
+    /// process `pid`. `None` when no process has the pid, or this platform
+    /// cannot tell.
+    fn parent_of(&self, _pid: Pid) -> Option<(Pid, String)> {
+        None
+    }
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError>;
     /// Run in a new process group; on timeout kill the group; exit 124.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;

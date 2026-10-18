@@ -1,11 +1,14 @@
 //! Process liveness and environment reads.
 
 use std::ffi::OsString;
+use std::time::Duration;
 
 use nix::errno::Errno;
 use nix::sys::signal::kill;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
-use teamwire_core::{Pid, PlatformError, PlatformErrorCode, Timestamp};
+use teamwire_core::{Command, Pid, PlatformError, PlatformErrorCode, Timestamp};
+
+use crate::run::run_command;
 
 fn nix_pid(pid: Pid) -> Option<nix::unistd::Pid> {
     // Pid 0 would signal our own process group, so it never counts as a process.
@@ -80,4 +83,45 @@ fn value_of(entry: &OsString, var: &str) -> Option<String> {
     let text = entry.to_string_lossy();
     let (key, value) = text.split_once('=')?;
     (key == var).then(|| value.to_owned())
+}
+
+/// The parent pid and program name of the process with this pid, read with
+/// `ps` because `sysinfo` reports a program name cut to 15 bytes on Linux.
+/// `None` when `ps` fails, times out, or finds no such process.
+pub(crate) fn parent_of(pid: Pid) -> Option<(Pid, String)> {
+    let cmd = Command::new("ps")
+        .args(["-o", "ppid=,comm=", "-p"])
+        .arg(pid.get().to_string());
+    let out = run_command(&cmd, Duration::from_secs(2)).ok()?;
+    if out.exit_code != 0 {
+        return None;
+    }
+    parse_ps_parent(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// `  123 /usr/bin/tmux` becomes `(123, "tmux")`.
+fn parse_ps_parent(text: &str) -> Option<(Pid, String)> {
+    let (ppid, comm) = text.trim().split_once(char::is_whitespace)?;
+    let name = comm.trim().rsplit('/').next()?;
+    Some((Pid::new(ppid.parse().ok()?), name.to_owned()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parent_of_this_process_is_the_real_parent() {
+        let me = Pid::new(std::process::id());
+        let (parent, name) = parent_of(me).unwrap();
+        assert_eq!(parent.get(), std::os::unix::process::parent_id());
+        assert!(!name.is_empty());
+    }
+
+    #[test]
+    fn ps_output_keeps_the_last_path_part() {
+        let (pid, name) = parse_ps_parent("  4242 /opt/homebrew/bin/tmux\n").unwrap();
+        assert_eq!((pid.get(), name.as_str()), (4242, "tmux"));
+        assert!(parse_ps_parent("").is_none());
+    }
 }
