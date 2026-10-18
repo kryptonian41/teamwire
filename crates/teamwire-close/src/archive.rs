@@ -146,17 +146,61 @@ fn read_sums_named(dest: &Path, name: &str) -> Result<Sums, String> {
     Ok(sums)
 }
 
-/// Writes the archive: a new directory that must not exist yet, `team.db` from
-/// the backup API, a copy of every other file with its mode, and `SHA256SUMS`.
+/// Where an archive is built before it gets its final name. A team name has
+/// no hyphen, so `.partial-<team>-` never starts another team's folder. The
+/// folder has no `SHA256SUMS` until its copy is whole, and `teamwire metrics`
+/// skips an archive folder without one.
+const PARTIAL: &str = ".partial-";
+
+/// Writes the archive: `team.db` from the backup API, a copy of every other
+/// file with its mode, and `SHA256SUMS`, all in a temporary folder that is
+/// renamed to `dest` (a path that must not exist yet) once whole. A close
+/// killed part way therefore never leaves a half archive under the final
+/// name, and the next close removes this team's leftover temporary folders.
 /// The text returned says how many files went in.
-pub(crate) fn write(ctx: &Ctx<'_>, team_dir: &Path, dest: &Path) -> Result<String, String> {
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
+pub(crate) fn write(
+    ctx: &Ctx<'_>,
+    team: &teamwire_core::TeamName,
+    team_dir: &Path,
+    dest: &Path,
+) -> Result<String, String> {
+    let (Some(parent), Some(name)) = (dest.parent(), dest.file_name()) else {
+        return Err(format!("{} has no folder name", dest.display()));
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
+    remove_leftovers(parent, team)?;
+    let tmp = parent.join(format!("{PARTIAL}{}", name.to_string_lossy()));
+    // `create_dir`, not `create_dir_all`: it fails when the path exists.
+    std::fs::create_dir(&tmp).map_err(|e| format!("cannot make {}: {e}", tmp.display()))?;
+    let summary = fill(ctx, team_dir, &tmp, dest)?;
+    // `rename` replaces an empty folder, so check first: an archive is never
+    // written over another (CLS-2).
+    if dest.symlink_metadata().is_ok() {
+        return Err(format!("{} already exists", dest.display()));
     }
-    // `create_dir`, not `create_dir_all`: it fails when the path exists, so an
-    // archive is never written over another (CLS-2).
-    std::fs::create_dir(dest).map_err(|e| format!("cannot make {}: {e}", dest.display()))?;
+    std::fs::rename(&tmp, dest)
+        .map_err(|e| format!("cannot move {} to {}: {e}", tmp.display(), dest.display()))?;
+    Ok(summary)
+}
+
+/// Removes the temporary folders an earlier close of this team left.
+fn remove_leftovers(parent: &Path, team: &teamwire_core::TeamName) -> Result<(), String> {
+    let prefix = format!("{PARTIAL}{team}-");
+    let entries =
+        std::fs::read_dir(parent).map_err(|e| format!("cannot read {}: {e}", parent.display()))?;
+    for entry in entries.flatten() {
+        if entry.file_name().to_string_lossy().starts_with(&prefix) {
+            let path = entry.path();
+            std::fs::remove_dir_all(&path)
+                .map_err(|e| format!("cannot remove the leftover {}: {e}", path.display()))?;
+        }
+    }
+    Ok(())
+}
+
+/// The body of `write`, into `dest`; `shown` is the path the summary names.
+fn fill(ctx: &Ctx<'_>, team_dir: &Path, dest: &Path, shown: &Path) -> Result<String, String> {
     ctx.store
         .backup_to(&dest.join("team.db"))
         .map_err(|e| format!("the database backup failed: {e}"))?;
@@ -197,7 +241,7 @@ pub(crate) fn write(ctx: &Ctx<'_>, team_dir: &Path, dest: &Path) -> Result<Strin
     Ok(format!(
         "{} file(s) and team.db in {}{skipped}",
         files.len(),
-        dest.display()
+        shown.display()
     ))
 }
 

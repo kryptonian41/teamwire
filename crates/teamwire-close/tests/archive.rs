@@ -10,7 +10,7 @@ pub mod rig;
 use std::path::PathBuf;
 
 use rig::{Rig, entries};
-use teamwire_close::{CloseOpts, CloseTarget, close_observed};
+use teamwire_close::{CloseOpts, CloseTarget, close, close_observed};
 use teamwire_core::{MemberKind, Pid, PlaceState, TeamState};
 
 /// Something that goes wrong in an archive directory.
@@ -200,4 +200,47 @@ fn a_close_removes_what_a_killed_close_left_in_deleting_unless_its_pid_is_alive(
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(!rig.team_dir().exists());
     assert_eq!(entries(&deleting), [deleting.join("busy.4000002")]);
+}
+
+#[test]
+fn a_copy_that_stops_part_way_leaves_no_archive_and_the_rerun_leaves_one() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut rig = team();
+    let root = rig.archive_root();
+    let unreadable = rig.team_dir().join("reports/api.md");
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at.as_deref(), Some("archive"), "{report:?}");
+    assert_eq!(report.archive, None, "no half archive is reported");
+    // What a kill leaves behind: a folder under a temporary name only.
+    let left = entries(&root);
+    assert_eq!(left.len(), 1, "{left:?}");
+    assert!(
+        left.first()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with(".partial-alpha-"),
+        "{left:?}"
+    );
+    // Another team's temporary folder is none of this close's business.
+    let other = root.join(".partial-beta-2026-10-18");
+    std::fs::create_dir_all(&other).unwrap();
+
+    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let all = entries(&root);
+    assert_eq!(all.len(), 2, "{all:?}");
+    assert!(other.is_dir());
+    let mine = report.archive.unwrap();
+    assert!(mine.join("SHA256SUMS").is_file());
+    assert!(
+        mine.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("alpha-20"),
+        "{mine:?}"
+    );
 }

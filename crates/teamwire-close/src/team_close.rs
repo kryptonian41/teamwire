@@ -222,7 +222,7 @@ impl Seq<'_, '_> {
             Err(why) => return self.done("archive", Err(why)),
         };
         let dest = archive::destination(self.ctx, &team.name, &self.opts);
-        let result = archive::write(self.ctx, &self.team_dir, &dest);
+        let result = archive::write(self.ctx, &team.name, &self.team_dir, &dest);
         if result.is_ok() || dest.exists() {
             self.report.archive = Some(dest);
         }
