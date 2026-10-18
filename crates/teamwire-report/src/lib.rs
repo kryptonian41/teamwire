@@ -23,6 +23,7 @@ mod paths;
 mod reminder;
 mod result_file;
 mod turn_end;
+mod usage;
 
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use lead_stop::{teams_without_watch, watch_missing_note};
