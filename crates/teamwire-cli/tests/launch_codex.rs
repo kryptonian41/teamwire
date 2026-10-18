@@ -2,6 +2,10 @@
 //! herdr, whose argument rules are those of real herdr.
 
 #![cfg(test)]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "these tests run the real teamwire binary and write a stub codex into a temporary folder"
+)]
 use std::io::Write as _;
 use std::path::Path;
 use std::process::Output;
@@ -18,10 +22,6 @@ struct Rig {
     bin: tempfile::TempDir,
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "this test runs the real teamwire binary"
-)]
 fn command(program: impl AsRef<std::ffi::OsStr>) -> std::process::Command {
     std::process::Command::new(program)
 }
