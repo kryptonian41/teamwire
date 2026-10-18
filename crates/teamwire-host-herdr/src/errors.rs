@@ -18,7 +18,10 @@ pub(crate) struct ErrorBody {
 /// The `HostErrorCode` for one herdr `error.code`.
 pub(crate) fn map_code(code: &str) -> HostErrorCode {
     match code {
-        // `agent_not_idle`: a long read of an agent that is working.
+        // `agent_not_idle` comes from reads only: `herdr agent prompt --help`
+        // (0.9.3) accepts a prompt while the agent works and names only
+        // `agent_blocked` as a refusal before input is sent, so delivery's
+        // retry on `Busy` cannot type a line twice.
         "agent_pane_busy" | "agent_not_idle" => HostErrorCode::Busy,
         "agent_not_ready" => HostErrorCode::NotReady,
         "agent_blocked" => HostErrorCode::Blocked,

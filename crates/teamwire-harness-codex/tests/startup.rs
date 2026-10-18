@@ -194,6 +194,31 @@ fn a_read_that_times_out_or_finds_the_agent_busy_is_read_again() {
     }
 }
 
+/// Reads `answer_startup` makes of a host whose every read fails with `code`.
+fn reads_until_the_end(code: HostErrorCode) -> usize {
+    let host = FakeHost::new();
+    let place = host.add_place(
+        "tw_demo_api",
+        PlaceState::Blocked,
+        Occupant {
+            session: None,
+            pids: vec![Pid::new(1)],
+        },
+    );
+    host.inject_always("read_tail", Fault::Fail(HostError::new(code, "slow")));
+    let got = codex(60).answer_startup(&host, &place, TrustPolicy::Accept);
+    assert!(matches!(&got, Err(e) if e.code == HarnessErrorCode::Timeout));
+    host.log().count_named("read_tail")
+}
+
+#[test]
+fn a_read_that_times_out_uses_up_the_steps_its_time_covers() {
+    // 60 steps of 0.5 s are 30 s; a read takes 5 s, which is 10 steps, so
+    // six reads fill the loop. A busy read returns at once and is one step.
+    assert_eq!(reads_until_the_end(HostErrorCode::Timeout), 6);
+    assert_eq!(reads_until_the_end(HostErrorCode::Busy), 60);
+}
+
 #[test]
 fn any_other_read_error_ends_the_loop_at_once() {
     let (got, _) = run_failing(
