@@ -42,7 +42,8 @@ const IGNORED_SHOWN: usize = 10;
 
 /// The warning for a worktree whose removal deletes gitignored files, such
 /// as `.env.local`: `git worktree remove` keeps no copy of them, and the
-/// dirty check does not list them. `None` when there are none, or when git
+/// dirty check does not list them. `TASK.md` is the brief's own copy, which
+/// launch excludes and the dirty check ignores, so it is not named. `None` when there are none, or when git
 /// cannot say (the dirty check has already refused in that case).
 pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
     if member.mode != Mode::Worktree || !member.cwd.is_dir() {
@@ -58,15 +59,21 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let ignored: Vec<&str> = stdout
         .lines()
+        .filter(|l| !teamwire_verify::is_task_file_status(l))
         .filter_map(|l| l.strip_prefix("!! "))
         .collect();
     if ignored.is_empty() {
         return None;
     }
-    let mut named = ignored[..ignored.len().min(IGNORED_SHOWN)].join(", ");
+    let mut named: Vec<String> = ignored
+        .iter()
+        .take(IGNORED_SHOWN)
+        .map(|p| (*p).to_owned())
+        .collect();
     if ignored.len() > IGNORED_SHOWN {
-        named.push_str(&format!(", and {} more", ignored.len() - IGNORED_SHOWN));
+        named.push(format!("and {} more", ignored.len() - IGNORED_SHOWN));
     }
+    let named = named.join(", ");
     Some(format!("removal deletes ignored files: {named}"))
 }
 

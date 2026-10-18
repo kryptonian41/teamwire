@@ -14,14 +14,14 @@ use teamwire_core::MemberKind;
 
 /// A rig whose worktree `api` holds ignored files named `names`. The pattern
 /// goes in the repository's own exclude file, so the worktree stays clean.
-fn rig_with_ignored(names: &[&str]) -> Rig {
+fn rig_with_ignored(names: &[&str]) -> std::io::Result<Rig> {
     let mut rig = Rig::new();
     let api = rig.add_worktree_member("api", MemberKind::Implementer);
-    std::fs::write(rig.repo.join(".git/info/exclude"), "*.local\n").unwrap();
+    std::fs::write(rig.repo.join(".git/info/exclude"), "*.local\n")?;
     for name in names {
-        std::fs::write(api.cwd.join(name), "secret\n").unwrap();
+        std::fs::write(api.cwd.join(name), "secret\n")?;
     }
-    rig
+    Ok(rig)
 }
 
 fn warning(lines: impl IntoIterator<Item = (String, String)>) -> Vec<String> {
@@ -33,8 +33,8 @@ fn warning(lines: impl IntoIterator<Item = (String, String)>) -> Vec<String> {
 }
 
 #[test]
-fn the_plan_and_the_report_name_the_ignored_files_the_removal_deletes() {
-    let mut rig = rig_with_ignored(&[".env.local"]);
+fn the_plan_and_the_report_name_the_ignored_files_the_removal_deletes() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[".env.local"])?;
     let api = rig.member("api");
     let want = vec!["api: removal deletes ignored files: .env.local".to_owned()];
 
@@ -51,27 +51,43 @@ fn the_plan_and_the_report_name_the_ignored_files_the_removal_deletes() {
     let lines = warning(report.steps.into_iter().map(|s| (s.step, s.detail)));
     assert_eq!(lines, want);
     assert!(!api.cwd.exists(), "the warning is not a refusal");
+    Ok(())
 }
-
 #[test]
-fn a_worktree_with_no_ignored_files_gets_no_warning() {
-    let mut rig = rig_with_ignored(&[]);
+fn a_worktree_with_no_ignored_files_gets_no_warning() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
     let plan = plan_close(&rig.ctx(), CloseTarget::Team);
     assert!(warning(plan.steps.into_iter().map(|s| (s.step, s.detail))).is_empty());
+    Ok(())
 }
-
 #[test]
-fn more_than_ten_ignored_files_are_counted_after_the_tenth() {
+fn more_than_ten_ignored_files_are_counted_after_the_tenth() -> std::io::Result<()> {
     let names: Vec<String> = (0..13).map(|i| format!("f{i:02}.local")).collect();
     let refs: Vec<&str> = names.iter().map(String::as_str).collect();
-    let mut rig = rig_with_ignored(&refs);
+    let mut rig = rig_with_ignored(&refs)?;
     let plan = plan_close(&rig.ctx(), CloseTarget::Team);
     let lines = warning(plan.steps.into_iter().map(|s| (s.step, s.detail)));
-    let shown = names[..10].join(", ");
+    let shown = names
+        .iter()
+        .take(10)
+        .cloned()
+        .collect::<Vec<_>>()
+        .join(", ");
     assert_eq!(
         lines,
         [format!(
             "api: removal deletes ignored files: {shown}, and 3 more"
         )]
     );
+    Ok(())
+}
+#[test]
+fn the_briefs_own_copy_is_not_named() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let api = rig.member("api");
+    std::fs::write(rig.repo.join(".git/info/exclude"), "TASK.md\n")?;
+    std::fs::write(api.cwd.join("TASK.md"), "brief\n")?;
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert!(warning(plan.steps.into_iter().map(|s| (s.step, s.detail))).is_empty());
+    Ok(())
 }

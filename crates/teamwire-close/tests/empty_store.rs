@@ -1,11 +1,6 @@
 //! A store that `teamwire launch` made and was killed before it wrote
 //! anything: close deletes the directory, and only when the store holds no
 //! team row and no member row.
-#![expect(
-    clippy::disallowed_methods,
-    reason = "a test stands in for a person who edits files in a worktree"
-)]
-
 #[path = "support/rig.rs"]
 pub mod rig;
 
@@ -15,7 +10,7 @@ use teamwire_core::{MemberKind, TeamName};
 
 fn named() -> CloseOpts {
     CloseOpts {
-        team: Some(TeamName::parse(TEAM).unwrap()),
+        team: TeamName::parse(TEAM).ok(),
         ..CloseOpts::default()
     }
 }
@@ -28,9 +23,12 @@ fn a_store_nothing_was_written_to_is_closed_by_deleting_its_directory() {
 
     let plan = plan_close_with(&rig.ctx(), CloseTarget::Team, &named());
     assert!(plan.refusals.is_empty(), "{plan:?}");
-    assert_eq!(plan.steps.len(), 1, "{plan:?}");
-    assert_eq!(plan.steps[0].step, TEAM);
-    assert!(plan.steps[0].detail.starts_with("nothing was recorded; "));
+    let deleted = format!("nothing was recorded; deleted {}", dir.display());
+    let step = |s: &teamwire_close::CloseStep| (s.step.clone(), s.detail.clone());
+    assert_eq!(
+        plan.steps.iter().map(step).collect::<Vec<_>>(),
+        [(TEAM.to_owned(), deleted.clone())]
+    );
     assert!(dir.join("team.db").is_file(), "a dry run changes nothing");
 
     let report = close(&mut rig.ctx(), CloseTarget::Team, named());
@@ -38,12 +36,12 @@ fn a_store_nothing_was_written_to_is_closed_by_deleting_its_directory() {
         report.refusals.is_empty() && report.stopped_at.is_none(),
         "{report:?}"
     );
-    assert_eq!(report.steps.len(), 1, "{report:?}");
-    assert_eq!(report.steps[0].step, TEAM);
-    assert_eq!(
-        report.steps[0].detail,
-        format!("nothing was recorded; deleted {}", dir.display())
-    );
+    let steps: Vec<_> = report
+        .steps
+        .iter()
+        .map(|s| (s.step.clone(), s.detail.clone()))
+        .collect();
+    assert_eq!(steps, [(TEAM.to_owned(), deleted)]);
     assert!(report.archive.is_none());
     assert!(!dir.exists());
 }
