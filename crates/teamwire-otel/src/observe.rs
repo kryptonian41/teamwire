@@ -232,6 +232,15 @@ fn tokens(h: &History, o: &mut Out<'_>) {
         .filter_map(|e| e.data.get("usage"))
         .last();
     let kind = kind_of(h, o.event);
+    // The effort the member started with; a member started by an older build
+    // recorded none.
+    let effort = h
+        .of_role(role.as_str())
+        .take_while(|e| e.seq < o.event.seq)
+        .filter(|e| e.kind == EventType::MemberStarted)
+        .last()
+        .and_then(|e| text(&e.data, "effort"))
+        .unwrap_or("unset");
     for (model, counts) in usage {
         for kind_of_token in ["input", "output", "cache_read", "cache_creation"] {
             let now = number(counts, kind_of_token).unwrap_or(0.0);
@@ -248,6 +257,7 @@ fn tokens(h: &History, o: &mut Out<'_>) {
                         ("role", role.as_str()),
                         ("kind", kind),
                         ("model", model),
+                        ("effort", effort),
                         ("type", kind_of_token),
                     ],
                 );
