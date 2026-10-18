@@ -234,8 +234,17 @@ The last section lists the ones most likely to be wrong.
 - One test-only fake changes: `FakeHarness::caps()` sets
   `reads_watch_lines: true`. Every `MemberLaunch` literal gains
   `accept_trust`.
-- A Codex member's `-c hooks.*` values replace that member's own `Stop`,
-  `PostToolUse` and `SessionStart` hooks from `~/.codex` for that run.
+- Codex reads hooks from every config layer, so the user's own hooks in
+  `~/.codex` still run in a Codex member beside teamwire's `-c hooks.*`. A
+  user Stop hook that blocks also holds a member.
+- `--dangerously-bypass-hook-trust` also runs hooks a repository declares in
+  its own `.codex/` folder, unreviewed. INV-25 refuses that case for Claude,
+  so the Codex adapter refuses to start a member when a `.codex/config.toml`
+  or `.codex/hooks.json` exists between the trust root and the member's
+  folder (user decision, 2026-10-18).
+- `SessionStart` fires when the first turn starts, not when the TUI starts,
+  so a Codex member's session is recorded only after launch types its first
+  message.
 - A long contract travels in argv. herdr types the command into a shell, so
   a very long line is a risk that only a live run can measure.
 - Facts most likely to be wrong, to check first when Codex is installed:
@@ -247,3 +256,7 @@ The last section lists the ones most likely to be wrong.
   4. The thread lock is held for the whole session, and `lsof` sees it.
   5. herdr's `agent start --kind codex` passes every argument through
      unchanged.
+  6. herdr reports a Codex pane's `agent_session` as Codex's session id. The
+     locator needs it under herdr, which reports no pids; without it every
+     delivery to a Codex member or lead under herdr fails, and launch refuses
+     a Codex lead with `lead_not_locatable`.
