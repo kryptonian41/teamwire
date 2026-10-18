@@ -76,6 +76,7 @@ pub(crate) fn call(
     caller: &McpCaller,
     tool: &str,
     args: JsonObject,
+    meta: &JsonObject,
 ) -> Result<Reply, ToolFailure> {
     if !TOOLS.iter().any(|(name, _)| *name == tool) {
         return Err(ToolFailure::invalid(format!("no tool named {tool}")));
@@ -112,13 +113,14 @@ pub(crate) fn call(
         clock: env.clock.as_ref(),
         config: &env.config,
     };
+    let env_of_caller = caller_env(caller, &team, meta);
     let proof = if reads {
-        prove_actor(&ctx, &caller_env(caller, &team))
+        prove_actor(&ctx, &env_of_caller)
     } else {
-        prove_actor_logged(&mut ctx, &caller_env(caller, &team))
+        prove_actor_logged(&mut ctx, &env_of_caller)
     };
     let actor = proof.map_err(|refusal| {
-        if matches!(caller, McpCaller::Lead) && !lead_session_reached(&ctx) {
+        if matches!(caller, McpCaller::Lead) && !lead_session_reached(&ctx, &env_of_caller) {
             return ToolFailure::identity(NO_LEAD_SESSION);
         }
         ToolFailure::from(teamwire_msg::SendError::Refused(refusal))
@@ -135,9 +137,10 @@ const NO_LEAD_SESSION: &str = "no harness session id reached this server, so the
 /// Whether the lead's harness reports any current session to this server.
 /// When the adapters cannot be read, the cause is something else, so this
 /// says a session was reached and the plain refusal stands.
-fn lead_session_reached(ctx: &Ctx<'_>) -> bool {
-    ctx.adapters(&Party::Lead)
-        .map_or(true, |(harness, _)| harness.current_session().is_some())
+fn lead_session_reached(ctx: &Ctx<'_>, env: &CallerEnv) -> bool {
+    ctx.adapters(&Party::Lead).map_or(true, |(harness, _)| {
+        harness.caller_session(&|name| env.lookup(name)).is_some()
+    })
 }
 
 /// A member speaks only for its own team. The lead names the team.
@@ -161,16 +164,24 @@ fn team_of(caller: &McpCaller, args: &JsonObject) -> Result<TeamName, ToolFailur
 }
 
 /// What ADR 0008 asks each kind of caller to present.
-fn caller_env(caller: &McpCaller, team: &TeamName) -> CallerEnv {
+/// The lead's request `_meta` reaches the proof as hints; a member's never does.
+fn caller_env(caller: &McpCaller, team: &TeamName, meta: &JsonObject) -> CallerEnv {
     match caller {
         McpCaller::Member { role, token, .. } => CallerEnv {
             team: Some(team.as_str().to_owned()),
             role: Some(role.as_str().to_owned()),
             token: Some(token.clone()),
             from: None,
+            hints: Vec::new(),
         },
         McpCaller::Lead => CallerEnv {
             from: Some("lead".to_owned()),
+            hints: meta
+                .iter()
+                .filter_map(|(key, value)| {
+                    Some((format!("MCP_META_{key}"), value.as_str()?.to_owned()))
+                })
+                .collect(),
             ..CallerEnv::default()
         },
     }

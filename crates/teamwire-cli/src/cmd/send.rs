@@ -236,6 +236,7 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
         role: std::env::var("TEAMWIRE_ROLE").ok(),
         token: member_token(),
         from,
+        hints: Vec::new(),
     }
 }
 

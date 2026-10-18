@@ -76,7 +76,9 @@ fn prove_lead(ctx: &Ctx<'_>, env: &CallerEnv) -> Result<Actor, Refusal> {
         })?
         .ok_or(Refusal::Identity)?;
     let (harness, _) = ctx.adapters(&Party::Lead).map_err(|_| Refusal::Identity)?;
-    let session = harness.current_session().ok_or(Refusal::Identity)?;
+    let session = harness
+        .caller_session(&|name| env.lookup(name))
+        .ok_or(Refusal::Identity)?;
     if session.kind == SessionKind::Interactive && team.lead_session.as_ref() == Some(&session.id) {
         Ok(Actor::Lead)
     } else {

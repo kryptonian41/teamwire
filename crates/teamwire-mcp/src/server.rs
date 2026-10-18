@@ -81,14 +81,18 @@ impl ServerHandler for McpServer {
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
         let env = Arc::clone(&self.env);
         let caller = Arc::clone(&self.caller);
         let name = request.name.to_string();
         let args = request.arguments.unwrap_or_default();
+        // `rmcp` moves a request's `_meta` into the context before the handler runs.
+        let mut meta = context.meta.0.0;
+        meta.extend(request.meta.map(|m| m.0.0).unwrap_or_default());
         let outcome =
-            tokio::task::spawn_blocking(move || tools::call(&env, &caller, &name, args)).await;
+            tokio::task::spawn_blocking(move || tools::call(&env, &caller, &name, args, &meta))
+                .await;
         let result = match outcome {
             Ok(Ok(reply)) => success(reply),
             Ok(Err(failure)) => refusal(&failure),
