@@ -855,6 +855,29 @@ fn a_member_creating_for_two_minutes_is_not_stalled() {
 }
 
 #[test]
+fn a_member_creating_for_760_seconds_is_not_stalled() {
+    // The limit is 90 + 600 + 150 = 840 s, so 38 polls of 20 s are inside it.
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add_creating("web");
+    bed.poll();
+    bed.delivered("api", CompletionStatus::Done);
+    let lines = bed.ticks(38);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+}
+
+#[test]
+fn a_member_creating_for_880_seconds_stalls_the_team() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add_creating("web");
+    bed.poll();
+    bed.delivered("api", CompletionStatus::Done);
+    let lines = bed.ticks(44);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 1, "{lines:?}");
+}
+
+#[test]
 fn a_member_still_creating_inside_the_grace_is_not_stalled() {
     let mut bed = Bed::new();
     bed.add_creating("web");

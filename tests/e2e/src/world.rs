@@ -432,7 +432,7 @@ mod tests {
         cmd.args(["-c", "sleep 25 & sleep 60"]);
         let begun = Instant::now();
         let ended = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            run_within(cmd, None, Duration::from_millis(500))
+            run_within(cmd, None, Duration::from_secs(2))
         }));
         assert!(
             begun.elapsed() < Duration::from_secs(15),
