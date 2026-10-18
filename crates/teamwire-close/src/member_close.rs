@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HostErrorCode, Member, MemberState};
+use teamwire_core::{HostErrorCode, Member, MemberState, Mode, RunOutput};
 use teamwire_store::{Ctx, Party};
 
 use crate::git;
@@ -35,6 +35,39 @@ pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, 
             git::failure_text(&out)
         ))
     }
+}
+
+/// How many ignored entries the warning names before it counts the rest.
+const IGNORED_SHOWN: usize = 10;
+
+/// The warning for a worktree whose removal deletes gitignored files, such
+/// as `.env.local`: `git worktree remove` keeps no copy of them, and the
+/// dirty check does not list them. `None` when there are none, or when git
+/// cannot say (the dirty check has already refused in that case).
+pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
+    if member.mode != Mode::Worktree || !member.cwd.is_dir() {
+        return None;
+    }
+    let out = git::run(
+        ctx.platform,
+        &member.cwd,
+        &["status", "--porcelain", "--ignored"],
+    )
+    .ok()
+    .filter(RunOutput::success)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let ignored: Vec<&str> = stdout
+        .lines()
+        .filter_map(|l| l.strip_prefix("!! "))
+        .collect();
+    if ignored.is_empty() {
+        return None;
+    }
+    let mut named = ignored[..ignored.len().min(IGNORED_SHOWN)].join(", ");
+    if ignored.len() > IGNORED_SHOWN {
+        named.push_str(&format!(", and {} more", ignored.len() - IGNORED_SHOWN));
+    }
+    Some(format!("removal deletes ignored files: {named}"))
 }
 
 /// Closes the member's own place through the member's own host (CLS-7).

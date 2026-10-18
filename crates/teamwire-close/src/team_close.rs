@@ -8,7 +8,7 @@ use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::{close_place, remove_worktree, unpushed};
+use crate::member_close::{close_place, ignored_warning, remove_worktree, unpushed};
 use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, git, hold};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
@@ -271,6 +271,13 @@ impl Seq<'_, '_> {
                 self.report
                     .unpushed
                     .extend(unpushed(self.ctx, member, branch));
+            }
+            if let Some(detail) = ignored_warning(self.ctx, member) {
+                self.report.steps.push(StepOutcome {
+                    step: member.role.to_string(),
+                    ok: true,
+                    detail,
+                });
             }
             match remove_worktree(self.ctx, member) {
                 Ok(note) => notes.push(note),

@@ -5,6 +5,7 @@ use teamwire_core::{Member, Role, TeamState};
 use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, live};
+use crate::member_close::ignored_warning;
 use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, remove};
 
 fn step(name: &str, detail: impl Into<String>) -> CloseStep {
@@ -99,6 +100,7 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
     if team.state == TeamState::Open {
         plan.steps
             .push(step("remove_worktrees", worktree_list(members)));
+        plan.steps.extend(ignored_steps(ctx, members));
         plan.steps.push(step("close_places", place_list(members)));
         plan.steps.push(step("release_hold", hold_detail(team)));
         plan.steps
@@ -123,6 +125,15 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         plan.steps.push(step("branches_kept", kept.join(", ")));
     }
     plan
+}
+
+/// One step per worktree whose removal deletes ignored files, named by role
+/// so the line reads `<role>: removal deletes ignored files: ...`.
+fn ignored_steps<'a>(
+    ctx: &'a Ctx<'_>,
+    members: &'a [Member],
+) -> impl Iterator<Item = CloseStep> + 'a {
+    live(members).filter_map(|m| ignored_warning(ctx, m).map(|d| step(m.role.as_str(), d)))
 }
 
 fn worktree_list(members: &[Member]) -> String {
@@ -206,6 +217,8 @@ fn member_plan(
             ),
         ));
     }
+    plan.steps
+        .extend(ignored_warning(ctx, member).map(|d| step(role.as_str(), d)));
     plan.steps.push(step(
         "mark_removed",
         format!("keep {role}'s row, marked removed"),
