@@ -73,7 +73,7 @@ pub(crate) fn version_of(wiring: &Wiring, program: &str) -> Option<String> {
 }
 
 /// The harnesses whose program runs, in selector order.
-fn found(wiring: &Wiring) -> Vec<&'static str> {
+pub(crate) fn found(wiring: &Wiring) -> Vec<&'static str> {
     [
         (CLAUDE, &wiring.claude.claude_bin),
         (CODEX, &wiring.codex.codex_bin),
