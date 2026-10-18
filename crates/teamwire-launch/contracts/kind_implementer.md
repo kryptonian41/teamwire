@@ -13,10 +13,12 @@ the tests that prove it, and the commits, in your own worktree.
   brief did not ask you to touch; that noise lands on the integrator.
 - Do not use `git stash`: every worktree of a repository shares one
   stash list, so another member can pop your work. Set work aside with
-  a commit on your branch.
+  a commit on your branch. The same goes for `git reset --hard` and
+  `git checkout -- .`. At Bun, one Claude ran `git stash`, another ran
+  `git stash pop`, then `git reset HEAD --hard` wiped the popped work.
 - Never make a check pass by weakening it. Do not delete, skip, mark
   expected-to-fail or loosen a test, and do not edit lint, type or CI
-  config, unless the brief says to. Spotify and Google both found agents
+  config, unless the brief says to. Spotify found agents
   doing exactly this; the parent's diff check flags it.
 - Two rounds of fixing per failing check, then stop. Record the
   command, its output and your two attempts in your report file, set
