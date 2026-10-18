@@ -267,6 +267,8 @@ fn deliver(
     };
 
     // No host for the lead: the watch prints the result (DEL-17).
+    // shortcut: this route writes no `result.delivering`, so no usage is
+    // recorded; read the transcript in the watch's delivery path to cover it.
     if team.lead_route == LeadRoute::Watch {
         return Ok(());
     }
@@ -276,9 +278,21 @@ fn deliver(
     // one member never overlap: a `delivering` row seen here is a crash left
     // over, at any age, and is delivered once more (REP-2).
     let stale = Duration::ZERO;
-    let claimed = ctx
-        .store
-        .write(|tx| tx.claim_completion_for_delivery(ctx.clock.now(), &ulid, stale))?;
+    // The session's token usage rides on the claim event. A transcript that
+    // cannot be read leaves the key out and never stops the delivery.
+    // `session` lets the metrics tell one session's running totals from the next.
+    let mut claim_data = json!({ "session": t.session.to_string() });
+    if let (Some(usage), Some(data)) = (
+        t.transcript
+            .as_deref()
+            .and_then(crate::usage::session_usage),
+        claim_data.as_object_mut(),
+    ) {
+        data.insert("usage".to_owned(), usage);
+    }
+    let claimed = ctx.store.write(|tx| {
+        tx.claim_completion_for_delivery_with(ctx.clock.now(), &ulid, stale, &claim_data)
+    })?;
     if claimed.is_none() {
         return Ok(());
     }

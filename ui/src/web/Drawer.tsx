@@ -1,9 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { FileRef } from "../shared/api.ts";
 import { StateChip } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
+import { href } from "./model/route.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
 export function Drawer({
@@ -23,6 +25,24 @@ export function Drawer({
   const age = formatAge(member.age_s, member.deadline_s);
   const resume = useLoad(() => client.resume(team, member.role), `${team}/${member.role}`);
   const [copied, setCopied] = useState(false);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Move focus into the dialog so the keyboard starts where the eye does, and
+  // give it back on close. Opened from a URL there is no opener, so fall back
+  // to the member's link in the table. The page behind is inert while the
+  // dialog is open, which keeps Tab inside it and backs up aria-modal; the
+  // dialog is portalled out of #root so it is not inert itself.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    const page = document.getElementById("root");
+    if (page) page.inert = true;
+    closeRef.current?.focus();
+    return () => {
+      if (page) page.inert = false;
+      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href="${href.member(team, member.role)}"]`);
+      back?.focus();
+    };
+  }, [team, member.role]);
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -44,29 +64,29 @@ export function Drawer({
     }
   };
 
-  return (
+  return createPortal(
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-label={`Member ${member.role}`}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Member ${member.role}`}>
         <header>
           <div>
-            <h2 style={{ margin: 0 }}>{member.role}</h2>
-            <div className="sub">
+            <h2>{member.role}</h2>
+            <p className="sub">
               {member.title} · {member.kind ?? "kind unknown"} · generation {member.generation}
-            </div>
+            </p>
           </div>
-          <button className="btn" onClick={onClose} aria-label="Close">
+          <button ref={closeRef} className="btn" onClick={onClose} aria-label="Close">
             Close
           </button>
         </header>
-        <div className="row" style={{ marginTop: 0 }}>
+        <p className="chips">
           <StateChip word={member.state} category={member.category} />
-          <span className={age.overdue ? "badge bad" : "sub"}>{age.label}</span>
+          {age.overdue ? <span className="flag bad">{age.label} · past its deadline</span> : <span className="sub num">{age.label}</span>}
           {member.branch && <code>{member.branch}</code>}
-        </div>
+        </p>
 
         <div className="resume">
-          <strong>Resume</strong>
+          <h3>Resume</h3>
           {resume.loading && <span className="note">Loading…</span>}
           {resume.error && <span className="note error">{resume.error}</span>}
           {resume.data && command && (
@@ -86,12 +106,17 @@ export function Drawer({
         </div>
 
         {tabs.length === 0 ? (
-          <p className="empty">No files for this member yet.</p>
+          <p className="quiet">No files for this member yet.</p>
         ) : (
           <>
             <div className="tabs" role="tablist">
               {tabs.map((t) => (
-                <button key={t.kind} role="tab" aria-selected={t.kind === active?.kind} onClick={() => setKind(t.kind)}>
+                <button
+                  key={t.kind}
+                  role="tab"
+                  aria-selected={t.kind === active?.kind}
+                  onClick={() => setKind(t.kind)}
+                >
                   {t.label}
                 </button>
               ))}
@@ -105,6 +130,7 @@ export function Drawer({
           </>
         )}
       </aside>
-    </>
+    </>,
+    document.body,
   );
 }

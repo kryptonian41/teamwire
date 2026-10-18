@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
 import type { LogMessage } from "../shared/teamwire.ts";
-import { DeliveryChip, ErrorNote, Loading, StateChip } from "./components.tsx";
+import { DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
@@ -24,14 +24,16 @@ export function TeamDetail({
   const client = useClient();
   const name = team?.name ?? "";
   const files = useLoad(() => client.teamFiles(name), name, snapshot?.at ?? "");
-  if (!snapshot) return <p className="note">Waiting for the first poll…</p>;
+  if (!snapshot) return <Empty title="Waiting for the first poll…" />;
   if (!team || team.name === null) {
     return (
       <>
         <p className="crumbs">
           <a href={href.overview()}>← Teams</a>
         </p>
-        <p className="empty">No team with that name.</p>
+        <Empty title="No team with that name">
+          It may have closed. Closed teams are under <a href={href.history()}>History</a>.
+        </Empty>
       </>
     );
   }
@@ -47,20 +49,26 @@ export function TeamDetail({
       </p>
       <div className="page-head">
         <h1>{team.title}</h1>
-        <span className="sub">{team.name}</span>
-        <span className="chip small cat-idle">{s.state ?? "state unknown"}</span>
-        <span className="row" style={{ margin: 0 }}>
-          <span className={`dot cat-${live.category}`} aria-hidden="true" />
-          <span className="sub">{live.label}</span>
-        </span>
-        {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
-          <span key={c} className={`chip small cat-${c}`}>
-            {counts[c]} {c}
+        <p className="meta">
+          <span>{team.name}</span>
+          <span className="chip cat-idle">{s.state ?? "state unknown"}</span>
+          <span className="live">
+            <span className={`dot cat-${live.category}`} aria-hidden="true" />
+            {live.label}
           </span>
-        ))}
+        </p>
+        {team.members.length > 0 && (
+          <p className="chips">
+            {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
+              <span key={c} className={`chip cat-${c}`}>
+                {counts[c]} {c}
+              </span>
+            ))}
+          </p>
+        )}
       </div>
       {s.errors.length > 0 && (
-        <ul className="errors">
+        <ul className="errors page-errors">
           {s.errors.map((e, i) => (
             <li key={i}>{e}</li>
           ))}
@@ -74,6 +82,8 @@ export function TeamDetail({
         <>
           <h2>Needs a look</h2>
           {s.stuck_deliveries.length > 0 && (
+            <>
+            <h3>Stuck deliveries</h3>
             <div className="table-wrap">
               <table>
                 <thead>
@@ -98,15 +108,19 @@ export function TeamDetail({
                 </tbody>
               </table>
             </div>
+            </>
           )}
           {s.undelivered_results.length > 0 && (
-            <ul>
+            <>
+            <h3>Undelivered results</h3>
+            <ul className="results">
               {s.undelivered_results.map((r) => (
                 <li key={`${r.role}-${r.n}`}>
-                  Result {r.n} from <strong>{r.role}</strong>: {r.report_state} (<code>{r.path}</code>)
+                  Result {r.n} from <strong>{r.role}</strong>: {r.report_state} <code>{r.path}</code>
                 </li>
               ))}
             </ul>
+            </>
           )}
         </>
       )}
@@ -156,7 +170,7 @@ export function TeamDetail({
 }
 
 function MemberTable({ team }: { team: TeamModel }) {
-  if (team.members.length === 0) return <p className="empty">No members reported.</p>;
+  if (team.members.length === 0) return <p className="quiet">No members reported.</p>;
   const name = team.name ?? "";
   const go = (role: string) => {
     location.hash = href.member(name, role);
@@ -190,16 +204,21 @@ function MemberTable({ team }: { team: TeamModel }) {
                 <td>
                   <a href={href.member(name, m.role)}>{m.role}</a>
                 </td>
-                <td>{m.title}</td>
+                <td className="title">{m.title}</td>
                 <td>{m.kind ?? "?"}</td>
                 <td>
                   <StateChip word={m.state} category={m.category} />
                 </td>
                 <td>{m.generation}</td>
                 <td>
-                  <div className={`bar${age.overdue ? " overdue" : ""}`} title={age.overdue ? "Past its deadline" : undefined}>
-                    <span style={{ width: `${Math.round(age.ratio * 100)}%` }} />
-                    <em>{age.label}</em>
+                  <div className={`age${age.overdue ? " overdue" : ""}`} title={age.overdue ? "Past its deadline" : undefined}>
+                    <span className="bar" aria-hidden="true">
+                      <span style={{ width: `${Math.round(age.ratio * 100)}%` }} />
+                    </span>
+                    <span>
+                      {age.label}
+                      {age.overdue && <span className="visually-hidden"> past its deadline</span>}
+                    </span>
                   </div>
                 </td>
                 <td>{m.result ?? "–"}</td>
@@ -237,9 +256,9 @@ function MessageSection({ team, snapshotAt }: { team: TeamModel; snapshotAt: str
           />
           <h2>Messages</h2>
           {selected && (
-            <div className="filter">
+            <div className="filter" role="status">
               <span>
-                Showing {selected.from} → {selected.to}
+                Showing <strong>{selected.from}</strong> → <strong>{selected.to}</strong>
               </span>
               <button className="btn" onClick={() => setSelected(null)}>
                 Show all
@@ -259,7 +278,7 @@ function MessageSection({ team, snapshotAt }: { team: TeamModel; snapshotAt: str
 function MessageTable({ team, messages }: { team: string; messages: LogMessage[] }) {
   const client = useClient();
   const [open, setOpen] = useState<string | null>(null);
-  if (messages.length === 0) return <p className="empty">No messages.</p>;
+  if (messages.length === 0) return <p className="quiet">No messages yet.</p>;
   return (
     <div className="table-wrap">
       <table className="msgs">
@@ -284,12 +303,16 @@ function MessageTable({ team, messages }: { team: string; messages: LogMessage[]
                 <div className="deliveries">
                   {m.to.map((to) => {
                     const d = m.deliveries.find((x) => x.to === to);
-                    return d ? <DeliveryChip key={to} to={to} state={d.state} /> : <span key={to} className="chip small cat-idle">{to} · no delivery row</span>;
+                    return d ? <DeliveryChip key={to} to={to} state={d.state} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
                   })}
                 </div>
               </td>
               <td className="excerpt">
-                <button className="link-btn" onClick={() => setOpen(open === m.display_id ? null : m.display_id)}>
+                <button
+                  className="link-btn"
+                  aria-expanded={open === m.display_id}
+                  onClick={() => setOpen(open === m.display_id ? null : m.display_id)}
+                >
                   {m.excerpt}
                 </button>
                 {open === m.display_id && (

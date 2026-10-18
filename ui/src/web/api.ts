@@ -4,6 +4,7 @@
 
 import {
   api,
+  FILE_KINDS,
   type ArchiveEntry,
   type FileKind,
   type FileRef,
@@ -20,6 +21,7 @@ import teamsFixture from "../../fixtures/teams.json";
 import logFixture from "../../fixtures/log.json";
 import metricsFixture from "../../fixtures/metrics.json";
 import archivesFixture from "../../fixtures/archives.json";
+import { mockMarkdown } from "./mockMarkdown.ts";
 
 export type Connection = "connecting" | "connected" | "reconnecting" | "forbidden";
 
@@ -135,8 +137,13 @@ export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
 }
 
 function mockText(kind: FileKind, name: string, where: string): FileText {
-  const text = `# ${kind} for ${name}\n\nThis is invented text from mock mode (${where}).\nIt is shown as plain text, never as HTML: <b>not bold</b>.\n`;
-  return { kind, name, bytes: text.length, modifiedAt: new Date().toISOString(), text, truncated: false };
+  const modifiedAt = new Date().toISOString();
+  if (FILE_KINDS[kind].ext !== ".md") {
+    const text = `${kind} log for ${name} (${where}): invented text from mock mode.\n`;
+    return { kind, name, bytes: text.length, modifiedAt, text, truncated: false, doc: null };
+  }
+  const { text, doc } = mockMarkdown(`${kind} for ${name}`, where);
+  return { kind, name, bytes: text.length, modifiedAt, text, truncated: false, doc };
 }
 
 export const mockClient: ApiClient = {

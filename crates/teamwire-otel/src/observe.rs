@@ -150,12 +150,12 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
         | EventType::DeliveryReminded
         | EventType::DeliveryResent
         | EventType::DeliveryReentered
-        | EventType::ResultDelivering
         | EventType::WatchStarted
         | EventType::WatchStopped
         | EventType::VerifyWaived
         | EventType::CloseStep
         | EventType::CloseRefused => {}
+        EventType::ResultDelivering => tokens(h, &mut o),
     }
     if let Some(ms) = number(d, "hook_ms") {
         let hook = text(d, "hook").unwrap_or("unknown");
@@ -211,6 +211,48 @@ fn completed(h: &History, o: &mut Out<'_>) {
             seconds,
             &[("kind", kind), ("status", status)],
         );
+    }
+}
+
+/// Token usage is cumulative per session on each `result.delivering` event,
+/// so an event counts what it adds to the previous one of the same session.
+/// The counts of a member then add up to its newest totals.
+fn tokens(h: &History, o: &mut Out<'_>) {
+    let (Some(usage), Some(role)) = (
+        o.event.data.get("usage").and_then(Value::as_object),
+        &o.event.role,
+    ) else {
+        return;
+    };
+    let session = text(&o.event.data, "session");
+    let before = h
+        .of_role(role.as_str())
+        .take_while(|e| e.seq < o.event.seq)
+        .filter(|e| e.kind == EventType::ResultDelivering && text(&e.data, "session") == session)
+        .filter_map(|e| e.data.get("usage"))
+        .last();
+    let kind = kind_of(h, o.event);
+    for (model, counts) in usage {
+        for kind_of_token in ["input", "output", "cache_read", "cache_creation"] {
+            let now = number(counts, kind_of_token).unwrap_or(0.0);
+            let was = before
+                .and_then(|u| u.get(model))
+                .and_then(|c| number(c, kind_of_token))
+                .unwrap_or(0.0);
+            let added = (now - was).max(0.0);
+            if added > 0.0 {
+                o.measure(
+                    &defs::MEMBER_TOKENS,
+                    added,
+                    &[
+                        ("role", role.as_str()),
+                        ("kind", kind),
+                        ("model", model),
+                        ("type", kind_of_token),
+                    ],
+                );
+            }
+        }
     }
 }
 

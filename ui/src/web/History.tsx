@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ArchiveEntry, FileRef } from "../shared/api.ts";
-import { ErrorNote, Loading } from "./components.tsx";
+import { Empty, ErrorNote, Loading } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
@@ -15,14 +15,19 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
 
   return (
     <>
-      <h1>History</h1>
+      <div className="page-head">
+        <h1>History</h1>
+        <p className="lede">Closed teams, newest archive first, with totals from teamwire's metrics.</p>
+      </div>
       {archives.loading && <Loading what="archives" />}
       {archives.error && <ErrorNote>{archives.error}</ErrorNote>}
       {metrics.error && <ErrorNote>Metrics: {metrics.error}</ErrorNote>}
-      {archives.data && archives.data.length === 0 && <p className="empty">No closed teams yet.</p>}
+      {archives.data && archives.data.length === 0 && (
+        <Empty title="No closed teams yet">A team is archived here when its lead closes it.</Empty>
+      )}
       {archives.data &&
         groupArchives(archives.data).map((g) => (
-          <section key={g.team}>
+          <section key={g.team} className="history-team">
             <h2>{g.team}</h2>
             <SummaryLine m={summary.get(g.team)} live={liveTeams.has(g.team)} />
             <div className="table-wrap">
@@ -42,7 +47,9 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
                       <td>{a.closedAt ? new Date(a.closedAt).toLocaleString() : "unknown"}</td>
                       <td>{a.files.length}</td>
                       <td>
-                        <a href={href.archive(a.dir)}>{a.dir}</a>
+                        <a href={href.archive(a.dir)}>
+                          <code>{a.dir}</code>
+                        </a>
                       </td>
                     </tr>
                   ))}
@@ -56,12 +63,12 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
 }
 
 function SummaryLine({ m, live }: { m: TeamMetrics | undefined; live: boolean }) {
-  if (!m) return <p className="sub">No metrics for this team. Totals cover all of its archives.</p>;
+  if (!m) return <p className="summary">No metrics for this team. Totals cover all of its archives.</p>;
   const done = Object.entries(m.completions)
     .map(([status, n]) => `${n} ${status}`)
     .join(", ");
   return (
-    <p className="sub">
+    <p className="summary">
       Completions: {done || "none"} · {m.messagesSent} messages sent · {m.leadWakeups} lead wakeups · {m.verifyRuns} verify
       runs
       {live && " · Totals include the live team of the same name."}
@@ -80,20 +87,28 @@ export function Archive({ dir }: { dir: string }) {
       <p className="crumbs">
         <a href={href.history()}>← History</a>
       </p>
-      <h1>{dir}</h1>
-      {archives.loading && <Loading what="archive" />}
-      {archives.error && <ErrorNote>{archives.error}</ErrorNote>}
-      {archives.data && !entry && <p className="empty">No archive with that name.</p>}
-      {entry && (
-        <>
-          <p className="sub">
+      <div className="page-head">
+        <h1>{dir}</h1>
+        {entry && (
+          <p className="lede">
             {entry.date} · {entry.closedAt ? `closed ${new Date(entry.closedAt).toLocaleString()}` : "close time unknown"}
           </p>
-          {entry.files.length === 0 && <p className="empty">This archive has no files.</p>}
+        )}
+      </div>
+      {archives.loading && <Loading what="archive" />}
+      {archives.error && <ErrorNote>{archives.error}</ErrorNote>}
+      {archives.data && !entry && (
+        <Empty title="No archive with that name">
+          The list of archives is on the <a href={href.history()}>History</a> page.
+        </Empty>
+      )}
+      {entry && (
+        <>
+          {entry.files.length === 0 && <Empty title="This archive has no files" />}
           {groupFilesByRole(entry.files).map((g) => (
-            <div key={g.role}>
+            <div key={g.role} className="file-group">
               <h3>{g.role}</h3>
-              <div className="row" style={{ marginTop: 0 }}>
+              <div className="chips">
                 {g.files.map((f) => (
                   <button
                     key={`${f.kind}/${f.name}`}
@@ -101,7 +116,7 @@ export function Archive({ dir }: { dir: string }) {
                     aria-pressed={picked?.kind === f.kind && picked.name === f.name}
                     onClick={() => setPicked(f)}
                   >
-                    {f.kind === "comms" ? f.name : f.kind} <span className="sub">({f.bytes} B)</span>
+                    {f.kind === "comms" ? f.name : f.kind} <span className="sub num">{f.bytes} B</span>
                   </button>
                 ))}
               </div>

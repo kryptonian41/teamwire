@@ -30,6 +30,7 @@ mod cmd {
     pub(crate) mod metrics;
     pub(crate) mod pr_watch;
     pub(crate) mod preset;
+    pub(crate) mod received;
     pub(crate) mod reopen;
     pub(crate) mod resend;
     pub(crate) mod send;
@@ -48,8 +49,8 @@ const USAGE: u8 = 3;
 pub(crate) use args::{
     AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
     HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
-    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReopenArgs, ResendArgs, SendArgs,
-    StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
+    SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -73,6 +74,7 @@ fn main() -> ExitCode {
         Command::Close(a) => cmd::close::run(a, global, &wiring),
         Command::Send(a) => cmd::send::run(a, global, &wiring),
         Command::Resend(a) => cmd::resend::run(a, global, &wiring),
+        Command::Received(a) => cmd::received::run(a, global, &wiring),
         Command::Log(a) => cmd::log::run(a, global, &wiring),
         Command::Lead(a) => cmd::lead::run(a, global, &wiring),
         Command::PrWatch(a) => cmd::pr_watch::run(a, global, &wiring),

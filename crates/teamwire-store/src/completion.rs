@@ -197,6 +197,18 @@ impl Tx<'_> {
         completion: &Ulid,
         stale_after: Duration,
     ) -> Result<Option<ReportState>, StoreError> {
+        self.claim_completion_for_delivery_with(at, completion, stale_after, &Value::Null)
+    }
+
+    /// `claim_completion_for_delivery`, and the keys of the object `extra`
+    /// are added to the `result.delivering` event's data.
+    pub fn claim_completion_for_delivery_with(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+        stale_after: Duration,
+        extra: &Value,
+    ) -> Result<Option<ReportState>, StoreError> {
         let Some(current) = self.reader().completion(completion)? else {
             return Ok(None);
         };
@@ -214,15 +226,18 @@ impl Tx<'_> {
             return Ok(None);
         }
         let c = &current.completion;
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("route".to_owned(), json!(c.route.map(Route::as_str)));
+        data.insert(
+            "seconds".to_owned(),
+            json!(seconds_between(c.created_at, at)),
+        );
         self.record_event(
             at,
             EventType::ResultDelivering,
             Some(&c.role),
             Some(completion),
-            &json!({
-                "route": c.route.map(Route::as_str),
-                "seconds": seconds_between(c.created_at, at),
-            }),
+            &Value::Object(data),
         )?;
         Ok(Some(c.report_state))
     }
@@ -335,6 +350,42 @@ impl Tx<'_> {
             &json!({
                 "route": null,
                 "code": DeliveryErrorCode::DeliveryInterrupted.as_str(),
+                "seconds": seconds_between(c.created_at, at),
+            }),
+        )?;
+        Ok(true)
+    }
+
+    /// `teamwire received` (ADR 0024): the lead read an `undelivered` or
+    /// `unconfirmed` result from its file, so it becomes `delivered` with
+    /// route `inbox`, and one `result.delivered` event is written. The
+    /// reason stays as the record of why the typing failed. False when the
+    /// result is in any other state.
+    pub fn mark_result_received(
+        &self,
+        at: Timestamp,
+        completion: &Ulid,
+    ) -> Result<bool, StoreError> {
+        let Some(current) = self.reader().completion(completion)? else {
+            return Ok(false);
+        };
+        let rows = self.connection().execute(
+            "UPDATE completions SET report_state = 'delivered', route = 'inbox'
+             WHERE ulid = ?1 AND report_state IN ('undelivered', 'unconfirmed')",
+            [completion.to_string()],
+        )?;
+        if rows == 0 {
+            return Ok(false);
+        }
+        let c = &current.completion;
+        self.record_event(
+            at,
+            EventType::ResultDelivered,
+            Some(&c.role),
+            Some(completion),
+            &json!({
+                "route": Route::Inbox.as_str(),
+                "code": null,
                 "seconds": seconds_between(c.created_at, at),
             }),
         )?;
