@@ -19,7 +19,7 @@ use teamwire_core::{
     DeliveryErrorCode, HarnessError, HarnessErrorCode, HostError, HostErrorCode, Liveness,
     Occupant, Pid, PlaceState, SessionKind, one_line,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, locate};
+use teamwire_deliver::{DeliveryOutcome, deliver_line, locate, locate_session};
 use teamwire_fakes::{CallKind, Fault};
 use teamwire_store::Party;
 
@@ -41,6 +41,32 @@ fn holds(session: &str, pids: &[u32]) -> Occupant {
         session: Some(sid(session)),
         pids: pids.iter().copied().map(Pid::new).collect(),
     }
+}
+
+#[test]
+fn a_session_no_store_records_is_located_by_the_same_two_views() {
+    let rig = Rig::new();
+    let place = rig.healthy("lead-1", 100);
+    let found = |session: &str| {
+        locate_session(
+            &rig.platform,
+            rig.clock.as_ref(),
+            &sid(session),
+            rig.harness.as_ref(),
+            rig.host.as_ref(),
+        )
+    };
+    assert_eq!(found("lead-1").unwrap(), place);
+    assert_eq!(
+        found("nobody").unwrap_err().code,
+        DeliveryErrorCode::NoLiveProcess
+    );
+    // The host view still has to agree: a pane another session took refuses.
+    rig.host.set_occupant(&place, holds("intruder", &[]));
+    assert_eq!(
+        found("lead-1").unwrap_err().code,
+        DeliveryErrorCode::HostOtherSession
+    );
 }
 
 #[test]
