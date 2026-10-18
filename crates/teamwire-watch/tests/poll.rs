@@ -956,3 +956,28 @@ fn a_report_from_before_the_message_leaves_it_unread() {
     let lines = bed.ticks(3);
     assert_eq!(count(&lines, "UNREAD"), 1, "{lines:?}");
 }
+
+/// A member whose harness has not yet reported its session (Codex, ADR 0023)
+/// is of unknown liveness, never dead.
+#[test]
+fn a_started_member_with_no_session_is_never_called_dead() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add_creating("web");
+    let web = fixture::role("web");
+    let now = teamwire_core::Clock::now(&bed.clock);
+    bed.store
+        .write(|tx| {
+            tx.set_member_state(
+                now,
+                &web,
+                teamwire_core::MemberState::Started,
+                &serde_json::json!({}),
+            )
+        })
+        .unwrap();
+    bed.poll();
+    bed.age(secs(300));
+    let lines = bed.ticks(30);
+    assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
+}
