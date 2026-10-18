@@ -88,7 +88,7 @@ Events, each announced once per occurrence:
 | `UNCONFIRMED <role> Result: <path>` | A result whose typing stalled or timed out; it may or may not be on the lead's screen |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to the lead that could not be typed |
 | `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
-| `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes (`UNREAD_AFTER`), counted from its latest attempt. A message whose whole body fit in the typed line is never unread (ADR 0021). Once per message and recipient |
+| `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes (`UNREAD_AFTER`), counted from its latest attempt. A message whose whole body fit in the typed line is never unread (ADR 0021), and neither is one the member recorded a completion after (ADR 0022). Once per message and recipient |
 | `UNANSWERED <id> from <role> <age>` | A question to the lead, handed off or acknowledged, has no `answer` whose `re` points at it after 10 minutes (`UNANSWERED_AFTER`). Once per question. Questions between members appear only in `status` |
 | `STORE-ERROR <code>` | The store could not be read; once per code |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done; re-armed when something moves |

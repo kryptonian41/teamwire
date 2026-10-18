@@ -8,7 +8,7 @@ use teamwire_core::{
     Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
     Ulid,
 };
-use teamwire_deliver::{attempt_started, line_holds_whole};
+use teamwire_deliver::unread_since;
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
@@ -143,12 +143,11 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        // The host took a line that held the whole text: nothing is unread.
-        if line_holds_whole(&message.body) {
+        let Some(since) = unread_since(tx, &message, &d.recipient)? else {
             continue;
-        }
+        };
         found.push(Unread {
-            since: attempt_started(tx, &message, &d.recipient)?,
+            since,
             message: message.ulid,
             display_id: message.display_id.to_string(),
             to,

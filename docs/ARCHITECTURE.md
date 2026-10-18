@@ -161,7 +161,9 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
 5. **Remind.** If the recipient was working, its PostToolUse hook reminds it
    of unread ids once; its Stop hook holds it once if it tries to stop with
    unread messages (ADR 0003, point 8). A `handed_off` message whose typed
-   line held the whole body is not unread (ADR 0021).
+   line held the whole body is not unread (ADR 0021). For the watch and
+   `status` only, neither is one the member recorded a completion after
+   (ADR 0022).
 6. **Read.** The recipient calls `teamwire inbox` or `team_inbox`, which
    checks each body's hash, returns unread messages oldest first, and marks
    them `acked`.
