@@ -52,7 +52,8 @@ pub fn locate_session(
     host: &dyn Host,
 ) -> Result<Place, DeliveryError> {
     let budget = Budget::new(clock, None);
-    locate_session_with(platform, session.clone(), harness, host, &budget).map(|found| found.place)
+    locate_session_with(platform, session.clone(), harness, host, &budget, None)
+        .map(|found| found.place)
 }
 
 pub(crate) fn locate_with(
@@ -63,7 +64,30 @@ pub(crate) fn locate_with(
     budget: &Budget<'_>,
 ) -> Result<Located, DeliveryError> {
     let session = recorded_session(ctx, party)?;
-    locate_session_with(ctx.platform, session, harness, host, budget)
+    let (subject, recovery) = match party {
+        Party::Lead => (
+            "the lead's",
+            "end that process and start the lead again".to_owned(),
+        ),
+        Party::Member(role) => (
+            "the member's",
+            match ctx.store.read(|tx| tx.team()) {
+                Ok(Some(team)) => format!(
+                    "end that process, then run teamwire reopen {} --role {role}",
+                    team.name
+                ),
+                _ => format!("end that process, then run teamwire reopen <team> --role {role}"),
+            },
+        ),
+    };
+    locate_session_with(
+        ctx.platform,
+        session,
+        harness,
+        host,
+        budget,
+        Some((subject, &recovery)),
+    )
 }
 
 fn locate_session_with(
@@ -72,6 +96,7 @@ fn locate_session_with(
     harness: &dyn Harness,
     host: &dyn Host,
     budget: &Budget<'_>,
+    stopped: Option<(&str, &str)>,
 ) -> Result<Located, DeliveryError> {
     let Some(place_var) = host.place_env_var() else {
         return Err(DeliveryError::new(
@@ -126,10 +151,16 @@ fn locate_session_with(
         }),
         0 => Err(other.map_or_else(
             || {
-                DeliveryError::new(
-                    DeliveryErrorCode::HostNoSession,
-                    nothing.unwrap_or_else(|| "the host names no place".to_owned()),
-                )
+                // The process lives, yet the host lists no session: a process
+                // that was stopped and resumed looks like this, and only the
+                // user can end it (ADR 0006 keeps delivery refusing).
+                let detail = match (stopped, pids.first()) {
+                    (Some((subject, recovery)), Some(pid)) => format!(
+                        "{subject} session still runs (pid {pid}) but the host shows no session at any place, for example after the process was stopped and resumed; {recovery}"
+                    ),
+                    _ => nothing.unwrap_or_else(|| "the host names no place".to_owned()),
+                };
+                DeliveryError::new(DeliveryErrorCode::HostNoSession, detail)
             },
             |detail| DeliveryError::new(DeliveryErrorCode::HostOtherSession, detail),
         )),

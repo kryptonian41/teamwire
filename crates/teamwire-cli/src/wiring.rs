@@ -303,8 +303,11 @@ mod tests {
     #[test]
     fn herdr_wins_over_tmux_and_an_empty_tmux_is_not_tmux() {
         assert_eq!(
-            lead_host(&env_in_tmux(Some("1"), Some("/tmp/tmux-1/default,42,0")), &|_| None)
-                .as_str(),
+            lead_host(
+                &env_in_tmux(Some("1"), Some("/tmp/tmux-1/default,42,0")),
+                &|_| None
+            )
+            .as_str(),
             "herdr"
         );
         assert_eq!(lead_of(&env_in_tmux(None, Some(""))), "none");

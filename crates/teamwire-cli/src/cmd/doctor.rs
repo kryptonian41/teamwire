@@ -134,7 +134,11 @@ fn nearest_host(
     for _ in 0..MAX_PARENT_STEPS {
         let (parent, name) = parent_of(pid)?;
         // Linux names the tmux server "tmux: server".
-        match name.split_whitespace().next().map(|n| n.trim_end_matches(':')) {
+        match name
+            .split_whitespace()
+            .next()
+            .map(|n| n.trim_end_matches(':'))
+        {
             Some("tmux") => return Some("tmux"),
             Some("herdr") => return Some("herdr"),
             _ => {}
@@ -682,7 +686,10 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
     let mut checks = diagnose(&inputs);
     // With no host, `binary_checks` already says so.
     if inputs.host != Host::None {
-        checks.insert(0, Check::pass("host", format!("{} ({})", pick.id, pick.why)));
+        checks.insert(
+            0,
+            Check::pass("host", format!("{} ({})", pick.id, pick.why)),
+        );
     }
     say(&render(&checks));
     ExitCode::from(exit_code(&checks))
@@ -693,9 +700,7 @@ mod tests {
     use super::*;
 
     /// A parent chain from a list of (pid, program), each the parent of the one before.
-    fn chain(
-        programs: &'static [&'static str],
-    ) -> impl Fn(Pid) -> Option<(Pid, String)> + 'static {
+    fn chain(programs: &'static [&'static str]) -> impl Fn(Pid) -> Option<(Pid, String)> + 'static {
         let me = std::process::id();
         move |pid| {
             let step = usize::try_from(pid.get().checked_sub(me)?).ok()?;
@@ -738,5 +743,4 @@ mod tests {
         assert_eq!(pick_host(Some("1"), None, &never).id, "herdr");
         assert_eq!(pick_host(None, Some("/tmp/t,1,0"), &never).id, "tmux");
     }
-
 }
