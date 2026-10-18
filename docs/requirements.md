@@ -290,7 +290,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| SEC-1 | MUST | Never log an environment value whose name contains `TOKEN`, `KEY`, `SECRET` or `HEADERS` (which covers `OTEL_EXPORTER_OTLP_HEADERS`), including `CLAUDE_CODE_MESSAGING_TOKEN` and teamwire's own member tokens. | harness R21 |
+| SEC-1 | MUST | Never log an environment value whose name contains `TOKEN`, `KEY`, `SECRET`, `HEADERS` (which covers `OTEL_EXPORTER_OTLP_HEADERS`), `PASSWORD`, `PASSWD`, `CREDENTIAL` or `AUTHORIZATION` (bare `AUTH` is not matched, because it would also hide `GIT_AUTHOR_NAME`), including `CLAUDE_CODE_MESSAGING_TOKEN` and teamwire's own member tokens. | harness R21 |
 | SEC-2 | MUST | Any route that pushes into a session accepts only senders in the team's member list. | protocols R27 |
 | SEC-3 | MUST | teamwire registers no hook, MCP server, skill or launch agent in a harness's user configuration except its own harness plugin, installed only by `teamwire install` through the harness's plugin commands. For Claude Code the plugin `teamwire@teamwire` carries the lead skill, the lead's MCP server and the lead's Stop hook (ADR 0018). Members never load it. Member hooks and MCP servers are passed per run and never registered. Example configs are files in the repo. | `CLAUDE.md`; harness R7; ADR 0012; ADR 0018 |
 | SEC-4 | MUST | teamwire never writes `~/.claude/settings.json`, `~/.claude.json`, Claude Code's plugin directory, or herdr's managed hook file itself. Reading them is allowed. `teamwire install` and `teamwire uninstall` change them only by running `claude plugin` and `claude mcp` (ADR 0012, ADR 0018). | harness R7, 1.5; ADR 0012; ADR 0018 |

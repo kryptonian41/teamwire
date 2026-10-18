@@ -18,10 +18,14 @@ fn secret_names() {
         "CLAUDE_CODE_MESSAGING_TOKEN",
         "OTEL_API_KEY",
         "my_secret",
+        "DB_PASSWORD",
+        "mysql_passwd",
+        "AWS_CREDENTIALS",
+        "HTTP_AUTHORIZATION",
     ] {
         assert!(is_secret_name(name), "{name}");
     }
-    for name in ["TEAMWIRE_ROLE", "HOME", "PATH"] {
+    for name in ["TEAMWIRE_ROLE", "HOME", "PATH", "GIT_AUTHOR_NAME"] {
         assert!(!is_secret_name(name), "{name}");
     }
 }

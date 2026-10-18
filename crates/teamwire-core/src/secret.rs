@@ -4,13 +4,24 @@
 use std::fmt;
 
 /// True for `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN`, and any name
-/// holding `TOKEN`, `KEY`, `SECRET` or `HEADERS` in any case. The last one
-/// covers `OTEL_EXPORTER_OTLP_HEADERS`, which carries credentials.
+/// holding `TOKEN`, `KEY`, `SECRET`, `HEADERS`, `PASSWORD`, `PASSWD`,
+/// `CREDENTIAL` or `AUTHORIZATION` in any case. `HEADERS` covers
+/// `OTEL_EXPORTER_OTLP_HEADERS`, which carries credentials. Bare `AUTH` is not
+/// listed because it would also hide `GIT_AUTHOR_NAME`.
 pub fn is_secret_name(name: &str) -> bool {
     let upper = name.to_ascii_uppercase();
-    ["TOKEN", "KEY", "SECRET", "HEADERS"]
-        .iter()
-        .any(|word| upper.contains(word))
+    [
+        "TOKEN",
+        "KEY",
+        "SECRET",
+        "HEADERS",
+        "PASSWORD",
+        "PASSWD",
+        "CREDENTIAL",
+        "AUTHORIZATION",
+    ]
+    .iter()
+    .any(|word| upper.contains(word))
 }
 
 /// Prints `name=value` pairs with the value of every secret name replaced
