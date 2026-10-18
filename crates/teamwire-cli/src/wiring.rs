@@ -20,12 +20,13 @@ pub(crate) use teamwire_harness_claude::{
     shadowing_entries, skill_state,
 };
 
-/// The harness whose hook commands this binary serves.
+// The Codex lead-setup items, re-exported for the same reason.
 pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
 pub(crate) use teamwire_harness_codex::lead_setup::{
     Change as CodexChange, LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
 };
 
+/// The harness whose hook commands this binary serves.
 pub(crate) fn claude_harness_id() -> HarnessId {
     HarnessId::from_static(ClaudeCode::ID)
 }

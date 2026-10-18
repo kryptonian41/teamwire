@@ -248,9 +248,10 @@ Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets to restate it.
 
 Launch sets no model and no effort by kind. Every member needs `mode` in the
-spec. A member without `model` or `effort` runs on Claude Code's defaults. A
-member runs on Codex with `"harness": "codex"`. The last three columns are
-what to set.
+spec. A member without `model` or `effort` runs on its harness's defaults. A
+member without `harness` runs on the lead's harness, and `"harness": "codex"`
+or `"harness": "claude-code"` picks one. The last three columns are what to
+set.
 
 | Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
 | --- | --- | --- | --- | --- | --- |
