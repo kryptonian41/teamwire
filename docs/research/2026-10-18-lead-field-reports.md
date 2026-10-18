@@ -102,7 +102,7 @@ Two findings come from teamwire's own runs.
   followed the session's own attribution instruction instead. A brief cannot
   settle a convention that the harness also sets.
 - Of 33 real questions members asked, 18 to 22 asked for an edit in a file
-  nobody owned (O7, count re-run by the closer). The closer got 18 to 22,
+  outside the member's own `owns` (O7, count re-run by the closer). The closer got 18 to 22,
   depending on how four borderline questions are read. The lead answered 32 of
   the 33 questions. The median wait was 0.35 minutes. The cost was small, but
   the questions show files the plan missed.
@@ -189,7 +189,7 @@ verify records. No member failed.
 | Reprompts | 100 in 32 teams. 97 went to implementers. | O1 |
 | Fix round for reviewed implementers | 54% (68 of 125), counting only reprompts with findings | O2 |
 | Tests that cannot fail | found by closers in at least 6 runs | O4a |
-| Questions | 38 asked, 33 real. 18 to 22 asked for a file nobody owned. 32 were answered. Median wait 0.35 minutes. | O7 |
+| Questions | 38 asked, 33 real. 18 to 22 asked for an edit in a file outside the member's own `owns`. 32 were answered. Median wait 0.35 minutes. | O7 |
 | `verify` flags | 426 outside-owns flags in 21 teams (signin 286, mfix 42, writerfix 23). 236 report-no-line flags in 13 teams. 188 weakened flags in 14 teams. | O9 |
 | Time to first completion | implementer median 5.8 minutes (p90 20.0, max 82.1), reviewer 9.0, closer 11.4 | O15 |
 
@@ -234,23 +234,23 @@ SEATS is `crates/teamwire-launch/contracts/`. PRESETS is `examples/presets/`.
 
 | # | Change | Evidence it rests on | Files changed |
 | --- | --- | --- | --- |
-| 1 | The closer proves tests can fail by reverting the fix in a scratch checkout. The closer runs each member's check on the member's branch and on the joined head. The reviewer looks for stubbed, empty or hard-coded code. The sources of the weakening and style claims are corrected (section 5). | O4a, B8, B19 | SEATS `kind_closer.md`, `kind_reviewer.md`, `kind_implementer.md`; PRESETS `closer.json`; SKILL closer row and integrate step |
+| 1 | The closer proves tests can fail by reverting the fix in a temporary clone that the closer makes. The closer runs the member's `setup` in the clone first (A4). The closer runs each member's check on the member's branch and on the joined head. The reviewer looks for stubbed, empty or hard-coded code. The sources of the weakening and style claims are corrected (section 5). | O4a, B8, B19 | SEATS `kind_closer.md`, `kind_reviewer.md`, `kind_implementer.md`; PRESETS `closer.json`; SKILL closer row and integrate step |
 | 2 | One review, then at most two fix rounds by the owner. A fix round is the normal case. The round after a pull request opens goes to the owner as one more reprompt. "Cap retries at two" is about a member that failed the same task twice. | O2, L15, B21, B3, L23 | SKILL |
 | 3 | The brief gains "Done when", "Out of scope" and "When to do nothing". The brief states the end state, not the steps. | L4, L10, L24, L29, B7 | SKILL; PRESETS coding presets |
 | 4 | Before launch, the lead finds files nobody owns and puts each in one member's `owns`. Members get no standing permission to edit other files. | O7. O8 is not checked by the closer. | SKILL |
 | 5 | The reviewer error sentence states what S11 measured. The lead never asks a reviewer for fixes in the same pass. The triage step stays. | S11, L10 | SKILL; SEATS `kind_reviewer.md` |
 | 6 | Cost is stated against one agent session: about 7× for a team, 12× to 22× for long orchestrated runs. | L9, L23, L7 | SKILL |
-| 7 | Before launch, the lead compares each `check` with the repository's CI job list. | O4b, not checked by the closer | SKILL |
+| 7 | Before launch, the lead compares each `check` with the repository's CI job list. | O4b: a check narrower than CI or the real gate showed up in six runs (not checked by the closer) | SKILL |
 | 8 | A replacement's brief names the failed member's branch, last diff and failing output. | S18: 66.6% to 71.8% with the earlier diff, 66.8% for a cold restart, one model | SKILL |
-| 9 | The sizing rules carry numbers: 48% for a one-file fix under five lines, under 10% for three or more files or over 100 lines, 3-5 teammates, 5-6 tasks each. | S6, L16, L8 | SKILL; PRESETS `parallel-tickets.json`, `dependent-tickets.json` |
+| 9 | The sizing rules carry numbers: 48% for a one-file fix under five lines, under 10% for three or more files or over 100 lines, 3-5 teammates, 5-6 tasks each. The 5-6 counts items on a teammate's shared task list, not units in one brief (A6). | S6, L16, L8 | SKILL; PRESETS `parallel-tickets.json`, `dependent-tickets.json` |
 | 10 | The reason for writing tests first is stated as measured: 25% of seeded faults against 14%. | S12 | SKILL; PRESETS `contract-split.json` |
-| 11 | The lead's own commits and merges raise `report-no-line` and `outside-owns` flags. The lead records the waiver in the same turn, asks the member for a report line, and sets `base` on stacked branches. | O9 | SKILL |
+| 11 | A lead commit on a member's branch raises `report-no-line:<sha>`, and `outside-owns` for files outside `owns`. A lead merge never raises `report-no-line`. A merge raises `outside-owns` only when the member's `base` does not name the merged branch (`crates/teamwire-verify/src/git.rs:92-112,188-195`). The lead records the waiver in the same turn, asks the member for a report line, and sets `base` on stacked branches. | O9 | SKILL |
 | 12 | Policy rules get one worked example each, settled with the user before launch. The brief does not restate a convention that the harness also sets, such as the commit trailer. | O6, corrected | SKILL |
 | 13 | Before planning a team, the lead asks whether a codemod or a script makes the change. | B15, B2 | SKILL |
 | 14 | Build and test commands and directory rules go in the repository's instruction files. Each new member failure adds one rule there. | B19, B4 (B4 not checked by the closer) | SKILL |
 | 15 | Each `check` runs once in a fresh worktree with the spec's `setup`. The implementer rule on `git stash` extends to `git reset --hard` and `git checkout -- .`. | O8 (not checked by the closer), B18 | SKILL; SEATS `kind_implementer.md`; `contract/tests.rs` if the pinned phrase changes |
 | 16 | One sentence says agents may read, research and review in parallel, and one agent writes each piece of code. | L15, L3, S22 | SKILL |
-| 20 | At the turn end that hands over a member's completion, the member's Stop hook adds up the tokens in the transcript. `teamwire metrics` reports them per member under `teamwire.member.tokens`. The skill tells the lead to read `teamwire metrics <team>` after a run. | O17 (not checked by the closer), B16 | The token-recording code; SKILL |
+| 20 | At the turn end that hands over a member's completion, the member's Stop hook adds up the tokens in the transcript. `teamwire metrics` reports them per member under `teamwire.member.tokens`. The skill tells the lead to read `teamwire metrics <team>` before close. A closed team's counts stay readable with `teamwire metrics` and no team name (A5). | O17 (not checked by the closer), B16 | The token-recording code; SKILL |
 
 Amendments after review, on 2026-10-18:
 
@@ -263,6 +263,15 @@ Amendments after review, on 2026-10-18:
   gives the reason.
 - A3 (item 5). The member rules name the source for "a reviewer asked to
   propose fixes rejects more correct work": Jin and Chen, 2026 (S11).
+- A4 (item 1). Before the revert, the closer runs the member's `setup` command in
+  the clone, with the clone's path as its first argument. That install is an
+  allowed exception to the no-installs rule. The closer may copy an existing
+  `target/` or `node_modules` folder into the clone instead when that is faster.
+- A5 (item 20). A closed team's token counts stay readable. `teamwire metrics`
+  with no team name reads `$TEAMWIRE_HOME/archive/`. `teamwire metrics <team>`
+  reads only a team that still has its state directory.
+- A6 (item 9). Anthropic's "5-6 tasks each" counts items on a teammate's shared
+  task list, not units in one brief.
 
 Corrected evidence behind item 15: Bun ran 4 worktrees with 16 Claudes each. The
 member's claim of "64 worktrees" was wrong. The `git stash` collision happened
@@ -321,8 +330,10 @@ The closer's unchecked findings:
 
 ## 7. Sources
 
-Each URL below is one the closer opened and checked. Dates are the page date.
-"Undated" means the page prints none. The Anthropic docs pages were read on
+The closer confirmed the quotes taken from these pages. The closer's report names
+pages, not URLs, so the URLs come from the member reports. Dates for B7, B8, B9
+and B14 also come from `bigco.md`, not from the closer. Other dates are the page
+date. "Undated" means the page prints none. The Anthropic docs pages were read on
 2026-10-18.
 
 | Id | Publisher and title | Date | URL |
