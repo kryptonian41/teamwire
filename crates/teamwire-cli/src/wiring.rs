@@ -225,7 +225,10 @@ mod tests {
         assert_eq!(lead_with(None, None, Some("t1")), "codex");
         assert_eq!(lead_with(None, Some("s1"), Some("t1")), "claude-code");
         assert_eq!(lead_with(Some("codex"), Some("s1"), None), "codex");
-        assert_eq!(lead_with(Some("claude-code"), None, Some("t1")), "claude-code");
+        assert_eq!(
+            lead_with(Some("claude-code"), None, Some("t1")),
+            "claude-code"
+        );
         // An empty or unknown value does not decide.
         assert_eq!(lead_with(Some("nope"), None, Some("t1")), "codex");
         assert_eq!(lead_with(None, Some(""), Some("t1")), "codex");
