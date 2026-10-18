@@ -134,7 +134,7 @@ pub fn reopen(ctx: &mut Ctx<'_>, opts: &ReopenOpts) -> Result<ReopenReport, Reop
         lead: None,
         members: Vec::new(),
         warnings: Vec::new(),
-        watch_command: watch_command(&team.name),
+        watch_command: watch_command(ctx.registry, &team.lead_harness, &team.name),
         dry_run: opts.dry_run,
     };
     // `None` is the lead. Each entry passed every check and waits for its tab.

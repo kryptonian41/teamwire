@@ -48,7 +48,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
             return LaunchReport {
                 members,
                 warnings,
-                watch_command: watch_command(&plan.spec.team),
+                watch_command: watch_command(ctx.registry, &plan.lead.harness, &plan.spec.team),
             };
         }
     }
@@ -75,7 +75,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     LaunchReport {
         members,
         warnings,
-        watch_command: watch_command(&plan.spec.team),
+        watch_command: watch_command(ctx.registry, &plan.lead.harness, &plan.spec.team),
     }
 }
 

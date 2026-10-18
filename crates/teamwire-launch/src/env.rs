@@ -15,8 +15,8 @@ pub struct ValidateEnv<'a> {
     /// Time for the one check that waits on a host (the lead's locator).
     pub clock: &'a dyn Clock,
     pub config: &'a Config,
-    /// The lead's harness (this binary's own: `claude-code`). It is also the
-    /// default harness of a member.
+    /// The lead's harness: the one wiring picked (`claude-code` or `codex`).
+    /// It is also the default harness of a member.
     pub lead_harness: HarnessId,
     /// The host detected for the lead. It is the default host of a member.
     pub lead_host: HostId,
