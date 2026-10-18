@@ -221,6 +221,22 @@ impl MemberLaunch {
     }
 }
 
+impl MemberLaunch {
+    /// A resume's launch with what the first start recorded beyond the model:
+    /// the `teamwire` binary and the plugin switches. A harness that carries
+    /// hook and MCP commands in argv (Codex) needs both to match the start.
+    #[must_use]
+    pub fn with_run_context(
+        mut self,
+        teamwire_bin: PathBuf,
+        plugins: BTreeMap<String, bool>,
+    ) -> Self {
+        self.teamwire_bin = teamwire_bin;
+        self.plugins = plugins;
+        self
+    }
+}
+
 impl LaunchSpec {
     /// `argv` as one shell command line, for a command teamwire only prints:
     /// a word with anything but plain characters is single-quoted.
