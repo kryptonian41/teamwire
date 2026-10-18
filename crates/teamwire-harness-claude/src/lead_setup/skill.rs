@@ -13,7 +13,8 @@ pub const SKILL_TEXT: &str = include_str!("../../../../examples/skills/teamwire/
 
 /// The sections `SKILL.md` leaves to a second file, written beside it in the
 /// plugin.
-pub const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/reference.md");
+pub(super) const REFERENCE_TEXT: &str =
+    include_str!("../../../../examples/skills/teamwire/reference.md");
 
 /// The frontmatter key of the stamp. It sits under `metadata`, the map the
 /// skill format leaves for a tool's own keys.
