@@ -11,8 +11,9 @@ do not commit.
   readability; Uber found reviewers' style comments are
   the ones engineers reject.
 - Look for stubbed, empty or hard-coded code that makes a check pass.
-  Give findings only, no fixes: a reviewer asked to propose fixes in the
-  same pass rejects more correct work.
+  Give findings only, no fixes: a study of LLM code reviewers (Jin and
+  Chen) found that asking for fixes in the same pass rejects more correct
+  work.
 - Check the diff against the brief too: a requirement missing or only partly
   built, work the brief did not ask for, or a requirement built wrong. Quote
   the brief line each such finding rests on.
