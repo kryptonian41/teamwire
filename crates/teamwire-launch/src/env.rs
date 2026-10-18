@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use teamwire_core::{Config, HarnessId, HostId, Platform, Registry};
+use teamwire_core::{Clock, Config, HarnessId, HostId, Platform, Registry};
 
 /// The adapters and facts `validate` reads. It holds no store: when the
 /// team's database exists, `validate` opens it read-only itself, and when it
@@ -12,6 +12,8 @@ pub struct ValidateEnv<'a> {
     pub home: &'a Path,
     pub registry: &'a Registry,
     pub platform: &'a dyn Platform,
+    /// Time for the one check that waits on a host (the lead's locator).
+    pub clock: &'a dyn Clock,
     pub config: &'a Config,
     /// The lead's harness (this binary's own: `claude-code`). It is also the
     /// default harness of a member.

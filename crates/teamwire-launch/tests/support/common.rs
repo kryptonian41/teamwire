@@ -175,6 +175,7 @@ impl Rig {
             home: self.home.path(),
             registry: &self.registry,
             platform: &*self.platform,
+            clock: &self.clock,
             config: &self.config,
             lead_harness: teamwire_core::HarnessId::from_static(FakeHarness::ID),
             lead_host: teamwire_core::HostId::from_static(FakeHost::ID),
