@@ -45,5 +45,9 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
 }
 
 export function Loading({ what }: { what: string }) {
-  return <p className="note">Loading {what}…</p>;
+  return (
+    <p className="loading" role="status">
+      Loading {what}…
+    </p>
+  );
 }

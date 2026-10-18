@@ -112,7 +112,7 @@ td, .num { font-variant-numeric: tabular-nums; }
 .skip:focus { transform: none; }
 main:focus { outline: none; }
 
-.top { background: var(--surface); }
+.top { position: relative; background: var(--surface); }
 .top-in, .banner-in {
   max-width: 1240px; margin: 0 auto; padding: 0 var(--s3);
 }
@@ -139,6 +139,13 @@ main:focus { outline: none; }
 }
 .banner ul { margin: var(--s1) 0 0; padding-left: var(--s4); }
 .banner-connected { color: var(--muted); }
+/* While connected, the line sits at the right end of the top bar. */
+@media (min-width: 721px) {
+  .banner-connected {
+    position: absolute; top: 0; right: max(0px, (100% - 1240px) / 2);
+    height: 56px; display: flex; align-items: center;
+  }
+}
 .banner-connected p::before { background: var(--c-done); }
 .banner-connecting, .banner-reconnecting { background: var(--bg-idle); color: var(--c-idle); }
 .banner-stale { background: var(--bg-attention); color: var(--c-attention); }
@@ -148,6 +155,12 @@ main:focus { outline: none; }
 
 .note { color: var(--muted); }
 .note.error { color: var(--c-failed); }
+p.note.error {
+  margin: 0 0 var(--s3); padding: var(--s3); border-radius: var(--r-lg); max-width: 60ch;
+  background: var(--bg-failed); overflow-wrap: anywhere;
+}
+.loading { margin: 0; padding: var(--s3) 0; color: var(--ink); animation: breathe 1.6s var(--ease) infinite alternate; }
+@keyframes breathe { from { opacity: 1; } to { opacity: .55; } }
 .quiet { color: var(--muted); margin: 0; }
 .empty { padding: var(--s5) 0; max-width: 62ch; color: var(--muted); }
 .empty p { margin: 0; }
@@ -273,7 +286,7 @@ pre.text {
   position: fixed; top: 0; right: 0; bottom: 0; width: min(100%, 640px); z-index: 11;
   background: var(--bg); padding: var(--s4); overflow-y: auto;
   display: flex; flex-direction: column; gap: var(--s3);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow); /* taste-skill-ignore: the drawer is a dialog that floats over the page */
 }
 .drawer header { display: flex; justify-content: space-between; align-items: start; gap: var(--s3); }
 .drawer h2 { margin: 0; font-size: var(--t-head); letter-spacing: -0.02em; }
@@ -314,11 +327,28 @@ pre.text {
 
 /* History and archive */
 .history-team h2 { margin-bottom: var(--s1); }
-.summary { margin: 0 0 var(--s3); color: var(--muted); max-width: 72ch; font-variant-numeric: tabular-nums; }
+.summary { margin: 0 0 var(--s3); color: var(--muted); max-width: 60ch; font-variant-numeric: tabular-nums; }
 .file-group h3 { margin-top: var(--s4); }
 
 details { margin-top: var(--s5); }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-lead); margin-bottom: var(--s3); }
+
+/* Motion: feedback only, transform and opacity, 200 ms at most. */
+.btn, .tabs button, .top nav a, .link-btn, a.team, .skip, .crumbs a {
+  transition: transform 120ms var(--ease), opacity 120ms var(--ease);
+}
+.btn:active, .tabs button:active, .top nav a:active, .link-btn:active, .crumbs a:active { transform: scale(.97); }
+a.team:active, tr.clickable:active { transform: scale(.995); }
+.drawer { animation: slide-in 200ms var(--ease); }
+.scrim { animation: fade-in 200ms var(--ease); }
+@keyframes slide-in { from { transform: translateX(32px); opacity: 0; } }
+@keyframes fade-in { from { opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .btn:active, .tabs button:active, .top nav a:active, .link-btn:active, .crumbs a:active,
+  a.team:active, tr.clickable:active { transform: none; }
+}
 
 @media (max-width: 480px) {
   th, td { padding: var(--s2) 10px; }

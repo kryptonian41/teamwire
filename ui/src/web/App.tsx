@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { ApiClient } from "./api.ts";
+import { Empty } from "./components.tsx";
 import { ClientContext, useHash, useNow, useSnapshot } from "./hooks.ts";
 import { bannerFor } from "./model/banner.ts";
 import { joinAll } from "./model/teams.ts";
@@ -45,21 +46,22 @@ export function App({ client }: { client: ApiClient }) {
             </a>
           </nav>
         </div>
-      </header>
-      <div className={`banner banner-${banner.kind}`} role="status">
-        <div className="banner-in">
-          <p>{banner.text}</p>
-          {banner.problems.length > 0 && (
-            <ul>
-              {banner.problems.map((p, i) => (
-                <li key={i}>
-                  <code>{p.code}</code> {p.detail}
-                </li>
-              ))}
-            </ul>
-          )}
+        {/* One element for every kind, so the status region never remounts. */}
+        <div className={`banner banner-${banner.kind}`} role="status">
+          <div className="banner-in">
+            <p>{banner.text}</p>
+            {banner.problems.length > 0 && (
+              <ul>
+                {banner.problems.map((p, i) => (
+                  <li key={i}>
+                    <code>{p.code}</code> {p.detail}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
-      </div>
+      </header>
       <main id="main" tabIndex={-1}>
         <Routes route={route} teams={teams} snapshot={snapshot} />
       </main>
@@ -85,6 +87,10 @@ function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; 
     case "archive":
       return <Archive dir={route.dir} />;
     default:
-      return <p className="empty">Nothing at {route.hash}. <a href={href.overview()}>Back to the teams</a>.</p>;
+      return (
+        <Empty title="Nothing at this address">
+          <code>{route.hash}</code> is not a page here. <a href={href.overview()}>Back to the teams</a>.
+        </Empty>
+      );
   }
 }
