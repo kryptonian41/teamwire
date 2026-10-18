@@ -187,6 +187,28 @@ fn member_states_follow_the_records_and_the_look() {
 }
 
 #[test]
+fn an_idle_member_that_was_never_prompted_is_quiet_at_once() {
+    let mut bed = Bed::new();
+    bed.add_undispatched("calm");
+    bed.add("prompted");
+    bed.add_undispatched("reprompted");
+    bed.age(std::time::Duration::from_secs(1));
+    bed.reprompt("reprompted");
+    let view = status_of(&bed, None);
+    let state = |name: &str| {
+        view.members
+            .iter()
+            .find(|m| m.role.as_str() == name)
+            .map(|m| m.state.clone())
+            .unwrap()
+    };
+    // Inside the grace period: only the member nobody prompted is quiet.
+    assert_eq!(state("calm"), "quiet");
+    assert_eq!(state("prompted"), "working");
+    assert_eq!(state("reprompted"), "working");
+}
+
+#[test]
 fn outside_prompt_shown() {
     let mut bed = Bed::new();
     bed.add("api");

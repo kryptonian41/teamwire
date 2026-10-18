@@ -87,10 +87,22 @@ fn dispatch_false_starts_the_member_idle() {
         json!(false),
     );
     let plan = rig.validate(&team_spec("demo", &[member]), false).unwrap();
-    let (report, _store) = rig.launch("demo", plan);
+    let (report, store) = rig.launch("demo", plan);
     assert_eq!(
         report.members.first().unwrap().outcome,
         LaunchOutcome::Started
     );
     assert_eq!(rig.host.log().count_named("submit"), 0);
+    // Status reads this key to tell a member nobody prompted from one still starting.
+    let events = store
+        .read(|tx| {
+            tx.events_of_role(&teamwire_core::Role::parse("a").unwrap())?
+                .all_or_corrupt()
+        })
+        .unwrap();
+    let started = events
+        .iter()
+        .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
+        .unwrap();
+    assert_eq!(started.data.get("dispatch"), Some(&json!(false)));
 }

@@ -105,22 +105,35 @@ impl Bed {
     }
 
     pub fn add_with_deadline(&mut self, name: &str, deadline_s: u64) -> Member {
-        self.insert(name, deadline_s, true, None)
+        self.insert(name, deadline_s, true, None, &json!({}))
     }
 
     /// Adds a started member whose `member.started` event was written by
     /// teamwire `version`.
     pub fn add_started_by(&mut self, name: &str, version: &str) -> Member {
-        self.insert(name, 1800, true, Some(version))
+        self.insert(name, 1800, true, Some(version), &json!({}))
     }
 
     /// Adds a member whose launch stopped in `creating`: no place, no
     /// session, never started.
     pub fn add_creating(&mut self, name: &str) {
-        self.insert(name, 1800, false, None);
+        self.insert(name, 1800, false, None, &json!({}));
     }
 
-    fn insert(&mut self, name: &str, deadline_s: u64, start: bool, by: Option<&str>) -> Member {
+    /// Adds a started member whose `member.started` event says it got no
+    /// first prompt (`"dispatch": false`).
+    pub fn add_undispatched(&mut self, name: &str) -> Member {
+        self.insert(name, 1800, true, None, &json!({ "dispatch": false }))
+    }
+
+    fn insert(
+        &mut self,
+        name: &str,
+        deadline_s: u64,
+        start: bool,
+        by: Option<&str>,
+        started_data: &serde_json::Value,
+    ) -> Member {
         let role = role(name);
         let session = Self::session(name);
         let place = self.host.add_place(
@@ -166,7 +179,7 @@ impl Bed {
                 tx.insert_member(now, &new)?;
                 tx.set_member_place(&role, &place)?;
                 tx.set_member_session(&role, &session)?;
-                tx.set_member_state(now, &role, MemberState::Started, &json!({}))
+                tx.set_member_state(now, &role, MemberState::Started, started_data)
             })
             .unwrap();
         self.places.insert(name.to_owned(), place);

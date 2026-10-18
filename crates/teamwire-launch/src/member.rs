@@ -133,7 +133,7 @@ fn launch_member(
         marks: Vec::new(),
         last: ctx.clock.monotonic(),
     };
-    let extra = json!({ "launch": launch_id, "requested": requested });
+    let extra = json!({ "launch": launch_id, "requested": requested, "dispatch": m.spec.dispatch });
     let result = run_member(ctx, plan, dirs, m, &extra, &mut made, &mut steps, warnings);
     match result {
         Ok(()) => LaunchOutcome::Started,
