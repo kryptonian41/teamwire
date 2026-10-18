@@ -226,6 +226,10 @@ fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     assert!(shown.contains("0/1 members started"), "{shown}");
     assert!(shown.contains("watch: teamwire watch demo"), "{shown}");
     assert!(
+        shown.contains("no member started; fix the cause and run teamwire launch --add --spec <spec>, or teamwire close demo"),
+        "{shown}"
+    );
+    assert!(
         !repo.join(".worktrees/api").exists(),
         "the checkout was taken back"
     );
@@ -316,7 +320,12 @@ fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_creat
         let mut args = extra.to_vec();
         args.extend(["--spec", file.to_str().unwrap()]);
         let out = rig.launch(&args, None, false);
-        assert_eq!(out.status.code(), Some(1), "{extra:?}: {}", text(&out.stdout));
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{extra:?}: {}",
+            text(&out.stdout)
+        );
         let err = text(&out.stderr);
         assert!(
             err.contains("refused: member cx: harness codex is not on PATH"),
@@ -324,5 +333,37 @@ fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_creat
         );
         assert!(!text(&out.stdout).contains("would launch"));
         assert!(rig.home_is_empty(), "{extra:?}: no team directory");
+    }
+}
+
+#[test]
+fn the_unverifiable_implementer_warning_names_what_is_missing() {
+    let rig = Rig::new();
+    let repo = rig.repo();
+    let child = |role: &str, extra: Value| {
+        let mut c = json!({"role": role, "title": format!("Work {role}"), "kind": "implementer",
+            "mode": "worktree", "repo": repo, "task": "build"});
+        c.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        c
+    };
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        child("nocheck", json!({"owns": ["a/"]})),
+        child("noowns", json!({"check": "true"})),
+        child("neither", json!({}))]});
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    let err = text(&out.stderr);
+    for line in [
+        "role nocheck: an implementer without a check cannot be verified",
+        "role noowns: an implementer without an owns list cannot be verified",
+        "role neither: an implementer without a check and an owns list cannot be verified",
+    ] {
+        assert!(err.contains(line), "{err}");
     }
 }

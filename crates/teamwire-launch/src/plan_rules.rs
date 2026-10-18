@@ -35,12 +35,16 @@ pub(crate) fn planning_warnings(
         .filter(|m| m.kind == MemberKind::Implementer)
         .collect();
     for m in &implementers {
-        if m.spec.check.is_none() || m.spec.owns.is_empty() {
-            warnings.push(format!(
-                "role {}: an implementer without a check and an owns list cannot be verified",
-                m.spec.role
-            ));
-        }
+        let missing = match (m.spec.check.is_none(), m.spec.owns.is_empty()) {
+            (true, true) => "a check and an owns list",
+            (true, false) => "a check",
+            (false, true) => "an owns list",
+            (false, false) => continue,
+        };
+        warnings.push(format!(
+            "role {}: an implementer without {missing} cannot be verified",
+            m.spec.role
+        ));
     }
     for (i, a) in implementers.iter().enumerate() {
         for b in implementers.iter().skip(i + 1) {
