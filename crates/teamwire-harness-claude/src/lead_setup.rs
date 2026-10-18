@@ -166,6 +166,22 @@ pub fn lead_setup_state(
 }
 
 impl ClaudeConfig {
+    /// The state directory the installed plugin was made for, when that is
+    /// not the one `want` names and its files are what this binary renders
+    /// for it: `Some(None)` for the default directory, `Some(Some(dir))` for
+    /// a `--home`. Reads only.
+    pub fn plugin_other_home(
+        &self,
+        want: &McpEntry,
+    ) -> Result<Option<Option<String>>, LeadSetupError> {
+        let Some(root) = plugin_state(self, Path::new(""))?.installed else {
+            return Ok(None);
+        };
+        Ok(installed_for_own_home(&root, want)
+            .filter(|e| e.home_args() != want.home_args())
+            .map(|e| e.home_args().get(1).cloned()))
+    }
+
     /// What is wrong with Claude Code's registration of the teamwire plugin,
     /// in words; empty when it is installed, enabled, and (when
     /// `compare_files`) holds the files `want` would render. Reads only.
@@ -179,10 +195,16 @@ impl ClaudeConfig {
         let mut problems = Vec::new();
         match &state.installed {
             None => problems.push(format!("`{PLUGIN_ID}` is not installed at user scope")),
-            Some(root) if compare_files && !files.plugin_matches(root) => problems.push(format!(
-                "the installed plugin at {} is another version of teamwire's",
-                root.display()
-            )),
+            Some(root)
+                if compare_files
+                    && !files.plugin_matches(root)
+                    && installed_for_own_home(root, want).is_none() =>
+            {
+                problems.push(format!(
+                    "the installed plugin at {} is another version of teamwire's",
+                    root.display()
+                ));
+            }
             Some(_) => {}
         }
         if state.installed.is_some() && state.enabled == Some(false) {
@@ -190,6 +212,29 @@ impl ClaudeConfig {
         }
         Ok(problems)
     }
+}
+
+/// The entry the installed plugin at `root` runs: `want`'s binary with the
+/// arguments in the plugin's own `.mcp.json`, when `root` holds exactly the
+/// files this binary renders for that entry. A plugin installed for another
+/// state directory differs from `want` only in `--home`.
+fn installed_for_own_home(root: &Path, want: &McpEntry) -> Option<McpEntry> {
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(root.join(".mcp.json")).ok()?).ok()?;
+    let args = doc
+        .get("mcpServers")?
+        .get("teamwire")?
+        .get("args")?
+        .as_array()?
+        .iter()
+        .map(|a| a.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()?;
+    let entry = McpEntry {
+        command: want.command.clone(),
+        args,
+    };
+    let files = PluginFiles::render(Path::new(""), &entry).ok()?;
+    files.plugin_matches(root).then_some(entry)
 }
 
 /// The changes that remove what ADR 0012 wrote. `force` also removes an
