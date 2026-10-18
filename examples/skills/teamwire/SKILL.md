@@ -125,9 +125,9 @@ brings in new work. Fix what it finds first.
    what else reads or pins what it changes: tests that pin a count or a
    title, access inventories, exhaustive matches on a type it extends, hook or
    lint configs, mocks of its module. Put each such file in one member's
-   `owns`. Otherwise the member must ask you, at a turn each time. In
-   teamwire's own runs, 18 to 22 of 33 real questions asked to edit a file
-   outside the member's `owns`.
+   `owns`. A member has no standing permission to edit outside `owns`, so
+   otherwise it asks you, at a turn each time. In teamwire's own runs, 18 to
+   22 of 33 real questions asked to edit a file outside the member's `owns`.
 6. Each content or product rule, such as which real people may appear, has
    one worked example, settled with the user. In five of teamwire's own runs,
    members decided the same question differently.
