@@ -45,7 +45,7 @@ pub use store::{
     APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path, team_names,
 };
 pub use team::{CloseEnd, NewTeam, TeamRow};
-pub use tx::{BadRow, Listing, ReadTx, Tx};
+pub use tx::{BadRow, Listing, ReadTx, Tx, sha256};
 pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 

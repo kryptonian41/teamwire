@@ -14,6 +14,48 @@ fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
 
+/// The member's result file, as the turn-end hook writes it.
+fn result_file(bed: &Bed, name: &str) -> std::path::PathBuf {
+    bed.home
+        .path()
+        .join("teams")
+        .join(fixture::TEAM)
+        .join("outbox")
+        .join(format!("{name}.md"))
+}
+
+/// Ends a completion's delivery as the hook does: it writes the result file
+/// first and records the file's hash with the outcome.
+#[expect(
+    clippy::disallowed_methods,
+    clippy::unwrap_used,
+    reason = "the test stands in for the hook that wrote a result file, outside the platform; a failure fails the test"
+)]
+fn finish_with_file(
+    bed: &mut Bed,
+    name: &str,
+    id: &teamwire_core::Ulid,
+    state: ReportState,
+    code: Option<DeliveryErrorCode>,
+) {
+    let file = result_file(bed, name);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "the result").unwrap();
+    let now = teamwire_core::Clock::now(&bed.clock);
+    let outcome = teamwire_store::ResultOutcome {
+        state,
+        route: None,
+        error: code.map(|c| teamwire_core::DeliveryError::new(c, "test")),
+        result_sha256: Some(teamwire_store::sha256(b"the result")),
+    };
+    bed.store
+        .write(|tx| {
+            tx.claim_completion_for_delivery(now, id, secs(90))?;
+            tx.finish_completion_delivery(now, id, &outcome).map(|_| ())
+        })
+        .unwrap();
+}
+
 /// A member old enough that startup grace is over.
 fn seasoned(bed: &mut Bed, name: &str) {
     bed.add(name);
@@ -41,7 +83,9 @@ fn undelivered_result_printed_once() {
     bed.working("web");
     bed.poll();
     let id = bed.complete("api", CompletionStatus::Done);
-    bed.finish(
+    finish_with_file(
+        &mut bed,
+        "api",
         &id,
         ReportState::Undelivered,
         Some(DeliveryErrorCode::HostOtherSession),
@@ -1003,4 +1047,185 @@ fn a_started_member_with_no_session_is_never_called_dead() {
     bed.age(secs(300));
     let lines = bed.ticks(30);
     assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
+}
+
+/// Only a member's own turn-end hook reports its completion, so a member
+/// that dies between `done` and its turn end is judged like a running one:
+/// three absent polls make it `DIED`, and the team can complete (WAT-6).
+#[test]
+fn a_member_that_dies_after_done_before_its_hook_is_announced_dead() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    bed.complete("api", CompletionStatus::Done);
+    bed.vanish("api");
+    let lines = bed.ticks(60);
+    assert_eq!(count(&lines, "DECLARED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "DIED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+    let order: Vec<String> = lines.iter().flat_map(|l| names(l)).collect();
+    let at = |name: &str| order.iter().position(|n| n == name).unwrap();
+    assert!(at("DECLARED") < at("DIED"), "{order:?}");
+    let last = lines.last().unwrap();
+    assert!(
+        last.ends_with("TEAM-COMPLETE 1/2 done; not done: api died"),
+        "{last}"
+    );
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
+
+/// A member gone before its `done` is still `DECLARED` before it is `DIED`.
+#[test]
+fn a_member_gone_before_done_is_declared_before_it_dies() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.vanish("api");
+    assert!(bed.ticks(2).is_empty());
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(4);
+    let order: Vec<String> = lines.iter().flat_map(|l| names(l)).collect();
+    assert_eq!(order, ["DECLARED", "DIED"], "{lines:?}");
+}
+
+/// A live, idle member whose completion stays `pending` past the hook budget
+/// and one more poll has a turn-end hook that did not report. The lead hears
+/// it once; the member stays unsettled.
+#[test]
+fn a_done_member_whose_hook_never_reports_is_unreported_once() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    bed.complete("api", CompletionStatus::Done);
+    bed.idle("api");
+    let lines = bed.ticks(30);
+    assert_eq!(count(&lines, "UNREPORTED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 0, "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains(
+            "UNREPORTED api: done is recorded but its turn-end hook did not report it; run teamwire doctor"
+        )),
+        "{lines:?}"
+    );
+    assert!(bed.memory.end.is_none());
+}
+
+#[test]
+fn a_hook_that_reports_within_its_budget_is_not_unreported() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    let id = bed.complete("api", CompletionStatus::Done);
+    bed.idle("api");
+    let mut lines = bed.ticks(3);
+    bed.finish(&id, ReportState::Delivered, None);
+    lines.extend(bed.ticks(10));
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+}
+
+/// A member still working after `done` has not reached its turn end, so its
+/// hook has not had the chance to report.
+#[test]
+fn a_done_member_still_working_is_not_unreported() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(30);
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+}
+
+/// The lead is pointed at a file that holds this result: a result file that
+/// is gone, or that a later write changed, gives way to the member's report.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test changes the result file the hook wrote, outside the platform"
+)]
+#[test]
+fn a_missing_or_changed_result_file_points_the_lead_at_the_report() {
+    for change in ["delete", "rewrite"] {
+        let mut bed = Bed::new();
+        bed.add("api");
+        bed.add("web");
+        bed.working("api");
+        bed.working("web");
+        bed.poll();
+        let id = bed.complete("api", CompletionStatus::Done);
+        finish_with_file(&mut bed, "api", &id, ReportState::Unconfirmed, None);
+        let file = result_file(&bed, "api");
+        if change == "delete" {
+            std::fs::remove_file(&file).unwrap();
+        } else {
+            std::fs::write(&file, "a newer text").unwrap();
+        }
+        let line = bed.tick().unwrap();
+        assert!(
+            line.contains("UNCONFIRMED api Result: "),
+            "{change}: {line}"
+        );
+        assert!(line.contains("/reports/api.md"), "{change}: {line}");
+        assert!(!line.contains("/outbox/"), "{change}: {line}");
+    }
+}
+
+/// Unread and unanswered times count only time awake, as `LATE` does: a
+/// sleeping machine gives nobody the chance to read or answer.
+#[test]
+fn a_laptop_sleep_does_not_make_a_fresh_message_unread_or_unanswered() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    bed.question("api", DeliveryState::HandedOff);
+    bed.age(secs(30));
+    assert!(bed.tick().is_none());
+    // The lid closes 30 s after the message was handed off, for an hour.
+    bed.clock.sleep_and_wake(secs(3600));
+    let lines = bed.ticks(2);
+    assert_eq!(count(&lines, "UNREAD"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "UNANSWERED"), 0, "{lines:?}");
+    // Ten minutes awake are still found.
+    let later = bed.ticks(30);
+    assert_eq!(count(&later, "UNREAD"), 1, "{later:?}");
+    assert_eq!(count(&later, "UNANSWERED"), 1, "{later:?}");
+}
+
+/// Idle polls from before `done` say nothing about the hook, which only
+/// runs at the turn end after it: the count starts at the completion.
+#[test]
+fn idle_polls_before_done_do_not_make_unreported_early() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.idle("api");
+    let before = bed.ticks(4);
+    assert_eq!(count(&before, "SILENT"), 1, "{before:?}");
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(4);
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+    let later = bed.ticks(1);
+    assert_eq!(count(&later, "UNREPORTED"), 1, "{later:?}");
 }
