@@ -1106,9 +1106,8 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
     // The watch delivered the result, so the lead has it.
     let id = older
         .read(|tx| {
-            Ok(tx
-                .completions_of(&Role::parse("web").unwrap())?
-                .all_or_corrupt()?)
+            tx.completions_of(&Role::parse("web").unwrap())?
+                .all_or_corrupt()
         })
         .unwrap()[0]
         .completion
