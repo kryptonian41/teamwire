@@ -653,6 +653,32 @@ fn metrics_for_a_team_whose_store_cannot_be_read_exits_6() {
 }
 
 #[test]
+fn metrics_for_a_closed_team_whose_archive_cannot_be_read_exits_6() {
+    let home = TestHome::new().unwrap();
+    let other = TestHome::new().unwrap();
+    let mut s = busy_team(&other, "alpha");
+    s.write(|tx| {
+        tx.connection().execute_batch("PRAGMA user_version = 99")?;
+        Ok(())
+    })
+    .unwrap();
+    drop(s);
+    let from = database_path(other.path(), &TeamName::parse("alpha").unwrap());
+    let dir = home.path().join("archive").join("alpha-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&from, dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    assert!(!run.err.contains("no database"), "{}", run.err);
+    assert!(run.err.contains("alpha-2026-09-30"), "{}", run.err);
+    // Another team's unreadable archive is not this one's.
+    let run = teamwire(&home, &[], &["metrics", "alph"]);
+    assert_eq!(run.code, 1, "{}{}", run.out, run.err);
+    assert!(run.err.contains("no database for team alph"), "{}", run.err);
+}
+
+#[test]
 fn export_of_an_unknown_team_is_refused() {
     let home = TestHome::new().unwrap();
     let run = teamwire(&home, &[], &["export", "nope"]);
