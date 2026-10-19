@@ -402,9 +402,11 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
 }
 
 /// Only implementers keep the user's plugins; every other member of every
-/// shape switches both off so its session carries no unrelated prompt text.
+/// shape switches all off. claude-mem is one of them: it records member
+/// sessions, and read-only members would otherwise read each other's findings
+/// back through injected memory.
 #[test]
-fn every_non_implementer_member_switches_both_plugins_off() {
+fn every_non_implementer_member_switches_all_plugins_off() {
     for name in NAMES {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
         for member in file["children"].as_array().unwrap() {
@@ -414,6 +416,7 @@ fn every_non_implementer_member_switches_both_plugins_off() {
             for plugin in [
                 "ponytail@ponytail",
                 "mattpocock-skills@claude-plugins-official",
+                "claude-mem@thedotmack",
             ] {
                 assert_eq!(
                     member["plugins"][plugin],
