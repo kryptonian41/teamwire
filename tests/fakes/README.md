@@ -210,12 +210,17 @@ exit 1. A syntax error (wrong number of operands, `--kind` or `--pane` missing
 on `agent start`, an unknown command) prints herdr's usage text
 (`usage: herdr agent get <target>`, `missing required --kind`,
 `unknown command: ..`) on stderr and exits 2, before the call reaches the
-state or the log. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
+state or the log. So does a flag the real command lacks (`agent list
+--no-such-flag`) and a value outside herdr 0.9.3's set (`agent read --source`
+takes `visible`, `recent`, `recent-unwrapped` or `detection`; `--format` takes
+`text` or `ansi`; `--until` takes a status). `agent read` also accepts
+`--strip-ansi`, which herdr's help does not list. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
 `WorkspaceInfo`) carry the fields of `herdr api schema --json` (protocol 22).
 Result types: `agent_started` (with `argv`), `agent_info`, `agent_list`,
 `agent_prompted`, `pane_info`, `pane_list`, `workspace_created|info|list`,
 `tab_created|info`, and `ok` for `send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
-means the fake itself is broken (no `FAKE_HERDR_STATE`).
+means the fake itself is broken: no `FAKE_HERDR_STATE`, or a `FAKE_HERDR_FAULTS`
+file that is missing, is not valid JSON, or has a key the fake does not know.
 
 `agent start <name> --kind claude --pane <pane> [--timeout ms] -- <claude args>`
 starts `fake-claude` (or `$FAKE_CLAUDE_BIN`) in the pane with a **cleared
@@ -254,12 +259,18 @@ from the session file `fake-claude` wrote (else the id on its command line).
 `pane close` ends the agent and, as herdr does, closes an emptied tab and an
 emptied workspace.
 
+Each call takes a kernel lock on `<state file>.lock` for as long as it works
+on the state, and waits up to five seconds for it. The kernel frees the lock
+when the process ends, so a killed call leaves nothing held. `agent start`
+saves the state and gives the lock up while it waits for the agent to be
+ready, so `agent list` and the other calls answer during a slow start.
+
 Environment of `fake-herdr` itself:
 
 | Variable | Meaning |
 | --- | --- |
 | `FAKE_HERDR_STATE` | Required. The JSON state file. Pane directories (`screen.txt`, `status.json`, `inbox`, `keys`) sit beside it. |
-| `FAKE_HERDR_LOG` | Optional. One JSON line per call: `{"argv":[..],"kind":"read"\|"write","fault":null\|"error:<code>"\|"hang"\|"garbage"\|"stalled"}`. |
+| `FAKE_HERDR_LOG` | Optional. One JSON line per call: `{"argv":[..],"kind":"read"\|"write","fault":null\|"error:<code>"\|"hang"\|"garbage"\|"stalled"\|"timed_out"}`. |
 | `FAKE_HERDR_FAULTS` | Optional. The fault file. |
 | `FAKE_HERDR_HANG_MS` | How long a `hang` fault sleeps (default 30000), then fails with `timeout`. |
 | `FAKE_HERDR_WAIT_MS` | The no-activity limit for `agent prompt --wait` (default 5000). |
@@ -273,6 +284,7 @@ The fault file, built with `HerdrFaults` or written by hand:
 {"rules": [
   {"cmd": "agent start", "times": 2, "action": {"error": {"code": "agent_pane_busy", "message": "busy"}}},
   {"cmd": "agent prompt", "target": "tw_demo_api", "times": 1, "action": "stalled"},
+  {"cmd": "agent prompt", "target": "tw_demo_api", "times": 1, "action": "timed_out"},
   {"cmd": "pane list", "action": "hang"},
   {"cmd": "agent list", "action": "garbage"},
   {"cmd": "agent get", "target": "tw_demo_api", "action": {"error": {"code": "agent_not_found"}}}
@@ -283,9 +295,14 @@ The fault file, built with `HerdrFaults` or written by hand:
 `target` is the first operand (an agent name or pane id) and may be left out;
 `times` counts firings across processes (the counts live in the state file)
 and, when left out, means always. The first rule that matches and has
-firings left wins. `stalled` is for `agent prompt`: the text is typed into the
-agent, then the call fails with `agent_prompt_stalled`, because herdr's docs
-say a stall does not prove the prompt was not delivered.
+firings left wins. `stalled` is for `agent prompt --wait`: the text is typed
+into the agent, then the call fails with `agent_prompt_stalled`, because
+herdr's docs say a stall does not prove the prompt was not delivered. Without
+`--wait` herdr never reports a stall, so the fake sends the prompt as usual.
+The adapter passes no `--wait`; `timed_out` is the failure after typing that
+it can reach: the text is typed, then the call fails with `timeout`. Both
+rules only act on `agent prompt`, and a firing counts even when it had no
+effect.
 
 ## `fake-claude`
 
@@ -344,7 +361,12 @@ names a directory, so it can never write into the real `~/.claude`.
   lock on that file. When the lock is free or the file is gone, the agent
   exits as on `/exit`. The kernel frees the lock however the test process
   ends, so this works after a SIGKILL, when `FakeHerdrEnv`'s `Drop` never
-  runs. Without the variable the agent never checks.
+  runs. Without the variable the agent never checks. A `run` step or a hook
+  that is still going when the owner ends is stopped too: each runs in a
+  process group of its own, and the agent ends that group.
+- `FakeHerdrEnv`'s `Drop` and `pane close` end an agent and the shell step it
+  is running, except when the pane's `status.json` says `exited`: the pid may
+  belong to another process by then.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 

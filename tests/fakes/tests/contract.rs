@@ -153,6 +153,16 @@ fn harness_contract_fails_when_a_running_session_reads_dead() {
 }
 
 #[test]
+#[should_panic(expected = "launch_spec keeps the value of TEAMWIRE_TOKEN out of argv")]
+fn harness_contract_fails_when_a_secret_is_in_argv() {
+    let harness = FakeHarness::new();
+    let mut setup = harness_setup(&harness);
+    // The fake puts the session id in argv, so a token with that value is there too.
+    setup.member.identity = vec![("TEAMWIRE_TOKEN".into(), "member-1".into())];
+    harness_contract(&setup);
+}
+
+#[test]
 fn escalated_dialog_text_is_a_dialog_too() {
     let harness = FakeHarness::new();
     let mut setup = harness_setup(&harness);
@@ -196,6 +206,28 @@ fn fake_platform_passes_platform_contract() {
         dir.path(),
         RunCase::unix_standard(),
     ));
+}
+
+#[test]
+#[should_panic(expected = "a timeout kills what the child started too: the grandchild is gone")]
+fn platform_contract_fails_when_a_timeout_leaves_the_grandchild_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    // The queue holds what a platform that kept the grandchild would say.
+    platform.set_alive(Pid::new(555), true);
+    for case in &cases {
+        let mut out = case.expect.conforming_output();
+        if case.expect.ends_grandchild {
+            out.stdout = b"555\n".to_vec();
+        }
+        platform.queue_run(Ok(out));
+    }
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
 }
 
 #[test]

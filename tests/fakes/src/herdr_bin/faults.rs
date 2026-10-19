@@ -25,13 +25,20 @@ pub enum Action {
     Hang,
     /// Print text that is not JSON on stdout and exit 0.
     Garbage,
-    /// `agent prompt` only: type the text into the agent, then fail with
-    /// `agent_prompt_stalled`, as herdr does when it saw no activity. Other
-    /// commands treat this as that error alone.
+    /// `agent prompt --wait` only: type the text into the agent, then fail
+    /// with `agent_prompt_stalled`, as herdr does when it saw no activity.
+    /// Without `--wait` the call works as usual, because herdr never reports
+    /// a stall then, and every other command ignores the rule. The firing
+    /// still counts.
     Stalled,
+    /// `agent prompt` only: type the text into the agent, then fail with
+    /// `timeout`, as a call does that ran out of time. Other commands ignore
+    /// the rule. The firing still counts.
+    TimedOut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rule {
     /// The command words, such as `"agent start"`. Absent matches any call.
     #[serde(default)]
@@ -47,15 +54,19 @@ pub struct Rule {
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct FaultFile {
     #[serde(default)]
     pub(crate) rules: Vec<Rule>,
 }
 
-pub(crate) fn load(path: &Path) -> FaultFile {
-    fsutil::read_text(path)
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+/// The rules in the file. A missing or malformed file is an error, not an
+/// empty rule list: a test that wrote a bad fault file would otherwise pass
+/// without the fault it meant to inject.
+pub(crate) fn load(path: &Path) -> Result<FaultFile, String> {
+    let text = fsutil::read_text(path)
+        .ok_or_else(|| format!("fault file {} cannot be read", path.display()))?;
+    serde_json::from_str(&text).map_err(|e| format!("bad fault file {}: {e}", path.display()))
 }
 
 /// The action of the first rule that matches and has firings left. Counts

@@ -2,12 +2,15 @@
 //! Claude Code applies them.
 
 use std::io::Write as _;
+use std::os::unix::process::CommandExt as _;
 use std::path::Path;
 use std::process::Stdio;
+use std::time::Duration;
 
 use serde_json::Value;
 
 use crate::fsutil;
+use crate::owner::Owner;
 
 #[derive(Debug, Default)]
 pub(crate) struct Settings {
@@ -54,12 +57,22 @@ pub(crate) struct Ran {
 }
 
 /// Runs `sh -c command` with the settings' `env` on top of this process's
-/// environment, `stdin` on its standard input, and waits.
+/// environment, `stdin` on its standard input, and waits. The command runs
+/// in a process group of its own, and `step_file` (if any) holds the group's
+/// id while it runs, so whoever ends the agent can end the group too. When
+/// `owner` is gone the group is ended and the call returns exit code -1, so
+/// a command that never returns cannot outlive the test that started it.
 #[expect(
     clippy::disallowed_methods,
     reason = "fake-claude runs the shell steps and hooks of its script; this crate may start processes"
 )]
-pub(crate) fn run_shell(command: &str, env: &[(String, String)], stdin: Option<&str>) -> Ran {
+pub(crate) fn run_shell(
+    command: &str,
+    env: &[(String, String)],
+    stdin: Option<&str>,
+    owner: &mut Owner,
+    step_file: Option<&Path>,
+) -> Ran {
     let mut cmd = std::process::Command::new("/bin/sh");
     cmd.arg("-c")
         .arg(command)
@@ -70,7 +83,8 @@ pub(crate) fn run_shell(command: &str, env: &[(String, String)], stdin: Option<&
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .stderr(Stdio::piped())
+        .process_group(0);
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
@@ -85,18 +99,79 @@ pub(crate) fn run_shell(command: &str, env: &[(String, String)], stdin: Option<&
         // The child may exit without reading; a broken pipe is fine.
         pipe.write_all(text.as_bytes()).ok();
     }
-    match child.wait_with_output() {
-        Ok(out) => Ran {
-            code: out.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-        },
-        Err(e) => Ran {
-            code: 126,
-            stdout: String::new(),
-            stderr: e.to_string(),
-        },
+    if let Some(file) = step_file {
+        fsutil::write_atomic(file, child.id().to_string().as_bytes()).ok();
     }
+    let stdout = child.stdout.take().map(drain);
+    let stderr = child.stderr.take().map(drain);
+    let code = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.code().unwrap_or(-1),
+            Ok(None) => {}
+            Err(e) => {
+                return Ran {
+                    code: 126,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                };
+            }
+        }
+        if owner.gone() {
+            fsutil::terminate(child.id());
+            child.kill().ok();
+            child.wait().ok();
+            break -1;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    // A process the shell left in the background keeps the pipes open, so
+    // the readers end only when it does. Wait for it as `wait_with_output`
+    // would, but not past the owner: end the group, then give the readers a
+    // moment to see the pipes close.
+    let busy = || {
+        [&stdout, &stderr]
+            .iter()
+            .any(|r| r.as_ref().is_some_and(|r| !r.is_finished()))
+    };
+    let mut ended_at = None;
+    while busy() {
+        if ended_at.is_none() && owner.gone() {
+            fsutil::terminate(child.id());
+            ended_at = Some(fsutil::Stopwatch::start());
+        }
+        if ended_at
+            .as_ref()
+            .is_some_and(|at| at.elapsed() > Duration::from_secs(2))
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    if let Some(file) = step_file {
+        std::fs::remove_file(file).ok();
+    }
+    let text = |reader: Option<std::thread::JoinHandle<Vec<u8>>>| {
+        let bytes = reader
+            .filter(std::thread::JoinHandle::is_finished)
+            .and_then(|r| r.join().ok())
+            .unwrap_or_default();
+        String::from_utf8_lossy(&bytes).into_owned()
+    };
+    Ran {
+        code,
+        stdout: text(stdout),
+        stderr: text(stderr),
+    }
+}
+
+/// Reads a pipe to its end on a thread, so a full pipe never blocks the
+/// child while the caller watches for its exit and its owner.
+fn drain(mut pipe: impl std::io::Read + Send + 'static) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        pipe.read_to_end(&mut bytes).ok();
+        bytes
+    })
 }
 
 /// The reason a Stop hook holds the agent, if it does: exit code 2 with the
@@ -142,7 +217,13 @@ mod tests {
     #[test]
     fn shell_steps_see_the_settings_env_and_stdin() {
         let env = vec![("FROM_SETTINGS".to_owned(), "yes".to_owned())];
-        let ran = run_shell("printf '%s:' \"$FROM_SETTINGS\"; cat", &env, Some("in"));
+        let ran = run_shell(
+            "printf '%s:' \"$FROM_SETTINGS\"; cat",
+            &env,
+            Some("in"),
+            &mut Owner::from_env(),
+            None,
+        );
         assert_eq!((ran.code, ran.stdout.as_str()), (0, "yes:in"));
     }
 

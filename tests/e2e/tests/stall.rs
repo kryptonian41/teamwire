@@ -1,4 +1,4 @@
-//! `fake-herdr` stalls while a message is typed: the sender exits 5, the
+//! `fake-herdr` times out after a message is typed: the sender exits 5, the
 //! state is `unconfirmed`, and nothing is sent a second time.
 
 use std::time::Duration;
@@ -18,7 +18,7 @@ fn prompts_with(w: &World, needle: &str) -> usize {
 }
 
 #[test]
-fn a_stalled_message_is_unconfirmed_and_never_resent() {
+fn a_timed_out_message_is_unconfirmed_and_never_resent() {
     let mut w = World::new(&ClaudeScript::default());
     let spec = json!({"team": "demo", "title": "Demo", "children": [
         {"role": "a", "title": "Alpha", "kind": "investigator", "mode": "pane",
@@ -30,7 +30,7 @@ fn a_stalled_message_is_unconfirmed_and_never_resent() {
     w.wait_member_turn_done("demo", "a");
 
     w.herdr
-        .set_faults(&HerdrFaults::new().stalled_prompt(None, None))
+        .set_faults(&HerdrFaults::new().timed_out_prompt(None, None))
         .unwrap();
     let send = w.teamwire(
         &[

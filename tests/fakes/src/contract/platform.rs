@@ -24,6 +24,9 @@ pub struct RunExpect {
     pub exit_code: i32,
     pub timed_out: bool,
     pub stdout_contains: Option<String>,
+    /// The first line of stdout is the pid of a process the child started,
+    /// and that process must be gone once `run` has returned.
+    pub ends_grandchild: bool,
 }
 
 impl RunExpect {
@@ -32,11 +35,15 @@ impl RunExpect {
     pub fn conforming_output(&self) -> RunOutput {
         RunOutput {
             exit_code: self.exit_code,
-            stdout: self
-                .stdout_contains
-                .clone()
-                .unwrap_or_default()
-                .into_bytes(),
+            stdout: if self.ends_grandchild {
+                // A pid no fake process has, so it reads as gone.
+                b"4194303\n".to_vec()
+            } else {
+                self.stdout_contains
+                    .clone()
+                    .unwrap_or_default()
+                    .into_bytes()
+            },
             stderr: Vec::new(),
             timed_out: self.timed_out,
         }
@@ -62,6 +69,7 @@ impl RunCase {
             exit_code,
             timed_out: false,
             stdout_contains: contains.map(str::to_owned),
+            ends_grandchild: false,
         };
         vec![
             Self {
@@ -102,6 +110,18 @@ impl RunCase {
                     exit_code: RunOutput::TIMEOUT_EXIT,
                     timed_out: true,
                     stdout_contains: None,
+                    ends_grandchild: false,
+                },
+            },
+            Self {
+                name: "a timeout kills what the child started too",
+                command: sh("sleep 30 & echo $!; wait"),
+                timeout: Duration::from_millis(300),
+                expect: RunExpect {
+                    exit_code: RunOutput::TIMEOUT_EXIT,
+                    timed_out: true,
+                    stdout_contains: None,
+                    ends_grandchild: true,
                 },
             },
         ]
@@ -134,6 +154,27 @@ impl std::fmt::Debug for PlatformSetup<'_> {
             .field("live_pid", &self.live_pid)
             .finish_non_exhaustive()
     }
+}
+
+/// The first line of `stdout` names a process the child started. A timeout
+/// must have ended it with the child, so it is gone within a short wait (the
+/// kernel needs a moment to reap a killed process).
+fn grandchild_rule(p: &dyn Platform, case: &str, stdout: &[u8]) {
+    let rule = format!("run: {case}: the grandchild is gone");
+    let pid = String::from_utf8_lossy(stdout)
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse::<u32>().ok());
+    let Some(pid) = pid else {
+        fail(&rule, "the child printed no pid");
+    };
+    for _ in 0..40 {
+        if !p.pid_alive(Pid::new(pid)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    fail(&rule, pid);
 }
 
 /// Runs every rule on one platform.
@@ -171,6 +212,9 @@ pub fn platform_contract(setup: &PlatformSetup<'_>) {
                 &format!("run: {}: stdout", case.name),
                 got.contains(want.as_str()),
             );
+        }
+        if case.expect.ends_grandchild {
+            grandchild_rule(p, case.name, &out.stdout);
         }
     }
 
@@ -278,4 +322,36 @@ fn write_rules(setup: &PlatformSetup<'_>) {
     );
     let entries = std::fs::read_dir(dir).map(Iterator::count).unwrap_or(0);
     require("write_atomic leaves no temporary file behind", entries == 1);
+    mode_rules(setup);
+}
+
+/// A replaced file keeps its mode, and a new file is 0644.
+fn mode_rules(setup: &PlatformSetup<'_>) {
+    use std::os::unix::fs::PermissionsExt;
+    let (p, dir) = (setup.platform, setup.dir);
+    let mode = |path: &Path| {
+        std::fs::metadata(path)
+            .map(|m| m.permissions().mode() & 0o7777)
+            .ok()
+    };
+    let fresh = dir.join("contract-mode-new.json");
+    ok("write_atomic", p.write_atomic(&fresh, b"new"));
+    require(
+        "write_atomic makes a new file 0644",
+        mode(&fresh) == Some(0o644),
+    );
+    let private = dir.join("contract-mode-kept.json");
+    ok("write_atomic", p.write_atomic(&private, b"old"));
+    ok(
+        "set_permissions",
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600)),
+    );
+    ok("write_atomic", p.write_atomic(&private, b"replaced"));
+    require(
+        "write_atomic keeps the mode of the file it replaces",
+        mode(&private) == Some(0o600),
+    );
+    for path in [&fresh, &private] {
+        ok("remove_file", std::fs::remove_file(path));
+    }
 }

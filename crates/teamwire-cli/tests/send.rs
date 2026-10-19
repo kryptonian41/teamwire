@@ -365,10 +365,10 @@ fn an_undelivered_recipient_exits_4_with_the_reason_on_stderr() {
 }
 
 #[test]
-fn a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it() {
+fn a_prompt_that_timed_out_after_typing_exits_5_and_a_resend_by_the_lead_finishes_it() {
     let mut rig = live_rig();
     rig.herdr
-        .set_faults(&HerdrFaults::new().stalled_prompt(None, Some(1)))
+        .set_faults(&HerdrFaults::new().timed_out_prompt(None, Some(1)))
         .unwrap();
     let out = rig.run(
         &[
@@ -390,6 +390,53 @@ fn a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it() {
     // A message that was reached has nothing to resend.
     let nothing = rig.run(&["resend", "alpha", "m001"], &LEAD);
     assert_eq!(nothing.status.code(), Some(1));
+}
+
+/// The host call that finds who holds a member's place (`agent get`) starts
+/// `kill -0` while `fake-herdr` holds its state lock. A `kill` that sleeps
+/// once makes that call run past the 5 s limit of a delivery, which kills it
+/// at that point. The next send must still find the member: a lock the killed
+/// call left behind would make every later call of the world fail with
+/// `host_listing_failed`.
+#[test]
+fn a_host_call_killed_on_its_timeout_does_not_break_the_next_send() {
+    let rig = live_rig();
+    let spy = rig.home.path().join("slow-kill");
+    std::fs::create_dir_all(&spy).unwrap();
+    let marker = spy.join("slept");
+    let script = format!(
+        "#!/bin/sh\nif [ ! -e '{m}' ]; then : > '{m}'; sleep 9; fi\nexec /bin/kill \"$@\"\n",
+        m = marker.display()
+    );
+    let kill = spy.join("kill");
+    std::fs::write(&kill, script).unwrap();
+    std::fs::set_permissions(&kill, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = rig
+        .herdr
+        .env()
+        .into_iter()
+        .find_map(|(k, v)| (k == "PATH").then_some(v))
+        .unwrap();
+    let send = |text: &str| {
+        let mut cmd = rig.command(
+            &[
+                "send", "alpha", "--to", "api", "--type", "finding", "--text", text,
+            ],
+            &Identity::Member("scout"),
+        );
+        cmd.env("PATH", format!("{}:{path}", spy.display()));
+        cmd.output().unwrap()
+    };
+    let first = send("slow host call");
+    let (stdout, stderr) = (text(&first.stdout), text(&first.stderr));
+    assert_ne!(first.status.code(), Some(0), "{stdout} / {stderr}");
+    assert!(
+        marker.exists(),
+        "the slow kill never ran: {stdout} / {stderr}"
+    );
+    let second = send("after the kill");
+    let (stdout, stderr) = (text(&second.stdout), text(&second.stderr));
+    assert_eq!(second.status.code(), Some(0), "{stdout} / {stderr}");
 }
 
 #[test]
