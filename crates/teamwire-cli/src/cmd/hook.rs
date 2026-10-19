@@ -245,16 +245,25 @@ fn lead_stop_in(
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
     let at = home.to_path_buf();
+    // Every store read, the lead harness's included, stays inside the bound.
     let (teams, afk_notes) = within(LEAD_STOP_BUDGET, move || {
+        let teams: Vec<_> =
+            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
+                .into_iter()
+                .map(|team| {
+                    let lead = lead_harness_of(&at, &team);
+                    (team, lead)
+                })
+                .collect();
         (
-            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock),
+            teams,
             teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
         )
     })?;
     let mut note: Vec<String> = teams
         .iter()
-        .map(|team| {
-            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(home, team, wiring))
+        .map(|(team, lead)| {
+            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(lead.as_ref(), wiring))
         })
         .collect();
     note.extend(afk_notes);
@@ -264,18 +273,23 @@ fn lead_stop_in(
     Some(harness.hold_reply(&note.join("\n")))
 }
 
-/// Whether the team's recorded lead harness reads a command's output as it is
-/// printed. A team that cannot be read gets the Monitor wording, which is the
-/// older one.
+/// The team's recorded lead harness, or `None` when the team cannot be read.
 #[expect(
     clippy::redundant_closure_for_method_calls,
     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
 )]
-fn lead_reads_watch_lines(home: &Path, team: &TeamName, wiring: &Wiring) -> bool {
+fn lead_harness_of(home: &Path, team: &TeamName) -> Option<HarnessId> {
     Store::open_read_only(home, team)
         .ok()
         .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
-        .and_then(|row| wiring.registry.harness(&row.lead_harness).ok())
+        .map(|row| row.lead_harness)
+}
+
+/// Whether the lead harness reads a command's output as it is printed. A
+/// team that could not be read, or a harness this binary does not have, gets
+/// the Monitor wording, which is the older one.
+fn lead_reads_watch_lines(lead: Option<&HarnessId>, wiring: &Wiring) -> bool {
+    lead.and_then(|id| wiring.registry.harness(id).ok())
         .is_none_or(|harness| harness.capabilities().reads_watch_lines)
 }
 
