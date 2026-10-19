@@ -76,6 +76,9 @@ reports the failure instead of dropping it.
 - **Metrics stay on your machine.** `teamwire metrics` reads each team's
   events locally. `teamwire metrics export` sends them to an OpenTelemetry
   endpoint.
+- **A run can go on while you are away.** `/teamwire:afk <task>` starts a team
+  that researches, plans, builds, verifies and writes one report with nobody
+  to answer it. The result is a local branch. Nothing is pushed.
 - **A dashboard comes with it.** A read-only web dashboard in [`ui/`](ui/)
   shows every team, its members, its messages and closed teams' archives.
 
@@ -245,11 +248,31 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire preset` | List the team shapes, or print one. |
 | `teamwire pr-watch` | Watch GitHub pull-request checks until every pull request is done. |
 | `teamwire metrics` / `export` | Local metrics from the event rows, or every record of a team as JSON lines. |
+| `teamwire afk start` | Create the team of an AFK run and take the sleep hold. The `/teamwire:afk` skill runs it. |
 | `teamwire doctor` | Run read-only checks of the state, the disk and the tools teamwire needs. |
 | `teamwire install` / `uninstall` | Install or remove the Claude Code plugin. |
 | `teamwire done`, `inbox`, `ack` | Members only: record a result, read messages, mark messages read. |
 
 [docs/api/cli.md](docs/api/cli.md) lists every flag, output and exit code.
+
+## AFK runs
+
+Type `/teamwire:afk <task>` in a Claude Code session started with
+`claude --permission-mode bypassPermissions`, then leave. The skill checks the
+mode, runs `teamwire afk start --team NAME --title TITLE --task FILE
+[--budget 8h]`, and leads one team through research, a plan, a plan review,
+the build, a review of each branch, a closer and a reporter. The lead never
+waits for you. It decides each open question, logs it in
+`teams/<team>/afk/decisions.md`, and carries on. The Stop hook holds the lead
+once when it would stop with nothing to wake it.
+
+The run never pushes, opens a pull request, or merges into your base branch.
+It ends with `teamwire close`, which refuses until `afk/REPORT.md` has its
+eight headings. The result is a local branch `afk/<team>`, and the report is
+in the archive. Past the budget (default 8 hours), launch refuses new
+implementers and lets everything else finish. Keep the lid open and the
+machine on power, because a closed lid still sleeps a Mac. ADR 0025 has the
+design.
 
 ## Dashboard
 
