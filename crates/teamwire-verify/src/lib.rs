@@ -6,6 +6,11 @@
 //! the one it was recorded at; run a check except through `Platform::run`
 //! with the member's timeout.
 //!
+//! Three ways to switch a test off stay unflagged, because no line-by-line
+//! rule sees them: `#[cfg(not(test))]` (the rules have no path filter, so
+//! it would flag production code), a test wrapped in `/* */`, and a net-zero
+//! swap of one test for another.
+//!
 //! Invariants: every verify run writes one record per member with its HEAD
 //! sha; `PASS` means the check passed and no flag stands unwaived.
 
@@ -175,13 +180,7 @@ impl VerifyReport {
 }
 
 /// Runs the check and the diff rules for one member, or for every member,
-/// and stores one record per checked member. A run that cannot read the store
-/// returns no records; `run` tells the caller why.
-pub fn verify(ctx: &mut Ctx<'_>, role: Option<&Role>, opts: VerifyOpts) -> Vec<VerifyRecord> {
-    run(ctx, role, opts).map(|r| r.records).unwrap_or_default()
-}
-
-/// `verify`, with the store's errors, and the file checks of `opts`.
+/// stores one record per checked member, and runs the file checks of `opts`.
 pub fn run(
     ctx: &mut Ctx<'_>,
     role: Option<&Role>,
@@ -285,10 +284,13 @@ fn verify_member(
         return Ok(skipped(member, "a pane member with no check"));
     }
     if !member.cwd.is_dir() {
-        return Ok(skipped(
-            member,
-            format!("{} does not exist", member.cwd.display()),
-        ));
+        // A started worktree member that has lost its folder has lost its
+        // work, which is not a clean run.
+        let mut record = skipped(member, format!("{} does not exist", member.cwd.display()));
+        if worktree {
+            record.verdict = Verdict::Fail;
+        }
+        return Ok(record);
     }
     let git = Git::new(ctx.platform, &member.cwd);
     let head = match git.head() {
@@ -314,7 +316,7 @@ fn verify_member(
             .collect(),
         None => HashSet::new(),
     };
-    let flags: Vec<Flag> = raised
+    let mut flags: Vec<Flag> = raised
         .into_iter()
         .map(|f| Flag {
             waived: waived.contains(&f.id),
@@ -326,6 +328,20 @@ fn verify_member(
         .check
         .as_deref()
         .map(|check| check::run_check(ctx, member, check, team_dir));
+    // The check may commit. The diff above was read at `head`, so a record at
+    // `head` would vouch for commits nobody inspected. No waiver clears this.
+    let moved_to = head
+        .as_ref()
+        .and_then(|before| git.head().ok().filter(|after| after != before));
+    if let (Some(before), Some(after)) = (&head, moved_to) {
+        flags.push(Flag {
+            id: FlagId::new("head-moved"),
+            detail: format!(
+                "HEAD moved from {before} to {after} while verify ran; run verify again"
+            ),
+            waived: false,
+        });
+    }
     let verdict = match &outcome {
         None => Verdict::NoCheck,
         Some(o) if o.exit_code != 0 => Verdict::Fail,
@@ -399,14 +415,23 @@ fn member_flags(ctx: &Ctx<'_>, rules: &Ruleset, member: &Member, git: &Git<'_>) 
             "no base recorded; the diff was not checked",
         )),
     }
+    if member.kind == MemberKind::Implementer && member.owns.is_empty() {
+        flags.push(RawFlag::new(
+            "no-owns",
+            "the implementer owns no path, so no edit is outside its scope",
+        ));
+    }
     flags.extend(report::report_flags(ctx, member));
     flags.extend(no_commits_flag(ctx, member, git));
+    // One flag per path, so a waiver for one stray file does not cover a
+    // later edit of another.
     match git.uncommitted() {
-        Ok(paths) if !paths.is_empty() => flags.push(RawFlag::new(
-            "uncommitted",
-            format!("{} uncommitted path(s): {}", paths.len(), paths.join(" ")),
-        )),
-        Ok(_) => {}
+        Ok(paths) => flags.extend(paths.into_iter().map(|path| {
+            RawFlag::new(
+                format!("uncommitted:{path}"),
+                format!("uncommitted change: {path}"),
+            )
+        })),
         Err(e) => flags.push(RawFlag::new("status-failed", e.to_string())),
     }
     let mut seen = HashSet::new();

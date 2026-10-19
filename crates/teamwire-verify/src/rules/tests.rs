@@ -185,3 +185,60 @@ fn other_languages_still_flag_a_marker_inside_a_string() {
     let r = rules();
     assert!(r.weakening("a.py", r#"x = "y"  # type: ignore"#).is_some());
 }
+
+#[test]
+fn every_added_skip_form_is_flagged() {
+    let r = rules();
+    for (path, line) in [
+        ("a_test.go", "\tt.Skipf(\"later %d\", 1)"),
+        (
+            "tests/test_a.py",
+            "pytestmark = pytest.mark.skip(reason='x')",
+        ),
+        ("tests/test_a.py", "pytestmark = pytest.mark.xfail"),
+        ("tests/test_a.py", "    raise unittest.SkipTest('x')"),
+        ("tests/test_a.py", "        self.skipTest('x')"),
+        ("test/a.test.js", "it('adds', { skip: true }, () => {"),
+        ("test/a.test.js", "it('adds', {skip:true}, f)"),
+        ("tests/it.rs", "#![cfg(any())]"),
+        ("tests/it.rs", "#![cfg(FALSE)]"),
+        ("tests/it.rs", "#![cfg(not(all()))]"),
+        ("tests/it.rs", "# [ignore]"),
+        ("tests/it.rs", "#[ ignore ]"),
+        ("tests/it.rs", "#[ should_panic ]"),
+        ("tests/it.rs", "# [allow(dead_code)]"),
+        ("tests/it.rs", "#! [ cfg ( any ( ) ) ]"),
+        ("tests/it.rs", "#[cfg_attr(test , ignore)]"),
+        ("tests/it.rs", "#[cfg_attr(test , ignore = \"x\")]"),
+        ("tests/it.rs", "#[cfg_attr(test , ignore , x)]"),
+    ] {
+        assert!(r.weakening(path, line).is_some(), "{path}: {line}");
+    }
+    assert!(r.weakening("a.py", "def unskip_pytest.skip(").is_none());
+    assert!(
+        r.weakening(
+            "tests/it.rs",
+            "#[cfg_attr(test, allow(ignored_unit_patterns))]"
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn an_assert_line_counts_like_a_test_marker() {
+    let r = rules();
+    for (path, line) in [
+        ("tests/it.rs", "    assert_eq!(a, 1);"),
+        ("tests/it.rs", "debug_assert!(ok);"),
+        ("tests/test_a.py", "    assert f() == 1"),
+        ("tests/test_a.py", "    self.assertEqual(a, 1)"),
+        ("a_test.go", "\tt.Fatal(\"no\")"),
+        ("a.test.js", "  expect(a).toBe(1);"),
+        ("ATest.java", "    assertEquals(1, a);"),
+    ] {
+        assert!(r.is_assert_line(path, line), "{path}: {line}");
+    }
+    assert!(!r.is_assert_line("tests/it.rs", "    // assert_eq!(a, 1);"));
+    assert!(!r.is_assert_line("tests/it.rs", "    let reassert = 1;"));
+    assert!(!r.is_assert_line("README.md", "assert_eq!(a, 1);"));
+}
