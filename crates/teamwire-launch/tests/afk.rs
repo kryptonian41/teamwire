@@ -47,6 +47,7 @@ fn afk_team(rig: &Rig, team: &str, budget: Duration) {
                     )),
                 },
                 at.checked_add(budget).unwrap(),
+                &json!({}),
             )
             .map(|_| ())
         })

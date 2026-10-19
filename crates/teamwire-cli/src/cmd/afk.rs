@@ -239,8 +239,25 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
         lead_route: new.lead.route,
         lead_session: new.lead.session.clone(),
     };
+    // The folder lets `reopen` resume the lead from where it runs.
+    let cwd = new
+        .lead
+        .session
+        .as_ref()
+        .and_then(|(session, _)| {
+            ctx.registry
+                .harness(&new.lead.harness)
+                .ok()?
+                .session_cwd(session)
+                .ok()?
+        })
+        .map(|p| p.display().to_string());
+    let extra = cwd.map_or(
+        serde_json::json!({}),
+        |cwd| serde_json::json!({ "lead_cwd": cwd }),
+    );
     ctx.store
-        .write(|tx| tx.create_afk_team(at, &row, new.ends).map(|_| ()))
+        .write(|tx| tx.create_afk_team(at, &row, new.ends, &extra).map(|_| ()))
         .map_err(|e| format!("the team could not be recorded: {e}"))?;
     let dir = afk_dir(ctx.home, new.team);
     std::fs::create_dir_all(&dir)
@@ -319,6 +336,7 @@ mod tests {
         let home = TestHome::new().unwrap();
         let platform = FakePlatform::new();
         let harness = Arc::new(FakeHarness::new());
+        harness.set_session_cwd(session(), "/work/lead");
         harness.add_session(
             session(),
             vec![Pid::new(4242)],
@@ -375,6 +393,14 @@ mod tests {
         let hold = row.sleep_hold.unwrap();
         assert!(hold.owned);
         assert_eq!(platform.hold_events().len(), 1);
+        let events = store
+            .read(|tx| {
+                tx.events_of_type(teamwire_core::EventType::TeamCreated)?
+                    .all_or_corrupt()
+            })
+            .unwrap();
+        assert_eq!(events[0].data["lead_cwd"], "/work/lead");
+        assert_eq!(events[0].data["afk_budget_ends_at"], ends.to_string());
     }
 
     #[test]

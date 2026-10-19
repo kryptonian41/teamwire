@@ -168,7 +168,12 @@ impl Bed {
         store
             .write(|tx| match budget {
                 Some(b) => tx
-                    .create_afk_team(clock.now(), &new, clock.now().checked_add(b).unwrap())
+                    .create_afk_team(
+                        clock.now(),
+                        &new,
+                        clock.now().checked_add(b).unwrap(),
+                        &serde_json::json!({}),
+                    )
                     .map(|_| ()),
                 None => tx.create_team(clock.now(), &new).map(|_| ()),
             })
