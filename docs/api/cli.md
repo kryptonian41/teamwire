@@ -429,9 +429,10 @@ Every team under the home with its title, state and roster, as `team_teams`
 returns it (MSG-21), and how to address its agents (`lead@<team>`,
 `<role>@<team>`). Reads only and needs no proof. A team whose store cannot
 be read is named on stderr and makes the command exit 6; the others are
-still listed. An AFK team shows `(open, afk)` in place of `(open)`, and
-`--json` gives every team an `afk_budget_ends_at` key, an RFC 3339 string or
-`null`.
+still listed. An AFK team shows `<name> (open, afk) <title>: address as ...` in place of
+`(open)`, and `--json` gives each element of `teams` an `afk_budget_ends_at`
+key, an RFC 3339 ms `Z` string or `null`. `team_teams` of the MCP server has
+no such key.
 
 ## Harness and server entry points
 
