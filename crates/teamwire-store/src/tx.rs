@@ -70,7 +70,9 @@ pub struct Tx<'a> {
 ///   `verify_records`, `all_verify_records`, `waivers`, `all_waivers`;
 ///   `watch_lease`, `announcements`, `announcements_with_prefix`.
 /// - events: `export_mark`, `last_event_seq`, `events_after`, `events_since`,
-///   `events_of_role`, `event`, `events_of_type`, `events_about`.
+///   `events_of_role`, `event`, `events_of_type`, `events_about`;
+///   `latest_event` and `events_of_kinds`, which read only the rows they
+///   return.
 #[derive(Debug)]
 pub struct ReadTx<'a> {
     conn: &'a Connection,

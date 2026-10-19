@@ -78,7 +78,16 @@ impl ReadTx<'_> {
         role: Option<&Role>,
         kind: EventType,
     ) -> Result<Option<Event>, StoreError> {
-        let newest = self.seqs_of(role, &[kind])?.pop();
+        self.latest_of(role, &[kind])
+    }
+
+    /// The newest event of any of `kinds`: only that row is read.
+    fn latest_of(
+        &self,
+        role: Option<&Role>,
+        kinds: &[EventType],
+    ) -> Result<Option<Event>, StoreError> {
+        let newest = self.seqs_of(role, kinds)?.pop();
         Ok(self.events_at(newest.as_slice())?.pop())
     }
 
@@ -97,12 +106,8 @@ impl ReadTx<'_> {
     /// event recorded it. The newest event decides even when it holds no
     /// folder, because an older folder belongs to an older lead session.
     pub fn lead_cwd(&self) -> Result<Option<PathBuf>, StoreError> {
-        let created = self.latest_event(None, EventType::TeamCreated)?;
-        let adopted = self.latest_event(None, EventType::TeamLeadAdopted)?;
-        Ok(created
-            .into_iter()
-            .chain(adopted)
-            .max_by_key(|e| e.seq)
+        let newest = self.latest_of(None, &[EventType::TeamCreated, EventType::TeamLeadAdopted])?;
+        Ok(newest
             .and_then(|e| text(&e.data, "lead_cwd"))
             .map(PathBuf::from))
     }
@@ -238,20 +243,42 @@ mod tests {
     }
 
     #[test]
+    fn a_damaged_older_lead_event_of_the_other_type_does_not_block_lead_cwd() {
+        let mut f = fixture();
+        let session = SessionId::parse("s2").unwrap();
+        f.store
+            .write(|tx| {
+                tx.create_team_with(at(0), &new_team(), &json!({ "lead_cwd": "/first" }))?;
+                tx.adopt_lead_in(
+                    at(1),
+                    &session,
+                    SessionKind::Interactive,
+                    Some(std::path::Path::new("/second")),
+                )
+            })
+            .unwrap();
+        damage_events(&mut f, EventType::TeamCreated);
+        assert_eq!(
+            f.store.read(|tx| tx.lead_cwd()).unwrap(),
+            Some(PathBuf::from("/second"))
+        );
+    }
+
+    #[test]
     fn a_damaged_started_event_of_another_member_is_passed_over() {
         let mut f = fixture();
         f.store
             .write(|tx| {
                 tx.create_team(at(0), &new_team())?;
-                tx.insert_member(at(1), &new_member("web"))?;
-                tx.set_member_state(at(2), &role("web"), MemberState::Started, &json!({}))?;
-                tx.insert_member(at(3), &new_member("api"))?;
+                tx.insert_member(at(1), &new_member("api"))?;
                 tx.set_member_state(
-                    at(4),
+                    at(2),
                     &role("api"),
                     MemberState::Started,
                     &json!({ "model": "sonnet" }),
-                )
+                )?;
+                tx.insert_member(at(3), &new_member("web"))?;
+                tx.set_member_state(at(4), &role("web"), MemberState::Started, &json!({}))
             })
             .unwrap();
         f.store
