@@ -480,6 +480,14 @@ fn run_member(
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
     put(&mut data, "plugins", json!(launch.plugins));
+    // Close takes these lines back when the team ends; a line that was
+    // already in the file is not launch's, so it is not listed.
+    let excluded: Vec<Value> = made
+        .excluded
+        .iter()
+        .map(|e| json!({ "file": e.file.display().to_string(), "lines": e.lines }))
+        .collect();
+    put(&mut data, "excluded", json!(excluded));
     put(
         &mut data,
         "session_id",

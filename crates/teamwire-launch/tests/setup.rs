@@ -264,7 +264,7 @@ fn a_second_member_adds_no_duplicate_lines_and_old_lines_stay() {
     );
     let text = std::fs::read_to_string(&exclude).unwrap();
     assert!(text.starts_with("# mine\n*.log\n"), "{text}");
-    for line in ["/.setup-marker", "/cache/deep/x", "TASK.md"] {
+    for line in ["/.setup-marker", "/cache/deep/x", "/TASK.md"] {
         assert_eq!(text.lines().filter(|l| *l == line).count(), 1, "{text}");
     }
 }
@@ -288,7 +288,7 @@ fn setup_that_writes_nothing_changes_no_exclude_file() {
     );
     let after = std::fs::read_to_string(&exclude).unwrap();
     // Only the brief is added, as before.
-    assert_eq!(after, format!("{}TASK.md\n", before.unwrap_or_default()));
+    assert_eq!(after, format!("{}/TASK.md\n", before.unwrap_or_default()));
 }
 
 #[test]
@@ -675,4 +675,50 @@ fn a_close_during_setup_refuses_before_any_file_is_written() {
     assert!(!team_dir.join("contract/api.md").exists());
     assert!(!team_dir.join("briefs/api.md").exists());
     assert!(!repo.join(".worktrees/api").exists());
+}
+
+/// The lines launch added to `info/exclude` are in the `member.started` data,
+/// so close can take them back when the team ends.
+#[test]
+fn the_added_exclude_lines_are_recorded_when_the_member_starts() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let exclude = repo.join(".git/info/exclude");
+    common::write(&exclude, "# mine\n/.setup-marker\n");
+    let script = "touch .setup-marker made.txt";
+    let plan = rig
+        .validate(&common::with(spec, "setup", json!(script)), false)
+        .unwrap();
+    let (report, store) = rig.launch("demo", plan);
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let events = role_events(&store, "api");
+    let (kind, data) = events.last().unwrap();
+    assert_eq!(kind, "member.started");
+    let file = std::fs::canonicalize(&exclude).unwrap();
+    let recorded: Vec<(std::path::PathBuf, Vec<String>)> = data["excluded"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            let lines = e["lines"].as_array().unwrap();
+            (
+                std::fs::canonicalize(e["file"].as_str().unwrap()).unwrap(),
+                lines
+                    .iter()
+                    .map(|l| l.as_str().unwrap().to_owned())
+                    .collect(),
+            )
+        })
+        .collect();
+    // The line that was already there is not launch's to take back.
+    assert_eq!(
+        recorded,
+        [
+            (file.clone(), vec!["/made.txt".to_owned()]),
+            (file, vec!["/TASK.md".to_owned()]),
+        ]
+    );
 }
