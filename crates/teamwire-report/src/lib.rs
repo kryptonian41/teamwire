@@ -15,6 +15,7 @@ use teamwire_core::{CompletionStatus, Member, ReportGaps, Role, Ulid};
 use teamwire_store::{Ctx, StoreError};
 use thiserror::Error;
 
+mod decisions;
 mod done;
 mod final_message;
 mod lead_stop;
@@ -26,6 +27,7 @@ mod result_file;
 mod turn_end;
 mod usage;
 
+pub use decisions::{Block, find_blocks};
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use lead_stop::{teams_without_watch, watch_missing_note};
 pub use received::{Received, mark_received};
