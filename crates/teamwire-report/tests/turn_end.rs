@@ -496,6 +496,30 @@ fn a_transcript_that_is_a_named_pipe_is_never_opened() {
 }
 
 #[test]
+fn a_named_pipe_is_not_read_for_the_final_message_either() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    // As above: a regression blocks on the open, here in the fallback that
+    // reads the final message when the stop input has none.
+    std::thread::spawn(move || {
+        let (mut rig, api) = finished_member();
+        rig.complete_now(&api);
+        let path = rig.home.path().join("pipe.jsonl");
+        make_fifo(&path);
+        let mut t = stop("api-1");
+        t.final_message = None;
+        t.transcript = Some(path);
+        let reply = on_turn_end(&mut rig.ctx(), &api, &t);
+        tx.send((reply, rig.newest(&api).completion.final_source))
+            .ok();
+    });
+    let (reply, source) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the hook blocked on the pipe");
+    assert_eq!(reply, TurnEndReply::Continue);
+    assert_eq!(source, FinalSource::None);
+}
+
+#[test]
 fn a_damaged_completion_leaves_one_store_error_row() {
     let (mut rig, api) = finished_member();
     rig.complete_now(&api);
@@ -515,4 +539,119 @@ fn a_damaged_completion_leaves_one_store_error_row() {
         "a hook's store.error row carries no hook_ms"
     );
     assert!(rig.typed_to_lead().is_empty());
+}
+
+/// Makes every later write that `sql`'s trigger matches fail, as a full
+/// disk or a damaged page would.
+fn fail_with_trigger(rig: &mut Rig, sql: &str) {
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(sql)
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_failed_hold_write_still_holds_the_member() {
+    let (mut rig, api) = team(); // no report: the check holds
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_hold BEFORE INSERT ON events WHEN NEW.type = 'member.held'
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    let TurnEndReply::Hold(note) = reply(&mut rig, &api) else {
+        unreachable!("the member must be held")
+    };
+    assert!(note.contains("reports/api.md"), "{note}");
+    assert!(rig.typed_to_lead().is_empty());
+}
+
+#[test]
+fn a_failed_final_message_write_still_delivers_the_result() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_final BEFORE UPDATE OF final_message ON completions
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Delivered
+    );
+    // The hook had the text in hand, so the result file still carries it.
+    let text = std::fs::read_to_string(rig.team_dir().join("outbox/api.md")).unwrap();
+    assert!(text.contains("All done, the api is finished."), "{text}");
+    assert!(text.contains("Final message from: hook"), "{text}");
+}
+
+#[test]
+fn a_claim_that_fails_at_first_is_tried_again() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    // SQLite's 'now' is the real clock: the claim fails for its first second
+    // and a half, then works.
+    let until: f64 = rig
+        .store
+        .read(|tx| {
+            tx.connection()
+                .query_row("SELECT julianday('now') + 1.5 / 86400.0", [], |r| r.get(0))
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    fail_with_trigger(
+        &mut rig,
+        &format!(
+            "CREATE TRIGGER no_claim BEFORE INSERT ON events
+             WHEN NEW.type = 'result.delivering' AND julianday('now') < {until}
+             BEGIN SELECT RAISE(ABORT, 'database is locked'); END;"
+        ),
+    );
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Delivered
+    );
+}
+
+#[test]
+fn a_claim_that_never_works_types_nothing_and_the_hook_ends() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_claim BEFORE INSERT ON events WHEN NEW.type = 'result.delivering'
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    // The fake clock stands still, so only the cap on tries ends the retries.
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert!(rig.typed_to_lead().is_empty(), "nothing is typed unclaimed");
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Pending
+    );
+}
+
+#[test]
+fn a_result_file_that_was_not_written_points_the_lead_at_the_report() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    rig.platform
+        .fail_writes(Some(teamwire_core::PlatformError::new(
+            teamwire_core::PlatformErrorCode::Io,
+            "the disk is full",
+        )));
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let lines = rig.typed_to_lead();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("reports/api.md"), "{}", lines[0]);
+    assert!(!lines[0].contains("outbox/api.md"), "{}", lines[0]);
+    assert!(!rig.team_dir().join("outbox/api.md").exists());
+    assert_eq!(rig.newest(&api).result_sha256, None);
 }

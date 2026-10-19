@@ -6,8 +6,16 @@ use std::path::Path;
 
 use teamwire_core::ReportGaps;
 
-/// The gaps as one sentence list, naming the report file.
-pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path) -> String {
+/// What a member held by its Stop hook does next (route A of ADR 0007).
+pub(crate) const FIX_THEN_STOP: &str =
+    "Fix the report file; the result goes to the lead when you stop again.";
+
+/// What a member refused by `done` does next: no turn end delivers its
+/// result, so it calls done once more (route B of ADR 0007).
+pub(crate) const FIX_THEN_DONE: &str = "Fix the report file, then call team_done again.";
+
+/// The gaps as one sentence list, naming the report file, then `next`.
+pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path, next: &str) -> String {
     let mut facts = Vec::new();
     if gaps.report_missing {
         facts.push(format!(
@@ -31,10 +39,7 @@ pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path) -> String {
     if gaps.decisions_missing && gaps.report_missing {
         facts.push("the report needs a 'Decisions I made' list".to_owned());
     }
-    format!(
-        "Team report check: {}. Fix the report file; the result goes to the lead when you stop again.",
-        facts.join("; ")
-    )
+    format!("Team report check: {}. {next}", facts.join("; "))
 }
 
 /// The reminder of unread messages, with the command that reads them.

@@ -9,7 +9,7 @@ use teamwire_core::{
 };
 use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
 
-use crate::note::gap_note;
+use crate::note::{FIX_THEN_DONE, gap_note};
 use crate::result_file::{MISSING_FROM_HARNESS, MISSING_YET, write_current};
 use crate::{DoneError, DoneReport, report_gaps};
 
@@ -186,7 +186,7 @@ pub fn done(
                 gaps: gaps.clone(),
                 report: format!(
                     "{} The second call is stored whatever the report says.",
-                    gap_note(&gaps, &report_file)
+                    gap_note(&gaps, &report_file, FIX_THEN_DONE)
                 ),
             }));
         }

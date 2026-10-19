@@ -42,6 +42,9 @@ fn no_hook_harness_told_once() {
     assert!(!stored);
     assert!(gaps.report_missing);
     assert!(report.contains("reports/api.md"), "{report}");
+    // No turn end delivers this result: the member calls done again.
+    assert!(report.contains("call team_done again"), "{report}");
+    assert!(!report.contains("stop again"), "{report}");
     assert_eq!(rig.completions(&api), 0);
     let refused = rig.events(EventType::MemberCompletionRefused);
     assert_eq!(refused.len(), 1);
