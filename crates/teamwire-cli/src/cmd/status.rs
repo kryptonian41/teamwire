@@ -95,9 +95,14 @@ fn render(view: &StatusView) -> String {
     let mut out = Vec::new();
     let name = view.team.as_ref().map_or("?", TeamName::as_str);
     out.push(format!(
-        "team {name} \"{}\" {}",
+        "team {name} \"{}\" {}{}",
         view.title.as_deref().unwrap_or(""),
-        view.state.map_or("unreadable", |s| s.as_str())
+        view.state.map_or("unreadable", |s| s.as_str()),
+        if view.refs.is_empty() {
+            String::new()
+        } else {
+            format!(" (refs {})", view.refs.join(", "))
+        }
     ));
     if let Some(lead) = &view.lead {
         let session = lead.session_id.as_ref().map_or("none", |s| s.as_str());

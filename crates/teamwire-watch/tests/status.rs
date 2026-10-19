@@ -386,3 +386,16 @@ fn a_result_the_lead_marked_received_is_not_listed() {
     let state = view.members.iter().find(|m| m.role == web.role).unwrap();
     assert_eq!(state.state, "done(failed)");
 }
+
+#[test]
+fn status_names_the_refs_the_team_holds() {
+    let mut bed = Bed::new();
+    assert!(status_of(&bed, None).refs.is_empty());
+    let json = serde_json::to_value(status_of(&bed, None)).unwrap();
+    assert_eq!(json["refs"], serde_json::json!([]));
+
+    bed.store
+        .write(|tx| tx.set_refs(&["GKA-580".to_owned(), "#1".to_owned()]))
+        .unwrap();
+    assert_eq!(status_of(&bed, None).refs, ["GKA-580", "#1"]);
+}

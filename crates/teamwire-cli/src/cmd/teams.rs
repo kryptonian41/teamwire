@@ -12,6 +12,15 @@ use crate::cmd::send::{STORE, fail, home_or_refuse, say, warn, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, TeamsArgs};
 
+/// ` (refs GKA-580, #1)`, or nothing for a team without refs.
+fn refs_suffix(refs: &[String]) -> String {
+    if refs.is_empty() {
+        String::new()
+    } else {
+        format!(" (refs {})", refs.join(", "))
+    }
+}
+
 pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let home = match home_or_refuse("teams", global) {
         Ok(home) => home,
@@ -42,8 +51,13 @@ pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
     for entry in &entries {
         say(&format!(
-            "{} ({}) {}: address as lead@{} or <role>@{}\n",
-            entry.name, entry.state, entry.title, entry.name, entry.name
+            "{} ({}) {}: address as lead@{} or <role>@{}{}\n",
+            entry.name,
+            entry.state,
+            entry.title,
+            entry.name,
+            entry.name,
+            refs_suffix(&entry.refs)
         ));
         for member in &entry.members {
             say(&format!("  {}", render(member)));

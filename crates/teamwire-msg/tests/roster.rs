@@ -11,7 +11,7 @@
 mod rig;
 
 use teamwire_core::{MemberKind, MemberState, MessageType};
-use teamwire_msg::roster;
+use teamwire_msg::{describe, roster};
 
 use rig::Rig;
 
@@ -74,4 +74,19 @@ fn the_json_names_the_lifecycle_and_not_a_live_state() {
     assert!(json["accepts_from_members"].is_array());
     assert!(json.get("state").is_none(), "{json}");
     assert!(json.get("accepts").is_none(), "{json}");
+}
+
+#[test]
+fn a_team_entry_carries_its_refs_in_the_json() {
+    let mut rig = Rig::new();
+    rig.add_member("scout", MemberKind::Investigator);
+    assert!(describe(&rig.ctx()).unwrap().refs.is_empty());
+    let json = serde_json::to_value(describe(&rig.ctx()).unwrap()).unwrap();
+    assert_eq!(json["refs"], serde_json::json!([]));
+
+    rig.store
+        .write(|tx| tx.set_refs(&["GKA-580".to_owned(), "#1".to_owned()]))
+        .unwrap();
+    let json = serde_json::to_value(describe(&rig.ctx()).unwrap()).unwrap();
+    assert_eq!(json["refs"], serde_json::json!(["GKA-580", "#1"]));
 }

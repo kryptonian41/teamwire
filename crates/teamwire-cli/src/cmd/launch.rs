@@ -169,6 +169,10 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
 fn print_plan(plan: &ValidPlan) {
     let verb = if plan.add { "add to" } else { "launch" };
     println!("dry run: would {verb} team {}", plan.spec.team);
+    if !plan.new_refs.is_empty() {
+        let what = if plan.add { "append" } else { "record" };
+        println!("  would {what} refs {}", plan.new_refs.join(", "));
+    }
     for m in &plan.members {
         let place = match &m.worktree {
             Some(w) => format!("worktree {} on branch {}", w.path.display(), w.branch),

@@ -211,3 +211,31 @@ fn a_send_to_a_quiet_member_or_an_unknown_team_is_refused() {
         );
     }
 }
+
+#[test]
+fn teams_shows_each_teams_refs_in_text_and_json() {
+    let rig = Rig::new();
+    let mut beta = Store::open(rig.home.path(), &TeamName::parse("beta").unwrap()).unwrap();
+    beta.write(|tx| tx.set_refs(&["GKA-580".to_owned(), "#1".to_owned()]))
+        .unwrap();
+    drop(beta);
+
+    let out = rig.run(&["teams"], None);
+    let stdout = text(&out.stdout);
+    assert!(
+        stdout.contains(
+            "beta (open) Team beta: address as lead@beta or <role>@beta (refs GKA-580, #1)"
+        ),
+        "{stdout}"
+    );
+    let alpha_line = stdout.lines().find(|l| l.starts_with("alpha")).unwrap();
+    assert!(!alpha_line.contains("refs"), "{alpha_line}");
+
+    let out = rig.run(&["teams", "--json"], None);
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["teams"][0]["refs"], serde_json::json!([]));
+    assert_eq!(
+        json["teams"][1]["refs"],
+        serde_json::json!(["GKA-580", "#1"])
+    );
+}

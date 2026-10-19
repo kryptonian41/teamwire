@@ -383,3 +383,67 @@ fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
     );
     assert!(shown.contains(&want), "{shown}");
 }
+
+#[test]
+fn a_bad_ref_is_refused_by_launch_and_by_dry_run() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["refs"] = json!(["GKA 580"]);
+    let file = rig.spec_file(&spec);
+    for extra in [&["--dry-run"][..], &[][..]] {
+        let mut args = extra.to_vec();
+        args.extend(["--spec", file.to_str().unwrap()]);
+        let out = rig.launch(&args, None, false);
+        assert_eq!(out.status.code(), Some(1), "{extra:?}");
+        assert!(
+            text(&out.stderr).contains("bad_ref"),
+            "{}",
+            text(&out.stderr)
+        );
+        assert!(rig.home_is_empty(), "{extra:?}: nothing was created");
+    }
+}
+
+#[test]
+fn dry_run_names_the_refs_it_would_record_and_then_append() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["refs"] = json!(["GKA-580", "#1", "GKA-580"]);
+    let file = rig.spec_file(&spec);
+    let dry = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(dry.status.code(), Some(0), "{}", text(&dry.stderr));
+    assert!(
+        text(&dry.stdout).contains("would record refs GKA-580, #1"),
+        "{}",
+        text(&dry.stdout)
+    );
+    assert!(rig.home_is_empty());
+
+    let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let store = Store::open_read_only(rig.home.path(), &TeamName::parse("demo").unwrap()).unwrap();
+    let refs = store.read(|tx| Ok(tx.team()?.map(|t| t.refs))).unwrap();
+    assert_eq!(refs.unwrap(), ["GKA-580", "#1"]);
+    drop(store);
+
+    let mut more = pane_spec("demo", rig.work.path());
+    more["children"][0]["role"] = json!("b");
+    more["children"][0]["title"] = json!("Beta");
+    more["refs"] = json!(["#1", "#2"]);
+    let file = rig.spec_file(&more);
+    let dry = rig.launch(
+        &["--add", "--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(dry.status.code(), Some(0), "{}", text(&dry.stderr));
+    assert!(
+        text(&dry.stdout).contains("would append refs #2"),
+        "{}",
+        text(&dry.stdout)
+    );
+}

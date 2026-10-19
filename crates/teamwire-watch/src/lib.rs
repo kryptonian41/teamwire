@@ -149,6 +149,8 @@ pub struct StatusView {
     pub team: Option<TeamName>,
     pub title: Option<String>,
     pub state: Option<TeamState>,
+    /// The tickets the team works on; empty when it has none.
+    pub refs: Vec<String>,
     pub lead: Option<LeadView>,
     pub watch: WatchView,
     pub members: Vec<MemberView>,
