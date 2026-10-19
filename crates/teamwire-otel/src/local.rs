@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use teamwire_core::{Event, EventType, TeamName, Timestamp};
-use teamwire_store::{Store, StoreError, database_path};
+use teamwire_store::{Store, StoreError, TeamDb, database_path, newest_archive, team_databases};
 
 use crate::defs::{self, Kind};
 use crate::history::History;
@@ -122,64 +122,30 @@ fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Sourc
             }];
         }
         // A closed team: close deleted its database, so read its newest
-        // archive. The team row names the team; the folder name cannot, since
-        // `a-2026` is a team and also the start of `a-2026-2026-09-30`.
-        return newest_archive_of(home, team, errors);
+        // archive.
+        return newest_archive(home, team, errors)
+            .map(|db| Source {
+                team: Some(team.as_str().to_owned()),
+                ..Source::from(db)
+            })
+            .into_iter()
+            .collect();
     }
-    let mut list = Vec::new();
-    for (dir, live) in [("teams", true), ("archive", false)] {
-        let root = home.join(dir);
-        let Ok(entries) = std::fs::read_dir(&root) else {
-            continue;
-        };
-        let mut paths: Vec<PathBuf> = Vec::new();
-        for entry in entries {
-            match entry {
-                Ok(entry) => paths.push(entry.path().join("team.db")),
-                Err(e) => errors.push(format!("{}: {e}", root.display())),
-            }
-        }
-        paths.sort();
-        for path in paths.into_iter().filter(|p| p.is_file()) {
-            // An archive without its checksum file is a copy that was cut
-            // short; the team it holds is counted from elsewhere.
-            let rank = if live {
-                None
-            } else {
-                let sums = path.with_file_name("SHA256SUMS");
-                match std::fs::metadata(&sums).and_then(|m| m.modified()) {
-                    Ok(time) => Some(time),
-                    Err(_) => continue,
-                }
-            };
-            list.push(Source {
-                path,
-                team: None,
-                live,
-                rank,
-            });
-        }
-    }
-    list
+    team_databases(home, errors)
+        .into_iter()
+        .map(Source::from)
+        .collect()
 }
 
-fn newest_archive_of(home: &Path, team: &TeamName, errors: &mut Vec<String>) -> Vec<Source> {
-    let all = MetricsQuery::default();
-    let named = |source: &Source| {
-        Store::open_read_only_at(&source.path)
-            .and_then(|store| store.read(|tx| Ok(tx.team()?.map(|t| t.name))))
-            .is_ok_and(|name| name.is_some_and(|n| n == *team))
-    };
-    sources(home, &all, errors)
-        .into_iter()
-        .filter(|s| !s.live && named(s))
-        .max_by_key(|s| s.rank)
-        .map(|s| Source {
-            team: Some(team.as_str().to_owned()),
-            ..s
-        })
-        .into_iter()
-        .collect()
+impl From<TeamDb> for Source {
+    fn from(db: TeamDb) -> Self {
+        Self {
+            path: db.path,
+            team: None,
+            live: db.live,
+            rank: db.rank,
+        }
+    }
 }
 
 /// Whether `team` has a live database or an archive to read.

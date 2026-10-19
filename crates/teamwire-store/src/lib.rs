@@ -22,6 +22,7 @@ mod export;
 mod member;
 mod message;
 mod older;
+mod places;
 mod received;
 mod reopen;
 mod store;
@@ -39,6 +40,7 @@ pub use error::{NO_DATABASE_HINT, StoreError};
 pub use export::{ExportClaim, ExportHolder, ExportMark};
 pub use member::NewMember;
 pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};
+pub use places::{TeamDb, newest_archive, team_databases};
 pub use received::ReceivedMessage;
 pub use reopen::RunOptions;
 pub use store::{
