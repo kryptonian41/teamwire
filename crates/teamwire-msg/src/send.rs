@@ -6,13 +6,15 @@ use std::path::PathBuf;
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, DeliveryErrorCode, DeliveryState, DisplayId, EventType, Message, MessageType, Pid, Recipient, Refusal,
-    SendRequest, TeamName, Timestamp, Ulid,
+    Actor, DeliveryErrorCode, DeliveryState, DisplayId, EventType, Message, MessageType, Pid,
+    Recipient, Refusal, SendRequest, TeamName, Timestamp, Ulid,
 };
 use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
-use crate::attempt::{Bumped, bump, bump_again, deliver_one, earlier_bump, report_of};
+use crate::attempt::{
+    Bumped, bump, bump_again, claim_attempt, deliver_one, earlier_bump, report_of, skipped,
+};
 use crate::remote::{Try, deliver_to_team};
 use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
 
@@ -49,7 +51,9 @@ pub fn send(ctx: &mut Ctx<'_>, req: SendRequest) -> Result<SendReport, SendError
 ///
 /// A refusal records a `message.refused` event and stores nothing. A key
 /// that already names a message from this sender resumes it: only the
-/// recipients still `pending` or `undelivered` are tried again.
+/// recipients still `pending` or `undelivered` are tried again, and a
+/// `pending` one only once its latest attempt began over a minute ago, as
+/// for `resend`; a younger one is `skipped`.
 pub fn send_with(
     ctx: &mut Ctx<'_>,
     mut req: SendRequest,
@@ -121,22 +125,37 @@ pub fn send_with(
             continue;
         }
         let attempts = record.delivery.attempts + 1;
-        let result = try_recipient(ctx, &team, &message, record, stored.duplicate, &bumped);
-        deliveries.push(survive_error(
-            result,
-            &record.delivery.recipient,
-            attempts,
-        )?);
+        let result = try_recipient(
+            ctx,
+            &actor,
+            &team,
+            &message,
+            record,
+            stored.duplicate,
+            &bumped,
+        );
+        deliveries.push(survive_error(result, &record.delivery.recipient, attempts)?);
     }
     for (other, rows) in by_other_team(&stored.deliveries) {
-        let tries: Vec<Try<'_>> = rows
-            .iter()
-            .filter(|r| to_try(r))
-            .map(|row| Try {
-                row,
-                attempts: row.delivery.attempts + 1,
-            })
-            .collect();
+        let mut tries: Vec<Try<'_>> = Vec::new();
+        for row in rows.iter().copied().filter(|r| to_try(r)) {
+            if !stored.duplicate {
+                tries.push(Try {
+                    row,
+                    attempts: row.delivery.attempts + 1,
+                });
+                continue;
+            }
+            match claim_attempt(ctx, &actor, &message, row) {
+                Ok(Some(attempts)) => tries.push(Try { row, attempts }),
+                Ok(None) => deliveries.push(skipped(row)),
+                Err(e) => deliveries.push(survive_error(
+                    Err(e),
+                    &row.delivery.recipient,
+                    row.delivery.attempts + 1,
+                )?),
+            }
+        }
         if tries.is_empty() {
             continue;
         }
@@ -195,9 +214,12 @@ fn normalise_body(body: &str) -> String {
         .replace("\r\n", "\n")
 }
 
-/// Delivers to one recipient of a stored message.
+/// Delivers to one recipient of a stored message. A resume first claims
+/// the row, as a resend does, so a row another command is still delivering
+/// is `skipped` and not typed a second time.
 fn try_recipient(
     ctx: &mut Ctx<'_>,
+    actor: &Actor,
     team: &TeamName,
     message: &Message,
     record: &DeliveryRecord,
@@ -205,6 +227,14 @@ fn try_recipient(
     bumped: &[Bumped],
 ) -> Result<RecipientReport, SendError> {
     let state = record.delivery.state;
+    let attempts = if duplicate {
+        let Some(attempts) = claim_attempt(ctx, actor, message, record)? else {
+            return Ok(skipped(record));
+        };
+        attempts
+    } else {
+        record.delivery.attempts + 1
+    };
     // A reprompt that was undone after a known failure starts its
     // generation again when the resume tries it again.
     let again = if duplicate && state == DeliveryState::Undelivered {
@@ -216,7 +246,6 @@ fn try_recipient(
     } else {
         None
     };
-    let attempts = record.delivery.attempts + 1;
     let bump = bumped
         .iter()
         .find(|b| b.recipient == record.delivery.recipient)

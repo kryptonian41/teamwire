@@ -18,7 +18,7 @@ use teamwire_core::{
     Refusal, RunOutput, SendRequest, Timestamp,
 };
 use teamwire_fakes::Fault;
-use teamwire_msg::{RecipientState, SendError, send, send_with};
+use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with};
 use teamwire_store::{Ctx, Store};
 
 use rig::{Rig, id, role, to};
@@ -634,6 +634,9 @@ fn resume_with_key_delivers_pending_and_undelivered_only() {
             )
         })
         .unwrap();
+    // The pending row's attempt is over a minute old, so no sender is
+    // still delivering it.
+    rig.clock.advance(Duration::from_secs(61));
     let mut req = rig.request(
         "scout",
         &["api", "web", "docs"],
@@ -664,6 +667,70 @@ fn resume_with_key_delivers_pending_and_undelivered_only() {
         rig.store.read(|tx| tx.counter("display_id")).unwrap(),
         Some(1)
     );
+}
+
+/// A first send with key `k1` to `api` that is still delivering: its row is
+/// committed `pending` and nothing has been typed yet.
+fn still_delivering(rig: &mut Rig) -> teamwire_store::StoredMessage {
+    let at = rig.now();
+    let new = teamwire_store::NewMessage {
+        sender: teamwire_core::Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "the finding".to_owned(),
+        client_key: Some("k1".to_owned()),
+        recipients: vec![to("api")],
+    };
+    rig.store.write(|tx| tx.insert_message(at, &new)).unwrap()
+}
+
+fn resume_k1(rig: &mut Rig) -> SendReport {
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    send(&mut rig.ctx(), req).unwrap()
+}
+
+#[test]
+fn a_resume_within_a_minute_of_the_attempt_skips_the_row() {
+    let mut rig = team_rig();
+    still_delivering(&mut rig);
+    rig.clock.advance(Duration::from_secs(59));
+    let report = resume_k1(&mut rig);
+    assert!(report.duplicate_of_key);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+}
+
+#[test]
+fn a_resume_claims_the_row_so_a_second_resume_skips_it() {
+    let mut rig = team_rig();
+    let stored = still_delivering(&mut rig);
+    rig.clock.advance(Duration::from_secs(61));
+    // The claim restarts the attempt clock, so a second resume that reads
+    // the row before this one records its outcome finds it busy.
+    let at = rig.now();
+    let attempts = rig
+        .store
+        .write(|tx| tx.begin_resend(at, &stored.message.ulid, &to("api")))
+        .unwrap();
+    assert_eq!(attempts, 1);
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+    rig.clock.advance(Duration::from_secs(61));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(only(&report).attempts, Some(2));
+    assert_eq!(all_submitted(&rig).len(), 1);
+    let resent = rig
+        .store
+        .read(|tx| {
+            tx.events_of_type(teamwire_core::EventType::DeliveryResent)?
+                .all_or_corrupt()
+        })
+        .unwrap();
+    assert_eq!(resent.len(), 2);
 }
 
 #[test]

@@ -249,6 +249,8 @@ fn a_resumed_pending_reprompt_that_fails_gives_the_generation_back() {
     rig.clock.advance(Duration::from_secs(5));
     crashed_after_the_bump(&mut rig, "k");
     assert_eq!(generation(&rig, "api").0, before.0 + 1);
+    // Over a minute later, so the dead sender's attempt is no longer live.
+    rig.clock.advance(Duration::from_secs(61));
     rig.set_reachable("api", false);
     let mut req = reprompt(&rig, &["api"]);
     req.client_key = Some("k".to_owned());
@@ -302,6 +304,7 @@ fn an_unrelated_damaged_event_does_not_stop_the_undo_of_a_resumed_reprompt() {
                 .map_err(Into::into)
         })
         .unwrap();
+    rig.clock.advance(Duration::from_secs(61));
     rig.set_reachable("api", false);
     let mut req = reprompt(&rig, &["api"]);
     req.client_key = Some("k".to_owned());
