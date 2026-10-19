@@ -179,7 +179,7 @@ fn run(tmux: &Tmux, platform: &Arc<dyn Platform>, report: &mut Report) {
         &format!("{seen:?}"),
     );
 
-    let closed = tmux.close(&place, T);
+    let closed = tmux.close(&place, &req.name, T);
     let after = tmux.state(&place, T);
     report.step(
         "close removes the pane",
