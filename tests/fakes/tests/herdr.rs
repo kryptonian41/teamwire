@@ -1066,26 +1066,48 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
     });
 }
 
+/// `agent prompt --wait` keeps the state lock while it waits for the agent,
+/// so killing it then is a kill while holding the lock.
 #[test]
-fn a_killed_agent_start_leaves_no_stuck_lock() {
+fn a_call_killed_while_it_holds_the_state_lock_leaves_no_stuck_lock() {
     let env = FakeHerdrEnv::new().unwrap();
     let pane_id = pane(&env, "/tmp");
-    let slow = slow_claude(&env);
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    let agent = env
+        .session_files()
+        .pop()
+        .unwrap()
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    // A stopped agent shows no activity, so the prompt waits.
+    signal("-STOP", &agent);
     let mut child = std::process::Command::new(env.root().join("bin").join("herdr"))
         .args([
-            "agent", "start", "slow", "--kind", "claude", "--pane", &pane_id,
+            "agent",
+            "prompt",
+            "tw_demo_api",
+            "hi",
+            "--wait",
+            "--timeout",
+            "60000",
         ])
         .env_clear()
         .envs(env.env())
-        .env("FAKE_CLAUDE_BIN", &slow)
-        .env("FAKE_HERDR_START_WAIT_MS", "20000")
+        .env("FAKE_HERDR_WAIT_MS", "60000")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
     std::thread::sleep(std::time::Duration::from_millis(500));
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "the prompt ended before it was killed"
+    );
     child.kill().unwrap();
     child.wait().unwrap();
+    signal("-CONT", &agent);
     let began = std::time::Instant::now();
     let out = env.run(&["agent", "list"]).unwrap();
     assert_eq!(out.code, Some(0), "{out:?}");

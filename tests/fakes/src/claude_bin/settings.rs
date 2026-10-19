@@ -124,11 +124,37 @@ pub(crate) fn run_shell(
         }
         std::thread::sleep(Duration::from_millis(20));
     };
+    // A process the shell left in the background keeps the pipes open, so
+    // the readers end only when it does. Wait for it as `wait_with_output`
+    // would, but not past the owner: end the group, then give the readers a
+    // moment to see the pipes close.
+    let busy = || {
+        [&stdout, &stderr]
+            .iter()
+            .any(|r| r.as_ref().is_some_and(|r| !r.is_finished()))
+    };
+    let mut ended_at = None;
+    while busy() {
+        if ended_at.is_none() && owner.gone() {
+            fsutil::terminate(child.id());
+            ended_at = Some(fsutil::Stopwatch::start());
+        }
+        if ended_at
+            .as_ref()
+            .is_some_and(|at| at.elapsed() > Duration::from_secs(2))
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
     if let Some(file) = step_file {
         std::fs::remove_file(file).ok();
     }
     let text = |reader: Option<std::thread::JoinHandle<Vec<u8>>>| {
-        let bytes = reader.and_then(|r| r.join().ok()).unwrap_or_default();
+        let bytes = reader
+            .filter(|r| r.is_finished())
+            .and_then(|r| r.join().ok())
+            .unwrap_or_default();
         String::from_utf8_lossy(&bytes).into_owned()
     };
     Ran {
