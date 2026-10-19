@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { StatusAll, TeamsList, MetricsView, type Liveness } from "../../shared/teamwire.ts";
+import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } from "../../shared/teamwire.ts";
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
@@ -78,7 +78,7 @@ test("maps the lead's liveness to one category", () => {
 });
 
 test("each signal alone flags a team, and a quiet team has none", () => {
-  const base = { ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] };
+  const base: StatusView = { ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] };
   const flagged = (patch: Partial<typeof base>) => problemReasons(joinTeam({ ...base, ...patch }, T));
   expect(hasProblem(joinTeam(base, T))).toBe(false);
   expect(flagged({})).toEqual([]);
@@ -92,4 +92,21 @@ test("each signal alone flags a team, and a quiet team has none", () => {
   // A closed team keeps no lead, watch or budget to watch.
   expect(flagged({ state: "closed", lead: null, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
   expect(flagged({ lead: { session_id: null, liveness: "unknown" }, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
+});
+
+test("label sets of one duration combine into a count-weighted average", () => {
+  const row = (kind: string, name: string, unit: string, value: number) => ({
+    name,
+    unit,
+    labels: [["team", "ads"], ["kind", kind]] as [string, string][],
+    value,
+  });
+  const d = "teamwire.member.run.duration";
+  const sum = summarizeMetrics([
+    row("implementer", d, "s", 100),
+    row("implementer", `${d}.count`, "{observation}", 1),
+    row("reviewer", d, "s", 400),
+    row("reviewer", `${d}.count`, "{observation}", 3),
+  ]);
+  expect(sum.get("ads")!.durations[d]).toEqual({ mean: 325, count: 4 });
 });
