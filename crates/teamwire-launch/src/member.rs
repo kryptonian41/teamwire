@@ -222,15 +222,11 @@ fn record_refused(
     let role = m.spec.role.clone();
     let written = ctx.store.write(|tx| {
         if recorded {
-            // Not `set_member_state`: that writes `member.failed`, and this
-            // member is counted once, as refused.
-            tx.connection().execute(
-                "UPDATE members SET state = 'failed' WHERE role = ?1 AND state = 'creating'",
-                [role.as_str()],
-            )?;
+            tx.refuse_member(at, &role, &data)
+        } else {
+            tx.record_event(at, EventType::MemberRefused, Some(&role), None, &data)
+                .map(|_| ())
         }
-        tx.record_event(at, EventType::MemberRefused, Some(&role), None, &data)
-            .map(|_| ())
     });
     if let Err(e) = written {
         tracing::warn!(role = %m.spec.role, error = %e, "could not record the refused launch");

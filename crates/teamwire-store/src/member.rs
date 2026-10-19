@@ -311,6 +311,26 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Moves a member from `creating` to `failed` because launch refused it
+    /// after recording it, and writes `member.refused` with `data`. No
+    /// `member.failed` is written: the member counts once, as refused. The row
+    /// stays, so close still finds what the undo left and `--add` can start it
+    /// again. A member that is missing or not `creating` is a constraint error.
+    pub fn refuse_member(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        data: &Value,
+    ) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET state = 'failed' WHERE role = ?1 AND state = 'creating'",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("creating member {role}"))?;
+        self.record_event(at, EventType::MemberRefused, Some(role), None, data)?;
+        Ok(())
+    }
+
     /// Marks a member `removed`, keeping its row, and writes `member.removed`
     /// with `data` (`unverified`, `stopped`). False when it was already removed.
     pub fn remove_member(

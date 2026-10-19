@@ -425,3 +425,34 @@ fn clearing_the_branch_empties_only_that_column_and_writes_no_event() {
         .unwrap_err();
     assert!(matches!(err, StoreError::Constraint(_)), "{err:?}");
 }
+
+#[test]
+fn refusing_a_creating_member_leaves_it_failed_with_only_member_refused() {
+    let mut f = with_members(&["api", "web"]);
+    let data = json!({ "reason_code": "afk_budget_spent" });
+    f.store
+        .write(|tx| tx.refuse_member(at(2), &role("api"), &data))
+        .unwrap();
+    assert_eq!(state_of(&f, "api"), MemberState::Failed);
+    let event = last_event(&f.store);
+    assert_eq!(
+        (event.kind, event.role),
+        (EventType::MemberRefused, Some(role("api")))
+    );
+    assert_eq!(event.data["reason_code"], "afk_budget_spent");
+    assert_eq!(count_events(&f.store, EventType::MemberFailed), 0);
+
+    f.store
+        .write(|tx| tx.set_member_state(at(3), &role("web"), MemberState::Started, &json!({})))
+        .unwrap();
+    let before = event_types(&f.store);
+    for who in ["api", "web", "ghost"] {
+        let err = f
+            .store
+            .write(|tx| tx.refuse_member(at(4), &role(who), &data))
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Constraint(_)), "{who}: {err:?}");
+    }
+    assert_eq!(event_types(&f.store), before);
+    assert_eq!(state_of(&f, "web"), MemberState::Started);
+}
