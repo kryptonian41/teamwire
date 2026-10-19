@@ -81,13 +81,22 @@ pub(crate) fn age(span: Duration) -> String {
     }
 }
 
-/// The path of a member's result file, printed in the event.
-pub(crate) fn result_path(team_dir: &Path, role: &Role) -> String {
-    team_dir
-        .join("outbox")
-        .join(format!("{role}.md"))
-        .display()
-        .to_string()
+/// The file the lead should open for a member's result, printed in the
+/// event: its result file, unless that is missing or no longer holds the
+/// text whose hash the completion recorded. Then its report, which the
+/// member wrote itself, is the better pointer.
+pub(crate) fn result_path(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> String {
+    let file = format!("{role}.md");
+    let outbox = team_dir.join("outbox").join(&file);
+    let current = std::fs::read(&outbox)
+        .is_ok_and(|bytes| sha256.is_none_or(|h| teamwire_store::sha256(&bytes) == *h));
+    if current {
+        outbox
+    } else {
+        team_dir.join("reports").join(file)
+    }
+    .display()
+    .to_string()
 }
 
 /// One event with its `[teamwire:<team>]` prefix, cut to `EVENT_MAX`.

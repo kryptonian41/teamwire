@@ -14,6 +14,47 @@ fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
 
+/// The member's result file, as the turn-end hook writes it.
+fn result_file(bed: &Bed, name: &str) -> std::path::PathBuf {
+    bed.home
+        .path()
+        .join("teams")
+        .join(fixture::TEAM)
+        .join("outbox")
+        .join(format!("{name}.md"))
+}
+
+/// Ends a completion's delivery as the hook does: it writes the result file
+/// first and records the file's hash with the outcome.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test stands in for the hook that wrote a result file, outside the platform"
+)]
+fn finish_with_file(
+    bed: &mut Bed,
+    name: &str,
+    id: &teamwire_core::Ulid,
+    state: ReportState,
+    code: Option<DeliveryErrorCode>,
+) {
+    let file = result_file(bed, name);
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "the result").unwrap();
+    let now = teamwire_core::Clock::now(&bed.clock);
+    let outcome = teamwire_store::ResultOutcome {
+        state,
+        route: None,
+        error: code.map(|c| teamwire_core::DeliveryError::new(c, "test")),
+        result_sha256: Some(teamwire_store::sha256(b"the result")),
+    };
+    bed.store
+        .write(|tx| {
+            tx.claim_completion_for_delivery(now, id, secs(90))?;
+            tx.finish_completion_delivery(now, id, &outcome).map(|_| ())
+        })
+        .unwrap();
+}
+
 /// A member old enough that startup grace is over.
 fn seasoned(bed: &mut Bed, name: &str) {
     bed.add(name);
@@ -41,7 +82,9 @@ fn undelivered_result_printed_once() {
     bed.working("web");
     bed.poll();
     let id = bed.complete("api", CompletionStatus::Done);
-    bed.finish(
+    finish_with_file(
+        &mut bed,
+        "api",
         &id,
         ReportState::Undelivered,
         Some(DeliveryErrorCode::HostOtherSession),
@@ -1108,4 +1151,37 @@ fn a_done_member_still_working_is_not_unreported() {
     bed.complete("api", CompletionStatus::Done);
     let lines = bed.ticks(30);
     assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+}
+
+/// The lead is pointed at a file that holds this result: a result file that
+/// is gone, or that a later write changed, gives way to the member's report.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the test changes the result file the hook wrote, outside the platform"
+)]
+#[test]
+fn a_missing_or_changed_result_file_points_the_lead_at_the_report() {
+    for change in ["delete", "rewrite"] {
+        let mut bed = Bed::new();
+        bed.add("api");
+        bed.add("web");
+        bed.working("api");
+        bed.working("web");
+        bed.poll();
+        let id = bed.complete("api", CompletionStatus::Done);
+        finish_with_file(&mut bed, "api", &id, ReportState::Unconfirmed, None);
+        let file = result_file(&bed, "api");
+        if change == "delete" {
+            std::fs::remove_file(&file).unwrap();
+        } else {
+            std::fs::write(&file, "a newer text").unwrap();
+        }
+        let line = bed.tick().unwrap();
+        assert!(
+            line.contains("UNCONFIRMED api Result: "),
+            "{change}: {line}"
+        );
+        assert!(line.contains("/reports/api.md"), "{change}: {line}");
+        assert!(!line.contains("/outbox/"), "{change}: {line}");
+    }
 }

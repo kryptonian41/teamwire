@@ -302,7 +302,7 @@ pub(crate) fn parsed_opt<T, E: Display>(
 }
 
 /// The 32-byte SHA-256 of `bytes`.
-pub(crate) fn sha256(bytes: &[u8]) -> [u8; 32] {
+pub fn sha256(bytes: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes).into()
 }

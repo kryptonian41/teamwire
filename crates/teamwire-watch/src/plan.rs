@@ -296,7 +296,7 @@ fn judge_completion(
 ) -> Verdict {
     let c = &record.completion;
     let role = &info.member.role;
-    let path = result_path(&env.snap.team_dir, role);
+    let path = result_path(&env.snap.team_dir, role, record.result_sha256.as_ref());
     match c.report_state {
         ReportState::Delivered => Verdict::settled(if c.status == CompletionStatus::Done {
             "done"

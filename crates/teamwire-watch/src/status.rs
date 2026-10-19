@@ -210,7 +210,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             continue;
         }
         view.undelivered_results.push(UndeliveredResult {
-            path: PathBuf::from(result_path(&team_dir, &c.role)),
+            path: PathBuf::from(result_path(
+                &team_dir,
+                &c.role,
+                record.result_sha256.as_ref(),
+            )),
             role: c.role,
             n: c.n,
             report_state: c.report_state,

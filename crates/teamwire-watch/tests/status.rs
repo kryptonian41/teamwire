@@ -453,3 +453,21 @@ fn past_the_budget_no_time_is_left() {
     let afk = status_of(&bed, None).afk.unwrap();
     assert_eq!((afk.seconds_left, afk.spent, afk.decisions), (0, true, 0));
 }
+
+#[test]
+fn an_undelivered_result_points_at_a_file_that_is_there() {
+    let bed = busy_team();
+    let team_dir = bed.home.path().join("teams").join("alpha");
+    let path = |view: &StatusView| view.undelivered_results[0].path.clone();
+    assert_eq!(
+        path(&status_of(&bed, None)),
+        team_dir.join("reports").join("web.md"),
+        "no result file was written"
+    );
+    std::fs::create_dir_all(team_dir.join("outbox")).unwrap();
+    std::fs::write(team_dir.join("outbox").join("web.md"), "result").unwrap();
+    assert_eq!(
+        path(&status_of(&bed, None)),
+        team_dir.join("outbox").join("web.md")
+    );
+}
