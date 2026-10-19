@@ -27,9 +27,9 @@ fn report(dir: &Path, role: &str, text: &str) {
     std::fs::write(reports.join(format!("{role}.md")), text).unwrap();
 }
 
-/// A second team `beta` with one member, and the folder its reports go in.
-fn add_beta(rig: &Rig) -> Store {
-    let team = TeamName::parse("beta").unwrap();
+/// A second team `beta` with one member working in `repo`.
+fn add_team(rig: &Rig, name: &str, repo: &std::path::Path) -> Store {
+    let team = TeamName::parse(name).unwrap();
     let at = rig.clock.now();
     let mut store = Store::open(rig.home.path(), &team).unwrap();
     store
@@ -38,7 +38,7 @@ fn add_beta(rig: &Rig) -> Store {
                 at,
                 &NewTeam {
                     name: team.clone(),
-                    title: "Beta".to_owned(),
+                    title: name.to_owned(),
                     lead_harness: HarnessId::from_static("fake"),
                     lead_host: HostId::from_static("fake"),
                     lead_route: LeadRoute::Sink,
@@ -54,7 +54,7 @@ fn add_beta(rig: &Rig) -> Store {
                     mode: Mode::Pane,
                     harness: HarnessId::from_static("fake"),
                     host: HostId::from_static("fake"),
-                    cwd: rig.home.path().join("work/beta/db"),
+                    cwd: repo.to_path_buf(),
                     repo: None,
                     branch: None,
                     base: None,
@@ -112,7 +112,7 @@ async fn every_kind_of_member_and_the_lead_may_read() {
 #[tokio::test]
 async fn of_reads_another_team_and_grep_reaches_an_archive() {
     let (rig, api, _web) = two_members().await;
-    let beta = add_beta(&rig);
+    let beta = add_team(&rig, "beta", &rig.home.path().join("work/api"));
     report(
         &rig.home.path().join("teams/beta"),
         "db",
@@ -175,7 +175,7 @@ async fn an_unknown_team_and_a_wrong_token_are_refused() {
 #[tokio::test]
 async fn ref_picks_teams_by_provider_and_id() {
     let (rig, api, _web) = two_members().await;
-    let mut beta = add_beta(&rig);
+    let mut beta = add_team(&rig, "beta", &rig.home.path().join("work/api"));
     beta.write(|tx| {
         tx.set_refs(&[teamwire_core::TicketRef {
             provider: "linear".to_owned(),
@@ -198,4 +198,35 @@ async fn ref_picks_teams_by_provider_and_id() {
     );
     let result = call(&api, "team_decisions", json!({"ref": "jira:GKA-580"})).await;
     assert_eq!(ok(&result)["teams"], json!([]));
+}
+
+#[tokio::test]
+async fn only_teams_that_share_a_repository_with_the_caller_are_read() {
+    let (rig, api, _web) = two_members().await;
+    // beta works inside alpha's api directory, in a worktree; gamma elsewhere.
+    add_team(&rig, "beta", &rig.home.path().join("work/api/.worktrees/b"));
+    add_team(&rig, "gamma", &rig.home.path().join("elsewhere"));
+    // A team rooted at the filesystem root shares nothing.
+    add_team(&rig, "atroot", std::path::Path::new("/"));
+    for team in ["beta", "gamma", "atroot"] {
+        report(
+            &rig.home.path().join("teams").join(team),
+            "db",
+            "## Decisions I made\n- x marks\n",
+        );
+    }
+    let result = call(&api, "team_decisions", json!({"grep": "x marks"})).await;
+    let names: Vec<_> = ok(&result)["teams"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["team"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["beta"]);
+    for team in ["gamma", "atroot"] {
+        let result = call(&api, "team_decisions", json!({"of": team})).await;
+        assert_eq!(refused(&result), "refused.other_repo", "{team}");
+    }
+    let result = call(&api, "team_decisions", json!({"of": "beta"})).await;
+    assert_eq!(ok(&result)["teams"][0]["team"], "beta");
 }

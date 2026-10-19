@@ -3,6 +3,7 @@
 //! Nothing is written.
 
 mod find;
+mod repos;
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -13,6 +14,7 @@ use teamwire_store::{Store, TeamDb, TeamRow, database_path, newest_archive, team
 use thiserror::Error;
 
 pub use find::{Block, find_blocks};
+pub use repos::{RepoScope, repo_dirs};
 
 /// What to read. At least one of `team`, `grep` and `reference` must be set.
 #[derive(Debug, Clone, Default)]
@@ -26,6 +28,8 @@ pub struct DecisionsQuery {
     /// Only teams with this ref: `provider:id` for that provider, or a bare
     /// `id` under any provider. The id is compared ignoring case.
     pub reference: Option<String>,
+    /// Read only teams that share a repository with the caller.
+    pub scope: Option<RepoScope>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
@@ -34,6 +38,8 @@ pub enum DecisionsError {
     NoFilter,
     #[error("no such team or archive: {0}")]
     NoSuchTeam(String),
+    #[error("team {0} worked in no repository you work in; the teamwire CLI can read it")]
+    OtherRepo(String),
 }
 
 /// The JSON of `teamwire decisions --json` and `team_decisions`.
@@ -128,6 +134,14 @@ pub fn read_decisions(
     let grep = query.grep.as_deref().map(str::to_lowercase);
     let mut teams = Vec::new();
     for item in loaded {
+        if let Some(scope) = &query.scope
+            && !scope.allows(&item.team.ulid, &item.members)
+        {
+            if query.team.is_some() {
+                return Err(DecisionsError::OtherRepo(item.team.name.to_string()));
+            }
+            continue;
+        }
         if let Some(reference) = &query.reference
             && !has_ref(&item.team.refs, reference)
         {

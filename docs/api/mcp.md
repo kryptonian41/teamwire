@@ -35,6 +35,7 @@ refused or failed call returns `isError: true` with:
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
 | `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
 | `refused.unknown_recipient` | No such member | no |
+| `refused.other_repo` | `team_decisions` `of` names a team that worked in no repository the caller's team works in. The message says the CLI can read it | no |
 | `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
 | `refused.recipient_team_closed` | The recipient's team is closing or closed | no |
 | `refused.removed_recipient` | The member was removed | no |
@@ -222,8 +223,8 @@ be read is left out of the list.
 ## `team_decisions`
 
 The "Decisions I made" blocks of members' reports, read-only. The same result as
-`teamwire decisions --json`. Every kind of member and the lead may call it, and
-a caller may read any team. Input:
+`teamwire decisions --json`. Every kind of member and the lead may call it. A caller
+reads only teams that worked in a repository its own team works in (below). Input:
 
 ```json
 {
@@ -256,6 +257,18 @@ member is left out. `truncated` is present, and `true`, only when more blocks
 matched than `limit`. A database or report that cannot be read goes to
 `errors`, and the rest is still returned. A team with no database and no
 archive is `refused.unknown_team`.
+
+The repository rule exists because many archives hold another company's work.
+A team's directories are each member's `repo`, or its `cwd` when `repo` is
+empty (removed members included). Each path is canonicalized when it still
+exists, and a path under `<x>/.worktrees/...` becomes `<x>`. Two teams share a
+repository when a directory of one equals a directory of the other or sits
+inside it. The home directory and `/` count as no directory, so a member rooted
+there matches no team. The rule is plain path comparison; no `git` command
+runs. A search (`grep` or `ref` without `of`) skips every team that shares no
+repository. `of` naming such a team is `refused.other_repo`. The caller's own
+team is always readable. `teamwire decisions` on the command line has no such
+rule: it reads every team.
 
 ## What is not an MCP tool
 
