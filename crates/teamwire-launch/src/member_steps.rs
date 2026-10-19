@@ -4,8 +4,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use teamwire_core::{Command, HostError, HostErrorCode, MemberLaunch, Place, one_line};
-use teamwire_store::Ctx;
+use teamwire_core::{Command, HostError, HostErrorCode, MemberLaunch, Place, TeamState, one_line};
+use teamwire_store::{Ctx, ReadTx, StoreError};
 
 use crate::contract::{ContractParts, render_contract};
 use crate::member_parts::{Dirs, Progress};
@@ -101,6 +101,16 @@ impl Stop {
             advice: None,
         }
     }
+}
+
+/// The state of a team that is not open, because a close holds its lock
+/// (CLS-3). Called inside the transaction of the write it guards, so a write
+/// that finds the team open commits before a close can take the lock.
+pub(crate) fn not_open(tx: &ReadTx<'_>) -> Result<Option<TeamState>, StoreError> {
+    Ok(tx
+        .team()?
+        .map(|t| t.state)
+        .filter(|s| *s != TeamState::Open))
 }
 
 /// Starts the agent with one call. The host adapter owns any retry: a second

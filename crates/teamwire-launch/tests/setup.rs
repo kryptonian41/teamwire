@@ -1,5 +1,10 @@
 //! Setup runs before the agent exists; a failed setup undoes the member.
 
+#![expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+
 #[cfg(test)]
 #[path = "support/common.rs"]
 #[expect(
@@ -412,4 +417,262 @@ fn a_deleted_branch_is_cleared_from_the_member_row() {
     let row = member_row(&store, "api").unwrap();
     assert_eq!(row.state, MemberState::Failed);
     assert_eq!(row.branch, None);
+}
+
+/// Takes team `demo`'s close lock through a second connection, as
+/// `teamwire close` does while a launch runs.
+fn take_close_lock(home: &std::path::Path) {
+    let team = teamwire_core::TeamName::parse("demo").unwrap();
+    let mut store = teamwire_store::Store::open(home, &team).unwrap();
+    let now = teamwire_core::Clock::now(&teamwire_fakes::FakeClock::new());
+    let taken = store
+        .write(|tx| tx.begin_close(now, teamwire_core::Pid::new(1)))
+        .unwrap();
+    assert!(taken, "the team was open");
+}
+
+/// A host that takes the close lock once, right before its first call named
+/// `on`, then does what the fake does.
+struct LockingHost {
+    inner: std::sync::Arc<teamwire_fakes::FakeHost>,
+    on: &'static str,
+    home: std::path::PathBuf,
+    taken: std::sync::atomic::AtomicBool,
+}
+
+impl LockingHost {
+    fn before(&self, op: &str) {
+        if op == self.on && !self.taken.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            take_close_lock(&self.home);
+        }
+    }
+}
+
+mod locking_host {
+    use std::time::Duration;
+
+    use teamwire_core::{
+        Address, Host, HostCaps, HostError, HostId, Key, Occupant, OneLine, Place, PlaceState,
+        SpawnRequest,
+    };
+
+    impl Host for super::LockingHost {
+        fn id(&self) -> HostId {
+            self.inner.id()
+        }
+        fn capabilities(&self) -> HostCaps {
+            self.inner.capabilities()
+        }
+        fn spawn(&self, req: &SpawnRequest, timeout: Duration) -> Result<Place, HostError> {
+            self.before("spawn");
+            self.inner.spawn(req, timeout)
+        }
+        fn submit(
+            &self,
+            place: &Place,
+            text: &OneLine,
+            timeout: Duration,
+        ) -> Result<(), HostError> {
+            self.before("submit");
+            self.inner.submit(place, text, timeout)
+        }
+        fn state(&self, place: &Place, timeout: Duration) -> Result<PlaceState, HostError> {
+            self.before("state");
+            self.inner.state(place, timeout)
+        }
+        fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError> {
+            self.before("occupant");
+            self.inner.occupant(place, timeout)
+        }
+        fn read_tail(
+            &self,
+            place: &Place,
+            lines: u16,
+            timeout: Duration,
+        ) -> Result<String, HostError> {
+            self.before("read_tail");
+            self.inner.read_tail(place, lines, timeout)
+        }
+        fn send_keys(
+            &self,
+            place: &Place,
+            keys: &[Key],
+            timeout: Duration,
+        ) -> Result<(), HostError> {
+            self.before("send_keys");
+            self.inner.send_keys(place, keys, timeout)
+        }
+        fn close(
+            &self,
+            place: &Place,
+            expected: &Address,
+            timeout: Duration,
+        ) -> Result<(), HostError> {
+            self.before("close");
+            self.inner.close(place, expected, timeout)
+        }
+        fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError> {
+            self.before("list");
+            self.inner.list(timeout)
+        }
+        fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, HostError> {
+            self.before("live_agent_names");
+            self.inner.live_agent_names(timeout)
+        }
+        fn place_env_var(&self) -> Option<&'static str> {
+            self.inner.place_env_var()
+        }
+        fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+            self.inner.place_from_env(read)
+        }
+    }
+}
+
+/// Puts a `LockingHost` around the rig's fake host.
+fn lock_on(rig: &mut Rig, on: &'static str) {
+    let host = std::sync::Arc::new(LockingHost {
+        inner: rig.host.clone(),
+        on,
+        home: rig.home.path().to_path_buf(),
+        taken: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut registry = teamwire_core::Registry::new();
+    registry.add_harness(rig.harness.clone()).unwrap();
+    registry.add_host(host).unwrap();
+    rig.registry = registry;
+}
+
+/// The launch was refused with `team_closed`, its member is `failed` with
+/// `member.refused` as its last event, and no agent of it is left running.
+fn assert_refused_by_close(
+    rig: &Rig,
+    report: &teamwire_launch::LaunchReport,
+    store: &teamwire_store::Store,
+) {
+    let outcome = &report.members.first().unwrap().outcome;
+    assert!(
+        matches!(outcome, LaunchOutcome::Refused(why) if why.starts_with("team_closed:")),
+        "{outcome:?}"
+    );
+    assert_eq!(member_row(store, "api").unwrap().state, MemberState::Failed);
+    let events = role_events(store, "api");
+    assert_eq!(events.last().unwrap().0, "member.refused", "{events:?}");
+    let live = teamwire_core::Host::live_agent_names(&*rig.host, std::time::Duration::from_secs(5))
+        .unwrap();
+    assert!(!live.iter().any(|n| n == "tw_demo_api"), "{live:?}");
+}
+
+/// A close takes the lock while the agent starts: launch does not record the
+/// place, closes it, and refuses.
+#[test]
+fn a_close_during_spawn_refuses_the_launch_and_closes_the_agent() {
+    let mut rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    lock_on(&mut rig, "spawn");
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, store) = rig.launch("demo", plan);
+    assert_refused_by_close(&rig, &report, &store);
+    assert_eq!(rig.host.log().count_named("spawn"), 1);
+    assert_eq!(member_row(&store, "api").unwrap().place, None);
+    assert!(!repo.join(".worktrees/api").exists());
+}
+
+/// A close takes the lock during the trust step: launch does not mark the
+/// member started.
+#[test]
+fn a_close_during_the_trust_step_refuses_the_launch() {
+    let mut rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    lock_on(&mut rig, "read_tail");
+    let plan = rig.validate(&spec, false).unwrap();
+    let (report, store) = rig.launch("demo", plan);
+    assert_refused_by_close(&rig, &report, &store);
+    let kinds: Vec<String> = role_events(&store, "api")
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    assert_eq!(kinds, ["member.creating", "member.refused"]);
+}
+
+/// Runs `run` like the rig's platform and takes the close lock after the
+/// first setup script.
+#[derive(Debug)]
+struct LockingSetup<'a> {
+    inner: &'a common::GitPlatform,
+    home: std::path::PathBuf,
+}
+
+impl teamwire_core::Platform for LockingSetup<'_> {
+    fn pid_alive(&self, pid: teamwire_core::Pid) -> bool {
+        self.inner.pid_alive(pid)
+    }
+    fn env_of(
+        &self,
+        pid: teamwire_core::Pid,
+        var: &str,
+    ) -> Result<Option<String>, teamwire_core::PlatformError> {
+        self.inner.env_of(pid, var)
+    }
+    fn run(
+        &self,
+        cmd: &teamwire_core::Command,
+        timeout: std::time::Duration,
+    ) -> Result<teamwire_core::RunOutput, teamwire_core::PlatformError> {
+        let out = self.inner.run(cmd, timeout);
+        if cmd.program == "sh" {
+            take_close_lock(&self.home);
+        }
+        out
+    }
+    fn write_atomic(
+        &self,
+        path: &std::path::Path,
+        bytes: &[u8],
+    ) -> Result<(), teamwire_core::PlatformError> {
+        self.inner.write_atomic(path, bytes)
+    }
+    fn sleep_hold(&self) -> Option<&dyn teamwire_core::SleepHold> {
+        self.inner.sleep_hold()
+    }
+    fn free_bytes(&self, path: &std::path::Path) -> Result<u64, teamwire_core::PlatformError> {
+        self.inner.free_bytes(path)
+    }
+    fn on_network_fs(&self, path: &std::path::Path) -> Result<bool, teamwire_core::PlatformError> {
+        self.inner.on_network_fs(path)
+    }
+}
+
+/// A close takes the lock while setup runs: launch writes no contract, brief
+/// or `TASK.md` and starts nothing.
+#[test]
+fn a_close_during_setup_refuses_before_any_file_is_written() {
+    use teamwire_core::Platform;
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let plan = rig
+        .validate(&common::with(spec, "setup", json!("true")), false)
+        .unwrap();
+    let platform = LockingSetup {
+        inner: &rig.platform,
+        home: rig.home.path().to_path_buf(),
+    };
+    let team = teamwire_core::TeamName::parse("demo").unwrap();
+    let mut store = teamwire_store::Store::open(rig.home.path(), &team).unwrap();
+    let report = teamwire_launch::launch(
+        &mut teamwire_store::Ctx {
+            home: rig.home.path(),
+            store: &mut store,
+            registry: &rig.registry,
+            platform: &platform as &dyn Platform,
+            clock: &rig.clock,
+            config: &rig.config,
+        },
+        plan,
+    );
+    assert_refused_by_close(&rig, &report, &store);
+    assert_eq!(rig.host.log().count_named("spawn"), 0);
+    let team_dir = rig.home.path().join("teams/demo");
+    assert!(!team_dir.join("contract/api.md").exists());
+    assert!(!team_dir.join("briefs/api.md").exists());
+    assert!(!repo.join(".worktrees/api").exists());
 }

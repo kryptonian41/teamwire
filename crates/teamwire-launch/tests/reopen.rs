@@ -748,3 +748,127 @@ fn a_damaged_unrelated_event_of_the_member_does_not_stop_its_reopen() {
     let report = run(&rig, &mut store, &all()).unwrap();
     assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
 }
+
+/// A host that takes team `demo`'s close lock, as `teamwire close` does,
+/// right before its first `read_tail` (the trust step after the spawn), then
+/// does what the fake does.
+struct LockingHost {
+    inner: std::sync::Arc<teamwire_fakes::FakeHost>,
+    home: std::path::PathBuf,
+    taken: std::sync::atomic::AtomicBool,
+}
+
+impl Host for LockingHost {
+    fn id(&self) -> teamwire_core::HostId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> teamwire_core::HostCaps {
+        self.inner.capabilities()
+    }
+    fn spawn(
+        &self,
+        req: &teamwire_core::SpawnRequest,
+        timeout: Duration,
+    ) -> Result<teamwire_core::Place, teamwire_core::HostError> {
+        self.inner.spawn(req, timeout)
+    }
+    fn submit(
+        &self,
+        place: &teamwire_core::Place,
+        text: &teamwire_core::OneLine,
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.submit(place, text, timeout)
+    }
+    fn state(
+        &self,
+        place: &teamwire_core::Place,
+        timeout: Duration,
+    ) -> Result<PlaceState, teamwire_core::HostError> {
+        self.inner.state(place, timeout)
+    }
+    fn occupant(
+        &self,
+        place: &teamwire_core::Place,
+        timeout: Duration,
+    ) -> Result<teamwire_core::Occupant, teamwire_core::HostError> {
+        self.inner.occupant(place, timeout)
+    }
+    fn read_tail(
+        &self,
+        place: &teamwire_core::Place,
+        lines: u16,
+        timeout: Duration,
+    ) -> Result<String, teamwire_core::HostError> {
+        if !self.taken.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let team = teamwire_core::TeamName::parse("demo").unwrap();
+            let mut store = Store::open(&self.home, &team).unwrap();
+            let now = teamwire_fakes::FakeClock::new().now();
+            assert!(store.write(|tx| tx.begin_close(now, Pid::new(1))).unwrap());
+        }
+        self.inner.read_tail(place, lines, timeout)
+    }
+    fn send_keys(
+        &self,
+        place: &teamwire_core::Place,
+        keys: &[teamwire_core::Key],
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.send_keys(place, keys, timeout)
+    }
+    fn close(
+        &self,
+        place: &teamwire_core::Place,
+        expected: &Address,
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.close(place, expected, timeout)
+    }
+    fn list(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<teamwire_core::Place>, teamwire_core::HostError> {
+        self.inner.list(timeout)
+    }
+    fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, teamwire_core::HostError> {
+        self.inner.live_agent_names(timeout)
+    }
+    fn place_env_var(&self) -> Option<&'static str> {
+        self.inner.place_env_var()
+    }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.inner.place_from_env(read)
+    }
+}
+
+#[test]
+fn a_close_after_the_new_tab_opened_refuses_and_closes_that_tab() {
+    let mut rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    let before = member_row(&store, "api").unwrap().place;
+    let host = std::sync::Arc::new(LockingHost {
+        inner: rig.host.clone(),
+        home: rig.home.path().to_path_buf(),
+        taken: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut registry = teamwire_core::Registry::new();
+    registry.add_harness(rig.harness.clone()).unwrap();
+    registry.add_host(host).unwrap();
+    rig.registry = registry;
+    let only = ReopenOpts {
+        role: Some(role("api")),
+        dry_run: false,
+        ..ReopenOpts::default()
+    };
+    let report = run(&rig, &mut store, &only).unwrap();
+    let ReopenOutcome::Refused(why) = outcome(&report, "api") else {
+        unreachable!("{:?}", report.members);
+    };
+    assert!(
+        why.starts_with("team_closed:") && why.contains("the new tab was closed"),
+        "{why}"
+    );
+    assert_eq!(closed_places(&rig).len(), 1, "the new tab was closed");
+    assert_eq!(member_row(&store, "api").unwrap().place, before);
+    assert!(rig.host.live_agent_names(T).unwrap().is_empty());
+}
