@@ -217,8 +217,8 @@ fn spawn_caffeinate(lead_pid: Pid) -> Result<std::process::Child, PlatformError>
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        // Its own session: the hold must outlive the launcher and not receive
-        // the terminal's signals.
+        // Its own process group: the hold must outlive the launcher and not
+        // receive the signals the terminal sends to the launcher's group.
         .process_group(0)
         .spawn()
         .map_err(|err| io_error("starting caffeinate", &err))

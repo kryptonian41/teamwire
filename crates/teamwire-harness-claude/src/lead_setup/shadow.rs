@@ -1,8 +1,7 @@
-//! `teamwire` MCP entries that Claude Code prefers over the user-scope one:
-//! the local scope (`projects.<dir>.mcpServers` in `.claude.json`) and the
-//! project scope (`<dir>/.mcp.json`). Claude Code starts the local entry
-//! first, then the project one, then the user one, so a leftover entry in
-//! either runs in place of what `teamwire install` registered.
+//! `teamwire` MCP entries in the local scope (`projects.<dir>.mcpServers` in
+//! `.claude.json`) and the project scope (`<dir>/.mcp.json`). The lead's
+//! server comes from the plugin, so Claude Code starts a leftover entry in
+//! either scope as a second `teamwire` server beside it, in that directory.
 
 use std::path::Path;
 
@@ -10,7 +9,8 @@ use super::LeadSetupError;
 use super::mcp::{self, McpEntry, McpState};
 use crate::ClaudeConfig;
 
-/// A `teamwire` entry that hides the user-scope one in a directory.
+/// A local or project `teamwire` entry that starts a second server in a
+/// directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shadow {
     /// Where the entry is, in words.
@@ -19,9 +19,9 @@ pub struct Shadow {
     pub entry: String,
 }
 
-/// The entries that hide the user-scope one for a Claude session started
-/// in `dir`. An entry identical to `want` is not reported: it starts the
-/// same server.
+/// The local and project entries for a Claude session started in `dir`. An
+/// entry identical to `want` is not reported: it also starts a second
+/// server, but one that runs the plugin's own command.
 pub fn shadowing_entries(
     config: &ClaudeConfig,
     dir: &Path,
