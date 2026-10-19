@@ -56,10 +56,17 @@ fn show(
     {
         return fail(&format!("no database for team {team}"), REFUSED);
     }
+    let named = team.is_some();
     let query = MetricsQuery { team, since };
     let view = teamwire_otel::metrics_at(home, wiring.clock.now(), &query);
     for error in &view.errors {
         warn(error);
+    }
+    // A named team has one source, so an error means its store was not read
+    // and an empty view would be a false "no events"; a listing goes on past
+    // one bad team.
+    if named && !view.errors.is_empty() {
+        return ExitCode::from(STORE);
     }
     if json {
         match serde_json::to_string_pretty(&view) {
