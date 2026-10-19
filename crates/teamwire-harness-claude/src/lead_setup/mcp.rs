@@ -8,7 +8,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use teamwire_core::Command;
+use teamwire_core::{Command, is_secret_name};
 
 use super::LeadSetupError;
 use crate::ClaudeConfig;
@@ -89,9 +89,25 @@ pub enum McpState {
     Foreign(String),
 }
 
-/// A flag whose name (`--token`, `-api-key`) marks its value as a secret.
+/// A flag whose name (`--token`, `-api-key`, a header flag) marks its value
+/// as a secret.
 fn is_secret_flag(name: &str) -> bool {
-    name.starts_with('-') && teamwire_core::is_secret_name(name)
+    name.starts_with('-') && (is_secret_name(name) || is_header_flag(name))
+}
+
+/// `-H` and `--header`: the value is a whole header, which can be
+/// `Authorization: Bearer …`.
+fn is_header_flag(name: &str) -> bool {
+    name == "-H" || name.to_ascii_lowercase().trim_start_matches('-') == "header"
+}
+
+/// A `NAME=VALUE`, `--flag=VALUE` or `Header: value` argument whose name
+/// marks its value as a secret, with the value hidden.
+fn hidden_value(arg: &str) -> Option<String> {
+    ['=', ':'].into_iter().find_map(|sep| {
+        let (name, _) = arg.split_once(sep)?;
+        (is_secret_name(name) || is_header_flag(name)).then(|| format!("{name}{sep}<hidden>"))
+    })
 }
 
 /// `word` with a URL's user info, query and fragment removed, since each can
@@ -110,8 +126,9 @@ fn without_url_secrets(word: &str) -> String {
 
 /// An entry in words for a refusal or a `doctor` line, which people paste
 /// into issues: the type, the program or URL and the arguments, but never
-/// an environment value, a header, the value of a secret flag (after it or
-/// after its `=`), or a URL's user info or query.
+/// an environment value, a header, the value of a secret flag or header flag
+/// (after it or after its `=`), a secret `NAME=VALUE` or `Name: value`, or a
+/// URL's user info or query.
 pub(crate) fn describe(entry: &Value) -> String {
     let text = |k: &str| entry.get(k).and_then(Value::as_str);
     let mut words: Vec<String> = Vec::new();
@@ -127,10 +144,14 @@ pub(crate) fn describe(entry: &Value) -> String {
         .flatten()
     {
         let arg = arg.as_str().unwrap_or("?");
-        let word = match arg.split_once('=') {
-            _ if hide_next => "<hidden>".to_owned(),
-            Some((name, _)) if is_secret_flag(name) => format!("{name}=<hidden>"),
-            _ => without_url_secrets(arg),
+        // A URL first: its query (`?key=…`) would otherwise read as a
+        // secret name and keep the user info in front of it.
+        let word = if hide_next {
+            "<hidden>".to_owned()
+        } else if arg.contains("://") {
+            without_url_secrets(arg)
+        } else {
+            hidden_value(arg).unwrap_or_else(|| arg.to_owned())
         };
         words.push(word);
         hide_next = !arg.contains('=') && is_secret_flag(arg);
@@ -297,6 +318,40 @@ mod tests {
         let http = describe(&json!({"type": "http", "url": "https://u:p@h/x?key=s#f"}));
         assert_eq!(http, "(http) https://h/x");
         assert_eq!(without_url_secrets("https://h?q=1"), "https://h");
+    }
+
+    #[test]
+    fn a_header_or_a_secret_name_value_argument_is_hidden() {
+        let args = |args: Value| describe(&json!({"command": "x", "args": args}));
+        assert_eq!(
+            args(json!([
+                "https://h/sse",
+                "--header",
+                "Authorization: Bearer sk-1"
+            ])),
+            "x https://h/sse --header <hidden>"
+        );
+        assert_eq!(
+            args(json!([
+                "run",
+                "-e",
+                "GITHUB_PERSONAL_ACCESS_TOKEN=ghp_abc",
+                "img"
+            ])),
+            "x run -e GITHUB_PERSONAL_ACCESS_TOKEN=<hidden> img"
+        );
+        assert_eq!(
+            args(json!([
+                "--header=Authorization: Bearer sk-2",
+                "-H",
+                "X-Api-Key: k3"
+            ])),
+            "x --header=<hidden> -H <hidden>"
+        );
+        assert_eq!(
+            args(json!(["Authorization: Bearer sk-4", "--team=t", "-h"])),
+            "x Authorization:<hidden> --team=t -h"
+        );
     }
 
     #[test]
