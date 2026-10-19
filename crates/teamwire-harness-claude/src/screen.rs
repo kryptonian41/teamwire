@@ -197,6 +197,30 @@ fn at_input_prompt(last: &[&str]) -> bool {
     })
 }
 
+/// The state delivery acts on: `classify`, except that an input box holding
+/// text is `Unknown`, so a line is never appended to what a person half
+/// typed. Claude's grey suggestion text reads the same as typed text in a
+/// plain capture, so a suggestion also delays a delivery until it clears.
+pub(crate) fn delivery_state(tail: &str) -> ScreenState {
+    match classify(tail) {
+        ScreenState::InputPrompt if last_pointer_text(tail).is_some_and(|t| holds_text(&t)) => {
+            ScreenState::Unknown
+        }
+        state => state,
+    }
+}
+
+/// Whether the box's text is more than the `Try "…"` placeholder an empty
+/// box shows.
+// shortcut: a person who types exactly `Try "…"` is read as an empty box.
+// Upgrade with a styled capture, which tells the dim placeholder apart.
+fn holds_text(text: &str) -> bool {
+    let placeholder = text
+        .strip_prefix("Try \"")
+        .is_some_and(|rest| rest.ends_with('"'));
+    !text.is_empty() && !placeholder
+}
+
 pub(crate) fn classify(tail: &str) -> ScreenState {
     let last = last_lines(tail);
     if dialog_near_the_end(&last) {

@@ -182,7 +182,7 @@ impl Harness for ClaudeCode {
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {
-        screen::classify(tail)
+        screen::delivery_state(tail)
     }
 
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
