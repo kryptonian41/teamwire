@@ -187,7 +187,11 @@ fn member_states_follow_the_records_and_the_look() {
     assert_eq!(state("gone"), "died?");
     assert_eq!(state("late"), "late");
     assert_eq!(state("unrep"), "unreported");
-    assert_eq!(state("donegone"), "died?", "a pending result is no proof of life");
+    assert_eq!(
+        state("donegone"),
+        "died?",
+        "a pending result is no proof of life"
+    );
     assert_eq!(state("fresh2"), "working", "startup is not quiet");
 }
 

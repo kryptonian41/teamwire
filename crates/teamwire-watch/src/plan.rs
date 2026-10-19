@@ -16,7 +16,7 @@ use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
     STALLED_PREFIX, age, agent_text, blocked_key, died_key, late_key, question_key, result_key,
-    result_path, silent_key, stalled_key, unanswered_key, unread_key,
+    result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -333,8 +333,26 @@ fn judge_completion(
             // Only the member's own turn-end hook reports this completion, so
             // a member that died before it ran is judged like a running one
             // (WAT-6). Looking only after `DECLARED` keeps that line first.
-            if look(env, info, mm).is_none() {
+            let Some(seen) = look(env, info, mm) else {
                 return Verdict::settled("died");
+            };
+            // An idle member has ended its turn, so its hook ran. Still
+            // pending after the hook's budget and one poll more means the hook
+            // failed or is an older build's; nothing else tells the lead.
+            match seen {
+                Seen::Alive(Activity::Idle) => mm.quiet += 1,
+                Seen::Alive(_) => mm.quiet = 0,
+                Seen::Absent | Seen::NoInfo => {}
+            }
+            let cfg = env.ctx.config;
+            if u64::from(mm.quiet).saturating_mul(cfg.poll_s) > cfg.hook_budget_s + cfg.poll_s {
+                env.announce(
+                    unreported_key(role, info.member.generation),
+                    "UNREPORTED",
+                    format!(
+                        "UNREPORTED {role}: done is recorded but its turn-end hook did not report it; run teamwire doctor"
+                    ),
+                );
             }
             Verdict::waiting()
         }

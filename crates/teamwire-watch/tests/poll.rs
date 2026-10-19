@@ -1051,3 +1051,61 @@ fn a_member_gone_before_done_is_declared_before_it_dies() {
     let order: Vec<String> = lines.iter().flat_map(|l| names(l)).collect();
     assert_eq!(order, ["DECLARED", "DIED"], "{lines:?}");
 }
+
+/// A live, idle member whose completion stays `pending` past the hook budget
+/// and one more poll has a turn-end hook that did not report. The lead hears
+/// it once; the member stays unsettled.
+#[test]
+fn a_done_member_whose_hook_never_reports_is_unreported_once() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    bed.complete("api", CompletionStatus::Done);
+    bed.idle("api");
+    let lines = bed.ticks(30);
+    assert_eq!(count(&lines, "UNREPORTED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 0, "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains(
+            "UNREPORTED api: done is recorded but its turn-end hook did not report it; run teamwire doctor"
+        )),
+        "{lines:?}"
+    );
+    assert!(bed.memory.end.is_none());
+}
+
+#[test]
+fn a_hook_that_reports_within_its_budget_is_not_unreported() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    let id = bed.complete("api", CompletionStatus::Done);
+    bed.idle("api");
+    let mut lines = bed.ticks(3);
+    bed.finish(&id, ReportState::Delivered, None);
+    lines.extend(bed.ticks(10));
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+}
+
+/// A member still working after `done` has not reached its turn end, so its
+/// hook has not had the chance to report.
+#[test]
+fn a_done_member_still_working_is_not_unreported() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(30);
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+}
