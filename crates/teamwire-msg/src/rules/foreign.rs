@@ -6,8 +6,7 @@
 use std::collections::BTreeMap;
 
 use teamwire_core::{
-    Actor, MemberKind, MemberState, MessageType, Recipient, Refusal, Remote, SendRequest, TeamName,
-    TeamState,
+    Actor, MemberState, MessageType, Recipient, Refusal, Remote, SendRequest, TeamName, TeamState,
 };
 use teamwire_store::{Ctx, Store, StoreError, TeamRow};
 
@@ -61,7 +60,7 @@ pub(super) fn check(
                     if member.state == MemberState::Removed {
                         return Err(Refusal::RemovedRecipient.into());
                     }
-                    if matches!(member.kind, MemberKind::Reviewer | MemberKind::Closer) {
+                    if member.kind.is_quiet() {
                         return Err(Refusal::RecipientNotAllowed.into());
                     }
                 }

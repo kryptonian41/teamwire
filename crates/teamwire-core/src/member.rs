@@ -4,6 +4,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::message::MessageType;
 use crate::names::{HarnessId, HostId, Place, Role, SessionId};
 use crate::strings::string_enum;
 use crate::timestamp::Timestamp;
@@ -30,6 +31,27 @@ string_enum! {
         Started => "started",
         Failed => "failed",
         Removed => "removed",
+    }
+}
+
+impl MemberKind {
+    /// Reviewers and closers report in their report file; the lead acts on
+    /// the report (MSG-3).
+    pub fn is_quiet(self) -> bool {
+        matches!(self, Self::Reviewer | Self::Closer)
+    }
+
+    /// Whether a member of this kind may send a message of this type. Only the
+    /// lead instructs, so a member never sends a reprompt or a note (MSG-1).
+    pub fn may_send(self, kind: MessageType) -> bool {
+        !self.is_quiet()
+            && matches!(
+                kind,
+                MessageType::Notice
+                    | MessageType::Finding
+                    | MessageType::Question
+                    | MessageType::Answer
+            )
     }
 }
 
@@ -60,4 +82,30 @@ pub struct Member {
     pub gate_told_generation: Option<u32>,
     pub removed_at: Option<Timestamp>,
     pub removed_note: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn may_send_pins_every_kind_and_type() {
+        for kind in MemberKind::ALL {
+            for ty in MessageType::ALL {
+                let want = matches!(kind, MemberKind::Implementer | MemberKind::Investigator)
+                    && matches!(
+                        ty,
+                        MessageType::Notice
+                            | MessageType::Finding
+                            | MessageType::Question
+                            | MessageType::Answer
+                    );
+                assert_eq!(kind.may_send(*ty), want, "{kind} {ty}");
+            }
+            assert_eq!(
+                kind.is_quiet(),
+                matches!(kind, MemberKind::Reviewer | MemberKind::Closer)
+            );
+        }
+    }
 }

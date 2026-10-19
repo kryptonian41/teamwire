@@ -4,7 +4,8 @@
 use teamwire_store::{Ctx, TeamRow};
 
 /// The report's headings. Each must appear in some Markdown heading line,
-/// compared without regard to case, so `## 1. What you asked` counts.
+/// compared without regard to case or commas, so `## 1. What you asked` and
+/// `## Not done and why` count.
 const HEADINGS: [&str; 8] = [
     "What you asked",
     "What I understood",
@@ -45,12 +46,12 @@ pub(crate) fn report_refusal(ctx: &Ctx<'_>, team: &TeamRow) -> Option<String> {
         .lines()
         .filter(|line| line.starts_with('#'))
         .filter_map(|line| line.trim_start_matches('#').strip_prefix(' '))
-        .map(str::to_lowercase)
+        .map(|h| h.to_lowercase().replace(',', ""))
         .collect();
     let lacking: Vec<&str> = HEADINGS
         .into_iter()
         .filter(|name| {
-            let name = name.to_lowercase();
+            let name = name.to_lowercase().replace(',', "");
             !headings.iter().any(|h| h.contains(&name))
         })
         .collect();
