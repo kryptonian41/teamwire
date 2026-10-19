@@ -155,6 +155,90 @@ fn a_running_watch_is_not_reported_missing() {
     assert_eq!((run.code, run.out.as_str()), (0, ""));
 }
 
+/// Marks the fixture's team as an AFK run whose budget ends at `ends`.
+fn make_afk(fx: &mut Fixture, ends: &str) {
+    fx.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE team SET afk_budget_ends_at = ?1", [ends])
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+}
+
+fn context(run: &Run) -> String {
+    let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn an_afk_team_with_nothing_to_wake_the_lead_is_held_with_the_afk_note() {
+    let mut fx = team();
+    make_afk(&mut fx, "2999-01-01T00:00:00.000Z");
+    // No member is working, so only the AFK note applies.
+    fx.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE members SET state = 'creating'", [])
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let before = events(&fx);
+    let run = hook(&fx, &[], &stop("lead-1", ""));
+    assert_eq!(run.code, 0);
+    let dir = fx.team_dir().display().to_string();
+    assert_eq!(
+        context(&run),
+        format!(
+            "[teamwire:alpha] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close alpha` once {dir}/afk/REPORT.md exists. If a command you started will wake you, stop again."
+        )
+    );
+    assert_eq!(events(&fx), before, "the hook writes nothing");
+}
+
+#[test]
+fn both_notes_come_back_in_one_reply() {
+    let mut fx = team();
+    make_afk(&mut fx, "2020-01-01T00:00:00.000Z");
+    let run = hook(&fx, &[], &stop("lead-1", ""));
+    let text = context(&run);
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 2, "{text}");
+    assert!(lines[0].starts_with("[teamwire:alpha] no watch is running;"));
+    assert!(
+        lines[1].starts_with("[teamwire:alpha] budget spent at 2020-01-01T00:00:00.000Z: "),
+        "{text}"
+    );
+}
+
+#[test]
+fn an_afk_continuation_is_not_held_again() {
+    let mut fx = team();
+    make_afk(&mut fx, "2999-01-01T00:00:00.000Z");
+    let run = hook(&fx, &[], &stop("lead-1", "").replace("false", "true"));
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+}
+
+#[test]
+fn an_afk_team_with_a_working_member_and_a_live_watch_is_not_held() {
+    let mut fx = team();
+    make_afk(&mut fx, "2999-01-01T00:00:00.000Z");
+    let at = teamwire_platform::SystemClock.now();
+    fx.store
+        .write(|tx| {
+            tx.take_watch_lease(at, Pid::new(std::process::id()), "host", |_| false)
+                .map(|_| ())
+        })
+        .unwrap();
+    let run = hook(&fx, &[], &stop("lead-1", ""));
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+}
+
 #[test]
 fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
     let fx = team();
