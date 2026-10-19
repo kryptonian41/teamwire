@@ -145,16 +145,20 @@ impl Tx<'_> {
         Ok(ulid)
     }
 
-    /// `create_team` for an AFK run: the row also records when the run's
-    /// budget ends, and `team.created` carries it as `afk_budget_ends_at`.
+    /// `create_team_with` for an AFK run: the row also records when the
+    /// run's budget ends, and `team.created` carries it as
+    /// `afk_budget_ends_at` beside the keys in `extra` (such as `lead_cwd`).
     pub fn create_afk_team(
         &self,
         at: Timestamp,
         team: &NewTeam,
         budget_ends_at: Timestamp,
+        extra: &Value,
     ) -> Result<Ulid, StoreError> {
         let ends = budget_ends_at.to_string();
-        let ulid = self.create_team_with(at, team, &json!({ "afk_budget_ends_at": ends }))?;
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("afk_budget_ends_at".to_owned(), json!(ends));
+        let ulid = self.create_team_with(at, team, &Value::Object(data))?;
         self.connection().execute(
             "UPDATE team SET afk_budget_ends_at = ?1 WHERE id = 1",
             [&ends],

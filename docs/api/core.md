@@ -188,8 +188,9 @@ so they need no schema change:
 folder belongs to an older lead session. `ReadTx::run_options` returns a
 member's recorded `model` and `effort`, and whether either key was recorded.
 `Tx::create_team_with` and `Tx::adopt_lead_in` write the extra keys.
-`Tx::create_afk_team` creates an AFK run's team: `create_team_with` plus
-`team.afk_budget_ends_at` and the event key of the same name.
+`Tx::create_afk_team` creates an AFK run's team: `create_team_with`, with
+its extra keys, plus `team.afk_budget_ends_at` and the event key of the same
+name.
 
 ## 6. Traits
 

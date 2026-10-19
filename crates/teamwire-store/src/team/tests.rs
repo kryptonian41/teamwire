@@ -45,7 +45,9 @@ fn an_afk_team_records_its_budget_end_and_an_ordinary_team_none() {
 
     let mut f = fixture();
     f.store
-        .write(|tx| tx.create_afk_team(at(0), &new_team(), at(8 * 3600)))
+        .write(|tx| {
+            tx.create_afk_team(at(0), &new_team(), at(8 * 3600), &json!({"lead_cwd": "/w"}))
+        })
         .unwrap();
     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
     assert_eq!(team.afk_budget_ends_at, Some(at(8 * 3600)));
@@ -53,6 +55,7 @@ fn an_afk_team_records_its_budget_end_and_an_ordinary_team_none() {
     let event = last_event(&f.store);
     assert_eq!(event.kind, EventType::TeamCreated);
     assert_eq!(event.data["afk_budget_ends_at"], at(8 * 3600).to_string());
+    assert_eq!(event.data["lead_cwd"], "/w");
     assert_eq!(count_events(&f.store, EventType::TeamCreated), 1);
 }
 
