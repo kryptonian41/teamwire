@@ -327,3 +327,23 @@ fn the_refs_field_lists_the_recorded_refs_and_a_team_without_refs_never_matches(
     assert_eq!(view.teams[0].refs[0].to_string(), "linear:GKA-580");
     assert_eq!(teams_with_ref(home.path(), "GKA-580"), ["alpha"]);
 }
+
+#[test]
+fn limit_blocks_keeps_a_member_before_the_cut_even_with_no_report() {
+    let home = TestHome::new().unwrap();
+    team(home.path(), "alpha", 1, &["api", "web"]);
+    report(
+        &home.path().join("teams/alpha"),
+        "web",
+        "## Decisions I made\n- a\n## Decisions I made\n- b\n",
+    );
+    let mut view = read_decisions(home.path(), &query(Some("alpha"), None, None)).unwrap();
+    assert!(view.limit_blocks(1));
+    let members = &view.teams[0].members;
+    assert_eq!(members.len(), 2);
+    assert_eq!(
+        (members[0].role.as_str(), members[0].report.clone()),
+        ("api", None)
+    );
+    assert_eq!(members[1].blocks.len(), 1);
+}

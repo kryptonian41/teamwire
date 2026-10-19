@@ -69,26 +69,28 @@ pub struct MemberDecisions {
 }
 
 impl DecisionsView {
-    /// Keeps the first `limit` blocks in print order and drops everything
-    /// after them. Returns whether anything was dropped.
+    /// Keeps the first `limit` blocks in print order and drops what comes
+    /// after the cut. A member before the cut stays, even with no report.
+    /// Returns whether anything was dropped.
     pub fn limit_blocks(&mut self, limit: usize) -> bool {
         let mut left = limit;
-        let mut cut = false;
-        for team in &mut self.teams {
-            for member in &mut team.members {
-                cut |= member.blocks.len() > left;
-                member.blocks.truncate(left);
+        let mut cut = None;
+        'teams: for (t, team) in self.teams.iter_mut().enumerate() {
+            for (m, member) in team.members.iter_mut().enumerate() {
+                if member.blocks.len() > left {
+                    member.blocks.truncate(left);
+                    team.members.truncate(if left == 0 { m } else { m + 1 });
+                    cut = Some(if team.members.is_empty() { t } else { t + 1 });
+                    break 'teams;
+                }
                 left -= member.blocks.len();
             }
         }
-        if cut {
-            // A member emptied by the cut has nothing left to show.
-            for team in &mut self.teams {
-                team.members.retain(|m| !m.blocks.is_empty());
-            }
-            self.teams.retain(|t| !t.members.is_empty());
-        }
-        cut
+        let Some(keep) = cut else {
+            return false;
+        };
+        self.teams.truncate(keep);
+        true
     }
 }
 

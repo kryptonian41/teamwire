@@ -115,6 +115,27 @@ fn a_report_without_the_label_has_no_blocks() {
 }
 
 #[test]
+fn an_indented_bold_line_continues_a_list_item() {
+    let b =
+        one("Decisions I made:\n1. Chose X.\n   **Why:** because Y.\n2. Chose Z.\n\n**Next**\n");
+    assert_eq!(b.text, "1. Chose X.\n   **Why:** because Y.\n2. Chose Z.");
+}
+
+#[test]
+fn a_line_indented_four_spaces_is_not_a_heading() {
+    let b = one("## Decisions I made\n- Ran the build first:\n    # build\n- Chose Z.\n## Next\n");
+    assert_eq!(b.text, "- Ran the build first:\n    # build\n- Chose Z.");
+    let b = one("Decisions I made:\n- a\n    # not a heading\n- b\n");
+    assert_eq!(b.text, "- a\n    # not a heading\n- b");
+}
+
+#[test]
+fn a_heading_indented_up_to_three_spaces_still_ends_the_block() {
+    let b = one("## Decisions I made\n- a\n   ## Next\n- b\n");
+    assert_eq!(b.text, "- a");
+}
+
+#[test]
 fn a_bare_label_takes_the_prose_right_under_it() {
     let b = one("Decisions I made:\nI kept the name.\n\nOther.\n");
     assert_eq!(b.text, "I kept the name.");
