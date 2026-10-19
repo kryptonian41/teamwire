@@ -12,6 +12,27 @@ describe("fixtures match the teamwire schemas", () => {
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
 });
 
+describe("AFK output", () => {
+  const afk = {
+    budget_ends_at: "2026-10-20T08:00:00.000Z",
+    seconds_left: 3600,
+    spent: false,
+    decisions: 2,
+  };
+  test("status accepts an afk object and keeps it", () => {
+    const parsed = StatusAll.parse([{ ...status[0]!, afk }]);
+    expect(parsed[0]!.afk).toEqual(afk);
+  });
+  test("status accepts a null afk and an older output without the key", () => {
+    expect(StatusAll.parse([{ ...status[0]!, afk: null }])[0]!.afk).toBeNull();
+    expect(StatusAll.parse([status[0]!])[0]!.afk).toBeUndefined();
+  });
+  test("a spent budget with a text seconds_left fails the parse", () => {
+    const bad = { ...status[0]!, afk: { ...afk, seconds_left: "0" } };
+    expect(StatusAll.safeParse([bad]).success).toBe(false);
+  });
+});
+
 describe("schemas refuse a changed shape", () => {
   test("a new delivery state fails the parse", () => {
     const changed = structuredClone(log);
