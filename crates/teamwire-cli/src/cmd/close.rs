@@ -12,7 +12,7 @@ use crate::{CloseArgs, Global, USAGE};
 
 /// Refused by a rule; nothing changed (docs/api/cli.md).
 const REFUSED: u8 = 1;
-/// The close stopped at a step; state is intact and a rerun continues.
+/// The close stopped at a step; a rerun continues from the first step.
 const STOPPED: u8 = 2;
 /// The store could not be opened.
 const STORE: u8 = 6;
@@ -83,21 +83,38 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
     show_report(&report, &target, &team)
 }
 
+/// The steps of a whole-team close that take something away. A failed one may
+/// have done part of its work (one worktree removed, the next refused).
+const DESTRUCTIVE: [&str; 3] = ["remove_worktrees", "close_places", "release_hold"];
+
 /// What state a stopped close leaves. Once the `finish` step is done the team
 /// is `closed`, so "the state is intact" would be wrong: the team is closed and
-/// only the archive or the deletion is left.
+/// only the archive or the deletion is left. Before that, the state is intact
+/// only when no destructive step ran; otherwise the team is open again with
+/// some worktrees, places or the hold already gone, and a rerun finishes them.
 fn stopped_message(report: &CloseReport, step: &str, team: &TeamName) -> String {
     let finished = report.steps.iter().any(|s| s.step == "finish" && s.ok);
+    let ran: Vec<&str> = DESTRUCTIVE
+        .into_iter()
+        .filter(|d| report.steps.iter().any(|s| s.step == *d))
+        .collect();
     if finished {
         format!(
             "close stopped at {step}: the team is already marked closed and its state \
              directory is still there; fix that, then run `teamwire close {team}` again to \
              archive it afresh and delete it"
         )
-    } else {
+    } else if ran.is_empty() {
         format!(
             "close stopped at {step}: the team is open again with its state intact; fix \
              that, then run the close again"
+        )
+    } else {
+        format!(
+            "close stopped at {step}: the team is open again, but {} already ran and close \
+             does not undo that; fix the problem, then run `teamwire close {team}` again to \
+             finish the job",
+            ran.join(", ")
         )
     }
 }
@@ -202,10 +219,42 @@ mod tests {
         let text = stopped_message(&after, "delete_state", &team);
         assert!(text.contains("already marked closed"), "{text}");
         assert!(!text.contains("state intact"), "{text}");
-        let before = report(&[("lock", true), ("close_places", false)]);
-        let text = stopped_message(&before, "close_places", &team);
+        let before = report(&[("lock", true), ("archive", true), ("verify_archive", false)]);
+        let text = stopped_message(&before, "verify_archive", &team);
         assert!(text.contains("open again with its state intact"), "{text}");
         let failed_finish = report(&[("lock", true), ("finish", false)]);
         assert!(stopped_message(&failed_finish, "finish", &team).contains("state intact"));
+    }
+
+    #[test]
+    fn a_stop_after_a_destructive_step_names_it_and_says_a_rerun_finishes() {
+        let team = TeamName::parse("alpha").unwrap();
+        let after = report(&[
+            ("lock", true),
+            ("archive", true),
+            ("verify_archive", true),
+            ("remove_worktrees", true),
+            ("close_places", false),
+        ]);
+        let text = stopped_message(&after, "close_places", &team);
+        assert_eq!(
+            text,
+            "close stopped at close_places: the team is open again, but remove_worktrees, \
+             close_places already ran and close does not undo that; fix the problem, then \
+             run `teamwire close alpha` again to finish the job"
+        );
+        let failed_finish = report(&[
+            ("lock", true),
+            ("remove_worktrees", true),
+            ("close_places", true),
+            ("release_hold", true),
+            ("finish", false),
+        ]);
+        let text = stopped_message(&failed_finish, "finish", &team);
+        assert!(!text.contains("state intact"), "{text}");
+        assert!(
+            text.contains("remove_worktrees, close_places, release_hold already ran"),
+            "{text}"
+        );
     }
 }
