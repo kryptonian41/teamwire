@@ -5,7 +5,7 @@ use teamwire_core::{Member, Role, TeamState};
 use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::ignored_warning;
+use crate::member_close::{ignored_warning, kept_branches};
 use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, remove};
 
 fn step(name: &str, detail: impl Into<String>) -> CloseStep {
@@ -118,9 +118,11 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
             )
         },
     ));
-    let kept: Vec<&str> = live(members)
+    // An error here is already a refusal from the dirty check.
+    let kept: Vec<String> = live(members)
         .filter(|m| m.mode == teamwire_core::Mode::Worktree)
-        .filter_map(|m| m.branch.as_deref())
+        .filter_map(|m| kept_branches(ctx, &team.name, m, true).ok())
+        .flat_map(|k| k.branches)
         .collect();
     if !kept.is_empty() {
         plan.steps.push(step("branches_kept", kept.join(", ")));
@@ -224,5 +226,11 @@ fn member_plan(
         "mark_removed",
         format!("keep {role}'s row, marked removed"),
     ));
+    if let Ok(kept) = kept_branches(ctx, &team.name, member, true)
+        && !kept.branches.is_empty()
+    {
+        plan.steps
+            .push(step("branches_kept", kept.branches.join(", ")));
+    }
     plan
 }

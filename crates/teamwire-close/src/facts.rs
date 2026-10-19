@@ -125,11 +125,215 @@ pub(crate) fn dirty_paths(ctx: &Ctx<'_>, member: &Member) -> Result<Vec<String>,
         .collect())
 }
 
-/// Why this member's checkout must not be removed now, if it has uncommitted
-/// work or git cannot say.
+/// How many names a rescue branch may take: the plain one, then `-2` to `-99`.
+const RESCUE_NAMES: u32 = 99;
+
+/// A worktree member's HEAD that is on no branch, as git reports it.
+#[derive(Debug)]
+pub(crate) struct Detached {
+    pub(crate) sha: String,
+    /// A branch, tag or remote ref already holds the commit.
+    held: bool,
+    /// `(sha, refname)` of every ref under `refs/heads/teamwire`, the only
+    /// refs a rescue name can clash with.
+    taken: Vec<(String, String)>,
+    /// `teamwire/rescue/<team>-<role>-<sha7>`. Team names hold no hyphen,
+    /// so the name splits one way.
+    base: String,
+}
+
+/// The rescue branch a detached HEAD gets.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Rescue {
+    /// A rescue branch from an earlier close already points at the commit.
+    Reuse(String),
+    /// This name is free; close creates it.
+    Create(String),
+}
+
+impl Rescue {
+    pub(crate) fn into_name(self) -> String {
+        match self {
+            Self::Reuse(name) | Self::Create(name) => name,
+        }
+    }
+}
+
+impl Detached {
+    pub(crate) fn short(&self) -> String {
+        self.sha.chars().take(7).collect()
+    }
+
+    /// The rescue branch to use, skipping the names in `refused` (git turned
+    /// them down). `None` when another ref already holds the commit. A name
+    /// that exists at another commit is skipped, never moved.
+    pub(crate) fn pick(&self, refused: &[String]) -> Result<Option<Rescue>, String> {
+        let names = || {
+            std::iter::once(self.base.clone())
+                .chain((2..=RESCUE_NAMES).map(|n| format!("{}-{n}", self.base)))
+        };
+        let branches = || {
+            self.taken
+                .iter()
+                .map(|(sha, r)| (sha, r.strip_prefix("refs/heads/").unwrap_or(r)))
+        };
+        if let Some(name) = names().find(|n| branches().any(|(sha, b)| b == n && *sha == self.sha))
+        {
+            return Ok(Some(Rescue::Reuse(name)));
+        }
+        if self.held {
+            return Ok(None);
+        }
+        // git keeps refs as paths: `teamwire` or `teamwire/rescue` as a branch
+        // blocks every name below it, and a name cannot also be a folder.
+        let clash = |name: &str| {
+            branches().any(|(_, b)| {
+                b == name
+                    || name.starts_with(&format!("{b}/"))
+                    || b.starts_with(&format!("{name}/"))
+            })
+        };
+        if let Some(name) = names().find(|n| !refused.contains(n) && !clash(n)) {
+            return Ok(Some(Rescue::Create(name)));
+        }
+        // A branch at a folder of the name blocks all 99 names at once; name
+        // it, since that is the branch the person has to rename.
+        let why = match branches().find(|(_, b)| self.base.starts_with(&format!("{b}/"))) {
+            Some((_, b)) => format!("the branch {b} blocks every name under {b}/"),
+            None => format!(
+                "{} and -2 to -{RESCUE_NAMES} exist at other commits or git refused them",
+                self.base
+            ),
+        };
+        Err(format!(
+            "HEAD is detached at {} and its commits are on no branch, and no rescue branch \
+             name is free: {why}. Create a branch at {} first; close never moves a branch",
+            self.short(),
+            self.short()
+        ))
+    }
+}
+
+/// The member's HEAD, when it is detached in a worktree that still exists.
+pub(crate) fn detached(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+) -> Result<Option<Detached>, String> {
+    if member.mode != Mode::Worktree || !member.cwd.is_dir() {
+        return Ok(None);
+    }
+    let cwd = &member.cwd;
+    let out = git::run(ctx.platform, cwd, &["symbolic-ref", "-q", "HEAD"])?;
+    if out.success() {
+        return Ok(None);
+    }
+    if out.timed_out || out.exit_code != 1 {
+        return Err(format!(
+            "git symbolic-ref HEAD in {}: {}",
+            cwd.display(),
+            git::failure_text(&out)
+        ));
+    }
+    let sha = git::stdout_of(ctx.platform, cwd, &["rev-parse", "HEAD"])?;
+    let held = !git::stdout_of(
+        ctx.platform,
+        cwd,
+        &[
+            "for-each-ref",
+            "--count=1",
+            "--contains",
+            &sha,
+            "--format=%(refname)",
+            "refs/heads",
+            "refs/tags",
+            "refs/remotes",
+        ],
+    )?
+    .is_empty();
+    let taken = git::stdout_of(
+        ctx.platform,
+        cwd,
+        &[
+            "for-each-ref",
+            "--format=%(objectname) %(refname)",
+            "refs/heads/teamwire",
+        ],
+    )?
+    .lines()
+    .filter_map(|l| l.split_once(' '))
+    .map(|(sha, r)| (sha.to_owned(), r.to_owned()))
+    .collect();
+    let base = format!(
+        "teamwire/rescue/{team}-{}-{}",
+        member.role,
+        sha.chars().take(7).collect::<String>()
+    );
+    Ok(Some(Detached {
+        sha,
+        held,
+        taken,
+        base,
+    }))
+}
+
+/// The member's detached HEAD, read with the team name from the store.
+/// `Ok(None)` also for a store with no team row: it records no worktree.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+fn detached_now(ctx: &Ctx<'_>, member: &Member) -> Result<Option<Detached>, String> {
+    match ctx.store.read(|tx| tx.team()) {
+        Ok(Some(team)) => detached(ctx, &team.name, member),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn cannot_tell(member: &Member, e: &str) -> String {
+    format!(
+        "cannot tell whether {}'s commits are on a branch ({e}); refusing rather than guess",
+        member.role
+    )
+}
+
+/// Why close cannot keep this member's detached commits on a branch, or
+/// cannot tell whether it must.
+fn rescue_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
+    match detached_now(ctx, member) {
+        Ok(Some(head)) => head
+            .pick(&[])
+            .err()
+            .map(|e| format!("{}'s {e}", member.role)),
+        Ok(None) => None,
+        Err(e) => Some(cannot_tell(member, &e)),
+    }
+}
+
+/// Why a worktree must not be removed this moment: its HEAD is detached and
+/// no ref holds the commit. Close makes the rescue branch first, so this
+/// means the agent committed after that, while it still ran; removing the
+/// worktree would leave the new commit on no ref. Asked right before
+/// `git worktree remove`; a rerun gives the new commit its own rescue branch.
+pub(crate) fn stranded_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
+    match detached_now(ctx, member) {
+        Ok(Some(head)) if !head.held => Some(format!(
+            "{}'s HEAD moved to {} after its rescue branch was made, and no ref holds it; the \
+             worktree is kept. Run close again to keep that commit on a branch",
+            member.role,
+            head.short()
+        )),
+        Ok(_) => None,
+        Err(e) => Some(cannot_tell(member, &e)),
+    }
+}
+
+/// Why this member's checkout must not be removed now: it has uncommitted
+/// work, its detached commits can get no rescue branch, or git cannot say.
 pub(crate) fn dirty_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
     match dirty_paths(ctx, member) {
-        Ok(paths) if paths.is_empty() => None,
+        Ok(paths) if paths.is_empty() => rescue_refusal(ctx, member),
         Ok(paths) => Some(format!(
             "{} has {} uncommitted path(s) in {}. Commit or copy that work out first; \
              teamwire never forces a removal",

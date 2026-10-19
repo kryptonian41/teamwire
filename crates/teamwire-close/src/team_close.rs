@@ -8,7 +8,7 @@ use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::{close_place, ignored_warning, remove_worktree, unpushed};
+use crate::member_close::{close_place, ignored_warning, kept_branches, remove_worktree};
 use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, git, hold};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
@@ -267,16 +267,15 @@ impl Seq<'_, '_> {
         let mut notes = Vec::new();
         let mut repos: Vec<&Path> = Vec::new();
         for member in live(&members).filter(|m| m.mode == Mode::Worktree) {
-            if let Some(branch) = member.branch.as_ref().filter(|b| {
-                !member
-                    .repo
-                    .as_deref()
-                    .is_some_and(|r| git::branch_is_gone(self.ctx.platform, r, b))
-            }) {
-                self.report.branches_kept.push(branch.clone());
-                self.report
-                    .unpushed
-                    .extend(unpushed(self.ctx, member, branch));
+            match kept_branches(self.ctx, &self.team, member, false) {
+                Ok(kept) => {
+                    self.report.branches_kept.extend(kept.branches);
+                    self.report.unpushed.extend(kept.unpushed);
+                }
+                Err(why) => {
+                    problems.push(why);
+                    continue;
+                }
             }
             if let Some(detail) = ignored_warning(self.ctx, member) {
                 self.report.steps.push(StepOutcome {
