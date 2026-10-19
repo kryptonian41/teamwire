@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use teamwire_core::{Event, EventType, Timestamp};
+use teamwire_core::{Event, EventType, Role, Timestamp};
 
 use crate::history::{History, number, text};
 
@@ -349,7 +349,12 @@ fn delivery(h: &History, e: &Event, team_span: SpanId) -> Vec<Span> {
                     "teamwire.message.type",
                     s(text(&sent.data, "type").unwrap_or("unknown")),
                 ),
-                ("teamwire.from", s(recipient_of(sent))),
+                (
+                    "teamwire.from",
+                    s(text(&sent.data, "from")
+                        .or_else(|| sent.role.as_ref().map(Role::as_str))
+                        .unwrap_or("lead")),
+                ),
             ],
             error: None,
         });

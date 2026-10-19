@@ -1,7 +1,7 @@
 //! A team's events, indexed so a metric or a span can find the other events
 //! it depends on (a message's type, a generation's start) without a query.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
 use teamwire_core::{Event, EventType};
@@ -10,6 +10,8 @@ pub(crate) struct History {
     events: Vec<Event>,
     about: HashMap<String, Vec<usize>>,
     by_role: HashMap<String, Vec<usize>>,
+    /// The `seq` of every reprompt a later undo took back.
+    undone: HashSet<u64>,
 }
 
 impl History {
@@ -17,7 +19,23 @@ impl History {
     pub(crate) fn new(events: Vec<Event>) -> Self {
         let mut about: HashMap<String, Vec<usize>> = HashMap::new();
         let mut by_role: HashMap<String, Vec<usize>> = HashMap::new();
+        let mut undone = HashSet::new();
+        // Per role, the reprompts not yet undone; an undo pops the latest, as
+        // `restore_generation` does, and a `member.creating` starts over.
+        let mut open: HashMap<&str, Vec<u64>> = HashMap::new();
         for (i, e) in events.iter().enumerate() {
+            if let Some(role) = &e.role {
+                let stack = open.entry(role.as_str()).or_default();
+                if e.kind == EventType::MemberCreating {
+                    stack.clear();
+                } else if e.kind == EventType::MemberReprompted {
+                    if flag(&e.data, "undone") {
+                        undone.extend(stack.pop());
+                    } else {
+                        stack.push(e.seq);
+                    }
+                }
+            }
             if let Some(subject) = &e.subject {
                 about.entry(subject.to_string()).or_default().push(i);
             }
@@ -29,11 +47,17 @@ impl History {
             events,
             about,
             by_role,
+            undone,
         }
     }
 
     pub(crate) fn events(&self) -> &[Event] {
         &self.events
+    }
+
+    /// Whether a later undo took back the reprompt `e`.
+    pub(crate) fn is_undone(&self, e: &Event) -> bool {
+        self.undone.contains(&e.seq)
     }
 
     /// The events whose subject is `subject`, oldest first.
@@ -77,7 +101,9 @@ impl History {
             .take_while(|e| e.seq < end.seq)
             .filter(|e| {
                 e.kind == EventType::MemberStarted
-                    || (e.kind == EventType::MemberReprompted && !flag(&e.data, "undone"))
+                    || (e.kind == EventType::MemberReprompted
+                        && !flag(&e.data, "undone")
+                        && !self.is_undone(e))
             })
             .last()
     }

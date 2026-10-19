@@ -56,6 +56,7 @@ fn a_verify_record_is_stored_with_its_event() {
     assert_eq!(e.data["flags"], serde_json::json!(["ignore_added"]));
     assert_eq!(e.data["exit"], 0);
     assert_eq!(e.data["seconds"], 12);
+    assert_eq!(e.data["head_sha"], record().head_sha);
 }
 
 #[test]

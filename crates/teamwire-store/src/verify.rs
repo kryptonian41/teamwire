@@ -99,6 +99,7 @@ impl Tx<'_> {
             Some(&new.role),
             None,
             &json!({
+                "head_sha": new.head_sha,
                 "verdict": new.verdict,
                 "flags": new.flags,
                 "exit": new.exit_code,

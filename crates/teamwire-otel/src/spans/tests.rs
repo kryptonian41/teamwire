@@ -289,10 +289,14 @@ fn a_verify_span_starts_when_the_check_started() {
         EventType::VerifyRecorded,
         Some("api"),
         None,
-        json!({"verdict": "PASS", "seconds": 12}),
+        json!({"verdict": "PASS", "seconds": 12, "head_sha": "abc123"}),
     );
     let spans = log.spans(&recorded);
     assert_eq!(spans.len(), 1);
+    assert_eq!(
+        attr(&spans[0], "teamwire.head_sha"),
+        Some(&Attr::Str("abc123".to_owned()))
+    );
     assert_eq!(spans[0].end.saturating_since(spans[0].start).as_secs(), 12);
     assert_eq!(
         attr(&spans[0], "teamwire.verdict"),
@@ -333,5 +337,31 @@ fn a_delivery_to_another_team_is_its_own_recipient_and_never_the_lead() {
     assert_eq!(
         attr(&spans[0], "teamwire.to"),
         Some(&Attr::Str("db@beta".to_owned()))
+    );
+}
+
+#[test]
+fn a_message_span_names_the_sender_not_the_recipient() {
+    let mut log = Log(Vec::new());
+    let m = Ulid::from_parts(at(10), 97);
+    log.add(
+        10,
+        EventType::MessageSent,
+        None,
+        Some(m),
+        json!({"type": "question", "sender_kind": "other_team", "from": "api@beta", "recipients": ["lead"]}),
+    );
+    let done = log.add(
+        12,
+        EventType::DeliveryHandedOff,
+        None,
+        Some(m),
+        json!({"to": "lead", "route": "host_typing", "attempts": 1}),
+    );
+    let spans = log.spans(&done);
+    let message = spans.iter().find(|s| s.name == "teamwire.message").unwrap();
+    assert_eq!(
+        attr(message, "teamwire.from"),
+        Some(&Attr::Str("api@beta".to_owned()))
     );
 }
