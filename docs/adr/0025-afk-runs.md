@@ -109,7 +109,7 @@ decisions, with the options each one beat.
 
 9. **The run ends with `teamwire close`.** Close refuses an AFK team whose
    `afk/REPORT.md` is missing or lacks one of eight headings, with
-   `refused: afk_report_incomplete`. The headings are: What you asked, What
+   `REFUSED: afk_report_incomplete`. The headings are: What you asked, What
    I understood, The result, Verified, Decisions made for you, Not done and
    why, Risks, Cost. The match ignores case and the heading number.
    - Beaten: an `afk finish` command. Close already ends a team in the safe
