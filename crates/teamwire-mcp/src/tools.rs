@@ -69,8 +69,9 @@ pub(crate) const TOOLS: [(&str, &str); 9] = [
     ),
 ];
 
-/// Runs one call: opens the team's store, proves the caller, runs the tool
-/// and closes the store. Nothing is kept for the next call.
+/// Runs one call: opens the team's store, proves the caller, runs the tool,
+/// records a failed transaction under the tool's name and closes the store.
+/// Nothing is kept for the next call.
 pub(crate) fn call(
     env: &ServerEnv,
     caller: &McpCaller,
@@ -124,8 +125,10 @@ pub(crate) fn call(
             return ToolFailure::identity(NO_LEAD_SESSION);
         }
         ToolFailure::from(teamwire_msg::SendError::Refused(refusal))
-    })?;
-    run(&mut ctx, &team, &actor, tool, args)
+    });
+    let out = actor.and_then(|actor| run(&mut ctx, &team, &actor, tool, args));
+    ctx.store.record_failure(ctx.clock.now(), tool);
+    out
 }
 
 /// A lead server that cannot read any harness session id is set up wrong,
@@ -359,5 +362,93 @@ fn state_word(state: RecipientState) -> &'static str {
         RecipientState::Undelivered => "undelivered",
         RecipientState::Acked => "acked",
         RecipientState::Skipped => "skipped",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use teamwire_core::{
+        Clock, Config, EventType, HarnessId, HostId, LeadRoute, MemberKind, Mode, Registry,
+    };
+    use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
+    use teamwire_store::{NewMember, NewTeam};
+
+    use super::*;
+
+    #[test]
+    fn a_tool_call_that_meets_a_damaged_row_records_it_under_its_name() {
+        let home = TestHome::new().unwrap();
+        let clock = Arc::new(FakeClock::new());
+        let team = TeamName::parse("alpha").unwrap();
+        let api = Role::parse("api").unwrap();
+        let mut store = Store::open(home.path(), &team).unwrap();
+        store
+            .write(|tx| {
+                tx.create_team(
+                    clock.now(),
+                    &NewTeam {
+                        name: team.clone(),
+                        title: "Alpha".to_owned(),
+                        lead_harness: HarnessId::from_static("fake"),
+                        lead_host: HostId::from_static("fake"),
+                        lead_route: LeadRoute::Sink,
+                        lead_session: None,
+                    },
+                )?;
+                tx.insert_member(
+                    clock.now(),
+                    &NewMember {
+                        role: api.clone(),
+                        title: "api".to_owned(),
+                        kind: MemberKind::Implementer,
+                        mode: Mode::Pane,
+                        harness: HarnessId::from_static("fake"),
+                        host: HostId::from_static("fake"),
+                        cwd: home.path().to_path_buf(),
+                        repo: None,
+                        branch: None,
+                        base: None,
+                        base_sha: None,
+                        check: None,
+                        owns: vec![],
+                        deadline_s: 1800,
+                    },
+                )?;
+                // Valid JSON, so the CHECK passes, but not a list of paths.
+                tx.connection()
+                    .execute("UPDATE members SET owns = '{}'", [])?;
+                Ok(())
+            })
+            .unwrap();
+        let env = ServerEnv {
+            home: home.path().to_path_buf(),
+            registry: Arc::new(Registry::new()),
+            platform: Arc::new(FakePlatform::new()),
+            clock: clock.clone(),
+            config: Config::default(),
+        };
+        let caller = McpCaller::Member {
+            team,
+            role: api,
+            token: "t".to_owned(),
+        };
+        let out = call(
+            &env,
+            &caller,
+            "team_inbox",
+            JsonObject::new(),
+            &JsonObject::new(),
+        );
+        assert!(out.is_err());
+        let errors: Vec<Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(errors, [json!({ "op": "team_inbox", "code": "corrupt" })]);
     }
 }

@@ -42,6 +42,7 @@ mod cmd {
     pub(crate) mod watch;
 }
 mod args;
+mod recorded;
 mod wiring;
 
 /// Exit code for a usage error.

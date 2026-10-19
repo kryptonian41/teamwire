@@ -7,6 +7,7 @@ use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
 use crate::cmd::send::{home_or_refuse, no_database_text};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
 
@@ -54,7 +55,7 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Err(code) => return code,
     };
     let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "done"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
             return fail(&format!("refused.identity: {message}"), REFUSED);

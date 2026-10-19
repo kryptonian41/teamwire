@@ -12,6 +12,7 @@ use teamwire_msg::{
 };
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
 
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
 
@@ -56,7 +57,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(parts) => parts,
         Err(e) => return fail("send", &e, USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "send", |ctx| {
         // A member's `--from` defaults to its role. With no role and no
         // token the caller claims to be the lead, as `resend` does, and the
         // harness session decides.
@@ -311,16 +312,18 @@ pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> Strin
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
-/// cannot be opened is reported and turned into the exit code to return.
+/// cannot be opened is reported and turned into the exit code to return. A
+/// failed write is recorded as `op` (`Recorded`).
 pub(crate) fn with_ctx<T>(
     global: &Global,
     wiring: &Wiring,
     team: &TeamName,
+    op: &'static str,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
     let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, op),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(team, &path);
             return Err(fail("", &message, REFUSED));
@@ -404,6 +407,41 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_on_with_ctx_records_a_failed_write_under_its_name() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        drop(Store::open(home.path(), &team()).unwrap());
+        let global = Global {
+            home: Some(home.path().to_path_buf()),
+        };
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+        })
+        .unwrap();
+        let out = with_ctx(&global, &wiring, &team(), "ack", |ctx| {
+            ctx.store.write(|_| Err::<(), _>(StoreError::Busy))
+        });
+        assert!(matches!(out, Ok(Err(StoreError::Busy))));
+        let store = Store::open_existing(home.path(), &team()).unwrap();
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(errors, [serde_json::json!({ "op": "ack", "code": "busy" })]);
+    }
 
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()

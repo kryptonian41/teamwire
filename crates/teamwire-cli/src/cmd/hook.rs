@@ -11,7 +11,8 @@ use serde_json::json;
 use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::state_home;
+use crate::cmd::send::{state_home, warn};
+use crate::recorded::Recorded;
 use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
@@ -80,9 +81,13 @@ fn member_hook(
         }
         (team_var, role_var)
     };
-    let team = TeamName::parse(&team_var).ok()?;
-    let role = Role::parse(&role_var).ok()?;
-    let home = state_home(global)?;
+    // From here on the session is a member's, so every way out says why on
+    // stderr: a hook that does nothing must not look like one that worked.
+    let team = said(TeamName::parse(&team_var), "the team name is not valid")?;
+    let role = said(Role::parse(&role_var), "the role name is not valid")?;
+    let Some(home) = state_home(global) else {
+        return quit("no state directory: set --home, TEAMWIRE_HOME or HOME");
+    };
     let token = teamwire_msg::caller_token(|k| std::env::var(k).ok());
     let mut stdin = std::io::stdin().lock().take(STDIN_LIMIT);
     member_hook_in(
@@ -107,31 +112,50 @@ fn member_hook_in(
     wiring: &Wiring,
     stdin: &mut dyn Read,
 ) -> Option<Vec<u8>> {
-    let mut store = Store::open_existing(home, team).ok()?;
-    let found = store
-        .read(|tx| Ok((tx.member(role)?, tx.member_token_hash(role)?)))
-        .ok()?;
-    let (member, stored_hash) = (found.0?, found.1);
+    let opened = said(
+        Store::open_existing(home, team),
+        "the store could not be opened",
+    )?;
+    let mut store = Recorded::new(opened, &wiring.clock, kind.op());
+    let found = said(
+        store.read(|tx| Ok((tx.member(role)?, tx.member_token_hash(role)?))),
+        "the member could not be read",
+    )?;
+    let (Some(member), stored_hash) = found else {
+        return quit(&format!("team {team} has no member {role}"));
+    };
     if member.state == MemberState::Removed {
-        return None;
+        return quit(&format!("member {role} was removed"));
     }
-    let harness = wiring.registry.harness(&member.harness).ok()?;
+    let harness = said(
+        wiring.registry.harness(&member.harness),
+        "the member's harness is not in this binary",
+    )?;
     if kind == MemberHook::PostTool && !harness.capabilities().in_turn_hook {
-        return None;
+        return quit(&format!("harness {} has no in-turn hook", member.harness));
     }
     let mut input = Vec::new();
-    stdin.read_to_end(&mut input).ok()?;
-    let turn = harness.parse_turn_end(&input).ok()?;
+    said(
+        stdin.read_to_end(&mut input),
+        "standard input could not be read",
+    )?;
+    let turn = said(
+        harness.parse_turn_end(&input),
+        "the hook input did not parse",
+    )?;
 
     if kind == MemberHook::SessionStart {
         // Only the member's own token may name its session (ADR 0023 point 5).
-        let stored = stored_hash?;
-        if !same_bytes(&teamwire_msg::token_hash(token?), &stored) {
-            return None;
+        let (Some(stored), Some(token)) = (stored_hash, token) else {
+            return quit("no member token to prove the session with");
+        };
+        if !same_bytes(&teamwire_msg::token_hash(token), &stored) {
+            return quit("the token does not belong to this member");
         }
-        if let Err(e) = store.write(|tx| tx.set_member_session(role, &turn.session)) {
-            tracing::warn!(error = %e, %role, "could not record the session");
-        }
+        said(
+            store.write(|tx| tx.set_member_session(role, &turn.session)),
+            "could not record the session",
+        )?;
         return None;
     }
 
@@ -151,6 +175,31 @@ fn member_hook_in(
             TurnEndReply::Continue => None,
             TurnEndReply::Hold(note) => Some(harness.hold_reply(&note)),
         }
+    }
+}
+
+impl MemberHook {
+    /// The `op` of a `store.error` row this hook writes.
+    fn op(self) -> &'static str {
+        match self {
+            Self::TurnEnd => "turn_end",
+            Self::PostTool => "post_tool",
+            Self::SessionStart => "session_start",
+        }
+    }
+}
+
+/// The member hook gives up: one stderr line says why, and the turn goes on.
+fn quit<T>(why: &str) -> Option<T> {
+    warn(&format!("teamwire hook: {why}"));
+    None
+}
+
+/// `result`'s value, or `quit` with what failed and the error.
+fn said<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(e) => quit(&format!("{what}: {e}")),
     }
 }
 

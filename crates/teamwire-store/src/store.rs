@@ -1,11 +1,12 @@
 //! Opening the database: pragmas, the forward migration, the refusal of a
 //! newer or foreign file, and the two transaction entry points.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
-use teamwire_core::TeamName;
+use teamwire_core::{TeamName, Timestamp};
 
 use crate::error::StoreError;
 use crate::older::show_missing_columns;
@@ -49,6 +50,9 @@ pub struct Store {
     conn: Connection,
     writer_version: String,
     read_only: bool,
+    /// The first failed transaction that `record_failure` has not written
+    /// down yet. In a `RefCell`, because a read fails through `&self`.
+    failed: RefCell<Option<StoreError>>,
     /// Set when a read-only open found no `-wal` or `-shm` file, so that
     /// opening created them: closing the store then removes them again.
     cleanup: Option<PathBuf>,
@@ -204,19 +208,39 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: true,
+            failed: RefCell::new(None),
             cleanup: no_side_files.then(|| path.to_path_buf()),
         })
     }
 
     fn open_read_write(path: &Path, create: OpenFlags) -> Result<Self, StoreError> {
-        let mut conn = Connection::open_with_flags(
+        let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX | create,
         )?;
+        Self::ready(conn)
+    }
+
+    /// Settings and migration of a freshly opened read-write connection. The
+    /// switch to WAL and the migration write to the file outside
+    /// `Store::write`, so a full disk is given the file's path here too.
+    fn ready(mut conn: Connection) -> Result<Self, StoreError> {
+        let prepared = Self::prepare(&mut conn);
+        prepared.map_err(|e| e.at(conn.path()))?;
+        Ok(Self {
+            conn,
+            writer_version: WRITER_VERSION.to_owned(),
+            read_only: false,
+            failed: RefCell::new(None),
+            cleanup: None,
+        })
+    }
+
+    fn prepare(conn: &mut Connection) -> Result<(), StoreError> {
         conn.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
         // Look before touching anything: switching a foreign or newer file to
         // WAL would already be a write.
-        match found(&conn)? {
+        match found(conn)? {
             Found::Foreign => return Err(StoreError::NotTeamwire),
             Found::Ours(v) if v > SCHEMA_VERSION => {
                 return Err(StoreError::SchemaNewer {
@@ -226,14 +250,8 @@ impl Store {
             }
             Found::Fresh | Found::Ours(_) => {}
         }
-        apply_pragmas(&conn)?;
-        migrate(&mut conn)?;
-        Ok(Self {
-            conn,
-            writer_version: WRITER_VERSION.to_owned(),
-            read_only: false,
-            cleanup: None,
-        })
+        apply_pragmas(conn)?;
+        migrate(conn)
     }
 
     /// Sets the version recorded in the `writer_version` of every event this
@@ -263,10 +281,52 @@ impl Store {
         }
         let tx = self
             .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let out = f(&Tx::new(&tx, &self.writer_version))?;
-        tx.commit()?;
-        Ok(out)
+            .transaction_with_behavior(TransactionBehavior::Immediate);
+        let out = tx.map_err(StoreError::from).and_then(|tx| {
+            let out = f(&Tx::new(&tx, &self.writer_version))?;
+            tx.commit()?;
+            Ok(out)
+        });
+        out.map_err(|e| self.remember(e.at(self.conn.path())))
+    }
+
+    /// Keeps the first busy, full, corrupt or io failure of a store opened
+    /// for writing, for `record_failure`. A read-only store never writes, so
+    /// it keeps nothing.
+    fn remember(&self, e: StoreError) -> StoreError {
+        if !self.read_only && e.is_recorded() {
+            self.failed.borrow_mut().get_or_insert_with(|| e.clone());
+        }
+        e
+    }
+
+    /// Writes the `store.error` row (`docs/metrics.md`) of the first failed
+    /// transaction (a write, or a read of a store opened for writing) since
+    /// the last call, in its own transaction now that the failed one rolled
+    /// back. Each command, hook, tool call and watch poll calls it
+    /// on its way out with its own name as `op`; `at` is the caller's, because
+    /// the store never reads the clock. Best effort: when this write fails
+    /// too, the failure is kept for the next call, so a full disk is recorded
+    /// once it has room again. A file another binary migrated since is not
+    /// written to (STO-6), and the failure is dropped.
+    pub fn record_failure(&mut self, at: Timestamp, op: &str) {
+        let Some(failed) = self.failed.take() else {
+            return;
+        };
+        let written = self.write(|tx| {
+            // Read under the write lock, so no migration can come between
+            // the check and the row.
+            let db: i64 = tx
+                .connection()
+                .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+            if db != i64::from(SCHEMA_VERSION) {
+                return Ok(());
+            }
+            tx.record_store_error(at, op, &failed)
+        });
+        if written.is_err() {
+            *self.failed.get_mut() = Some(failed);
+        }
     }
 
     /// Runs `f` inside one read transaction: it sees a single snapshot, and
@@ -290,7 +350,7 @@ impl Store {
         if !self.read_only {
             self.conn.pragma_update(None, "query_only", false)?;
         }
-        out
+        out.map_err(|e| self.remember(e.at(self.conn.path())))
     }
 
     /// Copies the whole database to a new file with `SQLite`'s backup API,
@@ -408,6 +468,46 @@ fn check_version_not_newer(db: u32) -> Result<(), StoreError> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod full_path_tests {
+    use rusqlite::Connection;
+    use teamwire_fakes::TestHome;
+
+    use super::Store;
+    use crate::StoreError;
+
+    #[test]
+    fn a_full_disk_while_opening_names_the_file() {
+        let home = TestHome::new().unwrap();
+        let path = home.path().join("team.db");
+        let conn = Connection::open(&path).unwrap();
+        // One page holds the header and nothing else, so creating the schema
+        // meets SQLITE_FULL the way a full volume does.
+        let _max: i64 = conn
+            .query_row("PRAGMA max_page_count = 1", [], |r| r.get(0))
+            .unwrap();
+        let named = std::fs::canonicalize(&path).unwrap();
+        assert_eq!(
+            Store::ready(conn).unwrap_err(),
+            StoreError::Full { path: named }
+        );
+    }
+
+    #[test]
+    fn a_full_disk_inside_a_read_names_the_file() {
+        let home = TestHome::new().unwrap();
+        let team = teamwire_core::TeamName::parse("alpha").unwrap();
+        let store = Store::open(home.path(), &team).unwrap();
+        let full = store.read(|_| {
+            Err::<(), _>(StoreError::Full {
+                path: std::path::PathBuf::new(),
+            })
+        });
+        let path = std::fs::canonicalize(crate::database_path(home.path(), &team)).unwrap();
+        assert_eq!(full, Err(StoreError::Full { path }));
+    }
 }
 
 #[cfg(test)]

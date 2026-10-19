@@ -15,7 +15,7 @@ pub(crate) fn run(args: &LeadArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(team) => team,
         Err(e) => return fail("lead", &e.to_string(), USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "lead", |ctx| {
         adopt_lead(ctx, &caller_env(Some("lead".to_owned())))
     });
     match outcome {

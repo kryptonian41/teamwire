@@ -36,16 +36,19 @@ fn hook_name(harness: &HarnessId) -> String {
 /// Route A of ADR 0007: hold once for gaps or unread messages, else write
 /// the result and deliver it.
 ///
-/// Never fails: every problem is logged and the turn ends normally.
+/// Never fails: every problem is logged and the turn ends normally. A failed
+/// write still leaves its `store.error` row.
 pub fn on_turn_end(ctx: &mut Ctx<'_>, me: &Role, t: &TurnEnd) -> TurnEndReply {
     let started = ctx.clock.monotonic();
-    match run(ctx, me, t, started) {
+    let reply = match run(ctx, me, t, started) {
         Ok(reply) => reply,
         Err(e) => {
             tracing::warn!(error = %e, role = %me, "the turn-end hook could not finish");
             TurnEndReply::Continue
         }
-    }
+    };
+    ctx.store.record_failure(ctx.clock.now(), "turn_end");
+    reply
 }
 
 /// `started + budget`, or `None` when that is beyond what an `Instant` can

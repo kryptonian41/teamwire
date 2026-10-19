@@ -9,6 +9,7 @@ use teamwire_launch::{LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec,
 use teamwire_store::{Ctx, Store};
 
 use crate::cmd::send::{home_or_refuse, refuse_member};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, LaunchArgs};
 
@@ -110,7 +111,7 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let team = plan.spec.team.clone();
     let printed = plan.warnings.len();
     let mut store = match Store::open(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "launch"),
         Err(e) => {
             eprintln!("teamwire launch: the store could not be opened: {e}");
             return ExitCode::from(STORE_ERROR);

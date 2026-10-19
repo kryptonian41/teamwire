@@ -30,7 +30,9 @@ pub(crate) fn run(args: &ReceivedArgs, global: &Global, wiring: &Wiring) -> Exit
     if let Some(code) = refuse_member("received") {
         return code;
     }
-    match with_ctx(global, wiring, &team, |ctx| mark_received(ctx, &roles)) {
+    match with_ctx(global, wiring, &team, "received", |ctx| {
+        mark_received(ctx, &roles)
+    }) {
         Err(code) => code,
         Ok(Err(e)) => fail("received", &e.to_string(), STORE_ERROR),
         Ok(Ok(results)) => {
