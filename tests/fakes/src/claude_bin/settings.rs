@@ -152,7 +152,7 @@ pub(crate) fn run_shell(
     }
     let text = |reader: Option<std::thread::JoinHandle<Vec<u8>>>| {
         let bytes = reader
-            .filter(|r| r.is_finished())
+            .filter(std::thread::JoinHandle::is_finished)
             .and_then(|r| r.join().ok())
             .unwrap_or_default();
         String::from_utf8_lossy(&bytes).into_owned()
