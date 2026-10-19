@@ -93,7 +93,8 @@ impl fmt::Debug for CallerEnv {
 }
 
 /// One recipient's state in a send, resend or log row. `Skipped` appears
-/// only in a resend, for a recipient that was already reached.
+/// only in a resend or a send resumed by its key, for a recipient that was
+/// already reached or that another command is still delivering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecipientState {
