@@ -878,6 +878,60 @@ fn a_completed_close_leaves_no_live_members() {
 }
 
 #[test]
+fn a_launch_counts_started_failed_and_refused_members() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    let data = |code: Option<&str>| {
+        let mut d = json!({"launch": "L1", "requested": 3});
+        if let Some(code) = code {
+            d["reason_code"] = json!(code);
+            d["reason"] = json!(format!("{code}: why"));
+        }
+        d
+    };
+    ev(
+        &mut s,
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        &data(None),
+    );
+    ev(
+        &mut s,
+        2,
+        EventType::MemberFailed,
+        Some("web"),
+        None,
+        &data(Some("spawn")),
+    );
+    ev(
+        &mut s,
+        3,
+        EventType::MemberRefused,
+        Some("db"),
+        None,
+        &data(Some("afk_budget_spent")),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    for (outcome, reason) in [
+        ("started", "none"),
+        ("failed", "spawn"),
+        ("refused", "afk_budget_spent"),
+    ] {
+        assert_eq!(
+            value(
+                &v,
+                "teamwire.launch.members",
+                &[("team", "alpha"), ("outcome", outcome), ("reason", reason)]
+            ),
+            Some(1.0),
+            "{outcome}"
+        );
+    }
+}
+
+#[test]
 fn a_launch_failure_reason_label_is_a_short_code_never_free_text() {
     let home = TestHome::new().unwrap();
     let mut s = open(&home, "alpha");

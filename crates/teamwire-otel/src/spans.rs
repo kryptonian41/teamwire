@@ -61,7 +61,9 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
     let team_span = span_id("team", team_ulid);
     match e.kind {
         EventType::TeamClosed => team_closed(h, e, team, team_span),
-        EventType::MemberStarted | EventType::MemberFailed => launch(h, e, team_span),
+        EventType::MemberStarted | EventType::MemberFailed | EventType::MemberRefused => {
+            launch(h, e, team_span)
+        }
         EventType::MemberCompleted => generation(h, e, team_span).into_iter().collect(),
         EventType::DeliveryHandedOff
         | EventType::DeliveryUnconfirmed
@@ -74,7 +76,6 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
         | EventType::TeamClosing
         | EventType::TeamLeadAdopted
         | EventType::MemberCreating
-        | EventType::MemberRefused
         | EventType::MemberReplaced
         | EventType::MemberRemoved
         | EventType::MemberReprompted
@@ -141,13 +142,16 @@ fn launch(h: &History, e: &Event, team_span: SpanId) -> Vec<Span> {
     let launch_id = text(&e.data, "launch");
     let parent = launch_id.map_or(team_span, |id| span_id("launch", id));
     let role = e.role.as_ref().map_or("", |r| r.as_str());
+    // A member refused before it was recorded has no `member.creating` in
+    // this launch, so no member span; an older launch's row is not its start.
     if let Some(creating) = e.role.as_ref().and_then(|r| {
         h.of_role(r.as_str())
             .take_while(|p| p.seq < e.seq)
             .filter(|p| p.kind == EventType::MemberCreating)
             .last()
+            .filter(|p| text(&p.data, "launch") == launch_id)
     }) {
-        let failed = e.kind == EventType::MemberFailed;
+        let failed = e.kind != EventType::MemberStarted;
         let reason = text(&e.data, "reason").unwrap_or("failed");
         let mut attrs = vec![
             ("teamwire.role", s(role)),
@@ -176,7 +180,7 @@ fn launch(h: &History, e: &Event, team_span: SpanId) -> Vec<Span> {
 }
 
 /// The launch span, at the terminal event that makes every requested member
-/// either started or failed.
+/// started, failed or refused.
 fn launch_span(h: &History, e: &Event, id: &str, team_span: SpanId) -> Option<Span> {
     let requested = e.data.get("requested").and_then(Value::as_u64)?;
     let mine = || {
@@ -185,8 +189,12 @@ fn launch_span(h: &History, e: &Event, id: &str, team_span: SpanId) -> Option<Sp
             .take_while(|p| p.seq <= e.seq)
             .filter(|p| text(&p.data, "launch") == Some(id))
     };
-    let terminal =
-        |p: &&Event| matches!(p.kind, EventType::MemberStarted | EventType::MemberFailed);
+    let terminal = |p: &&Event| {
+        matches!(
+            p.kind,
+            EventType::MemberStarted | EventType::MemberFailed | EventType::MemberRefused
+        )
+    };
     if mine().filter(terminal).count() as u64 != requested {
         return None;
     }
