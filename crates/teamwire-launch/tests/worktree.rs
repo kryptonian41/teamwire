@@ -208,3 +208,18 @@ fn a_pane_only_team_does_not_need_worktrees_ignored() {
     let spec = common::team_spec("demo", &[common::pane_member("a", "Alpha", &repo)]);
     assert!(rig.validate(&spec, false).is_ok());
 }
+
+#[test]
+fn the_contract_is_written_once() {
+    let rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    let plan = rig.validate(&spec, false).unwrap();
+    let _ = rig.launch("demo", plan);
+    let contract = rig.home.path().join("teams/demo/contract/api.md");
+    let writes = rig.platform.inner.written();
+    assert_eq!(
+        writes.iter().filter(|p| **p == contract).count(),
+        1,
+        "{writes:?}"
+    );
+}

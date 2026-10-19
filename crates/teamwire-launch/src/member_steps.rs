@@ -306,13 +306,6 @@ pub(crate) fn write_contract(
         contract.as_bytes(),
         0o644,
     )
-    .map_err(fail)?;
-    write_file(
-        ctx.platform,
-        &launch.contract_path,
-        contract.as_bytes(),
-        0o644,
-    )
     .map_err(fail)
 }
 
