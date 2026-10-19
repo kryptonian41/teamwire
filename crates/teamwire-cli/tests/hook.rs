@@ -300,3 +300,42 @@ fn post_tool_reminds_once_per_unread_message() {
     let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
     assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
 }
+
+#[test]
+fn a_member_hook_that_meets_a_damaged_row_says_so_and_records_it() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = hook(&fx, "claude-stop", &as_api(), &stop_input("sess-1"));
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    // The store's own log line about the row may come first.
+    let said: Vec<&str> = run
+        .err
+        .lines()
+        .filter(|l| l.starts_with("teamwire hook: "))
+        .collect();
+    assert_eq!(said.len(), 1, "{}", run.err);
+    assert!(
+        said[0].starts_with("teamwire hook: the member could not be read: "),
+        "{}",
+        run.err
+    );
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "turn_end", "code": "corrupt" })]
+    );
+}

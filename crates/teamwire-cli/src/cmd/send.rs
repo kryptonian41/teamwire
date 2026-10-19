@@ -408,6 +408,41 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
 mod tests {
     use super::*;
 
+    #[test]
+    fn every_command_on_with_ctx_records_a_failed_write_under_its_name() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        drop(Store::open(home.path(), &team()).unwrap());
+        let global = Global {
+            home: Some(home.path().to_path_buf()),
+        };
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+        })
+        .unwrap();
+        let out = with_ctx(&global, &wiring, &team(), "ack", |ctx| {
+            ctx.store.write(|_| Err::<(), _>(StoreError::Busy))
+        });
+        assert!(matches!(out, Ok(Err(StoreError::Busy))));
+        let store = Store::open_existing(home.path(), &team()).unwrap();
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(errors, [serde_json::json!({ "op": "ack", "code": "busy" })]);
+    }
+
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()
     }
