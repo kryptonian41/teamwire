@@ -34,7 +34,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let requested = plan.members.len();
     let mut members = Vec::new();
     let created = if plan.add {
-        Ok(())
+        add_refs(ctx, plan)
     } else {
         create_team(ctx, plan)
     };
@@ -113,9 +113,27 @@ fn create_team(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
                 .ok()?
         })
         .map(|p| p.display().to_string());
-    let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
+    let mut extra = json!({ "refs": plan.new_refs });
+    if let Some(cwd) = cwd {
+        put(&mut extra, "lead_cwd", json!(cwd));
+    }
     ctx.store
-        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
+        .write(|tx| {
+            tx.create_team_with(at, &team, &extra)?;
+            tx.set_refs(&plan.new_refs)
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// `--add`: records the refs the team does not hold yet, with their event, in
+/// one transaction. A spec with no new ref writes nothing.
+fn add_refs(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
+    if plan.new_refs.is_empty() {
+        return Ok(());
+    }
+    let at = ctx.clock.now();
+    ctx.store
+        .write(|tx| tx.add_refs(at, &plan.new_refs).map(|_| ()))
         .map_err(|e| e.to_string())
 }
 

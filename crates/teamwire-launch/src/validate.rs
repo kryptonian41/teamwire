@@ -102,7 +102,10 @@ pub fn validate(
     }
     team_title(spec, existing.as_ref(), &mut errors);
     plugin_keys(&spec.plugins, None, &mut errors);
-    let refs = ticket_refs(&spec.refs, &[], &mut errors);
+    let recorded = existing
+        .as_ref()
+        .map_or(&[][..], |e| e.team.refs.as_slice());
+    let refs = ticket_refs(&spec.refs, recorded, &mut errors);
     if spec.children.is_empty() {
         errors.push(SpecError::new(
             None,
@@ -124,6 +127,11 @@ pub fn validate(
     }
     // `--add` may leave the title out: the team row already holds it.
     let mut planned = spec.clone();
+    let new_refs = refs
+        .iter()
+        .filter(|r| !recorded.contains(r))
+        .cloned()
+        .collect();
     planned.refs = refs;
     if let Some(e) = &existing
         && plan::clean(&planned.title).is_empty()
@@ -132,6 +140,7 @@ pub fn validate(
     }
     Ok(ValidPlan {
         spec: planned,
+        new_refs,
         add,
         warnings,
         lead,
