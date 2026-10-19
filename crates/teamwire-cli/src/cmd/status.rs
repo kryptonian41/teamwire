@@ -101,6 +101,21 @@ fn render(view: &StatusView) -> String {
         view.state.map_or("unreadable", |s| s.as_str()),
         refs_suffix(&view.refs)
     ));
+    if let Some(afk) = &view.afk {
+        out.push(if afk.spent {
+            format!(
+                "afk: budget spent at {}, {} decisions",
+                afk.budget_ends_at, afk.decisions
+            )
+        } else {
+            format!(
+                "afk: budget ends {}, {} left, {} decisions",
+                afk.budget_ends_at,
+                minutes(afk.seconds_left),
+                afk.decisions
+            )
+        });
+    }
     if let Some(lead) = &view.lead {
         let session = lead.session_id.as_ref().map_or("none", |s| s.as_str());
         out.push(format!(

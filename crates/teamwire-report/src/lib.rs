@@ -32,7 +32,7 @@ pub use decisions::{
     TeamDecisions, find_blocks, read_decisions, repo_dirs,
 };
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
-pub use lead_stop::{teams_without_watch, watch_missing_note};
+pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};
 pub use received::{Received, mark_received};
 pub use reminder::on_tool_use;
 pub use turn_end::on_turn_end;

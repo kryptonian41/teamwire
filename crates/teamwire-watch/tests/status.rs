@@ -410,3 +410,61 @@ fn status_names_the_refs_the_team_holds() {
         [linear("GKA-580"), linear("GKA-9")]
     );
 }
+
+fn make_afk(bed: &mut Bed, seconds: u64) {
+    let ends = bed
+        .clock
+        .now()
+        .checked_add(std::time::Duration::from_secs(seconds))
+        .unwrap();
+    bed.store
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE team SET afk_budget_ends_at = ?1",
+                    [ends.to_string()],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+}
+
+#[test]
+fn an_ordinary_team_has_no_afk_view() {
+    let bed = Bed::new();
+    assert_eq!(status_of(&bed, None).afk, None);
+}
+
+#[test]
+fn an_afk_team_with_no_members_shows_its_budget_and_decisions() {
+    let mut bed = Bed::new();
+    make_afk(&mut bed, 3 * 3600);
+    let dir = bed.home.path().join("teams/alpha/afk");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("decisions.md"),
+        "# Log\nD1 roster\nD2 model\nnot D3\n",
+    )
+    .unwrap();
+
+    bed.age(secs(3600));
+    let view = status_of(&bed, None);
+    assert!(view.members.is_empty());
+    let afk = view.afk.unwrap();
+    assert_eq!(
+        (afk.seconds_left, afk.spent, afk.decisions),
+        (2 * 3600, false, 2)
+    );
+    let json = serde_json::to_value(&afk).unwrap();
+    assert_eq!(json["budget_ends_at"], afk.budget_ends_at.to_string());
+}
+
+#[test]
+fn past_the_budget_no_time_is_left() {
+    let mut bed = Bed::new();
+    make_afk(&mut bed, 60);
+    bed.age(secs(61));
+    let afk = status_of(&bed, None).afk.unwrap();
+    assert_eq!((afk.seconds_left, afk.spent, afk.decisions), (0, true, 0));
+}

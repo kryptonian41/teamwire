@@ -11,7 +11,8 @@ use crate::error::StoreError;
 use crate::older::show_missing_columns;
 use crate::tx::{ReadTx, Tx};
 use crate::{
-    SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_V5_SQL, SCHEMA_VERSION,
+    SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_V5_SQL, SCHEMA_V6_SQL,
+    SCHEMA_VERSION,
 };
 
 /// `PRAGMA application_id` of every teamwire database: the ASCII bytes
@@ -38,6 +39,7 @@ const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [
     SCHEMA_V3_SQL,
     SCHEMA_V4_SQL,
     SCHEMA_V5_SQL,
+    SCHEMA_V6_SQL,
 ];
 
 /// One team's database. One `rusqlite::Connection`, never shared across

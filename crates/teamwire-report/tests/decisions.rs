@@ -394,7 +394,7 @@ fn version_4_team(home: &Path, name: &str) -> PathBuf {
 }
 
 #[test]
-fn an_archive_from_before_schema_v5_reads_with_no_refs_and_never_matches_a_ref() {
+fn an_archive_from_before_schema_v6_reads_with_no_refs_and_never_matches_a_ref() {
     let home = TestHome::new().unwrap();
     let other = TestHome::new().unwrap();
     let db = version_4_team(other.path(), "old");

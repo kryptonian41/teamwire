@@ -165,6 +165,37 @@ fn teams_lists_every_team_with_how_to_address_it() {
 }
 
 #[test]
+fn an_afk_team_is_marked_in_text_and_carries_its_budget_in_json() {
+    let rig = Rig::new();
+    let mut beta = Store::open(rig.home.path(), &TeamName::parse("beta").unwrap()).unwrap();
+    beta.write(|tx| {
+        tx.connection()
+            .execute(
+                "UPDATE team SET afk_budget_ends_at = '2999-01-01T00:00:00.000Z'",
+                [],
+            )
+            .map(|_| ())
+            .map_err(Into::into)
+    })
+    .unwrap();
+    drop(beta);
+
+    let stdout = text(&rig.run(&["teams"], None).stdout);
+    assert!(stdout.contains("alpha (open) Team alpha"), "{stdout}");
+    assert!(stdout.contains("beta (open, afk) Team beta"), "{stdout}");
+
+    let out = rig.run(&["teams", "--json"], None);
+    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["teams"][0]["afk_budget_ends_at"], Value::Null);
+    assert!(json["teams"][0].get("afk_budget_ends_at").is_some());
+    assert_eq!(
+        json["teams"][1]["afk_budget_ends_at"],
+        "2999-01-01T00:00:00.000Z"
+    );
+    assert_eq!(json["teams"][1]["name"], "beta", "the roster keys stay");
+}
+
+#[test]
 fn a_member_sends_to_another_team_and_the_copy_is_stored_there() {
     let rig = Rig::new();
     let out = rig.run(

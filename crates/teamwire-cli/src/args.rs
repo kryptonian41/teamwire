@@ -3,6 +3,7 @@
 //! Never: hold logic. Each command's file reads its own struct.
 
 use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::{ArgGroup, Args, Parser, Subcommand};
 
@@ -39,6 +40,8 @@ pub(crate) enum Command {
     Reopen(ReopenArgs),
     /// Print one line when something needs the lead, until the team completes.
     Watch(WatchArgs),
+    /// Open an AFK run: a team with a time budget and no members yet.
+    Afk(AfkArgs),
     /// Show teams, or one team's members, messages and results. Reads only.
     Status(StatusArgs),
     /// Run each member's check and the diff rules; print a verdict per member.
@@ -89,6 +92,58 @@ pub(crate) enum Command {
     Metrics(MetricsArgs),
     /// The binary's version and the schema version it writes.
     Version,
+}
+
+#[derive(Args)]
+pub(crate) struct AfkArgs {
+    #[command(subcommand)]
+    pub(crate) command: AfkCommand,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum AfkCommand {
+    /// Create the run's team, copy the task into it and take the sleep hold (lead).
+    Start(AfkStartArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct AfkStartArgs {
+    /// The run's team name.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) team: String,
+    /// The team's title, at most 28 characters.
+    #[arg(long, value_name = "TITLE")]
+    pub(crate) title: String,
+    /// The task file; the run keeps a copy as afk/task.md.
+    #[arg(long, value_name = "FILE")]
+    pub(crate) task: PathBuf,
+    /// How long the run may start new implementers: a whole number and h or m.
+    #[arg(long, value_name = "DURATION", default_value = "8h", value_parser = parse_budget)]
+    pub(crate) budget: Duration,
+}
+
+/// `8h` or `90m`: a positive whole number, then `h` or `m`.
+fn parse_budget(text: &str) -> Result<Duration, String> {
+    let bad = || {
+        format!(
+            "{text:?} is not a budget: write a positive whole number and h or m, such as 8h or 90m"
+        )
+    };
+    let (number, per) = if let Some(n) = text.strip_suffix('h') {
+        (n, 3600)
+    } else if let Some(n) = text.strip_suffix('m') {
+        (n, 60)
+    } else {
+        return Err(bad());
+    };
+    if !number.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(bad());
+    }
+    let count: u64 = number.parse().map_err(|_| bad())?;
+    match count.checked_mul(per) {
+        Some(secs) if secs > 0 => Ok(Duration::from_secs(secs)),
+        _ => Err(bad()),
+    }
 }
 
 #[derive(Args)]

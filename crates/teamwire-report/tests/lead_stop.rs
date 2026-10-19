@@ -13,7 +13,7 @@ use teamwire_core::{
 };
 use teamwire_deliver::WATCH_LEASE_STALE;
 use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
-use teamwire_report::{teams_without_watch, watch_missing_note};
+use teamwire_report::{afk_hold_notes, teams_without_watch, watch_missing_note};
 use teamwire_store::{NewCompletion, NewMember, NewTeam, Store};
 
 struct Rig {
@@ -35,8 +35,8 @@ impl Rig {
         }
     }
 
-    /// An open team led from `lead-1`, with member `api` started.
-    fn team(&self, name: &str) -> Store {
+    /// An open team led from `lead-1`, with no members.
+    fn empty_team(&self, name: &str) -> Store {
         let mut store = Store::open(self.home.path(), &TeamName::parse(name).unwrap()).unwrap();
         let now = self.clock.now();
         store
@@ -51,7 +51,19 @@ impl Rig {
                         lead_route: LeadRoute::Sink,
                         lead_session: Some((sid("lead-1"), SessionKind::Interactive)),
                     },
-                )?;
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+        store
+    }
+
+    /// An open team led from `lead-1`, with member `api` started.
+    fn team(&self, name: &str) -> Store {
+        let mut store = self.empty_team(name);
+        let now = self.clock.now();
+        store
+            .write(|tx| {
                 tx.insert_member(
                     now,
                     &NewMember {
@@ -241,4 +253,159 @@ fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
         note,
         "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop."
     );
+}
+
+impl Rig {
+    fn afk_notes(&self, session: &str) -> Vec<String> {
+        afk_hold_notes(self.home.path(), &sid(session), &self.platform, &self.clock)
+    }
+
+    /// Marks the team as an AFK run whose budget ends `hours` from now.
+    fn make_afk(&self, store: &mut Store, hours: u64) {
+        let ends = self
+            .clock
+            .now()
+            .checked_add(Duration::from_secs(hours * 3600))
+            .unwrap()
+            .to_string();
+        store
+            .write(|tx| {
+                tx.connection()
+                    .execute("UPDATE team SET afk_budget_ends_at = ?1", [&ends])
+                    .map(|_| ())
+                    .map_err(Into::into)
+            })
+            .unwrap();
+    }
+
+    fn dir(&self) -> String {
+        self.home.path().join("teams/alpha").display().to_string()
+    }
+}
+
+#[test]
+fn an_afk_team_with_nothing_to_wake_the_lead_gets_the_note() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 8);
+    complete(&mut store, &rig);
+    let dir = rig.dir();
+    assert_eq!(
+        rig.afk_notes("lead-1"),
+        [format!(
+            "[teamwire:alpha] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close alpha` once {dir}/afk/REPORT.md exists. If a command you started will wake you, stop again."
+        )]
+    );
+}
+
+#[test]
+fn an_afk_team_with_no_members_is_told_to_add_them_or_close_without_a_report() {
+    let rig = Rig::new();
+    let mut store = rig.empty_team("alpha");
+    rig.make_afk(&mut store, 8);
+    let dir = rig.dir();
+    assert_eq!(
+        rig.afk_notes("lead-1"),
+        [format!(
+            "[teamwire:alpha] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close alpha`, which needs no report for a team that never had a member. If a command you started will wake you, stop again."
+        )]
+    );
+}
+
+#[test]
+fn an_afk_team_with_a_working_member_and_no_watch_gets_the_note() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 8);
+    assert_eq!(rig.afk_notes("lead-1").len(), 1);
+}
+
+#[test]
+fn a_working_member_and_a_live_watch_will_wake_the_lead() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 8);
+    rig.platform.set_alive(Pid::new(700), true);
+    rig.lease(&mut store, 700);
+    assert!(rig.afk_notes("lead-1").is_empty());
+}
+
+#[test]
+fn a_live_watch_with_no_working_member_wakes_nobody() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 8);
+    complete(&mut store, &rig);
+    rig.platform.set_alive(Pid::new(700), true);
+    rig.lease(&mut store, 700);
+    assert_eq!(rig.afk_notes("lead-1").len(), 1);
+}
+
+#[test]
+fn an_ordinary_team_gets_no_afk_note() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    complete(&mut store, &rig);
+    assert!(rig.afk_notes("lead-1").is_empty());
+}
+
+#[test]
+fn another_session_or_a_closed_team_gets_no_afk_note() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 8);
+    assert!(rig.afk_notes("someone-else").is_empty());
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE team SET state = 'closed'", [])
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    assert!(rig.afk_notes("lead-1").is_empty());
+}
+
+#[test]
+fn past_the_budget_the_note_says_so_and_asks_for_the_report() {
+    let rig = Rig::new();
+    let mut store = rig.team("alpha");
+    rig.make_afk(&mut store, 1);
+    let ends = rig
+        .clock
+        .now()
+        .checked_add(Duration::from_secs(3600))
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(3601));
+    let notes = rig.afk_notes("lead-1");
+    assert_eq!(notes.len(), 1);
+    let note = notes.first().unwrap();
+    assert!(
+        note.starts_with(&format!(
+            "[teamwire:alpha] budget spent at {ends}: finish what is running"
+        )),
+        "{}",
+        note
+    );
+    assert!(note.contains(&format!("{}/afk/REPORT.md", rig.dir())));
+}
+
+#[test]
+fn another_team_of_the_session_that_is_working_and_watched_wakes_the_lead() {
+    let rig = Rig::new();
+    let mut afk = rig.team("alpha");
+    rig.make_afk(&mut afk, 8);
+    complete(&mut afk, &rig);
+    assert_eq!(
+        rig.afk_notes("lead-1").len(),
+        1,
+        "nothing wakes the lead yet"
+    );
+
+    let mut beta = rig.team("beta");
+    rig.platform.set_alive(Pid::new(700), true);
+    rig.lease(&mut beta, 700);
+    assert!(rig.afk_notes("lead-1").is_empty());
+    // A team led by another session does not wake this lead.
+    assert_eq!(rig.afk_notes("someone-else").len(), 0);
 }

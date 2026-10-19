@@ -327,6 +327,31 @@ fn shown_commands(skill: &str) -> Vec<(String, String)> {
     found
 }
 
+/// The AFK skill builds on the main one, so it may name only commands that
+/// exist too, and `teamwire afk start` must be one of them.
+#[test]
+fn the_afk_skill_names_only_commands_that_exist() {
+    let skill = example("skills/afk/SKILL.md");
+    assert!(
+        skill.starts_with("---\nname: afk\ndescription: "),
+        "the front matter names the skill"
+    );
+    let commands = subcommands();
+    let shown = shown_commands(&skill);
+    assert!(
+        shown
+            .iter()
+            .any(|(word, line)| word == "afk" && line.contains("afk start")),
+        "the AFK skill does not show `teamwire afk start`"
+    );
+    for (word, line) in &shown {
+        assert!(
+            commands.contains(word),
+            "`teamwire {word}` is not a command: {line}"
+        );
+    }
+}
+
 #[test]
 fn the_skill_names_only_commands_and_tools_that_exist() {
     // A command named only in the reference file is checked too.
@@ -402,9 +427,11 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
 }
 
 /// Only implementers keep the user's plugins; every other member of every
-/// shape switches both off so its session carries no unrelated prompt text.
+/// shape switches all off. claude-mem is one of them: it records member
+/// sessions, and read-only members would otherwise read each other's findings
+/// back through injected memory.
 #[test]
-fn every_non_implementer_member_switches_both_plugins_off() {
+fn every_non_implementer_member_switches_all_plugins_off() {
     for name in NAMES {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
         for member in file["children"].as_array().unwrap() {
@@ -414,6 +441,7 @@ fn every_non_implementer_member_switches_both_plugins_off() {
             for plugin in [
                 "ponytail@ponytail",
                 "mattpocock-skills@claude-plugins-official",
+                "claude-mem@thedotmack",
             ] {
                 assert_eq!(
                     member["plugins"][plugin],

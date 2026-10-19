@@ -126,6 +126,16 @@ export const UndeliveredResult = z.object({
   path: z.string(),
 });
 
+/** The AFK budget and decisions of a team started by `teamwire afk start`. */
+export const AfkView = z.object({
+  budget_ends_at: z.string(),
+  /** Zero once the budget is spent. */
+  seconds_left: count,
+  spent: z.boolean(),
+  /** The `D<n>` entries in the team's `afk/decisions.md`. */
+  decisions: count,
+});
+
 /** `teamwire status <team> --json`, and one element of `status --json`. */
 export const StatusView = z.object({
   team: z.string().nullable(),
@@ -135,6 +145,8 @@ export const StatusView = z.object({
   refs: z.array(TicketRef).default([]),
   lead: LeadView.nullable(),
   watch: WatchView,
+  /** `null` for an ordinary team. An older teamwire leaves the key out. */
+  afk: AfkView.nullish(),
   members: z.array(MemberView),
   /** The last five messages, newest first. */
   messages: z.array(MessageView),
@@ -167,6 +179,8 @@ export const TeamEntry = z.object({
   state: TeamState,
   /** Tickets the team works on. Older teamwire omits it. */
   refs: z.array(TicketRef).default([]),
+  /** When an AFK run's budget ends; `null` for an ordinary team. An older teamwire leaves the key out. */
+  afk_budget_ends_at: z.string().nullish(),
   members: z.array(RosterMember),
 });
 
@@ -220,6 +234,7 @@ export type LeadView = z.infer<typeof LeadView>;
 export type MessageView = z.infer<typeof MessageView>;
 export type StuckDelivery = z.infer<typeof StuckDelivery>;
 export type UndeliveredResult = z.infer<typeof UndeliveredResult>;
+export type AfkView = z.infer<typeof AfkView>;
 export type StatusView = z.infer<typeof StatusView>;
 export type RosterMember = z.infer<typeof RosterMember>;
 export type TeamEntry = z.infer<typeof TeamEntry>;

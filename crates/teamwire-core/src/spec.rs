@@ -29,12 +29,12 @@ pub struct TeamSpec {
     /// per-run settings. A member's value wins over the team's, per key.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
-    /// Tickets the team works on (ADR 0025).
+    /// Tickets the team works on (ADR 0026).
     #[serde(default)]
     pub refs: Vec<TicketRef>,
 }
 
-/// The most refs a team holds after any `--add` (ADR 0025). `validate` checks
+/// The most refs a team holds after any `--add` (ADR 0026). `validate` checks
 /// it for a dry run, and `Tx::add_refs` checks it again under the write lock.
 pub const REFS_MAX: usize = 20;
 

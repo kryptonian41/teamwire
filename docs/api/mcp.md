@@ -237,7 +237,7 @@ reads only teams that worked in a repository its own team works in (below). Inpu
 }
 ```
 
-`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v5, never matches a `ref`. With `grep` and no
+`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v6, never matches a `ref`. With `grep` and no
 `of`, the search reaches every running team and every archive, and a team seen
 more than once is read once: the running copy, else the newest archive. Output:
 

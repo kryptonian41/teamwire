@@ -12,6 +12,37 @@ describe("fixtures match the teamwire schemas", () => {
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
 });
 
+describe("AFK output", () => {
+  const afk = {
+    budget_ends_at: "2026-10-20T08:00:00.000Z",
+    seconds_left: 3600,
+    spent: false,
+    decisions: 2,
+  };
+  test("status accepts an afk object and keeps it", () => {
+    const parsed = StatusAll.parse([{ ...status[0]!, afk }]);
+    expect(parsed[0]!.afk).toEqual(afk);
+  });
+  test("status accepts a null afk and an older output without the key", () => {
+    expect(StatusAll.parse([{ ...status[0]!, afk: null }])[0]!.afk).toBeNull();
+    expect(StatusAll.parse([status[0]!])[0]!.afk).toBeUndefined();
+  });
+  test("teams accepts the budget end as a string, null, or no key", () => {
+    const team = teams.teams[0]!;
+    const parse = (extra: object) => TeamsList.parse({ teams: [{ ...team, ...extra }] }).teams[0]!;
+    expect(parse({ afk_budget_ends_at: "2026-10-20T08:00:00.000Z" }).afk_budget_ends_at).toBe(
+      "2026-10-20T08:00:00.000Z",
+    );
+    expect(parse({ afk_budget_ends_at: null }).afk_budget_ends_at).toBeNull();
+    expect(parse({}).afk_budget_ends_at).toBeUndefined();
+    expect(TeamsList.safeParse({ teams: [{ ...team, afk_budget_ends_at: 5 }] }).success).toBe(false);
+  });
+  test("a spent budget with a text seconds_left fails the parse", () => {
+    const bad = { ...status[0]!, afk: { ...afk, seconds_left: "0" } };
+    expect(StatusAll.safeParse([bad]).success).toBe(false);
+  });
+});
+
 describe("schemas refuse a changed shape", () => {
   test("a new delivery state fails the parse", () => {
     const changed = structuredClone(log);

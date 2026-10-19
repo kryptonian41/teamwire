@@ -20,6 +20,11 @@ HOW TO WORK
   is the parent's problem to
   fix, not yours to route around. A check that runs and fails is
   different: that is your work to fix, within your role's limits.
+- Run each shell command directly, never inside `sh -c` or `bash -c`.
+  Your harness cannot check a wrapped script, and when one also runs
+  `rm` it can stop at a permission dialog even with approvals turned off.
+  Nobody answers that dialog: the command is denied after about two
+  minutes, and your run stalls until then.
 - Never run `git worktree add`, `remove`, `move` or `prune`, and never
   write into another member's directory. Every member's checkout is shared
   state: one member that removes a worktree can delete a teammate's

@@ -657,6 +657,21 @@ fn a_plugin_that_differs_in_more_than_its_home_still_fails_in_another_home() {
 }
 
 #[test]
+fn a_missing_or_changed_afk_skill_fails_like_the_main_skill() {
+    let bed = Bed::healthy();
+    let afk = bed.plugin_root().join("skills/afk/SKILL.md");
+    std::fs::write(&afk, "changed").unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["teamwire plugin"]);
+    assert!(detail_of(&checks, "teamwire plugin").contains("another version"));
+
+    std::fs::remove_file(&afk).unwrap();
+    let checks = bed.checks();
+    assert_eq!(failing(&checks), ["teamwire plugin"]);
+    assert!(detail_of(&checks, "teamwire plugin").contains("run `teamwire install`"));
+}
+
+#[test]
 fn a_plugin_for_another_binary_or_a_disabled_one_fails() {
     let bed = Bed::healthy();
     // Claude Code's copy, made by an older binary.

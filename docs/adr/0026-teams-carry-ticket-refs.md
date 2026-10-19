@@ -1,4 +1,4 @@
-# ADR 0025: A team carries ticket refs
+# ADR 0026: A team carries ticket refs
 
 Status: accepted, 2026-10-19.
 
@@ -36,7 +36,7 @@ archive holds a ref, because nothing could record one.
    spec.** Launch exits 1 and starts nobody, as for an invalid role.
    `--dry-run` prints the same refusal, and otherwise prints the refs it would
    record or append.
-7. **The first launch records the refs.** Schema version 5 adds the column
+7. **The first launch records the refs.** Schema version 6 adds the column
    `team.refs`, a JSON array of `{"provider", "id"}` objects that is never
    NULL and defaults to `[]`. The `team.created` event's data holds the same
    list as `refs`.
@@ -44,10 +44,10 @@ archive holds a ref, because nothing could record one.
    event, `team.refs_added` with data `{"added": [...]}` (objects), happen in
    one `Store::write` transaction. An `--add` that names no new ref writes no
    event. A ref is never removed, and a ref on a member is out of scope.
-9. **Schema version 5 also rebuilds `events`** with the longer type list, the
+9. **Schema version 6 also rebuilds `events`** with the longer type list, the
    way version 4 did for `delivery.reentered`, because SQLite cannot change a
    CHECK in place. Every row and the `AUTOINCREMENT` counter carry over. A
-   read-only open of a version 4 database reads `refs` as empty.
+   read-only open of a database older than version 6 reads `refs` as empty.
 10. **`teamwire status` and `teamwire teams` show the refs.** Both print them
     on the team's line as `provider:id`, such as `linear:GKA-580`, when there
     are any. Both `--json` outputs carry `"refs": [{"provider": ..., "id":
@@ -63,7 +63,7 @@ archive holds a ref, because nothing could record one.
   list from the team row or from the archive's `team.refs` and needs no brief.
 - The 72 existing archives hold no refs. A search by text still has to cover
   them, and a search by ref cannot.
-- A database migrated to version 5 cannot be opened by an older binary. The
+- A database migrated to version 6 cannot be opened by an older binary. The
   same held for every earlier version.
 - `teamwire metrics` and `teamwire export` do not label metrics with refs.
   The metrics keep their labels, and `team.refs_added` records no metric.

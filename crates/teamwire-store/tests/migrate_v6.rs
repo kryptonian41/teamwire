@@ -1,4 +1,4 @@
-//! The step from schema version 4 to 5 adds `team.refs` and rebuilds `events`,
+//! The step from schema version 5 to 6 adds `team.refs` and rebuilds `events`,
 //! the table every metric reads, on databases that real teams already hold.
 #![expect(
     clippy::unwrap_used,
@@ -15,8 +15,8 @@ use rusqlite::Connection;
 use teamwire_core::{EventType, TeamName, TicketRef, Timestamp};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
-    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_VERSION,
-    Store, database_path,
+    APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_V5_SQL,
+    SCHEMA_VERSION, Store, database_path,
 };
 
 type Row = (
@@ -34,19 +34,25 @@ fn team() -> TeamName {
     TeamName::parse("alpha").unwrap()
 }
 
-/// A version-4 database with a team row and events, whose newest two events
+/// A version-5 database with a team row and events, whose newest two events
 /// were deleted, so the `AUTOINCREMENT` counter (5) is higher than the highest
 /// `seq` kept (3).
-fn version_4_database(home: &TestHome) -> std::path::PathBuf {
+fn version_5_database(home: &TestHome) -> std::path::PathBuf {
     let path = database_path(home.path(), &team());
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     let conn = Connection::open(&path).unwrap();
-    for step in [SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL] {
+    for step in [
+        SCHEMA_V1_SQL,
+        SCHEMA_V2_SQL,
+        SCHEMA_V3_SQL,
+        SCHEMA_V4_SQL,
+        SCHEMA_V5_SQL,
+    ] {
         conn.execute_batch(step).unwrap();
     }
     conn.pragma_update(None, "application_id", APPLICATION_ID)
         .unwrap();
-    conn.pragma_update(None, "user_version", 4).unwrap();
+    conn.pragma_update(None, "user_version", 5).unwrap();
     conn.execute_batch(
         "INSERT INTO team (id, ulid, name, title, state, lead_harness, lead_host, lead_route, created_at)
          VALUES (1, '01J9ZQ0000000000000000TEAM', 'alpha', 'Alpha', 'open', 'claude-code', 'herdr', 'sink',
@@ -92,9 +98,9 @@ const NEW_EVENT: &str = "INSERT INTO events (ulid, time, type, writer_version)
 #[test]
 fn the_new_type_is_refused_before_the_step_and_accepted_after() {
     let home = TestHome::new().unwrap();
-    let path = version_4_database(&home);
+    let path = version_5_database(&home);
     let before = Connection::open(&path).unwrap().execute_batch(NEW_EVENT);
-    assert!(before.is_err(), "a version-4 table accepted the new type");
+    assert!(before.is_err(), "a version-5 table accepted the new type");
 
     drop(Store::open(home.path(), &team()).unwrap());
     Connection::open(&path)
@@ -104,9 +110,9 @@ fn the_new_type_is_refused_before_the_step_and_accepted_after() {
 }
 
 #[test]
-fn a_version_4_database_keeps_every_event_and_never_reuses_a_seq() {
+fn a_version_5_database_keeps_every_event_and_never_reuses_a_seq() {
     let home = TestHome::new().unwrap();
-    let path = version_4_database(&home);
+    let path = version_5_database(&home);
     let before = event_rows(&path);
     assert_eq!(before.len(), 3);
 
@@ -152,9 +158,9 @@ fn a_version_4_database_keeps_every_event_and_never_reuses_a_seq() {
 }
 
 #[test]
-fn a_version_4_team_row_migrates_with_no_refs_and_takes_new_ones() {
+fn a_version_5_team_row_migrates_with_no_refs_and_takes_new_ones() {
     let home = TestHome::new().unwrap();
-    version_4_database(&home);
+    version_5_database(&home);
 
     let mut store = Store::open(home.path(), &team()).unwrap();
     let row = store.read(|tx| tx.team()).unwrap().unwrap();
@@ -177,9 +183,9 @@ fn a_version_4_team_row_migrates_with_no_refs_and_takes_new_ones() {
 
 /// An empty `events` table has no counter row; the step must not need one.
 #[test]
-fn a_version_4_database_with_no_events_migrates() {
+fn a_version_5_database_with_no_events_migrates() {
     let home = TestHome::new().unwrap();
-    let path = version_4_database(&home);
+    let path = version_5_database(&home);
     Connection::open(&path)
         .unwrap()
         .execute_batch("DELETE FROM events; DELETE FROM sqlite_sequence;")
@@ -191,13 +197,13 @@ fn a_version_4_database_with_no_events_migrates() {
 /// A read-only open reads `refs` as empty through the temporary view, and
 /// leaves the file as it was.
 #[test]
-fn a_read_only_open_reads_a_version_4_team_with_no_refs_and_writes_nothing() {
+fn a_read_only_open_reads_a_version_5_team_with_no_refs_and_writes_nothing() {
     let home = TestHome::new().unwrap();
-    let path = version_4_database(&home);
+    let path = version_5_database(&home);
     let bytes = std::fs::read(&path).unwrap();
 
     let store = Store::open_read_only(home.path(), &team()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 4);
+    assert_eq!(store.schema_version().unwrap(), 5);
     let row = store.read(|tx| tx.team()).unwrap().unwrap();
     assert_eq!(row.title, "Alpha");
     assert!(row.refs.is_empty());
@@ -210,11 +216,11 @@ fn a_read_only_open_reads_a_version_4_team_with_no_refs_and_writes_nothing() {
 
 /// The step fails after it has added the column and rebuilt the table: one
 /// stored row has a type that no list holds. The open must fail and leave
-/// version 4 with all its rows and no new column, as a crash there would.
+/// version 5 with all its rows and no new column, as a crash there would.
 #[test]
-fn a_step_that_fails_midway_leaves_the_version_4_database_whole() {
+fn a_step_that_fails_midway_leaves_the_version_5_database_whole() {
     let home = TestHome::new().unwrap();
-    let path = version_4_database(&home);
+    let path = version_5_database(&home);
     {
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
@@ -234,7 +240,7 @@ fn a_step_that_fails_midway_leaves_the_version_4_database_whole() {
     let version: u32 = conn
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
     let refs_columns: i64 = conn
         .query_row(
             "SELECT count(*) FROM pragma_table_info('team') WHERE name = 'refs'",

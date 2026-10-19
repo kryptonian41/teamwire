@@ -367,3 +367,79 @@ fn refs_show_on_the_team_line_and_in_the_json_and_are_empty_without_any() {
     let all: serde_json::Value = serde_json::from_str(&all.out).unwrap();
     assert_eq!(all[0]["refs"], two_refs_json());
 }
+
+fn make_afk(bed: &mut Bed, ends: &str) {
+    bed.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE team SET afk_budget_ends_at = ?1", [ends])
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let dir = bed.home.path().join("teams/alpha/afk");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("decisions.md"), "D1 roster\nD2 model\n").unwrap();
+}
+
+#[test]
+fn an_afk_team_shows_its_line_after_the_header_and_an_afk_object() {
+    let mut bed = team();
+    make_afk(&mut bed, "2999-01-01T00:00:00.000Z");
+    let run = teamwire(&bed, &["status", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let lines: Vec<&str> = run.out.lines().collect();
+    assert!(lines[0].starts_with("team alpha"), "{}", run.out);
+    assert!(
+        lines[1].starts_with("afk: budget ends 2999-01-01T00:00:00.000Z, ")
+            && lines[1].ends_with(" left, 2 decisions"),
+        "{}",
+        run.out
+    );
+
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    let afk = &view["afk"];
+    assert_eq!(afk["budget_ends_at"], "2999-01-01T00:00:00.000Z");
+    assert_eq!(
+        (&afk["spent"], &afk["decisions"]),
+        (&false.into(), &2.into())
+    );
+    assert!(afk["seconds_left"].as_u64().unwrap() > 1_000_000_000);
+}
+
+#[test]
+fn a_spent_budget_reads_spent_with_zero_seconds_left() {
+    let mut bed = team();
+    make_afk(&mut bed, "2020-01-01T00:00:00.000Z");
+    let run = teamwire(&bed, &["status", "alpha"]);
+    assert!(
+        run.out
+            .contains("\nafk: budget spent at 2020-01-01T00:00:00.000Z, 2 decisions\n"),
+        "{}",
+        run.out
+    );
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert_eq!(view["afk"]["seconds_left"], 0);
+    assert_eq!(view["afk"]["spent"], true);
+}
+
+#[test]
+fn an_ordinary_team_has_a_null_afk_and_no_afk_line() {
+    let bed = team();
+    let run = teamwire(&bed, &["status", "alpha"]);
+    assert!(!run.out.contains("afk:"), "{}", run.out);
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert!(view["afk"].is_null() && view.get("afk").is_some(), "{view}");
+}
+
+#[test]
+fn an_afk_team_with_no_members_still_shows_its_line() {
+    let mut bed = Bed::new();
+    make_afk(&mut bed, "2999-01-01T00:00:00.000Z");
+    let run = teamwire(&bed, &["status", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(run.out.contains("\nafk: budget ends "), "{}", run.out);
+}

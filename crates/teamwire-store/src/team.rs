@@ -45,9 +45,11 @@ pub struct TeamRow {
     pub lead_route: LeadRoute,
     pub sleep_hold: Option<HoldInfo>,
     pub created_at: Timestamp,
+    /// Set only on an AFK run's team: when its wall-clock budget ends.
+    pub afk_budget_ends_at: Option<Timestamp>,
     /// The tickets the team works on, in the order they were recorded. Empty
     /// for a team launched without refs and for a database older than
-    /// schema version 5.
+    /// schema version 6.
     pub refs: Vec<TicketRef>,
 }
 
@@ -63,9 +65,9 @@ pub enum CloseEnd {
 
 const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id, lead_kind, \
      lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
-     closing_pid_started_at, refs";
+     closing_pid_started_at, afk_budget_ends_at, refs";
 
-/// A read-only view of a version-4 database shows `refs` as NULL.
+/// A read-only view of a database older than version 6 shows `refs` as NULL.
 fn refs_from_column(text: Option<String>) -> Result<Vec<TicketRef>, String> {
     text.map_or(Ok(Vec::new()), |t| {
         serde_json::from_str(&t).map_err(|e| bad("refs", e))
@@ -98,7 +100,8 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
         lead_route: parsed(row, 9, "lead route", LeadRoute::parse)?,
         sleep_hold,
         created_at: ts(row, 12)?,
-        refs: refs_from_column(col(row, 14)?)?,
+        afk_budget_ends_at: ts_opt(row, 14)?,
+        refs: refs_from_column(col(row, 15)?)?,
     })
 }
 
@@ -150,6 +153,27 @@ impl Tx<'_> {
             None,
             Some(&ulid),
             &Value::Object(data),
+        )?;
+        Ok(ulid)
+    }
+
+    /// `create_team_with` for an AFK run: the row also records when the
+    /// run's budget ends, and `team.created` carries it as
+    /// `afk_budget_ends_at` beside the keys in `extra` (such as `lead_cwd`).
+    pub fn create_afk_team(
+        &self,
+        at: Timestamp,
+        team: &NewTeam,
+        budget_ends_at: Timestamp,
+        extra: &Value,
+    ) -> Result<Ulid, StoreError> {
+        let ends = budget_ends_at.to_string();
+        let mut data = extra.as_object().cloned().unwrap_or_default();
+        data.insert("afk_budget_ends_at".to_owned(), json!(ends));
+        let ulid = self.create_team_with(at, team, &Value::Object(data))?;
+        self.connection().execute(
+            "UPDATE team SET afk_budget_ends_at = ?1 WHERE id = 1",
+            [&ends],
         )?;
         Ok(ulid)
     }

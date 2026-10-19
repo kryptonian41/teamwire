@@ -21,6 +21,8 @@ names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
 lines start with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
+For a run the user will not be present for, use `/teamwire:afk`.
+
 ## Your tools
 
 The lead's MCP server, in the teamwire plugin, lists ten tools named
@@ -211,8 +213,12 @@ Members load every user plugin, skill, hook and output style. Only the spec's
 reviewer, closer and investigator this map, as the presets do:
 
 ```json
-"plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false}
+"plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
 ```
+
+Claude-mem records member sessions. A read-only member that keeps it reads the
+other members' findings back through injected memory, so the reviews stop
+being independent.
 
 Turn `mattpocock-skills` on for an investigator that hunts a bug, and name
 `diagnosing-bugs` phases 1 to 3 (no fix) in its brief. Tell it to build the

@@ -14,6 +14,7 @@ use clap::Parser;
 
 mod cmd {
     pub(crate) mod ack;
+    pub(crate) mod afk;
     pub(crate) mod close;
     pub(crate) mod decisions;
     pub(crate) mod doctor;
@@ -48,10 +49,11 @@ mod wiring;
 const USAGE: u8 = 3;
 
 pub(crate) use args::{
-    AckArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs, ExportArgs, Global, HookArgs,
-    HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs,
-    MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs,
-    ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs,
+    ExportArgs, Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs,
+    LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
+    ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs,
+    VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -67,6 +69,7 @@ fn main() -> ExitCode {
     };
     let global = &cli.global;
     match &cli.command {
+        Command::Afk(a) => cmd::afk::run(a, global, &wiring),
         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
         Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
@@ -162,6 +165,8 @@ mod tests {
     #[test]
     fn every_documented_command_parses() {
         for line in [
+            "afk start --team run --title Run --task t.md",
+            "afk start --team run --title Run --task t.md --budget 90m",
             "launch",
             "launch --add --dry-run --spec s.json",
             "watch tw --interval 5 --once",
@@ -236,6 +241,14 @@ mod tests {
             "verify tw --waive F",
             "pr-watch -R o/r",
             "ack",
+            "afk start --team run --title Run --task t.md --budget 0h",
+            "afk start --team run --title Run --task t.md --budget 8",
+            "afk start --team run --title Run --task t.md --budget 8d",
+            "afk start --team run --title Run --task t.md --budget h",
+            "afk start --team run --title Run --task t.md --budget 8é",
+            "afk start --team run --title Run --task t.md --budget +8h",
+            "afk start --team run --title Run --task t.md --budget -2h",
+            "afk start --team run --title Run",
         ] {
             assert!(parse(line).is_err(), "{line}");
         }

@@ -52,7 +52,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -69,10 +69,14 @@ pub const SCHEMA_V3_SQL: &str = include_str!("schema/v3.sql");
 /// `delivery.reentered` type in its CHECK list. Every row is kept.
 pub const SCHEMA_V4_SQL: &str = include_str!("schema/v4.sql");
 
-/// The step from schema version 4 to 5: the `team.refs` column, and the
+/// The step from schema version 4 to 5: `team.afk_budget_ends_at`, set only
+/// on an AFK run's team.
+pub const SCHEMA_V5_SQL: &str = include_str!("schema/v5.sql");
+
+/// The step from schema version 5 to 6: the `team.refs` column, and the
 /// `events` table rebuilt with the `team.refs_added` type in its CHECK list.
 /// Every row is kept.
-pub const SCHEMA_V5_SQL: &str = include_str!("schema/v5.sql");
+pub const SCHEMA_V6_SQL: &str = include_str!("schema/v6.sql");
 
 #[cfg(test)]
 mod tests {
@@ -105,6 +109,7 @@ mod tests {
         conn.execute_batch(SCHEMA_V3_SQL).unwrap();
         conn.execute_batch(SCHEMA_V4_SQL).unwrap();
         conn.execute_batch(SCHEMA_V5_SQL).unwrap();
+        conn.execute_batch(SCHEMA_V6_SQL).unwrap();
         conn
     }
 

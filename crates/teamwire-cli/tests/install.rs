@@ -250,6 +250,8 @@ fn install_registers_the_plugin_and_a_second_run_changes_nothing() {
     );
     let root = bed.installed_root().unwrap();
     assert_eq!(mcp_command(&root), bed.binary("bin").display().to_string());
+    let afk = std::fs::read_to_string(root.join("skills/afk/SKILL.md")).unwrap();
+    assert!(afk.contains("\nname: afk\n"), "{afk}");
     let hooks = std::fs::read_to_string(root.join("hooks/hooks.json")).unwrap();
     let home = bed.home.path().display().to_string();
     assert!(

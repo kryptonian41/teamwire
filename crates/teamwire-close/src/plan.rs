@@ -72,6 +72,7 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
     if team.state == TeamState::Open {
         plan.refusals
             .extend(facts::member_refusals(ctx, &team.name, members));
+        plan.refusals.extend(crate::afk::report_refusal(ctx, team));
         let checked = live(members).count();
         plan.steps.push(step(
             "check",

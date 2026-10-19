@@ -301,3 +301,20 @@ Each one has a test named in `docs/failure-modes.md`.
 | --- | --- | --- | --- |
 | EXT-1 | SHOULD | A PR watch with the same one-line-per-poll rule: `FAIL` once per check, `MERGEABLE` on change, `DONE` when nothing is pending, exit 1 on any failure, `gh`'s exit code ignored. It is kept apart from the team lifecycle. | speclife LC-58 |
 | EXT-2 | SHOULD | Keep titles in the record and show them in status. Renaming host workspaces to follow the lead's label is host-specific and optional. | speclife Q6, W13 |
+
+### AFK runs (AFK)
+
+An AFK run is a team whose lead works while the user is away (ADR 0025).
+
+| Id | Level | Requirement | Source |
+| --- | --- | --- | --- |
+| AFK-1 | MUST | An AFK run is one ordinary team under `$TEAMWIRE_HOME/teams/<team>/`. Its `team` row has `afk_budget_ends_at` set; no other store or folder holds run state. The run's shared files are under `teams/<team>/afk/`, so close archives them. | ADR 0025; design 5.1 |
+| AFK-2 | MUST | `teamwire afk start` runs only from a Claude Code lead session. It refuses when the session already leads an open AFK team (`afk_already_running`), on a taken team name, and on any doctor `FAIL`. It creates the team with no members, copies the task to `afk/task.md` byte for byte, and takes the sleep hold. | ADR 0025; INV-26 |
+| AFK-3 | MUST | `--budget` takes a positive whole number followed by `h` or `m`, default `8h`. A malformed value is a usage error. A value that parses but ends past the last date the clock supports is refused as `bad_budget`, exit 1. | ADR 0025 |
+| AFK-4 | MUST | The lead's Stop hook holds the stop once per stop chain while the session leads an open AFK team and nothing will wake the lead. The hook skips the hold when `stop_hook_active` is true or the turn is a subagent's. The hook writes nothing and never fails the turn. | ADR 0025; DEL-17 |
+| AFK-5 | MUST | Past the budget, launch refuses each new `implementer` of an AFK team with `afk_budget_spent` and starts every other kind. A team without a budget is unaffected. | ADR 0025 |
+| AFK-6 | SHOULD | Launch prints one warning for each member of an AFK team whose model or effort is below the AFK table, and never refuses for it. | ADR 0025 |
+| AFK-7 | MUST | Close refuses an AFK team whose `afk/REPORT.md` is missing or lacks one of its eight headings, with `afk_report_incomplete`. Removing one member with `--role` is unaffected. | ADR 0025; CLS-1 |
+| AFK-8 | MUST | `teamwire status` shows the budget, the time left and the number of decisions for an AFK team, and `teamwire teams` marks it `afk`. Every reader of an open team works when the team has no member. | ADR 0025 |
+| AFK-9 | MUST | The AFK skill is rendered into the plugin as `skills/afk/SKILL.md`, stamped like the main skill, and `teamwire doctor` fails when the installed copy is missing or differs from this binary's. | ADR 0025; SEC-3 |
+| AFK-10 | MUST | An AFK run never pushes, opens a pull request, merges into the base branch, or runs `teamwire install`. Its result is a local branch. | ADR 0025; SEC-3 |
