@@ -16,7 +16,14 @@ use teamwire_core::{EventType, MemberKind, Role, TeamState};
 const FULL: &str = "# Report\n\n## 1. What you asked\n## What I understood\n## THE RESULT\n\
 ## Verified\n## Decisions made for you\n## Not done, and why\n## Risks\n## Cost\n";
 
+/// An AFK team with one member, so it has a run to report on.
 fn afk_rig() -> Rig {
+    let mut rig = empty_afk_rig();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    rig
+}
+
+fn empty_afk_rig() -> Rig {
     let mut rig = Rig::without_repo();
     rig.store
         .write(|tx| {
@@ -102,8 +109,34 @@ fn an_ordinary_team_closes_with_no_report() {
 #[test]
 fn removing_one_member_of_an_afk_team_needs_no_report() {
     let mut rig = afk_rig();
-    rig.add_pane_member("scout", MemberKind::Investigator);
     let role = Role::parse("scout").unwrap();
     let plan = plan_close(&rig.ctx(), CloseTarget::Member(role));
     assert!(plan.refusals.is_empty(), "{:?}", plan.refusals);
+}
+
+#[test]
+fn an_afk_team_that_never_had_a_member_closes_with_no_report() {
+    let mut rig = empty_afk_rig();
+    assert!(refusals(&mut rig).is_empty());
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.is_empty() && report.stopped_at.is_none(),
+        "{report:?}"
+    );
+}
+
+#[test]
+fn a_removed_member_still_needs_the_report() {
+    let mut rig = afk_rig();
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE members SET state = 'removed'", [])
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let why = refusals(&mut rig);
+    assert_eq!(why.len(), 1, "{why:?}");
+    assert!(why[0].starts_with("afk_report_incomplete: "), "{why:?}");
 }

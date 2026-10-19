@@ -20,6 +20,15 @@ const HEADINGS: [&str; 8] = [
 /// for a report that has every heading.
 pub(crate) fn report_refusal(ctx: &Ctx<'_>, team: &TeamRow) -> Option<String> {
     team.afk_budget_ends_at?;
+    // A run that never had a member has nothing to report on. A removed member
+    // still counts, and so does a member list that cannot be read.
+    if ctx
+        .store
+        .read(|tx| tx.members()?.all_or_corrupt())
+        .is_ok_and(|members| members.is_empty())
+    {
+        return None;
+    }
     let path = ctx
         .home
         .join("teams")
