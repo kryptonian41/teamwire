@@ -78,7 +78,9 @@ impl<'a> Tx<'a> {
         }
     }
 
-    /// The connection this transaction runs on.
+    /// The connection this transaction runs on. For tests only, to damage a
+    /// row on purpose: production code uses the typed methods.
+    #[doc(hidden)]
     pub fn connection(&self) -> &Connection {
         self.conn
     }
@@ -143,7 +145,9 @@ impl<'a> ReadTx<'a> {
         Self { conn }
     }
 
-    /// The connection this transaction runs on.
+    /// The connection this transaction runs on. For tests only, to damage a
+    /// row on purpose: production code uses the typed methods.
+    #[doc(hidden)]
     pub fn connection(&self) -> &Connection {
         self.conn
     }
