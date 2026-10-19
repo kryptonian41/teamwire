@@ -47,6 +47,8 @@ fn teamwire(home: &TestHome, envs: &[(&str, &str)], args: &[&str]) -> Run {
         .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
         .env_remove("OTEL_EXPORTER_OTLP_HEADERS")
         .env_remove("OTEL_EXPORTER_OTLP_TIMEOUT")
+        .env_remove("NO_COLOR")
+        .env_remove("TEAMWIRE_LOG")
         .env("TEAMWIRE_HOME", home.path())
         .envs(envs.iter().copied())
         .output()
@@ -631,6 +633,52 @@ fn export_writes_every_record_as_json_lines_with_cloudevents_names() {
 }
 
 #[test]
+fn metrics_for_a_team_whose_store_cannot_be_read_exits_6() {
+    let home = TestHome::new().unwrap();
+    let mut s = busy_team(&home, "alpha");
+    s.write(|tx| {
+        tx.connection().execute_batch("PRAGMA user_version = 99")?;
+        Ok(())
+    })
+    .unwrap();
+    drop(s);
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    assert!(!run.out.contains("no metrics"), "{}", run.out);
+    assert!(run.err.contains("teamwire metrics:"), "{}", run.err);
+    // Listing every team still reports the damaged one and exits 0.
+    let all = teamwire(&home, &[], &["metrics"]);
+    assert_eq!(all.code, 0, "{}{}", all.out, all.err);
+    assert!(all.err.contains("teamwire metrics:"), "{}", all.err);
+}
+
+#[test]
+fn metrics_for_a_closed_team_whose_archive_cannot_be_read_exits_6() {
+    let home = TestHome::new().unwrap();
+    let other = TestHome::new().unwrap();
+    let mut s = busy_team(&other, "alpha");
+    s.write(|tx| {
+        tx.connection().execute_batch("PRAGMA user_version = 99")?;
+        Ok(())
+    })
+    .unwrap();
+    drop(s);
+    let from = database_path(other.path(), &TeamName::parse("alpha").unwrap());
+    let dir = home.path().join("archive").join("alpha-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&from, dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    assert!(!run.err.contains("no database"), "{}", run.err);
+    assert!(run.err.contains("alpha-2026-09-30"), "{}", run.err);
+    // Another team's unreadable archive is not this one's.
+    let run = teamwire(&home, &[], &["metrics", "alph"]);
+    assert_eq!(run.code, 1, "{}{}", run.out, run.err);
+    assert!(run.err.contains("no database for team alph"), "{}", run.err);
+}
+
+#[test]
 fn export_of_an_unknown_team_is_refused() {
     let home = TestHome::new().unwrap();
     let run = teamwire(&home, &[], &["export", "nope"]);
@@ -653,6 +701,8 @@ fn export_skips_a_damaged_row_names_it_and_still_exits_zero() {
     let run = teamwire(&home, &[], &["export", "alpha"]);
     assert_eq!(run.code, 0, "{}", run.err);
     assert!(run.err.contains("skipped events row 3"), "{}", run.err);
+    // stderr is a pipe here, so the log lines carry no colour codes.
+    assert!(!run.err.contains('\x1b'), "{:?}", run.err);
     let ours = run
         .err
         .lines()

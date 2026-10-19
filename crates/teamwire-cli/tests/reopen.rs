@@ -50,6 +50,17 @@ impl Rig {
 
     /// Runs the binary as the session `caller`, in a cleared environment.
     fn teamwire(&self, args: &[&str], caller: &str, stdin: Option<&str>) -> Output {
+        self.teamwire_with(args, caller, stdin, &[])
+    }
+
+    /// `teamwire` with extra variables, such as a member's identity.
+    fn teamwire_with(
+        &self,
+        args: &[&str],
+        caller: &str,
+        stdin: Option<&str>,
+        vars: &[(&str, &str)],
+    ) -> Output {
         let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
         cmd.args(args)
             .env_clear()
@@ -57,6 +68,7 @@ impl Rig {
             .env("HERDR_ENV", "1")
             .env("TEAMWIRE_HOME", self.home.path())
             .env("CLAUDE_CODE_SESSION_ID", caller)
+            .envs(vars.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -168,6 +180,30 @@ fn a_caller_that_is_not_the_lead_is_told_how_to_adopt() {
     );
     assert!(shown.contains("results go to the reopened lead"), "{shown}");
     assert!(shown.contains("teamwire lead --adopt demo"), "{shown}");
+}
+
+#[test]
+fn a_member_session_cannot_reopen_a_team() {
+    let rig = Rig::new();
+    rig.closed_team("lead-sess");
+    let db = teamwire_store::database_path(rig.home.path(), &TeamName::parse("demo").unwrap());
+    let before = (rig.herdr.calls().len(), std::fs::read(&db).unwrap());
+    for vars in [
+        &[("TEAMWIRE_TOKEN", "not-a-real-token")][..],
+        &[("TEAMWIRE_TEAM", "demo"), ("TEAMWIRE_ROLE", "a")],
+    ] {
+        for args in [&["reopen", "demo"][..], &["reopen", "demo", "--dry-run"]] {
+            let out = rig.teamwire_with(args, "other-sess", None, vars);
+            let err = text(&out.stderr);
+            assert_eq!(out.status.code(), Some(1), "{vars:?} {args:?}: {err}");
+            assert!(err.contains("refused.identity"), "{err}");
+        }
+    }
+    let after = (rig.herdr.calls().len(), std::fs::read(&db).unwrap());
+    assert!(
+        after == before,
+        "a refused reopen asked the host or wrote the store"
+    );
 }
 
 #[test]

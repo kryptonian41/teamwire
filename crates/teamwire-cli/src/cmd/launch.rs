@@ -36,7 +36,9 @@ fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     reason = "the binary reports on stdout and stderr"
 )]
 pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCode {
-    if args.add
+    // A member's launch would make its own session a new team's lead, outside
+    // the parent's close; a dry run creates nothing, so a member may still plan.
+    if !args.dry_run
         && let Some(code) = refuse_member("launch")
     {
         return code;

@@ -25,16 +25,23 @@ struct Run {
 }
 
 fn teamwire(bed: &Bed, args: &[&str]) -> Run {
+    teamwire_with(bed, args, &[])
+}
+
+/// `teamwire` with the identity variables removed, then `vars` set.
+fn teamwire_with(bed: &Bed, args: &[&str], vars: &[(&str, &str)]) -> Run {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")
         .arg(bed.home.path())
         .args(args)
         .env_remove("HERDR_ENV")
         .env_remove("TEAMWIRE_TOKEN")
+        .env_remove("TEAMWIRE_TOKEN_FILE")
         .env_remove("TEAMWIRE_ROLE")
         .env_remove("TEAMWIRE_TEAM")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
+        .envs(vars.iter().copied())
         .output()
         .unwrap();
     Run {
@@ -135,6 +142,51 @@ fn a_member_caller_never_sees_the_lead_session() {
     assert!(!member(&["status", "alpha"]).contains("sess-lead"));
     let json: serde_json::Value = serde_json::from_str(&member(&["status", "--json"])).unwrap();
     assert!(json[0]["lead"].is_null(), "{json}");
+}
+
+#[test]
+fn an_empty_identity_variable_counts_as_unset_for_every_command() {
+    let mut bed = team();
+    let now = teamwire_core::Clock::now(&bed.clock);
+    bed.store
+        .write(|tx| {
+            tx.adopt_lead(
+                now,
+                &Bed::session("lead"),
+                teamwire_core::SessionKind::Interactive,
+            )
+        })
+        .unwrap();
+    for vars in [
+        &[("TEAMWIRE_ROLE", "")][..],
+        &[("TEAMWIRE_TEAM", "")],
+        &[
+            ("TEAMWIRE_TEAM", ""),
+            ("TEAMWIRE_ROLE", ""),
+            ("TEAMWIRE_TOKEN", ""),
+        ],
+    ] {
+        let run = teamwire_with(&bed, &["status", "alpha", "--json"], vars);
+        assert_eq!(run.code, 0, "{vars:?}: {}", run.err);
+        let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+        assert_eq!(json["lead"]["session_id"], "sess-lead", "{vars:?}: {json}");
+        // `done` agrees: this is not a member's session.
+        let done = teamwire_with(&bed, &["done", "--status", "done", "--summary", "x"], vars);
+        assert_eq!(done.code, 1, "{vars:?}: {}", done.err);
+        assert!(
+            done.err.contains("are not all set"),
+            "{vars:?}: {}",
+            done.err
+        );
+    }
+    // A non-empty role still makes a member, which never sees the lead.
+    let run = teamwire_with(
+        &bed,
+        &["status", "alpha", "--json"],
+        &[("TEAMWIRE_ROLE", "api")],
+    );
+    let json: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    assert!(json["lead"].is_null(), "{json}");
 }
 
 #[test]
@@ -325,6 +377,28 @@ fn received_clears_a_result_from_status_and_a_second_run_changes_nothing() {
     let unknown = teamwire(&bed, &["received", "alpha", "nobody"]);
     assert_eq!(unknown.code, 1, "{}{}", unknown.out, unknown.err);
     assert_eq!(unknown.out, "nobody refused: no member has this role\n");
+}
+
+#[test]
+fn a_member_session_cannot_mark_a_result_received() {
+    let mut bed = team();
+    let id = bed.complete("web", CompletionStatus::Done);
+    bed.finish(&id, teamwire_core::ReportState::Undelivered, None);
+    let before = sizes(&bed);
+    for vars in [
+        &[("TEAMWIRE_TOKEN", "not-a-real-token")][..],
+        &[("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")],
+    ] {
+        let run = teamwire_with(&bed, &["received", "alpha", "web"], vars);
+        assert_eq!(run.code, 1, "{vars:?}: {}{}", run.out, run.err);
+        assert!(run.err.contains("refused.identity"), "{}", run.err);
+    }
+    assert_eq!(sizes(&bed), before, "a refused received changed a file");
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(
+        shown.contains("results the lead has not received:"),
+        "{shown}"
+    );
 }
 
 fn make_afk(bed: &mut Bed, ends: &str) {

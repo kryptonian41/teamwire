@@ -54,12 +54,22 @@ fn show(
         && !database_path(home, team).is_file()
         && !teamwire_otel::team_is_known(home, team)
     {
+        if let Some(error) = unreadable_archive_of(home, team) {
+            return fail(&error, STORE);
+        }
         return fail(&format!("no database for team {team}"), REFUSED);
     }
+    let named = team.is_some();
     let query = MetricsQuery { team, since };
     let view = teamwire_otel::metrics_at(home, wiring.clock.now(), &query);
     for error in &view.errors {
         warn(error);
+    }
+    // A named team has one source, so an error means its store was not read
+    // and an empty view would be a false "no events"; a listing goes on past
+    // one bad team.
+    if named && !view.errors.is_empty() {
+        return ExitCode::from(STORE);
     }
     if json {
         match serde_json::to_string_pretty(&view) {
@@ -70,6 +80,32 @@ fn show(
         say(&render(&view));
     }
     ExitCode::SUCCESS
+}
+
+/// An archive of `team` whose database cannot be opened, as an error line.
+/// The metrics reader finds a closed team's archive by the team row inside
+/// it, so it cannot see one it fails to open; the folder name `<team>-<date>`
+/// still names the team, because a team name holds no hyphen. A folder
+/// without `SHA256SUMS` is a copy cut short, which the reader skips too.
+fn unreadable_archive_of(home: &Path, team: &TeamName) -> Option<String> {
+    std::fs::read_dir(home.join("archive"))
+        .ok()?
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|dir| {
+            dir.file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.split_once('-'))
+                .is_some_and(|(name, _)| name == team.as_str())
+                && dir.join("SHA256SUMS").is_file()
+        })
+        .map(|dir| dir.join("team.db"))
+        .filter(|db| db.is_file())
+        .find_map(|db| {
+            Store::open_read_only_at(&db)
+                .err()
+                .map(|e| format!("{}: {e}", db.display()))
+        })
 }
 
 /// `30s`, `15m`, `2h` or `1d`.

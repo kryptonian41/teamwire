@@ -128,8 +128,25 @@ fn a_subagent_stop_is_not_held() {
 #[test]
 fn a_member_session_returns_at_once() {
     let fx = team();
-    let run = hook(&fx, &[("TEAMWIRE_TEAM", "alpha")], &stop("lead-1", ""));
-    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    for env in [
+        &[("TEAMWIRE_TEAM", "alpha")][..],
+        &[("TEAMWIRE_TOKEN", "t")],
+    ] {
+        let run = hook(&fx, env, &stop("lead-1", ""));
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{env:?}");
+    }
+}
+
+#[test]
+fn an_empty_team_variable_is_still_the_lead() {
+    let fx = team();
+    let run = hook(&fx, &[("TEAMWIRE_TEAM", "")], &stop("lead-1", ""));
+    assert_eq!(run.code, 0);
+    assert!(
+        run.out.contains("[teamwire:alpha] no watch is running"),
+        "{}",
+        run.out
+    );
 }
 
 #[test]

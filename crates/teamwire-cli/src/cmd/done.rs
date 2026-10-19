@@ -6,7 +6,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::{home_or_refuse, no_database_text};
+use crate::cmd::send::{caller_env, home_or_refuse, no_database_text};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
@@ -16,27 +16,9 @@ const REFUSED: u8 = 1;
 /// The store could not be read or written.
 const STORE: u8 = 6;
 
-/// Who is calling, from the member's environment (ADR 0008).
-struct Caller {
-    team: Option<String>,
-    role: Option<String>,
-    token: Option<String>,
-}
-
-impl Caller {
-    fn from_process() -> Self {
-        let var = |name| std::env::var(name).ok().filter(|v| !v.is_empty());
-        Self {
-            team: var("TEAMWIRE_TEAM"),
-            role: var("TEAMWIRE_ROLE"),
-            token: teamwire_msg::caller_token(|name| std::env::var(name).ok()),
-        }
-    }
-}
-
 pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let DoneArgs { status, summary } = args;
-    let caller = Caller::from_process();
+    let caller = caller_env(None);
     let (Some(team), Some(role), Some(token)) = (caller.team, caller.role, caller.token) else {
         return fail(
             "refused.identity: only a team member can record a completion \
