@@ -92,6 +92,16 @@ impl StoreError {
         }
     }
 
+    /// Whether a failed write leaves a `store.error` row. A refused schema
+    /// must not be written to at all (STO-6), and a constraint or a missing
+    /// file says nothing about the store's health.
+    pub(crate) fn is_recorded(&self) -> bool {
+        matches!(
+            self,
+            Self::Busy | Self::Full { .. } | Self::Corrupt(_) | Self::Io(_)
+        )
+    }
+
     /// Names the database file in a full-disk error that does not name one
     /// yet: `SQLite`'s own error does not say which file it was writing.
     pub(crate) fn at(self, db: Option<&str>) -> Self {

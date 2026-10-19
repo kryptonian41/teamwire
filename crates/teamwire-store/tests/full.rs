@@ -5,7 +5,7 @@
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
 
-use teamwire_core::TeamName;
+use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_fakes::TestHome;
 use teamwire_store::{Store, StoreError};
 
@@ -32,6 +32,20 @@ fn notes(store: &Store) -> Vec<String> {
                 .collect::<Result<_, _>>()?)
         })
         .unwrap()
+}
+
+fn at(secs: i64) -> Timestamp {
+    Timestamp::from_unix_millis(1_790_000_000_000 + secs * 1000).unwrap()
+}
+
+fn store_errors(store: &Store) -> Vec<serde_json::Value> {
+    store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect()
 }
 
 #[test]
@@ -86,8 +100,36 @@ fn a_full_disk_rolls_back_and_names_the_file() {
     );
     assert_eq!(store.integrity_check().unwrap(), "ok");
 
+    // The row about the failure waits for room: the second transaction that
+    // writes it fails the same way while the disk stays full. Smaller event
+    // rows fill the pages the rollback left free first.
+    let mut filled = false;
+    for i in 0..10_000 {
+        let small = store.write(|tx| {
+            tx.record_event(
+                at(i),
+                EventType::WatchLine,
+                None,
+                None,
+                &serde_json::json!({}),
+            )
+        });
+        if small.is_err() {
+            filled = true;
+            break;
+        }
+    }
+    assert!(filled, "the disk never filled");
+    store.record_failure(at(1), "send");
+    assert_eq!(store_errors(&store), Vec::<serde_json::Value>::new());
+
     // With room again the same connection writes normally.
     set_max_pages(&store, pages + 1000);
+    store.record_failure(at(2), "send");
+    assert_eq!(
+        store_errors(&store),
+        [serde_json::json!({ "op": "send", "code": "full" })]
+    );
     store
         .write(|tx| {
             tx.connection().execute(

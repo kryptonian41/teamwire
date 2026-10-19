@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::{Connection, OpenFlags, TransactionBehavior};
-use teamwire_core::TeamName;
+use teamwire_core::{TeamName, Timestamp};
 
 use crate::error::StoreError;
 use crate::older::show_missing_columns;
@@ -49,6 +49,8 @@ pub struct Store {
     conn: Connection,
     writer_version: String,
     read_only: bool,
+    /// The first failed write that `record_failure` has not written down yet.
+    failed: Option<StoreError>,
     /// Set when a read-only open found no `-wal` or `-shm` file, so that
     /// opening created them: closing the store then removes them again.
     cleanup: Option<PathBuf>,
@@ -204,6 +206,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: true,
+            failed: None,
             cleanup: no_side_files.then(|| path.to_path_buf()),
         })
     }
@@ -232,6 +235,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: false,
+            failed: None,
             cleanup: None,
         })
     }
@@ -269,7 +273,32 @@ impl Store {
             tx.commit()?;
             Ok(out)
         });
-        out.map_err(|e| e.at(self.conn.path()))
+        out.map_err(|e| {
+            let e = e.at(self.conn.path());
+            if self.failed.is_none() && e.is_recorded() {
+                self.failed = Some(e.clone());
+            }
+            e
+        })
+    }
+
+    /// Writes the `store.error` row (`docs/metrics.md`) of the first failed
+    /// write since the last call, in its own transaction now that the failed
+    /// one rolled back. Each command, hook, tool call and watch poll calls it
+    /// on its way out with its own name as `op`; `at` is the caller's, because
+    /// the store never reads the clock. Best effort: when this write fails
+    /// too, the failure is kept for the next call, so a full disk is recorded
+    /// once it has room again.
+    pub fn record_failure(&mut self, at: Timestamp, op: &str) {
+        let Some(failed) = self.failed.take() else {
+            return;
+        };
+        if self
+            .write(|tx| tx.record_store_error(at, op, &failed))
+            .is_err()
+        {
+            self.failed = Some(failed);
+        }
     }
 
     /// Runs `f` inside one read transaction: it sees a single snapshot, and
