@@ -214,14 +214,33 @@ impl Store {
     }
 
     fn open_read_write(path: &Path, create: OpenFlags) -> Result<Self, StoreError> {
-        let mut conn = Connection::open_with_flags(
+        let conn = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX | create,
         )?;
+        Self::ready(conn)
+    }
+
+    /// Settings and migration of a freshly opened read-write connection. The
+    /// switch to WAL and the migration write to the file outside
+    /// `Store::write`, so a full disk is given the file's path here too.
+    fn ready(mut conn: Connection) -> Result<Self, StoreError> {
+        let prepared = Self::prepare(&mut conn);
+        prepared.map_err(|e| e.at(conn.path()))?;
+        Ok(Self {
+            conn,
+            writer_version: WRITER_VERSION.to_owned(),
+            read_only: false,
+            failed: RefCell::new(None),
+            cleanup: None,
+        })
+    }
+
+    fn prepare(conn: &mut Connection) -> Result<(), StoreError> {
         conn.busy_timeout(Duration::from_millis(u64::from(BUSY_TIMEOUT_MS)))?;
         // Look before touching anything: switching a foreign or newer file to
         // WAL would already be a write.
-        match found(&conn)? {
+        match found(conn)? {
             Found::Foreign => return Err(StoreError::NotTeamwire),
             Found::Ours(v) if v > SCHEMA_VERSION => {
                 return Err(StoreError::SchemaNewer {
@@ -231,15 +250,8 @@ impl Store {
             }
             Found::Fresh | Found::Ours(_) => {}
         }
-        apply_pragmas(&conn)?;
-        migrate(&mut conn)?;
-        Ok(Self {
-            conn,
-            writer_version: WRITER_VERSION.to_owned(),
-            read_only: false,
-            failed: RefCell::new(None),
-            cleanup: None,
-        })
+        apply_pragmas(conn)?;
+        migrate(conn)
     }
 
     /// Sets the version recorded in the `writer_version` of every event this
@@ -329,7 +341,7 @@ impl Store {
         if !self.read_only {
             self.conn.pragma_update(None, "query_only", false)?;
         }
-        out.map_err(|e| self.remember(e))
+        out.map_err(|e| self.remember(e.at(self.conn.path())))
     }
 
     /// Copies the whole database to a new file with `SQLite`'s backup API,
@@ -447,6 +459,46 @@ fn check_version_not_newer(db: u32) -> Result<(), StoreError> {
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod full_path_tests {
+    use rusqlite::Connection;
+    use teamwire_fakes::TestHome;
+
+    use super::Store;
+    use crate::StoreError;
+
+    #[test]
+    fn a_full_disk_while_opening_names_the_file() {
+        let home = TestHome::new().unwrap();
+        let path = home.path().join("team.db");
+        let conn = Connection::open(&path).unwrap();
+        // One page holds the header and nothing else, so creating the schema
+        // meets SQLITE_FULL the way a full volume does.
+        let _max: i64 = conn
+            .query_row("PRAGMA max_page_count = 1", [], |r| r.get(0))
+            .unwrap();
+        let named = std::fs::canonicalize(&path).unwrap();
+        assert_eq!(
+            Store::ready(conn).unwrap_err(),
+            StoreError::Full { path: named }
+        );
+    }
+
+    #[test]
+    fn a_full_disk_inside_a_read_names_the_file() {
+        let home = TestHome::new().unwrap();
+        let team = teamwire_core::TeamName::parse("alpha").unwrap();
+        let store = Store::open(home.path(), &team).unwrap();
+        let full = store.read(|_| {
+            Err::<(), _>(StoreError::Full {
+                path: std::path::PathBuf::new(),
+            })
+        });
+        let path = std::fs::canonicalize(crate::database_path(home.path(), &team)).unwrap();
+        assert_eq!(full, Err(StoreError::Full { path }));
+    }
 }
 
 #[cfg(test)]
