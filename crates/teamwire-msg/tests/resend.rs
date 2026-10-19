@@ -422,3 +422,65 @@ fn a_team_that_starts_closing_part_way_keeps_every_report() {
     assert_eq!(web.reason, Some(DeliveryErrorCode::TeamClosed));
     assert_eq!(submits(&rig), 1);
 }
+
+/// A message from scout to api and web, whose first send ended with api
+/// `undelivered` and web in `web_state`.
+fn tried_once(rig: &mut Rig, web_state: DeliveryState) -> teamwire_core::DisplayId {
+    let at = rig.now();
+    let new = NewMessage {
+        sender: Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "x".to_owned(),
+        client_key: None,
+        recipients: vec![to("api"), to("web")],
+    };
+    let stored = rig.store.write(|tx| tx.insert_message(at, &new)).unwrap();
+    let failed = |state| teamwire_store::DeliveryUpdate {
+        state,
+        route: None,
+        error: Some(teamwire_core::DeliveryError::new(
+            DeliveryErrorCode::HostStalled,
+            "x",
+        )),
+        attempts: 1,
+    };
+    rig.store
+        .write(|tx| {
+            let ulid = &stored.message.ulid;
+            tx.set_delivery_state(at, ulid, &to("api"), &failed(DeliveryState::Undelivered))?;
+            tx.set_delivery_state(at, ulid, &to("web"), &failed(web_state))
+        })
+        .unwrap();
+    stored.message.display_id
+}
+
+fn trigger(rig: &mut Rig, sql: &str) {
+    rig.store
+        .write(|tx| tx.connection().execute_batch(sql).map_err(Into::into))
+        .unwrap();
+}
+
+#[test]
+fn a_row_another_command_reached_after_this_one_read_it_is_skipped() {
+    let mut rig = team_rig();
+    let display = tried_once(&mut rig, DeliveryState::Undelivered);
+    // While this resend types to api, another command hands web off.
+    trigger(
+        &mut rig,
+        "CREATE TRIGGER web_reached AFTER UPDATE ON deliveries
+         WHEN NEW.recipient = 'api' AND NEW.state = 'handed_off'
+         BEGIN UPDATE deliveries SET state = 'handed_off' WHERE recipient = 'web'; END;",
+    );
+    let report = resend(
+        &mut rig.ctx(),
+        &Actor::parse("scout").unwrap(),
+        &display,
+        None,
+    )
+    .unwrap();
+    assert_eq!(state_of(&report, "api"), RecipientState::HandedOff);
+    assert_eq!(state_of(&report, "web"), RecipientState::Skipped);
+    assert_eq!(submits(&rig), 1);
+}

@@ -734,6 +734,45 @@ fn a_resume_claims_the_row_so_a_second_resume_skips_it() {
 }
 
 #[test]
+fn a_resume_skips_an_undelivered_row_another_command_just_claimed() {
+    let mut rig = team_rig();
+    rig.set_reachable("api", false);
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    let first = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(only(&first).state, RecipientState::Undelivered);
+    rig.set_reachable("api", true);
+    // Another resume claimed the row and is still typing: its claim is on
+    // record, its outcome is not.
+    let at = rig.now();
+    rig.store
+        .write(|tx| tx.begin_resend(at, &first.id, &to("api")))
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(2));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+    // A minute on, that command is taken for dead and the row is retried.
+    rig.clock.advance(Duration::from_secs(61));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(all_submitted(&rig).len(), 1);
+}
+
+#[test]
+fn a_resume_retries_an_undelivered_row_whose_last_attempt_ended() {
+    let mut rig = team_rig();
+    rig.set_reachable("api", false);
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    send(&mut rig.ctx(), req).unwrap();
+    rig.set_reachable("api", true);
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(all_submitted(&rig).len(), 1);
+}
+
+#[test]
 fn the_key_is_reported_before_any_host_call() {
     let mut rig = team_rig();
     let req = rig.request("scout", &["api"], MessageType::Finding, "x");

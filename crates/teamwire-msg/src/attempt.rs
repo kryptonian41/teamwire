@@ -8,7 +8,7 @@ use teamwire_core::{
     Refusal, Route, TeamName, TeamState, Timestamp,
 };
 use teamwire_deliver::{
-    CommsCopy, DeliveryOutcome, deliver_line, is_pending_stale, message_line_to,
+    CommsCopy, DeliveryOutcome, attempt_in_flight, deliver_line, message_line_to,
 };
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
@@ -17,17 +17,12 @@ use crate::{RecipientReport, RecipientState, SendError};
 
 /// Claims one more attempt at `row`, which the caller read earlier, for a
 /// resend or a send resumed by its key. `None` when another command is on
-/// the row: the row moved since the caller read it, or it is `pending` with
-/// an attempt that began under `PENDING_STALE` ago, which is a sender still
-/// delivering it. The checks, the count and its `delivery.resent` are one
-/// write, so of two commands claiming one row only the first types; the
-/// second sees the fresh attempt. A team that is not open refuses
-/// `team_closed`, recorded as `message.refused` (CLS-3).
-///
-/// shortcut: a row left `undelivered` or `unconfirmed` is claimed again at
-/// once, so a command that reads it after another's claim and before that
-/// one's outcome can still type it twice; tell such a row apart by an
-/// outcome event after the latest `delivery.resent` if that ever matters.
+/// the row: the row moved since the caller read it, or its latest attempt
+/// began under `PENDING_STALE` ago with no outcome recorded since, which is
+/// a command still delivering it. The checks, the count and its
+/// `delivery.resent` are one write, so of two commands claiming one row
+/// only the first types; the second sees the fresh attempt. A team that is
+/// not open refuses `team_closed`, recorded as `message.refused` (CLS-3).
 pub(crate) fn claim_attempt(
     ctx: &mut Ctx<'_>,
     actor: &Actor,
@@ -49,10 +44,7 @@ pub(crate) fn claim_attempt(
         let moved = reader.delivery(&message.ulid, recipient)?.is_none_or(|c| {
             c.delivery.state != row.delivery.state || c.delivery.attempts != row.delivery.attempts
         });
-        if moved
-            || (row.delivery.state == DeliveryState::Pending
-                && !is_pending_stale(&reader, message, recipient, now)?)
-        {
+        if moved || attempt_in_flight(&reader, message, recipient, now)? {
             return Ok(Claim::Busy);
         }
         tx.begin_resend(now, &message.ulid, recipient)
