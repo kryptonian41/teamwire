@@ -399,8 +399,9 @@ mod tests {
                     .all_or_corrupt()
             })
             .unwrap();
-        assert_eq!(events[0].data["lead_cwd"], "/work/lead");
-        assert_eq!(events[0].data["afk_budget_ends_at"], ends.to_string());
+        let data = &events.first().unwrap().data;
+        assert_eq!(data.get("lead_cwd").unwrap(), "/work/lead");
+        assert_eq!(data.get("afk_budget_ends_at").unwrap(), &ends.to_string());
     }
 
     #[test]
