@@ -584,6 +584,10 @@ fn a_failed_final_message_write_still_delivers_the_result() {
         rig.newest(&api).completion.report_state,
         ReportState::Delivered
     );
+    // The hook had the text in hand, so the result file still carries it.
+    let text = std::fs::read_to_string(rig.team_dir().join("outbox/api.md")).unwrap();
+    assert!(text.contains("All done, the api is finished."), "{text}");
+    assert!(text.contains("Final message from: hook"), "{text}");
 }
 
 #[test]

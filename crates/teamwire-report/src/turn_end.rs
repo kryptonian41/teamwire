@@ -17,7 +17,7 @@ use crate::lead_stop::watch_command;
 use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
-use crate::result_file::{MISSING_FROM_HARNESS, write_current};
+use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
 
 /// The cap on a result line that ends with the no-watch note: the 1000
 /// characters `result_line` allows, and room for the note after them.
@@ -264,14 +264,18 @@ fn deliver(
         )
     };
     // The result matters more than its final message: a failed write keeps
-    // the row as it was, and the delivery goes on.
-    if let Err(e) = ctx.store.write(|tx| {
+    // the row as it was, and the delivery goes on. The result file still
+    // carries the text this hook holds.
+    let saved = ctx.store.write(|tx| {
         tx.set_completion_final(&ulid, text.as_deref(), source)
             .map(|_| ())
-    }) {
+    });
+    let mut record = ctx.store.read(|tx| tx.completion(&ulid))?.unwrap_or(record);
+    if let Err(e) = saved {
         tracing::warn!(error = %e, role = %member.role, "could not record the final message");
+        record.completion.final_message = text;
+        record.completion.final_source = source;
     }
-    let record = ctx.store.read(|tx| tx.completion(&ulid))?.unwrap_or(record);
 
     #[expect(
         clippy::redundant_closure_for_method_calls,
@@ -284,7 +288,19 @@ fn deliver(
     let Some(dir) = team_dir(ctx) else {
         return Ok(());
     };
-    let written = match write_current(ctx, member, &ulid, MISSING_FROM_HARNESS) {
+    let report = report_file(ctx, &member.role);
+    let rendered = Rendered {
+        team: team.name.as_str(),
+        team_dir: &dir,
+        member,
+        record: &record,
+        final_message: record.completion.final_message.as_deref(),
+        final_source: record.completion.final_source,
+        report: &report,
+        final_missing: MISSING_FROM_HARNESS,
+        now: ctx.clock.now(),
+    };
+    let written = match crate::result_file::write(ctx, &rendered) {
         Ok(w) => Some(w),
         Err(e) => {
             // The lead still hears about the result; the summary is in the line.
@@ -322,10 +338,9 @@ fn deliver(
     }
     // A result file that was not written is missing or holds an older
     // result, so the line names the member's own report instead.
-    let path = written.as_ref().map_or_else(
-        || teamwire_verify::report_path(&dir, &member.role),
-        |w| w.path.clone(),
-    );
+    let path = written
+        .as_ref()
+        .map_or_else(|| report.clone(), |w| w.path.clone());
     let c = &record.completion;
     let mut line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
     // A lead that is idle reads the result before it ever stops, so the line
