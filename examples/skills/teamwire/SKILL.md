@@ -23,16 +23,17 @@ with machine setup and the reference tables in `reference.md`.
 
 ## Your tools
 
-The lead's MCP server, in the teamwire plugin, lists nine tools named
-`mcp__plugin_teamwire_teamwire__<tool>`. Six are yours, for messages and
+The lead's MCP server, in the teamwire plugin, lists ten tools named
+`mcp__plugin_teamwire_teamwire__<tool>`. Seven are yours, for messages and
 reads: `team_send`, `team_resend`, `team_log`, `team_members` (`of` reads
-another team), `team_status` (`teamwire status --json`) and `team_teams`
-(`teamwire teams --json`). Each applies its CLI command's rules and refusal
-codes, and returns JSON. Claude Code loads these tools only on request, so
-load all six in one call before the first use in a session:
+another team), `team_status` (`teamwire status --json`), `team_teams`
+(`teamwire teams --json`) and `team_decisions` (`teamwire decisions --json`).
+Each applies its CLI command's rules and refusal codes, and returns JSON.
+Claude Code loads these tools only on request, so load all seven in one call
+before the first use in a session:
 
 ```
-ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams"  max_results: 6
+ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams,mcp__plugin_teamwire_teamwire__team_decisions"  max_results: 7
 ```
 
 Pass `team` in every call, `team_teams` included. It must be a team this
@@ -147,6 +148,12 @@ brings in new work. Fix what it finds first.
    "fixing the process that generates the code instead of hand-fixing the
    code", and Stripe works the same way.
 
+**Read what earlier teams decided.** Before you ask anything, run
+`teamwire decisions --ref linear:GKA-580` for the ticket, or
+`teamwire decisions --grep <topic>`, across running teams and archives. Put
+each decision that still holds in the briefs under "Decisions already made",
+with its team and date.
+
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
 one numbered entry per member: kind, task, blockers, owned files and wave.
@@ -247,6 +254,10 @@ has a hyphen, and `lead` is reserved.
 - `base`: the branch a new member branch is cut from. Set it on every member
   of a contract split and of stacked branches, so `verify` reads the right
   diff.
+- `refs` on the team: the tickets the team works on, each with its tracker
+  named, as in `"refs": [{"provider": "linear", "id": "GKA-580"}]`. teamwire
+  never assumes a provider. `--add` may name more refs, and none is ever
+  removed. Later teams find this team's decisions by ref.
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
   starts a member idle, for you to prompt. With `"accept_trust": false`,
   launch does not answer the folder-trust prompt, and it fails the member
@@ -612,8 +623,8 @@ becomes one tree that passes the full gate.
    send work. Read its report, then a member's result only where it points.
    Below four members, read every result and report yourself before touching
    a branch. Either way, compare every **Decisions I made** list side by
-   side. Two members that decided one question differently are a bug waiting
-   to happen.
+   side with `teamwire decisions <team>`. Two members that decided one
+   question differently are a bug waiting to happen.
 2. **Triage, then run the fix round.** The closer grades each finding (wrong
    conclusion, wrong detail, or wording) and names its member. Decide which
    findings hold first. In a study of LLM code reviewers (Jin and Chen, 2026),

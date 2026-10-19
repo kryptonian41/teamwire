@@ -399,6 +399,56 @@ gives each team a `"refs": [...]` list, always present. Reads only and needs no 
 be read is named on stderr and makes the command exit 6; the others are
 still listed.
 
+### `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]`
+
+Prints the "Decisions I made" blocks of members' reports. Reads only. At least
+one of `<team>`, `--ref` and `--grep` is required; with neither the command exits 3.
+
+`<team>` is a running team's database, else the newest complete archive of that
+team (the archive whose `SHA256SUMS` is newest). A name with neither is
+refused, exit 1, `no such team or archive`. Without `<team>`, every running team
+and every complete archive is read, and a team seen more than once is read once:
+the running copy, else the newest archive. The team row's ULID names the team,
+not the folder.
+
+`--ref REF` keeps the teams whose recorded refs hold REF: `provider:id` matches
+that provider and that id (id compared ignoring case), a bare `id` matches that
+id under any provider. The text before the first `:` counts as a provider only
+when it matches `^[a-z][a-z0-9_]{0,15}$`. A team launched without refs, or
+archived before schema v5, never matches. Text output shows a team's refs as
+`[provider:id, ...]` after its title. `--role R` keeps one member. `--grep TEXT` keeps the blocks whose text holds
+TEXT, ignoring case, and prints each whole block; a member with no matching
+block, or no report, is left out. Filters combine with AND. Teams print oldest
+first, members in role order.
+
+A report is `<team folder>/reports/<role>.md`. A block starts at a line that,
+after any `#`s, a number such as `7.` and `**`, begins with "Decisions I made"
+(ignoring case); a mention in the middle of a line does not start one. A
+heading block runs to the next heading of the same or a higher level. Any
+other block (`Decisions I made:`, `**Decisions I made**`) runs to the next
+heading, the next bold label line, or the first non-blank line after its list
+that is neither a list item nor indented. Text after the label on the same line
+is part of the block. A report may hold several blocks; all are printed, in
+file order. A member with no report file prints `(no report)` when no `--grep`
+is given.
+
+`--json` prints `{"teams": [...], "errors": [...]}`, the same as the
+`team_decisions` tool returns:
+
+```json
+{"teams": [{"team": "fixall", "title": "…", "ulid": "…", "created_at": "…",
+  "live": false, "path": "/abs/path/to/team/dir", "refs": [{"provider": "linear", "id": "GKA-580"}],
+  "members": [{"role": "toolfix", "kind": "implementer", "title": "…",
+    "report": "/abs/path/reports/toolfix.md",
+    "blocks": [{"heading": "## Decisions I made", "line": 88, "text": "- …"}]}]}],
+ "errors": []}
+```
+
+`report` is `null` for a member with no report file. A database or report that
+cannot be read is named on stderr and listed in `errors`; the rest still
+prints. Exit 0 when anything printed (or nothing matched and nothing failed),
+1 when only errors came back.
+
 ## Harness and server entry points
 
 These are started by a harness, not typed by people.

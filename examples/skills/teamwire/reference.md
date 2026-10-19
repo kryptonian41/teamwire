@@ -77,6 +77,7 @@ database, so run `teamwire doctor`. The other lines:
 
 | Command | Does |
 | --- | --- |
+| `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
