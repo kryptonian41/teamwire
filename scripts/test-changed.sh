@@ -73,9 +73,9 @@ else
 $untracked"
   # A file belongs to the member whose directory prefixes its path. Two
   # directories outside every crate are still read by crates: examples/ is
-  # embedded by include_str! in teamwire-cli (presets) and
-  # teamwire-harness-claude (the skill), and the tests of teamwire-cli read
-  # docs/api/mcp.md.
+  # embedded by include_str! in teamwire-cli (presets), teamwire-harness-claude
+  # (the skill) and teamwire-harness-codex (the Codex lead skill and the shared
+  # skill), and the tests of teamwire-cli read docs/api/mcp.md.
   changed="$(
     echo "$files" | while read -r f; do
       [ -n "$f" ] || continue
@@ -83,6 +83,7 @@ $untracked"
       if [ "${f#examples/}" != "$f" ]; then
         echo teamwire-cli
         echo teamwire-harness-claude
+        echo teamwire-harness-codex
       elif [ "${f#docs/}" != "$f" ]; then
         echo teamwire-cli
       fi
