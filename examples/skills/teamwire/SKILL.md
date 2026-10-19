@@ -27,7 +27,8 @@ The lead's MCP server, in the teamwire plugin, lists ten tools named
 `mcp__plugin_teamwire_teamwire__<tool>`. Seven are yours, for messages and
 reads: `team_send`, `team_resend`, `team_log`, `team_members` (`of` reads
 another team), `team_status` (`teamwire status --json`), `team_teams`
-(`teamwire teams --json`) and `team_decisions` (`teamwire decisions --json`).
+(`teamwire teams --json`) and `team_decisions` (`teamwire decisions --json`,
+limited to teams that worked in your team's repositories; the CLI reads all).
 Each applies its CLI command's rules and refusal codes, and returns JSON.
 Claude Code loads these tools only on request, so load all seven in one call
 before the first use in a session:
