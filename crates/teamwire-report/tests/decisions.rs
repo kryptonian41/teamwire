@@ -15,7 +15,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::TestHome;
 use teamwire_report::{DecisionsError, DecisionsQuery, read_decisions};
-use teamwire_store::{NewMember, NewTeam, Store};
+use teamwire_store::{NewMember, NewTeam, Store, database_path};
 
 fn at(secs: i64) -> Timestamp {
     Timestamp::from_unix_millis(1_790_000_000_000 + secs * 1000).unwrap()
@@ -346,4 +346,62 @@ fn limit_blocks_keeps_a_member_before_the_cut_even_with_no_report() {
         ("api", None)
     );
     assert_eq!(members[1].blocks.len(), 1);
+}
+
+/// A team database as a version-4 binary left it: the v1 to v4 tables, no
+/// `refs` column, one team row. A store connection empties a fresh database
+/// first, because this test has no `SQLite` library of its own.
+fn version_4_team(home: &Path, name: &str) -> PathBuf {
+    let mut store = Store::open(home, &TeamName::parse(name).unwrap()).unwrap();
+    store
+        .write(|tx| {
+            let conn = tx.connection();
+            let tables: Vec<String> = conn
+                .prepare(
+                    "SELECT name FROM sqlite_schema WHERE type = 'table'
+                       AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+                )?
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            for table in tables {
+                conn.execute_batch(&format!("DROP TABLE {table};"))?;
+            }
+            for step in [
+                teamwire_store::SCHEMA_V1_SQL,
+                teamwire_store::SCHEMA_V2_SQL,
+                teamwire_store::SCHEMA_V3_SQL,
+                teamwire_store::SCHEMA_V4_SQL,
+            ] {
+                conn.execute_batch(step)?;
+            }
+            conn.execute_batch(&format!(
+                "INSERT INTO team (id, ulid, name, title, state, lead_harness, lead_host, lead_route, created_at)
+                 VALUES (1, '01J9ZQ0000000000000000TEAM', '{name}', 'Old', 'closed', 'claude-code', 'herdr', 'sink',
+                         '2026-10-01T00:00:00.000Z');
+                 PRAGMA user_version = 4;"
+            ))?;
+            Ok(())
+        })
+        .unwrap();
+    drop(store);
+    database_path(home, &TeamName::parse(name).unwrap())
+}
+
+#[test]
+fn an_archive_from_before_schema_v5_reads_with_no_refs_and_never_matches_a_ref() {
+    let home = TestHome::new().unwrap();
+    let other = TestHome::new().unwrap();
+    let db = version_4_team(other.path(), "old");
+    let dir = home.path().join("archive/old-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&db, dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let view = read_decisions(home.path(), &query(Some("old"), None, None)).unwrap();
+    assert_eq!(view.errors, Vec::<String>::new());
+    assert_eq!(view.teams[0].refs, Vec::<TicketRef>::new());
+    assert_eq!(teams_with_ref(home.path(), "GKA-580"), Vec::<String>::new());
+    assert_eq!(
+        teams_with_ref(home.path(), "linear:GKA-580"),
+        Vec::<String>::new()
+    );
 }
