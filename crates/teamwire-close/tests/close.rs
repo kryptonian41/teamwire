@@ -1333,7 +1333,11 @@ fn a_detached_head_that_no_rescue_name_fits_refuses_and_keeps_the_worktree() {
     git(&rig.repo, &["branch", "teamwire", "main"]);
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert!(
-        asks(&report.refusals, "no rescue branch name is free"),
+        asks(
+            &report.refusals,
+            "no rescue branch name is free: the branch teamwire blocks every name under \
+             teamwire/"
+        ),
         "{report:?}"
     );
     assert!(asks(&report.refusals, sha.get(..7).unwrap()), "{report:?}");

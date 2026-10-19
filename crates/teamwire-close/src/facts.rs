@@ -193,17 +193,24 @@ impl Detached {
                     || b.starts_with(&format!("{name}/"))
             })
         };
-        match names().find(|n| !refused.contains(n) && !clash(n)) {
-            Some(name) => Ok(Some(Rescue::Create(name))),
-            None => Err(format!(
-                "HEAD is detached at {} and its commits are on no branch, and no rescue \
-                 branch name is free ({} and -2 to -{RESCUE_NAMES} exist at other commits or \
-                 git refuses them). Create a branch at {} first; close never moves a branch",
-                self.short(),
-                self.base,
-                self.short()
-            )),
+        if let Some(name) = names().find(|n| !refused.contains(n) && !clash(n)) {
+            return Ok(Some(Rescue::Create(name)));
         }
+        // A branch at a folder of the name blocks all 99 names at once; name
+        // it, since that is the branch the person has to rename.
+        let why = match branches().find(|(_, b)| self.base.starts_with(&format!("{b}/"))) {
+            Some((_, b)) => format!("the branch {b} blocks every name under {b}/"),
+            None => format!(
+                "{} and -2 to -{RESCUE_NAMES} exist at other commits or git refused them",
+                self.base
+            ),
+        };
+        Err(format!(
+            "HEAD is detached at {} and its commits are on no branch, and no rescue branch \
+             name is free: {why}. Create a branch at {} first; close never moves a branch",
+            self.short(),
+            self.short()
+        ))
     }
 }
 
