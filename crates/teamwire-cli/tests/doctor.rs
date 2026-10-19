@@ -17,6 +17,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
     Clock, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Pid, PlatformError,
@@ -506,6 +507,31 @@ fn a_close_lock_held_by_a_dead_process_is_reported_with_the_fix() {
 /// A close lock whose pid now belongs to a process that started later is the
 /// lock of a dead close: doctor reports it, as `close --clear-stale-lock`
 /// would clear it. The original owner, still running, is not reported.
+#[test]
+fn a_watch_lease_with_a_live_pid_and_an_old_heartbeat_warns() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    let pid = Pid::new(4242);
+    let now = bed.clock.now();
+    store
+        .write(|tx| tx.take_watch_lease(now, pid, "herdr", |_| true).map(|_| ()))
+        .unwrap();
+    drop(store);
+    bed.platform.set_alive(pid, true);
+
+    let checks = bed.checks();
+    assert!(
+        checks.iter().all(|c| c.name != "team alpha watch lease"),
+        "a fresh lease is not stale: {checks:?}"
+    );
+
+    bed.clock.advance(Duration::from_secs(601));
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha watch lease"), Level::Warn);
+    let detail = detail_of(&checks, "team alpha watch lease");
+    assert!(detail.contains("has not beaten"), "{detail}");
+}
+
 #[test]
 fn a_close_lock_whose_pid_was_reused_is_reported() {
     let bed = Bed::healthy();

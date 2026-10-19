@@ -331,12 +331,23 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
             }
             checks.push(counters_check(&mut store, team));
             if let Some(lease) = lease
-                && !inputs.platform.pid_alive(lease.pid)
+                && teamwire_deliver::watch_lease_is_dead(
+                    &lease,
+                    inputs.platform,
+                    inputs.clock.now(),
+                )
             {
+                // The same rule as `status`: a live pid with an old heartbeat
+                // is a pid the system gave to another process.
+                let why = if inputs.platform.pid_alive(lease.pid) {
+                    "is alive but has not beaten for over 600 s"
+                } else {
+                    "is gone"
+                };
                 checks.push(Check::warn(
                     name("watch lease"),
                     format!(
-                        "held by pid {}, which is gone; the next `teamwire watch {team}` takes it over",
+                        "held by pid {}, which {why}; the next `teamwire watch {team}` takes it over",
                         lease.pid
                     ),
                 ));
