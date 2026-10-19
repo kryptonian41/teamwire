@@ -4,10 +4,6 @@
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
-#![expect(
-    clippy::panic,
-    reason = "a helper that panics on the wrong outcome fails the test, which is the intended result"
-)]
 
 #[path = "support/rig.rs"]
 mod rig;
@@ -113,14 +109,10 @@ fn a_guarded_host_does_not_type_after_text_left_in_the_box() {
     let place = rig.healthy("lead-1", 100);
     rig.host.set_screen(&place, "ready\n> fix the lin");
     let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
-    match outcome {
-        DeliveryOutcome::Undelivered(e) => {
-            assert_eq!(e.code, DeliveryErrorCode::NotAtInputPrompt);
-        }
-        other @ (DeliveryOutcome::HandedOff | DeliveryOutcome::Unconfirmed(_)) => {
-            panic!("expected undelivered, got {other:?}")
-        }
-    }
+    assert!(
+        matches!(&outcome, DeliveryOutcome::Undelivered(e) if e.code == DeliveryErrorCode::NotAtInputPrompt),
+        "{outcome:?}"
+    );
     assert!(rig.host.submitted(&place).is_empty());
     assert_eq!(rig.host.log().count_named("read_tail"), 3);
 }
