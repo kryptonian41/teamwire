@@ -10,6 +10,6 @@ TALKING TO THE TEAM
   its full text with the MCP tool `team_inbox`
   (`mcp__teamwire__team_inbox`; if your tools load on request, load it
   first), or with `{teamwire} inbox`.
-  A line that ends with "... Full text: teamwire inbox" is only the
+  A line that holds "... Full text: teamwire inbox" is only the
   start of the message. Read the inbox before you act on it. Reading it
   marks the message read; until then the parent sees it as unread.
