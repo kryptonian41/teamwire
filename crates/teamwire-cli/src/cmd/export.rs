@@ -4,7 +4,7 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use teamwire_core::{TeamName, Timestamp};
+use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
@@ -107,8 +107,18 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
             role: None,
             data,
         };
+    // The lead session id is what a member would need to speak as the lead,
+    // so an export taken from a member's session leaves it out everywhere.
+    let member = carries_member_identity();
     let mut out = Vec::new();
-    for e in keep(&mut skipped, tx.events_after(0, None, None)?) {
+    for mut e in keep(&mut skipped, tx.events_after(0, None, None)?) {
+        if member && e.kind == EventType::TeamLeadAdopted {
+            for key in ["old_session", "new_session"] {
+                if let Some(v) = e.data.get_mut(key) {
+                    *v = Value::Null;
+                }
+            }
+        }
         out.push(Record {
             seq: Some(e.seq),
             role: e.role.as_ref().map(|r| r.as_str().to_owned()),
@@ -197,9 +207,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
         ));
     }
     if let Some(team) = tx.team()? {
-        // The lead session id is what a member would need to speak as the
-        // lead, so an export taken from a member's session leaves it out.
-        let lead_session = (!carries_member_identity())
+        let lead_session = (!member)
             .then(|| team.lead_session.as_ref().map(ToString::to_string))
             .flatten();
         out.push(record(
