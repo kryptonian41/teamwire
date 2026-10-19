@@ -12,6 +12,7 @@
 //! irreversible step and `started` after the agent runs, so close finds
 //! everything whatever step a crash hit (LCH-3).
 
+mod afk;
 mod contract;
 mod env;
 mod git;

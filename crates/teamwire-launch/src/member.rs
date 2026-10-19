@@ -57,7 +57,10 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
         team: ctx.home.join("teams").join(plan.spec.team.as_str()),
     };
     for m in &plan.members {
-        let outcome = launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings);
+        let outcome = match crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
+            Some(why) => LaunchOutcome::Refused(why),
+            None => launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings),
+        };
         members.push(MemberOutcome {
             role: m.spec.role.clone(),
             outcome,

@@ -114,6 +114,7 @@ pub fn validate(
         .collect();
     disk_check(env, &members, &mut errors);
     crate::plan_rules::planning_warnings(&cx, &members, &mut warnings);
+    crate::afk::model_warnings(existing.as_ref(), &members, &mut warnings);
     if !errors.is_empty() {
         return Err(errors);
     }
