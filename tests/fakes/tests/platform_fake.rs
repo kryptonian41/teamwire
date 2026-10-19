@@ -187,3 +187,20 @@ fn hold_start_can_fail_and_linux_has_no_hold() {
     assert!(p.sleep_hold().unwrap().start(pid(1)).is_err());
     assert!(FakePlatform::without_sleep_hold().sleep_hold().is_none());
 }
+
+#[test]
+fn write_atomic_keeps_the_mode_of_the_file_it_replaces_and_makes_new_files_0644() {
+    use std::os::unix::fs::PermissionsExt;
+    let mode = |path: &Path| std::fs::metadata(path).unwrap().permissions().mode() & 0o7777;
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakePlatform::new();
+    let private = dir.path().join("env");
+    std::fs::write(&private, "old").unwrap();
+    std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600)).unwrap();
+    p.write_atomic(&private, b"new").unwrap();
+    assert_eq!(mode(&private), 0o600);
+    assert_eq!(std::fs::read(&private).unwrap(), b"new");
+    let fresh = dir.path().join("fresh");
+    p.write_atomic(&fresh, b"x").unwrap();
+    assert_eq!(mode(&fresh), 0o644);
+}

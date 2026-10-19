@@ -199,6 +199,28 @@ fn fake_platform_passes_platform_contract() {
 }
 
 #[test]
+#[should_panic(expected = "a timeout kills what the child started too: the grandchild is gone")]
+fn platform_contract_fails_when_a_timeout_leaves_the_grandchild_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    // The queue holds what a platform that kept the grandchild would say.
+    platform.set_alive(Pid::new(555), true);
+    for case in &cases {
+        let mut out = case.expect.conforming_output();
+        if case.expect.ends_grandchild {
+            out.stdout = b"555\n".to_vec();
+        }
+        platform.queue_run(Ok(out));
+    }
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
+}
+
+#[test]
 fn fake_platform_without_a_sleep_hold_passes_platform_contract() {
     let dir = tempfile::tempdir().unwrap();
     let platform = FakePlatform::without_sleep_hold();
