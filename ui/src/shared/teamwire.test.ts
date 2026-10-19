@@ -25,6 +25,25 @@ describe("schemas refuse a changed shape", () => {
   });
 });
 
+describe("ticket refs on a team", () => {
+  test("a payload with refs keeps them, in order", () => {
+    const withRefs = { teams: [{ ...teams.teams[0]!, refs: ["GKA-580", "#3772"] }] };
+    expect(TeamsList.parse(withRefs).teams[0]!.refs).toEqual(["GKA-580", "#3772"]);
+    const view = StatusAll.parse([{ ...status[0]!, refs: ["GKA-580"] }]);
+    expect(view[0]!.refs).toEqual(["GKA-580"]);
+  });
+  test("a payload without refs reads as an empty list", () => {
+    expect("refs" in teams.teams[0]!).toBe(false);
+    expect(TeamsList.parse(teams).teams[0]!.refs).toEqual([]);
+    expect("refs" in status[0]!).toBe(false);
+    expect(StatusAll.parse(status)[0]!.refs).toEqual([]);
+  });
+  test("a ref that is not text fails the parse", () => {
+    const bad = { teams: [{ ...teams.teams[0]!, refs: [580] }] };
+    expect(TeamsList.safeParse(bad).success).toBe(false);
+  });
+});
+
 // Reads the real teamwire on this machine. Opt in with TW_UI_LIVE=1, so a
 // member's check never depends on which teams happen to be running.
 describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {

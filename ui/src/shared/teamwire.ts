@@ -123,6 +123,8 @@ export const StatusView = z.object({
   team: z.string().nullable(),
   title: z.string().nullable(),
   state: TeamState.nullable(),
+  /** Tickets the team works on, such as `GKA-580`. Older teamwire omits it. */
+  refs: z.array(z.string()).default([]),
   lead: LeadView.nullable(),
   watch: WatchView,
   members: z.array(MemberView),
@@ -155,6 +157,8 @@ export const TeamEntry = z.object({
   name: z.string(),
   title: z.string(),
   state: TeamState,
+  /** Tickets the team works on, such as `GKA-580`. Older teamwire omits it. */
+  refs: z.array(z.string()).default([]),
   members: z.array(RosterMember),
 });
 
