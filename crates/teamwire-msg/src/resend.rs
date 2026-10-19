@@ -10,7 +10,7 @@ use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, deliver_one, earlier_bump, report_of};
 use crate::remote::{Try, deliver_to_team};
-use crate::send::{by_other_team, read_team, record_refusal, survive_store_error, team_name};
+use crate::send::{by_other_team, read_team, record_refusal, survive_error, team_name};
 use crate::{RecipientReport, RecipientState, SendError, SendReport};
 
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
@@ -97,7 +97,7 @@ pub fn resend(
             continue;
         }
         let result = retry(ctx, actor, &team, &message, row);
-        deliveries.push(survive_store_error(
+        deliveries.push(survive_error(
             result,
             &row.delivery.recipient,
             row.delivery.attempts + 1,
@@ -114,7 +114,7 @@ pub fn resend(
         }
         let results = deliver_to_team(ctx, &team, &message, &other, &group, &tries);
         for (t, result) in tries.iter().zip(results) {
-            deliveries.push(survive_store_error(
+            deliveries.push(survive_error(
                 result,
                 &t.row.delivery.recipient,
                 t.attempts,

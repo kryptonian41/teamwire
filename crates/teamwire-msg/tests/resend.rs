@@ -382,3 +382,39 @@ fn a_pending_row_whose_attempt_just_started_is_not_resendable() {
     let report = resend(&mut rig.ctx(), &scout, &display, None).unwrap();
     assert_eq!(state_of(&report, "api"), RecipientState::HandedOff);
 }
+
+#[test]
+fn a_team_that_starts_closing_part_way_keeps_every_report() {
+    let mut rig = team_rig();
+    rig.set_reachable("api", false);
+    rig.set_reachable("web", false);
+    let req = rig.request("scout", &["api", "web"], MessageType::Finding, "x");
+    let first = send(&mut rig.ctx(), req).unwrap();
+    rig.set_reachable("api", true);
+    rig.set_reachable("web", true);
+    // The close starts as soon as the first recipient's row is touched.
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER close_after_api AFTER UPDATE ON deliveries
+                     WHEN NEW.recipient = 'api'
+                     BEGIN UPDATE team SET state = 'closing'; END;",
+                )
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let report = resend(
+        &mut rig.ctx(),
+        &teamwire_core::Actor::parse("scout").unwrap(),
+        &first.display_id,
+        None,
+    )
+    .unwrap();
+    assert_eq!(report.deliveries.len(), 2);
+    assert_eq!(state_of(&report, "api"), RecipientState::HandedOff);
+    let web = report.deliveries.iter().find(|d| d.to == to("web")).unwrap();
+    assert_eq!(web.state, RecipientState::Undelivered);
+    assert_eq!(web.reason, Some(DeliveryErrorCode::TeamClosed));
+    assert_eq!(submits(&rig), 1);
+}

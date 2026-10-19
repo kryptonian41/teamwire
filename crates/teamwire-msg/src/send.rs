@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, DeliveryState, DisplayId, EventType, Message, MessageType, Pid, Recipient, Refusal,
+    Actor, DeliveryErrorCode, DeliveryState, DisplayId, EventType, Message, MessageType, Pid, Recipient, Refusal,
     SendRequest, TeamName, Timestamp, Ulid,
 };
 use teamwire_deliver::watch_lease_is_dead;
@@ -122,7 +122,7 @@ pub fn send_with(
         }
         let attempts = record.delivery.attempts + 1;
         let result = try_recipient(ctx, &team, &message, record, stored.duplicate, &bumped);
-        deliveries.push(survive_store_error(
+        deliveries.push(survive_error(
             result,
             &record.delivery.recipient,
             attempts,
@@ -142,7 +142,7 @@ pub fn send_with(
         }
         let results = deliver_to_team(ctx, &team, &message, &other, &rows, &tries);
         for (t, result) in tries.iter().zip(results) {
-            deliveries.push(survive_store_error(
+            deliveries.push(survive_error(
                 result,
                 &t.row.delivery.recipient,
                 t.attempts,
@@ -232,28 +232,35 @@ fn try_recipient(
     )
 }
 
-/// One recipient's store error is that recipient's report, `pending`, so the
-/// recipients after it are still tried and the caller still gets every
-/// report. The delivery may or may not have been typed, which is what
-/// `pending` says; the command exits non-zero for it. Any other error ends
-/// the whole command.
-pub(crate) fn survive_store_error(
+/// Turns an error that belongs to one recipient into that recipient's
+/// report, so the recipients after it are still tried and the caller still
+/// gets every report of a send that already typed some lines. A store error
+/// is `pending`: the delivery may or may not have been typed, and the
+/// command exits 6 for it. A team that started closing part way is
+/// `undelivered (team_closed)`: nothing more is typed, and the command exits
+/// 4. Any other error ends the whole command.
+pub(crate) fn survive_error(
     result: Result<RecipientReport, SendError>,
     recipient: &Recipient,
     attempts: u32,
 ) -> Result<RecipientReport, SendError> {
-    match result {
+    let (state, reason) = match result {
         Err(SendError::Store(e)) => {
             tracing::warn!(%recipient, error = %e, "could not record a delivery");
-            Ok(RecipientReport {
-                to: recipient.clone(),
-                state: RecipientState::Pending,
-                reason: None,
-                attempts: Some(attempts),
-            })
+            (RecipientState::Pending, None)
         }
-        other => other,
-    }
+        Err(SendError::Refused(Refusal::TeamClosed)) => (
+            RecipientState::Undelivered,
+            Some(DeliveryErrorCode::TeamClosed),
+        ),
+        other => return other,
+    };
+    Ok(RecipientReport {
+        to: recipient.clone(),
+        state,
+        reason,
+        attempts: Some(attempts),
+    })
 }
 
 /// The one write transaction of a send: the message, its deliveries, its
