@@ -180,6 +180,7 @@ so they need no schema change:
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
+| `team.created` | `afk_budget_ends_at` | When an AFK run's budget ends, written by `teamwire afk start`. Missing on an ordinary team. |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
 `ReadTx::lead_cwd` returns the `lead_cwd` of the newest `team.created` or
@@ -187,6 +188,8 @@ so they need no schema change:
 folder belongs to an older lead session. `ReadTx::run_options` returns a
 member's recorded `model` and `effort`, and whether either key was recorded.
 `Tx::create_team_with` and `Tx::adopt_lead_in` write the extra keys.
+`Tx::create_afk_team` creates an AFK run's team: `create_team_with` plus
+`team.afk_budget_ends_at` and the event key of the same name.
 
 ## 6. Traits
 
@@ -483,8 +486,11 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 Schema version 2 is `crates/teamwire-store/src/schema/v1.sql` followed by
 `src/schema/v2.sql`. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
-each, NULL when the platform could not read it (ADR 0002 decision 8). Its
-tables and columns are those in `ARCHITECTURE.md`, "Data model". Constraints
+each, NULL when the platform could not read it (ADR 0002 decision 8).
+Version 3 changes no table. Version 4 rebuilds `events` (ADR 0020). Version 5
+adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
+on an ordinary team (ADR 0025). The tables and columns are those in
+`ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 
 ```sql

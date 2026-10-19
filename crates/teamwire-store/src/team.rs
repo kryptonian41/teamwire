@@ -45,6 +45,8 @@ pub struct TeamRow {
     pub lead_route: LeadRoute,
     pub sleep_hold: Option<HoldInfo>,
     pub created_at: Timestamp,
+    /// Set only on an AFK run's team: when its wall-clock budget ends.
+    pub afk_budget_ends_at: Option<Timestamp>,
 }
 
 /// How a close ended.
@@ -59,7 +61,7 @@ pub enum CloseEnd {
 
 const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id, lead_kind, \
      lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
-     closing_pid_started_at";
+     closing_pid_started_at, afk_budget_ends_at";
 
 fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
     let pid = |i| -> Result<Option<Pid>, String> {
@@ -87,6 +89,7 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
         lead_route: parsed(row, 9, "lead route", LeadRoute::parse)?,
         sleep_hold,
         created_at: ts(row, 12)?,
+        afk_budget_ends_at: ts_opt(row, 14)?,
     })
 }
 
@@ -138,6 +141,23 @@ impl Tx<'_> {
             None,
             Some(&ulid),
             &Value::Object(data),
+        )?;
+        Ok(ulid)
+    }
+
+    /// `create_team` for an AFK run: the row also records when the run's
+    /// budget ends, and `team.created` carries it as `afk_budget_ends_at`.
+    pub fn create_afk_team(
+        &self,
+        at: Timestamp,
+        team: &NewTeam,
+        budget_ends_at: Timestamp,
+    ) -> Result<Ulid, StoreError> {
+        let ends = budget_ends_at.to_string();
+        let ulid = self.create_team_with(at, team, &json!({ "afk_budget_ends_at": ends }))?;
+        self.connection().execute(
+            "UPDATE team SET afk_budget_ends_at = ?1 WHERE id = 1",
+            [&ends],
         )?;
         Ok(ulid)
     }
