@@ -55,7 +55,7 @@ pub use platform::{
 pub use registry::{Registry, RegistryError};
 pub use sanitize::{OneLine, one_line};
 pub use secret::{RedactedEnv, is_secret_name};
-pub use spec::{MemberSpec, TeamSpec, TicketRef};
+pub use spec::{MemberSpec, REFS_MAX, TeamSpec, TicketRef};
 pub use strings::UnknownString;
 pub use team::{LeadRoute, TeamState};
 pub use timestamp::{Timestamp, TimestampError};

@@ -365,3 +365,30 @@ fn add_refs_without_a_team_is_refused() {
         "{result:?}"
     );
 }
+
+#[test]
+fn add_refs_past_the_limit_is_refused_and_changes_nothing() {
+    let mut f = created();
+    let nineteen: Vec<String> = (0..19).map(|n| format!("linear:T-{n}")).collect();
+    let nineteen: Vec<&str> = nineteen.iter().map(String::as_str).collect();
+    f.store.write(|tx| tx.set_refs(&refs(&nineteen))).unwrap();
+
+    // Two new refs would make 21, as when two `--add` runs both passed `validate`.
+    let result = f
+        .store
+        .write(|tx| tx.add_refs(at(1), &refs(&["linear:N-1", "linear:N-2"])));
+    assert!(
+        matches!(result, Err(StoreError::Constraint(_))),
+        "{result:?}"
+    );
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(team.refs, refs(&nineteen));
+    assert_eq!(count_events(&f.store, EventType::TeamRefsAdded), 0);
+
+    // One new ref fills the 20th place.
+    f.store
+        .write(|tx| tx.add_refs(at(2), &refs(&["linear:N-1"])))
+        .unwrap();
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(team.refs.len(), 20);
+}

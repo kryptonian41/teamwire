@@ -7,8 +7,8 @@ use rusqlite::{OptionalExtension, Row};
 use serde_json::{Value, json};
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName,
-    TeamState, TicketRef, Timestamp, Ulid,
+    EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, REFS_MAX, SessionId, SessionKind,
+    TeamName, TeamState, TicketRef, Timestamp, Ulid,
 };
 
 use crate::error::StoreError;
@@ -270,6 +270,14 @@ impl Tx<'_> {
         }
         if added.is_empty() {
             return Ok(added);
+        }
+        // `validate` read the team before this lock, so a second `--add` may
+        // have used the room since.
+        if all.len() > REFS_MAX {
+            return Err(StoreError::Constraint(format!(
+                "a team holds at most {REFS_MAX} refs, and this would make {}",
+                all.len()
+            )));
         }
         self.set_refs(&all)?;
         self.record_event(

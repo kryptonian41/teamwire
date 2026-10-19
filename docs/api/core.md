@@ -494,7 +494,9 @@ order that is never NULL and defaults to `[]`, and rebuilds `events` with the
 `team.refs_added` type. `TeamRow.refs` is that array; `Tx::set_refs` sets it
 when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs
 not yet held and writes `team.refs_added`, or writes nothing when none is new
-(ADR 0025). A read-only open of an older database reads `refs` as empty.
+(ADR 0025). It refuses with `StoreError::Constraint`, and appends nothing, when the
+team would hold more than `REFS_MAX` (20) refs, because two `--add` runs may each
+have passed `validate`'s check before either wrote. A read-only open of an older database reads `refs` as empty.
 Constraints
 that carry integrity:
 
