@@ -167,6 +167,8 @@ export const TeamEntry = z.object({
   name: z.string(),
   title: z.string(),
   state: TeamState,
+  /** When an AFK run's budget ends; `null` for an ordinary team. An older teamwire leaves the key out. */
+  afk_budget_ends_at: z.string().nullish(),
   members: z.array(RosterMember),
 });
 
