@@ -3,7 +3,7 @@
 //! read-only, so a look changes nothing anywhere.
 
 use serde::{Deserialize, Serialize};
-use teamwire_core::{Refusal, TeamName, TeamState};
+use teamwire_core::{Refusal, TeamName, TeamState, TicketRef};
 use teamwire_store::{Ctx, Store, StoreError, team_names};
 
 use crate::send::read_team;
@@ -18,7 +18,7 @@ pub struct TeamEntry {
     /// Only an open team takes messages.
     pub state: TeamState,
     /// The tickets the team works on; empty when it has none.
-    pub refs: Vec<String>,
+    pub refs: Vec<TicketRef>,
     pub members: Vec<RosterEntry>,
 }
 

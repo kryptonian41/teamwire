@@ -212,19 +212,34 @@ fn a_send_to_a_quiet_member_or_an_unknown_team_is_refused() {
     }
 }
 
+/// Two refs on different providers.
+fn two_refs() -> [teamwire_core::TicketRef; 2] {
+    let make = |provider: &str, id: &str| teamwire_core::TicketRef {
+        provider: provider.to_owned(),
+        id: id.to_owned(),
+    };
+    [make("linear", "GKA-580"), make("github", "#1")]
+}
+
+fn two_refs_json() -> serde_json::Value {
+    serde_json::json!([
+        {"provider": "linear", "id": "GKA-580"},
+        {"provider": "github", "id": "#1"},
+    ])
+}
+
 #[test]
 fn teams_shows_each_teams_refs_in_text_and_json() {
     let rig = Rig::new();
     let mut beta = Store::open(rig.home.path(), &TeamName::parse("beta").unwrap()).unwrap();
-    beta.write(|tx| tx.set_refs(&["GKA-580".to_owned(), "#1".to_owned()]))
-        .unwrap();
+    beta.write(|tx| tx.set_refs(&two_refs())).unwrap();
     drop(beta);
 
     let out = rig.run(&["teams"], None);
     let stdout = text(&out.stdout);
     assert!(
         stdout.contains(
-            "beta (open) Team beta: address as lead@beta or <role>@beta (refs GKA-580, #1)"
+            "beta (open) Team beta: address as lead@beta or <role>@beta (refs linear:GKA-580, github:#1)"
         ),
         "{stdout}"
     );
@@ -234,8 +249,5 @@ fn teams_shows_each_teams_refs_in_text_and_json() {
     let out = rig.run(&["teams", "--json"], None);
     let json: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(json["teams"][0]["refs"], serde_json::json!([]));
-    assert_eq!(
-        json["teams"][1]["refs"],
-        serde_json::json!(["GKA-580", "#1"])
-    );
+    assert_eq!(json["teams"][1]["refs"], two_refs_json());
 }

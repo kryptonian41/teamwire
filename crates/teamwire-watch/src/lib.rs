@@ -27,7 +27,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
     Actor, DeliveryState, DisplayId, Liveness, MessageType, Pid, Recipient, ReportState, Role,
-    SessionId, TeamName, TeamState, Timestamp,
+    SessionId, TeamName, TeamState, TicketRef, Timestamp,
 };
 use teamwire_store::Ctx;
 
@@ -150,7 +150,7 @@ pub struct StatusView {
     pub title: Option<String>,
     pub state: Option<TeamState>,
     /// The tickets the team works on; empty when it has none.
-    pub refs: Vec<String>,
+    pub refs: Vec<TicketRef>,
     pub lead: Option<LeadView>,
     pub watch: WatchView,
     pub members: Vec<MemberView>,

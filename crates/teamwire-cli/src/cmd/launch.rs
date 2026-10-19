@@ -171,7 +171,8 @@ fn print_plan(plan: &ValidPlan) {
     println!("dry run: would {verb} team {}", plan.spec.team);
     if !plan.new_refs.is_empty() {
         let what = if plan.add { "append" } else { "record" };
-        println!("  would {what} refs {}", plan.new_refs.join(", "));
+        let refs: Vec<String> = plan.new_refs.iter().map(ToString::to_string).collect();
+        println!("  would {what} refs {}", refs.join(", "));
     }
     for m in &plan.members {
         let place = match &m.worktree {

@@ -169,7 +169,8 @@ fn a_version_4_team_row_migrates_with_no_refs_and_takes_new_ones() {
     let added = store
         .write(|tx| tx.add_refs(at, std::slice::from_ref(&linear)))
         .unwrap();
-    assert_eq!(added, [linear.clone()]);
+    assert_eq!(added.len(), 1);
+    assert_eq!(added.first(), Some(&linear));
     let row = store.read(|tx| tx.team()).unwrap().unwrap();
     assert_eq!(row.refs, [linear]);
 }

@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     EventType, Host, HostId, LeadRoute, Member, MemberState, Role, SessionId, SessionKind,
-    TeamName, TeamSpec, TeamState,
+    TeamName, TeamSpec, TeamState, TicketRef,
 };
 use teamwire_store::{Store, TeamRow, database_path};
 
@@ -279,24 +279,47 @@ fn team_title(spec: &TeamSpec, existing: Option<&Existing>, errors: &mut Vec<Spe
     }
 }
 
+/// The longest provider name, in characters (ADR 0025).
+const PROVIDER_MAX: usize = 16;
+
+/// A provider name is `^[a-z][a-z0-9_]{0,15}$`. teamwire keeps no list of
+/// providers, so any name of that shape is accepted.
+fn provider_ok(p: &str) -> bool {
+    p.chars().count() <= PROVIDER_MAX
+        && p.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && p.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
 /// The spec's refs without repeats, in first-seen order, and a refusal for each
-/// that is empty, over `REF_MAX` characters, or holds white space or a control
-/// character. `recorded` are the refs the team already holds: with the spec's
-/// new ones they may not pass `REFS_MAX`.
-fn ticket_refs(refs: &[String], recorded: &[String], errors: &mut Vec<SpecError>) -> Vec<String> {
-    let mut kept: Vec<String> = Vec::new();
+/// whose provider is not a name of the right shape or whose id is empty, over
+/// `REF_MAX` characters, or holds white space or a control character. A repeat
+/// is the same provider and the same id. `recorded` are the refs the team
+/// already holds: with the spec's new ones they may not pass `REFS_MAX`.
+fn ticket_refs(
+    refs: &[TicketRef],
+    recorded: &[TicketRef],
+    errors: &mut Vec<SpecError>,
+) -> Vec<TicketRef> {
+    let mut kept: Vec<TicketRef> = Vec::new();
     for r in refs {
-        if r.is_empty()
-            || r.chars().count() > REF_MAX
-            || r.chars().any(|c| c.is_whitespace() || c.is_control())
+        let mut refuse = |message: String| {
+            errors.push(SpecError::new(None, Some("refs"), "bad_ref", message));
+        };
+        if !provider_ok(&r.provider) {
+            refuse(format!(
+                "ref provider {:?} must be a lowercase name of at most {PROVIDER_MAX} characters \
+                 (letters, digits, '_'), such as linear or github",
+                r.provider
+            ));
+        } else if r.id.is_empty()
+            || r.id.chars().count() > REF_MAX
+            || r.id.chars().any(|c| c.is_whitespace() || c.is_control())
         {
-            errors.push(SpecError::new(
-                None,
-                Some("refs"),
-                "bad_ref",
-                format!(
-                    "ref {r:?} must be 1 to {REF_MAX} characters with no white space, such as GKA-580 or #3772"
-                ),
+            refuse(format!(
+                "ref id {:?} (provider {}) must be 1 to {REF_MAX} characters with no white space, \
+                 such as GKA-580 or #3772",
+                r.id, r.provider
             ));
         } else if !kept.contains(r) {
             kept.push(r.clone());

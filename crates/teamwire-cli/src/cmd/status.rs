@@ -8,6 +8,7 @@ use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
 
 use crate::cmd::send::{carries_member_identity, home_or_refuse};
+use crate::cmd::teams::refs_suffix;
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 
@@ -98,11 +99,7 @@ fn render(view: &StatusView) -> String {
         "team {name} \"{}\" {}{}",
         view.title.as_deref().unwrap_or(""),
         view.state.map_or("unreadable", |s| s.as_str()),
-        if view.refs.is_empty() {
-            String::new()
-        } else {
-            format!(" (refs {})", view.refs.join(", "))
-        }
+        refs_suffix(&view.refs)
     ));
     if let Some(lead) = &view.lead {
         let session = lead.session_id.as_ref().map_or("none", |s| s.as_str());

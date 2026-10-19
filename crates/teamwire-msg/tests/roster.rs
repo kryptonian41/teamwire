@@ -10,7 +10,7 @@
 #[path = "support/rig.rs"]
 mod rig;
 
-use teamwire_core::{MemberKind, MemberState, MessageType};
+use teamwire_core::{MemberKind, MemberState, MessageType, TicketRef};
 use teamwire_msg::{describe, roster};
 
 use rig::Rig;
@@ -76,6 +76,20 @@ fn the_json_names_the_lifecycle_and_not_a_live_state() {
     assert!(json.get("accepts").is_none(), "{json}");
 }
 
+fn linear(id: &str) -> TicketRef {
+    TicketRef {
+        provider: "linear".to_owned(),
+        id: id.to_owned(),
+    }
+}
+
+fn github(id: &str) -> TicketRef {
+    TicketRef {
+        provider: "github".to_owned(),
+        id: id.to_owned(),
+    }
+}
+
 #[test]
 fn a_team_entry_carries_its_refs_in_the_json() {
     let mut rig = Rig::new();
@@ -85,8 +99,14 @@ fn a_team_entry_carries_its_refs_in_the_json() {
     assert_eq!(json["refs"], serde_json::json!([]));
 
     rig.store
-        .write(|tx| tx.set_refs(&["GKA-580".to_owned(), "#1".to_owned()]))
+        .write(|tx| tx.set_refs(&[linear("GKA-580"), github("#1")]))
         .unwrap();
     let json = serde_json::to_value(describe(&rig.ctx()).unwrap()).unwrap();
-    assert_eq!(json["refs"], serde_json::json!(["GKA-580", "#1"]));
+    assert_eq!(
+        json["refs"],
+        serde_json::json!([
+            {"provider": "linear", "id": "GKA-580"},
+            {"provider": "github", "id": "#1"},
+        ])
+    );
 }

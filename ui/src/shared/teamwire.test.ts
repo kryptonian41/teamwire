@@ -26,11 +26,13 @@ describe("schemas refuse a changed shape", () => {
 });
 
 describe("ticket refs on a team", () => {
+  const linear = { provider: "linear", id: "GKA-580" };
+  const github = { provider: "github", id: "#3772" };
   test("a payload with refs keeps them, in order", () => {
-    const withRefs = { teams: [{ ...teams.teams[0]!, refs: ["GKA-580", "#3772"] }] };
-    expect(TeamsList.parse(withRefs).teams[0]!.refs).toEqual(["GKA-580", "#3772"]);
-    const view = StatusAll.parse([{ ...status[0]!, refs: ["GKA-580"] }]);
-    expect(view[0]!.refs).toEqual(["GKA-580"]);
+    const withRefs = { teams: [{ ...teams.teams[0]!, refs: [linear, github] }] };
+    expect(TeamsList.parse(withRefs).teams[0]!.refs).toEqual([linear, github]);
+    const view = StatusAll.parse([{ ...status[0]!, refs: [linear] }]);
+    expect(view[0]!.refs).toEqual([linear]);
   });
   test("a payload without refs reads as an empty list", () => {
     expect("refs" in teams.teams[0]!).toBe(false);
@@ -38,9 +40,11 @@ describe("ticket refs on a team", () => {
     expect("refs" in status[0]!).toBe(false);
     expect(StatusAll.parse(status)[0]!.refs).toEqual([]);
   });
-  test("a ref that is not text fails the parse", () => {
-    const bad = { teams: [{ ...teams.teams[0]!, refs: [580] }] };
-    expect(TeamsList.safeParse(bad).success).toBe(false);
+  test("a bare string ref, or a ref without a provider, fails the parse", () => {
+    for (const bad of ["GKA-580", { id: "GKA-580" }, { provider: "linear" }]) {
+      const payload = { teams: [{ ...teams.teams[0]!, refs: [bad] }] };
+      expect(TeamsList.safeParse(payload).success).toBe(false);
+    }
   });
 });
 

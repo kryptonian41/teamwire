@@ -72,15 +72,20 @@ to every member of the same spec file, and a member's value wins per key
 (ADR 0017). An `--add` spec must repeat the team's map, because the store keeps
 none. Keys starting with `_` are ignored.
 
-`refs` is a list of ticket refs the team works on, such as `["GKA-580",
-"#3772"]` (ADR 0025). A ref is 1 to 64 characters with no white space and no
-control character, a team holds at most 20, and an exact repeat is recorded
-once, in first-seen order. An invalid ref, or a total over 20, fails the whole
-spec (`bad_ref`, `too_many_refs`) like an invalid role. The first launch
-records the refs on the team row and in `team.created`. An `--add` spec may
-name more refs, and launch appends the ones not yet recorded, with a
-`team.refs_added` event; a ref is never removed. `--dry-run` prints `would
-record refs ...` or `would append refs ...`.
+`refs` is a list of the tickets the team works on (ADR 0025). Each ref is an
+object with a required `provider` and a required `id`, such as
+`{"provider": "linear", "id": "GKA-580"}`; teamwire assumes no provider. A
+provider is a lowercase name matching `^[a-z][a-z0-9_]{0,15}$` (`linear`,
+`github`, `jira`; no fixed list). An id is 1 to 64 characters with no white
+space and no control character. A team holds at most 20 refs, and an exact
+repeat (same provider, same id) is recorded once, in first-seen order. A bare
+string, a missing or unknown field, a bad provider name, a bad id, or a total
+over 20 fails the whole spec (`bad_ref`, `too_many_refs`) like an invalid
+role. The first launch records the refs on the team row and in `team.created`.
+An `--add` spec may name more refs, and launch appends the ones not yet
+recorded, with a `team.refs_added` event; a ref is never removed. `--dry-run`
+prints `would record refs ...` or `would append refs ...`, each ref as
+`provider:id`.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
@@ -141,8 +146,8 @@ completion when it is `undelivered` or `unconfirmed` (ADR 0024). It also shows t
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
-binary. When the team has refs, the team's first line ends with `(refs GKA-580, #1)`;
-`--json` always carries `"refs": [...]`, empty for none. `--json` carries the same fields as `watch`, `unread_deliveries`,
+binary. When the team has refs, the team's first line ends with `(refs linear:GKA-580, github:#1)`;
+`--json` always carries `"refs": [{"provider": ..., "id": ...}]`, empty for none. `--json` carries the same fields as `watch`, `unread_deliveries`,
 `unanswered_questions`, and `started_by` and `older_build` per member. `--role R` adds the exact command
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
