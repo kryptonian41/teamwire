@@ -26,6 +26,9 @@ pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, 
             member.cwd.display()
         ));
     }
+    if let Some(why) = facts::stranded_refusal(ctx, member) {
+        return Err(why);
+    }
     let path = member.cwd.display().to_string();
     let out = git::run(ctx.platform, repo, &["worktree", "remove", &path])
         .map_err(|e| format!("{role}: {e}"))?;

@@ -742,3 +742,69 @@ fn removing_a_member_on_a_detached_head_keeps_its_commits_on_a_rescue_branch() {
     assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue]);
     assert_ne!(git(&rig.repo, &["for-each-ref", "--contains", &sha]), "");
 }
+
+#[test]
+fn a_commit_made_after_the_rescue_branch_stops_the_removal_and_keeps_the_worktree() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let first = commit_more(&rig, "api", "detached.rs");
+    verify_at(&mut rig, "api", &first, "PASS", &[]);
+    rig.set_place_state("api", PlaceState::Working);
+    let cwd = api.cwd.clone();
+    let late = std::cell::RefCell::new(String::new());
+    // The agent, still running under --stop, commits after close made the
+    // rescue branch and before its place closes.
+    let report = teamwire_close::close_observed(
+        &mut rig.ctx(),
+        CloseTarget::Member(role("api")),
+        CloseOpts {
+            stop: true,
+            ..CloseOpts::default()
+        },
+        &|step| {
+            if step == "close_place" {
+                *late.borrow_mut() = commit_more_in(&cwd, "late.rs");
+            }
+        },
+    );
+    let late = late.into_inner();
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("remove_worktree"),
+        "{report:?}"
+    );
+    assert!(
+        asks(
+            &report
+                .steps
+                .iter()
+                .map(|s| s.detail.clone())
+                .collect::<Vec<_>>(),
+            "no ref holds it"
+        ),
+        "{report:?}"
+    );
+    assert!(cwd.is_dir(), "the worktree holding {late} is kept");
+    assert_eq!(rig.member("api").state, MemberState::Started);
+
+    // The agent is stopped now; a rerun keeps the late commit on its own
+    // rescue branch and finishes.
+    rig.set_place_state("api", PlaceState::Idle);
+    verify_at(&mut rig, "api", &late, "PASS", &[]);
+    let rerun = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(rerun.stopped_at, None, "{rerun:?}");
+    assert!(!cwd.exists());
+    assert_ne!(git(&rig.repo, &["for-each-ref", "--contains", &late]), "");
+}
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
+    std::fs::write(cwd.join(file), "more\n").unwrap();
+    git(cwd, &["add", "-A"]);
+    git(cwd, &["commit", "-q", "-m", "more work"]);
+    git(cwd, &["rev-parse", "HEAD"])
+}

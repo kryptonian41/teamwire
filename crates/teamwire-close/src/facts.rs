@@ -270,29 +270,55 @@ pub(crate) fn detached(
     }))
 }
 
-/// Why close cannot keep this member's detached commits on a branch, or
-/// cannot tell whether it must.
+/// The member's detached HEAD, read with the team name from the store.
+/// `Ok(None)` also for a store with no team row: it records no worktree.
 #[expect(
     clippy::redundant_closure_for_method_calls,
     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
 )]
+fn detached_now(ctx: &Ctx<'_>, member: &Member) -> Result<Option<Detached>, String> {
+    match ctx.store.read(|tx| tx.team()) {
+        Ok(Some(team)) => detached(ctx, &team.name, member),
+        Ok(None) => Ok(None),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+fn cannot_tell(member: &Member, e: &str) -> String {
+    format!(
+        "cannot tell whether {}'s commits are on a branch ({e}); refusing rather than guess",
+        member.role
+    )
+}
+
+/// Why close cannot keep this member's detached commits on a branch, or
+/// cannot tell whether it must.
 fn rescue_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
-    let role = &member.role;
-    let cannot = |e: String| {
-        Some(format!(
-            "cannot tell whether {role}'s commits are on a branch ({e}); refusing rather than \
-             guess"
-        ))
-    };
-    let team = match ctx.store.read(|tx| tx.team()) {
-        Ok(Some(team)) => team.name,
-        Ok(None) => return None,
-        Err(e) => return cannot(e.to_string()),
-    };
-    match detached(ctx, &team, member) {
-        Ok(Some(head)) => head.pick(&[]).err().map(|e| format!("{role}'s {e}")),
+    match detached_now(ctx, member) {
+        Ok(Some(head)) => head
+            .pick(&[])
+            .err()
+            .map(|e| format!("{}'s {e}", member.role)),
         Ok(None) => None,
-        Err(e) => cannot(e),
+        Err(e) => Some(cannot_tell(member, &e)),
+    }
+}
+
+/// Why a worktree must not be removed this moment: its HEAD is detached and
+/// no ref holds the commit. Close makes the rescue branch first, so this
+/// means the agent committed after that, while it still ran; removing the
+/// worktree would leave the new commit on no ref. Asked right before
+/// `git worktree remove`; a rerun gives the new commit its own rescue branch.
+pub(crate) fn stranded_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
+    match detached_now(ctx, member) {
+        Ok(Some(head)) if !head.held => Some(format!(
+            "{}'s HEAD moved to {} after its rescue branch was made, and no ref holds it; the \
+             worktree is kept. Run close again to keep that commit on a branch",
+            member.role,
+            head.short()
+        )),
+        Ok(_) => None,
+        Err(e) => Some(cannot_tell(member, &e)),
     }
 }
 
