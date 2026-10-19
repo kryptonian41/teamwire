@@ -325,6 +325,9 @@ fn judge_completion(
             // later needs no line, so one poll of grace comes first.
             mm.declared_polls += 1;
             if mm.declared_polls < 2 {
+                // Idle polls before `done` say nothing about the hook, which
+                // runs only at the turn end after it.
+                mm.quiet = 0;
                 return Verdict::waiting();
             }
             env.announce(

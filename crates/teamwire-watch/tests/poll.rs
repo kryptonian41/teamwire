@@ -1209,3 +1209,23 @@ fn a_laptop_sleep_does_not_make_a_fresh_message_unread_or_unanswered() {
     assert_eq!(count(&later, "UNREAD"), 1, "{later:?}");
     assert_eq!(count(&later, "UNANSWERED"), 1, "{later:?}");
 }
+
+/// Idle polls from before `done` say nothing about the hook, which only
+/// runs at the turn end after it: the count starts at the completion.
+#[test]
+fn idle_polls_before_done_do_not_make_unreported_early() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.idle("api");
+    let before = bed.ticks(4);
+    assert_eq!(count(&before, "SILENT"), 1, "{before:?}");
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(4);
+    assert_eq!(count(&lines, "UNREPORTED"), 0, "{lines:?}");
+    let later = bed.ticks(1);
+    assert_eq!(count(&later, "UNREPORTED"), 1, "{later:?}");
+}
