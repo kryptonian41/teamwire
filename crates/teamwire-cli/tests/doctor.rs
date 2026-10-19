@@ -1102,22 +1102,19 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
     let mut older = bed.team("alpha").with_writer_version("0.0.0");
     start_member(&mut older, "web");
     start_member(&mut older, "api");
-    let now = FakeClock::new().now();
-    older
-        .write(|tx| {
-            tx.insert_completion(
-                now,
-                &teamwire_store::NewCompletion {
-                    role: Role::parse("web").unwrap(),
-                    generation: 1,
-                    status: teamwire_core::CompletionStatus::Done,
-                    summary: "finished".to_owned(),
-                    final_message: None,
-                    final_source: teamwire_core::FinalSource::Hook,
-                },
-            )
-            .map(|_| ())
+    complete(&mut older, "web");
+    // The watch delivered the result, so the lead has it.
+    let id = older
+        .read(|tx| {
+            Ok(tx
+                .completions_of(&Role::parse("web").unwrap())?
+                .all_or_corrupt()?)
         })
+        .unwrap()[0]
+        .completion
+        .ulid;
+    older
+        .write(|tx| tx.deliver_completion_via_watch(FakeClock::new().now(), &id))
         .unwrap();
     drop(older);
 
@@ -1132,6 +1129,41 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
         "{detail}"
     );
     assert!(detail.contains("shows as 0.0.0"), "{detail}");
+}
+
+fn complete(store: &mut Store, role: &str) {
+    let now = FakeClock::new().now();
+    store
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &teamwire_store::NewCompletion {
+                    role: Role::parse(role).unwrap(),
+                    generation: 1,
+                    status: teamwire_core::CompletionStatus::Done,
+                    summary: "finished".to_owned(),
+                    final_message: None,
+                    final_source: teamwire_core::FinalSource::Hook,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+}
+
+/// The watch's UNREPORTED line sends the lead here, so the member whose
+/// result nobody has received must be listed.
+#[test]
+fn a_member_from_another_build_whose_result_is_pending_is_counted() {
+    let bed = Bed::healthy();
+    let mut older = bed.team("alpha").with_writer_version("0.0.0");
+    start_member(&mut older, "web");
+    complete(&mut older, "web");
+    drop(older);
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
+    assert!(detail_of(&checks, "team alpha older members").contains("web (0.0.0)"));
 }
 
 #[test]

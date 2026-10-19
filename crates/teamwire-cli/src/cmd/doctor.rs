@@ -11,7 +11,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
-use teamwire_core::{Clock, Command, Config, Pid, Platform, Registry, TeamName, TeamState};
+use teamwire_core::{
+    Clock, Command, Config, Pid, Platform, Registry, ReportState, TeamName, TeamState,
+};
 use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 
 use crate::Global;
@@ -412,9 +414,15 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
     let older: Vec<String> = view
         .members
         .iter()
-        // A member with a result for its current generation has finished, so
-        // relaunching it changes nothing (the rule of the lead's Stop hook).
-        .filter(|m| m.older_build && m.result.is_none())
+        // A member whose result is settled has finished, so relaunching it
+        // changes nothing (the rule of the lead's Stop hook). A result still
+        // pending or delivering is what the watch's UNREPORTED line is about,
+        // so that member stays listed.
+        .filter(|m| {
+            m.older_build
+                && m.result
+                    .is_none_or(|r| matches!(r, ReportState::Pending | ReportState::Delivering))
+        })
         .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
         .collect();
     if older.is_empty() {
