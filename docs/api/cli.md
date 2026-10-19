@@ -80,6 +80,38 @@ When no member started, one more line follows `watch:`: `no member started;
 fix the cause and run teamwire launch --add --spec <spec>, or teamwire close
 <team>`. The team stays open.
 
+On an AFK team (ADR 0025), `--add` accepts a team that has no members yet.
+Past the team's budget, each new `implementer` prints `<role>: refused:
+afk_budget_spent: the run's budget ended at <RFC 3339>; no new implementer
+starts` and counts as not started (exit 2). Every other kind still starts.
+Before it starts members, launch prints one stderr line for each member whose
+model or effort is below the AFK table, and never refuses for it:
+`warning: AFK run: member <role> (<kind>) runs on <model|the default model>
+at <effort|the default effort>, below the AFK table (<model> at <effort>)`.
+The table is `implementer` and `investigator` on `opus` at `high`, `reviewer`
+and `closer` on `opus` at `xhigh`. Models order `haiku < sonnet < opus` and
+efforts `low < medium < high < xhigh < max`. A model name outside that list
+gets no warning.
+
+### `teamwire afk start --team NAME --title TITLE --task FILE [--budget DURATION]`
+
+Starts an AFK run (ADR 0025) from a lead session on Claude Code. It stops at
+the first step that fails: it finds the lead session as launch does; checks
+the team name and title with launch's rules; runs the checks of `teamwire
+doctor` that a launch needs; creates the team with no members and
+`afk_budget_ends_at` set; copies `--task` to `teams/<team>/afk/task.md` byte
+for byte; and starts or reuses the sleep hold. A doctor `FAIL` refuses the
+start, and a `warn` is printed. It prints the team name, the `afk/`
+directory, the report path (`afk/REPORT.md`), the time the budget ends, and a
+line asking the user to keep the lid open and the machine on power.
+
+`--budget` is a positive whole number followed by `h` or `m`, such as `8h` or
+`90m`, and defaults to `8h`. Zero, a missing unit and any other unit are usage
+errors (exit 3). `refused: afk_already_running` (exit 1) means this session
+already leads an open AFK team. A caller that carries a member identity is
+refused with `refused.identity`. After the start, members join with `teamwire
+launch --add`.
+
 ### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
 
 Runs until the team completes or closes. Prints at most one line per poll,
@@ -132,7 +164,13 @@ completion when it is `undelivered` or `unconfirmed` (ADR 0024). It also shows t
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
 binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
-`unanswered_questions`, and `started_by` and `older_build` per member. `--role R` adds the exact command
+`unanswered_questions`, and `started_by` and `older_build` per member. An AFK team shows one line
+after the team's header: `afk: budget ends <time>, <duration> left, <n>
+decisions`, or `afk: budget spent at <time>, <n> decisions` once the budget is
+over. `<n>` counts the lines of `afk/decisions.md` that start with `D<number>`
+and whitespace. The team object of `--json` has an `afk` key, `null` for an
+ordinary team and otherwise `{"budget_ends_at": "<RFC 3339>",
+"seconds_left": <int, 0 once spent>, "spent": <bool>, "decisions": <int>}`. `--role R` adds the exact command
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
 --append-system-prompt-file ...`), because a session resumed without them has
@@ -259,6 +297,14 @@ For each worktree that holds ignored files, the dry run and the real run print
 folders `target/` and `node_modules/`, and `TASK.md`. Close still removes the
 worktree.
 
+An AFK team is refused while `afk/REPORT.md` is missing or lacks one of eight
+headings, with `refused: afk_report_incomplete` (exit 1) and the missing names.
+A heading is a Markdown line that starts with one or more `#` and a space.
+The names are matched in any order, ignoring case, anywhere in the heading
+text, so `## 1. What you asked` counts: What you asked; What I understood; The
+result; Verified; Decisions made for you; Not done, and why; Risks; Cost.
+Removing one member with `--role` skips this check.
+
 ### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
 
 Sends one message (ADR 0003). `--to` takes roles separated by commas, or
@@ -380,7 +426,9 @@ Every team under the home with its title, state and roster, as `team_teams`
 returns it (MSG-21), and how to address its agents (`lead@<team>`,
 `<role>@<team>`). Reads only and needs no proof. A team whose store cannot
 be read is named on stderr and makes the command exit 6; the others are
-still listed.
+still listed. An AFK team shows `(open, afk)` in place of `(open)`, and
+`--json` gives every team an `afk_budget_ends_at` key, an RFC 3339 string or
+`null`.
 
 ## Harness and server entry points
 
@@ -394,7 +442,7 @@ These are started by a harness, not typed by people.
 | `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
-| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
+| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. When the session leads an open AFK team and nothing will wake the lead (no started member without a completion that also has a live watch lease), it holds once more with `[teamwire:<team>] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to <team dir>/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close <team>` once <team dir>/afk/REPORT.md exists. If a command you started will wake you, stop again.` (`<team dir>` is the absolute `$TEAMWIRE_HOME/teams/<team>`). Past the budget that note is `[teamwire:<team>] budget spent at <RFC 3339 ms Z>: finish what is running, write <team dir>/afk/REPORT.md, then run `teamwire close <team>`. Start no new implementer. If a command you started will wake you, stop again.` When the no-watch note also applies, both come back in one reply, joined by a newline. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
 | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 
 ## Maintenance
@@ -402,7 +450,7 @@ These are started by a harness, not typed by people.
 | Command | Does |
 | --- | --- |
 | `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use or its counter row is missing (`counter <name> is missing but <n> is in use`), and prints the SQL statement that repairs it (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. A plugin whose files match what this binary renders for the home it was installed for, but whose home differs from this run's, is a warning and gives no `teamwire install` advice: `warn teamwire plugin: installed for state directory <A>; this run uses <B>` (`<A>` reads `~/.teamwire (the default)` for a plugin installed for the default directory). Any other difference stays a failure. Doctor also prints a host line, for herdr and tmux, with the reason for the pick: `ok   host: herdr (HERDR_ENV is 1)`, `host: tmux (TMUX is set)`, `host: tmux (both HERDR_ENV and TMUX are set; the nearest parent is tmux)` or `host: herdr (both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first)`. With no host the old line stays. Exit 0 when all pass, 2 otherwise. When `codex` is on PATH, doctor also lists a `codex on PATH` line with its version, and checks the Codex plugin: a missing plugin is ok and names `teamwire install --harness codex`, a stale one is a warning. Without `codex` on PATH, doctor says nothing about Codex. |
-| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skill (`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, both skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. |
+| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skills (`skills/teamwire/SKILL.md`, `skills/teamwire/reference.md` and `skills/afk/SKILL.md`, which Claude Code lists as `/teamwire:afk`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, all three skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. |
 | `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, both skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `codex` is on PATH, it also removes the Codex plugin and marketplace through `codex plugin`. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. |
