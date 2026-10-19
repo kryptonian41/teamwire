@@ -197,7 +197,10 @@ pub(crate) fn answer_startup(
             }
             Some(Dialog::HooksReview) => return Ok(StartupOutcome::RefusedEscalated),
             Some(Dialog::Trust) if policy == TrustPolicy::Refuse => {
-                return Ok(StartupOutcome::RefusedEscalated);
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Refused,
+                    "the spec does not accept the folder-trust dialog",
+                ));
             }
             Some(dialog) => {
                 // A key that moved the pointer has taken effect, so the next

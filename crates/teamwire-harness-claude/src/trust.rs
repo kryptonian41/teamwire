@@ -94,14 +94,13 @@ pub(crate) fn answer_startup(
             std::thread::sleep(poll.step);
             continue;
         };
-        let tail = squash(&raw);
         // The stronger dialog reuses the plain dialog's title and its "Yes, I
         // trust this folder" button, so escalation is checked first and
         // refused whatever the policy says.
-        if has_any(&tail, &ESCALATION_MARKERS) {
+        if escalated(&raw) {
             return Ok(StartupOutcome::RefusedEscalated);
         }
-        if has_any(&tail, &PLAIN_TRUST_MARKERS) {
+        if has_any(&squash(&raw), &PLAIN_TRUST_MARKERS) {
             return match policy {
                 TrustPolicy::Refuse => Err(HarnessError::new(
                     HarnessErrorCode::Refused,
@@ -118,6 +117,13 @@ pub(crate) fn answer_startup(
     Err(timeout(
         "neither the input prompt nor a trust dialog appeared",
     ))
+}
+
+/// True when the screen shows an escalation line anywhere. Every read checks
+/// it, because a capture taken while the dialog is still being drawn can show
+/// the title before the escalation lines (INV-25).
+fn escalated(screen: &str) -> bool {
+    has_any(&squash(screen), &ESCALATION_MARKERS)
 }
 
 /// The screen below the last line of the trust dialog. The dialog's text can
@@ -158,6 +164,9 @@ fn accept(
             std::thread::sleep(poll.step);
             continue;
         };
+        if escalated(&screen) {
+            return Ok(StartupOutcome::RefusedEscalated);
+        }
         if classify(&after_dialog(&screen)) == ScreenState::InputPrompt {
             return Ok(StartupOutcome::NoDialog);
         }
@@ -188,10 +197,15 @@ fn confirm(
     let mut left = poll.steps;
     while left > 0 {
         left -= 1;
-        if let Some(screen) = read(host, place, poll, &mut left)?
-            && classify(&after_dialog(&screen)) == ScreenState::InputPrompt
-        {
-            return Ok(StartupOutcome::AnsweredPlainTrust);
+        if let Some(screen) = read(host, place, poll, &mut left)? {
+            // Enter is already sent here, so an escalated dialog seen now was
+            // accepted. Reporting it lets launch stop the member.
+            if escalated(&screen) {
+                return Ok(StartupOutcome::RefusedEscalated);
+            }
+            if classify(&after_dialog(&screen)) == ScreenState::InputPrompt {
+                return Ok(StartupOutcome::AnsweredPlainTrust);
+            }
         }
         std::thread::sleep(poll.step);
     }
