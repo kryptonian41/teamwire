@@ -127,6 +127,35 @@ fn stopped_message(report: &CloseReport, step: &str, team: &TeamName) -> String 
     }
 }
 
+/// What a stopped removal of one member leaves. The team never left `open`,
+/// so only the member's own steps count. Each acts on one member with one
+/// call, so a failed one took nothing away; one that succeeded did.
+fn removal_stopped_message(
+    report: &CloseReport,
+    step: &str,
+    team: &TeamName,
+    role: &Role,
+) -> String {
+    let ran: Vec<&str> = ["close_place", "remove_worktree"]
+        .into_iter()
+        .filter(|d| report.steps.iter().any(|s| s.step == *d && s.ok))
+        .collect();
+    let rerun = format!("`teamwire close {team} --role {role}`");
+    if ran.is_empty() {
+        format!(
+            "removal of {role} stopped at {step}: nothing was taken away; fix that, then run \
+             {rerun} again"
+        )
+    } else {
+        format!(
+            "removal of {role} stopped at {step}: {} already ran and close does not undo \
+             that; {role}'s row is kept, not marked removed. Fix the problem, then run \
+             {rerun} again to finish the job",
+            ran.join(", ")
+        )
+    }
+}
+
 fn show_plan(plan: &ClosePlan) -> ExitCode {
     for CloseStep { step, detail } in &plan.steps {
         say(&format!("[dry-run] {step}: {detail}"));
@@ -168,7 +197,10 @@ fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> E
         if let Some(archive) = &report.archive {
             warn(&format!("archive so far: {}", archive.display()));
         }
-        warn(&stopped_message(report, step, team));
+        warn(&match target {
+            CloseTarget::Team => stopped_message(report, step, team),
+            CloseTarget::Member(role) => removal_stopped_message(report, step, team, role),
+        });
         return ExitCode::from(STOPPED);
     }
     match target {
@@ -264,5 +296,23 @@ mod tests {
             text.contains("remove_worktrees, close_places, release_hold already ran"),
             "{text}"
         );
+    }
+
+    #[test]
+    fn a_stopped_removal_names_what_it_already_did() {
+        let team = TeamName::parse("alpha").unwrap();
+        let role = Role::parse("api").unwrap();
+        let after = report(&[("close_place", true), ("remove_worktree", false)]);
+        let text = removal_stopped_message(&after, "remove_worktree", &team, &role);
+        assert_eq!(
+            text,
+            "removal of api stopped at remove_worktree: close_place already ran and close \
+             does not undo that; api's row is kept, not marked removed. Fix the problem, then \
+             run `teamwire close alpha --role api` again to finish the job"
+        );
+        assert!(!text.contains("state intact"), "{text}");
+        let before = report(&[("close_place", false)]);
+        let text = removal_stopped_message(&before, "close_place", &team, &role);
+        assert!(text.contains("nothing was taken away"), "{text}");
     }
 }
