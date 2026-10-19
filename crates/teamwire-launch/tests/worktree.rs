@@ -122,7 +122,7 @@ fn task_md_written_and_excluded_from_git() {
     let kept = rig.home.path().join("teams/demo/briefs/api.md");
     assert_eq!(std::fs::read_to_string(kept).unwrap(), "build it");
     let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
-    assert_eq!(exclude.lines().filter(|l| *l == "TASK.md").count(), 1);
+    assert_eq!(exclude.lines().filter(|l| *l == "/TASK.md").count(), 1);
 }
 
 #[test]
@@ -184,7 +184,7 @@ fn non_utf8_exclude_is_kept() {
     );
     let bytes = std::fs::read(&exclude).unwrap();
     assert!(bytes.starts_with(b"caf\xe9\n"), "{bytes:?}");
-    assert!(bytes.ends_with(b"TASK.md\n"), "{bytes:?}");
+    assert!(bytes.ends_with(b"\n/TASK.md\n"), "{bytes:?}");
 }
 
 #[test]
@@ -207,4 +207,30 @@ fn a_pane_only_team_does_not_need_worktrees_ignored() {
     git(&repo, &["commit", "-q", "-m", "stop ignoring .worktrees"]);
     let spec = common::team_spec("demo", &[common::pane_member("a", "Alpha", &repo)]);
     assert!(rig.validate(&spec, false).is_ok());
+}
+
+#[test]
+fn the_contract_is_written_once() {
+    let rig = Rig::new();
+    let (spec, _repo) = one_worktree_team(&rig, "demo");
+    let plan = rig.validate(&spec, false).unwrap();
+    let _ = rig.launch("demo", plan);
+    let contract = rig.home.path().join("teams/demo/contract/api.md");
+    let writes = rig.platform.inner.written();
+    assert_eq!(
+        writes.iter().filter(|p| **p == contract).count(),
+        1,
+        "{writes:?}"
+    );
+}
+
+#[test]
+fn only_the_brief_at_the_root_is_hidden_from_git() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let plan = rig.validate(&spec, false).unwrap();
+    let _ = rig.launch("demo", plan);
+    std::fs::create_dir_all(repo.join("docs")).unwrap();
+    common::write(&repo.join("docs/TASK.md"), "the user's own notes\n");
+    assert_eq!(git(&repo, &["status", "--porcelain"]), "?? docs/");
 }

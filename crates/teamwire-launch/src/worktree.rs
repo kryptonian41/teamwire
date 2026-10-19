@@ -159,12 +159,14 @@ fn exclude_path(platform: &dyn Platform, worktree: &Path) -> Result<PathBuf, Str
     })
 }
 
-/// Adds `TASK.md` to the repository's `info/exclude` (LCH-24), once.
+/// Adds `/TASK.md` to the repository's `info/exclude` (LCH-24), once. The
+/// line is anchored, so a `TASK.md` deeper in the user's checkout still shows
+/// in `git status`.
 pub(crate) fn exclude_task_md(
     platform: &dyn Platform,
     worktree: &Path,
 ) -> Result<Option<Excluded>, String> {
-    let (file, lines) = exclude_lines(platform, worktree, &["TASK.md".to_owned()])?;
+    let (file, lines) = exclude_lines(platform, worktree, &["/TASK.md".to_owned()])?;
     Ok((!lines.is_empty()).then_some(Excluded { file, lines }))
 }
 

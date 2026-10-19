@@ -23,7 +23,7 @@ use teamwire_core::{
 use teamwire_store::{Ctx, RunOptions};
 use thiserror::Error;
 
-use crate::member_steps::spawn;
+use crate::member_steps::{not_open, spawn};
 use crate::reopen_lead::reopen_lead;
 use crate::{hold, watch_command};
 
@@ -382,7 +382,7 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         ),
         Err(e) => format!("the trust step failed: {e}"),
     };
-    Err(close_new_tab(r, &place, &failed))
+    Err(ReopenOutcome::Failed(close_new_tab(r, &place, &failed)))
 }
 
 /// The plugin switches the member's newest `member.started` event recorded.
@@ -400,11 +400,29 @@ fn recorded_plugins(
 }
 
 /// Records a member's new place. It runs after its tab is up, so a failed
-/// reopen leaves the old record as it was.
+/// reopen leaves the old record as it was. A team a close locked meanwhile
+/// gets no write, and the new tab is closed (CLS-3).
 fn record_place(ctx: &mut Ctx<'_>, role: &Role, r: &Ready<'_>, place: &Place) -> ReopenOutcome {
-    match ctx.store.write(|tx| tx.set_member_place(role, place)) {
-        Ok(()) => ReopenOutcome::Reopened,
-        Err(e) => close_new_tab(r, place, &format!("the place could not be recorded: {e}")),
+    let mut closed = None;
+    let written = ctx.store.write(|tx| {
+        closed = not_open(&tx.reader())?;
+        match closed {
+            Some(_) => Ok(()),
+            None => tx.set_member_place(role, place),
+        }
+    });
+    match (written, closed) {
+        (Ok(()), None) => ReopenOutcome::Reopened,
+        (Ok(()), Some(state)) => ReopenOutcome::Refused(close_new_tab(
+            r,
+            place,
+            &format!("team_closed: the team is {state}"),
+        )),
+        (Err(e), _) => ReopenOutcome::Failed(close_new_tab(
+            r,
+            place,
+            &format!("the place could not be recorded: {e}"),
+        )),
     }
 }
 
@@ -467,13 +485,14 @@ fn close_old_place(
     }
 }
 
-fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> ReopenOutcome {
+/// Closes a tab reopen just opened, and says how that went after `failed`.
+fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> String {
     match r.host.close(place, &r.request.name, CLOSE_TIMEOUT) {
-        Ok(()) => ReopenOutcome::Failed(format!("{failed}; the new tab was closed")),
-        Err(e) => ReopenOutcome::Failed(format!(
+        Ok(()) => format!("{failed}; the new tab was closed"),
+        Err(e) => format!(
             "{failed}; the new tab {} could not be closed ({e}): close it by hand before running \
              reopen again",
             place.id
-        )),
+        ),
     }
 }
