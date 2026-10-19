@@ -6,6 +6,11 @@
 //! the one it was recorded at; run a check except through `Platform::run`
 //! with the member's timeout.
 //!
+//! Three ways to switch a test off stay unflagged, because no line-by-line
+//! rule sees them: `#[cfg(not(test))]` (the rules have no path filter, so
+//! it would flag production code), a test wrapped in `/* */`, and a net-zero
+//! swap of one test for another.
+//!
 //! Invariants: every verify run writes one record per member with its HEAD
 //! sha; `PASS` means the check passed and no flag stands unwaived.
 

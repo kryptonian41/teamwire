@@ -3,6 +3,7 @@ extensions = ["py", "pyi"]
 marker_comment_prefixes = ["#"]
 test_paths = ["**/tests/**", "**/test/**", "**/test_*.py", "**/*_test.py"]
 test_markers = ["def test_", "async def test_"]
+assert_markers = ["assert", "self.assert"]
 config_files = [
   "**/pyproject.toml",
   "**/setup.cfg",
@@ -48,3 +49,22 @@ contains = "# noqa"
 [[weakening]]
 id = "no-cover"
 contains = "# pragma: no cover"
+
+# `pytestmark = pytest.mark.skip` skips a whole module without the `@`.
+[[weakening]]
+id = "pytest-mark-bare"
+contains = "pytest.mark.skip"
+word_start = true
+
+[[weakening]]
+id = "pytest-xfail-bare"
+contains = "pytest.mark.xfail"
+word_start = true
+
+[[weakening]]
+id = "skip-test-raise"
+contains = "SkipTest("
+
+[[weakening]]
+id = "skip-test-method"
+contains = ".skipTest("

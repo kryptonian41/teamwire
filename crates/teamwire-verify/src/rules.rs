@@ -28,6 +28,10 @@ struct Weakening {
     /// inside `exit(`.
     #[serde(default)]
     word_start: bool,
+    /// Match against the line with all whitespace removed, so `# [ignore]`
+    /// and `#[ ignore ]` are `#[ignore]`. The text may hold no whitespace.
+    #[serde(default)]
+    squeeze: bool,
 }
 
 /// The sections of a manifest that set lint levels.
@@ -58,6 +62,9 @@ struct RuleFile {
     test_paths: Vec<String>,
     #[serde(default)]
     test_markers: Vec<String>,
+    /// Like `test_markers`, for the lines that check something.
+    #[serde(default)]
+    assert_markers: Vec<String>,
     #[serde(default)]
     config_files: Vec<String>,
     lint_tables: Option<LintTables>,
@@ -133,10 +140,12 @@ impl Ruleset {
         {
             return None;
         }
+        let squeezed: String = line.split_whitespace().collect();
         language
             .weakening
             .iter()
             .find(|w| {
+                let line = if w.squeeze { &squeezed } else { line };
                 contains(line, &w.contains, w.word_start, language.ignore_in_strings)
                     && w.and_contains.iter().all(|c| line.contains(c.as_str()))
             })
@@ -147,15 +156,23 @@ impl Ruleset {
     /// line is prose: `// #[test]` is a test switched off, not a test. A
     /// marker must start a word, so `submit(` is not the marker `it(`.
     pub(crate) fn is_test_marker(&self, path: &str, line: &str) -> bool {
+        self.has_marker(path, line, |l| &l.test_markers)
+    }
+
+    /// True when `line` holds an assert marker, on the same terms as
+    /// `is_test_marker`.
+    pub(crate) fn is_assert_line(&self, path: &str, line: &str) -> bool {
+        self.has_marker(path, line, |l| &l.assert_markers)
+    }
+
+    fn has_marker(&self, path: &str, line: &str, markers: fn(&RuleFile) -> &Vec<String>) -> bool {
         self.language_of(path).is_some_and(|l| {
             let trimmed = line.trim_start();
             !l.comment_prefixes
                 .iter()
                 .chain(&l.marker_comment_prefixes)
                 .any(|p| trimmed.starts_with(p.as_str()))
-                && l.test_markers
-                    .iter()
-                    .any(|m| contains(line, m, true, false))
+                && markers(l).iter().any(|m| contains(line, m, true, false))
         })
     }
 

@@ -755,3 +755,139 @@ fn fast_forward_of_base_does_not_hide_flags() {
     repo.git(&["branch", "--force", "main", "HEAD"]);
     assert_flags_kept(&mut fx, &repo);
 }
+
+// ---- skip forms and dropped asserts (VER-3) ----
+
+const LIB: &str = "pub fn a() -> u32 { 1 }\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn one() {\n        assert_eq!(a(), 1);\n    }\n}\n";
+const IT: &str = "#[test]\nfn it_one() {\n    assert_eq!(1, 1);\n}\n\n#[test]\nfn it_two() {\n    assert_eq!(2, 2);\n}\n";
+const JS: &str = "const { it } = require('node:test');\n\nit('adds', () => {\n  check();\n});\n";
+const PY: &str = "def test_one():\n    assert f() == 1\n";
+const GO: &str = "package a\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif f() != 1 {\n\t\tt.Fatal(\"no\")\n\t}\n}\n";
+
+/// The flags of the diff rules after one commit that rewrites `path`.
+fn flags_after_edit(path: &str, text: &str) -> Vec<String> {
+    let repo = repo_on_work(&[
+        ("src/lib.rs", LIB),
+        ("tests/it.rs", IT),
+        ("test/a.test.js", JS),
+        ("tests/test_a.py", PY),
+        ("a_test.go", GO),
+    ]);
+    repo.commit(&[(path, text)], "change", start_secs() + 10);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer(
+        "api",
+        &repo,
+        Some("true"),
+        &["src/", "tests/", "test/", "a_test.go"],
+    ));
+    let record = run_one(&mut fx, "api");
+    record
+        .flags
+        .iter()
+        .map(|f| f.id.as_str().to_owned())
+        .filter(|id| id.starts_with("weakened:") || id.starts_with("asserts-removed:"))
+        .collect()
+}
+
+// Not flagged, by design (D17): `#[cfg(not(test))]` (the rules have no path
+// filter, so it would flag production code), a test wrapped in `/* */`, and
+// a net-zero swap of one test for another. Also not flagged: `it.skip.each`,
+// `it.skipIf(` and the focus form `fit(`.
+#[test]
+fn every_added_skip_form_is_flagged_end_to_end() {
+    let it_ignore = |attr: &str| {
+        IT.replacen(
+            "#[test]\nfn it_one",
+            &format!("#[test]\n{attr}\nfn it_one"),
+            1,
+        )
+    };
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "tests/it.rs",
+            it_ignore("#[ignore]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            it_ignore("# [ignore]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            it_ignore("#[ ignore ]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            format!("#![cfg(any())]\n{IT}"),
+            "weakened:tests/it.rs:1",
+        ),
+        (
+            "tests/it.rs",
+            IT.replace("assert_eq!", "let _ = "),
+            "asserts-removed:tests/it.rs",
+        ),
+        (
+            "test/a.test.js",
+            JS.replace("it('adds'", "it.skip('adds'"),
+            "weakened:test/a.test.js:3",
+        ),
+        (
+            "test/a.test.js",
+            JS.replace("it('adds', () =>", "it('adds', { skip: true }, () =>"),
+            "weakened:test/a.test.js:3",
+        ),
+        (
+            "tests/test_a.py",
+            format!("import pytest\npytestmark = pytest.mark.skip(reason='x')\n{PY}"),
+            "weakened:tests/test_a.py:2",
+        ),
+        (
+            "tests/test_a.py",
+            PY.replace(
+                "def test_one():\n",
+                "def test_one():\n    raise unittest.SkipTest('x')\n",
+            ),
+            "weakened:tests/test_a.py:2",
+        ),
+        (
+            "a_test.go",
+            GO.replace("\tif f()", "\tt.Skipf(\"later %d\", 1)\n\tif f()"),
+            "weakened:a_test.go:6",
+        ),
+        (
+            "a_test.go",
+            GO.replace("\tif f()", "\tt.Skip(\"later\")\n\tif f()"),
+            "weakened:a_test.go:6",
+        ),
+    ];
+    for (path, text, expected) in cases {
+        assert_eq!(flags_after_edit(path, &text), [expected], "{path}");
+    }
+}
+
+#[test]
+fn a_commit_that_removes_two_asserts_from_a_test_file_is_flagged() {
+    let before =
+        "#[test]\nfn a() {\n    assert_eq!(1, 1);\n    assert_eq!(2, 2);\n    assert!(true);\n}\n";
+    let (mut fx, repo) = rust_member(&["tests/"], &[("tests/b.rs", before)]);
+    repo.commit(
+        &[("tests/b.rs", "#[test]\nfn a() {\n    assert!(true);\n}\n")],
+        "simplify",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["asserts-removed:tests/b.rs"]);
+    assert_eq!(record.verdict, Verdict::Flagged);
+    assert!(
+        record
+            .flags
+            .first()
+            .unwrap()
+            .detail
+            .contains("2 assert line(s) removed and 0 added")
+    );
+}
