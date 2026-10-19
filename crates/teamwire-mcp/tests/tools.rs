@@ -1,4 +1,4 @@
-//! The nine tools through a real `rmcp` client on an in-process pipe: what
+//! The ten tools through a real `rmcp` client on an in-process pipe: what
 //! each returns on success and on refusal, and that a refusal stores only
 //! its own event.
 #![expect(
@@ -17,7 +17,7 @@ use teamwire_mcp::McpCaller;
 use rig::{Rig, call, ok, refused, sid, token_of, two_members};
 
 #[tokio::test]
-async fn tool_list_is_the_nine_tools_of_the_doc() {
+async fn tool_list_is_the_ten_tools_of_the_doc() {
     let rig = Rig::new();
     let client = rig.member_client("api", "x").await;
     let mut snapshot = Vec::new();
@@ -59,6 +59,7 @@ async fn tool_list_is_the_nine_tools_of_the_doc() {
             "team_members(of, team)",
             "team_log(limit, role, team)",
             "team_teams(team)",
+            "team_decisions(grep, limit, of, role, team)",
         ]
     );
     // A 2026 client requires the cache fields on the listing itself.
@@ -124,6 +125,7 @@ async fn a_wrong_token_is_refused_for_every_tool_and_stores_only_refusals() {
         ("team_status", json!({})),
         ("team_members", json!({})),
         ("team_log", json!({})),
+        ("team_decisions", json!({})),
     ];
     let before = rig.stored();
     for (tool, args) in calls {
@@ -138,7 +140,7 @@ async fn a_wrong_token_is_refused_for_every_tool_and_stores_only_refusals() {
             .filter(|e| **e == EventType::MessageRefused)
             .count()
     };
-    // The five tools that change state record the refusal; the three reads
+    // The five tools that change state record the refusal; the four reads
     // write nothing, not even that.
     assert_eq!(refusals(&after.0), refusals(&before.0) + 5);
     let others = |events: &[EventType]| {

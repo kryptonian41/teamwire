@@ -1,4 +1,4 @@
-//! The stdio MCP server (`rmcp`): the nine tools of `docs/api/mcp.md`, a
+//! The stdio MCP server (`rmcp`): the ten tools of `docs/api/mcp.md`, a
 //! thin front for `teamwire-msg`, `teamwire-report` and `teamwire-watch`,
 //! so every rule and refusal is the CLI's.
 //!

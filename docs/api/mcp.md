@@ -12,7 +12,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
 | The lead | `teamwire install` registers `teamwire mcp --lead` through the plugin that `teamwire install` adds: the Claude plugin (ADR 0018) or the Codex plugin (ADR 0023). Nothing else registers it. | The harness session id, checked against the team's recorded lead session per call. The harness reads it from the server's environment. A harness that gives the session only in the request (Codex, ADR 0023) gets it from the string fields of the call's `_meta`: the server passes each one to the harness as `MCP_META_<key>`, and the harness's `caller_session` reads them through a lookup. The Codex harness reads `CODEX_SESSION_ID`, then `CODEX_THREAD_ID`, then `MCP_META_sessionId`, then `MCP_META_threadId`, so a `CODEX_*` variable in the server's environment wins over the hints. A member's server ignores `_meta`. The `team` argument picks the team. |
 
-Every server lists all nine tools. The descriptions of `team_inbox`,
+Every server lists all ten tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's
 session knows not to call them.
 
@@ -218,6 +218,42 @@ own team, in which they are proven. Output:
 Address an agent listed here as `<role>@<name>`, and its lead as
 `lead@<name>`. Only an `open` team takes messages. A team whose store cannot
 be read is left out of the list.
+
+## `team_decisions`
+
+The "Decisions I made" blocks of members' reports, read-only. The same result as
+`teamwire decisions --json`. Every kind of member and the lead may call it, and
+a caller may read any team. Input:
+
+```json
+{
+  "team": "tw",         // lead only; members use their own team
+  "of": "billing",      // the team to read: its running database, else its newest archive
+  "role": "db",         // only this member
+  "grep": "stash",      // only blocks whose text holds this, ignoring case
+  "limit": 50           // blocks; default 50
+}
+```
+
+With no `of` and no `grep`, the caller reads its own team. With `grep` and no
+`of`, the search reaches every running team and every archive, and a team seen
+more than once is read once: the running copy, else the newest archive. Output:
+
+```json
+{"teams": [{"team": "billing", "title": "Billing", "ulid": "…", "created_at": "…",
+  "live": false, "path": "/abs/path/to/team/dir", "refs": [],
+  "members": [{"role": "db", "kind": "implementer", "title": "…",
+    "report": "/abs/path/reports/db.md",
+    "blocks": [{"heading": "## Decisions I made", "line": 88, "text": "- …"}]}]}],
+ "errors": [],
+ "truncated": true}
+```
+
+`report` is `null` for a member who wrote no report; with `grep`, such a
+member is left out. `truncated` is present, and `true`, only when more blocks
+matched than `limit`. A database or report that cannot be read goes to
+`errors`, and the rest is still returned. A team with no database and no
+archive is `refused.unknown_team`.
 
 ## What is not an MCP tool
 
