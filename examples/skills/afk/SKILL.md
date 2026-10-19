@@ -25,8 +25,8 @@ may stop for the user.
 2. Write the user's task, word for word, to a file. Pick a team name and a
    title from the task. Run
    `teamwire afk start --team <name> --title <title> --task <file>`, with
-   `--budget` only when the user named a time limit. On a refusal or a FAIL
-   line, tell the user what failed and stop.
+   `--budget` only when the user named a time limit. When it exits non-zero,
+   tell the user what failed and stop.
 3. Reply once with the team name, the report path, the time the budget
    ends, and: "Keep the lid open and the machine on power." Then start step 2
    in the same turn. Do not wait for an answer.
