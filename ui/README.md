@@ -3,7 +3,7 @@
 A read-only web dashboard for [teamwire](..) agent teams.
 
 ```bash
-bun install
+bun install --frozen-lockfile
 bun run start            # prints http://127.0.0.1:7878/auth?token=...
 ```
 
