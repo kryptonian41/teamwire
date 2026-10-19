@@ -135,8 +135,15 @@ fn announce_once_says_yes_exactly_once_per_key() {
             .write(|tx| tx.announce_once(at(3), "LATE:api:3"))
             .unwrap()
     );
-    assert!(f.store.read(|tx| tx.was_announced("LATE:api:2")).unwrap());
-    assert!(!f.store.read(|tx| tx.was_announced("DIED:api:1")).unwrap());
+    let keys: Vec<String> = f
+        .store
+        .read(|tx| tx.announcements())
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|a| a.key)
+        .collect();
+    assert_eq!(keys, ["LATE:api:2", "LATE:api:3"]);
 }
 
 #[test]

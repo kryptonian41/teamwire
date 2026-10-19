@@ -102,15 +102,7 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
         // A deleted branch must not stay in the member row: `status` would
         // show it and `close` would list it as kept.
         if branch_deleted && made.recorded {
-            let cleared = ctx.store.write(|tx| {
-                tx.connection()
-                    .execute(
-                        "UPDATE members SET branch = NULL WHERE role = ?1",
-                        [m.spec.role.as_str()],
-                    )
-                    .map(|_| ())
-                    .map_err(Into::into)
-            });
+            let cleared = ctx.store.write(|tx| tx.clear_member_branch(&m.spec.role));
             if let Err(e) = cleared {
                 notes.push(format!("could not clear the stored branch: {e}"));
             }

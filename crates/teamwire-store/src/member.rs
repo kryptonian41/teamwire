@@ -252,6 +252,17 @@ impl Tx<'_> {
         exactly_one(rows, format!("member {role}"))
     }
 
+    /// Clears the stored branch after launch deleted it, so `status` does not
+    /// show it and `close` does not list it as kept. No event (see
+    /// `set_member_place`).
+    pub fn clear_member_branch(&self, role: &Role) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET branch = NULL WHERE role = ?1",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("member {role}"))
+    }
+
     /// Records the member's harness session id. No event (see `set_member_place`).
     pub fn set_member_session(&self, role: &Role, session: &SessionId) -> Result<(), StoreError> {
         let rows = self.connection().execute(

@@ -124,3 +124,45 @@ fn all_waivers_are_listed_across_roles_and_heads() {
     assert_eq!(all.len(), 3);
     assert_eq!(all[2].role, role("web"));
 }
+
+#[test]
+fn message_bodies_return_a_body_that_fails_its_hash() {
+    use teamwire_core::{Actor, MessageType, Recipient};
+    let mut f = with_members(&["api", "web"]);
+    for body in ["first", "second"] {
+        f.store
+            .write(|tx| {
+                tx.insert_message(
+                    at(10),
+                    &crate::NewMessage {
+                        sender: Actor::Member(role("api")),
+                        kind: MessageType::Finding,
+                        re: None,
+                        commit: None,
+                        body: body.to_owned(),
+                        client_key: None,
+                        recipients: vec![Recipient::Member(role("web"))],
+                    },
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+    }
+    f.store
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE messages SET body = 'edited' WHERE display_id = 'm002'",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let rows = f.store.read(|tx| tx.message_bodies()).unwrap();
+    let got: Vec<_> = rows
+        .iter()
+        .map(|(id, body, sha)| (id.as_str(), body.as_str(), sha.len()))
+        .collect();
+    assert_eq!(got, [("m001", "first", 32), ("m002", "edited", 32)]);
+}

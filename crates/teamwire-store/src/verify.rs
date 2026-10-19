@@ -2,7 +2,7 @@
 
 use rusqlite::Row;
 use serde_json::json;
-use teamwire_core::{EventType, Role, Timestamp};
+use teamwire_core::{DisplayId, EventType, Role, Timestamp};
 
 use crate::error::StoreError;
 use crate::tx::{Listing, ReadTx, Tx, bad, col, hash32, listing, parsed, ts};
@@ -137,6 +137,25 @@ impl Tx<'_> {
 }
 
 impl ReadTx<'_> {
+    /// Every message's id, body and stored body hash, oldest first. The rows
+    /// are raw: unlike `messages`, a body that fails its hash is returned, so
+    /// `verify` can find and repair it.
+    pub fn message_bodies(&self) -> Result<Vec<(DisplayId, String, Vec<u8>)>, StoreError> {
+        let mut stmt = self
+            .connection()
+            .prepare("SELECT display_id, body, body_sha256 FROM messages ORDER BY rowid")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+            .collect::<Result<Vec<(String, String, Vec<u8>)>, _>>()?;
+        rows.into_iter()
+            .map(|(id, body, sha)| {
+                let display_id =
+                    DisplayId::parse(&id).map_err(|e| StoreError::bad_value("messages", &id, e))?;
+                Ok((display_id, body, sha))
+            })
+            .collect()
+    }
+
     /// Every verify record of every role, oldest first (`teamwire export`).
     pub fn all_verify_records(&self) -> Result<Listing<VerifyRow>, StoreError> {
         let mut stmt = self.connection().prepare(&format!(
