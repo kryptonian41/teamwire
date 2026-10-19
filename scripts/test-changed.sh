@@ -1,8 +1,4 @@
-  base="$(git merge-base main HEAD)" || exit 1
-  tracked="$(git diff --name-only "$base")" || exit 1
-  untracked="$(git ls-files --others --exclude-standard)" || exit 1
-  files="$tracked
-$untracked"#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Test run for the inner loop: the tests of the changed crates and of every
 # workspace crate that depends on them, dev-dependencies included, and nothing
 # else. The full gate (scripts/gate.sh) still runs at the end of each wave.
