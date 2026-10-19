@@ -21,6 +21,8 @@ names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
 lines start with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
+For a run the user will not be present for, use `/teamwire:afk`.
+
 ## Your tools
 
 The lead's MCP server, in the teamwire plugin, lists nine tools named
