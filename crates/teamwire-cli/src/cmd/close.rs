@@ -7,6 +7,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 
 use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
 
@@ -59,7 +60,7 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Store::open_existing(&home, &team)
     };
     let mut store = match opened {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "close"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
             return fail(&message, REFUSED);

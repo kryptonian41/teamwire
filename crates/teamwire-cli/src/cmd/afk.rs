@@ -16,6 +16,7 @@ use crate::cmd::doctor::{self, Host, Level};
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check;
 use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
 
@@ -131,7 +132,7 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
         return refuse("bad_budget", "the budget ends beyond the last date");
     };
     let mut store = match Store::open(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "afk"),
         Err(e) => {
             return fail(
                 COMMAND,

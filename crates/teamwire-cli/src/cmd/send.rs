@@ -12,6 +12,7 @@ use teamwire_msg::{
 };
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
 
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
 
@@ -56,7 +57,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(parts) => parts,
         Err(e) => return fail("send", &e, USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "send", |ctx| {
         // A member's `--from` defaults to its role. With no role and no
         // token the caller claims to be the lead, as `resend` does, and the
         // harness session decides.
@@ -311,16 +312,18 @@ pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> Strin
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
-/// cannot be opened is reported and turned into the exit code to return.
+/// cannot be opened is reported and turned into the exit code to return. A
+/// failed write is recorded as `op` (`Recorded`).
 pub(crate) fn with_ctx<T>(
     global: &Global,
     wiring: &Wiring,
     team: &TeamName,
+    op: &'static str,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
     let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, op),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(team, &path);
             return Err(fail("", &message, REFUSED));

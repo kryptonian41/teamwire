@@ -494,3 +494,25 @@ fn a_transcript_that_is_a_named_pipe_is_never_opened() {
     assert_eq!(reply, TurnEndReply::Continue);
     assert!(no_usage);
 }
+
+#[test]
+fn a_damaged_completion_leaves_one_store_error_row() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute("UPDATE completions SET created_at = 'not a time'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let errors = rig.events(EventType::StoreError);
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(
+        errors[0].data,
+        serde_json::json!({ "op": "turn_end", "code": "corrupt" }),
+        "a hook's store.error row carries no hook_ms"
+    );
+    assert!(rig.typed_to_lead().is_empty());
+}

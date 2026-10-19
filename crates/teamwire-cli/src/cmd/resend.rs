@@ -32,7 +32,7 @@ pub(crate) fn run(args: &ResendArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(parts) => parts,
         Err(e) => return fail("resend", &e, USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "resend", |ctx| {
         // A member proves itself with its token. With no token the caller
         // claims to be the lead, and the harness session decides.
         let from = member_token().is_none().then(|| "lead".to_owned());

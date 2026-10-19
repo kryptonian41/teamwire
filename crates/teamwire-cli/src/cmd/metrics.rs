@@ -9,6 +9,7 @@ use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView};
 use teamwire_store::{Ctx, Store, database_path};
 
 use crate::cmd::send::home_or_refuse;
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, MetricsArgs, MetricsCommand, USAGE};
 
@@ -142,7 +143,7 @@ fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig)
     let app_config = Config::default();
     for team in teams {
         let mut store = match Store::open_existing(home, &team) {
-            Ok(store) => store,
+            Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
             Err(e) => {
                 warn(&format!("team {team}: {e}"));
                 continue;

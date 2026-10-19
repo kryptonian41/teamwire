@@ -84,6 +84,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
     }
     let now = ctx.clock.now();
     let outcome = step(ctx, memory, now);
+    ctx.store.record_failure(now, "watch");
     memory.polls += 1;
     memory.last_poll = Some(now);
     memory.last_mono = Some(ctx.clock.monotonic());

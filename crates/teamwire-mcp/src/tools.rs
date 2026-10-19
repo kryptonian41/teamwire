@@ -69,8 +69,9 @@ pub(crate) const TOOLS: [(&str, &str); 9] = [
     ),
 ];
 
-/// Runs one call: opens the team's store, proves the caller, runs the tool
-/// and closes the store. Nothing is kept for the next call.
+/// Runs one call: opens the team's store, proves the caller, runs the tool,
+/// records a failed transaction under the tool's name and closes the store.
+/// Nothing is kept for the next call.
 pub(crate) fn call(
     env: &ServerEnv,
     caller: &McpCaller,
@@ -124,8 +125,10 @@ pub(crate) fn call(
             return ToolFailure::identity(NO_LEAD_SESSION);
         }
         ToolFailure::from(teamwire_msg::SendError::Refused(refusal))
-    })?;
-    run(&mut ctx, &team, &actor, tool, args)
+    });
+    let out = actor.and_then(|actor| run(&mut ctx, &team, &actor, tool, args));
+    ctx.store.record_failure(ctx.clock.now(), tool);
+    out
 }
 
 /// A lead server that cannot read any harness session id is set up wrong,

@@ -1,6 +1,7 @@
 //! Opening the database: pragmas, the forward migration, the refusal of a
 //! newer or foreign file, and the two transaction entry points.
 
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -49,8 +50,9 @@ pub struct Store {
     conn: Connection,
     writer_version: String,
     read_only: bool,
-    /// The first failed write that `record_failure` has not written down yet.
-    failed: Option<StoreError>,
+    /// The first failed transaction that `record_failure` has not written
+    /// down yet. In a `RefCell`, because a read fails through `&self`.
+    failed: RefCell<Option<StoreError>>,
     /// Set when a read-only open found no `-wal` or `-shm` file, so that
     /// opening created them: closing the store then removes them again.
     cleanup: Option<PathBuf>,
@@ -206,7 +208,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: true,
-            failed: None,
+            failed: RefCell::new(None),
             cleanup: no_side_files.then(|| path.to_path_buf()),
         })
     }
@@ -235,7 +237,7 @@ impl Store {
             conn,
             writer_version: WRITER_VERSION.to_owned(),
             read_only: false,
-            failed: None,
+            failed: RefCell::new(None),
             cleanup: None,
         })
     }
@@ -273,18 +275,23 @@ impl Store {
             tx.commit()?;
             Ok(out)
         });
-        out.map_err(|e| {
-            let e = e.at(self.conn.path());
-            if self.failed.is_none() && e.is_recorded() {
-                self.failed = Some(e.clone());
-            }
-            e
-        })
+        out.map_err(|e| self.remember(e.at(self.conn.path())))
+    }
+
+    /// Keeps the first busy, full, corrupt or io failure of a store opened
+    /// for writing, for `record_failure`. A read-only store never writes, so
+    /// it keeps nothing.
+    fn remember(&self, e: StoreError) -> StoreError {
+        if !self.read_only && e.is_recorded() {
+            self.failed.borrow_mut().get_or_insert_with(|| e.clone());
+        }
+        e
     }
 
     /// Writes the `store.error` row (`docs/metrics.md`) of the first failed
-    /// write since the last call, in its own transaction now that the failed
-    /// one rolled back. Each command, hook, tool call and watch poll calls it
+    /// transaction (a write, or a read of a store opened for writing) since
+    /// the last call, in its own transaction now that the failed one rolled
+    /// back. Each command, hook, tool call and watch poll calls it
     /// on its way out with its own name as `op`; `at` is the caller's, because
     /// the store never reads the clock. Best effort: when this write fails
     /// too, the failure is kept for the next call, so a full disk is recorded
@@ -297,7 +304,7 @@ impl Store {
             .write(|tx| tx.record_store_error(at, op, &failed))
             .is_err()
         {
-            self.failed = Some(failed);
+            *self.failed.get_mut() = Some(failed);
         }
     }
 
@@ -322,7 +329,7 @@ impl Store {
         if !self.read_only {
             self.conn.pragma_update(None, "query_only", false)?;
         }
-        out
+        out.map_err(|e| self.remember(e))
     }
 
     /// Copies the whole database to a new file with `SQLite`'s backup API,

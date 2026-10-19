@@ -25,7 +25,7 @@ pub(crate) fn run(args: &AckArgs, global: &Global, wiring: &Wiring) -> ExitCode 
     else {
         return fail("ack", "TEAMWIRE_TEAM does not name a team", USAGE);
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "ack", |ctx| {
         match prove_actor_logged(ctx, &caller_env(None)).map_err(SendError::Refused)? {
             Actor::Member(role) => ack(ctx, &role, &ids),
             Actor::Lead => Err(SendError::InvalidArgument(

@@ -13,6 +13,7 @@ use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
 use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
 
@@ -71,7 +72,7 @@ fn export_loop(
         }
         waited = Duration::ZERO;
         let mut store = match Store::open_existing(home, team) {
-            Ok(store) => store,
+            Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
             Err(e) => {
                 tracing::warn!(error = %e, "the exporter could not open the store");
                 continue;
@@ -141,7 +142,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Err(code) => return code,
     };
     let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "watch"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
             return fail(&message, REFUSED);

@@ -51,7 +51,7 @@ pub(crate) fn run(args: &ReopenArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let outcome = if opts.dry_run {
         with_read_ctx(global, wiring, &team, work)
     } else {
-        with_ctx(global, wiring, &team, work)
+        with_ctx(global, wiring, &team, "reopen", work)
     };
     match outcome {
         Err(code) => code,

@@ -186,6 +186,18 @@ fn only_busy_full_corrupt_and_io_failures_are_recorded() {
 }
 
 #[test]
+fn a_failed_read_of_a_store_opened_for_writing_is_recorded() {
+    let mut f = with_members(&[]);
+    let damaged: Result<(), StoreError> = f.store.read(|_| Err(StoreError::Corrupt("row".into())));
+    assert!(damaged.is_err());
+    f.store.record_failure(at(4), "watch");
+    assert_eq!(
+        store_errors(&f.store),
+        [json!({ "op": "watch", "code": "corrupt" })]
+    );
+}
+
+#[test]
 fn a_read_only_store_records_nothing() {
     let f = with_members(&[]);
     let mut ro = crate::Store::open_read_only(
