@@ -29,6 +29,7 @@ string_enum! {
         MemberCreating => "member.creating",
         MemberStarted => "member.started",
         MemberFailed => "member.failed",
+        MemberRefused => "member.refused",
         MemberReplaced => "member.replaced",
         MemberRemoved => "member.removed",
         MemberReprompted => "member.reprompted",
