@@ -622,7 +622,7 @@ fn the_lag_gauge_counts_the_events_still_behind_the_mark() {
         .flatten()
         .filter_map(|p| match p.value {
             Some(Value::AsDouble(v)) => Some(v),
-            Some(Value::AsInt(v)) => f64::from(i32::try_from(v).unwrap()),
+            Some(Value::AsInt(v)) => Some(f64::from(i32::try_from(v).unwrap())),
             None => None,
         })
         .collect();
