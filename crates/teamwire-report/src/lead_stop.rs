@@ -78,9 +78,35 @@ fn has_working_member(tx: &ReadTx<'_>) -> Result<bool, StoreError> {
     Ok(false)
 }
 
-/// The AFK notes for the open AFK teams that `session` leads and that nothing
-/// will wake: no started member is working, or no live watch lease exists.
-/// A team that cannot be read gets no note and is logged, as above.
+/// Whether an open team led by `session` has a working member and a live
+/// watch, so its watch will wake the lead.
+fn wakes_lead(
+    home: &Path,
+    team: &TeamName,
+    session: &SessionId,
+    platform: &dyn Platform,
+    clock: &dyn Clock,
+) -> Result<bool, StoreError> {
+    let store = Store::open_read_only(home, team)?;
+    let now = clock.now();
+    store.read(|tx| {
+        let Some(row) = tx.team()? else {
+            return Ok(false);
+        };
+        if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
+            return Ok(false);
+        }
+        let watched = tx
+            .watch_lease()?
+            .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now));
+        Ok(watched && has_working_member(tx)?)
+    })
+}
+
+/// The AFK notes for the open AFK teams that `session` leads, when nothing
+/// will wake the lead: no open team the session leads has both a working
+/// member and a live watch lease. A team that cannot be read gets no note,
+/// does not count as waking the lead, and is logged, as above.
 pub fn afk_hold_notes(
     home: &Path,
     session: &SessionId,
@@ -91,17 +117,24 @@ pub fn afk_hold_notes(
         tracing::warn!(error = %e, "the teams could not be listed");
         Vec::new()
     });
+    let woken = names.iter().any(|name| {
+        wakes_lead(home, name, session, platform, clock).unwrap_or_else(|e| {
+            tracing::warn!(team = %name, error = %e, "a team is left out of the wake check");
+            false
+        })
+    });
+    if woken {
+        return Vec::new();
+    }
     names
         .into_iter()
-        .filter_map(
-            |name| match afk_note_for(home, &name, session, platform, clock) {
-                Ok(note) => note,
-                Err(e) => {
-                    tracing::warn!(team = %name, error = %e, "a team is left out of the AFK hold");
-                    None
-                }
-            },
-        )
+        .filter_map(|name| match afk_note_for(home, &name, session, clock) {
+            Ok(note) => note,
+            Err(e) => {
+                tracing::warn!(team = %name, error = %e, "a team is left out of the AFK hold");
+                None
+            }
+        })
         .collect()
 }
 
@@ -109,7 +142,6 @@ fn afk_note_for(
     home: &Path,
     team: &TeamName,
     session: &SessionId,
-    platform: &dyn Platform,
     clock: &dyn Clock,
 ) -> Result<Option<String>, StoreError> {
     let store = Store::open_read_only(home, team)?;
@@ -122,12 +154,6 @@ fn afk_note_for(
             return Ok(None);
         };
         if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
-            return Ok(None);
-        }
-        let watched = tx
-            .watch_lease()?
-            .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now));
-        if watched && has_working_member(tx)? {
             return Ok(None);
         }
         let dir = home.join("teams").join(team.as_str()).display().to_string();

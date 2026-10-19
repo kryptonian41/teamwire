@@ -363,3 +363,23 @@ fn past_the_budget_the_note_says_so_and_asks_for_the_report() {
     );
     assert!(note.contains(&format!("{}/afk/REPORT.md", rig.dir())));
 }
+
+#[test]
+fn another_team_of_the_session_that_is_working_and_watched_wakes_the_lead() {
+    let rig = Rig::new();
+    let mut afk = rig.team("alpha");
+    rig.make_afk(&mut afk, 8);
+    complete(&mut afk, &rig);
+    assert_eq!(
+        rig.afk_notes("lead-1").len(),
+        1,
+        "nothing wakes the lead yet"
+    );
+
+    let mut beta = rig.team("beta");
+    rig.platform.set_alive(Pid::new(700), true);
+    rig.lease(&mut beta, 700);
+    assert!(rig.afk_notes("lead-1").is_empty());
+    // A team led by another session does not wake this lead.
+    assert_eq!(rig.afk_notes("someone-else").len(), 0);
+}
