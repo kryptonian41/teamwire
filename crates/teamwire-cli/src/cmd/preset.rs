@@ -170,7 +170,8 @@ fn show(name: &str, text: &str) -> Result<String, serde_json::Error> {
         }
     }
     out.push(
-        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values, then run \
+        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values. Leave out each member \
+         with a `_launch` or `_launch_after` note and add it later with `--add`. Then run \
          `teamwire launch --spec FILE`:"
             .to_owned(),
     );

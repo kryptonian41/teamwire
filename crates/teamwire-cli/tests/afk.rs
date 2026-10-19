@@ -40,6 +40,8 @@ struct Bed {
     herdr: bool,
     /// The process the session file names as the lead, once `healthy`.
     lead: Option<std::process::Child>,
+    /// Further variables for the command's environment.
+    env: Vec<(&'static str, &'static str)>,
 }
 
 impl Drop for Bed {
@@ -61,6 +63,7 @@ impl Bed {
             path: "/usr/bin:/bin".to_owned(),
             herdr: true,
             lead: None,
+            env: Vec::new(),
         };
         let status = std::process::Command::new("git")
             .args(["init", "-q"])
@@ -160,7 +163,8 @@ impl Bed {
             .current_dir(self.repo.path())
             .env_clear()
             .env("PATH", &self.path)
-            .env("TEAMWIRE_CLAUDE_DIR", self.claude.path());
+            .env("TEAMWIRE_CLAUDE_DIR", self.claude.path())
+            .envs(self.env.iter().copied());
         if self.herdr {
             cmd.env("HERDR_ENV", "1");
         }
@@ -255,6 +259,30 @@ fn outside_a_lead_session_it_is_refused() {
 }
 
 #[test]
+fn a_member_session_is_refused_before_anything_is_made() {
+    let mut bed = Bed::new(false);
+    bed.env = vec![("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")];
+    let out = bed.start_run("run", &[]);
+    assert_eq!(out.status.code(), Some(1), "{}", err(&out));
+    assert!(err(&out).contains("refused.identity"), "{}", err(&out));
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
+fn a_lead_that_is_not_claude_code_is_refused_before_anything_is_made() {
+    let mut bed = Bed::new(true);
+    bed.env = vec![("TEAMWIRE_LEAD_HARNESS", "codex")];
+    let out = bed.start_run("run", &[]);
+    assert_eq!(out.status.code(), Some(1), "{}", err(&out));
+    assert!(
+        err(&out).contains("unsupported_lead_harness"),
+        "{}",
+        err(&out)
+    );
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
 fn a_session_that_already_leads_an_open_afk_team_is_refused() {
     let bed = Bed::new(false);
     bed.seed_team("first", SESSION, Some(Duration::from_secs(3600)));
@@ -318,11 +346,22 @@ fn a_bad_budget_is_a_usage_error() {
 }
 
 #[test]
+fn a_budget_that_ends_beyond_the_last_date_is_refused_before_anything_is_made() {
+    let bed = Bed::new(true);
+    refused(
+        &bed.start_run("run", &["--budget", "100000000h"]),
+        "bad_budget",
+    );
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
 fn a_failing_doctor_check_refuses_and_names_it() {
     let bed = Bed::new(false);
     let out = bed.start_run("run", &[]);
     refused(&out, "doctor_failed");
     assert!(err(&out).contains("FAIL claude on PATH"), "{}", err(&out));
+    assert!(!err(&out).contains("break a launch"), "{}", err(&out));
     assert!(bed.nothing_made("run"));
 }
 
