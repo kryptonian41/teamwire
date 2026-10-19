@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } fro
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, sortTeams, summarizeMetrics } from "./teams.ts";
+import { countByCategory, formatAge, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -109,4 +109,15 @@ test("label sets of one duration combine into a count-weighted average", () => {
     row("reviewer", `${d}.count`, "{observation}", 3),
   ]);
   expect(sum.get("ads")!.durations[d]).toEqual({ mean: 325, count: 4 });
+});
+
+test("the refresh key ignores a quiet poll and changes with the team", () => {
+  const s = S[0]!;
+  expect(refreshKey({ ...s })).toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, age_s: m.age_s + 5 } : m)) })).toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, state: "idle" } : m)) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, generation: m.generation + 1 } : m)) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, messages: s.messages.slice(1) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, unread_deliveries: [] })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, stuck_deliveries: [] })).not.toBe(refreshKey(s));
 });

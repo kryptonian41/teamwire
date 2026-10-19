@@ -6,11 +6,14 @@ import { DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
-import { useClient, useLoad } from "./hooks.ts";
+import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { countByCategory, formatAge, leadCategory, livenessInfo, type TeamModel } from "./model/teams.ts";
+import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
+
+/** The longest the files and the log go without a reload. */
+const REFRESH_MS = 60_000;
 
 export function TeamDetail({
   team,
@@ -23,7 +26,8 @@ export function TeamDetail({
 }) {
   const client = useClient();
   const name = team?.name ?? "";
-  const files = useLoad(() => client.teamFiles(name), name, snapshot?.at ?? "");
+  const tick = useNow(REFRESH_MS);
+  const files = useLoad(() => client.teamFiles(name), name, team ? `${refreshKey(team.status)}|${tick}` : "");
   if (!snapshot) return <Empty title="Waiting for the first poll…" />;
   if (!team || team.name === null) {
     return (
@@ -125,7 +129,7 @@ export function TeamDetail({
         </>
       )}
 
-      <MessageSection team={team} snapshotAt={snapshot.at} />
+      <MessageSection team={team} />
 
       {team.removed.length > 0 && (
         <details>
@@ -232,10 +236,11 @@ function MemberTable({ team }: { team: TeamModel }) {
   );
 }
 
-function MessageSection({ team, snapshotAt }: { team: TeamModel; snapshotAt: string }) {
+function MessageSection({ team }: { team: TeamModel }) {
   const client = useClient();
   const name = team.name ?? "";
-  const log = useLoad(() => client.teamLog(name), name, snapshotAt);
+  const tick = useNow(REFRESH_MS);
+  const log = useLoad(() => client.teamLog(name), name, `${refreshKey(team.status)}|${tick}`);
   const [selected, setSelected] = useState<Selected | null>(null);
 
   const categories = new Map<string, StateCategory>(team.members.map((m) => [m.role, m.category]));

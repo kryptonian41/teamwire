@@ -21,6 +21,7 @@ case "$FAKE_MODE" in
   badjson) echo "not json"; exit 0 ;;
   shape) echo '{"teams": 5}'; exit 0 ;;
   hang) exec sleep 30 ;;
+  flood) echo $$ > ${dir}/flood.pid; exec yes ;;
   grandchild) sleep 100 & sleep 8 ;;
   env) echo "{\\"teams\\": [], \\"leak\\": \\"\${TEAMWIRE_TOKEN}\${TEAMWIRE_ROLE}\${TEAMWIRE_TEAM}\${TEAMWIRE_TOKEN_FILE}\\"}" > ${dir}/env.out; echo '{"teams":[]}'; exit 0 ;;
   args) echo "$@" > ${dir}/args.out; echo '{"teams":[]}'; exit 0 ;;
@@ -117,6 +118,14 @@ describe("runner", () => {
     expect(res.ok).toBe(false);
     expect(res.problems[0]?.code).toBe("cli_timeout");
     expect(Date.now() - t0).toBeLessThan(5000);
+  });
+
+  test("output past the cap is too_large and the child is killed", async () => {
+    const res = await withMode("flood", () => make()({ cmd: "teams" }));
+    expect(res.ok).toBe(false);
+    expect(res.problems[0]?.code).toBe("too_large");
+    const pid = Number((await Bun.file(join(dir, "flood.pid")).text()).trim());
+    expect(() => process.kill(pid, 0)).toThrow();
   });
 
   test("a grandchild that holds the pipes open does not stall the runner", async () => {

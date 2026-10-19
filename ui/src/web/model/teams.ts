@@ -82,6 +82,20 @@ export function hasProblem(t: TeamModel): boolean {
   );
 }
 
+/**
+ * Changes when the team page's files or log can have changed: a new message,
+ * a member state or generation, or a delivery that got stuck or unread. The
+ * snapshot itself changes every poll, so it makes a poor trigger.
+ */
+export function refreshKey(s: StatusView): string {
+  return JSON.stringify([
+    s.messages[0]?.display_id ?? null,
+    s.members.map((m) => [m.role, m.state, m.generation]),
+    s.stuck_deliveries.map((d) => d.display_id),
+    s.unread_deliveries.map((d) => d.display_id),
+  ]);
+}
+
 /** Problems first, then by title, then by key so the order never flickers. */
 export function sortTeams(teams: readonly TeamModel[]): TeamModel[] {
   return [...teams].sort((a, b) => {

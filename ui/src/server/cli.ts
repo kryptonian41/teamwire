@@ -94,16 +94,24 @@ export interface CliOutput {
 export type Runner = <C extends CliCall>(call: C) => Promise<CliResult<CliOutput[C["cmd"]]>>;
 
 const READ_GRACE_MS = 2000;
+/** The most output of one stream the server keeps. Real output is a few hundred KiB at most. */
+export const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-function collect(stream: ReadableStream<Uint8Array>) {
+function collect(stream: ReadableStream<Uint8Array>, onTooLarge: () => void) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let text = "";
+  let bytes = 0;
   const done = (async () => {
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        bytes += value.length;
+        if (bytes > MAX_OUTPUT_BYTES) {
+          onTooLarge();
+          break;
+        }
         text += decoder.decode(value, { stream: true });
       }
     } catch {
@@ -147,6 +155,11 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
       return { ok: false, problems: [{ code: "cli_failed", detail: `could not start ${config.bin}: ${(e as Error).message}` }] };
     }
     let timedOut = false;
+    let tooLarge = false;
+    const overflow = () => {
+      tooLarge = true;
+      proc.kill("SIGKILL");
+    };
     const timer = setTimeout(() => {
       timedOut = true;
       proc.kill("SIGKILL");
@@ -154,8 +167,8 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     // Read while the child runs so a full pipe cannot block it. After it
     // exits, a process it started may still hold the pipes open, so the
     // reads get a short grace period and are then cancelled.
-    const out = collect(proc.stdout);
-    const err = collect(proc.stderr);
+    const out = collect(proc.stdout, overflow);
+    const err = collect(proc.stderr, overflow);
     const exitCode = await proc.exited;
     await Promise.race([Promise.all([out.done, err.done]), Bun.sleep(READ_GRACE_MS)]);
     out.stop();
@@ -163,6 +176,9 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     const stdout = out.text();
     const stderr = err.text();
     clearTimeout(timer);
+    if (tooLarge) {
+      return { ok: false, problems: [{ code: "too_large", detail: `teamwire ${name} printed more than ${MAX_OUTPUT_BYTES} bytes and was killed` }] };
+    }
     if (timedOut) {
       return { ok: false, problems: [{ code: "cli_timeout", detail: `teamwire ${name} passed ${limit} ms and was killed` }] };
     }
