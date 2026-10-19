@@ -41,7 +41,7 @@ impl From<StoreError> for ToolFailure {
     fn from(e: StoreError) -> Self {
         let (code, retry) = match &e {
             StoreError::Busy => ("store.busy", true),
-            StoreError::Full => ("store.full", false),
+            StoreError::Full { .. } => ("store.full", false),
             StoreError::SchemaNewer { .. } => ("store.schema_newer", false),
             StoreError::SchemaOlder { .. }
             | StoreError::NotTeamwire
@@ -110,7 +110,11 @@ mod tests {
     fn store_errors_carry_their_documented_codes() {
         assert_eq!(ToolFailure::from(StoreError::Busy).code, "store.busy");
         assert!(ToolFailure::from(StoreError::Busy).retry);
-        assert_eq!(ToolFailure::from(StoreError::Full).code, "store.full");
+        let full = ToolFailure::from(StoreError::Full {
+            path: "/v/team.db".into(),
+        });
+        assert_eq!(full.code, "store.full");
+        assert!(full.message.contains("/v/team.db"), "{}", full.message);
         let newer = StoreError::SchemaNewer { db: 9, binary: 1 };
         assert_eq!(ToolFailure::from(newer).code, "store.schema_newer");
     }

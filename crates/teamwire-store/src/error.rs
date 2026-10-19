@@ -7,8 +7,10 @@ use thiserror::Error;
 pub enum StoreError {
     #[error("the database stayed locked past the busy timeout")]
     Busy,
-    #[error("the disk is full")]
-    Full,
+    /// `path` is the database file, so the message names the volume that
+    /// filled. It is empty only until `Store` fills it in.
+    #[error("the disk is full: cannot write {}", path.display())]
+    Full { path: std::path::PathBuf },
     #[error("the database has schema {db}; this binary knows {binary}")]
     SchemaNewer { db: u32, binary: u32 },
     #[error("the database has schema {db}; this binary writes {binary}")]
@@ -42,7 +44,9 @@ impl From<rusqlite::Error> for StoreError {
                 return Self::Busy;
             }
             if code == ErrorCode::DiskFull {
-                return Self::Full;
+                return Self::Full {
+                    path: std::path::PathBuf::new(),
+                };
             }
             if code == ErrorCode::ConstraintViolation {
                 return Self::Constraint(e.to_string());
@@ -72,6 +76,33 @@ impl From<std::io::Error> for StoreError {
 }
 
 impl StoreError {
+    /// The short name of the failure: the `code` of a `store.error` event and
+    /// the word after `STORE-ERROR` in a watch line.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Busy => "busy",
+            Self::Full { .. } => "full",
+            Self::SchemaNewer { .. } => "schema_newer",
+            Self::SchemaOlder { .. } => "schema_older",
+            Self::NotTeamwire => "not_teamwire",
+            Self::Corrupt(_) => "corrupt",
+            Self::Constraint(_) => "constraint",
+            Self::NoDatabase { .. } => "no_database",
+            Self::Io(_) => "io",
+        }
+    }
+
+    /// Names the database file in a full-disk error that does not name one
+    /// yet: `SQLite`'s own error does not say which file it was writing.
+    pub(crate) fn at(self, db: Option<&str>) -> Self {
+        match (self, db) {
+            (Self::Full { path }, Some(db)) if path.as_os_str().is_empty() => Self::Full {
+                path: std::path::PathBuf::from(db),
+            },
+            (e, _) => e,
+        }
+    }
+
     /// A stored value that does not parse: the row is damaged, not the caller wrong.
     pub(crate) fn bad_value(table: &str, key: &str, what: impl std::fmt::Display) -> Self {
         Self::Corrupt(format!("{table} {key}: {what}"))

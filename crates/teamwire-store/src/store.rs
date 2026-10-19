@@ -263,10 +263,13 @@ impl Store {
         }
         let tx = self
             .conn
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let out = f(&Tx::new(&tx, &self.writer_version))?;
-        tx.commit()?;
-        Ok(out)
+            .transaction_with_behavior(TransactionBehavior::Immediate);
+        let out = tx.map_err(StoreError::from).and_then(|tx| {
+            let out = f(&Tx::new(&tx, &self.writer_version))?;
+            tx.commit()?;
+            Ok(out)
+        });
+        out.map_err(|e| e.at(self.conn.path()))
     }
 
     /// Runs `f` inside one read transaction: it sees a single snapshot, and

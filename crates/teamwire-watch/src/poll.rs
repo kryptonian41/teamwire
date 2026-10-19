@@ -9,21 +9,6 @@ use crate::plan::plan;
 use crate::snapshot;
 use crate::text::{LINE_MAX, event};
 
-/// The short name of a store failure, as `STORE-ERROR <code>` prints it.
-fn code(e: &StoreError) -> &'static str {
-    match e {
-        StoreError::Busy => "busy",
-        StoreError::Full => "disk_full",
-        StoreError::SchemaNewer { .. } => "schema_newer",
-        StoreError::SchemaOlder { .. } => "schema_older",
-        StoreError::NotTeamwire => "not_teamwire",
-        StoreError::Corrupt(_) => "corrupt",
-        StoreError::Constraint(_) => "constraint",
-        StoreError::NoDatabase { .. } => "no_database",
-        StoreError::Io(_) => "io",
-    }
-}
-
 /// This binary can never read the store again: waiting will not help.
 fn is_final(e: &StoreError) -> bool {
     matches!(
@@ -109,7 +94,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
             if is_final(&e) {
                 memory.end = Some(WatchEnd::StoreError);
             }
-            let code = code(&e);
+            let code = e.code();
             if !memory.reported_errors.insert(code) {
                 return None;
             }

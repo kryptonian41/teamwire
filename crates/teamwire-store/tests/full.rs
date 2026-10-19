@@ -35,7 +35,7 @@ fn notes(store: &Store) -> Vec<String> {
 }
 
 #[test]
-fn disk_full_rolls_back() {
+fn a_full_disk_rolls_back_and_names_the_file() {
     let home = TestHome::new().unwrap();
     let mut store = Store::open(home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
     store
@@ -70,7 +70,15 @@ fn disk_full_rolls_back() {
         }
         Ok(())
     });
-    assert_eq!(full, Err(StoreError::Full));
+    // SQLite names the file by its resolved path (/private/var on macOS).
+    let path = std::fs::canonicalize(teamwire_store::database_path(
+        home.path(),
+        &TeamName::parse("alpha").unwrap(),
+    ))
+    .unwrap();
+    assert_eq!(full, Err(StoreError::Full { path: path.clone() }));
+    let message = full.unwrap_err().to_string();
+    assert!(message.contains(&path.display().to_string()), "{message}");
     assert_eq!(
         notes(&store),
         ["before"],
