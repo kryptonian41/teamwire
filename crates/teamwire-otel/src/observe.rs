@@ -85,7 +85,7 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
         EventType::MemberStarted | EventType::MemberFailed | EventType::MemberRefused => {
             launch(&mut o, d);
         }
-        EventType::MemberReprompted if !flag(d, "undone") => {
+        EventType::MemberReprompted if !flag(d, "undone") && !h.is_undone(event) => {
             let kind = kind_of(h, event);
             o.count(&defs::MEMBER_REPROMPTS, &[("kind", kind)]);
         }
@@ -319,7 +319,7 @@ fn delivery(h: &History, o: &mut Out<'_>, outcome: &str) {
         }
     }
     // A question handed to the lead costs the lead one full turn.
-    let to_lead = o.event.role.is_none();
+    let to_lead = recipient_of(o.event) == "lead";
     let is_question = o
         .event
         .subject
@@ -372,7 +372,9 @@ fn verify(o: &mut Out<'_>, d: &Value) {
     o.count(&defs::VERIFY_RUNS, &[("verdict", verdict)]);
     if let Some(flags) = d.get("flags").and_then(Value::as_array) {
         for id in flags.iter().filter_map(Value::as_str) {
-            o.count(&defs::VERIFY_FLAGS, &[("flag", id)]);
+            // The kind only: the rest of the id is a path or a sha.
+            let kind = id.split(':').next().unwrap_or(id);
+            o.count(&defs::VERIFY_FLAGS, &[("flag", kind)]);
         }
     }
     if let Some(seconds) = number(d, "seconds") {

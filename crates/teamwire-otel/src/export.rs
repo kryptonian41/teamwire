@@ -153,7 +153,11 @@ fn send_batch(
         observations.push(Observation {
             def: &defs::EXPORT_LAG,
             labels: Vec::new(),
-            value: batch.len() as f64,
+            // Events still behind the mark once this batch is sent.
+            value: history
+                .events()
+                .last()
+                .map_or(0, |l| l.seq.saturating_sub(claim.to_seq)) as f64,
             time: last.time,
         });
     }
