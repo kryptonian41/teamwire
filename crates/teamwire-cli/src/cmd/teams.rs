@@ -5,12 +5,22 @@
 use std::process::ExitCode;
 
 use serde_json::json;
+use teamwire_core::TicketRef;
 use teamwire_msg::{TeamEntry, describe};
 
 use crate::cmd::members::render;
 use crate::cmd::send::{STORE, fail, home_or_refuse, say, warn, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, TeamsArgs};
+
+/// ` (refs linear:GKA-580, github:#1)`, or nothing for a team without refs.
+pub(crate) fn refs_suffix(refs: &[TicketRef]) -> String {
+    if refs.is_empty() {
+        return String::new();
+    }
+    let shown: Vec<String> = refs.iter().map(ToString::to_string).collect();
+    format!(" (refs {})", shown.join(", "))
+}
 
 pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let home = match home_or_refuse("teams", global) {
@@ -42,8 +52,13 @@ pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
     for entry in &entries {
         say(&format!(
-            "{} ({}) {}: address as lead@{} or <role>@{}\n",
-            entry.name, entry.state, entry.title, entry.name, entry.name
+            "{} ({}) {}: address as lead@{} or <role>@{}{}\n",
+            entry.name,
+            entry.state,
+            entry.title,
+            entry.name,
+            entry.name,
+            refs_suffix(&entry.refs)
         ));
         for member in &entry.members {
             say(&format!("  {}", render(member)));

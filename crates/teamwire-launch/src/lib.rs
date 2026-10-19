@@ -33,7 +33,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
     Address, HarnessId, HostId, IdentityChannel, LeadRoute, MemberKind, MemberSpec, Role,
-    SessionId, SessionKind, TeamName, TeamSpec,
+    SessionId, SessionKind, TeamName, TeamSpec, TicketRef,
 };
 use teamwire_store::Ctx;
 
@@ -92,6 +92,10 @@ pub struct PlannedMember {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValidPlan {
     pub spec: TeamSpec,
+    /// The spec's refs that the team does not hold yet, in order: all of them
+    /// on a first launch, the unrecorded ones on `--add`.
+    #[serde(default)]
+    pub new_refs: Vec<TicketRef>,
     /// `--add`: members join a running team.
     pub add: bool,
     /// The warnings of LCH-9, LCH-10 and LCH-18, printed before launching.

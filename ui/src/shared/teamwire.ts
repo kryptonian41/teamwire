@@ -41,6 +41,14 @@ export const WatchState = z.enum(["running", "stale", "none"]);
 
 const count = z.number().int().nonnegative();
 
+/** A ticket in a tracker. teamwire assumes no provider: both fields are required. */
+export const TicketRef = z.object({
+  /** The tracker's lowercase name, such as `linear` or `github`. */
+  provider: z.string(),
+  /** The ticket's id in that tracker, such as `GKA-580`. */
+  id: z.string(),
+});
+
 /** One member in `teamwire status --json`. Removed members are left out. */
 export const MemberView = z.object({
   role: z.string(),
@@ -123,6 +131,8 @@ export const StatusView = z.object({
   team: z.string().nullable(),
   title: z.string().nullable(),
   state: TeamState.nullable(),
+  /** Tickets the team works on. Older teamwire omits it. */
+  refs: z.array(TicketRef).default([]),
   lead: LeadView.nullable(),
   watch: WatchView,
   members: z.array(MemberView),
@@ -155,6 +165,8 @@ export const TeamEntry = z.object({
   name: z.string(),
   title: z.string(),
   state: TeamState,
+  /** Tickets the team works on. Older teamwire omits it. */
+  refs: z.array(TicketRef).default([]),
   members: z.array(RosterMember),
 });
 

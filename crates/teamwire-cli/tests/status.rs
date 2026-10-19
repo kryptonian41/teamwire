@@ -326,3 +326,44 @@ fn received_clears_a_result_from_status_and_a_second_run_changes_nothing() {
     assert_eq!(unknown.code, 1, "{}{}", unknown.out, unknown.err);
     assert_eq!(unknown.out, "nobody refused: no member has this role\n");
 }
+
+/// Two refs on different providers.
+fn two_refs() -> [teamwire_core::TicketRef; 2] {
+    let make = |provider: &str, id: &str| teamwire_core::TicketRef {
+        provider: provider.to_owned(),
+        id: id.to_owned(),
+    };
+    [make("linear", "GKA-580"), make("github", "#1")]
+}
+
+fn two_refs_json() -> serde_json::Value {
+    serde_json::json!([
+        {"provider": "linear", "id": "GKA-580"},
+        {"provider": "github", "id": "#1"},
+    ])
+}
+
+#[test]
+fn refs_show_on_the_team_line_and_in_the_json_and_are_empty_without_any() {
+    let mut bed = team();
+    let plain = teamwire(&bed, &["status", "alpha"]);
+    assert!(!plain.out.contains("refs"), "{}", plain.out);
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert_eq!(view["refs"], serde_json::json!([]));
+
+    bed.store.write(|tx| tx.set_refs(&two_refs())).unwrap();
+    let run = teamwire(&bed, &["status", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    let first = run.out.lines().next().unwrap();
+    assert!(
+        first.ends_with("(refs linear:GKA-580, github:#1)"),
+        "{first}"
+    );
+    let json = teamwire(&bed, &["status", "alpha", "--json"]);
+    let view: serde_json::Value = serde_json::from_str(&json.out).unwrap();
+    assert_eq!(view["refs"], two_refs_json());
+    let all = teamwire(&bed, &["status", "--json"]);
+    let all: serde_json::Value = serde_json::from_str(&all.out).unwrap();
+    assert_eq!(all[0]["refs"], two_refs_json());
+}

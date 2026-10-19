@@ -25,6 +25,29 @@ describe("schemas refuse a changed shape", () => {
   });
 });
 
+describe("ticket refs on a team", () => {
+  const linear = { provider: "linear", id: "GKA-580" };
+  const github = { provider: "github", id: "#3772" };
+  test("a payload with refs keeps them, in order", () => {
+    const withRefs = { teams: [{ ...teams.teams[0]!, refs: [linear, github] }] };
+    expect(TeamsList.parse(withRefs).teams[0]!.refs).toEqual([linear, github]);
+    const view = StatusAll.parse([{ ...status[0]!, refs: [linear] }]);
+    expect(view[0]!.refs).toEqual([linear]);
+  });
+  test("a payload without refs reads as an empty list", () => {
+    expect("refs" in teams.teams[0]!).toBe(false);
+    expect(TeamsList.parse(teams).teams[0]!.refs).toEqual([]);
+    expect("refs" in status[0]!).toBe(false);
+    expect(StatusAll.parse(status)[0]!.refs).toEqual([]);
+  });
+  test("a bare string ref, or a ref without a provider, fails the parse", () => {
+    for (const bad of ["GKA-580", { id: "GKA-580" }, { provider: "linear" }]) {
+      const payload = { teams: [{ ...teams.teams[0]!, refs: [bad] }] };
+      expect(TeamsList.safeParse(payload).success).toBe(false);
+    }
+  });
+});
+
 // Reads the real teamwire on this machine. Opt in with TW_UI_LIVE=1, so a
 // member's check never depends on which teams happen to be running.
 describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {

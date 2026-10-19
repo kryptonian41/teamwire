@@ -9,8 +9,9 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 
 | Event type | Written when | Data fields |
 | --- | --- | --- |
-| `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
+| `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`, `refs`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` |
+| `team.refs_added` | `launch --add` names a ticket ref the team does not hold yet (records no metric) | `added` (the refs appended, in order) |
 | `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `reason`, `reason_code`, `seconds` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |

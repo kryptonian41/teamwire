@@ -2,6 +2,7 @@
 //! to `teamwire-launch`; these types only carry what the JSON said.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -28,6 +29,26 @@ pub struct TeamSpec {
     /// per-run settings. A member's value wins over the team's, per key.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+    /// Tickets the team works on (ADR 0025).
+    #[serde(default)]
+    pub refs: Vec<TicketRef>,
+}
+
+/// A ticket in some tracker. teamwire assumes no provider, so both fields are
+/// required. It never looks the ticket up: `validate` only checks the shape.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TicketRef {
+    /// The tracker's lowercase name, such as `linear`, `github` or `jira`.
+    pub provider: String,
+    /// The ticket's id in that tracker, such as `GKA-580`.
+    pub id: String,
+}
+
+impl fmt::Display for TicketRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.provider, self.id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

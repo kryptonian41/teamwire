@@ -160,7 +160,7 @@ pub struct Event {
 names in `docs/metrics.md` section 1:
 
 ```
-team.created team.closing team.closed team.lead_adopted
+team.created team.closing team.closed team.lead_adopted team.refs_added
 member.creating member.started member.failed member.replaced member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
@@ -180,6 +180,8 @@ so they need no schema change:
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
+| `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
+| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0025). |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
 `ReadTx::lead_cwd` returns the `lead_cwd` of the newest `team.created` or
@@ -386,7 +388,9 @@ pub enum TrustPolicy { Accept, Refuse }               // from the spec's accept_
 pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<String>,
                       pub harness: Option<HarnessId>, pub host: Option<HostId>,
                       pub children: Vec<MemberSpec>,
-                      pub plugins: BTreeMap<String, bool> }     // plugin id -> on/off, all members
+                      pub plugins: BTreeMap<String, bool>,      // plugin id -> on/off, all members
+                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0025
+pub struct TicketRef { pub provider: String, pub id: String }   // both required; no default provider
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
                         pub branch: Option<String>, pub base: Option<String>, pub cwd: Option<PathBuf>,
@@ -484,7 +488,14 @@ Schema version 2 is `crates/teamwire-store/src/schema/v1.sql` followed by
 `src/schema/v2.sql`. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8). Its
-tables and columns are those in `ARCHITECTURE.md`, "Data model". Constraints
+tables and columns are those in `ARCHITECTURE.md`, "Data model". Version 5
+(`src/schema/v5.sql`) adds `team.refs`, a JSON array of `{"provider", "id"}` objects in recorded
+order that is never NULL and defaults to `[]`, and rebuilds `events` with the
+`team.refs_added` type. `TeamRow.refs` is that array; `Tx::set_refs` sets it
+when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs
+not yet held and writes `team.refs_added`, or writes nothing when none is new
+(ADR 0025). A read-only open of an older database reads `refs` as empty.
+Constraints
 that carry integrity:
 
 ```sql
