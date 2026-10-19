@@ -1,21 +1,17 @@
 //! The watch loop's single poll (WAT-1..WAT-16) and the read-only status
-//! view. Both derive each member's state the same way.
+//! view. Both derive each member's state the same way, with two intended
+//! differences: status reads an idle `"dispatch": false` member `quiet` at
+//! once (WAT-3), and status ages are wall time, since only a running watch
+//! measures the machine's sleeps.
 //!
 //! Never: call a writing host method; print more than one line per poll;
-//! announce the same key twice (a restarted watch prints
-//! its `WATCHING` line again, and `TEAM-COMPLETE` for a finished team); write anything from `status` (WAT-11).
+//! announce the same key twice (a restarted watch prints its `WATCHING`
+//! line again, and `TEAM-COMPLETE` for a finished team); write anything
+//! from `status` (WAT-11).
 //!
 //! Invariants: announcements are stored before they are printed, and each
 //! key carries its generation or episode number; `TEAM-COMPLETE` is printed
-//! once per watch, when every live member is settled. A restarted watch
-//! prints it again for a finished team, and `WATCHING` on its first poll;
-//! both are intended.
-//!
-//! Status reads a member differently from the watch in two intended ways.
-//! An idle member started with `"dispatch": false` reads `quiet` at once in
-//! status (WAT-3), while the watch still counts its quiet polls. Status
-//! measures ages in wall time, because only a running watch measures the
-//! machine's sleeps, in its memory; a one-shot command never sees them.
+//! once per watch, when every live member is settled.
 
 mod afk;
 mod apply;
