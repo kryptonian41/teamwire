@@ -12,7 +12,7 @@
 use std::path::Path;
 
 use rusqlite::Connection;
-use teamwire_core::{EventType, TeamName, Timestamp};
+use teamwire_core::{EventType, TeamName, TicketRef, Timestamp};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
     APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_VERSION,
@@ -162,12 +162,16 @@ fn a_version_4_team_row_migrates_with_no_refs_and_takes_new_ones() {
     assert!(row.refs.is_empty());
 
     let at = Timestamp::from_unix_millis(1_790_000_000_000).unwrap();
+    let linear = TicketRef {
+        provider: "linear".to_owned(),
+        id: "GKA-580".to_owned(),
+    };
     let added = store
-        .write(|tx| tx.add_refs(at, &["GKA-580".to_owned()]))
+        .write(|tx| tx.add_refs(at, std::slice::from_ref(&linear)))
         .unwrap();
-    assert_eq!(added, ["GKA-580"]);
+    assert_eq!(added, [linear.clone()]);
     let row = store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(row.refs, ["GKA-580"]);
+    assert_eq!(row.refs, [linear]);
 }
 
 /// An empty `events` table has no counter row; the step must not need one.

@@ -1,7 +1,8 @@
 -- teamwire schema version 5: a team records the tickets it works on
 -- (ADR 0025), and a new event type, `team.refs_added`, records refs that a
--- later `launch --add` appended. The column holds a JSON array of strings in
--- first-recorded order; a team launched without refs holds `[]`.
+-- later `launch --add` appended. The column holds a JSON array of
+-- `{"provider": ..., "id": ...}` objects in first-recorded order; a team
+-- launched without refs holds `[]`.
 --
 -- The `events.type` CHECK is a closed list and SQLite cannot change a CHECK
 -- in place, so the table is rebuilt exactly as version 4 did: the old one is

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
     EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName,
-    TeamState, Timestamp, Ulid,
+    TeamState, TicketRef, Timestamp, Ulid,
 };
 
 use crate::error::StoreError;
@@ -48,7 +48,7 @@ pub struct TeamRow {
     /// The tickets the team works on, in the order they were recorded. Empty
     /// for a team launched without refs and for a database older than
     /// schema version 5.
-    pub refs: Vec<String>,
+    pub refs: Vec<TicketRef>,
 }
 
 /// How a close ended.
@@ -66,7 +66,7 @@ const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id,
      closing_pid_started_at, refs";
 
 /// A read-only view of a version-4 database shows `refs` as NULL.
-fn refs_from_column(text: Option<String>) -> Result<Vec<String>, String> {
+fn refs_from_column(text: Option<String>) -> Result<Vec<TicketRef>, String> {
     text.map_or(Ok(Vec::new()), |t| {
         serde_json::from_str(&t).map_err(|e| bad("refs", e))
     })
@@ -241,7 +241,7 @@ impl Tx<'_> {
     /// Sets the refs column of the team row. The first launch calls it in the
     /// transaction that creates the row; the `team.created` event carries the
     /// same list, so no event is written here.
-    pub fn set_refs(&self, refs: &[String]) -> Result<(), StoreError> {
+    pub fn set_refs(&self, refs: &[TicketRef]) -> Result<(), StoreError> {
         let rows = self.connection().execute(
             "UPDATE team SET refs = ?1 WHERE id = 1",
             [json!(refs).to_string()],
@@ -252,12 +252,16 @@ impl Tx<'_> {
     /// Appends the refs the team does not hold yet, in the given order, and
     /// writes `team.refs_added` with the ones it appended. Returns them. A
     /// call that adds nothing writes no event. A ref is never removed.
-    pub fn add_refs(&self, at: Timestamp, refs: &[String]) -> Result<Vec<String>, StoreError> {
+    pub fn add_refs(
+        &self,
+        at: Timestamp,
+        refs: &[TicketRef],
+    ) -> Result<Vec<TicketRef>, StoreError> {
         let Some(team) = self.reader().team()? else {
             return Err(StoreError::Constraint("no such team".to_owned()));
         };
         let mut all = team.refs;
-        let mut added: Vec<String> = Vec::new();
+        let mut added: Vec<TicketRef> = Vec::new();
         for r in refs {
             if !all.contains(r) {
                 all.push(r.clone());

@@ -9,7 +9,7 @@
 
 use serde_json::json;
 use teamwire_core::platform::ProcessRef;
-use teamwire_core::{EventType, HoldInfo, Pid, SessionId, SessionKind, TeamState};
+use teamwire_core::{EventType, HoldInfo, Pid, SessionId, SessionKind, TeamState, TicketRef};
 
 use crate::testkit::{at, count_events, fixture, last_event, new_team};
 use crate::{CloseEnd, StoreError};
@@ -261,8 +261,17 @@ fn sleep_hold_is_recorded_and_cleared() {
     assert_eq!(team.sleep_hold, None);
 }
 
-fn refs(list: &[&str]) -> Vec<String> {
-    list.iter().map(|r| (*r).to_owned()).collect()
+/// `provider:id` strings as refs.
+fn refs(list: &[&str]) -> Vec<TicketRef> {
+    list.iter()
+        .map(|r| {
+            let (provider, id) = r.split_once(':').unwrap();
+            TicketRef {
+                provider: provider.to_owned(),
+                id: id.to_owned(),
+            }
+        })
+        .collect()
 }
 
 #[test]
@@ -276,10 +285,10 @@ fn a_team_without_refs_holds_none() {
 fn set_refs_stores_them_in_order_and_writes_no_event() {
     let mut f = created();
     f.store
-        .write(|tx| tx.set_refs(&refs(&["GKA-580", "#1"])))
+        .write(|tx| tx.set_refs(&refs(&["linear:GKA-580", "github:#1"])))
         .unwrap();
     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(team.refs, ["GKA-580", "#1"]);
+    assert_eq!(team.refs, refs(&["linear:GKA-580", "github:#1"]));
     assert_eq!(count_events(&f.store, EventType::TeamRefsAdded), 0);
 }
 
@@ -287,28 +296,59 @@ fn set_refs_stores_them_in_order_and_writes_no_event() {
 fn add_refs_appends_only_new_refs_and_names_them_in_the_event() {
     let mut f = created();
     f.store
-        .write(|tx| tx.set_refs(&refs(&["GKA-580", "#1"])))
+        .write(|tx| tx.set_refs(&refs(&["linear:GKA-580", "github:#1"])))
         .unwrap();
     let added = f
         .store
-        .write(|tx| tx.add_refs(at(1), &refs(&["#1", "#2", "#2", "GKA-9"])))
+        .write(|tx| {
+            tx.add_refs(
+                at(1),
+                &refs(&["github:#1", "github:#2", "github:#2", "linear:GKA-9"]),
+            )
+        })
         .unwrap();
-    assert_eq!(added, ["#2", "GKA-9"]);
+    assert_eq!(added, refs(&["github:#2", "linear:GKA-9"]));
     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(team.refs, ["GKA-580", "#1", "#2", "GKA-9"]);
+    assert_eq!(
+        team.refs,
+        refs(&["linear:GKA-580", "github:#1", "github:#2", "linear:GKA-9"])
+    );
     let event = last_event(&f.store);
     assert_eq!(event.kind, EventType::TeamRefsAdded);
     assert_eq!(event.subject, Some(team.ulid));
-    assert_eq!(event.data, json!({ "added": ["#2", "GKA-9"] }));
+    assert_eq!(
+        event.data,
+        json!({ "added": [
+            { "provider": "github", "id": "#2" },
+            { "provider": "linear", "id": "GKA-9" },
+        ] })
+    );
+}
+
+#[test]
+fn the_same_id_under_two_providers_is_two_refs() {
+    let mut f = created();
+    f.store
+        .write(|tx| tx.set_refs(&refs(&["github:#12"])))
+        .unwrap();
+    let added = f
+        .store
+        .write(|tx| tx.add_refs(at(1), &refs(&["gitlab:#12", "github:#12"])))
+        .unwrap();
+    assert_eq!(added, refs(&["gitlab:#12"]));
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(team.refs, refs(&["github:#12", "gitlab:#12"]));
 }
 
 #[test]
 fn add_refs_with_nothing_new_writes_no_event() {
     let mut f = created();
-    f.store.write(|tx| tx.set_refs(&refs(&["#1"]))).unwrap();
+    f.store
+        .write(|tx| tx.set_refs(&refs(&["github:#1"])))
+        .unwrap();
     let added = f
         .store
-        .write(|tx| tx.add_refs(at(1), &refs(&["#1"])))
+        .write(|tx| tx.add_refs(at(1), &refs(&["github:#1"])))
         .unwrap();
     assert!(added.is_empty());
     assert_eq!(count_events(&f.store, EventType::TeamRefsAdded), 0);
@@ -317,7 +357,9 @@ fn add_refs_with_nothing_new_writes_no_event() {
 #[test]
 fn add_refs_without_a_team_is_refused() {
     let mut f = fixture();
-    let result = f.store.write(|tx| tx.add_refs(at(1), &refs(&["#1"])));
+    let result = f
+        .store
+        .write(|tx| tx.add_refs(at(1), &refs(&["github:#1"])));
     assert!(
         matches!(result, Err(StoreError::Constraint(_))),
         "{result:?}"
