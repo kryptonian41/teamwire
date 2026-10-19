@@ -178,8 +178,13 @@ pub(crate) fn plan(
         question(&mut env, q);
     }
 
+    // Time asleep gave nobody the chance to read or answer, as for `LATE`.
+    let awake_since = |since: Timestamp| {
+        now.saturating_since(since)
+            .saturating_sub(slept_since(&memory.sleeps, since))
+    };
     for u in &snap.unread {
-        let waited = now.saturating_since(u.since);
+        let waited = awake_since(u.since);
         // A removed or failed member's inbox is not waited on.
         if waited > UNREAD_AFTER && snap.members.iter().any(|m| m.member.role == u.to) {
             env.announce(
@@ -190,7 +195,7 @@ pub(crate) fn plan(
         }
     }
     for q in &snap.unanswered {
-        let waited = now.saturating_since(q.since);
+        let waited = awake_since(q.since);
         if waited > UNANSWERED_AFTER {
             env.announce(
                 unanswered_key(&q.message),

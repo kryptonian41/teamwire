@@ -1185,3 +1185,26 @@ fn a_missing_or_changed_result_file_points_the_lead_at_the_report() {
         assert!(!line.contains("/outbox/"), "{change}: {line}");
     }
 }
+
+/// Unread and unanswered times count only time awake, as `LATE` does: a
+/// sleeping machine gives nobody the chance to read or answer.
+#[test]
+fn a_laptop_sleep_does_not_make_a_fresh_message_unread_or_unanswered() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    bed.working("api");
+    bed.poll();
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    bed.question("api", DeliveryState::HandedOff);
+    bed.age(secs(30));
+    assert!(bed.tick().is_none());
+    // The lid closes 30 s after the message was handed off, for an hour.
+    bed.clock.sleep_and_wake(secs(3600));
+    let lines = bed.ticks(2);
+    assert_eq!(count(&lines, "UNREAD"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "UNANSWERED"), 0, "{lines:?}");
+    // Ten minutes awake are still found.
+    let later = bed.ticks(30);
+    assert_eq!(count(&later, "UNREAD"), 1, "{later:?}");
+    assert_eq!(count(&later, "UNANSWERED"), 1, "{later:?}");
+}
