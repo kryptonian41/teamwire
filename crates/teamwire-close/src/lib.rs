@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 use teamwire_core::{EventType, Role, TeamName};
 use teamwire_store::Ctx;
 
+mod afk;
 mod archive;
 mod delete;
 mod empty;

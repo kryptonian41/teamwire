@@ -61,6 +61,9 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
     view.team = Some(team.name.clone());
     view.title = Some(team.title.clone());
     view.state = Some(team.state);
+    view.afk = team
+        .afk_budget_ends_at
+        .map(|ends| crate::afk::view(&team_dir, ends, now));
     view.lead = Some(LeadView {
         session_id: team.lead_session.clone(),
         liveness: Liveness::Unknown,

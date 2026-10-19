@@ -160,8 +160,8 @@ fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
 }
 
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
-/// team that has working members and no running watch. It reads stores and
-/// writes nothing.
+/// team that has working members and no running watch, and each AFK team that
+/// nothing will wake. It reads stores and writes nothing.
 fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
     // A member never runs this hook; the plugin is also switched off for it.
     if std::env::var_os("TEAMWIRE_TEAM").is_some() {
@@ -196,18 +196,22 @@ fn lead_stop_in(
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
     let at = home.to_path_buf();
-    let teams = within(LEAD_STOP_BUDGET, move || {
-        teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
+    let (teams, afk_notes) = within(LEAD_STOP_BUDGET, move || {
+        (
+            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock),
+            teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
+        )
     })?;
-    if teams.is_empty() {
-        return None;
-    }
-    let note: Vec<String> = teams
+    let mut note: Vec<String> = teams
         .iter()
         .map(|team| {
             teamwire_report::watch_missing_note(team, lead_reads_watch_lines(home, team, wiring))
         })
         .collect();
+    note.extend(afk_notes);
+    if note.is_empty() {
+        return None;
+    }
     Some(harness.hold_reply(&note.join("\n")))
 }
 

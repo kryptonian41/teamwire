@@ -11,6 +11,7 @@
 //! prints it again for a finished team, and `WATCHING` on its first poll;
 //! both are intended.
 
+mod afk;
 mod apply;
 mod lease;
 mod memory;
@@ -143,6 +144,17 @@ pub struct WatchView {
     pub heartbeat_age_s: Option<u64>,
 }
 
+/// The AFK budget and the decisions logged so far.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AfkView {
+    pub budget_ends_at: Timestamp,
+    /// Zero once the budget is spent.
+    pub seconds_left: u64,
+    pub spent: bool,
+    /// The `D<n>` entries in `afk/decisions.md`.
+    pub decisions: u32,
+}
+
 /// `teamwire status <team>` and `team_status`. Read-only.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StatusView {
@@ -151,6 +163,8 @@ pub struct StatusView {
     pub state: Option<TeamState>,
     pub lead: Option<LeadView>,
     pub watch: WatchView,
+    /// Set only for an AFK team.
+    pub afk: Option<AfkView>,
     pub members: Vec<MemberView>,
     /// The last five messages.
     pub messages: Vec<MessageView>,
