@@ -333,6 +333,25 @@ fn id_and_key_printed_before_host_call() {
         delivery.delivery.state,
         teamwire_core::DeliveryState::Pending
     );
+    // A resume within the minute cannot tell the killed sender from one
+    // still typing, so it types nothing and says so: exit 5, as for a line
+    // that may or may not be on the screen.
+    rig.herdr.set_faults(&HerdrFaults::new()).unwrap();
+    let out = rig.run(
+        &[
+            "send", "alpha", "--to", "api", "--type", "finding", "--text", "x", "--key", "k-777",
+        ],
+        &Identity::Member("scout"),
+    );
+    let stderr = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(text(&out.stdout).contains("api: skipped"), "{out:?}");
+    assert!(
+        stderr.contains(
+            "SKIPPED for api: another command may still be delivering it; if it does not arrive, run teamwire resend alpha m001 after 60 s"
+        ),
+        "{stderr}"
+    );
 }
 
 #[test]

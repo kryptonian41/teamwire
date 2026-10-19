@@ -66,7 +66,10 @@ pub(crate) fn deliver_to_team(
         Ok(None) => {
             return tries
                 .iter()
-                .map(|t| mirror(ctx, message, t, gone(team)))
+                .map(|t| {
+                    let outcome = held_by_closing(&there, team, message, t)?;
+                    mirror(ctx, message, t, outcome)
+                })
                 .collect();
         }
         Err(e) => return tries.iter().map(|_| Err(e.clone())).collect(),
@@ -169,6 +172,34 @@ fn outcome_of(record: &DeliveryRecord) -> Outcome {
         route: d.route,
         error: d.error.clone(),
     }
+}
+
+/// What a team that is no longer open already holds for one try. Nothing is
+/// typed there, but a copy an earlier attempt stored still says what
+/// happened: a row handed off or read arrived, and a row still `pending`
+/// may have been typed before the sender died, so it is not `undelivered`.
+fn held_by_closing(
+    there: &Ctx<'_>,
+    team: &TeamName,
+    message: &Message,
+    t: &Try<'_>,
+) -> Result<Outcome, SendError> {
+    let Some(local) = remote_of(&t.row.delivery.recipient).map(Remote::local) else {
+        return Ok(gone(team));
+    };
+    let ulid = message.ulid;
+    let Some(record) = there.store.read(|tx| tx.delivery(&ulid, &local))? else {
+        return Ok(gone(team));
+    };
+    if record.delivery.state != DeliveryState::Pending {
+        return Ok(outcome_of(&record));
+    }
+    let Outcome { error, .. } = gone(team);
+    Ok(Outcome {
+        state: DeliveryState::Unconfirmed,
+        route: None,
+        error,
+    })
 }
 
 fn gone(team: &TeamName) -> Outcome {

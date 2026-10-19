@@ -192,6 +192,12 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
                 d.reason.map_or("unknown", |r| r.as_str())
             )),
             RecipientState::Pending => warn(&pending_line(team, &report.display_id, &d.to)),
+            // In a resume by key a reached row keeps its own state, so
+            // `skipped` means another command may still be typing it.
+            RecipientState::Skipped if report.duplicate_of_key => warn(&format!(
+                "SKIPPED for {}: another command may still be delivering it; if it does not arrive, run teamwire resend {team} {} after 60 s",
+                d.to, report.display_id
+            )),
             RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => {}
         }
     }
@@ -218,14 +224,17 @@ fn state_word(state: RecipientState) -> &'static str {
 
 /// 6 when any recipient is still pending, because its delivery record could
 /// not be written; else 4 when any is undelivered, else 5 when any is
-/// unconfirmed.
+/// unconfirmed, or skipped in a resume by key because another command may
+/// still be delivering it.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
     let any = |s| report.deliveries.iter().any(|d| d.state == s);
     if any(RecipientState::Pending) {
         STORE
     } else if any(RecipientState::Undelivered) {
         NOT_DELIVERED
-    } else if any(RecipientState::Unconfirmed) {
+    } else if any(RecipientState::Unconfirmed)
+        || (report.duplicate_of_key && any(RecipientState::Skipped))
+    {
         UNCONFIRMED
     } else {
         0

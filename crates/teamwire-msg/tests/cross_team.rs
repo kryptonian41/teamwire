@@ -527,3 +527,74 @@ fn each_team_logs_its_own_copy_and_only_beta_may_resend_it_there() {
     .unwrap();
     assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
 }
+
+/// Beta holds alpha's message for `db` in `state`, and then starts closing.
+fn held_by_a_closing_beta(t: &mut Two, text: &str, state: Option<DeliveryState>) -> Ulid {
+    let ulid = stored_in_alpha_only(t, text);
+    let at = t.rig.now();
+    t.beta
+        .write(|tx| {
+            tx.insert_received(
+                at,
+                &ReceivedMessage {
+                    ulid,
+                    sender: Remote::member_of(&TeamName::parse("alpha").unwrap(), &role("api")),
+                    kind: MessageType::Finding,
+                    re: None,
+                    commit: None,
+                    body: text.to_owned(),
+                    recipients: vec![Recipient::Member(role("db"))],
+                },
+            )?;
+            if let Some(state) = state {
+                tx.set_delivery_state(
+                    at,
+                    &ulid,
+                    &to("db"),
+                    &teamwire_store::DeliveryUpdate {
+                        state,
+                        route: Some(teamwire_core::Route::HostTyping),
+                        error: None,
+                        attempts: 1,
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let pid = teamwire_core::Pid::new(4242);
+    t.beta.write(|tx| tx.begin_close(t.rig.now(), pid)).unwrap();
+    t.rig.clock.advance(Duration::from_secs(61));
+    ulid
+}
+
+#[test]
+fn a_line_that_arrived_stays_handed_off_after_the_other_team_starts_closing() {
+    let mut t = two_teams();
+    let ulid = held_by_a_closing_beta(&mut t, "already there", Some(DeliveryState::HandedOff));
+    let actor = Actor::Member(role("api"));
+    let report = resend(&mut t.rig.ctx(), &actor, &id("m001"), None).unwrap();
+    assert_eq!(state_in(&t.beta, &ulid, "db"), DeliveryState::HandedOff);
+    assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
+    assert_eq!(
+        state_in(&t.rig.store, &ulid, "db@beta"),
+        DeliveryState::HandedOff
+    );
+    assert!(t.typed("db").is_empty());
+}
+
+#[test]
+fn a_copy_still_pending_in_a_closing_team_is_unconfirmed() {
+    let mut t = two_teams();
+    let ulid = held_by_a_closing_beta(&mut t, "maybe there", None);
+    let actor = Actor::Member(role("api"));
+    let report = resend(&mut t.rig.ctx(), &actor, &id("m001"), None).unwrap();
+    let only = &report.deliveries[0];
+    assert_eq!(only.state, RecipientState::Unconfirmed);
+    assert_eq!(only.reason, Some(DeliveryErrorCode::TeamClosed));
+    assert_eq!(
+        state_in(&t.rig.store, &ulid, "db@beta"),
+        DeliveryState::Unconfirmed
+    );
+    assert!(t.typed("db").is_empty());
+}

@@ -225,8 +225,26 @@ fn kill_after_submit_at_most_one_duplicate() {
     };
     assert_eq!(state(&rig), DeliveryState::Pending);
 
-    // The resume types it again: the one allowed duplicate.
+    // A resume skips a row whose attempt began under a minute ago, since its
+    // sender may still be typing. This sender is dead: its attempt is moved
+    // back to long ago, as if the minute had passed.
     rig.path_prefix = None;
+    let out = rig.run(&send_args(&to_api, key), &Identity::Lead);
+    assert!(out.stdout.contains("api: skipped"), "{out:?}");
+    assert_eq!(rig.typed_count(key), 1);
+    rig.store()
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE messages SET created_at = ?1 WHERE ulid = ?2",
+                    [rig::at().to_string(), message.ulid.to_string()],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+
+    // The resume types it again: the one allowed duplicate.
     let out = rig.run(&send_args(&to_api, key), &Identity::Lead);
     assert!(out.stdout.starts_with(&format!("{id}\n")), "{out:?}");
     assert_eq!(rig.typed_count(key), 2);

@@ -54,3 +54,34 @@ pub fn is_pending_stale(
     let started = attempt_started(tx, message, recipient)?;
     Ok(now.saturating_since(started) > PENDING_STALE)
 }
+
+/// True when a command may still be delivering `message` to `recipient`:
+/// the latest attempt began under `PENDING_STALE` ago and no outcome has
+/// been recorded since. Unlike `is_pending_stale` this holds for a row in
+/// any state, since a retry leaves an `undelivered` or `unconfirmed` row in
+/// its state until its outcome is written.
+pub fn attempt_in_flight(
+    tx: &ReadTx<'_>,
+    message: &Message,
+    recipient: &Recipient,
+    now: Timestamp,
+) -> Result<bool, StoreError> {
+    let mut started = Some(message.created_at);
+    for e in tx.events_about(&message.ulid)?.all_or_corrupt()? {
+        if !is_for(&e, recipient) {
+            continue;
+        }
+        if e.kind == EventType::DeliveryResent {
+            started = Some(e.time.max(message.created_at));
+        } else if matches!(
+            e.kind,
+            EventType::DeliveryHandedOff
+                | EventType::DeliveryUnconfirmed
+                | EventType::DeliveryUndelivered
+                | EventType::DeliveryAcked
+        ) {
+            started = None;
+        }
+    }
+    Ok(started.is_some_and(|t| now.saturating_since(t) <= PENDING_STALE))
+}
