@@ -42,7 +42,8 @@
       "effort": "xhigh",
       "plugins": {
         "ponytail@ponytail": false,
-        "mattpocock-skills@claude-plugins-official": false
+        "mattpocock-skills@claude-plugins-official": false,
+        "claude-mem@thedotmack": false
       },
       "deadline_s": 1200,
       "task": "Review the diff on branch myteam/impl against main. Read it with `git diff main...myteam/impl`. Report correctness, security and data-loss bugs, each with file:line and a concrete failure scenario. Look for stubbed, empty or hard-coded code that makes a check pass. Findings only, no fixes. Do NOT edit any file in the repository. If the diff is sound, say so plainly rather than inventing findings."
