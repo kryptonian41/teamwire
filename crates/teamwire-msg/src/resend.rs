@@ -94,11 +94,7 @@ pub fn resend(
             continue;
         }
         let result = retry(ctx, actor, &team, &message, row);
-        deliveries.push(survive_error(
-            result,
-            &row.delivery.recipient,
-            row.delivery.attempts + 1,
-        )?);
+        deliveries.push(survive_error(result, row, row.delivery.attempts + 1)?);
     }
     for (other, group) in by_other_team(&rows) {
         let mut tries = Vec::new();
@@ -106,11 +102,7 @@ pub fn resend(
             match claim_attempt(ctx, actor, &message, row) {
                 Ok(Some(attempts)) => tries.push(Try { row, attempts }),
                 Ok(None) => deliveries.push(skipped(row)),
-                Err(e) => deliveries.push(survive_error(
-                    Err(e),
-                    &row.delivery.recipient,
-                    row.delivery.attempts + 1,
-                )?),
+                Err(e) => deliveries.push(survive_error(Err(e), row, row.delivery.attempts + 1)?),
             }
         }
         if tries.is_empty() {
@@ -118,11 +110,7 @@ pub fn resend(
         }
         let results = deliver_to_team(ctx, &team, &message, &other, &group, &tries);
         for (t, result) in tries.iter().zip(results) {
-            deliveries.push(survive_error(
-                result,
-                &t.row.delivery.recipient,
-                t.attempts,
-            )?);
+            deliveries.push(survive_error(result, t.row, t.attempts)?);
         }
     }
     Ok(SendReport {

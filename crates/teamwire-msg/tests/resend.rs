@@ -484,3 +484,33 @@ fn a_row_another_command_reached_after_this_one_read_it_is_skipped() {
     assert_eq!(state_of(&report, "web"), RecipientState::Skipped);
     assert_eq!(submits(&rig), 1);
 }
+
+#[test]
+fn a_row_that_may_have_arrived_stays_unconfirmed_when_the_team_closes_part_way() {
+    let mut rig = team_rig();
+    let display = tried_once(&mut rig, DeliveryState::Unconfirmed);
+    trigger(
+        &mut rig,
+        "CREATE TRIGGER close_after_api AFTER UPDATE ON deliveries
+         WHEN NEW.recipient = 'api'
+         BEGIN UPDATE team SET state = 'closing'; END;",
+    );
+    let report = resend(
+        &mut rig.ctx(),
+        &Actor::parse("scout").unwrap(),
+        &display,
+        None,
+    )
+    .unwrap();
+    assert_eq!(state_of(&report, "api"), RecipientState::HandedOff);
+    let web = report
+        .deliveries
+        .iter()
+        .find(|d| d.to == to("web"))
+        .unwrap();
+    assert_eq!(web.state, RecipientState::Unconfirmed);
+    assert_eq!(web.reason, Some(DeliveryErrorCode::TeamClosed));
+    // The refused attempt was never counted.
+    assert_eq!(web.attempts, Some(1));
+    assert_eq!(submits(&rig), 1);
+}

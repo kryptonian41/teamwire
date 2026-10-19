@@ -134,7 +134,7 @@ pub fn send_with(
             stored.duplicate,
             &bumped,
         );
-        deliveries.push(survive_error(result, &record.delivery.recipient, attempts)?);
+        deliveries.push(survive_error(result, record, attempts)?);
     }
     for (other, rows) in by_other_team(&stored.deliveries) {
         let mut tries: Vec<Try<'_>> = Vec::new();
@@ -149,11 +149,7 @@ pub fn send_with(
             match claim_attempt(ctx, &actor, &message, row) {
                 Ok(Some(attempts)) => tries.push(Try { row, attempts }),
                 Ok(None) => deliveries.push(skipped(row)),
-                Err(e) => deliveries.push(survive_error(
-                    Err(e),
-                    &row.delivery.recipient,
-                    row.delivery.attempts + 1,
-                )?),
+                Err(e) => deliveries.push(survive_error(Err(e), row, row.delivery.attempts + 1)?),
             }
         }
         if tries.is_empty() {
@@ -161,11 +157,7 @@ pub fn send_with(
         }
         let results = deliver_to_team(ctx, &team, &message, &other, &rows, &tries);
         for (t, result) in tries.iter().zip(results) {
-            deliveries.push(survive_error(
-                result,
-                &t.row.delivery.recipient,
-                t.attempts,
-            )?);
+            deliveries.push(survive_error(result, t.row, t.attempts)?);
         }
     }
     Ok(SendReport {
@@ -265,27 +257,35 @@ fn try_recipient(
 /// report, so the recipients after it are still tried and the caller still
 /// gets every report of a send that already typed some lines. A store error
 /// is `pending`: the delivery may or may not have been typed, and the
-/// command exits 6 for it. A team that started closing part way is
-/// `undelivered (team_closed)`: nothing more is typed, and the command exits
-/// 4. Any other error ends the whole command.
+/// command exits 6 for it. A team that started closing part way types
+/// nothing more and counts no attempt. The row is then `unconfirmed
+/// (team_closed)` when an earlier attempt may have typed it (`pending` or
+/// `unconfirmed`), else `undelivered (team_closed)`, which exits 4. Any
+/// other error ends the whole command.
 pub(crate) fn survive_error(
     result: Result<RecipientReport, SendError>,
-    recipient: &Recipient,
+    row: &DeliveryRecord,
     attempts: u32,
 ) -> Result<RecipientReport, SendError> {
-    let (state, reason) = match result {
+    let d = &row.delivery;
+    let (state, reason, attempts) = match result {
         Err(SendError::Store(e)) => {
-            tracing::warn!(%recipient, error = %e, "could not record a delivery");
-            (RecipientState::Pending, None)
+            tracing::warn!(recipient = %d.recipient, error = %e, "could not record a delivery");
+            (RecipientState::Pending, None, attempts)
         }
-        Err(SendError::Refused(Refusal::TeamClosed)) => (
-            RecipientState::Undelivered,
-            Some(DeliveryErrorCode::TeamClosed),
-        ),
+        Err(SendError::Refused(Refusal::TeamClosed)) => {
+            let state = match d.state {
+                DeliveryState::Pending | DeliveryState::Unconfirmed => RecipientState::Unconfirmed,
+                DeliveryState::Undelivered | DeliveryState::HandedOff | DeliveryState::Acked => {
+                    RecipientState::Undelivered
+                }
+            };
+            (state, Some(DeliveryErrorCode::TeamClosed), d.attempts)
+        }
         other => return other,
     };
     Ok(RecipientReport {
-        to: recipient.clone(),
+        to: d.recipient.clone(),
         state,
         reason,
         attempts: Some(attempts),
