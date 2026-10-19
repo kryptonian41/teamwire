@@ -273,3 +273,19 @@ fn answer_startup_types_into_the_place_only_for_the_plain_dialog() {
         StartupOutcome::NoDialog
     );
 }
+
+#[test]
+fn a_gone_place_holds_no_live_agent_for_spawn_or_the_name_list() {
+    let h = FakeHost::new();
+    h.add_place(
+        "tw_demo_api",
+        PlaceState::Gone,
+        Occupant {
+            session: None,
+            pids: vec![],
+        },
+    );
+    assert!(h.live_agent_names(T).unwrap().is_empty());
+    h.spawn(&req("tw_demo_api"), T).unwrap();
+    assert_eq!(h.live_agent_names(T).unwrap(), ["tw_demo_api"]);
+}
