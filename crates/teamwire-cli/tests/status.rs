@@ -379,6 +379,28 @@ fn received_clears_a_result_from_status_and_a_second_run_changes_nothing() {
     assert_eq!(unknown.out, "nobody refused: no member has this role\n");
 }
 
+#[test]
+fn a_member_session_cannot_mark_a_result_received() {
+    let mut bed = team();
+    let id = bed.complete("web", CompletionStatus::Done);
+    bed.finish(&id, teamwire_core::ReportState::Undelivered, None);
+    let before = sizes(&bed);
+    for vars in [
+        &[("TEAMWIRE_TOKEN", "not-a-real-token")][..],
+        &[("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")],
+    ] {
+        let run = teamwire_with(&bed, &["received", "alpha", "web"], vars);
+        assert_eq!(run.code, 1, "{vars:?}: {}{}", run.out, run.err);
+        assert!(run.err.contains("refused.identity"), "{}", run.err);
+    }
+    assert_eq!(sizes(&bed), before, "a refused received changed a file");
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(
+        shown.contains("results the lead has not received:"),
+        "{shown}"
+    );
+}
+
 fn make_afk(bed: &mut Bed, ends: &str) {
     bed.store
         .write(|tx| {

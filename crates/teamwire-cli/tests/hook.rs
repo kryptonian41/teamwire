@@ -130,6 +130,36 @@ fn garbage_stdin_exits_zero() {
     assert_eq!(events(&fx), before, "nothing changed");
 }
 
+/// A hook exits 0 on every path (REP-10), even when its arguments do not
+/// parse: a settings file written for a newer binary names a hook this one
+/// lacks, and a non-zero exit is a hook error on every turn.
+#[test]
+fn hook_arguments_that_do_not_parse_exit_zero() {
+    let fx = team();
+    let home = fx.home.path().to_str().unwrap();
+    for args in [
+        &["hook", "not-a-hook"][..],
+        &["--home", home, "hook", "claude-stop", "--bogus"],
+        &[&format!("--home={home}"), "hook", "turn-end", "--bogus"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {out:?}");
+    }
+    // Any other command still exits 3 on a bad argument.
+    let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .args(["status", "--bogus"])
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+}
+
 #[test]
 fn every_member_hook_on_a_newer_schema_says_so_and_changes_nothing() {
     let mut fx = team();

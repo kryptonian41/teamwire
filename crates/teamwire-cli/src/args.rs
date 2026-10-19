@@ -403,8 +403,9 @@ pub(crate) struct HookArgs {
     pub(crate) hook: HookCommand,
 }
 
-/// The `claude-*` names are the ones per-run settings written before ADR
-/// 0022 spell, so they stay for teams that are still open.
+/// The `claude-*` names do what the harness-neutral names do (ADR 0023
+/// lines 133-136): settings written by an older launch spell them, and the
+/// Claude adapter still writes them.
 #[derive(Subcommand)]
 pub(crate) enum HookCommand {
     /// A member's turn-end (Stop) hook, on the member's own harness.
