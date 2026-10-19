@@ -89,24 +89,34 @@ pub enum McpState {
     Foreign(String),
 }
 
-/// Arguments whose next argument is a secret, so `describe` hides it.
-fn is_secret_flag(arg: &str) -> bool {
-    let arg = arg.to_ascii_lowercase();
-    ["token", "secret", "password", "key"]
-        .iter()
-        .any(|word| arg.starts_with('-') && arg.contains(word))
+/// A flag whose name (`--token`, `-api-key`) marks its value as a secret.
+fn is_secret_flag(name: &str) -> bool {
+    name.starts_with('-') && teamwire_core::is_secret_name(name)
+}
+
+/// `word` with a URL's user info, query and fragment removed, since each can
+/// hold a credential. A word that is not a URL is returned as it is.
+fn without_url_secrets(word: &str) -> String {
+    let Some((scheme, rest)) = word.split_once("://") else {
+        return word.to_owned();
+    };
+    let rest = rest.split(['?', '#']).next().unwrap_or_default();
+    let (authority, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+    let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    format!("{scheme}://{host}{path}")
 }
 
 /// An entry in words for a refusal or a `doctor` line, which people paste
 /// into issues: the type, the program or URL and the arguments, but never
-/// an environment value, a header, or the value after a secret flag.
+/// an environment value, a header, the value of a secret flag (after it or
+/// after its `=`), or a URL's user info or query.
 pub(crate) fn describe(entry: &Value) -> String {
     let text = |k: &str| entry.get(k).and_then(Value::as_str);
     let mut words: Vec<String> = Vec::new();
     if let Some(kind) = text("type").filter(|t| *t != "stdio") {
         words.push(format!("({kind})"));
     }
-    words.extend(text("command").or(text("url")).map(str::to_owned));
+    words.extend(text("command").or(text("url")).map(without_url_secrets));
     let mut hide_next = false;
     for arg in entry
         .get("args")
@@ -115,8 +125,13 @@ pub(crate) fn describe(entry: &Value) -> String {
         .flatten()
     {
         let arg = arg.as_str().unwrap_or("?");
-        words.push(if hide_next { "<hidden>" } else { arg }.to_owned());
-        hide_next = is_secret_flag(arg);
+        let word = match arg.split_once('=') {
+            _ if hide_next => "<hidden>".to_owned(),
+            Some((name, _)) if is_secret_flag(name) => format!("{name}=<hidden>"),
+            _ => without_url_secrets(arg),
+        };
+        words.push(word);
+        hide_next = !arg.contains('=') && is_secret_flag(arg);
     }
     for (key, noun) in [("env", "environment variable"), ("headers", "header")] {
         let n = entry
@@ -265,6 +280,21 @@ mod tests {
         }));
         assert_eq!(http, "(http) https://x.example/mcp with 1 header");
         assert!(!format!("{text}{http}").contains("s3cret"));
+    }
+
+    #[test]
+    fn a_secret_inside_one_argument_or_a_url_is_hidden() {
+        let text = describe(&json!({
+            "command": "server",
+            "args": ["--token=abc", "--team=t", "https://u:p@h/x?key=s", "--api-key", "k"]
+        }));
+        assert_eq!(
+            text,
+            "server --token=<hidden> --team=t https://h/x --api-key <hidden>"
+        );
+        let http = describe(&json!({"type": "http", "url": "https://u:p@h/x?key=s#f"}));
+        assert_eq!(http, "(http) https://h/x");
+        assert_eq!(without_url_secrets("https://h?q=1"), "https://h");
     }
 
     #[test]
