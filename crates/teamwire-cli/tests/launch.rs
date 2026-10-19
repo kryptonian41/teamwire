@@ -50,12 +50,24 @@ impl Rig {
     /// Runs `teamwire launch` with a cleared environment: the fakes' `PATH`,
     /// a temporary home, and `HERDR_ENV=1` unless `no_herdr`.
     fn launch(&self, args: &[&str], stdin: Option<&str>, no_herdr: bool) -> Output {
+        self.launch_with(args, stdin, no_herdr, &[])
+    }
+
+    /// `launch` with extra variables, such as a member's identity.
+    fn launch_with(
+        &self,
+        args: &[&str],
+        stdin: Option<&str>,
+        no_herdr: bool,
+        vars: &[(&str, &str)],
+    ) -> Output {
         let mut cmd = command(env!("CARGO_BIN_EXE_teamwire"));
         cmd.arg("launch")
             .args(args)
             .env_clear()
             .envs(self.herdr.env())
             .env("TEAMWIRE_HOME", self.home.path())
+            .envs(vars.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -382,4 +394,45 @@ fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
         file.display()
     );
     assert!(shown.contains(&want), "{shown}");
+}
+
+#[test]
+fn a_member_cannot_launch_a_team_but_may_ask_for_the_plan() {
+    let rig = Rig::new();
+    let file = rig.spec_file(&pane_spec("nested", rig.work.path()));
+    let file = file.to_str().unwrap();
+    let member: [&[(&str, &str)]; 3] = [
+        &[("TEAMWIRE_TOKEN", "not-a-real-token")],
+        &[("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")],
+        &[("TEAMWIRE_ROLE", "api")],
+    ];
+    for vars in member {
+        for args in [&["--spec", file][..], &["--add", "--spec", file]] {
+            let out = rig.launch_with(args, None, false, vars);
+            let err = text(&out.stderr);
+            assert_eq!(out.status.code(), Some(1), "{vars:?} {args:?}: {err}");
+            assert!(err.contains("refused.identity"), "{err}");
+            assert!(
+                rig.home_is_empty(),
+                "{vars:?} {args:?}: no team was created"
+            );
+        }
+        // A dry run creates nothing, so a member may ask for the plan.
+        let out = rig.launch_with(&["--dry-run", "--spec", file], None, false, vars);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{vars:?}: {}",
+            text(&out.stderr)
+        );
+        assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
+        // With no running team `--add` is refused, but not for who asks.
+        let out = rig.launch_with(&["--dry-run", "--add", "--spec", file], None, false, vars);
+        let err = text(&out.stderr);
+        assert!(
+            err.contains("no_such_team") && !err.contains("refused.identity"),
+            "{err}"
+        );
+        assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
+    }
 }

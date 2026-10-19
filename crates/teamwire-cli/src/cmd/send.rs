@@ -266,7 +266,7 @@ pub(crate) fn carries_member_identity() -> bool {
     caller_env(None).is_member_session()
 }
 
-/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
+/// A lead-only command (`close`, `watch`, a real `launch`) run from a member's
 /// session is refused.
 pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
     carries_member_identity().then(|| {
