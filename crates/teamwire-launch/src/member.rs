@@ -1,7 +1,10 @@
 //! The per-member sequence (LCH-3). Each member is recorded `creating` before
 //! its first irreversible step, then: worktree, setup, files, spawn, trust,
 //! `started`, and the first message. A failure at any step undoes that
-//! member only, without force, and records it `failed` (LCH-4).
+//! member only, without force, and records it `failed` (LCH-4). A refusal
+//! (the AFK budget has ended, checked at the start and again right before
+//! spawn, or the team has started closing) is undone the same way and
+//! writes `member.refused`.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -9,8 +12,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use teamwire_core::{
-    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
-    Ulid, one_line,
+    EventType, IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState,
+    TrustPolicy, Ulid, one_line,
 };
 use teamwire_store::{Ctx, NewMember, NewTeam};
 
@@ -27,6 +30,9 @@ use crate::{
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest reason kept in an event.
 const REASON_MAX: usize = 300;
+/// The refusals that write `member.refused` instead of `member.failed`, by
+/// their `reason_code`. Each one's reason starts with its code and a colon.
+const REFUSALS: [&str; 2] = ["afk_budget_spent", "team_closed"];
 
 pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let mut warnings = plan.warnings.clone();
@@ -57,10 +63,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
         team: ctx.home.join("teams").join(plan.spec.team.as_str()),
     };
     for m in &plan.members {
-        let outcome = match crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
-            Some(why) => LaunchOutcome::Refused(why),
-            None => launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings),
-        };
+        let outcome = launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings);
         members.push(MemberOutcome {
             role: m.spec.role.clone(),
             outcome,
@@ -141,6 +144,9 @@ fn launch_member(
     match result {
         Ok(()) => LaunchOutcome::Started,
         Err(stop) => {
+            let refusal = REFUSALS
+                .into_iter()
+                .find(|code| stop.refused && stop.reason.starts_with(&format!("{code}:")));
             let stop_code = stop.code;
             let (undo, left) = undo(ctx, m, &made);
             let mut reason = if undo.is_empty() {
@@ -151,8 +157,10 @@ fn launch_member(
             if let (Some(advice), false) = (stop.advice, left) {
                 reason = format!("{reason}; {advice}");
             }
-            if made.recorded {
-                record_failed(ctx, m, stop_code, &reason, &extra, &steps);
+            match refusal {
+                Some(code) => record_refused(ctx, m, code, &reason, &extra, &steps, made.recorded),
+                None if made.recorded => record_failed(ctx, m, stop_code, &reason, &extra, &steps),
+                None => {}
             }
             if stop.refused {
                 LaunchOutcome::Refused(reason)
@@ -189,6 +197,42 @@ fn record_failed(
     }
 }
 
+/// Writes `member.refused`. A member launch had already recorded is left
+/// `failed`, as a failed launch leaves it, so close still finds whatever the
+/// undo could not remove and `--add` can start it again. When the store
+/// refuses the write (the team is being closed), nothing is recorded.
+fn record_refused(
+    ctx: &mut Ctx<'_>,
+    m: &PlannedMember,
+    code: &str,
+    reason: &str,
+    extra: &Value,
+    steps: &Steps,
+    recorded: bool,
+) {
+    let at = ctx.clock.now();
+    let mut data = extra.clone();
+    put(&mut data, "reason_code", json!(code));
+    put(
+        &mut data,
+        "reason",
+        json!(one_line(reason, REASON_MAX).as_str()),
+    );
+    put(&mut data, "steps", steps.json());
+    let role = m.spec.role.clone();
+    let written = ctx.store.write(|tx| {
+        if recorded {
+            tx.refuse_member(at, &role, &data)
+        } else {
+            tx.record_event(at, EventType::MemberRefused, Some(&role), None, &data)
+                .map(|_| ())
+        }
+    });
+    if let Err(e) = written {
+        tracing::warn!(role = %m.spec.role, error = %e, "could not record the refused launch");
+    }
+}
+
 /// Sets `key` on a JSON object.
 fn put(data: &mut Value, key: &str, value: Value) {
     if let Some(map) = data.as_object_mut() {
@@ -221,6 +265,10 @@ fn run_member(
     warnings: &mut Vec<String>,
 ) -> Result<(), Stop> {
     let role = &m.spec.role;
+    // The code of a refusal is never written: `REFUSALS` gives its own.
+    if let Some(why) = crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
+        return Err(Stop::refuse(ReasonCode::Prepare, why));
+    }
     let harness = ctx
         .registry
         .harness(&m.harness)
@@ -367,6 +415,10 @@ fn run_member(
         argv: spec.argv,
         env,
     };
+    // Setup can outlast the AFK budget; no member starts after it ends.
+    if let Some(why) = crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
+        return Err(Stop::refuse(ReasonCode::Spawn, why));
+    }
     let place = spawn(host, &request)?;
     made.place = Some(place.clone());
     let chosen = harness.capabilities().choose_session_id;

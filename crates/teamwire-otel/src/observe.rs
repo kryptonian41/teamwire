@@ -82,7 +82,9 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
     };
     let d = &event.data;
     match event.kind {
-        EventType::MemberStarted | EventType::MemberFailed => launch(&mut o, d),
+        EventType::MemberStarted | EventType::MemberFailed | EventType::MemberRefused => {
+            launch(&mut o, d);
+        }
         EventType::MemberReprompted if !flag(d, "undone") => {
             let kind = kind_of(h, event);
             o.count(&defs::MEMBER_REPROMPTS, &[("kind", kind)]);
@@ -170,7 +172,7 @@ fn kind_of<'a>(h: &'a History, e: &Event) -> &'a str {
         .map_or("unknown", |role| h.member_kind(role.as_str(), e.seq))
 }
 
-/// The `reason_code` of a failed launch when it is a short code. The free
+/// The `reason_code` of a failed or refused launch when it is a short code. The free
 /// `reason` text can hold a path, so it is never a label.
 fn reason_code(d: &Value) -> &str {
     text(d, "reason_code")
@@ -181,17 +183,17 @@ fn reason_code(d: &Value) -> &str {
 }
 
 fn launch(o: &mut Out<'_>, d: &Value) {
-    if o.event.kind == EventType::MemberStarted {
-        o.count(
-            &defs::LAUNCH_MEMBERS,
-            &[("outcome", "started"), ("reason", "none")],
-        );
+    let (outcome, reason) = if o.event.kind == EventType::MemberStarted {
+        ("started", "none")
+    } else if o.event.kind == EventType::MemberRefused {
+        ("refused", reason_code(d))
     } else {
-        o.count(
-            &defs::LAUNCH_MEMBERS,
-            &[("outcome", "failed"), ("reason", reason_code(d))],
-        );
-    }
+        ("failed", reason_code(d))
+    };
+    o.count(
+        &defs::LAUNCH_MEMBERS,
+        &[("outcome", outcome), ("reason", reason)],
+    );
     for step in LAUNCH_STEPS {
         if let Some(ms) = d.get("steps").and_then(|s| number(s, step)) {
             o.measure(&defs::LAUNCH_DURATION, ms / 1000.0, &[("step", step)]);
@@ -437,7 +439,9 @@ fn member_state(kind: EventType) -> Option<&'static str> {
     match kind {
         EventType::MemberCreating => Some("creating"),
         EventType::MemberStarted => Some("started"),
-        EventType::MemberFailed => Some("failed"),
+        // A refused member never runs; its row, if launch had recorded one,
+        // is left `failed`.
+        EventType::MemberFailed | EventType::MemberRefused => Some("failed"),
         EventType::MemberRemoved => Some("removed"),
         EventType::TeamCreated
         | EventType::TeamClosing

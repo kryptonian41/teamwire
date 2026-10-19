@@ -1,6 +1,7 @@
 //! AFK teams in launch: members join a team that has none yet, a spent
 //! budget turns away new implementers only, and a member below the AFK
-//! model table gets a warning.
+//! model table gets a warning. Each refused member writes `member.refused`,
+//! as one refused because its team is closing does.
 
 #![expect(
     clippy::unwrap_used,
@@ -17,14 +18,18 @@
 )]
 mod common;
 
+use std::path::Path;
 use std::time::Duration;
 
-use common::{Rig, member_row, pane_member, team_spec, worktree_member};
+use common::{GitPlatform, Rig, member_row, pane_member, team_spec, with, worktree_member};
 use serde_json::json;
-use teamwire_core::{Clock, HarnessId, HostId, LeadRoute, SessionId, SessionKind, TeamName};
-use teamwire_fakes::FakeHarness;
+use teamwire_core::{
+    Clock, Command, Event, EventType, HarnessId, HostId, LeadRoute, MemberState, Pid, Platform,
+    PlatformError, RunOutput, SessionId, SessionKind, SleepHold, TeamName,
+};
+use teamwire_fakes::{FakeClock, FakeHarness};
 use teamwire_launch::LaunchOutcome;
-use teamwire_store::{NewTeam, Store};
+use teamwire_store::{Ctx, NewTeam, Store};
 
 /// An AFK team with no members whose budget ends `budget` after the rig's now.
 fn afk_team(rig: &Rig, team: &str, budget: Duration) {
@@ -97,6 +102,159 @@ fn past_the_budget_an_implementer_is_refused_and_every_other_kind_starts() {
         member_row(&store, "api").is_none(),
         "a refused member leaves no row"
     );
+}
+
+fn refused_events(store: &Store) -> Vec<Event> {
+    store
+        .read(|tx| tx.events_of_type(EventType::MemberRefused))
+        .unwrap()
+        .items
+}
+
+#[test]
+fn past_the_budget_a_refused_implementer_writes_one_member_refused_event() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    afk_team(&rig, "run", Duration::from_secs(3600));
+    rig.clock.advance(Duration::from_secs(3601));
+    let (report, store) = add(
+        &rig,
+        &[
+            worktree_member("api", "API", &repo),
+            pane_member("scout", "Scout", rig.work.path()),
+        ],
+    );
+    assert!(matches!(
+        report.members[0].outcome,
+        LaunchOutcome::Refused(_)
+    ));
+    assert!(member_row(&store, "api").is_none());
+    let refused = refused_events(&store);
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    let e = &refused[0];
+    assert_eq!(e.role.as_ref().unwrap().as_str(), "api");
+    assert_eq!(e.data["reason_code"], "afk_budget_spent");
+    assert_eq!(e.data["requested"], 2);
+    // The same launch id as the member that started, so the launch span
+    // counts both.
+    let started = store
+        .read(|tx| tx.events_of_type(EventType::MemberStarted))
+        .unwrap()
+        .items;
+    assert_eq!(e.data["launch"], started[0].data["launch"]);
+}
+
+/// The rig's platform, except that the setup command moves the clock forward
+/// by `by` while it runs, as a long setup would.
+#[derive(Debug)]
+struct SlowSetup<'a> {
+    inner: &'a GitPlatform,
+    clock: FakeClock,
+    by: Duration,
+}
+
+impl Platform for SlowSetup<'_> {
+    fn pid_alive(&self, pid: Pid) -> bool {
+        self.inner.pid_alive(pid)
+    }
+    fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
+        self.inner.env_of(pid, var)
+    }
+    fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
+        if cmd.args.iter().any(|a| a == "teamwire-setup") {
+            self.clock.advance(self.by);
+        }
+        self.inner.run(cmd, timeout)
+    }
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+        self.inner.write_atomic(path, bytes)
+    }
+    fn sleep_hold(&self) -> Option<&dyn SleepHold> {
+        self.inner.sleep_hold()
+    }
+    fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError> {
+        self.inner.free_bytes(path)
+    }
+    fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError> {
+        self.inner.on_network_fs(path)
+    }
+}
+
+#[test]
+fn an_implementer_whose_setup_runs_past_the_budget_is_refused_before_spawn() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    afk_team(&rig, "run", Duration::from_secs(3600));
+    rig.clock.advance(Duration::from_secs(3500));
+    let member = with(worktree_member("api", "API", &repo), "setup", json!("true"));
+    let plan = rig.validate(&team_spec("run", &[member]), true).unwrap();
+    let platform = SlowSetup {
+        inner: &rig.platform,
+        clock: rig.clock.clone(),
+        by: Duration::from_secs(200),
+    };
+    let mut store = Store::open(rig.home.path(), &TeamName::parse("run").unwrap()).unwrap();
+    let report = teamwire_launch::launch(
+        &mut Ctx {
+            home: rig.home.path(),
+            store: &mut store,
+            registry: &rig.registry,
+            platform: &platform,
+            clock: &rig.clock as &dyn Clock,
+            config: &rig.config,
+        },
+        plan,
+    );
+
+    let LaunchOutcome::Refused(why) = &report.members[0].outcome else {
+        panic!("the implementer was not refused: {:?}", report.members);
+    };
+    assert!(why.starts_with("afk_budget_spent"), "{why}");
+    assert_eq!(
+        rig.host.log().count_named("spawn"),
+        0,
+        "an agent was started"
+    );
+    let refused = refused_events(&store);
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0].data["reason_code"], "afk_budget_spent");
+    assert!(refused[0].data["steps"]["setup"].is_number());
+    // The row stays `failed`, as a failed launch leaves it, with no
+    // `member.failed` beside the refusal.
+    let row = member_row(&store, "api").unwrap();
+    assert_eq!(row.state, MemberState::Failed);
+    assert!(!row.cwd.exists(), "the worktree was not undone");
+    let failed = store
+        .read(|tx| tx.events_of_type(EventType::MemberFailed))
+        .unwrap()
+        .items;
+    assert!(failed.is_empty(), "{failed:?}");
+}
+
+#[test]
+fn a_member_refused_by_a_closing_team_writes_member_refused() {
+    let rig = Rig::new();
+    common::seed_team(&rig, "run", |_, _| Ok(()));
+    let plan = rig
+        .validate(
+            &team_spec("run", &[pane_member("scout", "Scout", rig.work.path())]),
+            true,
+        )
+        .unwrap();
+    let mut other =
+        Store::open_existing(rig.home.path(), &TeamName::parse("run").unwrap()).unwrap();
+    other
+        .write(|tx| tx.begin_close(rig.clock.now(), Pid::new(1)))
+        .unwrap();
+    let (report, store) = rig.launch("run", plan);
+    assert!(matches!(
+        report.members[0].outcome,
+        LaunchOutcome::Refused(_)
+    ));
+    assert!(member_row(&store, "scout").is_none());
+    let refused = refused_events(&store);
+    assert_eq!(refused.len(), 1, "{refused:?}");
+    assert_eq!(refused[0].data["reason_code"], "team_closed");
 }
 
 #[test]
