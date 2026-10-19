@@ -293,6 +293,7 @@ fn teamwire() -> std::process::Command {
 fn launch_with(
     herdr_env: Option<&str>,
     tmux: Option<&str>,
+    fake_tmux: bool,
 ) -> (std::process::Output, Option<String>) {
     let herdr = teamwire_fakes::FakeHerdrEnv::new().unwrap();
     let home = TestHome::new().unwrap();
@@ -307,6 +308,25 @@ fn launch_with(
         .env_clear()
         .envs(herdr.env())
         .env("TEAMWIRE_HOME", home.path());
+    if fake_tmux {
+        // A `tmux` that lists no panes and starts none.
+        let bin = work.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let script = bin.join("tmux");
+        write_file(
+            &script,
+            "#!/bin/sh\nfor arg in \"$@\"; do\n  [ \"$arg\" = list-panes ] && exit 0\ndone\necho 'fake tmux starts no pane' >&2\nexit 1\n",
+        );
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let path = std::env::var("PATH").unwrap_or_default();
+        let herdr_path = herdr
+            .env()
+            .into_iter()
+            .find_map(|(k, v)| (k == "PATH").then_some(v))
+            .unwrap_or(path);
+        cmd.env("PATH", format!("{}:{herdr_path}", bin.display()));
+    }
     if let Some(v) = herdr_env {
         cmd.env("HERDR_ENV", v);
     }
@@ -327,15 +347,25 @@ fn text(bytes: &[u8]) -> String {
 
 #[test]
 fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
-    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"));
+    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"), true);
     assert_eq!(recorded.as_deref(), Some("tmux"), "{}", text(&out.stderr));
-    // The member was to start in tmux, which is not on `PATH` here.
+    // The member was to start in tmux, whose fake starts no pane.
     assert_eq!(out.status.code(), Some(2));
     assert!(
-        text(&out.stdout).contains("could not run tmux"),
+        text(&out.stdout).contains("fake tmux starts no pane"),
         "{}",
         text(&out.stdout)
     );
+}
+
+/// LCH-25: launch does not rely on the host to refuse a live name, so a tmux
+/// that cannot list the names refuses the member and creates nothing.
+#[test]
+fn tmux_that_cannot_list_names_refuses_the_member() {
+    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"), false);
+    assert_eq!(recorded, None, "{}", text(&out.stderr));
+    let shown = format!("{}{}", text(&out.stdout), text(&out.stderr));
+    assert!(shown.contains("host_listing_failed"), "{shown}");
 }
 
 /// With both variables set, herdr is the fallback; the parents of the test
@@ -343,7 +373,7 @@ fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
 /// among them. The walk itself is tested with a fake lookup in `doctor.rs`.
 #[test]
 fn herdr_env_wins_over_tmux() {
-    let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"));
+    let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"), false);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(recorded.as_deref(), Some("herdr"));
 }

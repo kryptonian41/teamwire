@@ -65,10 +65,9 @@ fn close_leaves_a_place_that_holds_another_name() {
 fn a_name_already_live_is_refused_including_foreign_agents() {
     let h = FakeHost::new();
     h.add_foreign_agent("tw_demo_api");
-    assert_eq!(
-        h.spawn(&req("tw_demo_api"), T).unwrap_err().code,
-        HostErrorCode::BadArgument
-    );
+    let e = h.spawn(&req("tw_demo_api"), T).unwrap_err();
+    assert_eq!(e.code, HostErrorCode::BadArgument);
+    assert!(e.detail.starts_with("agent_name_taken:"), "{}", e.detail);
 }
 
 #[test]
