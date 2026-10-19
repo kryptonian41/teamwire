@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } fro
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
+import { countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -79,7 +79,12 @@ test("maps the lead's liveness to one category", () => {
 
 test("each signal alone flags a team, and a quiet team has none", () => {
   const base: StatusView = { ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] };
-  const flagged = (patch: Partial<typeof base>) => problemReasons(joinTeam({ ...base, ...patch }, T));
+  const flagged = (patch: Partial<typeof base>) => {
+    const reasons = problemReasons(joinTeam({ ...base, ...patch }, T));
+    // The overview splits teams with hasProblem, so it must agree with the flags.
+    expect(hasProblem(joinTeam({ ...base, ...patch }, T))).toBe(reasons.length > 0);
+    return reasons;
+  };
   expect(hasProblem(joinTeam(base, T))).toBe(false);
   expect(flagged({})).toEqual([]);
   expect(flagged({ lead: { session_id: null, liveness: "dead" } })).toEqual(["lead dead"]);
@@ -120,4 +125,17 @@ test("the refresh key ignores a quiet poll and changes with the team", () => {
   expect(refreshKey({ ...s, messages: s.messages.slice(1) })).not.toBe(refreshKey(s));
   expect(refreshKey({ ...s, unread_deliveries: [] })).not.toBe(refreshKey(s));
   expect(refreshKey({ ...s, stuck_deliveries: [] })).not.toBe(refreshKey(s));
+});
+
+test("the refresh key changes when a message arrives, whatever order the list is in", () => {
+  const s = S[0]!;
+  const [a, b, c] = s.messages;
+  const oldestFirst = (n: number) => ({ ...s, messages: [a!, b!, c!, s.messages[3]!].slice(0, n) });
+  expect(refreshKey(oldestFirst(4))).not.toBe(refreshKey(oldestFirst(3)));
+  expect(refreshKey({ ...s, messages: [...s.messages].reverse() })).not.toBe(refreshKey(s));
+});
+
+test("durations round to whole seconds", () => {
+  expect(formatDuration(10.666666666666666)).toBe("11s");
+  expect(formatDuration(59.6)).toBe("1m");
 });

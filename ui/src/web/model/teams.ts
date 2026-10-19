@@ -89,7 +89,8 @@ export function hasProblem(t: TeamModel): boolean {
  */
 export function refreshKey(s: StatusView): string {
   return JSON.stringify([
-    s.messages[0]?.display_id ?? null,
+    // The order of the list is not relied on: every id counts, so a new message always changes the key.
+    s.messages.map((m) => m.display_id),
     s.members.map((m) => [m.role, m.state, m.generation]),
     s.stuck_deliveries.map((d) => d.display_id),
     s.unread_deliveries.map((d) => d.display_id),
@@ -107,7 +108,8 @@ export function sortTeams(teams: readonly TeamModel[]): TeamModel[] {
 }
 
 /** Seconds as `45s`, `20m` or `1h5m`. */
-export function formatDuration(s: number): string {
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   const h = Math.floor(s / 3600);

@@ -139,7 +139,7 @@ export const StatusView = z.object({
   /** `null` for an ordinary team. An older teamwire leaves the key out. */
   afk: AfkView.nullish(),
   members: z.array(MemberView),
-  /** The last five messages, newest first. */
+  /** The last five messages, oldest first. The fixtures list them newest first, so do not rely on the order. */
   messages: z.array(MessageView),
   stuck_deliveries: z.array(StuckDelivery),
   unread_deliveries: z.array(UnreadDelivery),
