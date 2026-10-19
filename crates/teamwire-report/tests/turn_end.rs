@@ -496,6 +496,30 @@ fn a_transcript_that_is_a_named_pipe_is_never_opened() {
 }
 
 #[test]
+fn a_named_pipe_is_not_read_for_the_final_message_either() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    // As above: a regression blocks on the open, here in the fallback that
+    // reads the final message when the stop input has none.
+    std::thread::spawn(move || {
+        let (mut rig, api) = finished_member();
+        rig.complete_now(&api);
+        let path = rig.home.path().join("pipe.jsonl");
+        make_fifo(&path);
+        let mut t = stop("api-1");
+        t.final_message = None;
+        t.transcript = Some(path);
+        let reply = on_turn_end(&mut rig.ctx(), &api, &t);
+        tx.send((reply, rig.newest(&api).completion.final_source))
+            .ok();
+    });
+    let (reply, source) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the hook blocked on the pipe");
+    assert_eq!(reply, TurnEndReply::Continue);
+    assert_eq!(source, FinalSource::None);
+}
+
+#[test]
 fn a_damaged_completion_leaves_one_store_error_row() {
     let (mut rig, api) = finished_member();
     rig.complete_now(&api);
