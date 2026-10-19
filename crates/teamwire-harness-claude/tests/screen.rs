@@ -193,6 +193,22 @@ fn text_typed_after_the_placeholder_still_waits() {
 }
 
 #[test]
+fn the_box_check_for_guarded_hosts_sees_typed_text_only() {
+    let c = claude();
+    assert!(c.reads_input_box());
+    let typed = real_box("❯ fix the lin", "? for shortcuts");
+    assert!(c.box_holds_text(&typed));
+    // A working session draws its box too; text typed there also waits.
+    assert!(c.box_holds_text(&real_box("❯ fix the lin", "esc to interrupt")));
+    assert!(!c.box_holds_text(&real_box("❯", "? for shortcuts")));
+    assert!(!c.box_holds_text(&real_box(
+        "❯ Try \"fix the lint errors\"",
+        "? for shortcuts"
+    )));
+    assert!(!c.box_holds_text(BOX));
+}
+
+#[test]
 fn a_busy_box_is_not_a_prompt() {
     let screen = real_box("❯", "⏵⏵ auto mode on · 1 monitor · esc to interrupt");
     assert_eq!(state(&screen), ScreenState::Unknown);

@@ -203,12 +203,22 @@ fn at_input_prompt(last: &[&str]) -> bool {
 /// plain capture, so a suggestion also delays a delivery until it clears.
 pub(crate) fn delivery_state(tail: &str) -> ScreenState {
     let state = classify(tail);
-    if state == ScreenState::InputPrompt && last_pointer_text(tail).is_some_and(|t| holds_text(&t))
-    {
+    if state == ScreenState::InputPrompt && box_holds_text(tail) {
         ScreenState::Unknown
     } else {
         state
     }
+}
+
+/// Whether the last pointer line near the end of the screen, the input box,
+/// holds text. Delivery checks it on every host, since a host that guards
+/// dialogs still types after what a person left in the box.
+pub(crate) fn box_holds_text(tail: &str) -> bool {
+    last_lines(tail)
+        .into_iter()
+        .rev()
+        .find_map(pointer_rest)
+        .is_some_and(|text| holds_text(&squash(text)))
 }
 
 /// Whether the box's text is more than the `Try "…"` placeholder an empty
