@@ -307,15 +307,24 @@ impl Store {
     /// on its way out with its own name as `op`; `at` is the caller's, because
     /// the store never reads the clock. Best effort: when this write fails
     /// too, the failure is kept for the next call, so a full disk is recorded
-    /// once it has room again.
+    /// once it has room again. A file another binary migrated since is not
+    /// written to (STO-6), and the failure is dropped.
     pub fn record_failure(&mut self, at: Timestamp, op: &str) {
         let Some(failed) = self.failed.take() else {
             return;
         };
-        if self
-            .write(|tx| tx.record_store_error(at, op, &failed))
-            .is_err()
-        {
+        let written = self.write(|tx| {
+            // Read under the write lock, so no migration can come between
+            // the check and the row.
+            let db: i64 = tx
+                .connection()
+                .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+            if db != i64::from(SCHEMA_VERSION) {
+                return Ok(());
+            }
+            tx.record_store_error(at, op, &failed)
+        });
+        if written.is_err() {
             *self.failed.get_mut() = Some(failed);
         }
     }

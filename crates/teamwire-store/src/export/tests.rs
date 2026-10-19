@@ -198,6 +198,22 @@ fn a_failed_read_of_a_store_opened_for_writing_is_recorded() {
 }
 
 #[test]
+fn a_failure_is_not_written_into_a_file_a_newer_binary_migrated() {
+    let mut f = with_members(&[]);
+    let failed: Result<(), StoreError> = f.store.write(|_| Err(StoreError::Busy));
+    assert!(failed.is_err());
+    let path = crate::database_path(
+        f.home.path(),
+        &teamwire_core::TeamName::parse("alpha").unwrap(),
+    );
+    let newer = rusqlite::Connection::open(&path).unwrap();
+    newer.pragma_update(None, "user_version", 99).unwrap();
+    drop(newer);
+    f.store.record_failure(at(5), "watch");
+    assert_eq!(store_errors(&f.store), Vec::<serde_json::Value>::new());
+}
+
+#[test]
 fn a_read_only_store_records_nothing() {
     let f = with_members(&[]);
     let mut ro = crate::Store::open_read_only(
