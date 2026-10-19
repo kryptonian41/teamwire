@@ -183,15 +183,12 @@ fn reason_code(d: &Value) -> &str {
 }
 
 fn launch(o: &mut Out<'_>, d: &Value) {
-    let outcome = match o.event.kind {
-        EventType::MemberStarted => "started",
-        EventType::MemberRefused => "refused",
-        _ => "failed",
-    };
-    let reason = if outcome == "started" {
-        "none"
+    let (outcome, reason) = if o.event.kind == EventType::MemberStarted {
+        ("started", "none")
+    } else if o.event.kind == EventType::MemberRefused {
+        ("refused", reason_code(d))
     } else {
-        reason_code(d)
+        ("failed", reason_code(d))
     };
     o.count(
         &defs::LAUNCH_MEMBERS,
