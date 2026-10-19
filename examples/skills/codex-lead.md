@@ -8,7 +8,8 @@ hold for every section below.
   of a new team refuses with `lead_not_locatable`.
 - **Your tools** are `mcp__teamwire__team_send`, `mcp__teamwire__team_resend`,
   `mcp__teamwire__team_status`, `mcp__teamwire__team_members`,
-  `mcp__teamwire__team_log` and `mcp__teamwire__team_teams`. They are already
+  `mcp__teamwire__team_log`, `mcp__teamwire__team_teams` and
+  `mcp__teamwire__team_decisions`. They are already
   loaded. There is no ToolSearch step.
 - **The watch.** Codex has no Monitor tool. Start the watch in the
   background:
