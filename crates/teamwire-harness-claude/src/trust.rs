@@ -199,9 +199,16 @@ fn confirm(
         left -= 1;
         if let Some(screen) = read(host, place, poll, &mut left)? {
             // Enter is already sent here, so an escalated dialog seen now was
-            // accepted. Reporting it lets launch stop the member.
+            // accepted and Claude Code has saved trust for the folder. That is
+            // not `RefusedEscalated`, whose message asks the lead to answer a
+            // dialog that will not show again.
             if escalated(&screen) {
-                return Ok(StartupOutcome::RefusedEscalated);
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Refused,
+                    "the trust dialog showed the folder's escalation lines only after teamwire \
+                     accepted it, so Claude Code now trusts this folder and its own settings apply \
+                     without asking; review the folder's .claude/ and .mcp.json before using it",
+                ));
             }
             if classify(&after_dialog(&screen)) == ScreenState::InputPrompt {
                 return Ok(StartupOutcome::AnsweredPlainTrust);

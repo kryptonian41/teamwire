@@ -350,11 +350,13 @@ fn escalation_lines_drawn_after_the_first_read_are_refused_before_any_key() {
 }
 
 #[test]
-fn escalation_lines_seen_after_the_enter_are_reported() {
+fn escalation_lines_seen_after_the_enter_are_an_error_that_says_trust_was_given() {
     // Reads 1-3 show the plain dialog and lead to Down, then Enter. Read 4
     // shows the dialog again with its escalation lines.
     let (got, keys) = late_escalation(4);
-    assert_eq!(got.unwrap(), StartupOutcome::RefusedEscalated);
+    let err = got.unwrap_err();
+    assert_eq!(err.code, HarnessErrorCode::Refused);
+    assert!(err.detail.contains("now trusts this folder"), "{err}");
     assert_eq!(keys, [Key::Down, Key::Enter]);
 }
 
