@@ -346,11 +346,22 @@ fn a_bad_budget_is_a_usage_error() {
 }
 
 #[test]
+fn a_budget_that_ends_beyond_the_last_date_is_refused_before_anything_is_made() {
+    let bed = Bed::new(true);
+    refused(
+        &bed.start_run("run", &["--budget", "100000000h"]),
+        "bad_budget",
+    );
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
 fn a_failing_doctor_check_refuses_and_names_it() {
     let bed = Bed::new(false);
     let out = bed.start_run("run", &[]);
     refused(&out, "doctor_failed");
     assert!(err(&out).contains("FAIL claude on PATH"), "{}", err(&out));
+    assert!(!err(&out).contains("break a launch"), "{}", err(&out));
     assert!(bed.nothing_made("run"));
 }
 

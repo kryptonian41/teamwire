@@ -233,7 +233,7 @@ fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Resu
     eprint!("{failed}");
     Err(refuse(
         "doctor_failed",
-        "teamwire doctor found a problem that would break a launch; fix it and start again",
+        "teamwire doctor found a problem; fix it and start again",
     ))
 }
 
