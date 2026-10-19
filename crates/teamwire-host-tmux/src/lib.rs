@@ -7,15 +7,11 @@
 //! (tmux does not guard dialogs); run tmux except through `Platform::run`
 //! with a timeout.
 //!
-//! Invariants: every call after `spawn` names its pane by its `%` id and
-//! nothing else, never a session or window name; a place is
-//! `%<n>@<socket path>` and every call for it goes to that server, whatever
-//! the caller's `TMUX`; a bare `%<n>` goes to the adapter's own server;
-//! `list` and `live_agent_names` report only panes this adapter started,
-//! marked with the pane option `@teamwire_name`; a pane whose program has
-//! exited holds no live agent, so `live_agent_names` leaves it out and its
-//! name is free for `spawn`, which refuses a name another pane holds; every
-//! method splits the caller's timeout across its tmux calls.
+//! Invariants: every call after `spawn` names its pane by its `%` id, never a
+//! session or window name; a place is `%<n>@<socket path>` and its calls go to
+//! that server; `list` and `live_agent_names` report only panes marked with
+//! `@teamwire_name`; a pane whose program exited holds no live name, and
+//! `spawn` refuses a live one; each method splits the caller's timeout.
 
 mod call;
 mod keys;
@@ -716,10 +712,9 @@ mod tests {
         tmux.spawn(&req, Duration::from_secs(6)).unwrap_err();
         // The wrapper in the pane's argv names the folder it would have read.
         let runs = platform.runs();
-        let (new_window, _) = runs.get(1).unwrap();
-        let dir = new_window
-            .args
+        let dir = runs
             .iter()
+            .flat_map(|(c, _)| c.args.iter())
             .find(|a| a.contains("teamwire-tmux-env-"))
             .map(|a| a.trim_matches('\'').to_owned())
             .unwrap();

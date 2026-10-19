@@ -239,34 +239,34 @@ mod tests {
         }
     }
 
-    fn json(stdout: &str) -> Result<RunOutput, teamwire_core::PlatformError> {
-        Ok(RunOutput {
+    fn json(stdout: &str) -> RunOutput {
+        RunOutput {
             exit_code: 0,
             stdout: stdout.as_bytes().to_vec(),
             stderr: Vec::new(),
             timed_out: false,
-        })
+        }
     }
 
-    fn busy() -> Result<RunOutput, teamwire_core::PlatformError> {
-        Ok(RunOutput {
+    fn busy() -> RunOutput {
+        RunOutput {
             exit_code: 1,
             stdout: Vec::new(),
             stderr: br#"{"error":{"code":"agent_pane_busy","message":"busy"}}"#.to_vec(),
             timed_out: false,
-        })
+        }
     }
 
     #[test]
     fn a_spawn_whose_clock_runs_out_stops_retrying() {
         let platform = Arc::new(FakePlatform::new());
-        platform.queue_run(json(r#"{"result":{"agents":[]}}"#));
-        platform.queue_run(json(
+        platform.queue_run(Ok(json(r#"{"result":{"agents":[]}}"#)));
+        platform.queue_run(Ok(json(
             r#"{"result":{"tab":{"tab_id":"w1:t1"},"root_pane":{"pane_id":"w1:p1"}}}"#,
-        ));
-        platform.queue_run(json(r#"{"result":{}}"#));
+        )));
+        platform.queue_run(Ok(json(r#"{"result":{}}"#)));
         for _ in 0..8 {
-            platform.queue_run(busy());
+            platform.queue_run(Ok(busy()));
         }
         // Every read of the clock costs a second, and the caller gave five.
         let clock = Ticking {
