@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place, PlaceState,
-    SpawnRequest, SubmitAck,
+    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place,
+    PlaceState, SpawnRequest, SubmitAck,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
@@ -442,10 +442,18 @@ impl Host for FakeHost {
         Self::finish((), late_error)
     }
 
-    fn close(&self, place: &Place, _timeout: Duration) -> Result<(), HostError> {
+    fn close(
+        &self,
+        place: &Place,
+        expected: &Address,
+        _timeout: Duration,
+    ) -> Result<(), HostError> {
         self.log.record("close", CallKind::Write, place.id.as_str());
         let late_error = self.before("close")?;
         self.check_place(place)?;
+        if self.read_rec(place, |r| r.name != expected.as_str()) == Some(true) {
+            return Err(Self::not_found(place));
+        }
         let mut st = lock(&self.state);
         st.places.remove(&place.id);
         st.order.retain(|id| id != &place.id);

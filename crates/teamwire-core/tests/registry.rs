@@ -151,7 +151,7 @@ fn no_host_does_nothing_and_says_not_found() {
         HostErrorCode::NotFound
     );
     assert_eq!(
-        host.close(&place, t).unwrap_err().code,
+        host.close(&place, &spawn.name, t).unwrap_err().code,
         HostErrorCode::NotFound
     );
     assert_eq!(

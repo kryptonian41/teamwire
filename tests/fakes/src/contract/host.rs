@@ -120,7 +120,19 @@ pub fn host_contract(setup: &HostSetup<'_>) {
 
     unknown_place_rules(setup);
 
-    ok("close", host.close(&place, t));
+    match host.close(&place, &address("someone_else"), t) {
+        Err(e) if e.code == HostErrorCode::NotFound => {}
+        other => fail(
+            "close of a place that holds another agent's name is not_found",
+            other,
+        ),
+    }
+    require(
+        "close with another agent's name leaves the place",
+        ok("list", host.list(t)).contains(&place),
+    );
+
+    ok("close", host.close(&place, &name, t));
     require(
         "list() no longer holds a closed place",
         !ok("list", host.list(t)).contains(&place),
@@ -156,7 +168,12 @@ fn unknown_place_rules(setup: &HostSetup<'_>) {
         "read_tail",
         host.read_tail(&missing, 5, t).err().map(|e| e.code),
     );
-    not_found("close", host.close(&missing, t).err().map(|e| e.code));
+    not_found(
+        "close",
+        host.close(&missing, &address("a1"), t)
+            .err()
+            .map(|e| e.code),
+    );
     not_found(
         "submit",
         host.submit(&missing, &one_line("hello", 20), t)
