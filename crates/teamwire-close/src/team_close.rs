@@ -313,7 +313,7 @@ impl Seq<'_, '_> {
         let mut problems = Vec::new();
         let mut notes = Vec::new();
         for member in live(&members) {
-            match close_place(self.ctx, member) {
+            match close_place(self.ctx, &self.team, member) {
                 Ok(Some(note)) => notes.push(note),
                 Ok(None) => {}
                 Err(why) => problems.push(why),

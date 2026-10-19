@@ -808,3 +808,50 @@ fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
     git(cwd, &["commit", "-q", "-m", "more work"]);
     git(cwd, &["rev-parse", "HEAD"])
 }
+
+/// The member's recorded place id now names another team's live agent, as
+/// after a tmux server restart numbers its panes from `%0` again.
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn reuse_the_place_of(rig: &Rig, name: &str, state: PlaceState) {
+    let old = rig.place_of(name);
+    let mine = teamwire_core::Address::parse(&format!("tw_{}_{name}", rig::TEAM)).unwrap();
+    rig.host
+        .close(&old, &mine, std::time::Duration::ZERO)
+        .unwrap();
+    rig.host.add_place_with_id(
+        old.id,
+        "tw_other_web",
+        state,
+        teamwire_core::Occupant {
+            session: None,
+            pids: Vec::new(),
+        },
+    );
+}
+
+fn live_names(rig: &Rig) -> Vec<String> {
+    rig.host
+        .live_agent_names(std::time::Duration::ZERO)
+        .unwrap_or_default()
+}
+
+#[test]
+fn a_reused_place_id_is_not_closed_by_a_removal_with_stop() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("api", MemberKind::Investigator);
+    reuse_the_place_of(&rig, "api", PlaceState::Unknown);
+    let report = remove(
+        &mut rig,
+        "api",
+        CloseOpts {
+            stop: true,
+            ..CloseOpts::default()
+        },
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(live_names(&rig), ["tw_other_web"], "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}

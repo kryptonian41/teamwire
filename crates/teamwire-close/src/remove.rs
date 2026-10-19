@@ -226,7 +226,7 @@ pub(crate) fn run(
     // uncommitted work.
     if go("close_place", &mut report, &|c| {
         guard(c, &member, opts.stop)?;
-        Ok(member_close::close_place(c, &member)?
+        Ok(member_close::close_place(c, &team.name, &member)?
             .unwrap_or_else(|| format!("{role} has no place recorded")))
     }) && go("remove_worktree", &mut report, &|c| {
         guard(c, &member, opts.stop)?;

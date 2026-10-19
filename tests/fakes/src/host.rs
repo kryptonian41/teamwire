@@ -318,9 +318,13 @@ impl Host for FakeHost {
     fn spawn(&self, req: &SpawnRequest, _timeout: Duration) -> Result<Place, HostError> {
         self.log.record("spawn", CallKind::Write, req.name.as_str());
         let late_error = self.before("spawn")?;
+        // A place whose agent is gone (a dead session left in its tab)
+        // frees the name, so a test can keep that tab under its old name.
         let taken = {
             let st = lock(&self.state);
-            st.places.values().any(|r| r.name == req.name.as_str())
+            st.places
+                .values()
+                .any(|r| r.name == req.name.as_str() && r.state != PlaceState::Gone)
                 || st.foreign_agents.iter().any(|n| n == req.name.as_str())
         };
         if taken {

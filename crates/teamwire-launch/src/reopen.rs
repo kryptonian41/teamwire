@@ -382,7 +382,7 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         ),
         Err(e) => format!("the trust step failed: {e}"),
     };
-    Err(close_new_tab(r.host, &place, &failed))
+    Err(close_new_tab(r, &place, &failed))
 }
 
 /// The plugin switches the member's newest `member.started` event recorded.
@@ -404,11 +404,7 @@ fn recorded_plugins(
 fn record_place(ctx: &mut Ctx<'_>, role: &Role, r: &Ready<'_>, place: &Place) -> ReopenOutcome {
     match ctx.store.write(|tx| tx.set_member_place(role, place)) {
         Ok(()) => ReopenOutcome::Reopened,
-        Err(e) => close_new_tab(
-            r.host,
-            place,
-            &format!("the place could not be recorded: {e}"),
-        ),
+        Err(e) => close_new_tab(r, place, &format!("the place could not be recorded: {e}")),
     }
 }
 
@@ -461,7 +457,7 @@ fn close_old_place(
             return;
         }
     }
-    match r.host.close(old, CLOSE_TIMEOUT) {
+    match r.host.close(old, &r.request.name, CLOSE_TIMEOUT) {
         Ok(()) => {}
         Err(e) if e.code == teamwire_core::HostErrorCode::NotFound => {}
         Err(e) => warnings.push(format!(
@@ -471,8 +467,8 @@ fn close_old_place(
     }
 }
 
-fn close_new_tab(host: &dyn Host, place: &Place, failed: &str) -> ReopenOutcome {
-    match host.close(place, CLOSE_TIMEOUT) {
+fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> ReopenOutcome {
+    match r.host.close(place, &r.request.name, CLOSE_TIMEOUT) {
         Ok(()) => ReopenOutcome::Failed(format!("{failed}; the new tab was closed")),
         Err(e) => ReopenOutcome::Failed(format!(
             "{failed}; the new tab {} could not be closed ({e}): close it by hand before running \
