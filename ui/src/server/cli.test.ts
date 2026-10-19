@@ -22,7 +22,7 @@ case "$FAKE_MODE" in
   shape) echo '{"teams": 5}'; exit 0 ;;
   hang) exec sleep 30 ;;
   grandchild) sleep 100 & sleep 8 ;;
-  env) echo "{\\"teams\\": [], \\"leak\\": \\"\${TEAMWIRE_TOKEN}\${TEAMWIRE_ROLE}\${TEAMWIRE_TEAM}\\"}" > ${dir}/env.out; echo '{"teams":[]}'; exit 0 ;;
+  env) echo "{\\"teams\\": [], \\"leak\\": \\"\${TEAMWIRE_TOKEN}\${TEAMWIRE_ROLE}\${TEAMWIRE_TEAM}\${TEAMWIRE_TOKEN_FILE}\\"}" > ${dir}/env.out; echo '{"teams":[]}'; exit 0 ;;
   args) echo "$@" > ${dir}/args.out; echo '{"teams":[]}'; exit 0 ;;
 esac
 case "$*" in
@@ -131,12 +131,14 @@ describe("runner", () => {
     process.env.TEAMWIRE_TOKEN = "tok";
     process.env.TEAMWIRE_ROLE = "rol";
     process.env.TEAMWIRE_TEAM = "tea";
+    process.env.TEAMWIRE_TOKEN_FILE = "/tok/file";
     try {
       await withMode("env", () => make()({ cmd: "teams" }));
     } finally {
       delete process.env.TEAMWIRE_TOKEN;
       delete process.env.TEAMWIRE_ROLE;
       delete process.env.TEAMWIRE_TEAM;
+      delete process.env.TEAMWIRE_TOKEN_FILE;
     }
     const out = await Bun.file(join(dir, "env.out")).text();
     expect(out).toContain('"leak": ""');

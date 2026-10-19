@@ -35,7 +35,7 @@ export type CliResult<T> =
 export const STATUS_TIMEOUT_MS = 30_000;
 export const DEFAULT_TIMEOUT_MS = 10_000;
 
-const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
+const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
 
 /** Builds the arguments after the binary. Throws on a name that is not a team or role name. */
 export function buildArgs(call: CliCall, home?: string): string[] {
