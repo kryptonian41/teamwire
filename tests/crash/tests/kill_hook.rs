@@ -11,6 +11,7 @@
 )]
 #![expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
 
