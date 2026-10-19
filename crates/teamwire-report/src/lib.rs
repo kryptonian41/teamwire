@@ -27,7 +27,10 @@ mod result_file;
 mod turn_end;
 mod usage;
 
-pub use decisions::{Block, find_blocks};
+pub use decisions::{
+    Block, DecisionsError, DecisionsQuery, DecisionsView, MemberDecisions, TeamDecisions,
+    find_blocks, read_decisions,
+};
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use lead_stop::{teams_without_watch, watch_missing_note};
 pub use received::{Received, mark_received};

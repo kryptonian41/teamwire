@@ -18,35 +18,45 @@ pub struct Block {
 
 const LABEL: &str = "decisions i made";
 
+struct Line<'a> {
+    text: &'a str,
+    /// Inside a code fence (or the fence itself): never a heading or a label.
+    fenced: bool,
+}
+
 /// Every block in `report`, in file order.
 pub fn find_blocks(report: &str) -> Vec<Block> {
-    let lines: Vec<&str> = report.lines().collect();
-    // A `#` line inside a code fence is not a heading.
     let mut in_fence = false;
-    let fenced: Vec<bool> = lines
-        .iter()
-        .map(|l| {
-            let fence = l.trim_start().starts_with("```");
+    let lines: Vec<Line<'_>> = report
+        .lines()
+        .map(|text| {
+            let fence = text.trim_start().starts_with("```");
             let was = in_fence;
             if fence {
                 in_fence = !in_fence;
             }
-            was || fence
+            Line {
+                text,
+                fenced: was || fence,
+            }
         })
         .collect();
     let mut blocks = Vec::new();
     let mut i = 0;
-    while i < lines.len() {
-        let Some(start) = lines.get(i).filter(|_| !fenced[i]).and_then(|l| start_of(l)) else {
+    while let Some(line) = lines.get(i) {
+        let Some(start) = Some(line)
+            .filter(|l| !l.fenced)
+            .and_then(|l| start_of(l.text))
+        else {
             i += 1;
             continue;
         };
         let end = match start.level {
-            Some(level) => heading_end(&lines, &fenced, i, level),
-            None => label_end(&lines, &fenced, i, start.inline.is_some()),
+            Some(level) => heading_end(&lines, i, level),
+            None => label_end(&lines, i, start.inline.is_some()),
         };
         let mut body: Vec<&str> = start.inline.into_iter().collect();
-        body.extend(lines.get(i + 1..end).unwrap_or_default());
+        body.extend(lines.iter().take(end).skip(i + 1).map(|l| l.text));
         blocks.push(Block {
             heading: start.heading,
             line: i + 1,
@@ -122,16 +132,13 @@ fn heading_level(line: &str) -> Option<usize> {
 }
 
 /// A heading block runs to the next heading of the same or a higher level.
-fn heading_end(lines: &[&str], fenced: &[bool], from: usize, level: usize) -> usize {
-    (from + 1..lines.len())
-        .find(|&j| {
-            !fenced[j]
-                && lines
-                    .get(j)
-                    .and_then(|l| heading_level(l))
-                    .is_some_and(|n| n <= level)
-        })
-        .unwrap_or(lines.len())
+fn heading_end(lines: &[Line<'_>], from: usize, level: usize) -> usize {
+    lines
+        .iter()
+        .enumerate()
+        .skip(from + 1)
+        .find(|(_, l)| !l.fenced && heading_level(l.text).is_some_and(|n| n <= level))
+        .map_or(lines.len(), |(j, _)| j)
 }
 
 fn is_list_item(line: &str) -> bool {
@@ -147,14 +154,14 @@ fn is_list_item(line: &str) -> bool {
 /// first non-blank line that is neither a list item nor an indented
 /// continuation. Prose right under a bare label (no list yet, no blank line)
 /// belongs to the block.
-fn label_end(lines: &[&str], fenced: &[bool], from: usize, has_inline: bool) -> usize {
+fn label_end(lines: &[Line<'_>], from: usize, has_inline: bool) -> usize {
     let mut seen_list = false;
     let mut prose_allowed = !has_inline;
-    for j in from + 1..lines.len() {
-        let line = lines.get(j).copied().unwrap_or_default();
-        if fenced[j] {
+    for (j, l) in lines.iter().enumerate().skip(from + 1) {
+        if l.fenced {
             continue;
         }
+        let line = l.text;
         if line.trim().is_empty() {
             prose_allowed = false;
             continue;

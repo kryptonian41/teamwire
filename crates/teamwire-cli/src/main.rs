@@ -15,6 +15,7 @@ use clap::Parser;
 mod cmd {
     pub(crate) mod ack;
     pub(crate) mod close;
+    pub(crate) mod decisions;
     pub(crate) mod doctor;
     pub(crate) mod done;
     pub(crate) mod export;
@@ -47,10 +48,10 @@ mod wiring;
 const USAGE: u8 = 3;
 
 pub(crate) use args::{
-    AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
-    HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
-    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
-    SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+    AckArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs, ExportArgs, Global, HookArgs,
+    HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs,
+    MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs,
+    ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -76,6 +77,7 @@ fn main() -> ExitCode {
         Command::Resend(a) => cmd::resend::run(a, global, &wiring),
         Command::Received(a) => cmd::received::run(a, global, &wiring),
         Command::Log(a) => cmd::log::run(a, global, &wiring),
+        Command::Decisions(a) => cmd::decisions::run(a, global, &wiring),
         Command::Lead(a) => cmd::lead::run(a, global, &wiring),
         Command::PrWatch(a) => cmd::pr_watch::run(a, global, &wiring),
         Command::Preset(a) => cmd::preset::run(a, global, &wiring),

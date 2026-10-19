@@ -1,5 +1,4 @@
 #![expect(
-    clippy::unwrap_used,
     clippy::indexing_slicing,
     reason = "a unit test indexes what it just built; a failure fails the test"
 )]
