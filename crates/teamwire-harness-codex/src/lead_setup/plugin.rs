@@ -92,12 +92,11 @@ fn shell_word(text: &str) -> String {
 /// frontmatter key. `None` when the shared text has no frontmatter.
 fn skill(shared: &str) -> Option<String> {
     let rest = shared.strip_prefix("---\n")?;
-    let end = "---\n".len() + rest.find("\n---\n")? + 1;
-    let (head, body) = shared.split_at(end);
-    let text = format!("{head}{CODEX_PART}\n{body}");
-    // The text is split again at the same line, which still starts the
-    // closing fence of the frontmatter.
-    let (head, tail) = text.split_at(end);
+    // `fence` starts the closing `---` line; the Codex part goes after it.
+    let fence = "---\n".len() + rest.find("\n---\n")? + 1;
+    let (head, body) = shared.split_at(fence + "---\n".len());
+    let text = format!("{head}\n{CODEX_PART}{body}");
+    let (head, tail) = text.split_at(fence);
     Some(format!(
         "{head}metadata:\n{STAMP_KEY}{}\n{tail}",
         sha256_hex(&text)
@@ -301,6 +300,19 @@ mod tests {
         );
         let codex = text.find("codex --no-daemon").unwrap();
         assert!(codex < text.find("# Body").unwrap());
+    }
+
+    #[test]
+    fn the_codex_part_of_the_real_skill_sits_in_the_body() {
+        let shared = include_str!("../../../../examples/skills/teamwire/SKILL.md");
+        let files = PluginFiles::render(Path::new("/d"), &want(None), shared).unwrap();
+        let text = file(&files, "teamwire/skills/teamwire/SKILL.md");
+        let rest = text.strip_prefix("---\n").unwrap();
+        let end = rest.find("\n---\n").unwrap();
+        let (frontmatter, body) = rest.split_at(end);
+        assert!(!frontmatter.contains("codex --no-daemon"), "{frontmatter}");
+        assert!(frontmatter.contains(STAMP_KEY), "{frontmatter}");
+        assert_eq!(body.matches("codex --no-daemon").count(), 1, "{body}");
     }
 
     #[test]
