@@ -1043,8 +1043,9 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
         loop {
             let out = env.run(&["agent", "list"]).unwrap();
             assert_eq!(out.code, Some(0), "{out:?}");
-            let listed = json(&out)["agents"]
-                .as_array()
+            let listed = json(&out)
+                .get("agents")
+                .and_then(Value::as_array)
                 .is_some_and(|a| !a.is_empty());
             if listed {
                 break;
@@ -1121,7 +1122,7 @@ fn pane_with_an_exited_agent_on_a_sleep(env: &FakeHerdrEnv) -> (String, std::pro
         .unwrap();
     let mut state: Value =
         serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap()).unwrap();
-    state["panes"][0]["agent"] = serde_json::json!({
+    *state.pointer_mut("/panes/0/agent").unwrap() = serde_json::json!({
         "name": "tw_demo_api", "kind": "claude", "pid": sleeper.id(),
         "session_hint": null, "fixed": false,
     });

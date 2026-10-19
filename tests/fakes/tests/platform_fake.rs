@@ -195,7 +195,7 @@ fn write_atomic_keeps_the_mode_of_the_file_it_replaces_and_makes_new_files_0644(
     let dir = tempfile::tempdir().unwrap();
     let p = FakePlatform::new();
     let private = dir.path().join("env");
-    std::fs::write(&private, "old").unwrap();
+    p.write_atomic(&private, b"old").unwrap();
     std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o600)).unwrap();
     p.write_atomic(&private, b"new").unwrap();
     assert_eq!(mode(&private), 0o600);

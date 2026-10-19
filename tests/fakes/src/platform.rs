@@ -351,16 +351,16 @@ fn io_to_platform(e: &std::io::Error) -> PlatformError {
     PlatformError::new(code, e.to_string())
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the fake platform is what stands in for Platform::write_atomic, so it does the temp-file-then-rename itself"
-)]
 /// The mode `write_atomic` gives the new file, as the real platform does:
 /// the mode of the file it replaces, else 0644.
 fn mode_of(target: &Path) -> u32 {
     std::fs::metadata(target).map_or(0o644, |meta| meta.permissions().mode() & 0o7777)
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fake platform is what stands in for Platform::write_atomic, so it does the temp-file-then-rename itself"
+)]
 fn rename(from: &Path, to: &Path) -> std::io::Result<()> {
     std::fs::rename(from, to)
 }
