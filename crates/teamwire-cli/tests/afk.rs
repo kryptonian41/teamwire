@@ -40,6 +40,8 @@ struct Bed {
     herdr: bool,
     /// The process the session file names as the lead, once `healthy`.
     lead: Option<std::process::Child>,
+    /// Further variables for the command's environment.
+    env: Vec<(&'static str, &'static str)>,
 }
 
 impl Drop for Bed {
@@ -61,6 +63,7 @@ impl Bed {
             path: "/usr/bin:/bin".to_owned(),
             herdr: true,
             lead: None,
+            env: Vec::new(),
         };
         let status = std::process::Command::new("git")
             .args(["init", "-q"])
@@ -160,7 +163,8 @@ impl Bed {
             .current_dir(self.repo.path())
             .env_clear()
             .env("PATH", &self.path)
-            .env("TEAMWIRE_CLAUDE_DIR", self.claude.path());
+            .env("TEAMWIRE_CLAUDE_DIR", self.claude.path())
+            .envs(self.env.iter().copied());
         if self.herdr {
             cmd.env("HERDR_ENV", "1");
         }
@@ -251,6 +255,30 @@ fn outside_a_lead_session_it_is_refused() {
         None,
     );
     refused(&out, "no_lead_session");
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
+fn a_member_session_is_refused_before_anything_is_made() {
+    let mut bed = Bed::new(false);
+    bed.env = vec![("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")];
+    let out = bed.start_run("run", &[]);
+    assert_eq!(out.status.code(), Some(1), "{}", err(&out));
+    assert!(err(&out).contains("refused.identity"), "{}", err(&out));
+    assert!(bed.nothing_made("run"));
+}
+
+#[test]
+fn a_lead_that_is_not_claude_code_is_refused_before_anything_is_made() {
+    let mut bed = Bed::new(true);
+    bed.env = vec![("TEAMWIRE_LEAD_HARNESS", "codex")];
+    let out = bed.start_run("run", &[]);
+    assert_eq!(out.status.code(), Some(1), "{}", err(&out));
+    assert!(
+        err(&out).contains("unsupported_lead_harness"),
+        "{}",
+        err(&out)
+    );
     assert!(bed.nothing_made("run"));
 }
 

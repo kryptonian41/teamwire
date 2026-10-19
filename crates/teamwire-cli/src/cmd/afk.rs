@@ -17,7 +17,7 @@ use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check;
 use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
 use crate::recorded::Recorded;
-use crate::wiring::Wiring;
+use crate::wiring::{Wiring, claude_harness_id};
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
 
 const COMMAND: &str = "afk start";
@@ -42,6 +42,13 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     // 1. A lead session that does not already lead an open AFK run.
     if let Some(code) = refuse_member(COMMAND) {
         return code;
+    }
+    // AFK-2: only a Claude Code lead, whose pane the run can be proven to reach.
+    if wiring.lead_harness != claude_harness_id() {
+        return refuse(
+            "unsupported_lead_harness",
+            "an AFK run starts only from a Claude Code lead",
+        );
     }
     let home = match home_or_refuse(COMMAND, global) {
         Ok(home) => home,
