@@ -28,8 +28,8 @@ mod turn_end;
 mod usage;
 
 pub use decisions::{
-    Block, DecisionsError, DecisionsQuery, DecisionsView, MemberDecisions, TeamDecisions,
-    find_blocks, read_decisions,
+    Block, DecisionsError, DecisionsQuery, DecisionsView, MemberDecisions, RepoScope,
+    TeamDecisions, find_blocks, read_decisions, repo_dirs,
 };
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use lead_stop::{teams_without_watch, watch_missing_note};

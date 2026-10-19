@@ -14,8 +14,8 @@ use teamwire_core::{
     HarnessId, HostId, LeadRoute, MemberKind, Mode, Role, TeamName, TicketRef, Timestamp,
 };
 use teamwire_fakes::TestHome;
-use teamwire_report::{DecisionsError, DecisionsQuery, read_decisions};
-use teamwire_store::{NewMember, NewTeam, Store};
+use teamwire_report::{DecisionsError, DecisionsQuery, RepoScope, read_decisions};
+use teamwire_store::{NewMember, NewTeam, Store, database_path};
 
 fn at(secs: i64) -> Timestamp {
     Timestamp::from_unix_millis(1_790_000_000_000 + secs * 1000).unwrap()
@@ -23,6 +23,11 @@ fn at(secs: i64) -> Timestamp {
 
 /// A team created at `secs` with one implementer per role.
 fn team(home: &Path, name: &str, secs: i64, roles: &[&str]) -> Store {
+    team_in(home, name, secs, roles, &home.join("work"))
+}
+
+/// Like `team`, with every member's `cwd` set to `cwd`.
+fn team_in(home: &Path, name: &str, secs: i64, roles: &[&str], cwd: &Path) -> Store {
     let team = TeamName::parse(name).unwrap();
     let mut store = Store::open(home, &team).unwrap();
     store
@@ -48,7 +53,7 @@ fn team(home: &Path, name: &str, secs: i64, roles: &[&str]) -> Store {
                         mode: Mode::Pane,
                         harness: HarnessId::from_static("claude-code"),
                         host: HostId::from_static("herdr"),
-                        cwd: home.join("work"),
+                        cwd: cwd.to_path_buf(),
                         repo: None,
                         branch: None,
                         base: None,
@@ -89,6 +94,7 @@ fn query(team: Option<&str>, role: Option<&str>, grep: Option<&str>) -> Decision
         role: role.map(str::to_owned),
         grep: grep.map(str::to_owned),
         reference: None,
+        scope: None,
     }
 }
 
@@ -326,4 +332,158 @@ fn the_refs_field_lists_the_recorded_refs_and_a_team_without_refs_never_matches(
     let view = read_decisions(home.path(), &query(Some("alpha"), None, None)).unwrap();
     assert_eq!(view.teams[0].refs[0].to_string(), "linear:GKA-580");
     assert_eq!(teams_with_ref(home.path(), "GKA-580"), ["alpha"]);
+}
+
+#[test]
+fn limit_blocks_keeps_a_member_before_the_cut_even_with_no_report() {
+    let home = TestHome::new().unwrap();
+    team(home.path(), "alpha", 1, &["api", "web"]);
+    report(
+        &home.path().join("teams/alpha"),
+        "web",
+        "## Decisions I made\n- a\n## Decisions I made\n- b\n",
+    );
+    let mut view = read_decisions(home.path(), &query(Some("alpha"), None, None)).unwrap();
+    assert!(view.limit_blocks(1));
+    let members = &view.teams[0].members;
+    assert_eq!(members.len(), 2);
+    assert_eq!(
+        (members[0].role.as_str(), members[0].report.clone()),
+        ("api", None)
+    );
+    assert_eq!(members[1].blocks.len(), 1);
+}
+
+/// A team database as a version-4 binary left it: the v1 to v4 tables, no
+/// `refs` column, one team row. A store connection empties a fresh database
+/// first, because this test has no `SQLite` library of its own.
+fn version_4_team(home: &Path, name: &str) -> PathBuf {
+    let mut store = Store::open(home, &TeamName::parse(name).unwrap()).unwrap();
+    store
+        .write(|tx| {
+            let conn = tx.connection();
+            let tables: Vec<String> = conn
+                .prepare(
+                    "SELECT name FROM sqlite_schema WHERE type = 'table'
+                       AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
+                )?
+                .query_map([], |r| r.get(0))?
+                .collect::<Result<_, _>>()?;
+            for table in tables {
+                conn.execute_batch(&format!("DROP TABLE {table};"))?;
+            }
+            for step in [
+                teamwire_store::SCHEMA_V1_SQL,
+                teamwire_store::SCHEMA_V2_SQL,
+                teamwire_store::SCHEMA_V3_SQL,
+                teamwire_store::SCHEMA_V4_SQL,
+            ] {
+                conn.execute_batch(step)?;
+            }
+            conn.execute_batch(&format!(
+                "INSERT INTO team (id, ulid, name, title, state, lead_harness, lead_host, lead_route, created_at)
+                 VALUES (1, '01J9ZQ0000000000000000TEAM', '{name}', 'Old', 'closed', 'claude-code', 'herdr', 'sink',
+                         '2026-10-01T00:00:00.000Z');
+                 PRAGMA user_version = 4;"
+            ))?;
+            Ok(())
+        })
+        .unwrap();
+    drop(store);
+    database_path(home, &TeamName::parse(name).unwrap())
+}
+
+#[test]
+fn an_archive_from_before_schema_v5_reads_with_no_refs_and_never_matches_a_ref() {
+    let home = TestHome::new().unwrap();
+    let other = TestHome::new().unwrap();
+    let db = version_4_team(other.path(), "old");
+    let dir = home.path().join("archive/old-2026-09-30");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(&db, dir.join("team.db")).unwrap();
+    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    let view = read_decisions(home.path(), &query(Some("old"), None, None)).unwrap();
+    assert_eq!(view.errors, Vec::<String>::new());
+    assert_eq!(view.teams[0].refs, Vec::<TicketRef>::new());
+    assert_eq!(teams_with_ref(home.path(), "GKA-580"), Vec::<String>::new());
+    assert_eq!(
+        teams_with_ref(home.path(), "linear:GKA-580"),
+        Vec::<String>::new()
+    );
+}
+
+/// The scope of team `name`: its own members' directories.
+fn scope_of(home: &Path, name: &str, user_home: Option<&str>) -> RepoScope {
+    let store = Store::open_read_only(home, &TeamName::parse(name).unwrap()).unwrap();
+    let (team, members) = store
+        .read(|tx| Ok((tx.team()?.unwrap(), tx.members()?.items)))
+        .unwrap();
+    RepoScope::new(team.ulid, &members, user_home.map(PathBuf::from))
+}
+
+fn scoped_grep(home: &Path, scope: RepoScope) -> Vec<String> {
+    let q = DecisionsQuery {
+        grep: Some("x".to_owned()),
+        scope: Some(scope),
+        ..DecisionsQuery::default()
+    };
+    read_decisions(home, &q)
+        .unwrap()
+        .teams
+        .into_iter()
+        .map(|t| t.team)
+        .collect()
+}
+
+fn repo_team(home: &Path, name: &str, secs: i64, cwd: &str) {
+    team_in(home, name, secs, &["web"], Path::new(cwd));
+    report(
+        &home.join("teams").join(name),
+        "web",
+        "## Decisions I made\n- x\n",
+    );
+}
+
+#[test]
+fn a_scope_keeps_only_teams_that_share_a_repository() {
+    let home = TestHome::new().unwrap();
+    repo_team(home.path(), "alpha", 1, "/nonexistent/repo_a");
+    repo_team(home.path(), "beta", 2, "/nonexistent/repo_a/crates/x");
+    repo_team(home.path(), "gamma", 3, "/nonexistent/repo_b");
+    let scope = scope_of(home.path(), "alpha", None);
+    assert_eq!(scoped_grep(home.path(), scope.clone()), ["alpha", "beta"]);
+    let q = DecisionsQuery {
+        team: Some(TeamName::parse("gamma").unwrap()),
+        scope: Some(scope),
+        ..DecisionsQuery::default()
+    };
+    assert_eq!(
+        read_decisions(home.path(), &q).unwrap_err(),
+        DecisionsError::OtherRepo("gamma".to_owned())
+    );
+}
+
+#[test]
+fn a_worktree_path_matches_its_main_repository() {
+    let home = TestHome::new().unwrap();
+    repo_team(home.path(), "alpha", 1, "/nonexistent/proj/sub");
+    repo_team(home.path(), "beta", 2, "/nonexistent/proj/.worktrees/beta");
+    let scope = scope_of(home.path(), "alpha", None);
+    assert_eq!(scoped_grep(home.path(), scope), ["alpha", "beta"]);
+}
+
+#[test]
+fn a_team_rooted_at_the_home_directory_or_root_matches_nothing() {
+    let home = TestHome::new().unwrap();
+    repo_team(home.path(), "alpha", 1, "/nonexistent/me/proj");
+    repo_team(home.path(), "rooted", 2, "/nonexistent/me");
+    repo_team(home.path(), "atroot", 3, "/");
+    // Neither side may be the home directory: the rooted team shares nothing
+    // with alpha, and a caller rooted there shares nothing with anyone.
+    let scope = scope_of(home.path(), "alpha", Some("/nonexistent/me"));
+    assert_eq!(scoped_grep(home.path(), scope), ["alpha"]);
+    let scope = scope_of(home.path(), "rooted", Some("/nonexistent/me"));
+    assert_eq!(scoped_grep(home.path(), scope), ["rooted"]);
+    let scope = scope_of(home.path(), "atroot", Some("/nonexistent/me"));
+    assert_eq!(scoped_grep(home.path(), scope), ["atroot"]);
 }

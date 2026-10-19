@@ -79,7 +79,7 @@ struct Start<'a> {
 fn start_of(line: &str) -> Option<Start<'_>> {
     let trimmed = line.trim_start();
     let hashes = trimmed.chars().take_while(|c| *c == '#').count();
-    let level = (hashes > 0 && trimmed[hashes..].starts_with(' ')).then_some(hashes);
+    let level = heading_level(line);
     let mut rest = if level.is_some() {
         &trimmed[hashes..]
     } else {
@@ -125,8 +125,13 @@ fn start_of(line: &str) -> Option<Start<'_>> {
     }
 }
 
+/// The level of an ATX heading. Four or more leading spaces make a code
+/// line, not a heading.
 fn heading_level(line: &str) -> Option<usize> {
-    let trimmed = line.trim_start();
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return None;
+    }
     let hashes = trimmed.chars().take_while(|c| *c == '#').count();
     (hashes > 0 && trimmed[hashes..].starts_with(' ')).then_some(hashes)
 }
@@ -166,14 +171,15 @@ fn label_end(lines: &[Line<'_>], from: usize, has_inline: bool) -> usize {
             prose_allowed = false;
             continue;
         }
-        if heading_level(line).is_some() || line.trim_start().starts_with("**") {
+        let indented = line.starts_with([' ', '\t']);
+        // An indented line, even a bold one, continues the item above it.
+        if heading_level(line).is_some() || (!indented && line.starts_with("**")) {
             return j;
         }
         if is_list_item(line) {
             seen_list = true;
             continue;
         }
-        let indented = line.starts_with([' ', '\t']);
         if indented || (prose_allowed && !seen_list) {
             continue;
         }

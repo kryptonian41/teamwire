@@ -6,7 +6,7 @@ use rmcp::model::JsonObject;
 use serde_json::json;
 use teamwire_core::{Actor, TeamName};
 use teamwire_msg::{LogFilter, log_party, roster, roster_of, teams};
-use teamwire_report::{DecisionsError, DecisionsQuery, read_decisions};
+use teamwire_report::{DecisionsError, DecisionsQuery, RepoScope, read_decisions};
 use teamwire_store::Ctx;
 
 use crate::failure::ToolFailure;
@@ -97,15 +97,29 @@ pub(crate) fn run(
                 (None, false) => Some(team.clone()),
                 (of, _) => of,
             };
+            // The tool reads only teams that worked in a repository the
+            // caller's team works in; an archive may hold another company's work.
+            let (own, members) = ctx.store.read(|tx| Ok((tx.team()?, tx.members()?.items)))?;
+            let own =
+                own.ok_or_else(|| ToolFailure::new("internal", "the team has no team row"))?;
+            let scope = Some(RepoScope::new(
+                own.ulid,
+                &members,
+                std::env::var_os("HOME").map(Into::into),
+            ));
             let query = DecisionsQuery {
                 team: named,
                 role: input.role,
                 grep: input.grep,
                 reference: input.reference,
+                scope,
             };
             let mut view = read_decisions(ctx.home, &query).map_err(|e| match e {
                 DecisionsError::NoSuchTeam(_) => {
                     ToolFailure::new("refused.unknown_team", e.to_string())
+                }
+                DecisionsError::OtherRepo(_) => {
+                    ToolFailure::new("refused.other_repo", e.to_string())
                 }
                 DecisionsError::NoFilter => ToolFailure::invalid(e.to_string()),
             })?;

@@ -35,6 +35,8 @@ pub(crate) fn run(args: &DecisionsArgs, global: &Global, _wiring: &Wiring) -> Ex
         role: role.clone(),
         grep: grep.clone(),
         reference: reference.clone(),
+        // The person at the terminal reads every team.
+        scope: None,
     };
     let view = match read_decisions(&home, &query) {
         Ok(view) => view,
