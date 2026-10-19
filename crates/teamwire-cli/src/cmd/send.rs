@@ -241,11 +241,13 @@ pub(crate) fn error_code(e: &SendError) -> u8 {
 }
 
 /// What the process says about itself: the member's variables and the
-/// claimed sender (ADR 0008).
+/// claimed sender (ADR 0008). Every command reads the caller here, so an
+/// empty variable counts as unset for all of them, as it does for the token.
 pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
+    let var = |name| std::env::var(name).ok().filter(|v: &String| !v.is_empty());
     CallerEnv {
-        team: std::env::var("TEAMWIRE_TEAM").ok(),
-        role: std::env::var("TEAMWIRE_ROLE").ok(),
+        team: var("TEAMWIRE_TEAM"),
+        role: var("TEAMWIRE_ROLE"),
         token: member_token(),
         from,
         hints: Vec::new(),

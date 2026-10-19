@@ -9,9 +9,10 @@ use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
+use teamwire_msg::CallerEnv;
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::{state_home, warn};
+use crate::cmd::send::{caller_env, carries_member_identity, state_home, warn};
 use crate::recorded::Recorded;
 use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};
@@ -58,12 +59,12 @@ fn member_hook(
     wiring: &Wiring,
 ) -> Option<Vec<u8>> {
     // A session that is not a team member leaves before opening any file.
-    let team_var = std::env::var("TEAMWIRE_TEAM")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let role_var = std::env::var("TEAMWIRE_ROLE")
-        .ok()
-        .filter(|v| !v.is_empty());
+    let CallerEnv {
+        team: team_var,
+        role: role_var,
+        token,
+        ..
+    } = caller_env(None);
     // The command line names the same member as the environment, or this is
     // not that member's session (ADR 0008 point 4). A session-start hook may
     // have no member environment: its token proves who it is instead.
@@ -88,7 +89,6 @@ fn member_hook(
     let Some(home) = state_home(global) else {
         return quit("no state directory: set --home, TEAMWIRE_HOME or HOME");
     };
-    let token = teamwire_msg::caller_token(|k| std::env::var(k).ok());
     let mut stdin = std::io::stdin().lock().take(STDIN_LIMIT);
     member_hook_in(
         &home,
@@ -213,7 +213,7 @@ fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// nothing will wake. It reads stores and writes nothing.
 fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
     // A member never runs this hook; the plugin is also switched off for it.
-    if std::env::var_os("TEAMWIRE_TEAM").is_some() {
+    if carries_member_identity() {
         return None;
     }
     let home = state_home(global)?;
