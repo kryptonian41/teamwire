@@ -99,6 +99,7 @@ fn log_call(argv: &[String], command: &str, fault: Option<&Action>) {
         Action::Hang => "hang".to_owned(),
         Action::Garbage => "garbage".to_owned(),
         Action::Stalled => "stalled".to_owned(),
+        Action::TimedOut => "timed_out".to_owned(),
     });
     let line = json!({
         "argv": argv,
@@ -108,10 +109,10 @@ fn log_call(argv: &[String], command: &str, fault: Option<&Action>) {
     fsutil::append(&path, format!("{line}\n").as_bytes()).ok();
 }
 
-fn dispatch(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliError> {
+fn dispatch(ctx: &mut Ctx<'_>, args: &Args, fault: Option<&Action>) -> Result<Value, CliError> {
     match args.command().as_str() {
         "agent start" => agent::start(ctx, args),
-        "agent prompt" => agent::prompt(ctx, args, stalled),
+        "agent prompt" => agent::prompt(ctx, args, fault),
         "agent get" => agent::get(ctx, args),
         "agent list" => Ok(agent::list(ctx)),
         "agent read" => agent::read(ctx, args),
@@ -171,7 +172,6 @@ pub fn run(argv: &[String]) -> ExitCode {
         .and_then(|f| faults::take(f, &mut state, &command, args.operand(0)));
     log_call(argv, &command, fault.as_ref());
 
-    let mut stalled = false;
     match &fault {
         Some(Action::Hang) => {
             state::save(&state_path, &state).ok();
@@ -197,15 +197,14 @@ pub fn run(argv: &[String]) -> ExitCode {
             print_err(&command, &fail(&e.code, e.message.clone()));
             return ExitCode::from(1);
         }
-        Some(Action::Stalled) => stalled = true,
-        None => {}
+        Some(Action::Stalled | Action::TimedOut) | None => {}
     }
 
     let mut ctx = Ctx {
         state_path: &state_path,
         state: &mut state,
     };
-    let outcome = dispatch(&mut ctx, &args, stalled);
+    let outcome = dispatch(&mut ctx, &args, fault.as_ref());
     if let Err(e) = state::save(&state_path, &state) {
         print_err(&command, &fail("fake_misconfigured", e));
         return ExitCode::from(2);

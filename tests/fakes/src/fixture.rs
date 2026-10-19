@@ -58,10 +58,19 @@ impl HerdrFaults {
         self.rule(cmd, target, times, Action::Garbage)
     }
 
-    /// `agent prompt` types the text, then fails with `agent_prompt_stalled`.
+    /// `agent prompt --wait` types the text, then fails with
+    /// `agent_prompt_stalled`. Without `--wait` the call works, as in herdr.
     #[must_use]
     pub fn stalled_prompt(self, target: Option<&str>, times: Option<u32>) -> Self {
         self.rule("agent prompt", target, times, Action::Stalled)
+    }
+
+    /// `agent prompt` types the text, then fails with `timeout`, the answer
+    /// of a call that ran out of time. The adapter passes no `--wait`, so
+    /// this is the failure after typing that delivery can reach.
+    #[must_use]
+    pub fn timed_out_prompt(self, target: Option<&str>, times: Option<u32>) -> Self {
+        self.rule("agent prompt", target, times, Action::TimedOut)
     }
 
     /// `agent_not_found` for every call of `cmd` on `target`.

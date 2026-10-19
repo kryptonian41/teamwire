@@ -387,24 +387,68 @@ fn busy_twice_then_success() {
 }
 
 #[test]
-fn a_stalled_prompt_fails_but_the_text_was_typed() {
+fn a_stalled_prompt_with_wait_fails_but_the_text_was_typed() {
     let mut env = FakeHerdrEnv::new().unwrap();
     let pane_id = pane(&env, "/tmp");
     assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
     env.set_faults(&HerdrFaults::new().stalled_prompt(Some("tw_demo_api"), Some(1)))
         .unwrap();
     let out = env
-        .run(&["agent", "prompt", "tw_demo_api", "did this arrive"])
+        .run(&[
+            "agent",
+            "prompt",
+            "tw_demo_api",
+            "did this arrive",
+            "--wait",
+        ])
         .unwrap();
     assert_eq!(out.error_code().as_deref(), Some("agent_prompt_stalled"));
+    wait_for_screen(&env, "> did this arrive");
+}
+
+fn wait_for_screen(env: &FakeHerdrEnv, needle: &str) {
     for _ in 0..200 {
         let text = env.run(&["agent", "read", "tw_demo_api"]).unwrap().stdout;
-        if text.contains("> did this arrive") {
+        if text.contains(needle) {
             return;
         }
         std::thread::sleep(std::time::Duration::from_millis(25));
     }
-    panic!("the stalled prompt was not typed into the agent");
+    panic!("`{needle}` never reached the agent's screen");
+}
+
+#[test]
+fn a_stall_fault_without_wait_does_not_stall() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    env.set_faults(&HerdrFaults::new().stalled_prompt(Some("tw_demo_api"), None))
+        .unwrap();
+    let out = env
+        .run(&["agent", "prompt", "tw_demo_api", "no wait here"])
+        .unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    wait_for_screen(&env, "> no wait here");
+}
+
+#[test]
+fn a_timed_out_prompt_fails_with_timeout_but_the_text_was_typed() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    env.set_faults(&HerdrFaults::new().timed_out_prompt(Some("tw_demo_api"), Some(1)))
+        .unwrap();
+    let out = env
+        .run(&["agent", "prompt", "tw_demo_api", "did this arrive"])
+        .unwrap();
+    assert_eq!(out.code, Some(1));
+    assert_eq!(out.error_code().as_deref(), Some("timeout"));
+    wait_for_screen(&env, "> did this arrive");
+    // The rule fired once; the next prompt works.
+    let again = env
+        .run(&["agent", "prompt", "tw_demo_api", "second"])
+        .unwrap();
+    assert_eq!(again.code, Some(0), "{again:?}");
 }
 
 fn signal(name: &str, pid: &str) {

@@ -259,7 +259,7 @@ Environment of `fake-herdr` itself:
 | Variable | Meaning |
 | --- | --- |
 | `FAKE_HERDR_STATE` | Required. The JSON state file. Pane directories (`screen.txt`, `status.json`, `inbox`, `keys`) sit beside it. |
-| `FAKE_HERDR_LOG` | Optional. One JSON line per call: `{"argv":[..],"kind":"read"\|"write","fault":null\|"error:<code>"\|"hang"\|"garbage"\|"stalled"}`. |
+| `FAKE_HERDR_LOG` | Optional. One JSON line per call: `{"argv":[..],"kind":"read"\|"write","fault":null\|"error:<code>"\|"hang"\|"garbage"\|"stalled"\|"timed_out"}`. |
 | `FAKE_HERDR_FAULTS` | Optional. The fault file. |
 | `FAKE_HERDR_HANG_MS` | How long a `hang` fault sleeps (default 30000), then fails with `timeout`. |
 | `FAKE_HERDR_WAIT_MS` | The no-activity limit for `agent prompt --wait` (default 5000). |
@@ -273,6 +273,7 @@ The fault file, built with `HerdrFaults` or written by hand:
 {"rules": [
   {"cmd": "agent start", "times": 2, "action": {"error": {"code": "agent_pane_busy", "message": "busy"}}},
   {"cmd": "agent prompt", "target": "tw_demo_api", "times": 1, "action": "stalled"},
+  {"cmd": "agent prompt", "target": "tw_demo_api", "times": 1, "action": "timed_out"},
   {"cmd": "pane list", "action": "hang"},
   {"cmd": "agent list", "action": "garbage"},
   {"cmd": "agent get", "target": "tw_demo_api", "action": {"error": {"code": "agent_not_found"}}}
@@ -283,9 +284,14 @@ The fault file, built with `HerdrFaults` or written by hand:
 `target` is the first operand (an agent name or pane id) and may be left out;
 `times` counts firings across processes (the counts live in the state file)
 and, when left out, means always. The first rule that matches and has
-firings left wins. `stalled` is for `agent prompt`: the text is typed into the
-agent, then the call fails with `agent_prompt_stalled`, because herdr's docs
-say a stall does not prove the prompt was not delivered.
+firings left wins. `stalled` is for `agent prompt --wait`: the text is typed
+into the agent, then the call fails with `agent_prompt_stalled`, because
+herdr's docs say a stall does not prove the prompt was not delivered. Without
+`--wait` herdr never reports a stall, so the fake sends the prompt as usual.
+The adapter passes no `--wait`; `timed_out` is the failure after typing that
+it can reach: the text is typed, then the call fails with `timeout`. Both
+rules only act on `agent prompt`, and a firing counts even when it had no
+effect.
 
 ## `fake-claude`
 

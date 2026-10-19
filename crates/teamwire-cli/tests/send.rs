@@ -365,10 +365,10 @@ fn an_undelivered_recipient_exits_4_with_the_reason_on_stderr() {
 }
 
 #[test]
-fn a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it() {
+fn a_prompt_that_timed_out_after_typing_exits_5_and_a_resend_by_the_lead_finishes_it() {
     let mut rig = live_rig();
     rig.herdr
-        .set_faults(&HerdrFaults::new().stalled_prompt(None, Some(1)))
+        .set_faults(&HerdrFaults::new().timed_out_prompt(None, Some(1)))
         .unwrap();
     let out = rig.run(
         &[

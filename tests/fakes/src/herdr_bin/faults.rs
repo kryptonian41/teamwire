@@ -25,10 +25,16 @@ pub enum Action {
     Hang,
     /// Print text that is not JSON on stdout and exit 0.
     Garbage,
-    /// `agent prompt` only: type the text into the agent, then fail with
-    /// `agent_prompt_stalled`, as herdr does when it saw no activity. Other
-    /// commands treat this as that error alone.
+    /// `agent prompt --wait` only: type the text into the agent, then fail
+    /// with `agent_prompt_stalled`, as herdr does when it saw no activity.
+    /// Without `--wait` the call works as usual, because herdr never reports
+    /// a stall then, and every other command ignores the rule. The firing
+    /// still counts.
     Stalled,
+    /// `agent prompt` only: type the text into the agent, then fail with
+    /// `timeout`, as a call does that ran out of time. Other commands ignore
+    /// the rule. The firing still counts.
+    TimedOut,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

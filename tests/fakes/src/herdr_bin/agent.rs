@@ -8,6 +8,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use super::args::Args;
+use super::faults::Action;
 use super::pane_files::{alive, claude_dir, env_millis, read_status, wait_for_turn};
 use super::shapes::{agent_info, live_agent as running};
 use super::state::{AgentRec, Pane, pane_dir};
@@ -304,10 +305,14 @@ pub(super) fn send_keys(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliErro
     Ok(json!({ "type": "ok" }))
 }
 
-/// Types the prompt into the agent. With `stalled`, does everything but
-/// report success: the text is delivered and the call fails with
-/// `agent_prompt_stalled`.
-pub(super) fn prompt(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliError> {
+/// Types the prompt into the agent. A `Stalled` fault with `--wait` and a
+/// `TimedOut` fault do everything but report success: the text is delivered
+/// and the call fails with `agent_prompt_stalled` or `timeout`.
+pub(super) fn prompt(
+    ctx: &mut Ctx<'_>,
+    args: &Args,
+    fault: Option<&Action>,
+) -> Result<Value, CliError> {
     let target = args.operand(0).unwrap_or_default();
     let text = args.operand(1).unwrap_or_default();
     if text.trim().is_empty() {
@@ -325,11 +330,17 @@ pub(super) fn prompt(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Va
     let line = format!("{}\n", Value::String(text.to_owned()));
     fsutil::append(&dir.join("inbox"), line.as_bytes())
         .map_err(|e| fail("internal_error", e.to_string()))?;
-    if stalled {
-        return Err(fail(
-            "agent_prompt_stalled",
-            "no agent activity was seen after the prompt was submitted",
-        ));
+    match fault {
+        Some(Action::Stalled) if args.has("wait") => {
+            return Err(fail(
+                "agent_prompt_stalled",
+                "no agent activity was seen after the prompt was submitted",
+            ));
+        }
+        Some(Action::TimedOut) => {
+            return Err(fail("timeout", "the prompt call ran out of time"));
+        }
+        _ => {}
     }
     if args.has("wait") {
         wait_for_turn(&dir, before_seq, args.millis("timeout"))?;
