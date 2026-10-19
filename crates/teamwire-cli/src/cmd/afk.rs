@@ -10,7 +10,7 @@ use teamwire_core::{Clock, Config, SessionId, TeamName, TeamState, Timestamp};
 use teamwire_launch::{
     LeadPlan, SpecError, ValidateEnv, check_title, ensure_hold, lead_process, new_team_lead,
 };
-use teamwire_store::{Ctx, NewTeam, Store, database_path, team_names};
+use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, team_names};
 
 use crate::cmd::doctor::{self, Host, Level};
 use crate::cmd::install::wanted_entry;
@@ -165,7 +165,13 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     };
     let warnings = match create(&mut ctx, &new) {
         Ok(warnings) => warnings,
-        Err(e) => {
+        Err(Failed::Taken) => {
+            return refuse(
+                "team_exists",
+                &format!("team {team} already exists; pick another name"),
+            );
+        }
+        Err(Failed::Other(e)) => {
             return fail(
                 COMMAND,
                 &format!("{e}; close the team with teamwire close {team} and start again"),
@@ -258,9 +264,18 @@ struct New<'a> {
     ends: Timestamp,
 }
 
+/// Why `create` stopped.
+#[derive(Debug)]
+enum Failed {
+    /// A team of that name already exists; nothing of this run was made.
+    Taken,
+    /// The team may exist by now, so the lead has to close it.
+    Other(String),
+}
+
 /// Steps 4 to 6: the team row with the budget end, `afk/task.md`, and the
 /// sleep hold. Returns the hold's warnings.
-fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
+fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, Failed> {
     let at = ctx.clock.now();
     let row = NewTeam {
         name: new.team.clone(),
@@ -287,15 +302,20 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
         serde_json::json!({}),
         |cwd| serde_json::json!({ "lead_cwd": cwd }),
     );
+    // The team row has a fixed primary key, so of two runs with one name the
+    // insert of the loser breaks a constraint, and the winner's files stay.
     ctx.store
         .write(|tx| tx.create_afk_team(at, &row, new.ends, &extra).map(|_| ()))
-        .map_err(|e| format!("the team could not be recorded: {e}"))?;
+        .map_err(|e| match e {
+            StoreError::Constraint(_) => Failed::Taken,
+            e => Failed::Other(format!("the team could not be recorded: {e}")),
+        })?;
     let dir = afk_dir(ctx.home, new.team);
     std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("{} could not be made: {e}", dir.display()))?;
+        .map_err(|e| Failed::Other(format!("{} could not be made: {e}", dir.display())))?;
     ctx.platform
         .write_atomic(&dir.join("task.md"), new.task)
-        .map_err(|e| format!("afk/task.md could not be written: {e}"))?;
+        .map_err(|e| Failed::Other(format!("afk/task.md could not be written: {e}")))?;
     let mut warnings = Vec::new();
     let lead = (&new.lead.harness, new.lead.session.as_ref().map(|(s, _)| s));
     ensure_hold(ctx, new.team, lead, &mut warnings);
@@ -312,10 +332,10 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
         .flatten()
         .is_some_and(|t| t.sleep_hold.is_some());
     if !held && ctx.platform.sleep_hold().is_some() {
-        return Err(format!(
+        return Err(Failed::Other(format!(
             "the sleep hold could not be taken: {}",
             warnings.join("; ")
-        ));
+        )));
     }
     Ok(warnings)
 }
@@ -391,7 +411,7 @@ mod tests {
     fn run_create(
         platform: FakePlatform,
         task: &[u8],
-    ) -> (TestHome, Store, FakePlatform, Result<Vec<String>, String>) {
+    ) -> (TestHome, Store, FakePlatform, Result<Vec<String>, Failed>) {
         let home = TestHome::new().unwrap();
         let harness = Arc::new(FakeHarness::new());
         harness.set_session_cwd(session(), "/work/lead");
@@ -468,11 +488,43 @@ mod tests {
             "no caffeinate",
         )));
         let (_home, store, _, result) = run_create(platform, b"x");
-        let why = result.unwrap_err();
+        let Failed::Other(why) = result.unwrap_err() else {
+            panic!("the hold failure is not a taken name");
+        };
         assert!(why.contains("sleep hold could not be taken"), "{why}");
         assert!(why.contains("no caffeinate"), "{why}");
         let row = store.read(|tx| tx.team()).unwrap().unwrap();
         assert_eq!(row.sleep_hold, None);
+    }
+
+    #[test]
+    fn a_second_create_on_one_store_reports_the_name_taken_and_keeps_the_first_task() {
+        let (home, mut store, platform) = created(b"first");
+        let clock = FakeClock::new();
+        let registry = Registry::new();
+        let config = Config::default();
+        let team = TeamName::parse("run").unwrap();
+        let lead = lead();
+        let result = create(
+            &mut Ctx {
+                home: home.path(),
+                store: &mut store,
+                registry: &registry,
+                platform: &platform,
+                clock: &clock,
+                config: &config,
+            },
+            &New {
+                team: &team,
+                title: "Again",
+                lead: &lead,
+                task: b"second",
+                ends: clock.now(),
+            },
+        );
+        assert!(matches!(result, Err(Failed::Taken)), "{result:?}");
+        let copy = std::fs::read(home.path().join("teams/run/afk/task.md")).unwrap();
+        assert_eq!(copy, b"first");
     }
 
     #[test]
