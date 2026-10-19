@@ -319,15 +319,22 @@ fn judge_completion(
             // Not reported yet. A completion the hook delivers a moment
             // later needs no line, so one poll of grace comes first.
             mm.declared_polls += 1;
-            if mm.declared_polls >= 2 {
-                env.announce(
-                    result_key("DECLARED", &c.ulid),
-                    "DECLARED",
-                    format!(
-                        "DECLARED {role} ({}) recorded, not reported yet; it is reported when its turn ends",
-                        c.status
-                    ),
-                );
+            if mm.declared_polls < 2 {
+                return Verdict::waiting();
+            }
+            env.announce(
+                result_key("DECLARED", &c.ulid),
+                "DECLARED",
+                format!(
+                    "DECLARED {role} ({}) recorded, not reported yet; it is reported when its turn ends",
+                    c.status
+                ),
+            );
+            // Only the member's own turn-end hook reports this completion, so
+            // a member that died before it ran is judged like a running one
+            // (WAT-6). Looking only after `DECLARED` keeps that line first.
+            if look(env, info, mm).is_none() {
+                return Verdict::settled("died");
             }
             Verdict::waiting()
         }
@@ -368,10 +375,10 @@ fn judge_completion(
     }
 }
 
-fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict {
+/// One look at a started member. `None` once it is announced `DIED`.
+fn look(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Option<Seen> {
     let role = &info.member.role;
     let generation = info.member.generation;
-    let cfg = env.ctx.config;
     let seen = observe(env.ctx, &info.member, &mut env.listings);
     match seen {
         Seen::Alive(_) => mm.absent = 0,
@@ -382,8 +389,18 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     }
     if mm.absent >= 3 || env.snap.announced.contains(&died_key(role, generation)) {
         env.announce(died_key(role, generation), "DIED", format!("DIED {role}"));
-        return Verdict::settled("died");
+        return None;
     }
+    Some(seen)
+}
+
+fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict {
+    let role = &info.member.role;
+    let generation = info.member.generation;
+    let cfg = env.ctx.config;
+    let Some(seen) = look(env, info, mm) else {
+        return Verdict::settled("died");
+    };
 
     // The quiet grace counts from the later of the run's start and the last
     // sleep gap. `LATE` counts from the run's start alone.

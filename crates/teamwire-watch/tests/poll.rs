@@ -1004,3 +1004,50 @@ fn a_started_member_with_no_session_is_never_called_dead() {
     let lines = bed.ticks(30);
     assert_eq!(count(&lines, "DIED"), 0, "{lines:?}");
 }
+
+/// Only a member's own turn-end hook reports its completion, so a member
+/// that dies between `done` and its turn end is judged like a running one:
+/// three absent polls make it `DIED`, and the team can complete (WAT-6).
+#[test]
+fn a_member_that_dies_after_done_before_its_hook_is_announced_dead() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.delivered("web", CompletionStatus::Done);
+    bed.complete("api", CompletionStatus::Done);
+    bed.vanish("api");
+    let lines = bed.ticks(60);
+    assert_eq!(count(&lines, "DECLARED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "DIED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+    let order: Vec<String> = lines.iter().flat_map(|l| names(l)).collect();
+    let at = |name: &str| order.iter().position(|n| n == name).unwrap();
+    assert!(at("DECLARED") < at("DIED"), "{order:?}");
+    let last = lines.last().unwrap();
+    assert!(
+        last.ends_with("TEAM-COMPLETE 1/2 done; not done: api died"),
+        "{last}"
+    );
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
+
+/// A member gone before its `done` is still `DECLARED` before it is `DIED`.
+#[test]
+fn a_member_gone_before_done_is_declared_before_it_dies() {
+    let mut bed = Bed::new();
+    seasoned(&mut bed, "api");
+    seasoned(&mut bed, "web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.vanish("api");
+    assert!(bed.ticks(2).is_empty());
+    bed.complete("api", CompletionStatus::Done);
+    let lines = bed.ticks(4);
+    let order: Vec<String> = lines.iter().flat_map(|l| names(l)).collect();
+    assert_eq!(order, ["DECLARED", "DIED"], "{lines:?}");
+}

@@ -159,7 +159,9 @@ fn status_shows_the_team_its_members_and_what_is_stuck() {
 #[test]
 fn member_states_follow_the_records_and_the_look() {
     let mut bed = Bed::new();
-    for name in ["idle", "busy", "stuck", "gone", "late", "fresh", "unrep"] {
+    for name in [
+        "idle", "busy", "stuck", "gone", "late", "fresh", "unrep", "donegone",
+    ] {
         bed.add_with_deadline(name, if name == "late" { 100 } else { 1800 });
     }
     bed.age(std::time::Duration::from_secs(120));
@@ -168,6 +170,8 @@ fn member_states_follow_the_records_and_the_look() {
     bed.blocked("stuck");
     bed.vanish("gone");
     bed.complete("unrep", CompletionStatus::Done);
+    bed.complete("donegone", CompletionStatus::Done);
+    bed.vanish("donegone");
     bed.add("fresh2");
     let view = status_of(&bed, None);
     let state = |name: &str| {
@@ -183,6 +187,7 @@ fn member_states_follow_the_records_and_the_look() {
     assert_eq!(state("gone"), "died?");
     assert_eq!(state("late"), "late");
     assert_eq!(state("unrep"), "unreported");
+    assert_eq!(state("donegone"), "died?", "a pending result is no proof of life");
     assert_eq!(state("fresh2"), "working", "startup is not quiet");
 }
 

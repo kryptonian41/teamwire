@@ -248,6 +248,9 @@ fn state_word(
                 "prompted outside teamwire".to_owned()
             }
             ReportState::Delivered => format!("done({})", c.status),
+            // Only the member's own hook reports a pending result, so a
+            // member gone before it ran is dead, as the watch says.
+            ReportState::Pending if seen == Seen::Absent => "died?".to_owned(),
             ReportState::Pending | ReportState::Delivering => "unreported".to_owned(),
             ReportState::Undelivered => "undelivered".to_owned(),
             ReportState::Unconfirmed => "unconfirmed".to_owned(),
