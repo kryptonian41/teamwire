@@ -57,7 +57,7 @@ in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default
 `claude-code`), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
-`children`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
+`children`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
 `accept_trust` (default true), `plugins`. A Codex member's arguments hold no
@@ -71,6 +71,16 @@ Claude plugin id `name@marketplace` to true or false. The team's map applies
 to every member of the same spec file, and a member's value wins per key
 (ADR 0017). An `--add` spec must repeat the team's map, because the store keeps
 none. Keys starting with `_` are ignored.
+
+`refs` is a list of ticket refs the team works on, such as `["GKA-580",
+"#3772"]` (ADR 0025). A ref is 1 to 64 characters with no white space and no
+control character, a team holds at most 20, and an exact repeat is recorded
+once, in first-seen order. An invalid ref, or a total over 20, fails the whole
+spec (`bad_ref`, `too_many_refs`) like an invalid role. The first launch
+records the refs on the team row and in `team.created`. An `--add` spec may
+name more refs, and launch appends the ones not yet recorded, with a
+`team.refs_added` event; a ref is never removed. `--dry-run` prints `would
+record refs ...` or `would append refs ...`.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
@@ -131,7 +141,8 @@ completion when it is `undelivered` or `unconfirmed` (ADR 0024). It also shows t
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
-binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
+binary. When the team has refs, the team's first line ends with `(refs GKA-580, #1)`;
+`--json` always carries `"refs": [...]`, empty for none. `--json` carries the same fields as `watch`, `unread_deliveries`,
 `unanswered_questions`, and `started_by` and `older_build` per member. `--role R` adds the exact command
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
@@ -378,7 +389,8 @@ is working or done is in `teamwire status`.
 
 Every team under the home with its title, state and roster, as `team_teams`
 returns it (MSG-21), and how to address its agents (`lead@<team>`,
-`<role>@<team>`). Reads only and needs no proof. A team whose store cannot
+`<role>@<team>`), followed by `(refs ...)` when the team has refs. `--json`
+gives each team a `"refs": [...]` list, always present. Reads only and needs no proof. A team whose store cannot
 be read is named on stderr and makes the command exit 6; the others are
 still listed.
 
