@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FILE_KINDS, FILE_KIND_NAMES, MAX_FILE_BYTES } from "../shared/api.ts";
@@ -23,10 +23,11 @@ beforeAll(() => {
   writeFileSync(join(home, "outside.md"), "outside");
   symlinkSync(join(home, "outside.md"), join(team, "briefs", "evil.md"));
   symlinkSync(join(team, "members", "impl", "token"), join(team, "reports", "tok.md"));
+  linkSync(join(team, "members", "impl", "token"), join(team, "briefs", "hard.md"));
   writeFileSync(join(team, "reports", "big.md"), "x".repeat(MAX_FILE_BYTES + 10));
 
   const arch = join(home, "archive");
-  for (const d of ["ads-2026-10-07", "ads-2026-10-07-153012", "zed-2026-10-09", "bad-name", "Upper-2026-10-07", "ads-2026-10-07-1530"]) {
+  for (const d of ["ads-2026-10-07", "ads-2026-10-07-153012", "ads-2026-10-07-153012-2", "zed-2026-10-09", "bad-name", "Upper-2026-10-07", "ads-2026-10-07-1530"]) {
     mkdirSync(join(arch, d, "briefs"), { recursive: true });
   }
   writeFileSync(join(arch, "ads-2026-10-07-153012", "briefs", "impl.md"), "hi");
@@ -72,6 +73,11 @@ describe("readKindFile", () => {
     expect(JSON.stringify(await listFiles(team))).not.toContain("tok");
   });
 
+  test("refuses a hard link to a file under members/", async () => {
+    expect(await readKindFile(team, "brief", "hard")).toMatchObject({ ok: false, problem: { code: "not_found" } });
+    expect((await listFiles(team)).some((f) => f.name === "hard")).toBe(false);
+  });
+
   test("a missing file is not_found", async () => {
     expect(await readKindFile(team, "brief", "nobody")).toMatchObject({ ok: false, problem: { code: "not_found" } });
   });
@@ -115,6 +121,7 @@ describe("archives", () => {
   test("parseArchiveName", () => {
     expect(parseArchiveName("ads-2026-10-07")).toEqual({ team: "ads", date: "2026-10-07", time: "" });
     expect(parseArchiveName("ads_2-2026-10-07-153012")).toEqual({ team: "ads_2", date: "2026-10-07", time: "153012" });
+    expect(parseArchiveName("ads-2026-10-07-153012-2")).toEqual({ team: "ads", date: "2026-10-07", time: "153012" });
     for (const bad of ["bad-name", "Upper-2026-10-07", "ads-2026-10-07-1530", "-2026-10-07", "ads-2026-10-07/x", "1ads-2026-10-07"]) {
       expect(parseArchiveName(bad)).toBeNull();
     }
@@ -122,11 +129,11 @@ describe("archives", () => {
 
   test("lists valid archives newest first and skips bad ones", async () => {
     const list = await listArchives(home);
-    expect(list.map((a) => a.dir)).toEqual(["zed-2026-10-09", "ads-2026-10-07-153012", "ads-2026-10-07"]);
-    const sealed = list[1]!;
+    expect(list.map((a) => a.dir)).toEqual(["zed-2026-10-09", "ads-2026-10-07-153012-2", "ads-2026-10-07-153012", "ads-2026-10-07"]);
+    const sealed = list[2]!;
     expect(sealed.closedAt).toBe("2026-10-07T15:30:12.000Z");
     expect(sealed.files).toEqual([expect.objectContaining({ kind: "brief", name: "impl", bytes: 2 })]);
-    expect(list[2]!.closedAt).toBeNull();
+    expect(list[3]!.closedAt).toBeNull();
   });
 
   test("archiveDir refuses traversal and unknown names", async () => {

@@ -51,6 +51,24 @@ export function countByCategory(members: readonly { category: StateCategory }[])
   return counts;
 }
 
+const QUESTION_WAIT_S = 600;
+
+/** The signals of D18 as card flags. Lead, watch and AFK count only while the team is open. */
+export function problemReasons(t: TeamModel): string[] {
+  const s = t.status;
+  const out: string[] = [];
+  if (s.state === "open") {
+    const lead = leadCategory(s.lead);
+    if (lead === "failed" || lead === "attention") out.push(livenessInfo(s.lead).label);
+    if (s.watch.state === "stale") out.push("watch stale");
+    if (s.afk?.spent) out.push("AFK spent");
+  }
+  if (s.unread_deliveries.length > 0) out.push(`${s.unread_deliveries.length} unread`);
+  const waiting = s.unanswered_questions.filter((q) => q.to.includes("lead") && q.age_s >= QUESTION_WAIT_S);
+  if (waiting.length > 0) out.push(`${waiting.length} question waiting`);
+  return out;
+}
+
 /** A team has a problem when teamwire reported errors, or something needs the lead. */
 export function hasProblem(t: TeamModel): boolean {
   const s = t.status;
@@ -59,8 +77,24 @@ export function hasProblem(t: TeamModel): boolean {
     s.errors.length > 0 ||
     s.stuck_deliveries.length > 0 ||
     s.undelivered_results.length > 0 ||
+    problemReasons(t).length > 0 ||
     t.members.some((m) => m.category === "failed" || m.category === "attention" || m.category === "unknown")
   );
+}
+
+/**
+ * Changes when the team page's files or log can have changed: a new message,
+ * a member state or generation, or a delivery that got stuck or unread. The
+ * snapshot itself changes every poll, so it makes a poor trigger.
+ */
+export function refreshKey(s: StatusView): string {
+  return JSON.stringify([
+    // The order of the list is not relied on: every id counts, so a new message always changes the key.
+    s.messages.map((m) => m.display_id),
+    s.members.map((m) => [m.role, m.state, m.generation]),
+    s.stuck_deliveries.map((d) => d.display_id),
+    s.unread_deliveries.map((d) => d.display_id),
+  ]);
 }
 
 /** Problems first, then by title, then by key so the order never flickers. */
@@ -73,7 +107,9 @@ export function sortTeams(teams: readonly TeamModel[]): TeamModel[] {
   });
 }
 
-function duration(s: number): string {
+/** Seconds as `45s`, `20m` or `1h5m`. */
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   const h = Math.floor(s / 3600);
@@ -91,7 +127,7 @@ export interface AgeView {
 
 export function formatAge(age_s: number, deadline_s: number): AgeView {
   return {
-    label: `${duration(age_s)} / ${duration(deadline_s)}`,
+    label: `${formatDuration(age_s)} / ${formatDuration(deadline_s)}`,
     overdue: age_s > deadline_s,
     ratio: deadline_s <= 0 ? 1 : Math.min(1, age_s / deadline_s),
   };
@@ -118,7 +154,14 @@ function emptyMetrics(): TeamMetrics {
  */
 export function summarizeMetrics(metrics: readonly Metric[]): Map<string, TeamMetrics> {
   const out = new Map<string, TeamMetrics>();
-  const histograms = new Map<string, { mean: number; count: number }>();
+  // One row per team, name and full label set, so a second label set never overwrites the first.
+  const rows = new Map<string, { team: string; name: string; mean: number; count: number }>();
+  const row = (team: string, name: string, m: Metric) => {
+    const key = JSON.stringify([team, name, [...m.labels].sort()]);
+    const r = rows.get(key) ?? { team, name, mean: 0, count: 0 };
+    rows.set(key, r);
+    return r;
+  };
   for (const m of metrics) {
     const team = m.labels.find(([k]) => k === "team")?.[1];
     if (team === undefined) continue;
@@ -141,26 +184,20 @@ export function summarizeMetrics(metrics: readonly Metric[]): Map<string, TeamMe
         sum.verifyRuns += m.value;
         break;
       default: {
-        if (m.name.endsWith(".count")) {
-          const base = m.name.slice(0, -".count".length);
-          const h = histograms.get(`${team}|${base}`);
-          if (h) h.count = m.value;
-          else {
-            const entry = { mean: 0, count: m.value };
-            histograms.set(`${team}|${base}`, entry);
-            sum.durations[base] = entry;
-          }
-        } else if (m.unit === "s" || m.name.includes("attempts")) {
-          const h = histograms.get(`${team}|${m.name}`);
-          if (h) h.mean = m.value;
-          else {
-            const entry = { mean: m.value, count: 0 };
-            histograms.set(`${team}|${m.name}`, entry);
-            sum.durations[m.name] = entry;
-          }
-        }
+        if (m.name.endsWith(".count")) row(team, m.name.slice(0, -".count".length), m).count = m.value;
+        else if (m.unit === "s" || m.name.includes("attempts")) row(team, m.name, m).mean = m.value;
       }
     }
+  }
+  // Label sets of one name combine into one average, each weighted by its count.
+  const totals = new Map<string, { weighted: number; count: number }>();
+  for (const r of rows.values()) {
+    const t = totals.get(`${r.team}|${r.name}`) ?? { weighted: 0, count: 0 };
+    totals.set(`${r.team}|${r.name}`, t);
+    t.weighted += r.mean * r.count;
+    t.count += r.count;
+    const d = out.get(r.team)!.durations;
+    d[r.name] = { mean: t.count === 0 ? r.mean : t.weighted / t.count, count: t.count };
   }
   return out;
 }
