@@ -101,16 +101,21 @@ the team name and title with launch's rules; runs the checks of `teamwire
 doctor` that a launch needs; creates the team with no members and
 `afk_budget_ends_at` set; copies `--task` to `teams/<team>/afk/task.md` byte
 for byte; and starts or reuses the sleep hold. A doctor `FAIL` refuses the
-start, and a `warn` is printed. It prints the team name, the `afk/`
-directory, the report path (`afk/REPORT.md`), the time the budget ends, and a
-line asking the user to keep the lid open and the machine on power.
+start, and a `warn` is printed first, on stderr. On success (exit 0) it prints
+these lines: `afk run <team> is open, with no members yet`; `folder:
+<home>/teams/<team>/afk`; `report: <folder>/REPORT.md`; `budget: new
+implementers stop at <RFC 3339> (<n>m from now)`; `keep the lid open and the
+machine on power: a closed lid still sleeps a Mac`; and `next: teamwire launch
+--add --spec FILE`. A problem with the sleep hold prints `warning: ...` on
+stderr.
 
 `--budget` is a positive whole number followed by `h` or `m`, such as `8h` or
 `90m`, and defaults to `8h`. Zero, a missing unit and any other unit are usage
-errors (exit 3). `refused: afk_already_running` (exit 1) means this session
-already leads an open AFK team. A caller that carries a member identity is
-refused with `refused.identity`. After the start, members join with `teamwire
-launch --add`.
+errors (exit 3). A refusal prints `teamwire afk start: refused: <code>:
+<message>` and exits 1. The codes are `no_lead_session`, `background_lead`,
+`afk_already_running` (this session already leads an open AFK team),
+`bad_name`, `title_missing`, `title_too_long`, `team_exists`, `bad_task` and
+`doctor_failed` (any doctor `FAIL`).
 
 ### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
 
