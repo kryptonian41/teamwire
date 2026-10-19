@@ -423,3 +423,54 @@ fn good_plugin_ids_pass() {
     );
     rig.validate(&spec, false).unwrap();
 }
+
+#[test]
+fn bad_refs_refused_and_repeats_dropped() {
+    let rig = Rig::new();
+    let members = [pane_member("a", "Alpha", rig.work.path())];
+    let ok = common::with(
+        team_spec("demo", &members),
+        "refs",
+        json!([
+            "GKA-580",
+            "#3772",
+            "knit-insights/teamwire#12",
+            "GKA-580",
+            "x".repeat(64)
+        ]),
+    );
+    let plan = rig.validate(&ok, false).unwrap();
+    assert_eq!(plan.spec.refs.len(), 4, "the exact repeat is dropped");
+    assert_eq!(plan.spec.refs[..2], ["GKA-580", "#3772"]);
+
+    let bad = common::with(
+        team_spec("demo", &members),
+        "refs",
+        json!([
+            "GKA 580",
+            "",
+            "x".repeat(65),
+            "tab\there",
+            "ok-1",
+            "nul\u{1}"
+        ]),
+    );
+    let errors = rig.validate(&bad, false).unwrap_err();
+    assert_eq!(codes(&errors), ["bad_ref"; 5]);
+    assert!(errors.iter().all(|e| e.field.as_deref() == Some("refs")));
+    assert!(rig.home_is_empty());
+}
+
+#[test]
+fn more_than_twenty_refs_refused() {
+    let rig = Rig::new();
+    let members = [pane_member("a", "Alpha", rig.work.path())];
+    let twenty: Vec<String> = (0..20).map(|n| format!("T-{n}")).collect();
+    let spec = common::with(team_spec("demo", &members), "refs", json!(twenty));
+    rig.validate(&spec, false).unwrap();
+
+    let twenty_one: Vec<String> = (0..21).map(|n| format!("T-{n}")).collect();
+    let spec = common::with(team_spec("demo", &members), "refs", json!(twenty_one));
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["too_many_refs"]);
+}

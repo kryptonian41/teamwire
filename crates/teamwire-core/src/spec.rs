@@ -28,6 +28,10 @@ pub struct TeamSpec {
     /// per-run settings. A member's value wins over the team's, per key.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+    /// Tickets the team works on, such as `GKA-580` or `#3772`. Free text to
+    /// teamwire: `validate` only checks the shape (ADR 0025).
+    #[serde(default)]
+    pub refs: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

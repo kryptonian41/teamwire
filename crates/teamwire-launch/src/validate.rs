@@ -19,6 +19,10 @@ use crate::{LeadPlan, SpecError, ValidPlan, ValidateEnv};
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest title (LCH-23).
 pub(crate) const TITLE_MAX: usize = 28;
+/// The longest ticket ref, in characters (ADR 0025).
+const REF_MAX: usize = 64;
+/// The most refs a team holds after any `--add` (ADR 0025).
+const REFS_MAX: usize = 20;
 
 /// What the store already holds about the team.
 pub(crate) struct Existing {
@@ -98,6 +102,7 @@ pub fn validate(
     }
     team_title(spec, existing.as_ref(), &mut errors);
     plugin_keys(&spec.plugins, None, &mut errors);
+    let refs = ticket_refs(&spec.refs, &[], &mut errors);
     if spec.children.is_empty() {
         errors.push(SpecError::new(
             None,
@@ -119,6 +124,7 @@ pub fn validate(
     }
     // `--add` may leave the title out: the team row already holds it.
     let mut planned = spec.clone();
+    planned.refs = refs;
     if let Some(e) = &existing
         && plan::clean(&planned.title).is_empty()
     {
@@ -262,6 +268,41 @@ fn team_title(spec: &TeamSpec, existing: Option<&Existing>, errors: &mut Vec<Spe
             format!("team title {title:?} is over {TITLE_MAX} characters"),
         ));
     }
+}
+
+/// The spec's refs without repeats, in first-seen order, and a refusal for each
+/// that is empty, over `REF_MAX` characters, or holds white space or a control
+/// character. `recorded` are the refs the team already holds: with the spec's
+/// new ones they may not pass `REFS_MAX`.
+fn ticket_refs(refs: &[String], recorded: &[String], errors: &mut Vec<SpecError>) -> Vec<String> {
+    let mut kept: Vec<String> = Vec::new();
+    for r in refs {
+        if r.is_empty()
+            || r.chars().count() > REF_MAX
+            || r.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
+            errors.push(SpecError::new(
+                None,
+                Some("refs"),
+                "bad_ref",
+                format!(
+                    "ref {r:?} must be 1 to {REF_MAX} characters with no white space, such as GKA-580 or #3772"
+                ),
+            ));
+        } else if !kept.contains(r) {
+            kept.push(r.clone());
+        }
+    }
+    let total = recorded.len() + kept.iter().filter(|r| !recorded.contains(r)).count();
+    if total > REFS_MAX {
+        errors.push(SpecError::new(
+            None,
+            Some("refs"),
+            "too_many_refs",
+            format!("a team holds at most {REFS_MAX} refs, and this spec would make {total}"),
+        ));
+    }
+    kept
 }
 
 /// A refusal for each plugin key that is not `name@marketplace`. The id goes
