@@ -25,6 +25,7 @@ use teamwire_store::{DeliveryUpdate, NewMessage};
 struct Run {
     code: i32,
     out: String,
+    err: String,
 }
 
 fn team() -> Fixture {
@@ -69,6 +70,7 @@ fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
     Run {
         code: out.status.code().unwrap(),
         out: String::from_utf8(out.stdout).unwrap(),
+        err: String::from_utf8(out.stderr).unwrap(),
     }
 }
 
@@ -116,9 +118,45 @@ fn garbage_stdin_exits_zero() {
             let run = hook(&fx, which, &as_api(), input);
             assert_eq!(run.code, 0, "{which} {input:?}");
             assert_eq!(run.out, "", "{which} {input:?}");
+            assert!(
+                run.err
+                    .starts_with("teamwire hook: the hook input did not parse: "),
+                "{which} {input:?}: {}",
+                run.err
+            );
+            assert_eq!(run.err.lines().count(), 1, "{which} {input:?}: {}", run.err);
         }
     }
     assert_eq!(events(&fx), before, "nothing changed");
+}
+
+#[test]
+fn every_member_hook_on_a_newer_schema_says_so_and_changes_nothing() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            tx.connection().pragma_update(None, "user_version", 99)?;
+            Ok(())
+        })
+        .unwrap();
+    let before = events(&fx);
+    for which in [
+        "claude-stop",
+        "turn-end",
+        "claude-post-tool",
+        "session-start",
+    ] {
+        let run = hook(&fx, which, &as_api(), &stop_input("sess-1"));
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{which}");
+        assert!(
+            run.err
+                .starts_with("teamwire hook: the store could not be opened: ")
+                && run.err.contains("schema 99"),
+            "{which}: {}",
+            run.err
+        );
+    }
+    assert_eq!(events(&fx), before, "a refused schema is never written to");
 }
 
 #[test]
