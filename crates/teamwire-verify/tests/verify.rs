@@ -932,14 +932,9 @@ fn a_started_worktree_member_whose_folder_is_gone_fails() {
     fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
     std::fs::remove_dir_all(repo.path()).unwrap();
     let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
-    assert_eq!(report.records[0].verdict, Verdict::Fail);
-    assert!(
-        report.records[0]
-            .note
-            .as_deref()
-            .unwrap()
-            .contains("does not exist")
-    );
+    let record = report.records.first().unwrap();
+    assert_eq!(record.verdict, Verdict::Fail);
+    assert!(record.note.as_deref().unwrap().contains("does not exist"));
     assert!(!report.is_clean(false));
 }
 
