@@ -330,7 +330,10 @@ impl Host for FakeHost {
         if taken {
             return Err(HostError::new(
                 HostErrorCode::BadArgument,
-                format!("an agent named {} is already live", req.name),
+                format!(
+                    "agent_name_taken: an agent named {} is already live",
+                    req.name
+                ),
             ));
         }
         let place = self.add_place(

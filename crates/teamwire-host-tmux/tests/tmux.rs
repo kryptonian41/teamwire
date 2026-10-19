@@ -102,6 +102,51 @@ fn list_and_names_hold_only_panes_this_adapter_started() {
 }
 
 #[test]
+fn a_second_spawn_under_a_live_name_is_refused() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let req = request("tw_t_a", dir.path(), &["cat"]);
+    let first = tmux.spawn(&req, T).unwrap();
+    let err = tmux.spawn(&req, T).unwrap_err();
+    assert_eq!(err.code, HostErrorCode::BadArgument);
+    assert!(
+        err.detail.starts_with("agent_name_taken:"),
+        "{}",
+        err.detail
+    );
+    assert_eq!(tmux.list(T).unwrap(), [first]);
+}
+
+#[test]
+fn a_pane_whose_program_exited_holds_no_live_name_and_reopen_can_replace_it() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let old = tmux
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    // A dead session leaves its pane in the tab, as `remain-on-exit` does.
+    server.raw(&["set-option", "-g", "remain-on-exit", "on"]);
+    tmux.send_keys(&old, &[Key::CtrlC], T).unwrap();
+    for _ in 0..100 {
+        if tmux.state(&old, T).unwrap() == PlaceState::Gone {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(tmux.state(&old, T).unwrap(), PlaceState::Gone);
+    assert!(tmux.live_agent_names(T).unwrap().is_empty());
+    // Reopen starts the new tab first, then closes the old one.
+    let new = tmux
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .unwrap();
+    assert_eq!(tmux.live_agent_names(T).unwrap(), ["tw_t_a"]);
+    tmux.close(&old, &name("tw_t_a"), T).unwrap();
+    assert_eq!(tmux.list(T).unwrap(), [new]);
+}
+
+#[test]
 fn list_with_no_server_is_empty_and_a_place_is_gone() {
     let server = PrivateServer::new();
     let tmux = server.tmux();
