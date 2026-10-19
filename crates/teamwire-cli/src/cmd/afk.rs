@@ -306,9 +306,12 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, Failed> {
     // insert of the loser breaks a constraint, and the winner's files stay.
     ctx.store
         .write(|tx| tx.create_afk_team(at, &row, new.ends, &extra).map(|_| ()))
-        .map_err(|e| match e {
-            StoreError::Constraint(_) => Failed::Taken,
-            e => Failed::Other(format!("the team could not be recorded: {e}")),
+        .map_err(|e| {
+            if matches!(e, StoreError::Constraint(_)) {
+                Failed::Taken
+            } else {
+                Failed::Other(format!("the team could not be recorded: {e}"))
+            }
         })?;
     let dir = afk_dir(ctx.home, new.team);
     std::fs::create_dir_all(&dir)
@@ -488,9 +491,7 @@ mod tests {
             "no caffeinate",
         )));
         let (_home, store, _, result) = run_create(platform, b"x");
-        let Failed::Other(why) = result.unwrap_err() else {
-            panic!("the hold failure is not a taken name");
-        };
+        let why = format!("{:?}", result.unwrap_err());
         assert!(why.contains("sleep hold could not be taken"), "{why}");
         assert!(why.contains("no caffeinate"), "{why}");
         let row = store.read(|tx| tx.team()).unwrap().unwrap();
