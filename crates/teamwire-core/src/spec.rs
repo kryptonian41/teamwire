@@ -34,6 +34,10 @@ pub struct TeamSpec {
     pub refs: Vec<TicketRef>,
 }
 
+/// The most refs a team holds after any `--add` (ADR 0025). `validate` checks
+/// it for a dry run, and `Tx::add_refs` checks it again under the write lock.
+pub const REFS_MAX: usize = 20;
+
 /// A ticket in some tracker. teamwire assumes no provider, so both fields are
 /// required. It never looks the ticket up: `validate` only checks the shape.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

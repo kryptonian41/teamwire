@@ -7,8 +7,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use teamwire_core::{
-    EventType, Host, HostId, LeadRoute, Member, MemberState, Role, SessionId, SessionKind,
-    TeamName, TeamSpec, TeamState, TicketRef,
+    EventType, Host, HostId, LeadRoute, Member, MemberState, REFS_MAX, Role, SessionId,
+    SessionKind, TeamName, TeamSpec, TeamState, TicketRef,
 };
 use teamwire_store::{Store, TeamRow, database_path};
 
@@ -21,8 +21,6 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const TITLE_MAX: usize = 28;
 /// The longest ticket ref, in characters (ADR 0025).
 const REF_MAX: usize = 64;
-/// The most refs a team holds after any `--add` (ADR 0025).
-const REFS_MAX: usize = 20;
 
 /// What the store already holds about the team.
 pub(crate) struct Existing {
