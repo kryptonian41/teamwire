@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness } from "../../shared/t
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, joinAll, joinTeam, leadCategory, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
+import { countByCategory, formatAge, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -39,7 +39,7 @@ test("counts members per category, keeping unknown words apart", () => {
 test("sorts problem teams first, then by title", () => {
   const sorted = sortTeams(joinAll(S, T));
   expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs"]);
-  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], team: "aaa", title: "Zed" }, T);
+  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [], team: "aaa", title: "Zed" }, T);
   const other = joinTeam({ ...quiet.status, team: "bbb", title: "Alpha" }, T);
   const bad = joinTeam({ ...quiet.status, team: "ccc", title: "Zzz", errors: ["x"] }, T);
   expect(sortTeams([quiet, other, bad]).map((t) => t.title)).toEqual(["Zzz", "Alpha", "Zed"]);
@@ -75,4 +75,21 @@ test("maps the lead's liveness to one category", () => {
   expect(leadCategory(lead({ alive: "gone" }))).toBe("failed");
   expect(livenessInfo(lead({ alive: "working" }))).toEqual({ category: "active", label: "lead working" });
   expect(livenessInfo(null).label).toBe("no lead");
+});
+
+test("each signal alone flags a team, and a quiet team has none", () => {
+  const base = { ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] };
+  const flagged = (patch: Partial<typeof base>) => problemReasons(joinTeam({ ...base, ...patch }, T));
+  expect(hasProblem(joinTeam(base, T))).toBe(false);
+  expect(flagged({})).toEqual([]);
+  expect(flagged({ lead: { session_id: null, liveness: "dead" } })).toEqual(["lead dead"]);
+  expect(flagged({ watch: { state: "stale", pid: 1, heartbeat_age_s: 900 } })).toEqual(["watch stale"]);
+  expect(flagged({ unread_deliveries: [{ display_id: "m1", to: "api", age_s: 1 }] })).toEqual(["1 unread"]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["lead"], age_s: 600 }] })).toEqual(["1 question waiting"]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["lead"], age_s: 599 }] })).toEqual([]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["web"], age_s: 9000 }] })).toEqual([]);
+  expect(flagged({ afk: { budget_ends_at: "x", seconds_left: 0, spent: true, decisions: 0 } })).toEqual(["AFK spent"]);
+  // A closed team keeps no lead, watch or budget to watch.
+  expect(flagged({ state: "closed", lead: null, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
+  expect(flagged({ lead: { session_id: null, liveness: "unknown" }, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
 });

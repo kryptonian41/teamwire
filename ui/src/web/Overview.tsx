@@ -1,6 +1,6 @@
 import { CATEGORY_ORDER } from "../shared/state.ts";
 import { Empty, StateChip } from "./components.tsx";
-import { countByCategory, hasProblem, livenessInfo, sortTeams, type TeamModel } from "./model/teams.ts";
+import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
 
 export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; loaded: boolean; neverPolled: boolean }) {
@@ -52,6 +52,7 @@ function TeamRow({ team }: { team: TeamModel }) {
   const counts = countByCategory(team.members);
   const live = livenessInfo(s.lead);
   const problem = hasProblem(team);
+  const reasons = problemReasons(team);
   const body = (
     <>
       <div className="team-id">
@@ -84,8 +85,13 @@ function TeamRow({ team }: { team: TeamModel }) {
             ))}
           </p>
         )}
-        {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (
+        {(reasons.length > 0 || s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (
           <p className="chips">
+            {reasons.map((r) => (
+              <span key={r} className="flag bad">
+                {r}
+              </span>
+            ))}
             {s.stuck_deliveries.length > 0 && <span className="flag">{s.stuck_deliveries.length} stuck deliveries</span>}
             {s.undelivered_results.length > 0 && (
               <span className="flag bad">{s.undelivered_results.length} undelivered results</span>

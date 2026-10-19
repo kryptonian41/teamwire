@@ -51,6 +51,24 @@ export function countByCategory(members: readonly { category: StateCategory }[])
   return counts;
 }
 
+const QUESTION_WAIT_S = 600;
+
+/** The signals of D18 as card flags. Lead, watch and AFK count only while the team is open. */
+export function problemReasons(t: TeamModel): string[] {
+  const s = t.status;
+  const out: string[] = [];
+  if (s.state === "open") {
+    const lead = leadCategory(s.lead);
+    if (lead === "failed" || lead === "attention") out.push(livenessInfo(s.lead).label);
+    if (s.watch.state === "stale") out.push("watch stale");
+    if (s.afk?.spent) out.push("AFK spent");
+  }
+  if (s.unread_deliveries.length > 0) out.push(`${s.unread_deliveries.length} unread`);
+  const waiting = s.unanswered_questions.filter((q) => q.to.includes("lead") && q.age_s >= QUESTION_WAIT_S);
+  if (waiting.length > 0) out.push(`${waiting.length} question waiting`);
+  return out;
+}
+
 /** A team has a problem when teamwire reported errors, or something needs the lead. */
 export function hasProblem(t: TeamModel): boolean {
   const s = t.status;
@@ -59,6 +77,7 @@ export function hasProblem(t: TeamModel): boolean {
     s.errors.length > 0 ||
     s.stuck_deliveries.length > 0 ||
     s.undelivered_results.length > 0 ||
+    problemReasons(t).length > 0 ||
     t.members.some((m) => m.category === "failed" || m.category === "attention" || m.category === "unknown")
   );
 }
