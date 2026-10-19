@@ -633,3 +633,21 @@ fn a_claim_that_never_works_types_nothing_and_the_hook_ends() {
         ReportState::Pending
     );
 }
+
+#[test]
+fn a_result_file_that_was_not_written_points_the_lead_at_the_report() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    rig.platform
+        .fail_writes(Some(teamwire_core::PlatformError::new(
+            teamwire_core::PlatformErrorCode::Io,
+            "the disk is full",
+        )));
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    let lines = rig.typed_to_lead();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("reports/api.md"), "{}", lines[0]);
+    assert!(!lines[0].contains("outbox/api.md"), "{}", lines[0]);
+    assert!(!rig.team_dir().join("outbox/api.md").exists());
+    assert_eq!(rig.newest(&api).result_sha256, None);
+}

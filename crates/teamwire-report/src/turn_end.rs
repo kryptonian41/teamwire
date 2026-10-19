@@ -316,8 +316,10 @@ fn deliver(
     if claim(ctx, &ulid, &claim_data, deadline)?.is_none() {
         return Ok(());
     }
+    // A result file that was not written is missing or holds an older
+    // result, so the line names the member's own report instead.
     let path = written.as_ref().map_or_else(
-        || crate::result_file::path_of(&dir, member),
+        || teamwire_verify::report_path(&dir, &member.role),
         |w| w.path.clone(),
     );
     let c = &record.completion;
