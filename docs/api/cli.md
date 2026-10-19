@@ -115,13 +115,17 @@ errors (exit 3). A refusal prints `teamwire afk start: refused: <code>:
 <message>` and exits 1. The codes are `no_lead_session`, `background_lead`,
 `afk_already_running` (this session already leads an open AFK team),
 `bad_name`, `title_missing`, `title_too_long`, `team_exists`, `bad_task`,
-`unknown_harness`, `no_host`, `no_lead_process`, `bad_budget` (the budget
+`unknown_harness`, `no_host` (`host none cannot start a member; v1 needs herdr or
+tmux`), `no_lead_process` (`no sleep hold can be taken: <why>`, on platforms
+with a sleep hold), `bad_budget` (the budget
 parses but its end is past the last date the clock supports) and
 `doctor_failed` (any doctor `FAIL`). A caller that carries a member identity
 gets `refused.identity` instead, as for the other lead commands. Exit 6 means
 the store could not be opened (`the store could not be opened: ...`) or the
 team could not be recorded or `afk/task.md` written (`...; close the team with
-teamwire close <team> and start again`).
+teamwire close <team> and start again`). The same exit 6 follows when the hold is
+not recorded after the team exists: `the sleep hold could not be taken:
+<warnings>; close the team with teamwire close <team> and start again`.
 
 ### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
 
