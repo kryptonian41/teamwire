@@ -28,7 +28,8 @@ fn result_file(bed: &Bed, name: &str) -> std::path::PathBuf {
 /// first and records the file's hash with the outcome.
 #[expect(
     clippy::disallowed_methods,
-    reason = "the test stands in for the hook that wrote a result file, outside the platform"
+    clippy::unwrap_used,
+    reason = "the test stands in for the hook that wrote a result file, outside the platform; a failure fails the test"
 )]
 fn finish_with_file(
     bed: &mut Bed,

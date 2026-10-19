@@ -10,6 +10,12 @@
 //! once per watch, when every live member is settled. A restarted watch
 //! prints it again for a finished team, and `WATCHING` on its first poll;
 //! both are intended.
+//!
+//! Status reads a member differently from the watch in two intended ways.
+//! An idle member started with `"dispatch": false` reads `quiet` at once in
+//! status (WAT-3), while the watch still counts its quiet polls. Status
+//! measures ages in wall time, because only a running watch measures the
+//! machine's sleeps, in its memory; a one-shot command never sees them.
 
 mod afk;
 mod apply;
@@ -30,7 +36,6 @@ use teamwire_core::{
     Actor, DeliveryState, DisplayId, Liveness, MessageType, Pid, Recipient, ReportState, Role,
     SessionId, TeamName, TeamState, Timestamp,
 };
-use teamwire_store::Ctx;
 
 pub use lease::{WatchError, start, stop};
 pub use memory::{WatchEnd, WatchMemory};
@@ -54,8 +59,9 @@ pub struct LeadView {
 pub struct MemberView {
     pub role: Role,
     pub title: String,
-    /// `done(<status>)`, `unreported`, `undelivered`, `died?`, `blocked`,
-    /// `working`, `quiet`, `late` or `prompted outside teamwire`.
+    /// `done(<status>)`, `unreported`, `undelivered`, `unconfirmed`,
+    /// `died?`, `blocked`, `working`, `quiet`, `late`, `prompted outside
+    /// teamwire`, `not started` or `failed to start`.
     pub state: String,
     pub generation: u32,
     pub age_s: u64,
@@ -174,11 +180,6 @@ pub struct StatusView {
     pub undelivered_results: Vec<UndeliveredResult>,
     /// Why part of the view could not be read.
     pub errors: Vec<String>,
-}
-
-/// The status view. Reads only.
-pub fn status(ctx: &Ctx<'_>) -> StatusView {
-    status::status_with(ctx, None)
 }
 
 pub use status::status_with;

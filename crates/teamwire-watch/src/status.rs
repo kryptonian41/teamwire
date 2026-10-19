@@ -99,9 +99,7 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
                     .iter()
                     .any(|e| e.kind == teamwire_core::EventType::MemberReprompted && e.seq > s.seq)
         });
-        let run_start = started
-            .as_ref()
-            .map_or(member.gen_started_at, |e| e.time.max(member.gen_started_at));
+        let run_start = crate::snapshot::run_start(&member, started.map(|e| e.time));
         let completion = tx
             .latest_completion(&member.role)?
             .filter(|c| c.completion.generation == member.generation);

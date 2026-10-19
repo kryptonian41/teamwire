@@ -117,7 +117,7 @@ fn status_changes_no_file() {
         clock: &clock,
         config: &config,
     };
-    let view = teamwire_watch::status(&ctx);
+    let view = teamwire_watch::status_with(&ctx, None);
     drop(ro);
     assert_eq!(hashes(&team_dir), closed_before);
     assert!(view.errors.is_empty(), "{:?}", view.errors);

@@ -78,6 +78,14 @@ fn highest_episode(tx: &ReadTx<'_>, prefix: &str) -> Result<u32, StoreError> {
         .unwrap_or(0))
 }
 
+/// When the member's current run began, given the time of its latest
+/// `member.started` event. A first generation counts from that event, since
+/// `gen_started_at` is the `creating` time. A later one counts from its
+/// reprompt, which is after the start event.
+pub(crate) fn run_start(member: &Member, started: Option<Timestamp>) -> Timestamp {
+    started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at))
+}
+
 fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError> {
     let started = tx
         .events_of_role(&member.role)?
@@ -86,10 +94,7 @@ fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError
         .rev()
         .find(|e| e.kind == EventType::MemberStarted)
         .map(|e| e.time);
-    // A first generation counts from its start event, since `gen_started_at`
-    // is the `creating` time. A later one counts from its reprompt, which is
-    // after the start event.
-    let run_start = started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at));
+    let run_start = run_start(&member, started);
     let completion = tx
         .latest_completion(&member.role)?
         .filter(|c| c.completion.generation == member.generation);
