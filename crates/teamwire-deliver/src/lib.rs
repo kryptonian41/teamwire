@@ -7,7 +7,7 @@
 //! across a host call; type into a session that shows a dialog.
 //!
 //! Invariants: every typed line is a `OneLine`; a "not submitted" host code
-//! is retried at most 3 times in about 5 seconds, then `Undelivered`.
+//! is tried at most 3 times (2 retries) in about 5 seconds, then `Undelivered`.
 
 mod budget;
 mod deliver;
