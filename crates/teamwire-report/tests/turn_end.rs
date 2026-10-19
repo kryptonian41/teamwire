@@ -540,3 +540,96 @@ fn a_damaged_completion_leaves_one_store_error_row() {
     );
     assert!(rig.typed_to_lead().is_empty());
 }
+
+/// Makes every later write that `sql`'s trigger matches fail, as a full
+/// disk or a damaged page would.
+fn fail_with_trigger(rig: &mut Rig, sql: &str) {
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(sql)
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_failed_hold_write_still_holds_the_member() {
+    let (mut rig, api) = team(); // no report: the check holds
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_hold BEFORE INSERT ON events WHEN NEW.type = 'member.held'
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    let TurnEndReply::Hold(note) = reply(&mut rig, &api) else {
+        unreachable!("the member must be held")
+    };
+    assert!(note.contains("reports/api.md"), "{note}");
+    assert!(rig.typed_to_lead().is_empty());
+}
+
+#[test]
+fn a_failed_final_message_write_still_delivers_the_result() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_final BEFORE UPDATE OF final_message ON completions
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Delivered
+    );
+}
+
+#[test]
+fn a_claim_that_fails_at_first_is_tried_again() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    // SQLite's 'now' is the real clock: the claim fails for its first second
+    // and a half, then works.
+    let until: f64 = rig
+        .store
+        .read(|tx| {
+            tx.connection()
+                .query_row("SELECT julianday('now') + 1.5 / 86400.0", [], |r| r.get(0))
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    fail_with_trigger(
+        &mut rig,
+        &format!(
+            "CREATE TRIGGER no_claim BEFORE INSERT ON events
+             WHEN NEW.type = 'result.delivering' AND julianday('now') < {until}
+             BEGIN SELECT RAISE(ABORT, 'database is locked'); END;"
+        ),
+    );
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(rig.typed_to_lead().len(), 1);
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Delivered
+    );
+}
+
+#[test]
+fn a_claim_that_never_works_types_nothing_and_the_hook_ends() {
+    let (mut rig, api) = finished_member();
+    rig.complete_now(&api);
+    fail_with_trigger(
+        &mut rig,
+        "CREATE TRIGGER no_claim BEFORE INSERT ON events WHEN NEW.type = 'result.delivering'
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    );
+    // The fake clock stands still, so only the cap on tries ends the retries.
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert!(rig.typed_to_lead().is_empty(), "nothing is typed unclaimed");
+    assert_eq!(
+        rig.newest(&api).completion.report_state,
+        ReportState::Pending
+    );
+}
