@@ -316,13 +316,25 @@ fn a_full_close_runs_the_fixed_order_and_archives_everything() {
         .read(|tx| Ok(tx.events_of_type(EventType::TeamClosed)?.items))
         .unwrap();
     assert_eq!(closed.len(), 1, "the final backup holds team.closed");
-    let steps = db
+    let steps: Vec<String> = db
         .read(|tx| Ok(tx.events_of_type(EventType::CloseStep)?.items))
-        .unwrap();
-    assert!(
-        steps.len() >= 6,
-        "the close steps are in the archive: {}",
-        steps.len()
+        .unwrap()
+        .iter()
+        .map(|e| e.data["step"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    // The archive is copied before archive_final records itself, and it must
+    // be verified before delete_state runs, so the archived steps end at finish.
+    assert_eq!(
+        steps,
+        [
+            "lock",
+            "archive",
+            "verify_archive",
+            "remove_worktrees",
+            "close_places",
+            "release_hold",
+            "finish"
+        ]
     );
 }
 
@@ -939,10 +951,12 @@ fn a_close_records_its_own_start_time_with_the_lock() {
 }
 
 #[test]
-fn reprompt_and_add_refused_during_close() {
+fn while_a_close_runs_the_state_reads_closing_and_a_second_close_and_a_removal_are_refused() {
     // Launch --add, reprompt and removal each read the team state inside their
-    // own write transaction. While a close runs, that state is `closing`, and
-    // a second close or a removal is refused.
+    // own write transaction. This test checks what they read while a close
+    // runs (`closing`), that the lock cannot be taken twice, and that a second
+    // close and a removal are refused; launch --add and reprompt themselves
+    // are tested in teamwire-launch and teamwire-msg.
     let mut rig = busy_team();
     let home = rig.home.path().to_path_buf();
     let team = teamwire_core::TeamName::parse(rig::TEAM).unwrap();
