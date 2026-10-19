@@ -12,7 +12,7 @@ const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// Starts or reuses the hold and records it on the team. Every way this can
 /// go wrong is said in `warnings`, because a missing hold is a laptop that
 /// sleeps under a running team.
-pub(crate) fn ensure_hold(
+pub fn ensure_hold(
     ctx: &mut Ctx<'_>,
     team: &TeamName,
     lead: (&HarnessId, Option<&SessionId>),

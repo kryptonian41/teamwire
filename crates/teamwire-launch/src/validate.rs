@@ -43,13 +43,7 @@ pub fn validate(
         .as_ref()
         .is_some_and(|s| s.kind == SessionKind::Background)
     {
-        return Err(vec![SpecError::new(
-            None,
-            None,
-            "background_lead",
-            "this session runs in the background and has no terminal of its own, so member reports \
-             would go to another session. Launch the team from a session in a terminal.",
-        )]);
+        return Err(vec![background_lead()]);
     }
     let mut errors = Vec::new();
     let mut warnings = Vec::new();
@@ -247,22 +241,64 @@ fn team_title(spec: &TeamSpec, existing: Option<&Existing>, errors: &mut Vec<Spe
     if existing.is_some() {
         return;
     }
-    let title = plan::clean(&spec.title);
+    if let Err(e) = check_title(&spec.title) {
+        errors.push(e);
+    }
+}
+
+/// The title with its white space cleaned, or the refusal for a title that
+/// is empty or over `TITLE_MAX` characters.
+pub fn check_title(raw: &str) -> Result<String, SpecError> {
+    let title = plan::clean(raw);
     if title.is_empty() {
-        errors.push(SpecError::new(
+        Err(SpecError::new(
             None,
             Some("title"),
             "title_missing",
             format!("the spec needs a title of at most {TITLE_MAX} characters"),
-        ));
+        ))
     } else if title.chars().count() > TITLE_MAX {
-        errors.push(SpecError::new(
+        Err(SpecError::new(
             None,
             Some("title"),
             "title_too_long",
             format!("team title {title:?} is over {TITLE_MAX} characters"),
-        ));
+        ))
+    } else {
+        Ok(title)
     }
+}
+
+fn background_lead() -> SpecError {
+    SpecError::new(
+        None,
+        None,
+        "background_lead",
+        "this session runs in the background and has no terminal of its own, so member reports \
+         would go to another session. Launch the team from a session in a terminal.",
+    )
+}
+
+/// The lead of a team that does not exist yet: the caller's own session, as
+/// `validate` would resolve it. A caller with no session, or one in the
+/// background, is refused.
+pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
+    let harness = env
+        .registry
+        .harness(&env.lead_harness)
+        .map_err(|e| SpecError::new(None, None, "unknown_harness", e.to_string()))?;
+    let Some(session) = harness.current_session() else {
+        return Err(SpecError::new(
+            None,
+            None,
+            "no_lead_session",
+            "this is not a lead session: its session id could not be read",
+        ));
+    };
+    if session.kind == SessionKind::Background {
+        return Err(background_lead());
+    }
+    lead_plan(env, None, Some((session.id, session.kind)))
 }
 
 /// A refusal for each plugin key that is not `name@marketplace`. The id goes

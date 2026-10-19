@@ -40,9 +40,10 @@ use teamwire_store::Ctx;
 
 pub use contract::{ContractParts, render_contract};
 pub use env::ValidateEnv;
+pub use hold::ensure_hold;
 pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 pub use spec::parse_spec;
-pub use validate::validate;
+pub use validate::{check_title, new_team_lead, validate};
 
 /// The lead of the team a launch belongs to, as validation resolved it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
