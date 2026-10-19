@@ -17,17 +17,19 @@ use crate::error::StoreError;
 ///
 /// The methods, by the file that holds them. Each writes its event row in the
 /// same transaction, except the bookkeeping writes named below.
-/// - team: `create_team`, `begin_close`, `finish_close`,
-///   `clear_stale_close_lock`, `adopt_lead`.
-/// - member: `insert_member`, `relaunch_failed_member`, `set_member_state`,
-///   `remove_member`, `bump_generation`, `restore_generation`, `hold_member`,
+/// - team: `create_team`, `create_team_with`, `create_afk_team`, `begin_close`,
+///   `finish_close`, `clear_stale_close_lock`, `adopt_lead`, `adopt_lead_in`.
+/// - member: `insert_member`, `insert_member_with`, `relaunch_failed_member`,
+///   `relaunch_failed_member_with`, `set_member_state`, `remove_member`,
+///   `bump_generation`, `restore_generation`, `hold_member`,
 ///   `hold_member_unread`.
-/// - message and delivery: `insert_message`, `set_delivery_state` (forward
-///   moves only), `ack_delivery`, `begin_resend`, `mark_reminded`,
-///   `record_delivery_reentered`.
+/// - message and delivery: `insert_message`, `insert_received`,
+///   `set_delivery_state` (forward moves only), `ack_delivery`, `begin_resend`,
+///   `mark_reminded`, `record_delivery_reentered`.
 /// - completion: `insert_completion`, `claim_completion_for_delivery`,
-///   `finish_completion_delivery`, `deliver_completion_via_watch`,
-///   `interrupt_stale_delivery`.
+///   `claim_completion_for_delivery_with`, `finish_completion_delivery`,
+///   `finish_completion_delivery_with`, `deliver_completion_via_watch`,
+///   `interrupt_stale_delivery`, `mark_result_received`.
 /// - verify and watch: `insert_verify_record`, `insert_waiver`,
 ///   `take_watch_lease`, `release_watch_lease`.
 /// - `record_event` writes any other event, `record_store_error` a
@@ -37,10 +39,10 @@ use crate::error::StoreError;
 /// Bookkeeping writes that write no event, because the closed event list has
 /// no type for them and none of them is a lifecycle or message change:
 /// `set_sleep_hold`, `set_member_place`, `set_member_session`,
-/// `set_member_token_hash`, `set_gate_told_generation`, `set_completion_final`,
-/// `announce_once`, `heartbeat_watch_lease`, and the metric-export
-/// `claim_metric_export`, `commit_metric_export`, `release_metric_claim`
-/// (an event there would feed the export its own tail).
+/// `set_member_token_hash`, `clear_member_branch`, `set_gate_told_generation`,
+/// `set_completion_final`, `announce_once`, `heartbeat_watch_lease`, and the
+/// metric-export `claim_metric_export`, `commit_metric_export`,
+/// `release_metric_claim` (an event there would feed the export its own tail).
 ///
 /// Data a hook or a launch adds to events, with no new event type: a hook
 /// puts `hook_ms` in the data of the events it writes (the source of
@@ -54,17 +56,23 @@ pub struct Tx<'a> {
 
 /// A read transaction, open inside `Store::read`.
 ///
-/// The reads, by the file that holds them: `team`; `member`, `members`,
-/// `member_token_hash`; `message`, `message_by_display_id`,
-/// `message_by_client_key`, `messages` (filter by sender, recipient, either,
-/// type, time, newest N), `sent_to_since`, `inbox` (bodies with a hash flag),
-/// `counter`; `delivery`, `deliveries_of`, `deliveries_for`,
-/// `deliveries_in_states`; `completion`, `completions_of`,
-/// `latest_completion`, `completions_in_states`; `verify_records`, `waivers`,
-/// `all_waivers`; `watch_lease`, `was_announced`, `announcements`,
-/// `announcements_with_prefix`; `export_mark`, `last_event_seq`,
-/// `events_after`, `events_since`, `events_of_role`, `event`,
-/// `events_of_type`, `events_about`; `unanswered_questions`.
+/// The reads, by the file that holds them:
+/// - team and member: `team`; `member`, `members`, `member_token_hash`;
+///   `lead_cwd`, `run_options` (read from event data).
+/// - message: `message`, `message_by_display_id`, `message_by_client_key`,
+///   `messages` (filter by sender, recipient, either, type, time, newest N),
+///   `sent_to_since`, `inbox` (bodies with a hash flag), `unanswered_questions`,
+///   `counter`, `counters`, `counter_floors`.
+/// - delivery and completion: `delivery`, `deliveries_of`, `deliveries_for`,
+///   `deliveries_in_states`; `completion`, `completions`, `completions_of`,
+///   `latest_completion`, `completions_in_states`.
+/// - verify and watch: `message_bodies` (raw rows, no hash refusal),
+///   `verify_records`, `all_verify_records`, `waivers`, `all_waivers`;
+///   `watch_lease`, `announcements`, `announcements_with_prefix`.
+/// - events: `export_mark`, `last_event_seq`, `events_after`, `events_since`,
+///   `events_of_role`, `event`, `events_of_type`, `events_about`;
+///   `latest_event` and `events_of_kinds`, which read only the rows they
+///   return.
 #[derive(Debug)]
 pub struct ReadTx<'a> {
     conn: &'a Connection,
@@ -78,7 +86,9 @@ impl<'a> Tx<'a> {
         }
     }
 
-    /// The connection this transaction runs on.
+    /// The connection this transaction runs on. For tests only, to damage a
+    /// row on purpose: production code uses the typed methods.
+    #[doc(hidden)]
     pub fn connection(&self) -> &Connection {
         self.conn
     }
@@ -143,7 +153,9 @@ impl<'a> ReadTx<'a> {
         Self { conn }
     }
 
-    /// The connection this transaction runs on.
+    /// The connection this transaction runs on. For tests only, to damage a
+    /// row on purpose: production code uses the typed methods.
+    #[doc(hidden)]
     pub fn connection(&self) -> &Connection {
         self.conn
     }

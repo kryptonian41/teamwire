@@ -44,9 +44,12 @@ pub const ELLIPSIS: char = '…';
 ///   runs of them collapse, and the ends are trimmed.
 /// - An ANSI escape sequence (ESC `[` ... final byte) is removed whole, and
 ///   every other control character is dropped.
-/// - Characters that print nothing or reorder text (zero-width and bidi
-///   marks, the byte-order mark, soft hyphen, Unicode tag characters,
-///   variation selectors, blank Hangul fillers) are dropped.
+/// - Characters that print nothing or reorder text are dropped: every
+///   Unicode default-ignorable code point (soft hyphen, combining grapheme
+///   joiner, zero-width and bidi marks, the byte-order mark, tag characters,
+///   variation selectors, blank Hangul and Khmer fillers, the invisible
+///   format controls U+2060-206F and the musical beam controls) and the
+///   interlinear annotation marks U+FFF9-FFFB.
 /// - A result longer than `max` characters is cut to `max - 1` characters
 ///   plus `…`.
 ///
@@ -95,24 +98,29 @@ fn skip_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
+/// Unicode's `Default_Ignorable_Code_Point` set, plus the interlinear
+/// annotation marks U+FFF9-FFFB. Written out because the standard library has
+/// no such table and a Unicode crate is not worth a dependency.
 fn is_invisible(c: char) -> bool {
     matches!(
         c,
         '\u{00ad}'
+            | '\u{034f}'
             | '\u{061c}'
             | '\u{115f}'..='\u{1160}'
-            | '\u{180e}'
+            | '\u{17b4}'..='\u{17b5}'
+            | '\u{180b}'..='\u{180f}'
             | '\u{200b}'..='\u{200f}'
             | '\u{202a}'..='\u{202e}'
-            | '\u{2060}'..='\u{2064}'
-            | '\u{2066}'..='\u{2069}'
+            | '\u{2060}'..='\u{206f}'
             | '\u{3164}'
             | '\u{fe00}'..='\u{fe0f}'
             | '\u{feff}'
             | '\u{ffa0}'
-            | '\u{fff9}'..='\u{fffb}'
-            | '\u{e0000}'..='\u{e007f}'
-            | '\u{e0100}'..='\u{e01ef}'
+            | '\u{fff0}'..='\u{fffb}'
+            | '\u{1bca0}'..='\u{1bca3}'
+            | '\u{1d173}'..='\u{1d17a}'
+            | '\u{e0000}'..='\u{e0fff}'
     )
 }
 

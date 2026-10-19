@@ -11,7 +11,9 @@ use serde_json::json;
 use teamwire_core::{EventType, MemberState, Place, SessionId};
 
 use crate::StoreError;
-use crate::testkit::{at, count_events, event_types, last_event, new_member, role, with_members};
+use crate::testkit::{
+    at, count_events, event_types, fixture, last_event, new_member, new_team, role, with_members,
+};
 
 fn state_of(f: &crate::testkit::Fixture, name: &str) -> MemberState {
     f.store
@@ -397,4 +399,29 @@ fn creating_event_carries_extra_data_but_kind_and_mode_win() {
             .unwrap()
     );
     assert_eq!(last_event(&f.store).data["launch"], "02L");
+}
+
+#[test]
+fn clearing_the_branch_empties_only_that_column_and_writes_no_event() {
+    let mut f = fixture();
+    let mut m = new_member("api");
+    m.branch = Some("api".to_owned());
+    f.store
+        .write(|tx| {
+            tx.create_team(at(0), &new_team())?;
+            tx.insert_member(at(1), &m)
+        })
+        .unwrap();
+    let before = event_types(&f.store);
+    f.store
+        .write(|tx| tx.clear_member_branch(&role("api")))
+        .unwrap();
+    let row = f.store.read(|tx| tx.member(&role("api"))).unwrap().unwrap();
+    assert_eq!((row.branch, row.state), (None, MemberState::Creating));
+    assert_eq!(event_types(&f.store), before);
+    let err = f
+        .store
+        .write(|tx| tx.clear_member_branch(&role("ghost")))
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Constraint(_)), "{err:?}");
 }

@@ -56,26 +56,15 @@ struct Mirror {
     rewrite_differing: bool,
 }
 
-/// Every message with its body and the hash the store kept. Read straight
-/// from the table: the store's own listing refuses a row whose body fails its
-/// hash, and that is exactly the row these checks must still see.
+/// Every message with its body and the hash the store kept. The store's own
+/// listing refuses a row whose body fails its hash, and that is exactly the
+/// row these checks must still see.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::message_bodies` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
 fn stored_messages(ctx: &Ctx<'_>) -> Result<Vec<(DisplayId, String, Vec<u8>)>, VerifyError> {
-    let rows = ctx.store.read(|tx| {
-        let mut stmt = tx
-            .connection()
-            .prepare("SELECT display_id, body, body_sha256 FROM messages ORDER BY rowid")?;
-        let rows = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .collect::<Result<Vec<(String, String, Vec<u8>)>, _>>()?;
-        Ok(rows)
-    })?;
-    rows.into_iter()
-        .map(|(id, body, sha)| {
-            let id = DisplayId::parse(&id)
-                .map_err(|e| VerifyError::Internal(format!("message id {id}: {e}")))?;
-            Ok((id, body, sha))
-        })
-        .collect()
+    Ok(ctx.store.read(|tx| tx.message_bodies())?)
 }
 
 fn hash_of(bytes: &[u8]) -> [u8; 32] {
