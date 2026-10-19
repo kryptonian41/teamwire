@@ -320,7 +320,13 @@ fn a_full_close_runs_the_fixed_order_and_archives_everything() {
         .read(|tx| Ok(tx.events_of_type(EventType::CloseStep)?.items))
         .unwrap()
         .iter()
-        .map(|e| e.data["step"].as_str().unwrap_or_default().to_owned())
+        .map(|e| {
+            e.data
+                .get("step")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default()
+                .to_owned()
+        })
         .collect();
     // The archive is copied before archive_final records itself, and it must
     // be verified before delete_state runs, so the archived steps end at finish.
@@ -1330,7 +1336,7 @@ fn a_detached_head_that_no_rescue_name_fits_refuses_and_keeps_the_worktree() {
         asks(&report.refusals, "no rescue branch name is free"),
         "{report:?}"
     );
-    assert!(asks(&report.refusals, &sha[..7]), "{report:?}");
+    assert!(asks(&report.refusals, sha.get(..7).unwrap()), "{report:?}");
     assert!(api.cwd.is_dir());
     assert_eq!(rig.team().state, TeamState::Open);
 }
