@@ -16,7 +16,7 @@ use fixture::{Fixture, Repo, implementer, implementer_without_repo, start_secs};
 use sha2::{Digest, Sha256};
 use teamwire_core::{CompletionStatus, FinalSource, Role, RunOutput};
 use teamwire_store::NewCompletion;
-use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, verify, waive};
+use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, waive};
 
 const T0: i64 = 0;
 
@@ -35,7 +35,9 @@ fn full_report(shas: &[&str]) -> String {
 
 fn run_one(fx: &mut Fixture, name: &str) -> VerifyRecord {
     let role = role(name);
-    let mut records = verify(&mut fx.ctx(), Some(&role), VerifyOpts::default());
+    let mut records = run(&mut fx.ctx(), Some(&role), VerifyOpts::default())
+        .unwrap()
+        .records;
     assert_eq!(records.len(), 1);
     records.remove(0)
 }
@@ -362,7 +364,7 @@ fn uncommitted_paths_are_flagged() {
     repo.write(&[("src/new.rs", "fn n() {}\n"), ("TASK.md", "brief\n")]);
     report_all_commits(&fx, &repo, "api");
     let record = run_one(&mut fx, "api");
-    assert_eq!(flag_ids(&record), ["uncommitted"]);
+    assert_eq!(flag_ids(&record), ["uncommitted:src/new.rs"]);
     assert!(record.flags.first().unwrap().detail.contains("src/new.rs"));
     assert_eq!(record.verdict, Verdict::Flagged);
 }
@@ -653,7 +655,9 @@ fn removed_unstarted_and_checkless_pane_members_are_skipped() {
     pane.mode = teamwire_core::Mode::Pane;
     pane.kind = teamwire_core::MemberKind::Reviewer;
     fx.add_member(&pane);
-    let records = verify(&mut fx.ctx(), None, VerifyOpts::default());
+    let records = run(&mut fx.ctx(), None, VerifyOpts::default())
+        .unwrap()
+        .records;
     let verdicts: Vec<(&str, Verdict)> = records
         .iter()
         .map(|r| (r.role.as_str(), r.verdict))
@@ -889,5 +893,112 @@ fn a_commit_that_removes_two_asserts_from_a_test_file_is_flagged() {
             .unwrap()
             .detail
             .contains("2 assert line(s) removed and 0 added")
+    );
+}
+
+#[test]
+fn a_waiver_of_one_uncommitted_path_does_not_cover_a_later_edit_of_another() {
+    let (mut fx, repo) = rust_member(&["src/", "tests/"], &[]);
+    report_all_commits(&fx, &repo, "api");
+    repo.write(&[("notes.txt", "scratch\n")]);
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["uncommitted:notes.txt"]);
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("uncommitted:notes.txt"),
+        "scratch file",
+    )
+    .unwrap();
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+
+    // Later, at the same HEAD, another file changes.
+    repo.write(&[("tests/a.rs", "#[test]\n#[ignore]\nfn a() {}\n")]);
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    let open: Vec<&str> = record
+        .flags
+        .iter()
+        .filter(|f| !f.waived)
+        .map(|f| f.id.as_str())
+        .collect();
+    assert_eq!(open, ["uncommitted:tests/a.rs"]);
+}
+
+#[test]
+fn a_started_worktree_member_whose_folder_is_gone_fails() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    std::fs::remove_dir_all(repo.path()).unwrap();
+    let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
+    assert_eq!(report.records[0].verdict, Verdict::Fail);
+    assert!(
+        report.records[0]
+            .note
+            .as_deref()
+            .unwrap()
+            .contains("does not exist")
+    );
+    assert!(!report.is_clean(false));
+}
+
+#[test]
+fn an_implementer_with_no_owns_list_is_flagged_and_a_waiver_clears_it() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB), ("billing/plan.rs", "x\n")]);
+    let sha = repo.commit(
+        &[("billing/plan.rs", "y\n")],
+        "touch billing",
+        start_secs() + 10,
+    );
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &[]));
+    fx.write_report("api", &full_report(&[&sha]));
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["no-owns"]);
+    assert_eq!(record.verdict, Verdict::Flagged);
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("no-owns"),
+        "reads only",
+    )
+    .unwrap();
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+}
+
+#[test]
+fn a_commit_made_during_the_check_flags_head_moved_and_no_waiver_clears_it() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let first = repo.head();
+    let git_dir = repo.path().display();
+    let check =
+        format!("git -C {git_dir} -c user.name=t -c user.email=t@t commit --allow-empty -qm moved");
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some(&check), &["src/"]));
+    let record = run_one(&mut fx, "api");
+    let moved = repo.head();
+    assert_ne!(first, moved);
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert_eq!(record.head_sha.as_deref(), Some(first.as_str()));
+    let flag = record
+        .flags
+        .iter()
+        .find(|f| f.id.as_str() == "head-moved")
+        .unwrap();
+    assert_eq!(
+        flag.detail,
+        format!("HEAD moved from {first} to {moved} while verify ran; run verify again")
+    );
+    assert!(!flag.waived);
+    let waived = waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("head-moved"),
+        "ok",
+    );
+    assert!(
+        matches!(waived, Err(VerifyError::UnknownFlag(_))),
+        "{waived:?}"
     );
 }
