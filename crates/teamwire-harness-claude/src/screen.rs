@@ -217,7 +217,8 @@ pub(crate) fn delivery_state(tail: &str) -> ScreenState {
 fn holds_text(text: &str) -> bool {
     let placeholder = text
         .strip_prefix("Try \"")
-        .is_some_and(|rest| rest.ends_with('"'));
+        .and_then(|rest| rest.strip_suffix('"'))
+        .is_some_and(|quoted| !quoted.contains('"'));
     !text.is_empty() && !placeholder
 }
 

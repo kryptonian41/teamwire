@@ -183,6 +183,17 @@ fn delivery_waits_while_the_box_holds_text_and_the_trust_step_still_sees_a_promp
 }
 
 #[test]
+fn text_typed_after_the_placeholder_still_waits() {
+    for typed in [
+        "❯ Try \"fix the lint errors\" now",
+        "❯ Try \"fix the lint errors\" and \"the tests\"",
+    ] {
+        let screen = real_box(typed, "? for shortcuts");
+        assert_eq!(state(&screen), ScreenState::Unknown, "{typed}");
+    }
+}
+
+#[test]
 fn a_busy_box_is_not_a_prompt() {
     let screen = real_box("❯", "⏵⏵ auto mode on · 1 monitor · esc to interrupt");
     assert_eq!(state(&screen), ScreenState::Unknown);
