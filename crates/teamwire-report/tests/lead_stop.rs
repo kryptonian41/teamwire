@@ -35,8 +35,8 @@ impl Rig {
         }
     }
 
-    /// An open team led from `lead-1`, with member `api` started.
-    fn team(&self, name: &str) -> Store {
+    /// An open team led from `lead-1`, with no members.
+    fn empty_team(&self, name: &str) -> Store {
         let mut store = Store::open(self.home.path(), &TeamName::parse(name).unwrap()).unwrap();
         let now = self.clock.now();
         store
@@ -51,7 +51,19 @@ impl Rig {
                         lead_route: LeadRoute::Sink,
                         lead_session: Some((sid("lead-1"), SessionKind::Interactive)),
                     },
-                )?;
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+        store
+    }
+
+    /// An open team led from `lead-1`, with member `api` started.
+    fn team(&self, name: &str) -> Store {
+        let mut store = self.empty_team(name);
+        let now = self.clock.now();
+        store
+            .write(|tx| {
                 tx.insert_member(
                     now,
                     &NewMember {
@@ -282,6 +294,20 @@ fn an_afk_team_with_nothing_to_wake_the_lead_gets_the_note() {
         rig.afk_notes("lead-1"),
         [format!(
             "[teamwire:alpha] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close alpha` once {dir}/afk/REPORT.md exists. If a command you started will wake you, stop again."
+        )]
+    );
+}
+
+#[test]
+fn an_afk_team_with_no_members_is_told_to_add_them_or_close_without_a_report() {
+    let rig = Rig::new();
+    let mut store = rig.empty_team("alpha");
+    rig.make_afk(&mut store, 8);
+    let dir = rig.dir();
+    assert_eq!(
+        rig.afk_notes("lead-1"),
+        [format!(
+            "[teamwire:alpha] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close alpha`, which needs no report for a team that never had a member. If a command you started will wake you, stop again."
         )]
     );
 }

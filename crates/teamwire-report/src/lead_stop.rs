@@ -157,7 +157,14 @@ fn afk_note_for(
             return Ok(None);
         }
         let dir = home.join("teams").join(team.as_str()).display().to_string();
-        Ok(Some(if now >= ends {
+        // Close accepts a team that never had a member without a report, so
+        // telling that lead to add a reporter first would be wrong advice.
+        let never_had_a_member = tx.members()?.all_or_corrupt().is_ok_and(|m| m.is_empty());
+        Ok(Some(if never_had_a_member {
+            format!(
+                "[teamwire:{team}] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close {team}`, which needs no report for a team that never had a member. If a command you started will wake you, stop again."
+            )
+        } else if now >= ends {
             format!(
                 "[teamwire:{team}] budget spent at {ends}: finish what is running, write {dir}/afk/REPORT.md, then run `teamwire close {team}`. Start no new implementer. If a command you started will wake you, stop again."
             )

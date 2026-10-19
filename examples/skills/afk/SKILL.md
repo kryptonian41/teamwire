@@ -27,9 +27,11 @@ may stop for the user.
    `teamwire afk start --team <name> --title <title> --task <file>`, with
    `--budget` only when the user named a time limit. When it exits non-zero,
    tell the user what failed and stop.
-3. Reply once with the team name, the report path, the time the budget
-   ends, and: "Keep the lid open and the machine on power." Then start step 2
-   in the same turn. Do not wait for an answer.
+3. Reply once with the team name, the report path and the time the budget
+   ends. Then tell the user, in these words: "Keep the lid open and the
+   machine on power." Only the user can do that: a closed lid sleeps the Mac
+   even with the sleep hold. Then start step 2 in the same turn. Do not wait
+   for an answer.
 
 The run is this one team. Every member you add later joins it with
 `teamwire launch --add`. Never start a second team for this run.
@@ -171,6 +173,10 @@ heading, archives the team with the `afk/` files, keeps the branches and
 releases the sleep hold. When close refuses, reprompt the reporter with the
 missing headings. Then call `PushNotification` with the archived report's
 path if you have that tool.
+
+A team that never had a member has nothing to report, so close accepts it
+without `afk/REPORT.md`. When the run ends before you added anyone, run
+`teamwire close <team>` and say why in your last reply.
 
 A run always ends with a report. When something fails that nobody can fix,
 have the reporter write up what exists. A partial result with an honest
