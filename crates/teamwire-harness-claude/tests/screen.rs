@@ -6,8 +6,7 @@ use teamwire_core::{
     Harness, Occupant, Pid, PlaceState, ScreenState, StartupOutcome, TrustPolicy, one_line,
 };
 use teamwire_fakes::{
-    ESCALATED_TRUST_TEXT, FakeHost, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT,
-    TRUST_OPTION_TEXT,
+    ESCALATED_TRUST_TEXT, FakeHost, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT,
 };
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 

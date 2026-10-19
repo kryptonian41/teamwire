@@ -324,7 +324,12 @@ fn slow_answer_failing(
 }
 
 /// `slow_answer` with the escalation lines drawn from read `from` on.
-fn late_escalation(from: u32) -> (Result<StartupOutcome, teamwire_core::HarnessError>, Vec<Key>) {
+fn late_escalation(
+    from: u32,
+) -> (
+    Result<StartupOutcome, teamwire_core::HarnessError>,
+    Vec<Key>,
+) {
     let dir = tempfile::tempdir().unwrap();
     let dialog = SlowDialog::new(0, 0);
     dialog.state.lock().unwrap().escalate_from = Some(from);

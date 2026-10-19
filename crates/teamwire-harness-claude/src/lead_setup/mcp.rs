@@ -102,7 +102,9 @@ fn without_url_secrets(word: &str) -> String {
     };
     let rest = rest.split(['?', '#']).next().unwrap_or_default();
     let (authority, path) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
-    let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
     format!("{scheme}://{host}{path}")
 }
 
