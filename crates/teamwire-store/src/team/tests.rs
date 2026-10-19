@@ -260,3 +260,66 @@ fn sleep_hold_is_recorded_and_cleared() {
     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
     assert_eq!(team.sleep_hold, None);
 }
+
+fn refs(list: &[&str]) -> Vec<String> {
+    list.iter().map(|r| (*r).to_owned()).collect()
+}
+
+#[test]
+fn a_team_without_refs_holds_none() {
+    let f = created();
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert!(team.refs.is_empty());
+}
+
+#[test]
+fn set_refs_stores_them_in_order_and_writes_no_event() {
+    let mut f = created();
+    f.store
+        .write(|tx| tx.set_refs(&refs(&["GKA-580", "#1"])))
+        .unwrap();
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(team.refs, ["GKA-580", "#1"]);
+    assert_eq!(count_events(&f.store, EventType::TeamRefsAdded), 0);
+}
+
+#[test]
+fn add_refs_appends_only_new_refs_and_names_them_in_the_event() {
+    let mut f = created();
+    f.store
+        .write(|tx| tx.set_refs(&refs(&["GKA-580", "#1"])))
+        .unwrap();
+    let added = f
+        .store
+        .write(|tx| tx.add_refs(at(1), &refs(&["#1", "#2", "#2", "GKA-9"])))
+        .unwrap();
+    assert_eq!(added, ["#2", "GKA-9"]);
+    let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+    assert_eq!(team.refs, ["GKA-580", "#1", "#2", "GKA-9"]);
+    let event = last_event(&f.store);
+    assert_eq!(event.kind, EventType::TeamRefsAdded);
+    assert_eq!(event.subject, Some(team.ulid));
+    assert_eq!(event.data, json!({ "added": ["#2", "GKA-9"] }));
+}
+
+#[test]
+fn add_refs_with_nothing_new_writes_no_event() {
+    let mut f = created();
+    f.store.write(|tx| tx.set_refs(&refs(&["#1"]))).unwrap();
+    let added = f
+        .store
+        .write(|tx| tx.add_refs(at(1), &refs(&["#1"])))
+        .unwrap();
+    assert!(added.is_empty());
+    assert_eq!(count_events(&f.store, EventType::TeamRefsAdded), 0);
+}
+
+#[test]
+fn add_refs_without_a_team_is_refused() {
+    let mut f = fixture();
+    let result = f.store.write(|tx| tx.add_refs(at(1), &refs(&["#1"])));
+    assert!(
+        matches!(result, Err(StoreError::Constraint(_))),
+        "{result:?}"
+    );
+}

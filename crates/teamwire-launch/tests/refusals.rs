@@ -441,7 +441,8 @@ fn bad_refs_refused_and_repeats_dropped() {
     );
     let plan = rig.validate(&ok, false).unwrap();
     assert_eq!(plan.spec.refs.len(), 4, "the exact repeat is dropped");
-    assert_eq!(plan.spec.refs[..2], ["GKA-580", "#3772"]);
+    assert_eq!(plan.spec.refs.first().map(String::as_str), Some("GKA-580"));
+    assert_eq!(plan.spec.refs.get(1).map(String::as_str), Some("#3772"));
 
     let bad = common::with(
         team_spec("demo", &members),

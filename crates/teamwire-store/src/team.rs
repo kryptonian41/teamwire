@@ -45,6 +45,10 @@ pub struct TeamRow {
     pub lead_route: LeadRoute,
     pub sleep_hold: Option<HoldInfo>,
     pub created_at: Timestamp,
+    /// The tickets the team works on, in the order they were recorded. Empty
+    /// for a team launched without refs and for a database older than
+    /// schema version 5.
+    pub refs: Vec<String>,
 }
 
 /// How a close ended.
@@ -59,7 +63,14 @@ pub enum CloseEnd {
 
 const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id, lead_kind, \
      lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
-     closing_pid_started_at";
+     closing_pid_started_at, refs";
+
+/// A read-only view of a version-4 database shows `refs` as NULL.
+fn refs_from_column(text: Option<String>) -> Result<Vec<String>, String> {
+    text.map_or(Ok(Vec::new()), |t| {
+        serde_json::from_str(&t).map_err(|e| bad("refs", e))
+    })
+}
 
 fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
     let pid = |i| -> Result<Option<Pid>, String> {
@@ -87,6 +98,7 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
         lead_route: parsed(row, 9, "lead route", LeadRoute::parse)?,
         sleep_hold,
         created_at: ts(row, 12)?,
+        refs: refs_from_column(col(row, 14)?)?,
     })
 }
 
@@ -224,6 +236,46 @@ impl Tx<'_> {
             &json!({ "step": "clear_stale_lock", "outcome": "cleared" }),
         )?;
         Ok(true)
+    }
+
+    /// Sets the refs column of the team row. The first launch calls it in the
+    /// transaction that creates the row; the `team.created` event carries the
+    /// same list, so no event is written here.
+    pub fn set_refs(&self, refs: &[String]) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE team SET refs = ?1 WHERE id = 1",
+            [json!(refs).to_string()],
+        )?;
+        exactly_one(rows, "team")
+    }
+
+    /// Appends the refs the team does not hold yet, in the given order, and
+    /// writes `team.refs_added` with the ones it appended. Returns them. A
+    /// call that adds nothing writes no event. A ref is never removed.
+    pub fn add_refs(&self, at: Timestamp, refs: &[String]) -> Result<Vec<String>, StoreError> {
+        let Some(team) = self.reader().team()? else {
+            return Err(StoreError::Constraint("no such team".to_owned()));
+        };
+        let mut all = team.refs;
+        let mut added: Vec<String> = Vec::new();
+        for r in refs {
+            if !all.contains(r) {
+                all.push(r.clone());
+                added.push(r.clone());
+            }
+        }
+        if added.is_empty() {
+            return Ok(added);
+        }
+        self.set_refs(&all)?;
+        self.record_event(
+            at,
+            EventType::TeamRefsAdded,
+            None,
+            Some(&team.ulid),
+            &json!({ "added": added }),
+        )?;
+        Ok(added)
     }
 
     /// Records a new lead session (`teamwire lead --adopt`) and returns the
