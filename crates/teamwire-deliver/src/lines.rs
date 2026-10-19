@@ -85,6 +85,12 @@ pub fn message_line(
 /// `teamwire inbox` and answers a question from its own team; the lead has
 /// no inbox and no `TEAMWIRE_TEAM`, so its line points at the stored copy
 /// `comms_path` and its answer command names the team and `--from lead`.
+/// When `comms_written` is false that copy is missing or out of date, so the
+/// pointer says so and names the command that rewrites it.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one part of the typed line; a struct would only rename them"
+)]
 pub fn message_line_to(
     team: &TeamName,
     id: &DisplayId,
@@ -93,6 +99,7 @@ pub fn message_line_to(
     body: &str,
     reader: &Recipient,
     comms_path: &Path,
+    comms_written: bool,
 ) -> OneLine {
     let Recipient::Lead = reader else {
         return message_line(team, id, kind, sender, body);
@@ -101,6 +108,12 @@ pub fn message_line_to(
     let team_name = clean(team.as_str());
     let id_text = clean(id.as_str());
     let reminder = peer_reminder(sender, "a team member");
+    let path = one_line(&comms_path.display().to_string(), PATH_CHARS);
+    let pointer = if comms_written {
+        path.into_string()
+    } else {
+        format!("{path} (not written; run teamwire verify {team_name} --repair-files)")
+    };
     let tail = if kind == MessageType::Question {
         format!(
             "{reminder} Answer with: teamwire send {team_name} --from lead --to {sender_name} --type answer --re {id_text} --text \"...\""
@@ -111,10 +124,7 @@ pub fn message_line_to(
     one_line(
         &format!(
             "[teamwire:{team_name} msg {id_text} {kind} from {sender_name}] {} {tail}",
-            excerpt_with_pointer(
-                body,
-                one_line(&comms_path.display().to_string(), PATH_CHARS).as_str()
-            ),
+            excerpt_with_pointer(body, &pointer),
             kind = clean(kind.as_str()),
         ),
         LINE_CHARS,

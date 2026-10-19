@@ -152,6 +152,10 @@ pub(crate) fn deliver_one(
         .join(team.as_str())
         .join("comms")
         .join(format!("{}.md", message.display_id));
+    // A failed write leaves the copy missing or holding an older text, and
+    // the lead must not read either as this message.
+    let comms_written = *recipient != Recipient::Lead
+        || std::fs::read(&comms_path).is_ok_and(|b| b == message.body.as_bytes());
     let line = message_line_to(
         team,
         &message.display_id,
@@ -160,6 +164,7 @@ pub(crate) fn deliver_one(
         &message.body,
         recipient,
         &comms_path,
+        comms_written,
     );
     let party = match recipient {
         Recipient::Lead => Party::Lead,

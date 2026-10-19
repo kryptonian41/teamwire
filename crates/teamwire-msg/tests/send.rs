@@ -520,6 +520,33 @@ fn a_comms_write_failure_does_not_lose_the_message_or_stop_delivery() {
 }
 
 #[test]
+fn a_comms_copy_that_was_not_written_is_named_as_such_in_the_lead_line() {
+    let mut rig = team_rig();
+    rig.platform
+        .fail_writes(Some(teamwire_core::PlatformError::new(
+            teamwire_core::PlatformErrorCode::NoSpace,
+            "disk full",
+        )));
+    let lead_place = teamwire_core::Place {
+        host: teamwire_core::HostId::from_static("fake"),
+        id: "p1".to_owned(),
+    };
+    let req = rig.request(
+        "web",
+        &["lead"],
+        MessageType::Finding,
+        &format!("the finding {}", "and more ".repeat(40)),
+    );
+    send(&mut rig.ctx(), req).unwrap();
+    let typed = rig.host.submitted(&lead_place);
+    let line = typed.last().expect("a line typed into the lead's place");
+    assert!(
+        line.contains("comms/m001.md (not written; run teamwire verify alpha --repair-files)"),
+        "{line}"
+    );
+}
+
+#[test]
 fn replaced_recipient_is_not_delivered() {
     let mut rig = team_rig();
     // The recipient's session is gone: the locator finds no live process.
