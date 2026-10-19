@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, ScreenState, one_line};
+use teamwire_core::{
+    Harness, Occupant, Pid, PlaceState, ScreenState, StartupOutcome, TrustPolicy, one_line,
+};
 use teamwire_fakes::{
-    ESCALATED_TRUST_TEXT, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT,
+    ESCALATED_TRUST_TEXT, FakeHost, FakePlatform, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT,
 };
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
@@ -158,11 +160,52 @@ fn an_idle_box_is_a_prompt_whatever_the_footer_says() {
 }
 
 #[test]
-fn typed_text_in_the_box_keeps_it_a_prompt() {
+fn delivery_waits_while_the_box_holds_text_and_the_trust_step_still_sees_a_prompt() {
     for footer in IDLE_FOOTERS {
         let screen = real_box("❯ fix the lint errors", footer);
-        assert_eq!(state(&screen), ScreenState::InputPrompt, "{footer}");
+        assert_eq!(state(&screen), ScreenState::Unknown, "{footer}");
+        // The trust step reads the same box as the input prompt: no dialog.
+        let host = FakeHost::new();
+        let place = host.add_place(
+            "tw_demo_api",
+            PlaceState::Blocked,
+            Occupant {
+                session: None,
+                pids: vec![Pid::new(1)],
+            },
+        );
+        host.set_screen(&place, &screen);
+        let got = claude().answer_startup(&host, &place, TrustPolicy::Accept);
+        assert_eq!(got.unwrap(), StartupOutcome::NoDialog, "{footer}");
+        assert!(host.keys_sent(&place).is_empty(), "{footer}");
     }
+}
+
+#[test]
+fn text_typed_after_the_placeholder_still_waits() {
+    for typed in [
+        "❯ Try \"fix the lint errors\" now",
+        "❯ Try \"fix the lint errors\" and \"the tests\"",
+    ] {
+        let screen = real_box(typed, "? for shortcuts");
+        assert_eq!(state(&screen), ScreenState::Unknown, "{typed}");
+    }
+}
+
+#[test]
+fn the_box_check_for_guarded_hosts_sees_typed_text_only() {
+    let c = claude();
+    assert!(c.reads_input_box());
+    let typed = real_box("❯ fix the lin", "? for shortcuts");
+    assert!(c.box_holds_text(&typed));
+    // A working session draws its box too; text typed there also waits.
+    assert!(c.box_holds_text(&real_box("❯ fix the lin", "esc to interrupt")));
+    assert!(!c.box_holds_text(&real_box("❯", "? for shortcuts")));
+    assert!(!c.box_holds_text(&real_box(
+        "❯ Try \"fix the lint errors\"",
+        "? for shortcuts"
+    )));
+    assert!(!c.box_holds_text(BOX));
 }
 
 #[test]

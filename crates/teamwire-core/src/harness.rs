@@ -67,6 +67,18 @@ pub trait Harness: Send + Sync {
     fn line_pending(&self, _tail: &str, _line: &OneLine) -> bool {
         false
     }
+    /// Whether `box_holds_text` can tell anything. Delivery on a host that
+    /// guards dialogs reads the screen only when it can, so a harness that
+    /// cannot costs no extra read. Default `false`.
+    fn reads_input_box(&self) -> bool {
+        false
+    }
+    /// Whether the input box shown by `tail` already holds text, such as a
+    /// line a person half typed. Delivery waits while it does, on every host.
+    /// The default is `false`: a harness that cannot tell types as before.
+    fn box_holds_text(&self, _tail: &str) -> bool {
+        false
+    }
     /// Handle a startup dialog on the member's screen, if the harness has one.
     fn answer_startup(
         &self,

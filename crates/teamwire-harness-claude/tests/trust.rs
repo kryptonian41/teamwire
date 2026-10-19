@@ -151,6 +151,10 @@ struct Slow {
     /// Reads made so far, and the errors that replace given reads (1-based).
     reads: u32,
     fail_reads: Vec<(u32, HostError)>,
+    /// The read (1-based) from which the dialog also shows its escalation
+    /// lines, as when a capture caught the first frame half drawn.
+    escalate_from: Option<u32>,
+    escalated: bool,
 }
 
 impl SlowDialog {
@@ -168,6 +172,8 @@ impl SlowDialog {
                 chosen: None,
                 reads: 0,
                 fail_reads: Vec::new(),
+                escalate_from: None,
+                escalated: false,
             }),
         };
         dialog.render(0);
@@ -176,10 +182,15 @@ impl SlowDialog {
 
     fn render(&self, cursor: usize) {
         let mark = |i: usize| if i == cursor { "❯" } else { " " };
+        let extra = if self.state.lock().unwrap().escalated {
+            format!("\n{ESCALATED_TRUST_TEXT}")
+        } else {
+            String::new()
+        };
         self.host.set_screen(
             &self.place,
             &format!(
-                "Quick safety check: Is this a project you created or one you trust?\n {} No, exit\n {} {TRUST_OPTION_TEXT}\n Enter to confirm · Esc to cancel",
+                "Quick safety check: Is this a project you created or one you trust?{extra}\n {} No, exit\n {} {TRUST_OPTION_TEXT}\n Enter to confirm · Esc to cancel",
                 mark(0),
                 mark(1)
             ),
@@ -212,6 +223,13 @@ impl Host for SlowDialog {
         let nth = st.reads;
         if let Some(at) = st.fail_reads.iter().position(|(n, _)| *n == nth) {
             return Err(st.fail_reads.remove(at).1);
+        }
+        if st.escalate_from == Some(nth) {
+            st.escalated = true;
+            let shown = st.shown;
+            drop(st);
+            self.render(shown);
+            st = self.state.lock().unwrap();
         }
         st.reads_since_change += 1;
         if st.shown != st.cursor && st.reads_since_change > st.lag {
@@ -303,6 +321,43 @@ fn slow_answer_failing(
     let keys = dialog.host.keys_sent(&dialog.place);
     let chosen = dialog.state.lock().unwrap().chosen;
     (got, keys, chosen)
+}
+
+/// `slow_answer` with the escalation lines drawn from read `from` on.
+fn late_escalation(
+    from: u32,
+) -> (
+    Result<StartupOutcome, teamwire_core::HarnessError>,
+    Vec<Key>,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let dialog = SlowDialog::new(0, 0);
+    dialog.state.lock().unwrap().escalate_from = Some(from);
+    let got = claude_in(dir.path())
+        .with_startup_poll(StartupPoll {
+            step: Duration::from_millis(1),
+            steps: 12,
+        })
+        .answer_startup(&dialog, &dialog.place.clone(), TrustPolicy::Accept);
+    (got, dialog.host.keys_sent(&dialog.place))
+}
+
+#[test]
+fn escalation_lines_drawn_after_the_first_read_are_refused_before_any_key() {
+    let (got, keys) = late_escalation(2);
+    assert_eq!(got.unwrap(), StartupOutcome::RefusedEscalated);
+    assert!(keys.is_empty(), "nothing is typed into an escalated dialog");
+}
+
+#[test]
+fn escalation_lines_seen_after_the_enter_are_an_error_that_says_trust_was_given() {
+    // Reads 1-3 show the plain dialog and lead to Down, then Enter. Read 4
+    // shows the dialog again with its escalation lines.
+    let (got, keys) = late_escalation(4);
+    let err = got.unwrap_err();
+    assert_eq!(err.code, HarnessErrorCode::Refused);
+    assert!(err.detail.contains("now trusts this folder"), "{err}");
+    assert_eq!(keys, [Key::Down, Key::Enter]);
 }
 
 #[test]

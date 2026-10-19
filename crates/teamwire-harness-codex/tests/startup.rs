@@ -249,7 +249,7 @@ fn the_pointer_is_moved_back_to_the_trusting_option_first() {
 fn the_refuse_policy_types_nothing_into_the_trust_dialog() {
     let first = format!("{TRUST_TEXT}\n{TRUST}");
     let (got, keys) = run(&first, &[], TrustPolicy::Refuse, 5);
-    assert_eq!(got.unwrap(), StartupOutcome::RefusedEscalated);
+    assert_eq!(got.unwrap_err().code, HarnessErrorCode::Refused);
     assert!(keys.is_empty());
 }
 
