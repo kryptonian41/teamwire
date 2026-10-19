@@ -6,7 +6,10 @@
 //! which lines are wrong. The lead reads the lines at each integration.
 //!
 //! Invariants: the diff is the working tree against the merge-base, so
-//! committed and uncommitted changes are both seen.
+//! committed and uncommitted changes are both seen. Renames are not
+//! detected: a moved file shows as a removal at the old path and an addition
+//! at the new one. Untracked files are listed separately, since a diff never
+//! shows them.
 
 use std::path::Path;
 
@@ -38,8 +41,13 @@ const WEAKENING_ATTRS: &[&str] = &[
 
 pub(crate) fn check_base(root: &Path, base: &str, found: &mut Findings) -> Result<()> {
     let merge_base = git(root, &["merge-base", base, "HEAD"])?.trim().to_owned();
-    let names = git(root, &["diff", "--name-only", &merge_base])?;
-    for path in names.lines().filter(|p| is_protected(p)) {
+    let changed = git(root, &["diff", "--name-only", "--no-renames", &merge_base])?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard"])?;
+    for path in changed
+        .lines()
+        .chain(untracked.lines())
+        .filter(|p| is_protected(p))
+    {
         found.notes.push(format!("PROTECTED-CHANGED {path}"));
     }
     let diff = git(root, &["diff", "-U0", &merge_base, "--", "*.rs"])?;
@@ -260,6 +268,33 @@ mod tests {
                 "PROTECTED-CHANGED tests/fakes/src/lib.rs",
             ]
         );
+    }
+
+    /// Commit a file on `main` and bring it into `work`, so `work` can change it.
+    fn commit_on_main(root: &Path, path: &str, text: &str) {
+        git_ok(root, &["checkout", "-q", "main"]);
+        write(root, path, text);
+        git_ok(root, &["add", "."]);
+        git_ok(root, &["commit", "-q", "-m", "on main"]);
+        git_ok(root, &["checkout", "-q", "work"]);
+        git_ok(root, &["merge", "-q", "main"]);
+    }
+
+    #[test]
+    fn a_protected_file_moved_away_is_reported_at_its_old_path() {
+        let dir = committed_workspace();
+        commit_on_main(dir.path(), "clippy.toml", "x = 1\n");
+        git_ok(dir.path(), &["mv", "clippy.toml", "docs/clippy-old.toml"]);
+        git_ok(dir.path(), &["commit", "-q", "-m", "move"]);
+        assert_eq!(report(dir.path()), ["PROTECTED-CHANGED clippy.toml"]);
+    }
+
+    #[test]
+    fn an_untracked_file_under_a_protected_path_is_reported() {
+        let dir = committed_workspace();
+        write(dir.path(), "scripts/x.sh", "#!/bin/sh\n");
+        write(dir.path(), "docs/other.md", "not protected\n");
+        assert_eq!(report(dir.path()), ["PROTECTED-CHANGED scripts/x.sh"]);
     }
 
     #[test]
