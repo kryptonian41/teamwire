@@ -181,7 +181,7 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
         unreachable!("{changes:?}")
     };
     assert_eq!(dir, &bed.plugin_dir());
-    assert_eq!(files.len(), 6);
+    assert_eq!(files.len(), 7);
     assert_eq!(
         rest,
         [
@@ -208,6 +208,10 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
         .unwrap()
         .contains("## Watch lines")
     );
+    let afk =
+        std::fs::read_to_string(bed.plugin_dir().join("teamwire/skills/afk/SKILL.md")).unwrap();
+    assert!(afk.contains("\nname: afk\n"));
+    assert!(afk.contains("\nmetadata:\n  teamwire-sha256: "));
     let hooks: Value = serde_json::from_str(
         &std::fs::read_to_string(bed.plugin_dir().join("teamwire/hooks/hooks.json")).unwrap(),
     )

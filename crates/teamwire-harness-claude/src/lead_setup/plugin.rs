@@ -11,7 +11,7 @@ use teamwire_core::Command;
 
 use super::mcp::{McpEntry, claude};
 use super::skill;
-use super::skill::REFERENCE_TEXT;
+use super::skill::{AFK_TEXT, REFERENCE_TEXT};
 use super::{LeadSetupError, SKILL_TEXT};
 use crate::ClaudeConfig;
 use crate::launch::shell_word;
@@ -57,6 +57,8 @@ impl PluginFiles {
     fn render_with(dir: &Path, want: &McpEntry, reference: &str) -> Result<Self, String> {
         let skill = skill::stamp(SKILL_TEXT)
             .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
+        let afk = skill::stamp(AFK_TEXT)
+            .ok_or_else(|| "the compiled-in afk skill has no frontmatter".to_owned())?;
         let mut hook_words = vec![shell_word(&want.command)];
         hook_words.extend(want.home_args().iter().map(|a| shell_word(a)));
         hook_words.extend(["hook".to_owned(), "claude-lead-stop".to_owned()]);
@@ -81,6 +83,7 @@ impl PluginFiles {
                 format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
                 reference.to_owned(),
             ),
+            (format!("{PLUGIN_DIR}/skills/afk/SKILL.md"), afk),
         ];
         // The version changes with the content, so `claude plugin update`
         // sees a new binary or skill as a new version and refreshes its copy.
@@ -275,7 +278,7 @@ mod tests {
     }
 
     #[test]
-    fn the_six_files_name_the_binary_and_the_hook() {
+    fn the_seven_files_name_the_binary_and_the_hook() {
         let files = PluginFiles::render(Path::new("/h/claude-plugin"), &want(None)).unwrap();
         let paths: Vec<_> = files
             .files
@@ -291,6 +294,7 @@ mod tests {
                 "teamwire/hooks/hooks.json",
                 "teamwire/skills/teamwire/SKILL.md",
                 "teamwire/skills/teamwire/reference.md",
+                "teamwire/skills/afk/SKILL.md",
             ]
         );
         let market = json_of(&files, ".claude-plugin/marketplace.json");
@@ -310,6 +314,8 @@ mod tests {
                 "timeout": 10}]}]}})
         );
         assert!(file(&files, "teamwire/skills/teamwire/SKILL.md").contains("teamwire-sha256: "));
+        let afk = file(&files, "teamwire/skills/afk/SKILL.md");
+        assert!(afk.contains("\nname: afk\n") && afk.contains("teamwire-sha256: "));
     }
 
     #[test]
