@@ -14,7 +14,7 @@ use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
 use crate::lead_stop::watch_command;
-use crate::note::{gap_note, unread_note};
+use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
 use crate::result_file::{MISSING_FROM_HARNESS, write_current};
@@ -203,7 +203,11 @@ fn hold(
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
     let mut parts = Vec::new();
     if told {
-        parts.push(gap_note(&gaps, &report_file(ctx, &member.role)));
+        parts.push(gap_note(
+            &gaps,
+            &report_file(ctx, &member.role),
+            FIX_THEN_STOP,
+        ));
     }
     if !ids.is_empty() {
         parts.push(unread_note(&ids));
