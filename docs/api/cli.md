@@ -298,7 +298,10 @@ folders `target/` and `node_modules/`, and `TASK.md`. Close still removes the
 worktree.
 
 An AFK team is refused while `afk/REPORT.md` is missing or lacks one of eight
-headings, with `refused: afk_report_incomplete` (exit 1) and the missing names.
+headings. Close prints `REFUSED: afk_report_incomplete: <team dir>/afk/REPORT.md
+is missing; write it with a heading for each of: <the 8 names joined by '; '>`
+or `... has no heading for: <missing names joined by '; '>`, then `nothing was
+changed`, and exits 1. The dry run prints the same `REFUSED` line.
 A heading is a Markdown line that starts with one or more `#` and a space.
 The names are matched in any order, ignoring case, anywhere in the heading
 text, so `## 1. What you asked` counts: What you asked; What I understood; The
