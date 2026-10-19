@@ -165,12 +165,12 @@ the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
 binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
 `unanswered_questions`, and `started_by` and `older_build` per member. An AFK team shows one line
-after the team's header: `afk: budget ends <time>, <duration> left, <n>
+right after the `team <name> "<title>" <state>` header: `afk: budget ends <RFC 3339 ms Z>, <NhMMm|Nm|Ns> left, <n>
 decisions`, or `afk: budget spent at <time>, <n> decisions` once the budget is
 over. `<n>` counts the lines of `afk/decisions.md` that start with `D<number>`
 and whitespace. The team object of `--json` has an `afk` key, `null` for an
 ordinary team and otherwise `{"budget_ends_at": "<RFC 3339>",
-"seconds_left": <int, 0 once spent>, "spent": <bool>, "decisions": <int>}`. `--role R` adds the exact command
+"seconds_left": <int, 0 once spent>, "spent": <bool>, "decisions": <int>}`. `team_status` of the MCP server carries the same key. `--role R` adds the exact command
 to restart that member's session with its per-run configuration (for Claude
 Code: `claude --resume <session-id> --settings ... --mcp-config ...
 --append-system-prompt-file ...`), because a session resumed without them has
