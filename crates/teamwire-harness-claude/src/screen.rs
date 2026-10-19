@@ -202,11 +202,12 @@ fn at_input_prompt(last: &[&str]) -> bool {
 /// typed. Claude's grey suggestion text reads the same as typed text in a
 /// plain capture, so a suggestion also delays a delivery until it clears.
 pub(crate) fn delivery_state(tail: &str) -> ScreenState {
-    match classify(tail) {
-        ScreenState::InputPrompt if last_pointer_text(tail).is_some_and(|t| holds_text(&t)) => {
-            ScreenState::Unknown
-        }
-        state => state,
+    let state = classify(tail);
+    if state == ScreenState::InputPrompt && last_pointer_text(tail).is_some_and(|t| holds_text(&t))
+    {
+        ScreenState::Unknown
+    } else {
+        state
     }
 }
 
