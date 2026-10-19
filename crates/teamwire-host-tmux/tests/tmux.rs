@@ -17,6 +17,10 @@ use teamwire_fakes::contract::{HostSetup, host_contract};
 use server::{PrivateServer, T, request, screen_shows};
 use teamwire_host_tmux::Tmux;
 
+fn name(text: &str) -> Address {
+    Address::parse(text).unwrap()
+}
+
 /// The `%<n>` part of a place id, which is what `TMUX_PANE` holds.
 fn bare(place: &Place) -> &str {
     place.id.split('@').next().unwrap()
@@ -109,7 +113,7 @@ fn list_with_no_server_is_empty_and_a_place_is_gone() {
     };
     assert_eq!(tmux.state(&place, T).unwrap(), PlaceState::Gone);
     assert_eq!(
-        tmux.close(&place, T).unwrap_err().code,
+        tmux.close(&place, &name("tw_t_a"), T).unwrap_err().code,
         HostErrorCode::NotFound
     );
 }
@@ -131,7 +135,7 @@ fn a_session_or_window_name_is_never_a_place() {
         HostErrorCode::NotFound
     );
     assert_eq!(
-        tmux.close(&by_name, T).unwrap_err().code,
+        tmux.close(&by_name, &name("tw_t_a"), T).unwrap_err().code,
         HostErrorCode::NotFound
     );
     assert_eq!(tmux.list(T).unwrap().len(), 1, "nothing was closed");
@@ -253,7 +257,7 @@ fn a_closed_pane_is_gone_and_the_others_stay() {
         .spawn(&request("tw_t_b", dir.path(), &["cat"]), T)
         .unwrap();
     assert_ne!(a, b);
-    tmux.close(&a, T).unwrap();
+    tmux.close(&a, &name("tw_t_a"), T).unwrap();
     assert_eq!(tmux.state(&a, T).unwrap(), PlaceState::Gone);
     assert_eq!(tmux.state(&b, T).unwrap(), PlaceState::Unknown);
     assert_eq!(tmux.list(T).unwrap(), [b]);
@@ -329,13 +333,28 @@ fn close_refuses_a_pane_without_the_teamwire_mark() {
         host: tmux.id(),
         id: id.clone(),
     };
-    let err = tmux.close(&theirs, T).unwrap_err();
+    let err = tmux.close(&theirs, &name("tw_t_a"), T).unwrap_err();
     assert_eq!(err.code, HostErrorCode::NotFound);
     assert!(
         server
             .raw(&["list-panes", "-a", "-F", "#{pane_id}"])
             .contains(&id)
     );
+}
+
+#[test]
+fn close_leaves_a_pane_that_holds_another_members_name() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    // As after a server restart: the id close has on record is now the
+    // pane of another team's member.
+    let reused = tmux
+        .spawn(&request("tw_other_web", dir.path(), &["cat"]), T)
+        .unwrap();
+    let err = tmux.close(&reused, &name("tw_t_a"), T).unwrap_err();
+    assert_eq!(err.code, HostErrorCode::NotFound);
+    assert_eq!(tmux.list(T).unwrap(), [reused]);
 }
 
 #[test]
@@ -464,7 +483,7 @@ fn a_place_records_its_server_and_any_adapter_can_reach_it() {
         assert!(tmux.occupant(&place, T).unwrap().pids.len() == 1);
     }
     teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform))
-        .close(&place, T)
+        .close(&place, &name("tw_t_a"), T)
         .unwrap();
     assert_eq!(server.tmux().list(T).unwrap(), []);
 }

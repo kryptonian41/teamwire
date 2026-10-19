@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HostErrorCode, Member, MemberState, Mode, RunOutput, TeamName};
+use teamwire_core::{Address, HostErrorCode, Member, MemberState, Mode, RunOutput, TeamName};
 use teamwire_store::{Ctx, Party};
 
 use crate::facts::{self, Detached, Rescue};
@@ -88,8 +88,13 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
 }
 
 /// Closes the member's own place through the member's own host (CLS-7).
-/// A place the host no longer knows is closed already.
-pub(crate) fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<String>, String> {
+/// A place the host no longer knows, or one that now holds another agent
+/// (a reused id), is closed already.
+pub(crate) fn close_place(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+) -> Result<Option<String>, String> {
     let Some(place) = &member.place else {
         return Ok(None);
     };
@@ -97,7 +102,7 @@ pub(crate) fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<Strin
     let (_, host) = ctx
         .adapters(&Party::Member(role.clone()))
         .map_err(|e| format!("{role}: {e}"))?;
-    match host.close(place, HOST_TIMEOUT) {
+    match host.close(place, &Address::of(team, role), HOST_TIMEOUT) {
         Ok(()) => Ok(Some(format!("{role}'s place {} closed", place.id))),
         Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
             "{role}'s place {} was already gone",

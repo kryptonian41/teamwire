@@ -808,3 +808,42 @@ fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
     git(cwd, &["commit", "-q", "-m", "more work"]);
     git(cwd, &["rev-parse", "HEAD"])
 }
+
+#[test]
+fn a_reused_place_id_is_not_closed_by_a_removal_with_stop() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("api", MemberKind::Investigator);
+    // As after a tmux server restart: the member's recorded id now names
+    // another team's agent, in a state the host cannot report.
+    let old = rig.place_of("api");
+    let mine = teamwire_core::Address::parse(&format!("tw_{}_api", rig::TEAM)).unwrap();
+    rig.host
+        .close(&old, &mine, std::time::Duration::ZERO)
+        .unwrap();
+    rig.host.add_place_with_id(
+        old.id,
+        "tw_other_web",
+        PlaceState::Unknown,
+        teamwire_core::Occupant {
+            session: None,
+            pids: Vec::new(),
+        },
+    );
+    let report = remove(
+        &mut rig,
+        "api",
+        CloseOpts {
+            stop: true,
+            ..CloseOpts::default()
+        },
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        rig.host
+            .live_agent_names(std::time::Duration::ZERO)
+            .unwrap(),
+        ["tw_other_web"],
+        "{report:?}"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}

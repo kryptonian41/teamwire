@@ -11,8 +11,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    Harness, HarnessErrorCode, Host, HostCaps, HostError, HostErrorCode, HostId, Key, NoHost,
-    Occupant, OneLine, Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
+    Address, Harness, HarnessErrorCode, Host, HostCaps, HostError, HostErrorCode, HostId, Key,
+    NoHost, Occupant, OneLine, Pid, Place, PlaceState, SpawnRequest, StartupOutcome, TrustPolicy,
 };
 use teamwire_fakes::{
     ClaudeScript, ESCALATED_TRUST_TEXT, FakeHerdrEnv, FakeHost, FakePlatform, Fault,
@@ -253,8 +253,8 @@ impl Host for SlowDialog {
         }
         Ok(())
     }
-    fn close(&self, p: &Place, t: Duration) -> Result<(), HostError> {
-        self.host.close(p, t)
+    fn close(&self, p: &Place, name: &Address, t: Duration) -> Result<(), HostError> {
+        self.host.close(p, name, t)
     }
     fn list(&self, t: Duration) -> Result<Vec<Place>, HostError> {
         self.host.list(t)
@@ -442,7 +442,7 @@ struct HerdrCli<'a> {
 impl HerdrCli<'_> {
     fn unsupported() -> HostError {
         NoHost
-            .close(
+            .state(
                 &Place {
                     host: HostId::from_static("none"),
                     id: String::new(),
@@ -505,7 +505,7 @@ impl Host for HerdrCli<'_> {
         }
         Ok(())
     }
-    fn close(&self, _p: &Place, _t: Duration) -> Result<(), HostError> {
+    fn close(&self, _p: &Place, _name: &Address, _t: Duration) -> Result<(), HostError> {
         Err(Self::unsupported())
     }
     fn list(&self, _t: Duration) -> Result<Vec<Place>, HostError> {

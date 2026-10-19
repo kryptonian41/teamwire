@@ -13,9 +13,9 @@ use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::{
-    Actor, DeliveryState, Event, EventType, HarnessCaps, HarnessId, Host, HostCaps, HostError,
-    HostId, Key, MemberKind, MessageType, Mode, Occupant, OneLine, Place, PlaceState, Recipient,
-    Registry, Role, Route, SpawnRequest, TurnEnd, Ulid,
+    Actor, Address, DeliveryState, Event, EventType, HarnessCaps, HarnessId, Host, HostCaps,
+    HostError, HostId, Key, MemberKind, MessageType, Mode, Occupant, OneLine, Place, PlaceState,
+    Recipient, Registry, Role, Route, SpawnRequest, TurnEnd, Ulid,
 };
 use teamwire_fakes::{FakeHarness, FakeHost};
 use teamwire_store::{CompletionRecord, DeliveryUpdate, NewMember, NewMessage, Party};
@@ -262,9 +262,9 @@ impl Host for WrapHost {
         (self.before)("send_keys", timeout);
         self.inner.send_keys(place, keys, timeout)
     }
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
         (self.before)("close", timeout);
-        self.inner.close(place, timeout)
+        self.inner.close(place, expected, timeout)
     }
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError> {
         (self.before)("list", timeout);

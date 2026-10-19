@@ -21,7 +21,7 @@ use std::time::Duration;
 use common::{Rig, member_row, pane_member, team_spec, with};
 use serde_json::json;
 use teamwire_core::{
-    Clock, Host, Liveness, MemberState, Pid, PlaceState, Role, SessionId, SessionKind,
+    Address, Clock, Host, Liveness, MemberState, Pid, PlaceState, Role, SessionId, SessionKind,
 };
 use teamwire_launch::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 use teamwire_store::{Ctx, Store};
@@ -64,7 +64,13 @@ fn closed_team(rig: &Rig, roles: &[&str]) -> Store {
 
 fn close_tab(rig: &Rig, store: &Store, role_name: &str) {
     let place = member_row(store, role_name).unwrap().place.unwrap();
-    rig.host.close(&place, T).unwrap();
+    rig.host
+        .close(
+            &place,
+            &Address::parse(&format!("tw_demo_{role_name}")).unwrap(),
+            T,
+        )
+        .unwrap();
 }
 
 fn run(rig: &Rig, store: &mut Store, opts: &ReopenOpts) -> Result<ReopenReport, ReopenError> {
@@ -617,9 +623,9 @@ fn a_lead_whose_folder_is_the_home_directory_is_refused_and_nothing_is_spawned()
 }
 
 /// A launched team whose session is dead but whose recorded tab is still
-/// listed, under a name no agent uses any more (a bare shell the dead
-/// session left behind). The fake host refuses a second agent under a live
-/// name, so the real tab is closed and the shell tab is recorded instead.
+/// listed under the member's name (a bare shell the dead session left
+/// behind). The fake host frees the name of a place whose agent is gone, so
+/// the real tab is closed and a gone tab under the same name is recorded.
 fn dead_session_in_a_live_tab(rig: &Rig) -> (Store, teamwire_core::Place) {
     rig.harness
         .set_session_cwd(sid("lead-session"), rig.work.path());
@@ -628,10 +634,16 @@ fn dead_session_in_a_live_tab(rig: &Rig) -> (Store, teamwire_core::Place) {
     let row = member_row(&store, "api").unwrap();
     rig.harness
         .set_liveness(&row.session_id.unwrap(), Liveness::Dead);
-    rig.host.close(&row.place.unwrap(), T).unwrap();
+    rig.host
+        .close(
+            &row.place.unwrap(),
+            &Address::parse("tw_demo_api").unwrap(),
+            T,
+        )
+        .unwrap();
     let shell = rig.host.add_place(
-        "left-over-shell",
-        PlaceState::Idle,
+        "tw_demo_api",
+        PlaceState::Gone,
         teamwire_core::Occupant {
             session: None,
             pids: vec![Pid::new(4242)],

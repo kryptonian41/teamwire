@@ -25,7 +25,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Pid, Place,
+    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Pid, Place,
     PlaceState, Platform, SpawnRequest, SubmitAck,
 };
 
@@ -462,21 +462,21 @@ impl Host for Tmux {
         Ok(())
     }
 
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
         let pane = Self::pane(place)?;
         // After a tmux server restart the pane ids start again at `%0`, so a
-        // recorded id can name a pane that is not ours. Only a pane this
-        // adapter marked is killed.
+        // recorded id can name another member's pane. Only the pane this
+        // adapter marked with the expected name is killed.
         let format = format!("#{{{NAME_OPTION}}}");
         let mark = self.run_at(
             &pane,
             &["display-message", "-p", "-t", pane.id, &format],
             timeout,
         )?;
-        if mark.trim().is_empty() {
+        if mark.trim() != expected.as_str() {
             return Err(HostError::new(
                 HostErrorCode::NotFound,
-                format!("{} is not a pane teamwire started", pane.id),
+                format!("{} is not {expected}'s pane", pane.id),
             ));
         }
         self.run_at(&pane, &["kill-pane", "-t", pane.id], timeout)?;
@@ -587,6 +587,30 @@ mod tests {
             Some("%4")
         );
         assert_eq!(tmux.place_from_env(&env(&[("TMUX", "/x,1,0")])), None);
+    }
+
+    #[test]
+    fn close_leaves_a_pane_marked_with_another_name() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(Ok(ok("tw_other_web\n")));
+        let tmux = Tmux::new(platform.clone());
+        let place = Place {
+            host: tmux.id(),
+            id: "%0".to_owned(),
+        };
+        let mine = Address::parse("tw_demo_api").unwrap();
+        let err = tmux
+            .close(&place, &mine, Duration::from_secs(5))
+            .unwrap_err();
+        assert_eq!(err.code, HostErrorCode::NotFound);
+        let runs = platform.runs();
+        assert_eq!(runs.len(), 1, "only the mark was read: {runs:?}");
+        assert!(
+            !runs
+                .iter()
+                .any(|(c, _)| c.args.iter().any(|a| a == "kill-pane")),
+            "{runs:?}"
+        );
     }
 
     #[test]

@@ -87,7 +87,7 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
     let mut left = false;
     let mut notes = Vec::new();
     if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
-        match host.close(place, HOST_TIMEOUT) {
+        match host.close(place, &m.address, HOST_TIMEOUT) {
             Ok(()) => notes.push(format!("place {} closed", place.id)),
             Err(e) if e.code == HostErrorCode::NotFound => {
                 notes.push(format!("place {} was already gone", place.id));

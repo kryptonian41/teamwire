@@ -1377,3 +1377,34 @@ fn the_unpushed_note_names_the_branch_head_is_on() {
         ["api: branch other has no upstream; 1 commit(s) exist only on this machine"]
     );
 }
+
+#[test]
+fn a_reused_place_id_is_not_closed_by_a_whole_team_close() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("api", MemberKind::Investigator);
+    // As after a tmux server restart: the member's recorded id now names an
+    // idle agent of another team.
+    let old = rig.place_of("api");
+    let mine = teamwire_core::Address::parse(&format!("tw_{}_api", rig::TEAM)).unwrap();
+    rig.host
+        .close(&old, &mine, std::time::Duration::ZERO)
+        .unwrap();
+    rig.host.add_place_with_id(
+        old.id,
+        "tw_other_web",
+        PlaceState::Idle,
+        teamwire_core::Occupant {
+            session: None,
+            pids: Vec::new(),
+        },
+    );
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(rig.team().state, TeamState::Closed);
+    assert_eq!(
+        rig.host
+            .live_agent_names(std::time::Duration::ZERO)
+            .unwrap(),
+        ["tw_other_web"]
+    );
+}
