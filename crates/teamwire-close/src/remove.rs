@@ -187,16 +187,15 @@ pub(crate) fn run(
         )),
         Busy::Idle => {}
     }
-    if let Some(branch) = member.branch.as_ref().filter(|b| {
-        !member
-            .repo
-            .as_deref()
-            .is_some_and(|r| git::branch_is_gone(ctx.platform, r, b))
-    }) {
-        report.branches_kept.push(branch.clone());
-        report
-            .unpushed
-            .extend(crate::member_close::unpushed(ctx, member, branch));
+    match crate::member_close::kept_branches(ctx, &team.name, member, false) {
+        Ok(kept) => {
+            report.branches_kept.extend(kept.branches);
+            report.unpushed.extend(kept.unpushed);
+        }
+        Err(why) => {
+            report.refusals.push(why);
+            return report;
+        }
     }
     let member = member.clone();
     // The lock is read inside a write transaction, so a close that took it

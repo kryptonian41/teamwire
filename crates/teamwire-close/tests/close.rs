@@ -1199,3 +1199,157 @@ fn a_branch_the_user_deleted_is_not_reported_kept() {
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert!(report.branches_kept.is_empty(), "{report:?}");
 }
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+/// An implementer that detached its HEAD and committed there: the commit is
+/// on no branch, tag or remote ref. Returns the commit's sha.
+fn detached_commit(rig: &mut Rig) -> String {
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    std::fs::write(api.cwd.join("lib.rs"), "fn a() {}\n").unwrap();
+    git(&api.cwd, &["add", "-A"]);
+    git(&api.cwd, &["commit", "-q", "-m", "work on a detached head"]);
+    git(&api.cwd, &["rev-parse", "HEAD"])
+}
+
+fn rescue_name(sha: &str) -> String {
+    format!(
+        "teamwire/rescue/{}-api-{}",
+        rig::TEAM,
+        sha.get(..7).unwrap_or(sha)
+    )
+}
+
+#[test]
+fn commits_on_a_detached_head_get_a_rescue_branch_and_the_close_finishes() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let api = rig.member("api");
+    let rescue = rescue_name(&sha);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(git(&rig.repo, &["rev-parse", &rescue]), sha);
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue.clone()]);
+    assert_ne!(
+        git(&rig.repo, &["for-each-ref", "--contains", &sha]),
+        "",
+        "the commit is on a ref"
+    );
+    // The note names the branch that holds the commits, not the recorded one.
+    assert_eq!(
+        report.unpushed,
+        [format!(
+            "api: branch {rescue} has no upstream; 1 commit(s) exist only on this machine"
+        )]
+    );
+}
+
+#[test]
+fn a_rescue_name_taken_at_another_commit_moves_on_to_dash_two() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    git(&rig.repo, &["branch", &rescue, "main"]);
+    let main = git(&rig.repo, &["rev-parse", "main"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let second = format!("{rescue}-2");
+    assert_eq!(git(&rig.repo, &["rev-parse", &second]), sha);
+    assert_eq!(
+        git(&rig.repo, &["rev-parse", &rescue]),
+        main,
+        "the existing branch did not move"
+    );
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), second]);
+}
+
+#[test]
+fn a_rescue_branch_already_at_the_commit_is_reused() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    git(&rig.repo, &["branch", &rescue, &sha]);
+    let before = git(&rig.repo, &["for-each-ref", "--format=%(refname)"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        git(&rig.repo, &["for-each-ref", "--format=%(refname)"]),
+        before,
+        "no new ref"
+    );
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue]);
+}
+
+#[test]
+fn the_dry_run_names_the_rescue_branch_and_creates_none() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    let before = git(&rig.repo, &["for-each-ref", "--format=%(refname)"]);
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert!(plan.refusals.is_empty(), "{plan:?}");
+    let kept = plan.steps.iter().find(|s| s.step == "branches_kept");
+    assert_eq!(
+        kept.map(|s| s.detail.clone()),
+        Some(format!("br-api, {rescue}")),
+        "{plan:?}"
+    );
+    assert_eq!(
+        git(&rig.repo, &["for-each-ref", "--format=%(refname)"]),
+        before
+    );
+}
+
+#[test]
+fn a_detached_head_that_no_rescue_name_fits_refuses_and_keeps_the_worktree() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let api = rig.member("api");
+    // A branch named `teamwire` blocks every `teamwire/...` name.
+    git(&rig.repo, &["branch", "teamwire", "main"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        asks(&report.refusals, "no rescue branch name is free"),
+        "{report:?}"
+    );
+    assert!(asks(&report.refusals, &sha[..7]), "{report:?}");
+    assert!(api.cwd.is_dir());
+    assert_eq!(rig.team().state, TeamState::Open);
+}
+
+#[test]
+fn a_detached_head_another_ref_holds_gets_no_rescue_branch() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(report.branches_kept, ["br-api"]);
+    assert_eq!(
+        git(
+            &rig.repo,
+            &["for-each-ref", "--format=%(refname)", "refs/heads/teamwire"]
+        ),
+        ""
+    );
+}
+
+#[test]
+fn the_unpushed_note_names_the_branch_head_is_on() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "-b", "other"]);
+    std::fs::write(api.cwd.join("lib.rs"), "fn a() {}\n").unwrap();
+    git(&api.cwd, &["add", "-A"]);
+    git(&api.cwd, &["commit", "-q", "-m", "work on another branch"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        report.unpushed,
+        ["api: branch other has no upstream; 1 commit(s) exist only on this machine"]
+    );
+}

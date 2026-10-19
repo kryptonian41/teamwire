@@ -557,7 +557,8 @@ fn the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_not
             "unverified",
             "close_place",
             "remove_worktree",
-            "mark_removed"
+            "mark_removed",
+            "branches_kept"
         ]
     );
     assert_eq!(rig.member("api").state, MemberState::Started);
@@ -713,5 +714,31 @@ fn a_removed_members_deleted_branch_is_not_reported_kept() {
     git(&rig.repo, &["branch", "-D", "br-api"]);
     let report = remove(&mut rig, "api", CloseOpts::default());
     assert!(report.refusals.is_empty(), "{report:?}");
-    assert!(report.branches_kept.is_empty(), "{report:?}");
+    assert!(
+        !report.branches_kept.iter().any(|b| b == "br-api"),
+        "{report:?}"
+    );
+    // The deleted branch held the HEAD commit, so a rescue branch keeps it now.
+    assert_eq!(report.branches_kept.len(), 1, "{report:?}");
+}
+
+#[test]
+fn removing_a_member_on_a_detached_head_keeps_its_commits_on_a_rescue_branch() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let sha = commit_more(&rig, "api", "detached.rs");
+    verify_at(&mut rig, "api", &sha, "PASS", &[]);
+    let rescue = format!(
+        "teamwire/rescue/{}-api-{}",
+        rig::TEAM,
+        sha.get(..7).unwrap_or(&sha)
+    );
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(git(&rig.repo, &["rev-parse", &rescue]), sha);
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue]);
+    assert_ne!(git(&rig.repo, &["for-each-ref", "--contains", &sha]), "");
 }
