@@ -18,6 +18,21 @@ case "${1:-full}" in
   *) echo "usage: scripts/gate.sh [fast]" >&2; exit 3 ;;
 esac
 
+# The ref that tidy compares against: $TEAMWIRE_BASE, else a local main, else
+# origin/main (a fresh clone has only the remote branch).
+base="${TEAMWIRE_BASE:-}"
+if [ -z "$base" ]; then
+  if git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+    base=main
+  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    base=origin/main
+  else
+    echo "gate: no local main and no origin/main; set TEAMWIRE_BASE to the ref to compare against" >&2
+    exit 1
+  fi
+fi
+echo "gate: base: $base"
+
 log="$(mktemp -t teamwire-gate.XXXXXX)"
 trap 'rm -f "$log"' EXIT
 
@@ -36,7 +51,7 @@ step() {
 }
 
 step 1 fmt cargo fmt --all -- --check
-step 2 tidy cargo xtask tidy --base main
+step 2 tidy cargo xtask tidy --base "$base"
 step 3 clippy cargo clippy --workspace --all-targets --locked -- -D warnings
 if [ "$last" -eq 3 ]; then
   exit 0

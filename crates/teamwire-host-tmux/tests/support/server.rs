@@ -8,6 +8,10 @@ use teamwire_core::{Address, Command, Host, Platform, SpawnRequest};
 use teamwire_fakes::NoTmuxConfig;
 use teamwire_host_tmux::Tmux;
 
+/// The budget of one tmux call. A loaded machine takes seconds to start a
+/// freshly built test binary, and the limit only guards against a hang.
+pub(crate) const T: Duration = Duration::from_secs(60);
+
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) struct PrivateServer {
@@ -38,7 +42,7 @@ impl PrivateServer {
         let cmd = Command::new("tmux")
             .args(["-L", &self.socket])
             .args(args.iter().copied());
-        let out = self.platform.run(&cmd, Duration::from_secs(10)).unwrap();
+        let out = self.platform.run(&cmd, T).unwrap();
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 }
@@ -47,9 +51,7 @@ impl PrivateServer {
 /// Killing a server leaves it behind, so `Drop` removes it. Only the socket
 /// this value made is ever named.
 fn socket_file(platform: &dyn Platform, socket: &str) -> Option<std::path::PathBuf> {
-    let out = platform
-        .run(&Command::new("id").arg("-u"), Duration::from_secs(10))
-        .ok()?;
+    let out = platform.run(&Command::new("id").arg("-u"), T).ok()?;
     let uid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     let base =
         std::env::var_os("TMUX_TMPDIR").map_or_else(|| "/tmp".into(), std::path::PathBuf::from);
@@ -59,7 +61,7 @@ fn socket_file(platform: &dyn Platform, socket: &str) -> Option<std::path::PathB
 impl Drop for PrivateServer {
     fn drop(&mut self) {
         let cmd = Command::new("tmux").args(["-L", &self.socket, "kill-server"]);
-        drop(self.platform.run(&cmd, Duration::from_secs(10)));
+        drop(self.platform.run(&cmd, T));
         if let Some(file) = socket_file(self.platform.as_ref(), &self.socket) {
             drop(std::fs::remove_file(file));
         }
@@ -79,7 +81,7 @@ pub(crate) fn request(name: &str, dir: &std::path::Path, argv: &[&str]) -> Spawn
 /// Looks at the pane's screen every 50 ms until `text` shows, up to 5 s.
 pub(crate) fn screen_shows(host: &dyn Host, place: &teamwire_core::Place, text: &str) -> bool {
     for _ in 0..100 {
-        let tail = host.read_tail(place, 50, Duration::from_secs(10)).unwrap();
+        let tail = host.read_tail(place, 50, T).unwrap();
         if tail.contains(text) {
             return true;
         }

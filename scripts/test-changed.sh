@@ -1,15 +1,12 @@
-  base="$(git merge-base main HEAD)" || exit 1
-  tracked="$(git diff --name-only "$base")" || exit 1
-  untracked="$(git ls-files --others --exclude-standard)" || exit 1
-  files="$tracked
-$untracked"#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Test run for the inner loop: the tests of the changed crates and of every
 # workspace crate that depends on them, dev-dependencies included, and nothing
 # else. The full gate (scripts/gate.sh) still runs at the end of each wave.
 #   scripts/test-changed.sh <crate>...      those crates and their dependents
 #   scripts/test-changed.sh                 the crates with files that differ
-#                                           from main (committed, staged,
-#                                           unstaged and untracked)
+#                                           from the base (committed, staged,
+#                                           unstaged and untracked): $TEAMWIRE_BASE,
+#                                           else main, else origin/main
 #   scripts/test-changed.sh --dry-run ...   print the package list and the
 #                                           commands, build nothing
 # Plain `cargo test`, not nextest: see docs/conventions.md section 2. Written
@@ -55,16 +52,30 @@ if [ -n "$args" ]; then
 else
   # A failing git command must not read as "no changed files": git prints its
   # own message to stderr, and the script stops.
-  base="$(git merge-base main HEAD)" || exit 1
+  # The ref to compare against: $TEAMWIRE_BASE, else a local main, else
+  # origin/main (a fresh clone has only the remote branch).
+  base="${TEAMWIRE_BASE:-}"
+  if [ -z "$base" ]; then
+    if git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+      base=main
+    elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+      base=origin/main
+    else
+      echo "test-changed: no local main and no origin/main; set TEAMWIRE_BASE to the ref to compare against" >&2
+      exit 1
+    fi
+  fi
+  echo "test-changed: base: $base"
+  base="$(git merge-base "$base" HEAD)" || exit 1
   tracked="$(git diff --name-only "$base")" || exit 1
   untracked="$(git ls-files --others --exclude-standard)" || exit 1
   files="$tracked
 $untracked"
   # A file belongs to the member whose directory prefixes its path. Two
   # directories outside every crate are still read by crates: examples/ is
-  # embedded by include_str! in teamwire-cli (presets) and
-  # teamwire-harness-claude (the skill), and the tests of teamwire-cli read
-  # docs/api/mcp.md.
+  # embedded by include_str! in teamwire-cli (presets), teamwire-harness-claude
+  # (the skill) and teamwire-harness-codex (the Codex lead skill and the shared
+  # skill), and the tests of teamwire-cli read docs/api/mcp.md.
   changed="$(
     echo "$files" | while read -r f; do
       [ -n "$f" ] || continue
@@ -72,6 +83,7 @@ $untracked"
       if [ "${f#examples/}" != "$f" ]; then
         echo teamwire-cli
         echo teamwire-harness-claude
+        echo teamwire-harness-codex
       elif [ "${f#docs/}" != "$f" ]; then
         echo teamwire-cli
       fi

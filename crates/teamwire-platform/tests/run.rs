@@ -7,10 +7,15 @@ use teamwire_platform::{SystemClock, native};
 
 const LONG: Duration = Duration::from_secs(20);
 
-/// The timeout for a test whose shell must reach a line before the timeout
-/// kills it. On a busy machine a process start has taken over a second, and
-/// a shorter timeout kills the shell before that line runs.
-const TIMES_OUT: Duration = Duration::from_secs(3);
+/// The timeouts, in order, for a test whose shell must reach a line before
+/// the timeout kills it. On a busy machine a process start has taken seconds,
+/// so a test tries the next, longer timeout when the shell was killed too
+/// early. Every attempt still has to time out.
+const TIMES_OUT: [Duration; 3] = [
+    Duration::from_secs(3),
+    Duration::from_secs(10),
+    Duration::from_secs(30),
+];
 
 fn sh(script: &str) -> Command {
     Command::new("/bin/sh").arg("-c").arg(script)
@@ -134,14 +139,19 @@ fn a_missing_program_is_not_found() {
 
 #[test]
 fn timeout_reports_124_and_keeps_partial_output() {
-    let started = SystemClock.monotonic();
-    let out = native()
-        .run(&sh("echo before; sleep 60"), TIMES_OUT)
-        .unwrap();
-    assert!(out.timed_out);
-    assert_eq!(out.exit_code, 124);
-    assert_eq!(out.stdout, b"before\n");
-    assert!(started.elapsed() < Duration::from_secs(10));
+    let mut stdout = Vec::new();
+    for timeout in TIMES_OUT {
+        let started = SystemClock.monotonic();
+        let out = native().run(&sh("echo before; sleep 60"), timeout).unwrap();
+        assert!(out.timed_out);
+        assert_eq!(out.exit_code, 124);
+        assert!(started.elapsed() < timeout + Duration::from_secs(10));
+        stdout = out.stdout;
+        if stdout == b"before\n" {
+            break;
+        }
+    }
+    assert_eq!(stdout, b"before\n");
 }
 
 #[test]
@@ -150,11 +160,17 @@ fn timeout_kills_process_group() {
     let pids = dir.path().join("pids");
     // The shell starts a grandchild, records both pids, and hangs.
     let script = format!("sleep 60 & echo $$ $! > {}; wait", pids.display());
-    let out = native().run(&sh(&script), TIMES_OUT).unwrap();
-    assert!(out.timed_out);
-    assert_eq!(out.exit_code, 124);
-
-    let text = std::fs::read_to_string(&pids).unwrap();
+    let mut text = String::new();
+    for timeout in TIMES_OUT {
+        drop(std::fs::remove_file(&pids));
+        let out = native().run(&sh(&script), timeout).unwrap();
+        assert!(out.timed_out);
+        assert_eq!(out.exit_code, 124);
+        text = std::fs::read_to_string(&pids).unwrap_or_default();
+        if text.split_whitespace().count() == 2 {
+            break;
+        }
+    }
     let parsed: Vec<u32> = text
         .split_whitespace()
         .map(|p| p.parse().unwrap())

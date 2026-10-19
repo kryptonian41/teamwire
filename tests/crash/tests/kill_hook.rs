@@ -11,6 +11,7 @@
 )]
 #![expect(
     clippy::unwrap_used,
+    clippy::indexing_slicing,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
 
@@ -98,10 +99,17 @@ fn kill9_between_delivering_and_outcome_delivers_once_more() {
 fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
     let mut rng = rig::Rng::from_env("kill9_of_the_stop_hook_at_random_points");
     let rig = team();
-    record_done(&rig, "warm-up");
-    let started = Instant::now();
-    stop_hook(&rig);
-    let window = started.elapsed() * 13 / 10;
+    // The median of three, so one slow first start does not stretch the window.
+    let mut times: Vec<Duration> = (0..3)
+        .map(|_| {
+            record_done(&rig, "warm-up");
+            let started = Instant::now();
+            stop_hook(&rig);
+            started.elapsed()
+        })
+        .collect();
+    times.sort();
+    let window = times[1] * 13 / 10;
     eprintln!("kill window {window:?}");
 
     let mut interrupted = 0;
@@ -125,6 +133,8 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         // recovery; a kill while the completion is still `Pending` claimed nothing.
         if state == ReportState::Delivering {
             interrupted += 1;
+        } else if state == ReportState::Pending {
+            assert_eq!(typed, 0, "{summary} was typed but is still pending");
         }
         assert!(
             matches!(
@@ -139,7 +149,16 @@ fn kill9_of_the_stop_hook_at_random_points_leaves_nothing_delivering() {
         assert_eq!(latest_state(&rig), ReportState::Delivered, "{summary}");
         assert_eq!(delivering(&rig), 0);
         let typed = rig.typed_count(&summary);
-        assert!((1..=2).contains(&typed), "{summary} typed {typed} times");
+        // Only a kill after the claim can have typed it before the stop.
+        let allowed = if state == ReportState::Delivering {
+            1..=2
+        } else {
+            1..=1
+        };
+        assert!(
+            allowed.contains(&typed),
+            "{summary} ({state:?}) typed {typed} times"
+        );
     }
     eprintln!("{interrupted} of {KILL_POINTS} hooks were killed while delivering");
     assert!(

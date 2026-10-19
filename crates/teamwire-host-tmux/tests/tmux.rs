@@ -14,10 +14,8 @@ use std::time::Duration;
 use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnRequest, one_line};
 use teamwire_fakes::contract::{HostSetup, host_contract};
 
-use server::{PrivateServer, request, screen_shows};
+use server::{PrivateServer, T, request, screen_shows};
 use teamwire_host_tmux::Tmux;
-
-const T: Duration = Duration::from_secs(10);
 
 /// The `%<n>` part of a place id, which is what `TMUX_PANE` holds.
 fn bare(place: &Place) -> &str {
@@ -39,6 +37,7 @@ fn passes_host_contract_on_a_private_socket() {
     let mut setup = HostSetup::new(&tmux, &make);
     setup.echoes_input = true;
     setup.lists_agent_names = false;
+    setup.timeout = T;
     host_contract(&setup);
 }
 
