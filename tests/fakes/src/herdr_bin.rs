@@ -104,6 +104,30 @@ fn is_read(command: &str) -> bool {
     )
 }
 
+/// The file in a pane directory that holds the process group of the shell
+/// step `fake-claude` is running, if it runs one.
+pub(crate) const STEP_FILE: &str = "step.pgid";
+
+/// Ends the agent process of a pane and the shell step it is running. Does
+/// nothing for an agent that exited, whose pid may belong to someone else.
+pub(crate) fn end_agent(state_path: &Path, pane_id: &str, pid: u32) {
+    if agent_exited(state_path, pane_id) {
+        return;
+    }
+    fsutil::terminate(pid);
+    let dir = state::pane_dir(state_path, pane_id);
+    let step = fsutil::read_text(&dir.join(STEP_FILE)).and_then(|t| t.trim().parse().ok());
+    if let Some(step) = step {
+        fsutil::terminate(step);
+    }
+}
+
+/// True when the pane's agent wrote `exited`. Its recorded pid may belong to
+/// an unrelated process by now, so nothing signals it.
+pub(crate) fn agent_exited(state_path: &Path, pane_id: &str) -> bool {
+    pane_files::read_status(&state::pane_dir(state_path, pane_id)).0 == "exited"
+}
+
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|v| !v.is_empty())
@@ -186,7 +210,13 @@ pub fn run(argv: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let fault_file = env_path("FAKE_HERDR_FAULTS").map(|p| faults::load(&p));
+    let fault_file = match env_path("FAKE_HERDR_FAULTS").map(|p| faults::load(&p)) {
+        Some(Err(e)) => {
+            print_err(&command, &fail("fake_misconfigured", e));
+            return ExitCode::from(2);
+        }
+        other => other.and_then(Result::ok),
+    };
     let fault = fault_file
         .as_ref()
         .and_then(|f| faults::take(f, &mut state, &command, args.operand(0)));

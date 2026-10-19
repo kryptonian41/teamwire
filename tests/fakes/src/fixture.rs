@@ -348,15 +348,19 @@ impl Drop for FakeHerdrEnv {
         let Ok(doc) = serde_json::from_str::<Value>(&text) else {
             return;
         };
-        let pids = doc
-            .get("panes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|p| p.pointer("/agent/pid").and_then(Value::as_u64))
-            .filter_map(|p| u32::try_from(p).ok());
-        for pid in pids {
-            fsutil::terminate(pid);
+        let panes = doc.get("panes").and_then(Value::as_array);
+        for pane in panes.into_iter().flatten() {
+            let pid = pane
+                .pointer("/agent/pid")
+                .and_then(Value::as_u64)
+                .and_then(|p| u32::try_from(p).ok());
+            let id = pane
+                .get("pane_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Some(pid) = pid {
+                crate::herdr_bin::end_agent(&self.state_path(), id, pid);
+            }
         }
     }
 }

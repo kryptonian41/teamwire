@@ -835,3 +835,89 @@ fn agents_end_once_the_owner_lock_is_released() {
         std::thread::sleep(Duration::from_millis(50));
     }
 }
+
+/// A step that never returns holds the agent in `run_shell`. When the owner
+/// is gone, the agent ends the step's process group and exits.
+#[test]
+fn a_blocking_step_ends_soon_after_the_owner_lock_is_released() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    let pid_file = env.root().join("blocker.pid");
+    env.set_script(&ClaudeScript {
+        turns: vec![vec![Step::Run(format!(
+            "echo $$ > {}; while :; do sleep 1; done",
+            pid_file.display()
+        ))]],
+        ..ClaudeScript::default()
+    })
+    .unwrap();
+    let lock_path = env.root().join("test-owner.lock");
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    lock.lock().unwrap();
+    let lock_var = lock_path.display().to_string();
+    let settings = settings_with(&env, LOGGING_HOOK, &identity());
+    let pane_id = pane(&env);
+    let started = env
+        .run_with(
+            &[
+                "agent",
+                "start",
+                "tw_demo_api",
+                "--kind",
+                "claude",
+                "--pane",
+                &pane_id,
+                "--timeout",
+                "20000",
+                "--",
+                "-n",
+                "tw_demo_api",
+                "--settings",
+                &settings,
+            ],
+            &[("FAKE_OWNER_LOCK", &lock_var)],
+        )
+        .unwrap();
+    assert_eq!(started.code, Some(0), "{started:?}");
+    let sent = env.run(&["agent", "prompt", "tw_demo_api", "go"]).unwrap();
+    assert_eq!(sent.code, Some(0), "{sent:?}");
+    let begun = Instant::now();
+    while !pid_file.exists() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the step never ran"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let blocker = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .to_owned();
+
+    drop(lock);
+    let begun = Instant::now();
+    while !env.session_files().is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the agent outlived its owner inside a blocking step"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // The step's shell went with it. A killed child that nobody waits for
+    // lingers as a zombie, but its parent is gone, so init reaps it.
+    for _ in 0..50 {
+        let alive = std::process::Command::new("kill")
+            .args(["-0", &blocker])
+            .status()
+            .is_ok_and(|s| s.success());
+        if !alive {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    panic!("the step shell {blocker} outlived its agent");
+}

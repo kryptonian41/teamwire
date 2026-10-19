@@ -210,12 +210,17 @@ exit 1. A syntax error (wrong number of operands, `--kind` or `--pane` missing
 on `agent start`, an unknown command) prints herdr's usage text
 (`usage: herdr agent get <target>`, `missing required --kind`,
 `unknown command: ..`) on stderr and exits 2, before the call reaches the
-state or the log. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
+state or the log. So does a flag the real command lacks (`agent list
+--no-such-flag`) and a value outside herdr 0.9.3's set (`agent read --source`
+takes `visible`, `recent`, `recent-unwrapped` or `detection`; `--format` takes
+`text` or `ansi`; `--until` takes a status). `agent read` also accepts
+`--strip-ansi`, which herdr's help does not list. The info objects (`AgentInfo`, `PaneInfo`, `TabInfo`,
 `WorkspaceInfo`) carry the fields of `herdr api schema --json` (protocol 22).
 Result types: `agent_started` (with `argv`), `agent_info`, `agent_list`,
 `agent_prompted`, `pane_info`, `pane_list`, `workspace_created|info|list`,
 `tab_created|info`, and `ok` for `send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
-means the fake itself is broken (no `FAKE_HERDR_STATE`).
+means the fake itself is broken: no `FAKE_HERDR_STATE`, or a `FAKE_HERDR_FAULTS`
+file that is missing, is not valid JSON, or has a key the fake does not know.
 
 `agent start <name> --kind claude --pane <pane> [--timeout ms] -- <claude args>`
 starts `fake-claude` (or `$FAKE_CLAUDE_BIN`) in the pane with a **cleared
@@ -356,7 +361,12 @@ names a directory, so it can never write into the real `~/.claude`.
   lock on that file. When the lock is free or the file is gone, the agent
   exits as on `/exit`. The kernel frees the lock however the test process
   ends, so this works after a SIGKILL, when `FakeHerdrEnv`'s `Drop` never
-  runs. Without the variable the agent never checks.
+  runs. Without the variable the agent never checks. A `run` step or a hook
+  that is still going when the owner ends is stopped too: each runs in a
+  process group of its own, and the agent ends that group.
+- `FakeHerdrEnv`'s `Drop` and `pane close` end an agent and the shell step it
+  is running, except when the pane's `status.json` says `exited`: the pid may
+  belong to another process by then.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 

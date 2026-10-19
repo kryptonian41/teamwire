@@ -895,6 +895,95 @@ fn syntax_errors_print_usage_and_exit_two() {
 }
 
 #[test]
+fn flags_and_values_herdr_refuses_exit_two_with_the_usage_line() {
+    let env = FakeHerdrEnv::new().unwrap();
+    for (args, usage) in [
+        (
+            &["agent", "list", "--no-such-flag"][..],
+            "usage: herdr agent list",
+        ),
+        (
+            &["agent", "read", "x", "--source", "bogus-source"][..],
+            "usage: herdr agent read <target>",
+        ),
+        (
+            &["agent", "prompt", "x", "hi", "--until", "asleep"][..],
+            "usage: herdr agent prompt <target> <text>",
+        ),
+        (
+            &["pane", "close", "w1:p1", "--wait"][..],
+            "usage: herdr pane close <pane>",
+        ),
+    ] {
+        let out = env.run(args).unwrap();
+        assert_eq!(out.code, Some(2), "{args:?}: {out:?}");
+        assert!(out.stderr.contains(usage), "{args:?}: {out:?}");
+        assert!(out.stdout.is_empty());
+    }
+    assert!(env.calls().is_empty());
+}
+
+#[test]
+fn the_flags_the_adapter_and_herdr_accept_are_accepted() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    for source in ["visible", "recent", "recent-unwrapped", "detection"] {
+        let out = env
+            .run(&[
+                "agent",
+                "read",
+                "tw_demo_api",
+                "--source",
+                source,
+                "--lines",
+                "5",
+            ])
+            .unwrap();
+        assert_eq!(out.code, Some(0), "{source}: {out:?}");
+    }
+    let out = env
+        .run(&[
+            "agent",
+            "read",
+            "tw_demo_api",
+            "--format",
+            "text",
+            "--strip-ansi",
+            "--ansi",
+        ])
+        .unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+}
+
+#[test]
+fn a_malformed_or_missing_faults_file_is_a_misconfiguration() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let bad = env.write_file("bad-faults.json", "{\"rules\": [").unwrap();
+    let typo = env
+        .write_file(
+            "typo-faults.json",
+            r#"{"rules":[{"cmd":"agent list","tims":1,"action":"hang"}]}"#,
+        )
+        .unwrap();
+    let missing = env.root().join("no-such-faults.json");
+    for path in [bad, typo, missing] {
+        let out = env
+            .run_with(
+                &["agent", "list"],
+                &[("FAKE_HERDR_FAULTS", &path.display().to_string())],
+            )
+            .unwrap();
+        assert_eq!(out.code, Some(2), "{path:?}: {out:?}");
+        assert_eq!(
+            out.error_code().as_deref(),
+            Some("fake_misconfigured"),
+            "{path:?}: {out:?}"
+        );
+    }
+}
+
+#[test]
 fn an_empty_prompt_is_refused_before_the_agent_is_looked_up() {
     let env = FakeHerdrEnv::new().unwrap();
     let out = env.run(&["agent", "prompt", "nobody", ""]).unwrap();
@@ -1020,4 +1109,58 @@ fn a_call_waits_for_a_held_state_lock_and_runs_when_it_is_released() {
         drop(held);
         assert_eq!(call.join().unwrap().code, Some(0));
     });
+}
+
+/// Puts a `sleep` the test owns in the pane as its agent, with a status file
+/// that says the agent exited, as a pid the system has reused would look.
+fn pane_with_an_exited_agent_on_a_sleep(env: &FakeHerdrEnv) -> (String, std::process::Child) {
+    let pane_id = pane(env, "/tmp");
+    let sleeper = std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .unwrap();
+    let mut state: Value =
+        serde_json::from_str(&std::fs::read_to_string(env.state_path()).unwrap()).unwrap();
+    state["panes"][0]["agent"] = serde_json::json!({
+        "name": "tw_demo_api", "kind": "claude", "pid": sleeper.id(),
+        "session_hint": null, "fixed": false,
+    });
+    std::fs::write(env.state_path(), state.to_string()).unwrap();
+    let dir = env
+        .root()
+        .join("fake-herdr-panes")
+        .join(pane_id.replace(':', "_"));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("status.json"), r#"{"status":"exited","seq":3}"#).unwrap();
+    (pane_id, sleeper)
+}
+
+/// True when the child still runs. `kill -0` would say yes for a child that
+/// was killed and not yet waited for.
+fn is_running(child: &mut std::process::Child) -> bool {
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    child.try_wait().unwrap().is_none()
+}
+
+#[test]
+fn dropping_the_world_leaves_a_process_alone_when_its_pane_says_exited() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let (_, mut sleeper) = pane_with_an_exited_agent_on_a_sleep(&env);
+    drop(env);
+    let alive = is_running(&mut sleeper);
+    sleeper.kill().unwrap();
+    sleeper.wait().unwrap();
+    assert!(alive, "the drop signalled a pid whose agent had exited");
+}
+
+#[test]
+fn pane_close_leaves_a_process_alone_when_its_pane_says_exited() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let (pane_id, mut sleeper) = pane_with_an_exited_agent_on_a_sleep(&env);
+    let out = env.run(&["pane", "close", &pane_id]).unwrap();
+    let alive = is_running(&mut sleeper);
+    sleeper.kill().unwrap();
+    sleeper.wait().unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(alive, "pane close signalled a pid whose agent had exited");
 }
