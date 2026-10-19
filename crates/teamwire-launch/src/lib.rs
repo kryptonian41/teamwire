@@ -40,7 +40,7 @@ use teamwire_store::Ctx;
 
 pub use contract::{ContractParts, render_contract};
 pub use env::ValidateEnv;
-pub use hold::ensure_hold;
+pub use hold::{ensure_hold, lead_process};
 pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 pub use spec::parse_spec;
 pub use validate::{check_title, new_team_lead, validate};

@@ -36,6 +36,19 @@ struct Bed {
     work: tempfile::TempDir,
     repo: tempfile::TempDir,
     path: String,
+    /// `HERDR_ENV=1` in the command's environment.
+    herdr: bool,
+    /// The process the session file names as the lead, once `healthy`.
+    lead: Option<std::process::Child>,
+}
+
+impl Drop for Bed {
+    fn drop(&mut self) {
+        if let Some(lead) = &mut self.lead {
+            drop(lead.kill());
+            drop(lead.wait());
+        }
+    }
 }
 
 impl Bed {
@@ -46,6 +59,8 @@ impl Bed {
             work: tempfile::tempdir().unwrap(),
             repo: tempfile::tempdir().unwrap(),
             path: "/usr/bin:/bin".to_owned(),
+            herdr: true,
+            lead: None,
         };
         let status = std::process::Command::new("git")
             .args(["init", "-q"])
@@ -66,9 +81,33 @@ impl Bed {
             )
             .unwrap();
             bed.install_lead_setup();
+            bed.start_lead_process();
             return bed;
         }
         bed
+    }
+
+    /// A live process, and the session file that names it as the process of
+    /// the lead session: what `afk start` finds to hold the sleep on.
+    fn start_lead_process(&mut self) {
+        let child = std::process::Command::new("sleep")
+            .arg("600")
+            .spawn()
+            .unwrap();
+        let sessions = self.claude.path().join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+        let file = serde_json::json!({"pid": child.id(), "sessionId": SESSION});
+        std::fs::write(
+            sessions.join(format!("{}.json", child.id())),
+            file.to_string(),
+        )
+        .unwrap();
+        self.lead = Some(child);
+    }
+
+    /// Takes the session file away, so the lead's process cannot be found.
+    fn forget_lead_process(&self) {
+        std::fs::remove_dir_all(self.claude.path().join("sessions")).unwrap();
     }
 
     fn task(&self) -> PathBuf {
@@ -120,9 +159,11 @@ impl Bed {
             .args(args)
             .current_dir(self.repo.path())
             .env_clear()
-            .env("HERDR_ENV", "1")
             .env("PATH", &self.path)
             .env("TEAMWIRE_CLAUDE_DIR", self.claude.path());
+        if self.herdr {
+            cmd.env("HERDR_ENV", "1");
+        }
         if let Some(session) = session {
             cmd.env("CLAUDE_CODE_SESSION_ID", session);
         }
@@ -313,6 +354,8 @@ fn a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task() {
     let row = store.read(|tx| tx.team()).unwrap().unwrap();
     assert_eq!(row.title, "Overnight");
     assert_eq!(row.lead_session, Some(SessionId::parse(SESSION).unwrap()));
+    // The hold runs on the lead's process wherever the platform has one.
+    assert_eq!(row.sleep_hold.is_some(), cfg!(target_os = "macos"));
     let ends = row.afk_budget_ends_at.unwrap();
     let left = ends.saturating_since(row.created_at);
     assert!(
@@ -343,4 +386,22 @@ fn the_budget_option_sets_the_end() {
         left <= Duration::from_secs(90 * 60) && left > Duration::from_secs(89 * 60),
         "{left:?}"
     );
+}
+
+#[test]
+fn a_start_without_a_host_is_refused_before_anything_is_made() {
+    let mut bed = Bed::new(true);
+    bed.herdr = false;
+    refused(&bed.start_run("run", &[]), "no_host");
+    assert!(bed.nothing_made("run"));
+}
+
+/// Only a platform with a sleep hold needs the lead's process.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_start_that_cannot_find_the_leads_process_is_refused_before_anything_is_made() {
+    let bed = Bed::new(true);
+    bed.forget_lead_process();
+    refused(&bed.start_run("run", &[]), "no_lead_process");
+    assert!(bed.nothing_made("run"));
 }

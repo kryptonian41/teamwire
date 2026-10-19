@@ -7,7 +7,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Clock, Config, SessionId, TeamName, TeamState, Timestamp};
-use teamwire_launch::{LeadPlan, SpecError, ValidateEnv, check_title, ensure_hold, new_team_lead};
+use teamwire_launch::{
+    LeadPlan, SpecError, ValidateEnv, check_title, ensure_hold, lead_process, new_team_lead,
+};
 use teamwire_store::{Ctx, NewTeam, Store, database_path, team_names};
 
 use crate::cmd::doctor::{self, Host, Level};
@@ -100,6 +102,27 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     // 3. The checks of `teamwire doctor`.
     if let Err(code) = doctor_gate(&home, global, wiring) {
         return code;
+    }
+
+    // The hold is step 6, but a run that cannot take it must not start: find
+    // the lead's process now, while nothing exists yet.
+    if wiring.platform.sleep_hold().is_some() {
+        let mut notes = Vec::new();
+        let found = lead
+            .session
+            .as_ref()
+            .and_then(|(s, _)| lead_process(&wiring.registry, &lead.harness, s, &mut notes));
+        if found.is_none() {
+            return refuse(
+                "no_lead_process",
+                &format!(
+                    "no sleep hold can be taken: {}",
+                    notes
+                        .first()
+                        .map_or("the lead's process was not found", String::as_str)
+                ),
+            );
+        }
     }
 
     // 4 to 6. The team, the task copy and the hold.
@@ -268,6 +291,24 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
     let mut warnings = Vec::new();
     let lead = (&new.lead.harness, new.lead.session.as_ref().map(|(s, _)| s));
     ensure_hold(ctx, new.team, lead, &mut warnings);
+    // A platform with no sleep hold at all only warns; anywhere else, a run
+    // without a recorded hold would let the machine sleep under it.
+    #[expect(
+        clippy::redundant_closure_for_method_calls,
+        reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+    )]
+    let held = ctx
+        .store
+        .read(|tx| tx.team())
+        .ok()
+        .flatten()
+        .is_some_and(|t| t.sleep_hold.is_some());
+    if !held && ctx.platform.sleep_hold().is_some() {
+        return Err(format!(
+            "the sleep hold could not be taken: {}",
+            warnings.join("; ")
+        ));
+    }
     Ok(warnings)
 }
 
@@ -333,8 +374,17 @@ mod tests {
 
     /// Runs `create` for team `run` on fakes where the lead is process 4242.
     fn created(task: &[u8]) -> (TestHome, Store, FakePlatform) {
+        let (home, store, platform, result) = run_create(FakePlatform::new(), task);
+        let warnings = result.unwrap();
+        assert!(warnings.is_empty(), "{warnings:?}");
+        (home, store, platform)
+    }
+
+    fn run_create(
+        platform: FakePlatform,
+        task: &[u8],
+    ) -> (TestHome, Store, FakePlatform, Result<Vec<String>, String>) {
         let home = TestHome::new().unwrap();
-        let platform = FakePlatform::new();
         let harness = Arc::new(FakeHarness::new());
         harness.set_session_cwd(session(), "/work/lead");
         harness.add_session(
@@ -354,7 +404,7 @@ mod tests {
             .checked_add(Duration::from_secs(8 * 3600))
             .unwrap();
         let config = Config::default();
-        let warnings = create(
+        let result = create(
             &mut Ctx {
                 home: home.path(),
                 store: &mut store,
@@ -370,10 +420,8 @@ mod tests {
                 task,
                 ends,
             },
-        )
-        .unwrap();
-        assert!(warnings.is_empty(), "{warnings:?}");
-        (home, store, platform)
+        );
+        (home, store, platform, result)
     }
 
     #[test]
@@ -402,6 +450,21 @@ mod tests {
         let data = &events.first().unwrap().data;
         assert_eq!(data.get("lead_cwd").unwrap(), "/work/lead");
         assert_eq!(data.get("afk_budget_ends_at").unwrap(), &ends.to_string());
+    }
+
+    #[test]
+    fn a_hold_that_cannot_be_taken_is_an_error_after_the_team_exists() {
+        let platform = FakePlatform::new();
+        platform.fail_hold_start(Some(teamwire_core::PlatformError::new(
+            teamwire_core::PlatformErrorCode::Io,
+            "no caffeinate",
+        )));
+        let (_home, store, _, result) = run_create(platform, b"x");
+        let why = result.unwrap_err();
+        assert!(why.contains("sleep hold could not be taken"), "{why}");
+        assert!(why.contains("no caffeinate"), "{why}");
+        let row = store.read(|tx| tx.team()).unwrap().unwrap();
+        assert_eq!(row.sleep_hold, None);
     }
 
     #[test]

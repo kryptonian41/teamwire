@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HarnessId, HoldInfo, Pid, SessionId, TeamName, TeamState};
+use teamwire_core::{HarnessId, HoldInfo, Pid, Registry, SessionId, TeamName, TeamState};
 use teamwire_store::{Ctx, Store};
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -27,7 +27,7 @@ pub fn ensure_hold(
     let (harness, Some(session)) = lead else {
         return;
     };
-    let Some(lead_pid) = lead_process(ctx, harness, session, warnings) else {
+    let Some(lead_pid) = lead_process(ctx.registry, harness, session, warnings) else {
         return;
     };
     let mine = team_of(ctx.store).and_then(|t| t.sleep_hold);
@@ -62,15 +62,15 @@ pub fn ensure_hold(
     }
 }
 
-/// The lead's harness process, found from the lead's session.
-fn lead_process(
-    ctx: &Ctx<'_>,
+/// The lead's harness process, found from the lead's session. Every way it
+/// can be missing is said in `warnings`.
+pub fn lead_process(
+    registry: &Registry,
     harness: &HarnessId,
     session: &SessionId,
     warnings: &mut Vec<String>,
 ) -> Option<Pid> {
-    let found = ctx
-        .registry
+    let found = registry
         .harness(harness)
         .map_err(|e| e.to_string())
         .and_then(|h| {

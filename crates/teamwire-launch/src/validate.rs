@@ -298,6 +298,14 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     if session.kind == SessionKind::Background {
         return Err(background_lead());
     }
+    if env.lead_host.as_str() == teamwire_core::NoHost::ID {
+        return Err(SpecError::new(
+            None,
+            None,
+            "no_host",
+            "host none cannot start a member; v1 needs herdr or tmux",
+        ));
+    }
     lead_plan(env, None, Some((session.id, session.kind)))
 }
 
