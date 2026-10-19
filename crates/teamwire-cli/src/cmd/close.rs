@@ -14,7 +14,7 @@ use crate::{CloseArgs, Global, USAGE};
 const REFUSED: u8 = 1;
 /// The close stopped at a step; a rerun continues from the first step.
 const STOPPED: u8 = 2;
-/// The store could not be opened.
+/// The store could not be opened or read.
 const STORE: u8 = 6;
 
 pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCode {
@@ -66,6 +66,14 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         }
         Err(e) => return fail(&e.to_string(), STORE),
     };
+    // A row that does not parse is a broken store (exit 6), not a rule that
+    // refused, so it is read here before the close library turns it into one.
+    if let Err(e) = store.read(|tx| {
+        tx.team()?;
+        tx.members()?.all_or_corrupt()
+    }) {
+        return fail(&format!("the team cannot be read: {e}"), STORE);
+    }
     let config = Config::default();
     let mut ctx = Ctx {
         home: &home,

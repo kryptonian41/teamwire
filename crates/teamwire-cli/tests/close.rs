@@ -651,3 +651,27 @@ fn a_member_whose_start_failed_leaves_no_branch_in_status_or_close() {
     assert_eq!(close.code, 0, "{}{}", close.out, close.err);
     assert!(!close.out.contains("branches kept"), "{}", close.out);
 }
+
+#[test]
+fn a_member_row_that_does_not_parse_is_exit_six_with_and_without_dry_run() {
+    let rig = Rig::new();
+    rig.launch(&pane_spec(rig.work.path()));
+    let team = TeamName::parse("alpha").unwrap();
+    let mut store = Store::open_existing(rig.home.path(), &team).unwrap();
+    store
+        .write(|tx| {
+            Ok(tx.connection().execute(
+                "UPDATE members SET harness = 'Not A Harness!' WHERE role = 'scout'",
+                (),
+            )?)
+        })
+        .unwrap();
+    drop(store);
+    for args in [&["close", "alpha"][..], &["close", "alpha", "--dry-run"]] {
+        let run = rig.teamwire(args, None);
+        assert_eq!(run.code, 6, "{args:?}: {}{}", run.out, run.err);
+        assert!(run.err.contains("cannot be read"), "{}", run.err);
+    }
+    assert_eq!(rig.team_state(), TeamState::Open);
+    assert!(rig.team_dir("alpha").join("team.db").is_file());
+}
