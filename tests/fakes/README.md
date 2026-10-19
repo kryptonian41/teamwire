@@ -254,6 +254,12 @@ from the session file `fake-claude` wrote (else the id on its command line).
 `pane close` ends the agent and, as herdr does, closes an emptied tab and an
 emptied workspace.
 
+Each call takes a kernel lock on `<state file>.lock` for as long as it works
+on the state, and waits up to five seconds for it. The kernel frees the lock
+when the process ends, so a killed call leaves nothing held. `agent start`
+saves the state and gives the lock up while it waits for the agent to be
+ready, so `agent list` and the other calls answer during a slow start.
+
 Environment of `fake-herdr` itself:
 
 | Variable | Meaning |

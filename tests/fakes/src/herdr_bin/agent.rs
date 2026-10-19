@@ -196,11 +196,34 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         .millis("timeout")
         .unwrap_or(30_000)
         .min(env_millis("FAKE_HERDR_START_WAIT_MS", 10_000));
+    // The agent is in the state file now, so another start sees the pane
+    // busy. Other calls run while this one waits for the agent.
+    ctx.release_lock()?;
+    let ready = wait_ready(&dir, limit);
+    ctx.relock()?;
+    ready?;
+    let pane = pane_now(ctx, &pane_id)?;
+    let program = if kind == "codex" {
+        "codex".to_owned()
+    } else {
+        claude_program().display().to_string()
+    };
+    let mut argv = vec![program];
+    argv.extend(args.tail.iter().cloned());
+    Ok(json!({
+        "type": "agent_started",
+        "agent": agent_info(ctx, &pane, &rec),
+        "argv": argv,
+    }))
+}
+
+/// Waits until the agent reports `idle`, `limit` milliseconds at most.
+fn wait_ready(dir: &Path, limit: u64) -> Result<(), CliError> {
     let started = fsutil::Stopwatch::start();
     loop {
-        let (status, _) = read_status(&dir);
+        let (status, _) = read_status(dir);
         match status.as_str() {
-            "idle" => break,
+            "idle" => return Ok(()),
             "blocked" => {
                 return Err(fail(
                     "agent_not_ready",
@@ -215,19 +238,6 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    let pane = pane_now(ctx, &pane_id)?;
-    let program = if kind == "codex" {
-        "codex".to_owned()
-    } else {
-        claude_program().display().to_string()
-    };
-    let mut argv = vec![program];
-    argv.extend(args.tail.iter().cloned());
-    Ok(json!({
-        "type": "agent_started",
-        "agent": agent_info(ctx, &pane, &rec),
-        "argv": argv,
-    }))
 }
 
 fn pane_now(ctx: &Ctx<'_>, pane_id: &str) -> Result<Pane, CliError> {

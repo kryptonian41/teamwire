@@ -2,6 +2,7 @@
 //! agent process and the CLI use to talk to each other.
 
 use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -90,34 +91,35 @@ pub(crate) fn pane_dir(state_path: &Path, pane_id: &str) -> PathBuf {
     fsutil::join(dir, &["fake-herdr-panes", &pane_id.replace(':', "_")])
 }
 
-/// Holds the state lock until dropped.
+/// Holds the state lock until dropped. The lock is the kernel's, as in
+/// `owner.rs`: it ends with the open file, so a call that is killed never
+/// leaves it held.
 #[derive(Debug)]
-pub(crate) struct Lock(PathBuf);
-
-impl Drop for Lock {
-    fn drop(&mut self) {
-        std::fs::remove_file(&self.0).ok();
-    }
+pub(crate) struct Lock {
+    _file: File,
 }
 
-/// Takes the lock beside the state file, waiting up to five seconds.
+/// Takes the lock on the file beside the state file, waiting up to five
+/// seconds. The file stays on disk; only the lock on it comes and goes.
 pub(crate) fn lock(state_path: &Path) -> Result<Lock, String> {
     let lock_path = state_path.with_extension("lock");
+    let file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| e.to_string())?;
     let start = fsutil::Stopwatch::start();
     loop {
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-        {
-            Ok(_) => return Ok(Lock(lock_path)),
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+        match file.try_lock() {
+            Ok(()) => return Ok(Lock { _file: file }),
+            Err(TryLockError::WouldBlock) => {
                 if start.elapsed() > Duration::from_secs(5) {
                     return Err(format!("state lock {} stayed held", lock_path.display()));
                 }
                 std::thread::sleep(Duration::from_millis(10));
             }
-            Err(e) => return Err(e.to_string()),
+            Err(TryLockError::Error(e)) => return Err(e.to_string()),
         }
     }
 }

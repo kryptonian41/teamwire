@@ -46,6 +46,26 @@ pub(crate) fn fail(code: &str, message: impl Into<String>) -> CliError {
 pub(crate) struct Ctx<'a> {
     pub(crate) state_path: &'a Path,
     pub(crate) state: &'a mut State,
+    /// The state lock. A command that waits on something slow gives it up
+    /// with `release_lock` and takes it again with `relock`.
+    pub(crate) guard: &'a mut Option<state::Lock>,
+}
+
+impl Ctx<'_> {
+    /// Saves the state and lets other calls run.
+    pub(crate) fn release_lock(&mut self) -> Result<(), CliError> {
+        state::save(self.state_path, self.state).map_err(|e| fail("fake_misconfigured", e))?;
+        self.guard.take();
+        Ok(())
+    }
+
+    /// Takes the lock again and reloads the state other calls changed.
+    pub(crate) fn relock(&mut self) -> Result<(), CliError> {
+        *self.guard =
+            Some(state::lock(self.state_path).map_err(|e| fail("fake_misconfigured", e))?);
+        *self.state = state::load(self.state_path).map_err(|e| fail("fake_misconfigured", e))?;
+        Ok(())
+    }
 }
 
 fn say(out: &mut impl std::io::Write, text: &str) {
@@ -152,8 +172,8 @@ pub fn run(argv: &[String]) -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    let guard = match state::lock(&state_path) {
-        Ok(l) => l,
+    let mut guard = match state::lock(&state_path) {
+        Ok(l) => Some(l),
         Err(e) => {
             print_err(&command, &fail("fake_misconfigured", e));
             return ExitCode::from(2);
@@ -175,7 +195,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     match &fault {
         Some(Action::Hang) => {
             state::save(&state_path, &state).ok();
-            drop(guard);
+            guard.take();
             let ms = std::env::var("FAKE_HERDR_HANG_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -203,6 +223,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     let mut ctx = Ctx {
         state_path: &state_path,
         state: &mut state,
+        guard: &mut guard,
     };
     let outcome = dispatch(&mut ctx, &args, fault.as_ref());
     if let Err(e) = state::save(&state_path, &state) {

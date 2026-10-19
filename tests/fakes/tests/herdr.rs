@@ -919,3 +919,105 @@ fn agent_not_found_fault_answers_prompt_and_get_on_a_live_agent() {
     assert_eq!(env.run(&["agent", "list"]).unwrap().code, Some(0));
     assert_eq!(env.run(&["agent", "get", &pane_id]).unwrap().code, Some(0));
 }
+
+/// A program for `FAKE_CLAUDE_BIN` that never reports ready, so `agent start`
+/// waits for it until its own limit.
+fn slow_claude(env: &FakeHerdrEnv) -> String {
+    use std::os::unix::fs::PermissionsExt;
+    let path = env
+        .write_file("slow-claude", "#!/bin/sh\nexec sleep 60\n")
+        .unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path.display().to_string()
+}
+
+#[test]
+fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let slow = slow_claude(&env);
+    std::thread::scope(|scope| {
+        let starting = scope.spawn(|| {
+            env.run_with(
+                &[
+                    "agent", "start", "slow", "--kind", "claude", "--pane", &pane_id,
+                ],
+                &[
+                    ("FAKE_CLAUDE_BIN", &slow),
+                    ("FAKE_HERDR_START_WAIT_MS", "6000"),
+                ],
+            )
+            .unwrap()
+        });
+        // The slow agent is in the state file once the pane lists it.
+        let began = std::time::Instant::now();
+        loop {
+            let out = env.run(&["agent", "list"]).unwrap();
+            assert_eq!(out.code, Some(0), "{out:?}");
+            let listed = json(&out)["agents"]
+                .as_array()
+                .is_some_and(|a| !a.is_empty());
+            if listed {
+                break;
+            }
+            assert!(began.elapsed().as_secs() < 5, "the agent was never listed");
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        assert!(
+            began.elapsed().as_secs() < 5,
+            "agent list waited for agent start"
+        );
+        let started = starting.join().unwrap();
+        assert_eq!(
+            started.error_code().as_deref(),
+            Some("timeout"),
+            "{started:?}"
+        );
+    });
+}
+
+#[test]
+fn a_killed_agent_start_leaves_no_stuck_lock() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let slow = slow_claude(&env);
+    let mut child = std::process::Command::new(env.root().join("bin").join("herdr"))
+        .args([
+            "agent", "start", "slow", "--kind", "claude", "--pane", &pane_id,
+        ])
+        .env_clear()
+        .envs(env.env())
+        .env("FAKE_CLAUDE_BIN", &slow)
+        .env("FAKE_HERDR_START_WAIT_MS", "20000")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let began = std::time::Instant::now();
+    let out = env.run(&["agent", "list"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert!(began.elapsed().as_secs() < 3, "agent list waited on a lock");
+}
+
+#[test]
+fn a_call_waits_for_a_held_state_lock_and_runs_when_it_is_released() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let lock_path = env.state_path().with_extension("lock");
+    let held = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .unwrap();
+    held.lock().unwrap();
+    std::thread::scope(|scope| {
+        let call = scope.spawn(|| env.run(&["agent", "list"]).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        assert!(!call.is_finished(), "the call ignored the held lock");
+        drop(held);
+        assert_eq!(call.join().unwrap().code, Some(0));
+    });
+}
