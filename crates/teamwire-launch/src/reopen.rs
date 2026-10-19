@@ -391,14 +391,10 @@ fn recorded_plugins(
     ctx: &Ctx<'_>,
     role: &Role,
 ) -> Result<BTreeMap<String, bool>, teamwire_store::StoreError> {
-    let events = ctx
+    let started = ctx
         .store
-        .read(|tx| tx.events_of_role(role))?
-        .all_or_corrupt()?;
-    Ok(events
-        .into_iter()
-        .rev()
-        .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
+        .read(|tx| tx.latest_event(Some(role), teamwire_core::EventType::MemberStarted))?;
+    Ok(started
         .and_then(|e| serde_json::from_value(e.data.get("plugins")?.clone()).ok())
         .unwrap_or_default())
 }

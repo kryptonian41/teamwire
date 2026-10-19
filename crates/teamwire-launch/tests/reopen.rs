@@ -717,3 +717,22 @@ fn an_old_tab_that_holds_another_session_is_left_open_with_a_warning() {
     );
     assert!(rig.host.list(T).unwrap().contains(&old));
 }
+
+#[test]
+fn a_damaged_unrelated_event_of_the_member_does_not_stop_its_reopen() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE events SET time = 'yesterday' WHERE type = 'member.creating' AND role = 'api'",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+}

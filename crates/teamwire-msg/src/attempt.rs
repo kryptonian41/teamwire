@@ -57,9 +57,10 @@ pub(crate) fn earlier_bump(
     if message.kind != MessageType::Reprompt {
         return Ok(None);
     }
-    let (events, member) = ctx
-        .store
-        .read(|tx| Ok((tx.events_of_role(role)?.all_or_corrupt()?, tx.member(role)?)))?;
+    let (events, member) = ctx.store.read(|tx| {
+        let kinds = [EventType::MemberCreating, EventType::MemberReprompted];
+        Ok((tx.events_of_kinds(role, &kinds)?, tx.member(role)?))
+    })?;
     let Some(member) = member else {
         return Ok(None);
     };
