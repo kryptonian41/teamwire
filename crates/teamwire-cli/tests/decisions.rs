@@ -188,7 +188,7 @@ fn no_team_and_no_grep_is_a_usage_error() {
     let run = teamwire(&home, &["decisions"]);
     assert_eq!(run.code, 3);
     assert!(
-        run.err.contains("name a team or give --grep"),
+        run.err.contains("name a team or give --ref or --grep"),
         "{}",
         run.err
     );
@@ -220,4 +220,45 @@ fn only_errors_exit_1_and_something_printed_exits_0() {
     let run = teamwire(&home, &["decisions", "--grep", "x"]);
     assert_eq!(run.code, 0, "{}", run.err);
     assert!(run.out.contains("== alpha"), "{}", run.out);
+}
+
+#[test]
+fn ref_selects_teams_and_counts_as_a_filter_and_the_json_has_refs() {
+    let home = TestHome::new().unwrap();
+    for (name, secs, refs) in [
+        ("alpha", 1, vec![("linear", "GKA-580")]),
+        ("beta", 2, vec![("jira", "GKA-580")]),
+        ("gamma", 3, vec![]),
+    ] {
+        let mut store = team(home.path(), name, secs, &["web"]);
+        let refs: Vec<teamwire_core::TicketRef> = refs
+            .into_iter()
+            .map(|(p, id)| teamwire_core::TicketRef {
+                provider: p.to_owned(),
+                id: id.to_owned(),
+            })
+            .collect();
+        store.write(|tx| tx.set_refs(&refs)).unwrap();
+        report(
+            &home.path().join("teams").join(name),
+            "web",
+            "## Decisions I made\n- x\n",
+        );
+    }
+    let run = teamwire(&home, &["decisions", "--ref", "linear:GKA-580", "--json"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    let view: Value = serde_json::from_str(&run.out).unwrap();
+    assert_eq!(view["teams"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        view["teams"][0]["refs"],
+        serde_json::json!([{"provider": "linear", "id": "GKA-580"}])
+    );
+    let run = teamwire(&home, &["decisions", "--ref", "gka-580"]);
+    assert!(
+        run.out.contains("== alpha") && run.out.contains("== beta"),
+        "{}",
+        run.out
+    );
+    assert!(run.out.contains("[linear:GKA-580]"), "{}", run.out);
+    assert!(!run.out.contains("== gamma"), "{}", run.out);
 }

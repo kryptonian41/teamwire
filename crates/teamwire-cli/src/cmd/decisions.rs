@@ -12,13 +12,14 @@ use crate::{DecisionsArgs, Global, USAGE};
 
 /// Refused by a rule, or nothing could be read (docs/api/cli.md).
 const REFUSED: u8 = 1;
-const USAGE_LINE: &str = "name a team or give --grep; see teamwire decisions --help";
+const USAGE_LINE: &str = "name a team or give --ref or --grep; see teamwire decisions --help";
 
 pub(crate) fn run(args: &DecisionsArgs, global: &Global, _wiring: &Wiring) -> ExitCode {
     let DecisionsArgs {
         team,
         role,
         grep,
+        reference,
         json,
     } = args;
     let team = match team.as_deref().map(TeamName::parse).transpose() {
@@ -33,6 +34,7 @@ pub(crate) fn run(args: &DecisionsArgs, global: &Global, _wiring: &Wiring) -> Ex
         team,
         role: role.clone(),
         grep: grep.clone(),
+        reference: reference.clone(),
     };
     let view = match read_decisions(&home, &query) {
         Ok(view) => view,
@@ -64,7 +66,13 @@ fn render(view: &DecisionsView) -> String {
     let mut lines: Vec<String> = Vec::new();
     for team in &view.teams {
         let state = if team.live { "running" } else { "archived" };
-        lines.push(format!("== {} ({state}): {}", team.team, team.title));
+        let refs: Vec<String> = team.refs.iter().map(ToString::to_string).collect();
+        let refs = if refs.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", refs.join(", "))
+        };
+        lines.push(format!("== {} ({state}): {}{refs}", team.team, team.title));
         for member in &team.members {
             lines.push(format!("-- {} ({})", member.role, member.kind));
             if member.report.is_none() {

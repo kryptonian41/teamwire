@@ -10,7 +10,9 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime};
 
-use teamwire_core::{HarnessId, HostId, LeadRoute, MemberKind, Mode, Role, TeamName, Timestamp};
+use teamwire_core::{
+    HarnessId, HostId, LeadRoute, MemberKind, Mode, Role, TeamName, TicketRef, Timestamp,
+};
 use teamwire_fakes::TestHome;
 use teamwire_report::{DecisionsError, DecisionsQuery, read_decisions};
 use teamwire_store::{NewMember, NewTeam, Store};
@@ -86,6 +88,7 @@ fn query(team: Option<&str>, role: Option<&str>, grep: Option<&str>) -> Decision
         team: team.map(|t| TeamName::parse(t).unwrap()),
         role: role.map(str::to_owned),
         grep: grep.map(str::to_owned),
+        reference: None,
     }
 }
 
@@ -253,4 +256,74 @@ fn limit_blocks_cuts_in_print_order_and_says_so() {
     let mut whole = read_decisions(home.path(), &query(Some("alpha"), None, None)).unwrap();
     assert!(!whole.limit_blocks(3));
     assert_eq!(whole.teams[0].members.len(), 2);
+}
+
+fn with_refs(home: &Path, name: &str, secs: i64, refs: &[(&str, &str)]) {
+    let mut store = team(home, name, secs, &["web"]);
+    let refs: Vec<TicketRef> = refs
+        .iter()
+        .map(|(p, id)| TicketRef {
+            provider: (*p).to_owned(),
+            id: (*id).to_owned(),
+        })
+        .collect();
+    store.write(|tx| tx.set_refs(&refs)).unwrap();
+    report(
+        &home.join("teams").join(name),
+        "web",
+        "## Decisions I made\n- x\n",
+    );
+}
+
+fn teams_with_ref(home: &Path, reference: &str) -> Vec<String> {
+    let q = DecisionsQuery {
+        reference: Some(reference.to_owned()),
+        ..DecisionsQuery::default()
+    };
+    read_decisions(home, &q)
+        .unwrap()
+        .teams
+        .into_iter()
+        .map(|t| t.team)
+        .collect()
+}
+
+#[test]
+fn ref_matches_the_provider_exactly_and_a_bare_id_under_any_provider() {
+    let home = TestHome::new().unwrap();
+    with_refs(home.path(), "alpha", 1, &[("linear", "GKA-580")]);
+    with_refs(
+        home.path(),
+        "beta",
+        2,
+        &[("jira", "GKA-580"), ("github", "#7")],
+    );
+    with_refs(home.path(), "gamma", 3, &[]);
+    let h = home.path();
+    assert_eq!(teams_with_ref(h, "linear:GKA-580"), ["alpha"]);
+    assert_eq!(teams_with_ref(h, "LINEAR:gka-580"), Vec::<String>::new());
+    assert_eq!(teams_with_ref(h, "linear:gka-580"), ["alpha"]);
+    assert_eq!(teams_with_ref(h, "GKA-580"), ["alpha", "beta"]);
+    assert_eq!(teams_with_ref(h, "gka-580"), ["alpha", "beta"]);
+    assert_eq!(teams_with_ref(h, "jira:#7"), Vec::<String>::new());
+    assert_eq!(teams_with_ref(h, "github:#7"), ["beta"]);
+}
+
+#[test]
+fn a_colon_that_is_not_after_a_provider_name_belongs_to_the_id() {
+    let home = TestHome::new().unwrap();
+    with_refs(home.path(), "alpha", 1, &[("custom", "A:1")]);
+    assert_eq!(teams_with_ref(home.path(), "custom:A:1"), ["alpha"]);
+    assert_eq!(teams_with_ref(home.path(), "A:1"), ["alpha"]);
+    assert_eq!(teams_with_ref(home.path(), "9x:A:1"), Vec::<String>::new());
+}
+
+#[test]
+fn the_refs_field_lists_the_recorded_refs_and_a_team_without_refs_never_matches() {
+    let home = TestHome::new().unwrap();
+    with_refs(home.path(), "alpha", 1, &[("linear", "GKA-580")]);
+    with_refs(home.path(), "old", 2, &[]);
+    let view = read_decisions(home.path(), &query(Some("alpha"), None, None)).unwrap();
+    assert_eq!(view.teams[0].refs[0].to_string(), "linear:GKA-580");
+    assert_eq!(teams_with_ref(home.path(), "GKA-580"), ["alpha"]);
 }

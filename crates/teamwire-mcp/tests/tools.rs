@@ -59,7 +59,7 @@ async fn tool_list_is_the_ten_tools_of_the_doc() {
             "team_members(of, team)",
             "team_log(limit, role, team)",
             "team_teams(team)",
-            "team_decisions(grep, limit, of, role, team)",
+            "team_decisions(grep, limit, of, ref, role, team)",
         ]
     );
     // A 2026 client requires the cache fields on the listing itself.

@@ -267,6 +267,9 @@ pub(crate) struct DecisionsArgs {
     /// running team and every archive.
     #[arg(long, value_name = "TEXT")]
     pub(crate) grep: Option<String>,
+    /// Only teams with this ticket ref: `provider:id`, or a bare id under any provider.
+    #[arg(long = "ref", value_name = "REF")]
+    pub(crate) reference: Option<String>,
     #[arg(long)]
     pub(crate) json: bool,
 }

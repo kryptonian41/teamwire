@@ -92,15 +92,16 @@ pub(crate) fn run(
                 .as_deref()
                 .map(|t| TeamName::parse(t).map_err(|e| ToolFailure::invalid(format!("of: {e}"))))
                 .transpose()?;
-            // With neither `of` nor a search, the caller reads its own team.
-            let named = match (of, &input.grep) {
-                (None, None) => Some(team.clone()),
+            // With no `of`, no ref and no search, the caller reads its own team.
+            let named = match (of, input.grep.is_some() || input.reference.is_some()) {
+                (None, false) => Some(team.clone()),
                 (of, _) => of,
             };
             let query = DecisionsQuery {
                 team: named,
                 role: input.role,
                 grep: input.grep,
+                reference: input.reference,
             };
             let mut view = read_decisions(ctx.home, &query).map_err(|e| match e {
                 DecisionsError::NoSuchTeam(_) => {

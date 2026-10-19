@@ -171,3 +171,31 @@ async fn an_unknown_team_and_a_wrong_token_are_refused() {
     let result = call(&intruder, "team_decisions", json!({})).await;
     assert_eq!(refused(&result), "refused.identity");
 }
+
+#[tokio::test]
+async fn ref_picks_teams_by_provider_and_id() {
+    let (rig, api, _web) = two_members().await;
+    let mut beta = add_beta(&rig);
+    beta.write(|tx| {
+        tx.set_refs(&[teamwire_core::TicketRef {
+            provider: "linear".to_owned(),
+            id: "GKA-580".to_owned(),
+        }])
+    })
+    .unwrap();
+    report(
+        &rig.home.path().join("teams/beta"),
+        "db",
+        "## Decisions I made\n- x\n",
+    );
+    let result = call(&api, "team_decisions", json!({"ref": "linear:gka-580"})).await;
+    let out = ok(&result);
+    assert_eq!(out["teams"].as_array().unwrap().len(), 1);
+    assert_eq!(out["teams"][0]["team"], "beta");
+    assert_eq!(
+        out["teams"][0]["refs"][0],
+        json!({"provider": "linear", "id": "GKA-580"})
+    );
+    let result = call(&api, "team_decisions", json!({"ref": "jira:GKA-580"})).await;
+    assert_eq!(ok(&result)["teams"], json!([]));
+}

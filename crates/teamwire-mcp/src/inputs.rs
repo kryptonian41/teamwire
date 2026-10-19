@@ -123,6 +123,9 @@ pub(crate) struct DecisionsInput {
     pub(crate) of: Option<String>,
     /// Only this member.
     pub(crate) role: Option<String>,
+    /// Only teams with this ticket ref: `provider:id`, or a bare id under any provider.
+    #[serde(rename = "ref")]
+    pub(crate) reference: Option<String>,
     /// Only blocks whose text contains this, ignoring case. Reaches every running
     /// team and every archive unless `of` is given.
     pub(crate) grep: Option<String>,

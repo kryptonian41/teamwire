@@ -8,13 +8,13 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use serde::Serialize;
-use teamwire_core::{Member, MemberKind, TeamName};
+use teamwire_core::{Member, MemberKind, TeamName, TicketRef};
 use teamwire_store::{Store, TeamDb, TeamRow, database_path, newest_archive, team_databases};
 use thiserror::Error;
 
 pub use find::{Block, find_blocks};
 
-/// What to read. At least one of `team` and `grep` must be set.
+/// What to read. At least one of `team`, `grep` and `reference` must be set.
 #[derive(Debug, Clone, Default)]
 pub struct DecisionsQuery {
     /// The running team, else its newest archive.
@@ -23,11 +23,14 @@ pub struct DecisionsQuery {
     pub role: Option<String>,
     /// Only blocks whose text holds this, ignoring case.
     pub grep: Option<String>,
+    /// Only teams with this ref: `provider:id` for that provider, or a bare
+    /// `id` under any provider. The id is compared ignoring case.
+    pub reference: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum DecisionsError {
-    #[error("name a team or give --grep")]
+    #[error("name a team or give --ref or --grep")]
     NoFilter,
     #[error("no such team or archive: {0}")]
     NoSuchTeam(String),
@@ -51,7 +54,7 @@ pub struct TeamDecisions {
     pub live: bool,
     /// The folder that holds the team's database and its `reports/`.
     pub path: String,
-    pub refs: Vec<String>,
+    pub refs: Vec<TicketRef>,
     pub members: Vec<MemberDecisions>,
 }
 
@@ -100,7 +103,7 @@ pub fn read_decisions(
     home: &Path,
     query: &DecisionsQuery,
 ) -> Result<DecisionsView, DecisionsError> {
-    if query.team.is_none() && query.grep.is_none() {
+    if query.team.is_none() && query.grep.is_none() && query.reference.is_none() {
         return Err(DecisionsError::NoFilter);
     }
     let mut errors = Vec::new();
@@ -123,6 +126,11 @@ pub fn read_decisions(
     let grep = query.grep.as_deref().map(str::to_lowercase);
     let mut teams = Vec::new();
     for item in loaded {
+        if let Some(reference) = &query.reference
+            && !has_ref(&item.team.refs, reference)
+        {
+            continue;
+        }
         let members = members_of(&item, query.role.as_deref(), grep.as_deref(), &mut errors);
         if grep.is_some() && members.is_empty() {
             continue;
@@ -135,11 +143,31 @@ pub fn read_decisions(
             created_at: item.team.created_at.to_string(),
             live: item.db.live,
             path: dir.display().to_string(),
-            refs: Vec::new(),
+            refs: item.team.refs.clone(),
             members,
         });
     }
     Ok(DecisionsView { teams, errors })
+}
+
+/// Whether `refs` holds `wanted`. `provider:id` needs that provider (when the
+/// part before the first colon is a valid provider name, else the whole text
+/// is an id); a bare id matches under any provider.
+fn has_ref(refs: &[TicketRef], wanted: &str) -> bool {
+    let (provider, id) = match wanted.split_once(':') {
+        Some((p, id)) if is_provider_name(p) => (Some(p), id),
+        _ => (None, wanted),
+    };
+    refs.iter()
+        .any(|r| r.id.eq_ignore_ascii_case(id) && provider.is_none_or(|p| r.provider == p))
+}
+
+/// `^[a-z][a-z0-9_]{0,15}$`.
+fn is_provider_name(text: &str) -> bool {
+    let mut chars = text.chars();
+    chars.next().is_some_and(|c| c.is_ascii_lowercase())
+        && text.len() <= 16
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// The running team's database, else its newest archive.

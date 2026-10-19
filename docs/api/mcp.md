@@ -230,18 +230,20 @@ a caller may read any team. Input:
   "team": "tw",         // lead only; members use their own team
   "of": "billing",      // the team to read: its running database, else its newest archive
   "role": "db",         // only this member
+  "ref": "linear:GKA-580", // only teams with this ticket ref
   "grep": "stash",      // only blocks whose text holds this, ignoring case
   "limit": 50           // blocks; default 50
 }
 ```
 
-With no `of` and no `grep`, the caller reads its own team. With `grep` and no
+`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v5, never matches a `ref`. With `grep` and no
 `of`, the search reaches every running team and every archive, and a team seen
 more than once is read once: the running copy, else the newest archive. Output:
 
 ```json
 {"teams": [{"team": "billing", "title": "Billing", "ulid": "…", "created_at": "…",
-  "live": false, "path": "/abs/path/to/team/dir", "refs": [],
+  "live": false, "path": "/abs/path/to/team/dir",
+  "refs": [{"provider": "linear", "id": "GKA-580"}],
   "members": [{"role": "db", "kind": "implementer", "title": "…",
     "report": "/abs/path/reports/db.md",
     "blocks": [{"heading": "## Decisions I made", "line": 88, "text": "- …"}]}]}],
