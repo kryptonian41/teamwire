@@ -7,7 +7,9 @@ use teamwire_core::{
     Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
     Refusal, Route, TeamName, TeamState, Timestamp,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, is_pending_stale, message_line_to};
+use teamwire_deliver::{
+    CommsCopy, DeliveryOutcome, deliver_line, is_pending_stale, message_line_to,
+};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
 use crate::send::record_refusal;
@@ -231,8 +233,10 @@ pub(crate) fn deliver_one(
         &message.sender,
         &message.body,
         recipient,
-        &comms_path,
-        comms_written,
+        CommsCopy {
+            path: &comms_path,
+            written: comms_written,
+        },
     );
     let party = match recipient {
         Recipient::Lead => Party::Lead,
