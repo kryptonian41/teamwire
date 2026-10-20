@@ -471,13 +471,7 @@ fn a_close_taking_its_line_back_during_setup_does_not_lose_the_new_members_line(
             let spec = team_making("two", "b", &repo, "gen-x");
             rig.launch("two", rig.validate(&spec, false).unwrap())
         });
-        for _ in 0..200 {
-            if made.exists() {
-                break;
-            }
-            std::thread::sleep(pause);
-        }
-        assert!(made.exists(), "setup ran");
+        assert!(appears(&made, &launch), "setup ran");
         // Let launch get as far as it can before the close lets go.
         std::thread::sleep(pause * 10);
         // The other team's close, holding the lock, takes its line back.
