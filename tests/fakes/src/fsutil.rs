@@ -6,6 +6,10 @@ use std::path::{Path, PathBuf};
 
 /// Replaces `path` with `bytes`, all at once: a reader sees the old file or
 /// the new one, never half of it. Fails when the parent directory is missing.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fake of write_atomic writes through OpenOptions itself"
+)]
 pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     let name = path
         .file_name()
@@ -35,6 +39,10 @@ fn rename(from: &Path, to: &Path) -> std::io::Result<()> {
 
 /// Appends `bytes` to `path`, creating it if needed. One `write` call, so
 /// concurrent appenders of whole lines do not interleave inside a line.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "appending has no Platform equivalent in the fakes"
+)]
 pub(crate) fn append(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     std::fs::OpenOptions::new()
         .append(true)

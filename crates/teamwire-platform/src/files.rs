@@ -41,8 +41,12 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PlatformErro
     set_mode(temp.as_file(), path)
         .map_err(|err| io_error(&context("setting the mode of"), &err))?;
     // On failure the temporary file is removed when `temp` drops.
-    temp.persist(path)
-        .map_err(|err| io_error(&context("renaming into place"), &err.error))?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "write_atomic is the one place that renames a temp file into place"
+    )]
+    let persisted = temp.persist(path);
+    persisted.map_err(|err| io_error(&context("renaming into place"), &err.error))?;
     File::open(dir)
         .and_then(|handle| handle.sync_all())
         .map_err(|err| io_error(&context("syncing the directory of"), &err))
