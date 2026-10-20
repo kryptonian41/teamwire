@@ -37,12 +37,13 @@ pub use directory::{TeamEntry, describe, roster_of, teams};
 pub use inbox::{ack, inbox};
 pub use lead::{AdoptReport, adopt_lead};
 pub use log::{log, log_party};
-pub use prove::{prove_actor, token_hash};
+pub use prove::prove_actor;
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
 pub use send::{
     Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with, watch_running,
 };
+pub use teamwire_store::token_hash;
 pub use token::caller_token;
 
 /// What the calling process says about itself, read from its environment
