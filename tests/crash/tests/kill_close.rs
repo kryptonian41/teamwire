@@ -74,12 +74,24 @@ fn kill9_during_close_after_the_archive_is_cleared_and_rerun() {
     stop_agents(&rig);
 }
 
+const MIN_RUNS: usize = 8;
+const MAX_RUNS: usize = 40;
+/// Kills that must land between `closed` and the deletion.
+const NEEDED: usize = 2;
+
 #[test]
 fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
     let mut rng = rig::Rng::from_env("kill9_between_closed_and_state_deleted");
     let work = tempfile::tempdir().unwrap();
     let mut caught_closed = 0;
-    for i in 0..8 {
+    let mut runs_made = 0;
+    for i in 0..MAX_RUNS {
+        // The window is some 20 ms wide and a slow machine moves it, so the
+        // test goes on past MIN_RUNS until enough kills landed in it.
+        if i >= MIN_RUNS && caught_closed >= NEEDED {
+            break;
+        }
+        runs_made += 1;
         let rig = Rig::bare();
         launch_scout(&rig, work.path());
         let mut running = rig.start(&["close", "alpha"], &Identity::Nobody);
@@ -106,7 +118,7 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
                 agents(&rig)
             );
         }
-        let extra = rng.up_to(Duration::from_millis(60));
+        let extra = rng.up_to(Duration::from_millis(25));
         let begun = Instant::now();
         while begun.elapsed() < extra {
             std::hint::spin_loop();
@@ -136,9 +148,9 @@ fn kill9_between_closed_and_state_deleted_finishes_on_rerun() {
         assert_closed_for_good(&rig);
         stop_agents(&rig);
     }
-    eprintln!("{caught_closed} of 8 runs killed close between closed and deleted");
+    eprintln!("{caught_closed} of {runs_made} runs killed close between closed and deleted");
     assert!(
-        caught_closed >= 2,
-        "only {caught_closed} of 8 runs killed close between closed and deleted; the window between closed and deleted was missed"
+        caught_closed >= NEEDED,
+        "only {caught_closed} of {runs_made} runs killed close between closed and deleted; the window between closed and deleted was missed"
     );
 }
