@@ -7,13 +7,9 @@ use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
 
-use crate::cmd::send::{carries_member_identity, home_or_refuse};
+use crate::cmd::send::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
 
 /// The view of one team, from its database opened read-only.
 fn view_of(
@@ -217,38 +213,28 @@ fn render(view: &StatusView) -> String {
     out.join("\n") + "\n"
 }
 
-#[expect(clippy::print_stdout, reason = "the view is the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str, code: u8) -> ExitCode {
-    eprintln!("teamwire status: {message}");
-    ExitCode::from(code)
-}
-
 fn store_failure(team: &TeamName, e: &StoreError) -> ExitCode {
     if matches!(e, StoreError::NoDatabase { .. }) {
-        return fail(&format!("no team {team}. {NO_DATABASE_HINT}"), REFUSED);
+        return fail(
+            "status",
+            &format!("no team {team}. {NO_DATABASE_HINT}"),
+            REFUSED,
+        );
     }
-    fail(&e.to_string(), STORE_ERROR)
+    fail("status", &e.to_string(), STORE)
 }
 
 fn json_text<T: serde::Serialize>(value: &T) -> Result<String, ExitCode> {
     serde_json::to_string_pretty(value)
         .map(|t| t + "\n")
-        .map_err(|e| fail(&e.to_string(), STORE_ERROR))
+        .map_err(|e| fail("status", &e.to_string(), STORE))
 }
 
 pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let StatusArgs { team, role, json } = args;
     let role = match role.as_deref().map(Role::parse).transpose() {
         Ok(role) => role,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("status", &e.to_string(), USAGE),
     };
     let home = match home_or_refuse("status", global) {
         Ok(home) => home,
@@ -256,13 +242,13 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
     };
     let Some(team) = team else {
         if role.is_some() {
-            return fail("--role needs a team", USAGE);
+            return fail("status", "--role needs a team", USAGE);
         }
         return all_teams(&home, *json, wiring);
     };
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("status", &e.to_string(), USAGE),
     };
     let mut view = match view_of(&home, &team, role.as_ref(), wiring) {
         Ok(view) => view,
@@ -279,7 +265,7 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
     };
     say(&text);
     if unreadable(&view) {
-        return ExitCode::from(STORE_ERROR);
+        return ExitCode::from(STORE);
     }
     let missing_role = role
         .as_ref()
@@ -308,7 +294,7 @@ fn unreadable(view: &StatusView) -> bool {
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     let names = match teamwire_store::team_names(home) {
         Ok(names) => names,
-        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e) => return fail("status", &e.to_string(), STORE),
     };
     let mut views = Vec::new();
     for name in names {
@@ -323,7 +309,7 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
         hide_lead_from_members(view);
     }
     let code = if views.iter().any(|(_, view)| unreadable(view)) {
-        ExitCode::from(STORE_ERROR)
+        ExitCode::from(STORE)
     } else {
         ExitCode::SUCCESS
     };

@@ -1,6 +1,5 @@
 //! `teamwire watch`: one line per poll when something needs the lead.
 
-use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,14 +11,12 @@ use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{
+    REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line,
+};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
 
 /// The longest `--interval`. Each poll refreshes the lease, and a lease
 /// unrefreshed for `WATCH_LEASE_STALE` looks dead to a second watch. Half
@@ -101,24 +98,6 @@ fn export_loop(
     }
 }
 
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str, code: u8) -> ExitCode {
-    eprintln!("teamwire watch: {message}");
-    ExitCode::from(code)
-}
-
-#[expect(clippy::print_stdout, reason = "the watch's lines are its output")]
-fn say(line: &str) {
-    println!("{line}");
-    // A line must reach the reader now: it is read by another program.
-    if let Err(e) = std::io::stdout().flush() {
-        tracing::warn!(error = %e, "could not flush standard output");
-    }
-}
-
 fn host_name() -> String {
     std::env::var("HOSTNAME").unwrap_or_else(|_| "localhost".to_owned())
 }
@@ -132,7 +111,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("watch", &e.to_string(), USAGE),
     };
     // A member's single poll takes the lease and uses up announcement keys
     // that the lead's watch would then never print, so `--once` is refused too.
@@ -140,10 +119,11 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         return code;
     }
     if *interval == 0 {
-        return fail("--interval must be at least 1 second", USAGE);
+        return fail("watch", "--interval must be at least 1 second", USAGE);
     }
     if *interval > MAX_INTERVAL_S {
         return fail(
+            "watch",
             &format!("--interval must be at most {MAX_INTERVAL_S} seconds"),
             USAGE,
         );
@@ -156,9 +136,9 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Ok(store) => Recorded::new(store, &wiring.clock, "watch"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
-            return fail(&message, REFUSED);
+            return fail("watch", &message, REFUSED);
         }
-        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e) => return fail("watch", &e.to_string(), STORE),
     };
     let config = Config {
         poll_s: *interval,
@@ -180,8 +160,8 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         &host_name(),
     ) {
         Ok(()) => {}
-        Err(e @ WatchError::Held { .. }) => return fail(&e.to_string(), REFUSED),
-        Err(WatchError::Store(e)) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e @ WatchError::Held { .. }) => return fail("watch", &e.to_string(), REFUSED),
+        Err(WatchError::Store(e)) => return fail("watch", &e.to_string(), STORE),
     }
 
     let stop = AtomicBool::new(false);
@@ -223,14 +203,14 @@ fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
 fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: bool) -> ExitCode {
     loop {
         if let Some(line) = teamwire_watch::poll(ctx, memory) {
-            say(line.as_str());
+            say_line(line.as_str());
             if deliver {
                 deliver_to_lead(ctx, &line);
             }
         }
         match memory.end {
             Some(WatchEnd::TeamComplete | WatchEnd::TeamClosed) => return ExitCode::SUCCESS,
-            Some(WatchEnd::StoreError) => return ExitCode::from(STORE_ERROR),
+            Some(WatchEnd::StoreError) => return ExitCode::from(STORE),
             Some(WatchEnd::LeaseLost) => return ExitCode::from(REFUSED),
             None if once => return ExitCode::SUCCESS,
             None => std::thread::sleep(Duration::from_secs(ctx.config.poll_s)),
