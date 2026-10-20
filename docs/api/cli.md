@@ -344,7 +344,11 @@ suffix when taken, and `-HHMMSS-<n>` for a second archive made in the same secon
 directory is deleted last: it is first renamed to
 `$TEAMWIRE_HOME/deleting/<team>.<pid>`, so a kill never leaves
 `teams/<team>` without its `team.db`, and then removed. A later close
-removes any directory there whose pid is dead. Prints the
+removes any directory there whose pid is dead. Deleting the state also
+deletes `$TEAMWIRE_HOME/cache/closer/<team>/`, the closer's clone, the same way
+(a symlink there is removed as a link); a failure to delete it is a note in the
+step's detail and never fails the close. `--keep-state` and `--role` leave it.
+Prints the
 branches kept and any unpushed commits. `branches kept:` lists only branches
 that exist in the repo; a branch the user deleted by hand is left out. The
 archive is built in `<archive dir>/.partial-<team>-<date>[-<time>]` and renamed to

@@ -103,7 +103,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 1 | `cargo fmt --all -- --check` | Format changes |
 | 2 | `cargo xtask tidy --base <base>`, where `<base>` is `$TEAMWIRE_BASE`, else a local `main`, else `origin/main`; the gate prints the base it used | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
-| 4 | `cargo build --workspace --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
+| 4 | `cargo build --workspace --all-targets --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
@@ -145,6 +145,12 @@ at once: each binary is checked against the dep-info file cargo wrote beside
 it, and one older than any of its source files is refused, with the file
 named (`teamwire_fakes::teamwire_cli` and `FakeBins::ensure`). A plain `cargo test -p <crate>`
 leaves the variable unset and builds the fakes itself.
+
+The gate's build takes `--all-targets`. Without it, the build leaves out the
+dev-dependencies, so some crates get fewer features: rmcp without `client`,
+regex-syntax without `unicode`. `cargo test` then compiles those crates and
+every workspace crate above them a second time, 16 crates in all (measured
+2026-10-20). With `--all-targets` the test step compiles nothing.
 
 `cargo-nextest` 0.9.148 is installed (2026-10-10), and `.config/nextest.toml`
 is ready for it, but the gate does not use it yet. nextest runs many tests at
@@ -249,7 +255,9 @@ get_unwrap = "warn"
 use_self = "warn"
 
 [profile.dev]
-debug = "line-tables-only"
+# No debug info: on macOS rustc keeps each build's object files beside the
+# binaries for their debug info, and cargo never deletes the old ones.
+debug = false
 ```
 
 `unsafe_code = "forbid"`: teamwire needs no unsafe code. Reading another
@@ -457,5 +465,5 @@ the user's real agent teams. So:
 | R33 no Cargo features | Yes | No `[features]` tables in v1 |
 | R34 `teamwire-testkit` crate for in-process fakes | No | `CLAUDE.md` names `tests/fakes/`; one crate there holds both the in-process fakes and the fake binaries |
 | R35 failure-path tests first | Yes | §6 item 6 |
-| R37 `debug = "line-tables-only"` | Yes | §4 |
+| R37 `debug = "line-tables-only"` | No | §4: `debug = false`. With line tables, macOS keeps every build's object files in `target/debug/deps`, and about 61,000 old ones (0.9 GB) had piled up by 2026-10-20. A panic still prints its own file and line; a backtrace shows function names only |
 | R38 briefs restate conventions | Yes | §6 |

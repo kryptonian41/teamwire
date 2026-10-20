@@ -102,4 +102,6 @@ get_unwrap = "warn"
 use_self = "warn"
 
 [profile.dev]
-debug = "line-tables-only"
+# No debug info: on macOS rustc keeps each build's object files beside the
+# binaries for their debug info, and cargo never deletes the old ones.
+debug = false
