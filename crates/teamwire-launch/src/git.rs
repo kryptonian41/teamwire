@@ -21,20 +21,7 @@ pub(crate) fn run(platform: &dyn Platform, dir: &Path, args: &[&str]) -> Result<
 
 /// The text a failed call left, for a message.
 pub(crate) fn failure_text(out: &RunOutput) -> String {
-    if out.timed_out {
-        return "timed out".to_owned();
-    }
-    let text = format!(
-        "{}{}",
-        String::from_utf8_lossy(&out.stderr),
-        String::from_utf8_lossy(&out.stdout)
-    );
-    let text = text.trim();
-    if text.is_empty() {
-        format!("exit {}", out.exit_code)
-    } else {
-        text.to_owned()
-    }
+    out.failure_text()
 }
 
 /// The trimmed standard output of a call that must succeed.
@@ -47,5 +34,5 @@ pub(crate) fn stdout_of(
     if !out.success() {
         return Err(format!("git {}: {}", args.join(" "), failure_text(&out)));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    Ok(out.stdout_trimmed())
 }

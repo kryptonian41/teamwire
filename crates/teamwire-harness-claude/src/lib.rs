@@ -89,11 +89,6 @@ impl ClaudeCode {
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
     }
-
-    /// The platform Claude's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
 }
 
 impl fmt::Debug for ClaudeCode {

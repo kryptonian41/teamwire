@@ -72,11 +72,6 @@ impl CodexCli {
     pub fn config(&self) -> &CodexConfig {
         &self.config
     }
-
-    /// The platform Codex's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
 }
 
 impl fmt::Debug for CodexCli {

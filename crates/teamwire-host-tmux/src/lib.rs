@@ -24,8 +24,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Pid, Place,
-    PlaceState, Platform, SpawnRequest, SubmitAck,
+    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, LaunchSpec, Occupant, OneLine,
+    Pid, Place, PlaceState, Platform, SpawnRequest, SubmitAck,
 };
 
 use call::{Failure, Socket, call};
@@ -90,11 +90,6 @@ impl Tmux {
     pub fn with_client(mut self, tmux_env: &str) -> Self {
         self.socket_path = pane::socket_of_client(tmux_env).map(str::to_owned);
         self
-    }
-
-    /// The platform tmux's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
     }
 
     /// The server a call goes to when its place names none.
@@ -278,7 +273,7 @@ impl Tmux {
             text.push_str("export ");
             text.push_str(k);
             text.push('=');
-            text.push_str(&sh_quote(v));
+            text.push_str(&LaunchSpec::shell_word(v));
             text.push('\n');
         }
         // `write_atomic` keeps the mode of the file it replaces and gives a new
@@ -316,11 +311,6 @@ fn is_env_name(name: &str) -> bool {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// A word for `sh`: single-quoted, each `'` written `'\''`.
-fn sh_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 /// The words that load the environment file in `dir`, remove `dir`, and then

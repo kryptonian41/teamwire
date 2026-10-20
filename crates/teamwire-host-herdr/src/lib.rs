@@ -84,11 +84,6 @@ impl Herdr {
         self
     }
 
-    /// The platform herdr's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
-
     fn call(&self, args: &[&str], timeout: Duration) -> Result<serde_json::Value, HostError> {
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         cli::call(self.platform.as_ref(), &args, timeout)

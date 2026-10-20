@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use teamwire_core::LaunchSpec;
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -73,20 +74,6 @@ fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
-/// Quote `text` for `sh -c` only when it holds a character the shell would
-/// treat specially.
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
-}
-
 /// The skill: the shared text's frontmatter, the Codex part, the shared body,
 /// and a `metadata` block holding the hash of that text as the last
 /// frontmatter key. `None` when the shared text has no frontmatter.
@@ -122,7 +109,11 @@ impl PluginFiles {
             skill(shared).ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut mcp_args = want.words().split_off(1);
         mcp_args.extend(["mcp".to_owned(), "--lead".to_owned()]);
-        let mut hook_words: Vec<String> = want.words().iter().map(|w| shell_word(w)).collect();
+        let mut hook_words: Vec<String> = want
+            .words()
+            .iter()
+            .map(|w| LaunchSpec::shell_word(w))
+            .collect();
         hook_words.extend(["hook", "lead-stop", "--harness", "codex"].map(str::to_owned));
         let body = [
             (

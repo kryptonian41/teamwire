@@ -1,6 +1,6 @@
 use teamwire_core::{OtelConfig, Role, TeamName};
 
-use super::{header_value, otel_vars, shell_word};
+use super::{header_value, otel_vars};
 
 fn names() -> (TeamName, Role) {
     (
@@ -38,14 +38,4 @@ fn empty_existing_attributes_add_no_leading_comma() {
 #[test]
 fn header_values_escape_the_list_separators() {
     assert_eq!(header_value("a,b%c"), "a%2Cb%25c");
-}
-
-#[test]
-fn shell_word_quotes_only_what_needs_it() {
-    assert_eq!(
-        shell_word("/usr/local/bin/teamwire"),
-        "/usr/local/bin/teamwire"
-    );
-    assert_eq!(shell_word("/my dir/tw"), "'/my dir/tw'");
-    assert_eq!(shell_word("it's"), "'it'\\''s'");
 }
