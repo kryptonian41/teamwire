@@ -234,6 +234,14 @@ impl MemberLaunch {
 }
 
 impl MemberLaunch {
+    /// `$TEAMWIRE_HOME/teams/<team>/members/<role>` names its home four
+    /// levels up.
+    #[must_use]
+    pub fn home_from_member_dir(&self) -> Option<String> {
+        let home = self.member_dir.ancestors().nth(4)?;
+        (!home.as_os_str().is_empty()).then(|| home.display().to_string())
+    }
+
     /// A resume's launch with what the first start recorded beyond the model:
     /// the `teamwire` binary and the plugin switches. A harness that carries
     /// hook and MCP commands in argv (Codex) needs both to match the start.
@@ -250,21 +258,26 @@ impl MemberLaunch {
 }
 
 impl LaunchSpec {
-    /// `argv` as one shell command line, for a command teamwire only prints:
-    /// a word with anything but plain characters is single-quoted.
+    /// `text` as one shell word, for a command a person or `sh -c` reads: a
+    /// word with anything but plain characters is single-quoted, each `'`
+    /// written `'\''`.
+    #[must_use]
+    pub fn shell_word(text: &str) -> String {
+        let plain = !text.is_empty()
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@,".contains(c));
+        if plain {
+            text.to_owned()
+        } else {
+            format!("'{}'", text.replace('\'', "'\\''"))
+        }
+    }
+
+    /// `argv` as one shell command line, for a command teamwire only prints.
     pub fn shell_line(argv: &[String]) -> String {
         argv.iter()
-            .map(|text| {
-                let plain = !text.is_empty()
-                    && text
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-                if plain {
-                    text.clone()
-                } else {
-                    format!("'{}'", text.replace('\'', "'\\''"))
-                }
-            })
+            .map(|text| Self::shell_word(text))
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -395,5 +408,26 @@ impl fmt::Debug for LaunchFile {
             .field("bytes", &format_args!("<{} bytes>", self.bytes.len()))
             .field("mode", &format_args!("{:o}", self.mode))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shell_word_quotes_only_what_needs_it() {
+        assert_eq!(LaunchSpec::shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
+        assert_eq!(LaunchSpec::shell_word("a=b,c@d"), "a=b,c@d");
+        assert_eq!(LaunchSpec::shell_word(""), "''");
+        assert_eq!(LaunchSpec::shell_word("/my dir/tw"), "'/my dir/tw'");
+        assert_eq!(LaunchSpec::shell_word("it's"), "'it'\\''s'");
+        assert_eq!(LaunchSpec::shell_word("50%"), "'50%'");
+    }
+
+    #[test]
+    fn shell_line_joins_quoted_words() {
+        let argv = ["claude".to_owned(), "a b".to_owned()];
+        assert_eq!(LaunchSpec::shell_line(&argv), "claude 'a b'");
     }
 }

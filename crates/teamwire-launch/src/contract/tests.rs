@@ -231,12 +231,15 @@ fn contract_names_the_launching_binary() {
 
 #[test]
 fn a_binary_path_with_a_space_or_a_quote_is_shell_quoted() {
-    assert_eq!(shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
+    assert_eq!(LaunchSpec::shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
     assert_eq!(
-        shell_word("/Users/a b/Application Support/teamwire"),
+        LaunchSpec::shell_word("/Users/a b/Application Support/teamwire"),
         "'/Users/a b/Application Support/teamwire'"
     );
-    assert_eq!(shell_word("/o'k/teamwire"), "'/o'\\''k/teamwire'");
+    assert_eq!(
+        LaunchSpec::shell_word("/o'k/teamwire"),
+        "'/o'\\''k/teamwire'"
+    );
     let text = render_contract(&ContractParts {
         team: &TeamName::parse("demo").unwrap(),
         role: &Role::parse("api").unwrap(),

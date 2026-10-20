@@ -72,7 +72,6 @@ impl CodexCli {
     pub fn config(&self) -> &CodexConfig {
         &self.config
     }
-
 }
 
 impl fmt::Debug for CodexCli {

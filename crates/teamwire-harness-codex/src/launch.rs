@@ -93,7 +93,7 @@ pub(crate) fn build(
             )]),
         );
     }
-    let home = home_from_member_dir(&m.member_dir);
+    let home = m.home_from_member_dir();
     set(
         "shell_environment_policy.set",
         shell_env(m, home.as_ref(), &token_path),
@@ -216,12 +216,6 @@ fn table<'a>(entries: impl IntoIterator<Item = (&'a str, Value)>) -> Value {
     )
 }
 
-/// `$TEAMWIRE_HOME/teams/<team>/members/<role>` names its home four levels up.
-fn home_from_member_dir(member_dir: &Path) -> Option<String> {
-    let home = member_dir.ancestors().nth(4)?;
-    (!home.as_os_str().is_empty()).then(|| path_text(home))
-}
-
 /// The folder Codex keys trust on: the main repository's root for a worktree
 /// (its `.git` file reads `gitdir: <repo>/.git/worktrees/<name>`), else `cwd`.
 fn trust_root(cwd: &Path) -> PathBuf {
@@ -267,20 +261,6 @@ fn refuse_own_codex_config(cwd: &Path) -> Result<(), HarnessError> {
     Ok(())
 }
 
-/// Quote `text` for `sh -c` only when it holds a character the shell would
-/// treat specially, so plain paths stay readable.
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
-}
-
 fn shell_env(m: &MemberLaunch, home: Option<&String>, token_path: &Path) -> Value {
     let mut env = vec![
         ("TEAMWIRE_TEAM", text(m.team.as_str())),
@@ -320,27 +300,27 @@ fn hook_entry(
     timeout_s: Option<i64>,
 ) -> Value {
     let mut words = vec![
-        format!("TEAMWIRE_TEAM={}", shell_word(m.team.as_str())),
-        format!("TEAMWIRE_ROLE={}", shell_word(m.role.as_str())),
+        format!("TEAMWIRE_TEAM={}", LaunchSpec::shell_word(m.team.as_str())),
+        format!("TEAMWIRE_ROLE={}", LaunchSpec::shell_word(m.role.as_str())),
     ];
     if let Some(h) = home {
-        words.push(format!("TEAMWIRE_HOME={}", shell_word(h)));
+        words.push(format!("TEAMWIRE_HOME={}", LaunchSpec::shell_word(h)));
     }
     words.push(format!(
         "TEAMWIRE_TOKEN_FILE={}",
-        shell_word(&path_text(token_path))
+        LaunchSpec::shell_word(&path_text(token_path))
     ));
-    words.push(shell_word(&path_text(&m.teamwire_bin)));
+    words.push(LaunchSpec::shell_word(&path_text(&m.teamwire_bin)));
     if let Some(h) = home {
-        words.extend(["--home".to_owned(), shell_word(h)]);
+        words.extend(["--home".to_owned(), LaunchSpec::shell_word(h)]);
     }
     words.extend([
         "hook".to_owned(),
         event.to_owned(),
         "--team".to_owned(),
-        shell_word(m.team.as_str()),
+        LaunchSpec::shell_word(m.team.as_str()),
         "--role".to_owned(),
-        shell_word(m.role.as_str()),
+        LaunchSpec::shell_word(m.role.as_str()),
     ]);
     let mut hook = vec![
         ("type", text("command")),

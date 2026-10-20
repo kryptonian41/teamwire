@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use teamwire_core::{MemberKind, Role, TeamName};
+use teamwire_core::{LaunchSpec, MemberKind, Role, TeamName};
 
 const HEAD: &str = include_str!("../contracts/head.md");
 const KIND_IMPLEMENTER: &str = include_str!("../contracts/kind_implementer.md");
@@ -92,7 +92,7 @@ fn ask_the_parent(kind: MemberKind) -> String {
 /// The whole contract for one member. The task is not here: it is the
 /// member's first message (LCH-19).
 pub fn render_contract(p: &ContractParts<'_>) -> String {
-    let bin = shell_word(&p.teamwire_bin.display().to_string());
+    let bin = LaunchSpec::shell_word(&p.teamwire_bin.display().to_string());
     // The placeholder is filled in the fixed text before any path or check
     // is added, so text from the spec that holds `{teamwire}` stays as written.
     let head = HEAD
@@ -113,21 +113,6 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         finish,
     ]
     .concat()
-}
-
-/// The path as one shell word: left alone when it holds only safe characters,
-/// else in single quotes with each `'` written `'\''`.
-fn shell_word(text: &str) -> String {
-    let safe = !text.is_empty()
-        && text.chars().all(|c| {
-            c.is_ascii_alphanumeric()
-                || matches!(c, '/' | '.' | '_' | '-' | '+' | ':' | '@' | '=' | ',')
-        });
-    if safe {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
 }
 
 #[cfg(test)]

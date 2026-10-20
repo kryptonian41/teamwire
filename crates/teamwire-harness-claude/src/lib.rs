@@ -89,7 +89,6 @@ impl ClaudeCode {
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
     }
-
 }
 
 impl fmt::Debug for ClaudeCode {
