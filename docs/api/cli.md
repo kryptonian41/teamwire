@@ -322,10 +322,11 @@ closed right before its worktree is removed, inside `remove_worktrees`, so
 nothing can commit between the last HEAD check and the removal; every other
 place closes in `close_places`. `--dry-run` names each such member in its
 `remove_worktrees` line: `<role>'s HEAD is detached, so its place is closed
-right before its worktree is removed`. Before a worktree is removed, for the
-whole team or `--role`, close waits up to 5 s for the processes that ran in the
-member's place to end. If one still runs, the worktree is kept, the step names
-the processes, and close stops; stop them, then run close again. A `--role`
+right before its worktree is removed`. When close closes a place right before
+it removes the worktree (a detached member on the whole-team path, and every
+`--role` removal), it first waits up to 5 s for the processes that ran in the
+place to end. If one still runs, the worktree is kept, the step names the
+processes, and close stops; stop them, then run close again. A `--role`
 removal stopped there says the place was closed and the worktree kept.
 Close takes back the `info/exclude` lines launch added (and `/TASK.md`)
 that no remaining worktree needs; the `remove_worktrees` (or `remove_worktree`)
