@@ -4,7 +4,7 @@
 //! Never: change a file. Invariants: each non-test `.connection()` outside
 //! `crates/teamwire-store/src/` adds one line naming the file and the line.
 //! Test code is skipped: files named `tests.rs`, files under a `tests`
-//! directory, and everything from the first `#[cfg(test)]` line on.
+//! directory, and everything from a `#[cfg(test)] mod` line on, and every file of a crate under `tests/`.
 
 use std::path::Path;
 
@@ -27,13 +27,21 @@ pub(crate) fn check_connection(
     files.sort();
     for path in files {
         let name = relative(root, &path);
-        let is_test_file = name.ends_with("/tests.rs") || name.contains("/tests/");
+        let is_test_file =
+            name.ends_with("/tests.rs") || name.contains("/tests/") || name.starts_with("tests/");
         if name.starts_with(STORE_SRC) || is_test_file {
             continue;
         }
         let text = std::fs::read_to_string(&path).with_context(|| format!("reading {name}"))?;
-        for (index, line) in code_only(&text).lines().enumerate() {
-            if line.contains("#[cfg(test)]") {
+        let code = code_only(&text);
+        let mut lines = code.lines().enumerate().peekable();
+        while let Some((index, line)) = lines.next() {
+            // A `#[cfg(test)]` on a module ends the production code; on a const or use it does not.
+            if line.contains("#[cfg(test)]")
+                && lines
+                    .peek()
+                    .is_some_and(|(_, next)| next.trim_start().starts_with("mod "))
+            {
                 break;
             }
             if line.contains(".connection()") {
@@ -76,6 +84,47 @@ mod tests {
                 .first()
                 .is_some_and(|p| p.starts_with("crates/teamwire-a/src/svc.rs:2:"))
         );
+    }
+
+    #[test]
+    fn cfg_test_on_a_const_does_not_hide_later_production_code() {
+        let dir = clean_workspace();
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/svc.rs",
+            "#[cfg(test)]\nconst ALL: u8 = 1;\nfn f(tx: T) {\n    tx.connection();\n}\n",
+        );
+        let found = hits(dir.path());
+        assert_eq!(found.len(), 1, "{found:?}");
+    }
+
+    #[test]
+    fn test_crates_src_is_test_code() {
+        let dir = clean_workspace();
+        write(
+            dir.path(),
+            "Cargo.toml",
+            "[workspace]\nmembers = [\"crates/*\", \"tests/crash\", \"xtask\"]\n\n[workspace.package]\nversion = \"0.0.0\"\npublish = false\n",
+        );
+        write(
+            dir.path(),
+            "tests/crash/Cargo.toml",
+            &std::fs::read_to_string(dir.path().join("crates/teamwire-a/Cargo.toml"))
+                .unwrap()
+                .replace("teamwire-a", "teamwire-crash"),
+        );
+        write(
+            dir.path(),
+            "tests/crash/src/lib.rs",
+            "//! Purpose.\n//!\n//! Never: anything.\nfn f(t: T) { t.connection(); }\n",
+        );
+        let found = tidy(dir.path(), &empty_metadata()).unwrap();
+        let found: Vec<_> = found
+            .problems
+            .iter()
+            .filter(|p| p.contains(".connection()"))
+            .collect();
+        assert!(found.is_empty(), "{found:?}");
     }
 
     #[test]
