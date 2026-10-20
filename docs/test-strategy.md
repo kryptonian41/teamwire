@@ -19,7 +19,10 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
   session-file directory and its `~/.claude.json` path from its config; tests
   point both at the temporary home (`TEAMWIRE_CLAUDE_DIR`).
 - No test depends on wall-clock sleeps for correctness. Time comes from the
-  `Clock` trait; tests use `FakeClock` and advance it.
+  `Clock` trait; tests use `FakeClock` and advance it. A time limit in a test
+  only guards against a hang and is at least 60 s per external call; a test
+  about order asserts the order, not a duration; and the gate is checked with
+  a second `cargo test --workspace` run loading the machine.
 - A test that needs git makes a throwaway repository in its temporary
   directory.
 
