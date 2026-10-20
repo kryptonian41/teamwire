@@ -88,7 +88,7 @@ Output:
   "display_id": "m014",
   "seq": 7,
   "deliveries": [
-    {"to": "harness", "state": "handed_off"},
+    {"to": "harness", "state": "handed_off", "attempts": 1},
     {"to": "rust", "state": "undelivered", "reason": "host_other_session", "attempts": 3}
   ],
   "duplicate_of_key": false

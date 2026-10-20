@@ -68,8 +68,7 @@ members it adds.
 With the `tmux` host and no running tmux server, launch and reopen open the tabs
 in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
 
-Spec fields, per team: `team`, `title`, `setup`, `harness` (default
-`claude-code`), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
+Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
 `children`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
@@ -114,8 +113,8 @@ gets no warning.
 
 Starts an AFK run (ADR 0025) from a lead session on Claude Code. Any other lead harness is refused. It stops at
 the first step that fails: it finds the lead session as launch does; checks
-the team name and title with launch's rules; runs the checks of `teamwire
-doctor` does (every check, not only the ones a launch needs); creates the team with no members and
+the team name and title with launch's rules; runs every check of `teamwire
+doctor`, not only the ones a launch needs; creates the team with no members and
 `afk_budget_ends_at` set; copies `--task` to `teams/<team>/afk/task.md` byte
 for byte; and starts or reuses the sleep hold. A doctor `FAIL` refuses the
 start (`teamwire doctor found a problem; fix it and start again`), and a
@@ -134,9 +133,7 @@ errors (exit 3). A refusal prints `teamwire afk start: refused: <code>:
 `afk_already_running` (this session already leads an open AFK team),
 `bad_name`, `title_missing`, `title_too_long`, `team_exists` (also when the write that creates the team finds the name taken, as the loser of two runs with one name), `bad_task`,
 `unknown_harness`, `unsupported_lead_harness` (the lead is not a Claude Code
-session; raised after the member check and before the lead is looked up), `lead_not_locatable`
-(the lead's harness cannot read watch lines and its pane cannot be found,
-ADR 0023), `host_listing_failed`, `no_host` (`host none cannot start a member; v1 needs herdr or
+session; raised after the member check and before the lead is looked up), `no_host` (`host none cannot start a member; v1 needs herdr or
 tmux`), `no_lead_process` (`no sleep hold can be taken: <why>`, on platforms
 with a sleep hold), `bad_budget` (the budget
 parses but its end is past the last date the clock supports) and
@@ -461,8 +458,9 @@ and its rules as text.
 
 ## Member commands
 
-Each reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`, `TEAMWIRE_TOKEN` and
-`TEAMWIRE_HOME` from its environment; an empty value counts as unset. Launch puts them there through the
+Each reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` and `TEAMWIRE_TOKEN` from its environment;
+an empty value counts as unset. `TEAMWIRE_HOME` is read too, but an empty
+`TEAMWIRE_HOME` is an error, not a fallback to `~/.teamwire`. Launch puts them there through the
 member's identity channel (ADR 0008): for Claude Code, the `env` key of the
 per-member `settings.json`, which reaches the Bash tool and the hooks.
 `TEAMWIRE_TOKEN_FILE`, a path to a file that holds the token, stands in for
@@ -471,8 +469,9 @@ environment (Codex, [ADR 0023](../adr/0023-codex-cli-is-a-harness.md)).
 
 ### `teamwire done --status done|blocked|failed --summary TEXT`
 
-Records a completion (ADR 0007). A wrong or missing token is `refused.identity`,
-exit 1, and is logged as `message.refused`, as for `team_done`. Prints what happens next. Exit 1 with the
+Records a completion (ADR 0007). A missing token is `refused.identity`, exit 1,
+before the store is opened, so nothing is logged. A wrong token is also
+`refused.identity`, exit 1, and is logged as `message.refused`, as for `team_done`. Prints what happens next. Exit 1 with the
 reason for an invalid status. For a harness without a turn-end hook, the
 first call with report gaps prints the gaps and stores nothing (exit 1); the
 second call stores the completion.
