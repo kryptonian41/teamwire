@@ -475,7 +475,7 @@ impl Rig {
     /// real git, then pauses. The real git is named by its absolute path,
     /// because the wrapper stands first on the `PATH`.
     pub fn pause_after_git(&mut self, words: &str) -> PathBuf {
-        let real = which("git");
+        let real = real_git();
         let test = format!("case \" $* \" in *' {words} '*) true;; *) false;; esac");
         self.pause_wrapper("git", &real.display().to_string(), &test)
     }
@@ -603,18 +603,18 @@ pub fn wait_idle(rig: &Rig) {
     }
 }
 
-/// The first `name` on the test `PATH`, by absolute path.
-fn which(name: &str) -> PathBuf {
+/// The first `git` on the test `PATH`, by absolute path.
+fn real_git() -> PathBuf {
     let path = std::env::var_os("PATH").unwrap();
     std::env::split_paths(&path)
-        .map(|dir| dir.join(name))
+        .map(|dir| dir.join("git"))
         .find(|p| p.is_file())
-        .unwrap_or_else(|| panic!("no {name} on the PATH"))
+        .expect("no git on the PATH")
 }
 
 /// Runs `git -C dir args` with a fixed identity and asserts it succeeded.
 pub fn git(dir: &Path, args: &[&str]) -> String {
-    let out = Command::new(which("git"))
+    let out = Command::new(real_git())
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -630,6 +630,13 @@ pub fn git(dir: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// Writes `name` into the checkout `dir` and commits it.
+pub fn commit_file(dir: &Path, name: &str, text: &str) {
+    std::fs::write(dir.join(name), text).unwrap();
+    git(dir, &["add", name]);
+    git(dir, &["commit", "-q", "-m", name]);
 }
 
 /// A repository on `main` with one commit, ignoring `.worktrees/` as launch
@@ -664,10 +671,12 @@ pub fn archives(home: &Path) -> Vec<PathBuf> {
 /// Runs `close` until it succeeds, clearing a lock a dead close left. Returns
 /// how many runs it took.
 pub fn close_until_done(rig: &Rig) -> usize {
+    let mut finished = None;
     for run in 1..=4 {
         let out = rig.run(&["close", "alpha"], &Identity::Nobody);
         if out.code == Some(0) {
-            return run;
+            finished = Some(run);
+            break;
         }
         assert!(
             out.stderr.contains("--clear-stale-lock"),
@@ -676,7 +685,7 @@ pub fn close_until_done(rig: &Rig) -> usize {
         let cleared = rig.run(&["close", "alpha", "--clear-stale-lock"], &Identity::Nobody);
         assert_eq!(cleared.code, Some(0), "{cleared:?}");
     }
-    panic!("close never finished")
+    finished.expect("close never finished")
 }
 
 /// The state directory is gone and the newest archive matches its sums.

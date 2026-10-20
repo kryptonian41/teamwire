@@ -4,7 +4,6 @@
 //! section 2).
 #![expect(
     clippy::unwrap_used,
-    clippy::expect_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
 
@@ -12,8 +11,8 @@
 pub mod rig;
 
 use rig::{
-    Identity, Rig, assert_closed_for_good, assert_integrity, close_until_done, git, stop_agents,
-    temp_repo, wait_idle, worktree_spec,
+    Identity, Rig, assert_closed_for_good, assert_integrity, close_until_done, commit_file, git,
+    stop_agents, temp_repo, wait_idle, worktree_spec,
 };
 use teamwire_core::Role;
 
@@ -29,11 +28,8 @@ fn kill9_right_after_worktree_add_leaves_a_member_close_can_find() {
     let repo = temp_repo();
     let tree = repo.path().join(".worktrees/wt");
     let signal = rig.pause_after_git("worktree add");
-    let mut running = rig.start_with_stdin(
-        &["launch"],
-        &Identity::Nobody,
-        &worktree_spec(repo.path()),
-    );
+    let mut running =
+        rig.start_with_stdin(&["launch"], &Identity::Nobody, &worktree_spec(repo.path()));
     Rig::wait_for(&signal, &mut running);
     running.kill9();
     running.finish();
@@ -71,9 +67,7 @@ fn kill9_right_after_worktree_remove_keeps_the_branch_and_a_rerun_finishes() {
     assert_eq!(launched.code, Some(0), "{launched:?}");
     wait_idle(&rig);
     // A commit of the member's own: the branch must keep it.
-    std::fs::write(tree.join("a.txt"), "work\n").unwrap();
-    git(&tree, &["add", "a.txt"]);
-    git(&tree, &["commit", "-q", "-m", "member work"]);
+    commit_file(&tree, "a.txt", "work\n");
     let tip = git(repo.path(), &["rev-parse", "refs/heads/wt"]);
 
     let signal = rig.pause_after_git("worktree remove");
