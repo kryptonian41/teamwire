@@ -22,7 +22,12 @@ use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 use teamwire_host_tmux::Tmux;
 use teamwire_store::{Ctx, NewTeam, Party, Store};
 
-const T: Duration = Duration::from_secs(10);
+/// The budget of one tmux call. The limit only guards against a hang, and a
+/// loaded machine takes seconds to start a process.
+const T: Duration = Duration::from_secs(60);
+
+/// How many 50 ms looks make `T`.
+const LOOKS: u32 = 1200;
 
 static NEXT_SOCKET: AtomicU32 = AtomicU32::new(0);
 
@@ -83,7 +88,7 @@ fn write_file(path: &Path, text: &str) {
 }
 
 fn shows(host: &dyn Host, place: &Place, text: &str) -> bool {
-    for _ in 0..100 {
+    for _ in 0..LOOKS {
         if host.read_tail(place, 50, T).unwrap().contains(text) {
             return true;
         }
@@ -131,7 +136,9 @@ impl Rig {
                         .collect(),
                     env: Vec::new(),
                 },
-                T,
+                // The adapter splits a spawn's timeout among up to six tmux
+                // calls, so each still gets `T`.
+                T.saturating_mul(6),
             )
             .unwrap();
         let first_line = screen.lines().next().unwrap();
@@ -139,7 +146,12 @@ impl Rig {
             shows(tmux.as_ref(), &place, first_line),
             "the pane never showed its screen"
         );
-        let pane_pid = *tmux.occupant(&place, T).unwrap().pids.first().unwrap();
+        let pane_pid = *tmux
+            .occupant(&place, T.saturating_mul(2))
+            .unwrap()
+            .pids
+            .first()
+            .unwrap();
 
         // Claude Code's own record of the session, naming the pane's process.
         let claude_dir = tempfile::tempdir().unwrap();
@@ -237,8 +249,10 @@ fn no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane() {
     // tmux delivers keys to a pane in order. Once the marker has arrived, a
     // paste or Enter sent before it would have arrived too.
     let marker = [Key::Char('Z'), Key::Char('Q')];
-    rig.tmux.send_keys(&rig.place, &marker, T).unwrap();
-    for _ in 0..100 {
+    rig.tmux
+        .send_keys(&rig.place, &marker, T.saturating_mul(2))
+        .unwrap();
+    for _ in 0..LOOKS {
         if rig.typed().contains("ZQ") {
             break;
         }
@@ -258,7 +272,7 @@ fn a_pane_at_its_input_prompt_receives_the_line_and_an_enter() {
         ),
         "{outcome:?}"
     );
-    for _ in 0..100 {
+    for _ in 0..LOOKS {
         if rig.typed().contains("hello lead") {
             break;
         }
