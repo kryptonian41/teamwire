@@ -338,3 +338,39 @@ fn an_exclude_lock_whose_owner_is_dead_is_removed() {
     assert!(exclude.lines().any(|l| l == "/TASK.md"), "{exclude}");
     assert!(!lock.exists());
 }
+
+#[test]
+fn two_branches_that_map_to_one_directory_are_refused() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let member = |role: &str, branch: &str| {
+        common::with(
+            common::worktree_member(role, role, &repo),
+            "branch",
+            serde_json::json!(branch),
+        )
+    };
+    let spec = common::team_spec("demo", &[member("a", "feat/x"), member("b", "feat-x")]);
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(common::codes(&errors), ["slug_collision"]);
+    let message = &errors.first().unwrap().message;
+    assert!(
+        message.contains("a and b") && message.contains(".worktrees/feat-x"),
+        "{message}"
+    );
+}
+
+#[test]
+fn a_base_that_is_not_a_commit_is_refused() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let member = common::with(
+        common::worktree_member("api", "API work", &repo),
+        "base",
+        serde_json::json!("no-such-ref"),
+    );
+    let spec = common::team_spec("demo", &[member]);
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(common::codes(&errors), ["bad_base"]);
+    assert!(errors.first().unwrap().message.contains("no-such-ref"));
+}
