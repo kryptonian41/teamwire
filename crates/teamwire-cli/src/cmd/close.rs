@@ -125,7 +125,10 @@ fn stopped_message(report: &CloseReport, step: &str, team: &TeamName) -> String 
 
 /// What a stopped removal of one member leaves. The team never left `open`,
 /// so only the member's own steps count. Each acts on one member with one
-/// call, so a failed one took nothing away; one that succeeded did.
+/// call, so a failed one took nothing away; one that succeeded did. One
+/// failure comes after the work: a `close_place` whose detail starts with
+/// `<role>'s place ` closed the place, then found processes from it still
+/// running, so the worktree was kept.
 fn removal_stopped_message(
     report: &CloseReport,
     step: &str,
@@ -137,7 +140,18 @@ fn removal_stopped_message(
         .filter(|d| report.steps.iter().any(|s| s.step == *d && s.ok))
         .collect();
     let rerun = format!("`teamwire close {team} --role {role}`");
-    if ran.is_empty() {
+    let place = format!("{role}'s place ");
+    let closed = report
+        .steps
+        .iter()
+        .any(|s| s.step == "close_place" && !s.ok && s.detail.starts_with(&place));
+    if closed {
+        format!(
+            "removal of {role} stopped at {step}: {role}'s place was closed and its worktree \
+             kept, because processes from the place still run; {role}'s row is kept, not \
+             marked removed. Stop them, then run {rerun} again to finish the job"
+        )
+    } else if ran.is_empty() {
         format!(
             "removal of {role} stopped at {step}: nothing was taken away; fix that, then run \
              {rerun} again"
@@ -292,5 +306,31 @@ mod tests {
         let before = report(&[("close_place", false)]);
         let text = removal_stopped_message(&before, "close_place", &team, &role);
         assert!(text.contains("nothing was taken away"), "{text}");
+    }
+
+    #[test]
+    fn a_removal_stopped_after_its_place_closed_says_the_worktree_is_kept() {
+        let team = TeamName::parse("alpha").unwrap();
+        let role = Role::parse("api").unwrap();
+        // The text teamwire-close writes when processes outlive the closed place.
+        let closed = CloseReport {
+            steps: vec![StepOutcome {
+                step: "close_place".to_owned(),
+                ok: false,
+                detail: "api's place p1 closed, but process(es) 7002 that ran in it still run \
+                         5 s later; the worktree is kept. Stop them, then run close again"
+                    .to_owned(),
+            }],
+            ..CloseReport::default()
+        };
+        let text = removal_stopped_message(&closed, "close_place", &team, &role);
+        assert_eq!(
+            text,
+            "removal of api stopped at close_place: api's place was closed and its worktree \
+             kept, because processes from the place still run; api's row is kept, not marked \
+             removed. Stop them, then run `teamwire close alpha --role api` again to finish \
+             the job"
+        );
+        assert!(!text.contains("nothing was taken away"), "{text}");
     }
 }

@@ -100,7 +100,9 @@ const EXIT_PAUSE: Duration = Duration::from_millis(50);
 /// there, it is removed next, so close waits for the processes that ran in
 /// the place to end: the host returns once the place is closed, and a git
 /// command the hangup reached may still be finishing. If they still run when
-/// the wait ends, the error keeps the worktree and names them.
+/// the wait ends, the error keeps the worktree and names them; it is the
+/// only error that starts with `<role>'s place `, which the CLI reads to say
+/// the place is already closed.
 pub(crate) fn close_place(
     ctx: &Ctx<'_>,
     team: &TeamName,

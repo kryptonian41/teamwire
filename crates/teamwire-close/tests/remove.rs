@@ -813,10 +813,11 @@ fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
 fn a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs() {
     let mut rig = verified_implementer();
     let api = rig.member("api");
+    let place = rig.place_of("api");
     // A git command the hangup reached, still finishing after the place closed.
     let late = teamwire_core::Pid::new(7002);
     rig.host.set_occupant(
-        &rig.place_of("api"),
+        &place,
         teamwire_core::Occupant {
             session: None,
             pids: vec![late],
@@ -832,6 +833,13 @@ fn a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs
     let failed = report.steps.last().unwrap();
     assert!(
         !failed.ok && failed.detail.contains("7002") && failed.detail.contains("run close again"),
+        "{report:?}"
+    );
+    // The CLI reads this start to say the place is closed and the worktree kept.
+    assert!(
+        failed
+            .detail
+            .starts_with(&format!("api's place {} closed, but ", place.id)),
         "{report:?}"
     );
     assert!(place_is_closed(&rig, "api"));
