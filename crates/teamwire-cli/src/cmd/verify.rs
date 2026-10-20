@@ -7,17 +7,10 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{PARTIAL, REFUSED, STORE, home_or_refuse, no_database_text, refuse_member};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// A member is not clean, or a copy or the database is not right.
-const NOT_CLEAN: u8 = 2;
-/// The store could not be read or written.
-const STORE: u8 = 6;
 
 pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let VerifyArgs {
@@ -83,7 +76,7 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
             if report.is_clean(role.is_some()) {
                 ExitCode::SUCCESS
             } else {
-                ExitCode::from(NOT_CLEAN)
+                ExitCode::from(PARTIAL)
             }
         }
         Err(e) => fail(&e.to_string(), error_code(&e)),

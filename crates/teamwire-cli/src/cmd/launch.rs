@@ -10,15 +10,10 @@ use teamwire_launch::{
 };
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::{home_or_refuse, refuse_member};
+use crate::cmd::send::{PARTIAL, REFUSED, STORE, home_or_refuse, refuse_member};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, LaunchArgs};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const PARTIAL: u8 = 2;
-const STORE_ERROR: u8 = 6;
 
 fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     if let Some(file) = &args.spec {
@@ -119,7 +114,7 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         Ok(store) => Recorded::new(store, &wiring.clock, "launch"),
         Err(e) => {
             eprintln!("teamwire launch: the store could not be opened: {e}");
-            return ExitCode::from(STORE_ERROR);
+            return ExitCode::from(STORE);
         }
     };
     let report = {

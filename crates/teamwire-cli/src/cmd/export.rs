@@ -7,14 +7,9 @@ use serde_json::{Value, json};
 use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
-use crate::cmd::send::{carries_member_identity, home_or_refuse};
+use crate::cmd::send::{REFUSED, STORE, carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// The store could not be read, or the file could not be written.
-const STORE: u8 = 6;
 
 /// One record in `CloudEvents` 1.0 names. `seq` and `role` are extension
 /// attributes: they let a reader put events back in order and find a

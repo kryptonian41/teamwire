@@ -6,17 +6,10 @@ use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{PARTIAL, REFUSED, STORE, home_or_refuse, no_database_text, refuse_member};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// The close stopped at a step; a rerun continues from the first step.
-const STOPPED: u8 = 2;
-/// The store could not be opened or read.
-const STORE: u8 = 6;
 
 pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let CloseArgs {
@@ -202,7 +195,7 @@ fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> E
             CloseTarget::Team => stopped_message(report, step, team),
             CloseTarget::Member(role) => removal_stopped_message(report, step, team, role),
         });
-        return ExitCode::from(STOPPED);
+        return ExitCode::from(PARTIAL);
     }
     match target {
         CloseTarget::Team => match &report.archive {

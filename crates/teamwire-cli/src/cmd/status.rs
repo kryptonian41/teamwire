@@ -7,13 +7,9 @@ use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
 
-use crate::cmd::send::{carries_member_identity, home_or_refuse};
+use crate::cmd::send::{REFUSED, STORE, carries_member_identity, home_or_refuse};
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
 
 /// The view of one team, from its database opened read-only.
 fn view_of(
@@ -235,13 +231,13 @@ fn store_failure(team: &TeamName, e: &StoreError) -> ExitCode {
     if matches!(e, StoreError::NoDatabase { .. }) {
         return fail(&format!("no team {team}. {NO_DATABASE_HINT}"), REFUSED);
     }
-    fail(&e.to_string(), STORE_ERROR)
+    fail(&e.to_string(), STORE)
 }
 
 fn json_text<T: serde::Serialize>(value: &T) -> Result<String, ExitCode> {
     serde_json::to_string_pretty(value)
         .map(|t| t + "\n")
-        .map_err(|e| fail(&e.to_string(), STORE_ERROR))
+        .map_err(|e| fail(&e.to_string(), STORE))
 }
 
 pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCode {
@@ -279,7 +275,7 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
     };
     say(&text);
     if unreadable(&view) {
-        return ExitCode::from(STORE_ERROR);
+        return ExitCode::from(STORE);
     }
     let missing_role = role
         .as_ref()
@@ -308,7 +304,7 @@ fn unreadable(view: &StatusView) -> bool {
 fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
     let names = match teamwire_store::team_names(home) {
         Ok(names) => names,
-        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e) => return fail(&e.to_string(), STORE),
     };
     let mut views = Vec::new();
     for name in names {
@@ -323,7 +319,7 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
         hide_lead_from_members(view);
     }
     let code = if views.iter().any(|(_, view)| unreadable(view)) {
-        ExitCode::from(STORE_ERROR)
+        ExitCode::from(STORE)
     } else {
         ExitCode::SUCCESS
     };

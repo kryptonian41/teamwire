@@ -91,6 +91,9 @@ mod cmd {
 
         use crate::Global;
 
+        /// The exit code of a run that found a problem; same value as the real one.
+        pub(crate) const PARTIAL: u8 = 2;
+
         /// The state directory the test names; the real helper is not compiled here.
         pub(crate) fn home_or_refuse(_command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
             global.home.clone().ok_or(ExitCode::from(1))

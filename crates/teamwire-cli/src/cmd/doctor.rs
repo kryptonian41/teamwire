@@ -19,11 +19,8 @@ use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 use crate::Global;
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check::{self, Outcome};
-use crate::cmd::send::home_or_refuse;
+use crate::cmd::send::{PARTIAL, home_or_refuse};
 use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, Wiring};
-
-/// Exit code of a doctor run that found a problem (`docs/api/cli.md`).
-const PARTIAL: u8 = 2;
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;

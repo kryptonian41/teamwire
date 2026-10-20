@@ -5,13 +5,9 @@ use std::process::ExitCode;
 use teamwire_core::{Role, TeamName};
 use teamwire_report::{Received, mark_received};
 
-use crate::cmd::send::{fail, refuse_member, say, with_ctx};
+use crate::cmd::send::{REFUSED, STORE, fail, refuse_member, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, ReceivedArgs, USAGE};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
 
 pub(crate) fn run(args: &ReceivedArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let ReceivedArgs { team, roles } = args;
@@ -34,7 +30,7 @@ pub(crate) fn run(args: &ReceivedArgs, global: &Global, wiring: &Wiring) -> Exit
         mark_received(ctx, &roles)
     }) {
         Err(code) => code,
-        Ok(Err(e)) => fail("received", &e.to_string(), STORE_ERROR),
+        Ok(Err(e)) => fail("received", &e.to_string(), STORE),
         Ok(Ok(results)) => {
             let mut out = String::new();
             let mut unknown = false;

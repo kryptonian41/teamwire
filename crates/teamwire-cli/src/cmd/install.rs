@@ -12,7 +12,7 @@ use std::time::Duration;
 use teamwire_core::Command;
 
 use crate::cmd::lead_setup_check::is_build_output;
-use crate::cmd::send::{REFUSED, fail, state_home};
+use crate::cmd::send::{PARTIAL, REFUSED, fail, state_home};
 use crate::wiring::{Change, CodexChange, CodexCommand, McpEntry, SKILL_TEXT, Wiring};
 use crate::{Global, InstallArgs, USAGE, UninstallArgs};
 
@@ -22,9 +22,6 @@ const CLAUDE: &str = "claude-code";
 const CODEX: &str = "codex";
 
 const NO_HOME: &str = "no state directory: set --home, TEAMWIRE_HOME or HOME";
-
-/// A change failed after the checks passed (`docs/api/cli.md`).
-const PARTIAL: u8 = 2;
 
 /// The MCP entry this binary registers: its own absolute path, with
 /// `--home` only when the state directory is not `~/.teamwire`.

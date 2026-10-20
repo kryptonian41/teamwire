@@ -12,14 +12,10 @@ use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{REFUSED, STORE, home_or_refuse, no_database_text, refuse_member};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
 
 /// The longest `--interval`. Each poll refreshes the lease, and a lease
 /// unrefreshed for `WATCH_LEASE_STALE` looks dead to a second watch. Half
@@ -158,7 +154,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
             let message = no_database_text(&team, &path);
             return fail(&message, REFUSED);
         }
-        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e) => return fail(&e.to_string(), STORE),
     };
     let config = Config {
         poll_s: *interval,
@@ -181,7 +177,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     ) {
         Ok(()) => {}
         Err(e @ WatchError::Held { .. }) => return fail(&e.to_string(), REFUSED),
-        Err(WatchError::Store(e)) => return fail(&e.to_string(), STORE_ERROR),
+        Err(WatchError::Store(e)) => return fail(&e.to_string(), STORE),
     }
 
     let stop = AtomicBool::new(false);
@@ -230,7 +226,7 @@ fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: b
         }
         match memory.end {
             Some(WatchEnd::TeamComplete | WatchEnd::TeamClosed) => return ExitCode::SUCCESS,
-            Some(WatchEnd::StoreError) => return ExitCode::from(STORE_ERROR),
+            Some(WatchEnd::StoreError) => return ExitCode::from(STORE),
             Some(WatchEnd::LeaseLost) => return ExitCode::from(REFUSED),
             None if once => return ExitCode::SUCCESS,
             None => std::thread::sleep(Duration::from_secs(ctx.config.poll_s)),

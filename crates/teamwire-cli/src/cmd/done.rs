@@ -6,15 +6,10 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::{caller_env, home_or_refuse, no_database_text};
+use crate::cmd::send::{REFUSED, STORE, caller_env, home_or_refuse, no_database_text};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// The store could not be read or written.
-const STORE: u8 = 6;
 
 pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let DoneArgs { status, summary } = args;

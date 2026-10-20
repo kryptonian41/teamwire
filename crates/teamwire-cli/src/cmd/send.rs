@@ -18,6 +18,8 @@ use crate::{Global, SendArgs, USAGE};
 
 /// Refused by a rule; nothing changed (docs/api/cli.md).
 pub(crate) const REFUSED: u8 = 1;
+/// Part of the work was done, or the check found a problem.
+pub(crate) const PARTIAL: u8 = 2;
 /// At least one recipient is `undelivered`.
 const NOT_DELIVERED: u8 = 4;
 /// At least one recipient is `unconfirmed`, none `undelivered`.

@@ -8,15 +8,10 @@ use teamwire_core::{Clock, Config, TeamName};
 use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView};
 use teamwire_store::{Ctx, Store, database_path};
 
-use crate::cmd::send::home_or_refuse;
+use crate::cmd::send::{REFUSED, STORE, home_or_refuse};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, MetricsArgs, MetricsCommand, USAGE};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// The store could not be read or written.
-const STORE: u8 = 6;
 
 pub(crate) fn run(args: &MetricsArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let MetricsArgs {
