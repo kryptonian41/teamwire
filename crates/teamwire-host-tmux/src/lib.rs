@@ -92,11 +92,6 @@ impl Tmux {
         self
     }
 
-    /// The platform tmux's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
-
     /// The server a call goes to when its place names none.
     fn own_server(&self) -> Option<Socket<'_>> {
         self.socket_path
