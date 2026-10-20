@@ -11,7 +11,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | --- | --- | --- |
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` (null in an export taken from a member session) |
-| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `excluded`, `session_id` (started) |
+| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `excluded`, `session_id` (started) |
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
@@ -133,7 +133,7 @@ wave-1 contract:
 - Every `member.creating`, `member.started`, `member.failed` and `member.refused`
   written by one `teamwire launch` run carries `data.launch` (a ULID made once per run) and
   `data.requested` (the number of members in the spec). The
-  `teamwire.launch` span runs from the first to the last event with that id.
+  `teamwire.launch` span runs from the first event with that id to the event that makes every requested member started, failed or refused. A launch that stops before that has no span.
 - `member.started`, `member.failed` and `member.refused` carry `data.steps`, the
   milliseconds each launch step took. `member.started` also carries `data.session_id`, the
   harness session id for the `session.id` attribute.
