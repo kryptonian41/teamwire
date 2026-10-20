@@ -103,7 +103,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | 1 | `cargo fmt --all -- --check` | Format changes |
 | 2 | `cargo xtask tidy --base <base>`, where `<base>` is `$TEAMWIRE_BASE`, else a local `main`, else `origin/main`; the gate prints the base it used | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
-| 4 | `cargo build --workspace --all-targets --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
+| 4 | `cargo build --workspace --all-targets --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo nextest run --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
 | 6 | `scripts/check-docs.sh` | Required documents still present |
 
@@ -152,18 +152,22 @@ regex-syntax without `unicode`. `cargo test` then compiles those crates and
 every workspace crate above them a second time, 16 crates in all (measured
 2026-10-20). With `--all-targets` the test step compiles nothing.
 
-`cargo-nextest` 0.9.148 is installed (2026-10-10), and `.config/nextest.toml`
-is ready for it, but the gate does not use it yet. nextest runs many tests at
-once, each in its own process, and the end-to-end and crash tests start dozens
-of processes each. Process starts on this Mac are slow: at times every start
-costs about 0.25 s, even `/bin/echo`, and a newly built binary's first start
-costs seconds. Under nextest those waits broke teamwire's own timeouts and the
-tests' own 20 s waits, and the gate failed in a different test on each of four
-runs. When it passed, step 4 took about 200 s against about 330 s with `cargo
-test`. The cause of the slow starts is not proven. The candidates are the
-system's program check (`syspolicyd`), a security agent, and other load on
-the machine. `docs/research/2026-10-10-test-suite.md` has the measurements
-and a plan. Try nextest again once a start costs milliseconds.
+Step 4 runs the tests with `cargo-nextest` 0.9.148, configured in
+`.config/nextest.toml`. nextest runs many tests at once, each in its own
+process. The end-to-end and crash tests start dozens of processes each and
+depend on teamwire's own timeouts, so they run one at a time in the
+`process-heavy` group. That chain sets most of step 4's length.
+
+nextest was first tried on 2026-10-10 and dropped. Every process start then
+cost about 0.25 s, even `/bin/echo`, and the gate failed in a different test
+on each of four runs (`docs/research/2026-10-10-test-suite.md`). On
+2026-10-20 a start of `/bin/echo` cost 3 to 6 ms, and four nextest runs passed
+all 1,946 tests in 190 to 217 s, against 299 to 304 s for `cargo test`. What
+is still slow: the first one or two starts of a newly linked large binary
+take about 0.265 s. The SentinelOne agent's own telemetry shows it holds each
+new program for up to 250 ms. If the old failures come back, run
+`for i in $(seq 50); do /bin/echo >/dev/null; done` under `time`: a healthy
+machine takes about 0.15 s.
 
 `cargo-deny` and `cargo-mutants` are not installed on this machine (checked
 2026-09-29). repopract recommends `cargo-deny` for a licence audit;
@@ -446,7 +450,7 @@ the user's real agent teams. So:
 | R5 every rule has a program | Yes | §7 brackets |
 | R7, R8 one gate script with a fast mode | Yes | §2 (`scripts/gate.sh`, `fast`) |
 | R9 lints opt-in checked | Yes | tidy |
-| R10, R14, R36 nextest and cargo-deny in the gate | No | nextest is installed but not in the gate: parallel tests overload process starts on this Mac (§2); cargo-deny is not installed, a user decision (`ARCHITECTURE.md` open questions) |
+| R10, R14, R36 nextest and cargo-deny in the gate | Partly | nextest runs step 4 of the gate (§2); cargo-deny is not installed, a user decision (`ARCHITECTURE.md` open questions) |
 | R11 clippy with `-D warnings` on the call | Yes | §2 |
 | R12 `#[expect]` with reason only | Yes | §4 |
 | R13 `Cargo.lock` committed, `--locked` | Yes | §2 |

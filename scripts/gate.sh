@@ -61,6 +61,6 @@ fi
 # needs it before the tests skip their own rebuild of the fakes.
 # --all-targets turns on the dev-dependencies' features too, so cargo test
 # reuses every crate this build made instead of compiling 16 of them again.
-step 4 test sh -c 'cargo build --workspace --all-targets --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked'
+step 4 test sh -c 'cargo build --workspace --all-targets --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo nextest run --workspace --locked'
 step 5 doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 step 6 docs scripts/check-docs.sh
