@@ -148,3 +148,33 @@ fn a_closed_team_refuses_and_stores_nothing() {
     assert!(run.err.contains("team_closed"), "{}", run.err);
     assert_eq!(stored(&fx), 0);
 }
+
+#[test]
+fn a_store_failure_leaves_a_row_named_for_the_command() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = done(&fx, &as_api(), &["--status", "done", "--summary", "x"]);
+    assert_ne!(run.code, 0, "{}{}", run.out, run.err);
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "done", "code": "corrupt" })],
+        "{}{}",
+        run.out,
+        run.err
+    );
+}

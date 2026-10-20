@@ -675,3 +675,32 @@ fn a_member_row_that_does_not_parse_is_exit_six_with_and_without_dry_run() {
     assert_eq!(rig.team_state(), TeamState::Open);
     assert!(rig.team_dir("alpha").join("team.db").is_file());
 }
+
+#[test]
+fn a_close_that_meets_a_damaged_row_leaves_one_store_error_row() {
+    let rig = Rig::new();
+    rig.launch(&pane_spec(rig.work.path()));
+    let team = TeamName::parse("alpha").unwrap();
+    let mut store = Store::open_existing(rig.home.path(), &team).unwrap();
+    store
+        .write(|tx| {
+            Ok(tx.connection().execute(
+                "UPDATE members SET harness = 'Not A Harness!' WHERE role = 'scout'",
+                (),
+            )?)
+        })
+        .unwrap();
+    // A dry run opens the store read-only and never writes a row.
+    let dry = rig.teamwire(&["close", "alpha", "--dry-run"], None);
+    assert_eq!(dry.code, 6, "{}{}", dry.out, dry.err);
+    let run = rig.teamwire(&["close", "alpha"], None);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    let errors: Vec<Value> = store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(errors, [json!({ "op": "close", "code": "corrupt" })]);
+}

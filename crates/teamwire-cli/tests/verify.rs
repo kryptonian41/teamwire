@@ -236,3 +236,30 @@ fn a_member_session_cannot_waive_a_flag_but_can_run_verify() {
     assert_eq!(run.code, 2, "{}{}", run.out, run.err);
     assert!(run.out.contains("FLAGGED"), "{}", run.out);
 }
+
+#[test]
+fn a_store_failure_leaves_a_row_named_for_the_command() {
+    let (mut fx, _repo) = team("exit 0", &[("src/lib.rs", "fn a() {}\n")]);
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = teamwire(&fx, &["verify", "alpha"]);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "verify", "code": "corrupt" })]
+    );
+}
