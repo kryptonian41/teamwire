@@ -230,6 +230,67 @@ fn platform_contract_fails_when_a_timeout_leaves_the_grandchild_running() {
     });
 }
 
+/// The run outputs for `cases`, where the grandchild case's first `killed`
+/// runs time out before the child printed its pid.
+fn queue_with_early_kills(platform: &FakePlatform, cases: &[RunCase], killed: usize) {
+    for case in cases {
+        if case.expect.ends_grandchild {
+            for _ in 0..killed {
+                platform.queue_run(Ok(teamwire_core::RunOutput {
+                    stdout: Vec::new(),
+                    ..case.expect.conforming_output()
+                }));
+            }
+        }
+        platform.queue_run(Ok(case.expect.conforming_output()));
+    }
+}
+
+#[test]
+fn platform_contract_tries_longer_timeouts_until_the_child_prints_its_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    queue_with_early_kills(&platform, &cases, 2);
+    let grandchild = cases.iter().find(|c| c.expect.ends_grandchild).unwrap();
+    let command = grandchild.command.clone();
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
+    let timeouts: Vec<Duration> = platform
+        .runs()
+        .into_iter()
+        .filter(|(cmd, _)| *cmd == command)
+        .map(|(_, timeout)| timeout)
+        .collect();
+    assert_eq!(
+        timeouts,
+        [
+            Duration::from_millis(300),
+            Duration::from_secs(3),
+            Duration::from_secs(30)
+        ]
+    );
+}
+
+#[test]
+#[should_panic(
+    expected = "a timeout kills what the child started too: the grandchild is gone: \"the child printed no pid\""
+)]
+fn platform_contract_fails_when_no_attempt_prints_a_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    queue_with_early_kills(&platform, &cases, 3);
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
+}
+
 #[test]
 fn fake_platform_without_a_sleep_hold_passes_platform_contract() {
     let dir = tempfile::tempdir().unwrap();
