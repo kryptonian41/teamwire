@@ -60,7 +60,7 @@ and no host (ADP-1).
 | `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. |
 | `teamwire-verify` | Runs checks, diffs from the start commit, applies the per-language rules, writes verify records and waivers. |
 | `teamwire-close` | Whole-team close and single-member removal, in the fixed order, with the archive. |
-| `teamwire-watch` | The watch loop and the status view. Both derive each member's state the same way. |
+| `teamwire-watch` | The watch loop and the status view. Both derive each member's state the same way, except that status reads an idle `"dispatch": false` member quiet at once (WAT-3) and measures ages in wall time, because only a running watch measures sleeps. |
 | `teamwire-otel` | Local metrics queries and the OpenTelemetry export. |
 | `teamwire-mcp` | The stdio MCP server (`rmcp`), a thin front for `msg`, `report` and `watch`. |
 | `teamwire-cli` | The `teamwire` binary: argument parsing, wiring concrete adapters, exit codes. |
@@ -95,7 +95,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | Path | Written by | Holds |
 | --- | --- | --- |
 | `team.db` (with `-wal`, `-shm`) | teamwire only | Every record below |
-| `briefs/<role>.md` | launch | The brief as sent (a worktree member also gets a copy at `<worktree>/TASK.md`, listed in the repository's `info/exclude`) |
+| `briefs/<role>.md` | launch | The brief as sent (a worktree member also gets a copy at `<worktree>/TASK.md`, listed as `/TASK.md` in the repository's `info/exclude` until the last worktree that needs it is closed) |
 | `contract/<role>.md` | launch | The rendered system-prompt contract |
 | `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), the merged `plugins` map as `enabledPlugins`, always holding `teamwire@teamwire: false` so a member never loads the lead's plugin (ADR 0017, ADR 0018), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
 | `setup/<role>.log` | launch | Output of the setup command |
@@ -113,12 +113,12 @@ crate and listed in `docs/api/core.md`):
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation`, `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
-| `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `result_sha256` |
+| `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `reason_detail`, `result_sha256` |
 | `verify_records` | verify run per member | `role`, `head_sha`, `verdict`, `exit_code`, `seconds`, `flags`, `log_sha256` |
 | `waivers` | waived flag | `role`, `flag_id`, `head_sha`, `reason` |
 | `watch_lease` | team (single row) | `pid`, `host`, `started_at`, `heartbeat_at` |
 | `announcements` | thing the watch said | `key` (such as `LATE:api:2`, generation 2; `SILENT:api:2:3`, episode 3), `at` |
-| `counters` | named counter | `name` (`display_id`, `seq:<sender>`), `value` |
+| `counters` | named counter | `name` (`display_id`, `seq:<sender>`, `completion:<role>`, `watch.stalls_ended`), `value` |
 | `events` | state change | `seq` (autoincrement), `ulid`, `time`, `type`, `role`, `subject`, `data` (JSON), `writer_version` (`<crate version>+<12 hex commit>` or `+unknown`; compared as text, never parsed) |
 | `metric_export` | exporter | `last_event_seq`, `claimed_to`, `claimed_by`, `claimed_by_started_at`, `claimed_at` |
 
@@ -130,8 +130,9 @@ Rules that hold across the model:
   An undelivered message keeps its row with the reason.
 - Every write transaction that changes lifecycle or message state also
   writes the event row for its change (OBS-1). Bookkeeping writes write no
-  event: a member's place, session and token hash, the sleep-hold record,
-  announcements, the watch lease heartbeat, and the metric export mark
+  event: a member's place, session and token hash, a member's stored branch
+  cleared by a retry, the generation a gate told, a completion's final
+  message, the sleep-hold record, announcements, the watch lease heartbeat, and the metric export mark
   (an event for the mark would feed the export its own tail).
 - Times are stored as UTC RFC 3339 strings with milliseconds. Timeouts
   inside one process use a monotonic clock.
@@ -148,7 +149,9 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
    sender. A refusal records a `message.refused` event and exits 1.
 2. **Store.** One transaction inserts the message (ULID, display id, `seq`,
    body, SHA-256), one `pending` delivery row per recipient, and the
-   `message.sent` event. After commit, `comms/m014.md` is written atomically.
+   `message.sent` event. After commit, `comms/m014.md` is written atomically. If that write fails, the lead's typed
+   line adds `(not written; run teamwire verify <team> --repair-files)` after
+   the path.
 3. **Locate.** For each recipient, outside any transaction, the locator asks
    the harness which live process runs the recipient's session and where it
    says it is, and asks the host who is in that place. Both must agree on one
@@ -158,8 +161,8 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
    `[teamwire:tw msg m014 finding from specmsg] <excerpt> ... Full text: teamwire inbox. <tail>`,
    or `<body>. <tail>` with no pointer when the whole body fits in the
    300-character excerpt (ADR 0021). Host success marks `handed_off`. A stall or timeout marks `unconfirmed`
-   and is not retried. A "not submitted" code is retried at most 3 times in
-   about 5 seconds, then marks `undelivered`.
+   and is not retried. A "not submitted" code is tried at most 3 times (2
+   retries) in about 5 seconds, then marks `undelivered`.
 5. **Remind.** If the recipient was working, its PostToolUse hook reminds it
    of unread ids once; its Stop hook holds it once if it tries to stop with
    unread messages (ADR 0003, point 8). A `handed_off` message whose typed
@@ -230,11 +233,17 @@ Principles, each with the requirement it serves:
   the member's address among the host's live agents, and if it is there,
   refuses, names the agent to stop by hand, and keeps the state. Close finds
   everything else recorded, whatever step a crash hit (LCH-3).
-- **Hooks never fail a turn.** Every hook path exits 0. Errors go to stderr
-  and to an event row when the store is reachable (REP-10).
+- **Hooks never fail a turn.** Every hook path exits 0. When a member hook
+  gives up before its work starts, it prints one `teamwire hook: <why>` line on
+  stderr. A failure inside the turn-end work is logged on stderr as a warning.
+  A store error with code busy, full, corrupt or io also leaves a `store.error`
+  row when the store is reachable (REP-10). The lead's Stop hook stays silent
+  (`docs/api/cli.md`).
 - **Refuse rather than guess.** An unknown busy state refuses close; a
   missing view refuses delivery; a newer schema refuses to open (CLS-1, DEL-2,
-  STO-6).
+  STO-6). `close --role --stop` still accepts an unknown busy state
+  (ADR 0019 point 5). The host closes a place only when the agent in it carries
+  the member's name, so a reused place id never closes another agent.
 - **Distinct exit codes.** 0 success; 1 refused by a rule, nothing changed;
   2 partial (launch started some members, verify found a member not clean,
   close stopped at a step); 3 usage error; 4 not delivered; 5 unconfirmed;
@@ -246,9 +255,9 @@ Principles, each with the requirement it serves:
   refuses when the schema is newer than it knows. Every event row records the
   writer's version.
 - **Full disk.** SQLite rolls the transaction back and teamwire exits 6 with
-  the path and free space. Hooks still exit 0. `launch` refuses when the
-  state directory's disk has less than 200 MB free, and `doctor` warns below
-  1 GB.
+  a message that names the database file. Hooks still exit 0. `launch` refuses
+  when the state directory's disk has less than 200 MB free, and `doctor`
+  fails below the same 200 MB.
 
 Every failure mode, how it is detected, what teamwire does and which test
 proves it, is in `docs/failure-modes.md`.
@@ -271,27 +280,27 @@ telemetry, when the user turns it on, carries the same labels. The full list
 of metrics, spans and labels is in `docs/metrics.md`.
 
 teamwire's own diagnostic logs go to stderr through `tracing`, filtered by
-`TEAMWIRE_LOG`. Tokens and any variable named like a secret are never logged
+`TEAMWIRE_LOG`, with colour codes only when stderr is a terminal. Tokens and any variable named like a secret are never logged
 (SEC-1).
 
 ## Harness and host adapters
 
 Three traits keep the core free of product names (ADR 0004):
 
-- **Harness**: the agent program. Claude Code is the v1 implementation.
-- **Host**: where the program runs. herdr is the v1 implementation; tmux
-  follows in wave 5. No host at all is a valid configuration. The lead's host
+- **Harness**: the agent program. Claude Code and Codex CLI ship (ids
+  `claude-code`, `codex`, ADR 0023).
+- **Host**: where the program runs. herdr and tmux ship (ADR 0019). No host at all is a valid configuration. The lead's host
   is herdr when `HERDR_ENV=1`, else tmux when `TMUX` is set. When both are
   set, teamwire walks its own parent processes (own pid first, at most 64
   steps) and the nearest program named `tmux` or `herdr` decides; with
   neither found, herdr wins.
 - **Platform**: the operating system. macOS and Linux.
 
-Adapters are identified by string ids (`claude-code`, `herdr`, `tmux`,
-`none`) and looked up in a registry that the CLI fills; the core has no list
+Adapters are identified by string ids (`claude-code`, `codex`, `herdr`,
+`tmux`, `none`) and looked up in a registry that the CLI fills; the core has no list
 of products. The harness and host belong to each member and to the lead, so a
-Claude Code lead can lead a member on another harness once that harness has
-an adapter (ADR 0004, ADP-12).
+Claude Code lead can lead a member on another harness that has an adapter, such
+as Codex (ADR 0004, ADP-12).
 
 The core chooses routes from each adapter's capability record, never from
 its name:
@@ -318,7 +327,11 @@ Claude Code specifics that the adapter owns:
   agents --json` second, handling both row shapes (ADP-4). Both are read-only.
 - Trust: the adapter reads the screen through the host and answers only the
   plain folder-trust dialog (LCH-15). Launch refuses a home directory before
-  the adapter runs.
+  the adapter runs. Accepted risk: Claude Code 2.1.303 shows that same plain
+  prompt for a folder whose settings declare hooks, project MCP servers or an
+  `apiKeyHelper`, so launch answers it and those then run with the member's
+  rights. Read a folder's `.claude/` and `.mcp.json` before you launch members
+  into it for the first time.
 - The Stop hook input (`session_id`, `stop_hook_active`, `agent_id`,
   `last_assistant_message`, `transcript_path`) and its `additionalContext`
   output are parsed and produced here.
@@ -329,7 +342,7 @@ number of times) and counts `agent_not_ready` as started (LCH-13),
 `agent prompt`, `agent get` for the session in a pane,
 one workspace per team and one tab per member, and labels set once at launch.
 
-Adding a harness (Codex CLI, Gemini CLI, opencode) or a host means one crate
+Adding another harness (Gemini CLI, opencode) or a host means one crate
 that implements a trait and passes that trait's contract suite in
 `tests/fakes`. Nothing in the core changes.
 
@@ -347,7 +360,7 @@ the database itself. This section says what is enforced.
 | A result is typed into the wrong conversation | Two agreeing views before every send, re-checked just before it | DEL-1..DEL-5 |
 | A member forges a watch line or a second message | Every agent string is sanitised to one printable, capped line | DEL-11 |
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |
-| A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused | LCH-15 |
+| A branch grants itself execution through the trust dialog | Only the plain folder-trust dialog is answered; the escalated one is refused. Accepted risk: the plain prompt also appears for a folder whose settings declare hooks, project MCP servers or an `apiKeyHelper`, and those then run with the member's rights, so read the folder's `.claude/` and `.mcp.json` before the first launch into it | LCH-15 |
 | teamwire breaks the user's own Claude Code setup | teamwire writes nothing under `~/.claude/` or to `~/.claude.json` itself, except deleting an ADR 0012 skill folder on install; only `teamwire install` changes Claude Code's setup, through `claude plugin` and `claude mcp`; nothing else is registered globally; state is under `$TEAMWIRE_HOME` | STO-12, SEC-3, SEC-4 |
 | A secret leaks into a log or export | Values of `TEAMWIRE_TOKEN`, `CLAUDE_CODE_MESSAGING_TOKEN` and any `*TOKEN*`, `*KEY*`, `*SECRET*`, `*HEADERS*`, `*PASSWORD*`, `*PASSWD*`, `*CREDENTIAL*`, `*AUTHORIZATION*` variable are filtered everywhere | SEC-1 |
 | The lead's MCP server skips the member-environment check | The session id check already refuses a member | ADR 0018 |
@@ -393,7 +406,7 @@ default shown, and nothing in the build plan waits on an answer.
 | 5 | Should planning rules (implementer without check, overlapping owns, more than five open branches) refuse a launch or only warn? | Warn, with an override flag | speclife Q7 |
 | 6 | Who should notice when the lead session itself dies? | Nobody in v1; `status` shows lead liveness | speclife Q8 |
 | 7 | Keep the stricter verify verdict (`FLAGGED` blocks member removal until waived)? | Yes | speclife Q1, ADR 0009 |
-| 8 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | No; the trait and fakes only | harness Q6 |
+| 8 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | Codex CLI yes (ADR 0023); Gemini CLI and opencode no | harness Q6 |
 | 9 | Is Linux (without a sleep hold) a supported platform for v1, or macOS only? | macOS fully; Linux without the sleep hold | rust Q7 |
 | 10 | May the build install `cargo-nextest`, `cargo-deny` and `cargo-mutants`? They add per-test timeouts, a licence and advisory audit, and mutation scores | `cargo-nextest`: installed 2026-10-10, but the gate keeps `cargo test` until process starts on this Mac are fast enough for parallel tests (`docs/conventions.md` §2). `cargo-deny` and `cargo-mutants`: not installed, so the gate has no licence audit (`docs/conventions.md` §2) | repopract Q1, R10, R14, R20 |
 | 11 | Should this repository commit its own `.claude/settings.json` with edit-time hooks (format on edit, a guard on protected files) for agents working in it? | No; the gate and `xtask tidy` enforce the same rules after the fact | repopract Q2 |
