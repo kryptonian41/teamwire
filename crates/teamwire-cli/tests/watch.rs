@@ -152,6 +152,12 @@ fn a_bad_team_name_or_interval_is_a_usage_error() {
         teamwire(&bed, &["watch", "alpha", "--interval", "0", "--once"]).code,
         3
     );
+    // A longer interval would let the lease look dead between two polls.
+    let run = teamwire(&bed, &["watch", "alpha", "--interval", "301", "--once"]);
+    assert_eq!(run.code, 3, "{}", run.err);
+    assert!(run.err.contains("300"), "{}", run.err);
+    let run = teamwire(&bed, &["watch", "alpha", "--interval", "300", "--once"]);
+    assert_eq!(run.code, 0, "{}", run.err);
 }
 
 #[test]
