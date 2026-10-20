@@ -247,7 +247,8 @@ fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     let mut rig = Rig::new();
     // Whatever the adapters are, starting the agent fails.
     rig.herdr
-        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        // Not `agent_pane_busy`: the adapter retries that 8 times, 1.5 s apart.
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "invalid_params"))
         .unwrap();
     let repo = rig.repo();
     let spec = json!({"team": "demo", "title": "Demo team", "children": [
@@ -412,7 +413,8 @@ fn the_unverifiable_implementer_warning_names_what_is_missing() {
 fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
     let mut rig = Rig::new();
     rig.herdr
-        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        // Not `agent_pane_busy`: the adapter retries that 8 times, 1.5 s apart.
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "invalid_params"))
         .unwrap();
     let file = rig.spec_file(&pane_spec("demo", rig.work.path()));
     let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);

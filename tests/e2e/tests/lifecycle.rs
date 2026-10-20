@@ -60,7 +60,7 @@ fn three_members_run_the_whole_lifecycle() {
     assert_eq!(launch.code, 0, "{}", launch.all());
     w.wait_started("demo", &["a", "b", "inv"]);
 
-    let mut watch = w.watch("demo", 3);
+    let mut watch = w.watch("demo", 1);
     watch.wait_for("WATCHING 3 members", Duration::from_secs(20));
     w.write(&w.home.path().join("go"), "");
     watch.wait_for("TEAM-COMPLETE 3/3 done", Duration::from_secs(60));

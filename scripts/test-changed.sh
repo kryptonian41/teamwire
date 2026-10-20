@@ -9,8 +9,8 @@
 #                                           else main, else origin/main
 #   scripts/test-changed.sh --dry-run ...   print the package list and the
 #                                           commands, build nothing
-# Plain `cargo test`, not nextest: see docs/conventions.md section 2. Written
-# for bash 3.2 (macOS), so no mapfile and no associative arrays.
+# Tests run under nextest, as in the gate (docs/conventions.md section 2).
+# Written for bash 3.2 (macOS), so no mapfile and no associative arrays.
 set -u
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -141,7 +141,8 @@ for p in teamwire-fakes teamwire-cli; do
 done
 # The printed commands and the run commands are the same variables.
 build="cargo build --locked --all-targets$pflags$extra"
-test="cargo test --locked$pflags"
+# --no-tests=warn: a changed crate can have no tests, and that is not a failure.
+test="cargo nextest run --locked --no-tests=warn$pflags"
 
 echo "test-changed: changed: $(echo $changed)"
 echo "test-changed: packages: $(echo $packages)"

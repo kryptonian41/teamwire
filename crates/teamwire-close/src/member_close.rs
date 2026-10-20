@@ -89,9 +89,9 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     Some(format!("removal deletes ignored files: {named}"))
 }
 
-/// How long a close waits for the processes that ran in a place to end once
-/// the place is closed: they only have to exit on the hangup.
-const EXIT_TRIES: u32 = 100;
+/// How often a close checks whether the processes that ran in a closed place
+/// have ended. The whole wait is `Config::close_exit_wait_ms`: they only have
+/// to exit on the hangup.
 const EXIT_PAUSE: Duration = Duration::from_millis(50);
 
 /// Closes the member's own place through the member's own host (CLS-7).
@@ -125,17 +125,18 @@ pub(crate) fn close_place(
     };
     match host.close(place, &Address::of(team, role), HOST_TIMEOUT) {
         Ok(()) => {
-            let running = still_running(ctx.platform, pids);
+            let wait = Duration::from_millis(ctx.config.close_exit_wait_ms);
+            let running = still_running(ctx.platform, pids, wait);
             if running.is_empty() {
                 return Ok(Some(format!("{role}'s place {} closed", place.id)));
             }
             let named: Vec<String> = running.iter().map(ToString::to_string).collect();
             Err(format!(
-                "{role}'s place {} closed, but process(es) {} that ran in it still run {} s \
+                "{role}'s place {} closed, but process(es) {} that ran in it still run {:?} \
                  later; the worktree is kept. Stop them, then run close again",
                 place.id,
                 named.join(", "),
-                (EXIT_PAUSE * EXIT_TRIES).as_secs()
+                wait
             ))
         }
         Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
@@ -148,8 +149,9 @@ pub(crate) fn close_place(
 
 /// The processes of `pids` still running after the wait. A pid seen gone is
 /// not asked about again, so a later process that reuses it does not count.
-fn still_running(platform: &dyn Platform, mut pids: Vec<Pid>) -> Vec<Pid> {
-    for _ in 0..EXIT_TRIES {
+fn still_running(platform: &dyn Platform, mut pids: Vec<Pid>, wait: Duration) -> Vec<Pid> {
+    let tries = wait.as_millis().div_ceil(EXIT_PAUSE.as_millis());
+    for _ in 0..tries {
         pids.retain(|p| platform.pid_alive(*p));
         if pids.is_empty() {
             return pids;
