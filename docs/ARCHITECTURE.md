@@ -103,7 +103,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
-| `$TEAMWIRE_HOME/locks/exclude-<sha256>/` | launch, close | Held while `info/exclude` is rewritten; holds the owner pid |
+| `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 
 The database tables (schema version 6; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):

@@ -317,7 +317,17 @@ ref holds, first gets the branch `teamwire/rescue/<team>-<role>-<sha7>` (reused
 when it already points there; otherwise `-2` to `-99`; close refuses only when
 every name is taken or refused). The branch is listed among the kept branches,
 and `--dry-run` names it and creates none. Close never moves or deletes a
-branch. Close takes back the `info/exclude` lines launch added (and `/TASK.md`)
+branch. On the whole-team path, a member whose HEAD is detached has its place
+closed right before its worktree is removed, inside `remove_worktrees`, so
+nothing can commit between the last HEAD check and the removal; every other
+place closes in `close_places`. `--dry-run` names each such member in its
+`remove_worktrees` line: `<role>'s HEAD is detached, so its place is closed
+right before its worktree is removed`. Before a worktree is removed, for the
+whole team or `--role`, close waits up to 5 s for the processes that ran in the
+member's place to end. If one still runs, the worktree is kept, the step names
+the processes, and close stops; stop them, then run close again. A `--role`
+removal stopped there says the place was closed and the worktree kept.
+Close takes back the `info/exclude` lines launch added (and `/TASK.md`)
 that no remaining worktree needs; the `remove_worktrees` (or `remove_worktree`)
 step detail names them: `took back <lines> from <file>`. Exit 6 means the store
 cannot be opened, or its team or member rows cannot be read (`--dry-run` too).
