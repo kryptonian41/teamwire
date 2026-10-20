@@ -120,6 +120,15 @@ fn a_wrong_token_or_a_missing_identity_is_refused() {
     let run = done(&fx, &wrong, &["--status", "done", "--summary", "x"]);
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
     assert!(run.err.contains("refused.identity"), "{}", run.err);
+    let refused = fx
+        .store
+        .read(|tx| tx.events_of_type(teamwire_core::EventType::MessageRefused))
+        .unwrap();
+    assert_eq!(
+        refused.items.len(),
+        1,
+        "a wrong token is logged as MCP team_done logs it"
+    );
 
     let run = done(&fx, &[], &["--status", "done", "--summary", "x"]);
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
