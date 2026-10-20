@@ -14,7 +14,7 @@
 #[path = "../../teamwire-verify/tests/support/fixture.rs"]
 pub mod fixture;
 
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::process::{Command, Stdio};
 
 use fixture::{Fixture, MemberSetup};
@@ -309,10 +309,18 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
         held.write_all(b"PRAGMA journal_mode=DELETE;\nBEGIN EXCLUSIVE;\nSELECT 1;\n")
             .unwrap();
         held.flush().unwrap();
+        // `SELECT 1` prints only once `BEGIN EXCLUSIVE` holds the lock, so
+        // the hook starts after every store is locked. A holder that died
+        // closes its output, and the read ends instead of waiting.
+        let mut out = std::io::BufReader::new(holder.stdout.take().unwrap());
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        while out.read_line(&mut line).unwrap() > 0 && line.trim() != "1" {
+            lines.push(std::mem::take(&mut line));
+        }
+        assert_eq!(line.trim(), "1", "{name} was not locked: {lines:?}");
         holders.push((holder, held));
     }
-    // Time for the holders to take their locks before the hook starts.
-    std::thread::sleep(std::time::Duration::from_millis(500));
 
     let start = std::time::Instant::now();
     let run = hook_at(&home, &[], &stop("lead-1", ""));
