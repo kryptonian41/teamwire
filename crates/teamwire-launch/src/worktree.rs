@@ -1,10 +1,13 @@
 //! Making and taking back a member's git worktree (LCH-8, LCH-24). git is
 //! always run through `Platform::run`, and the host's own worktree command
-//! is never used (INV-23).
+//! is never used (INV-23). Every change to the repository's shared
+//! `info/exclude` holds the exclude lock that close also takes.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use teamwire_core::Platform;
+use sha2::{Digest, Sha256};
+use teamwire_core::{Pid, Platform, exclude};
 
 use crate::WorktreePlan;
 use crate::git::{failure_text, run, stdout_of};
@@ -164,80 +167,149 @@ fn exclude_path(platform: &dyn Platform, worktree: &Path) -> Result<PathBuf, Str
 /// in `git status`.
 pub(crate) fn exclude_task_md(
     platform: &dyn Platform,
+    home: &Path,
     worktree: &Path,
 ) -> Result<Option<Excluded>, String> {
-    let (file, lines) = exclude_lines(platform, worktree, &["/TASK.md".to_owned()])?;
+    let (file, lines) = exclude_lines(platform, home, worktree, &["/TASK.md".to_owned()])?;
     Ok((!lines.is_empty()).then_some(Excluded { file, lines }))
 }
 
+/// How often, and how long apart, launch tries for another process's lock
+/// on an `info/exclude`: a holder only reads and rewrites one small file, so
+/// ten seconds is far past any real hold.
+const LOCK_TRIES: u32 = 200;
+const LOCK_PAUSE: Duration = Duration::from_millis(50);
+
+/// A held lock on one `info/exclude`. Dropping it releases the lock.
+struct ExcludeLock {
+    dir: PathBuf,
+}
+
+impl Drop for ExcludeLock {
+    fn drop(&mut self) {
+        // A lock left here names this pid, so it is cleared once this process ends.
+        if let Err(e) = std::fs::remove_dir_all(&self.dir) {
+            tracing::warn!(lock = %self.dir.display(), error = %e, "an exclude lock could not be released");
+        }
+    }
+}
+
+/// Takes the lock every read-modify-write of `file` holds, so two launches
+/// (or a launch and a close) on one repository never drop each other's
+/// lines: a directory `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>`,
+/// which `create_dir` makes in one atomic step, holding the owner's pid. A
+/// lock whose owner is dead is removed. Close takes the same lock.
+fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<ExcludeLock, String> {
+    let (Some(parent), Some(name)) = (file.parent(), file.file_name()) else {
+        return Err(format!("{} has no folder", file.display()));
+    };
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
+    // The same file reached through a symlink must get the same lock.
+    let key = std::fs::canonicalize(parent)
+        .unwrap_or_else(|_| parent.to_path_buf())
+        .join(name);
+    let locks = home.join("locks");
+    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
+    let digest = Sha256::digest(key.to_string_lossy().as_bytes());
+    let dir = locks.join(format!("exclude-{}", hex::encode(digest)));
+    for _ in 0..LOCK_TRIES {
+        match std::fs::create_dir(&dir) {
+            Ok(()) => {
+                let lock = ExcludeLock { dir };
+                let pid = std::process::id().to_string();
+                platform
+                    .write_atomic(&lock.dir.join("pid"), pid.as_bytes())
+                    .map_err(|e| format!("cannot write the lock {}: {e}", lock.dir.display()))?;
+                return Ok(lock);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if holder_is_dead(platform, &dir) {
+                    std::fs::remove_dir_all(&dir).ok();
+                } else {
+                    std::thread::sleep(LOCK_PAUSE);
+                }
+            }
+            Err(e) => return Err(format!("cannot make the lock {}: {e}", dir.display())),
+        }
+    }
+    Err(format!(
+        "another teamwire process held the lock {} on {} for {} s; try again, or remove \
+         that directory if no teamwire process is running",
+        dir.display(),
+        file.display(),
+        (LOCK_PAUSE * LOCK_TRIES).as_secs()
+    ))
+}
+
+/// True when the lock's pid file names a process that is not running. A
+/// pid of this process is another thread's hold, which is live.
+fn holder_is_dead(platform: &dyn Platform, dir: &Path) -> bool {
+    // shortcut: a lock with no pid file counts as held, because its owner may
+    // be between `create_dir` and the pid write; a process killed in that gap
+    // leaves a lock someone must delete. Upgrade if that is ever seen.
+    let Ok(text) = std::fs::read_to_string(dir.join("pid")) else {
+        return false;
+    };
+    let Ok(pid) = text.trim().parse::<u32>() else {
+        return false;
+    };
+    pid != std::process::id() && !platform.pid_alive(Pid::new(pid))
+}
+
 /// Appends each entry to the repository's `info/exclude` unless a line
-/// already names it (with or without a leading `/`). Existing lines are never
-/// rewritten or reordered. Returns the file and the entries that were added.
+/// already names it, under the exclude lock. Returns the file and the
+/// entries that were added.
 fn exclude_lines(
     platform: &dyn Platform,
+    home: &Path,
     worktree: &Path,
     entries: &[String],
 ) -> Result<(PathBuf, Vec<String>), String> {
     let path = exclude_path(platform, worktree)?;
-    // Only a missing file is empty. Any other read error, or text that is not
-    // UTF-8, must not turn into a fresh file that replaces the repository's
-    // shared rules.
-    let mut bytes = match std::fs::read(&path) {
+    let _lock = lock_exclude(platform, home, &path)?;
+    let added = append_locked(platform, &path, entries)?;
+    Ok((path, added))
+}
+
+/// `exclude_lines` for a caller that already holds the exclude lock on
+/// `path`. Returns the entries that were added.
+fn append_locked(
+    platform: &dyn Platform,
+    path: &Path,
+    entries: &[String],
+) -> Result<Vec<String>, String> {
+    // Only a missing file is empty. Any other read error must not turn into
+    // a fresh file that replaces the repository's shared rules.
+    let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
     };
-    let mut added: Vec<String> = Vec::new();
-    let mut tail = Vec::new();
-    for entry in entries {
-        let bare = entry.strip_prefix('/').unwrap_or(entry).as_bytes();
-        let present = bytes.split(|b| *b == b'\n').any(|l| {
-            let l = l.trim_ascii();
-            l.strip_prefix(b"/").unwrap_or(l) == bare
-        });
-        if !present && !added.contains(entry) {
-            tail.extend_from_slice(entry.as_bytes());
-            tail.push(b'\n');
-            added.push(entry.clone());
-        }
+    let (bytes, added) = exclude::add(&bytes, entries);
+    if !added.is_empty() {
+        platform
+            .write_atomic(path, &bytes)
+            .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
-    if added.is_empty() {
-        return Ok((path, added));
-    }
-    if !bytes.is_empty() && !bytes.ends_with(b"\n") {
-        bytes.push(b'\n');
-    }
-    bytes.extend_from_slice(&tail);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .map_err(|e| format!("cannot make {}: {e}", parent.display()))?;
-    }
-    platform
-        .write_atomic(&path, &bytes)
-        .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
-    Ok((path, added))
+    Ok(added)
 }
 
-/// Removes the lines `excluded` added, one occurrence each; every other line
-/// stays as it was. Returns a note for the undo output.
-pub(crate) fn unexclude(platform: &dyn Platform, excluded: &Excluded) -> String {
+/// Removes the lines `excluded` added, one occurrence each, under the
+/// exclude lock; every other line stays as it was. Returns a note for the
+/// undo output.
+pub(crate) fn unexclude(platform: &dyn Platform, home: &Path, excluded: &Excluded) -> String {
     let file = excluded.file.display();
+    let _lock = match lock_exclude(platform, home, &excluded.file) {
+        Ok(lock) => lock,
+        Err(e) => return format!("could not take back the lines launch added to {file}: {e}"),
+    };
     let bytes = match std::fs::read(&excluded.file) {
         Ok(bytes) => bytes,
         Err(e) => return format!("could not read {file} to take back its added lines: {e}"),
     };
-    let mut pending: Vec<&[u8]> = excluded.lines.iter().map(String::as_bytes).collect();
-    let mut kept: Vec<&[u8]> = Vec::new();
-    for line in bytes.split_inclusive(|b| *b == b'\n') {
-        let bare = line.strip_suffix(b"\n").unwrap_or(line);
-        match pending.iter().position(|p| *p == bare) {
-            Some(i) => {
-                pending.swap_remove(i);
-            }
-            None => kept.push(line),
-        }
-    }
-    match platform.write_atomic(&excluded.file, &kept.concat()) {
+    let kept = exclude::remove(&bytes, &excluded.lines);
+    match platform.write_atomic(&excluded.file, &kept) {
         Ok(()) => format!("lines launch added to {file} removed"),
         Err(e) => format!("could not take back the lines launch added to {file}: {e}"),
     }
@@ -252,8 +324,30 @@ pub(crate) fn unexclude(platform: &dyn Platform, excluded: &Excluded) -> String 
 /// added, for the undo.
 pub(crate) fn exclude_setup_files(
     platform: &dyn Platform,
+    home: &Path,
     worktree: &Path,
 ) -> (Vec<String>, Option<Excluded>) {
+    let file = match exclude_path(platform, worktree) {
+        Ok(file) => file,
+        Err(e) => {
+            return (
+                vec![format!("setup created files git does not ignore: {e}")],
+                None,
+            );
+        }
+    };
+    // The listing runs under the lock: it reads the exclude file, and a close
+    // that takes a line back between the listing and the append would leave
+    // a file setup made neither listed nor ignored.
+    let _lock = match lock_exclude(platform, home, &file) {
+        Ok(lock) => lock,
+        Err(e) => {
+            return (
+                vec![format!("setup created files git does not ignore: {e}")],
+                None,
+            );
+        }
+    };
     // One entry per file, never per directory: a directory line would also hide
     // files a member writes there later, and close would then delete them.
     // `-z` gives raw names, so quote-escaping never reaches the exclude file.
@@ -273,7 +367,7 @@ pub(crate) fn exclude_setup_files(
         match std::str::from_utf8(raw) {
             Ok("TASK.md") => {}
             // A newline would split into two rules, so such a name is never written.
-            Ok(p) if !p.contains('\n') => entries.push(anchored(p)),
+            Ok(p) if !p.contains('\n') => entries.push(exclude::anchored(p)),
             _ => notes.push(format!(
                 "setup created {:?}, whose name cannot be written to the exclude file, so git does not ignore it",
                 String::from_utf8_lossy(raw)
@@ -284,9 +378,9 @@ pub(crate) fn exclude_setup_files(
         return (notes, None);
     }
     let mut excluded = None;
-    match exclude_lines(platform, worktree, &entries) {
-        Ok((_, added)) if added.is_empty() => {}
-        Ok((file, added)) => {
+    match append_locked(platform, &file, &entries) {
+        Ok(added) if added.is_empty() => {}
+        Ok(added) => {
             let them = if added.len() == 1 { "it" } else { "them" };
             notes.push(format!(
                 "setup created {}; launch added {them} to {} so git ignores {them} (every worktree of the repository shares that file)",
@@ -302,20 +396,4 @@ pub(crate) fn exclude_setup_files(
 
 fn list_failed(why: &str) -> String {
     format!("could not list what setup created, so none of it is ignored: {why}")
-}
-
-/// A path as an `info/exclude` line: anchored at the root, with glob
-/// characters, a leading `#` or `!`, and a trailing space escaped.
-fn anchored(path: &str) -> String {
-    let mut line = String::from("/");
-    for (i, c) in path.chars().enumerate() {
-        if matches!(c, '*' | '?' | '[' | '\\') || (i == 0 && matches!(c, '#' | '!')) {
-            line.push('\\');
-        }
-        line.push(c);
-    }
-    if line.ends_with(' ') {
-        line.insert(line.len() - 1, '\\');
-    }
-    line
 }

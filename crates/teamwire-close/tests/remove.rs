@@ -847,3 +847,45 @@ fn a_reused_place_id_is_not_closed_by_a_removal_with_stop() {
     );
     assert_eq!(rig.member("api").state, MemberState::Removed);
 }
+
+#[test]
+fn removing_a_member_takes_back_its_exclude_lines_that_no_teammate_needs() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Investigator);
+    let web = rig.add_worktree_member("web", MemberKind::Investigator);
+    let exclude = rig.repo.join(".git/info/exclude");
+    std::fs::write(&exclude, "*.local\n/TASK.md\n/gen/api.out\n").unwrap();
+    let file = exclude.display().to_string();
+    let data = serde_json::json!({ "excluded": [{ "file": file, "lines": ["/TASK.md", "/gen/api.out"] }] });
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| {
+            tx.record_event(
+                now,
+                EventType::MemberStarted,
+                Some(&role("api")),
+                None,
+                &data,
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    for cwd in [&api.cwd, &web.cwd] {
+        std::fs::write(cwd.join("TASK.md"), "brief\n").unwrap();
+    }
+    std::fs::create_dir_all(api.cwd.join("gen")).unwrap();
+    std::fs::write(api.cwd.join("gen/api.out"), "x\n").unwrap();
+
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(
+        std::fs::read_to_string(&exclude).unwrap(),
+        "*.local\n/TASK.md\n",
+        "web's worktree still needs /TASK.md"
+    );
+
+    let report = remove(&mut rig, "web", CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(std::fs::read_to_string(&exclude).unwrap(), "*.local\n");
+}

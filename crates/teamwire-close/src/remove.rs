@@ -7,7 +7,7 @@ use teamwire_core::{Member, MemberKind, MemberState, Mode, Role, TeamState};
 use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal, unplaced_refusal};
-use crate::{CloseOpts, CloseReport, StepOutcome, git, member_close, team_close};
+use crate::{CloseOpts, CloseReport, StepOutcome, exclude, git, member_close, team_close};
 
 /// What stands between this member and removal.
 #[derive(Debug, Default)]
@@ -276,13 +276,10 @@ fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
     };
     let note = member_close::remove_worktree(ctx, member)?;
     git::run(ctx.platform, repo, &["worktree", "prune"]).ok();
-    Ok(format!(
-        "{note}{}",
-        member
-            .branch
-            .as_ref()
-            .map_or(String::new(), |b| format!("; branch {b} kept"))
-    ))
+    let mut notes = vec![note];
+    notes.extend(member.branch.as_ref().map(|b| format!("branch {b} kept")));
+    notes.extend(exclude::take_back(ctx, &[member]));
+    Ok(notes.join("; "))
 }
 
 /// The row stays, with `removed_at` and a note, so the role is never reused

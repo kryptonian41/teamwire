@@ -215,6 +215,34 @@ fn dry_run_prints_the_plan_and_touches_nothing() {
 }
 
 #[test]
+fn an_unknown_key_is_warned_about_and_the_launch_goes_ahead() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["titel"] = json!("typo");
+    spec["children"][0]["acept_trust"] = json!(false);
+    let file = rig.spec_file(&spec);
+    let file = file.to_str().unwrap();
+    for args in [&["--dry-run", "--spec", file][..], &["--spec", file][..]] {
+        let out = rig.launch(args, None, false);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            text(&out.stderr)
+        );
+        let err = text(&out.stderr);
+        assert!(
+            err.contains(r#"warning: team level: unknown key "titel" is ignored"#)
+                && err.contains(r#"warning: role a: unknown key "acept_trust" is ignored"#),
+            "{args:?}: {err}"
+        );
+        let shown = text(&out.stdout);
+        let real = !args.contains(&"--dry-run");
+        assert_eq!(shown.contains("a: started"), real, "{args:?}: {shown}");
+    }
+}
+
+#[test]
 fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     let mut rig = Rig::new();
     // Whatever the adapters are, starting the agent fails.
