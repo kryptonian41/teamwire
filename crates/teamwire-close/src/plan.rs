@@ -100,7 +100,7 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
     ));
     if team.state == TeamState::Open {
         plan.steps
-            .push(step("remove_worktrees", worktree_list(members)));
+            .push(step("remove_worktrees", worktree_list(ctx, team, members)));
         plan.steps.extend(ignored_steps(ctx, members));
         plan.steps.push(step("close_places", place_list(members)));
         plan.steps.push(step("release_hold", hold_detail(team)));
@@ -139,16 +139,36 @@ fn ignored_steps<'a>(
     live(members).filter_map(|m| ignored_warning(ctx, m).map(|d| step(m.role.as_str(), d)))
 }
 
-fn worktree_list(members: &[Member]) -> String {
-    let paths: Vec<String> = live(members)
+/// The worktrees, and each member whose place closes right before its
+/// worktree goes because its HEAD is detached.
+fn worktree_list(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member]) -> String {
+    let worktrees: Vec<&Member> = live(members)
         .filter(|m| m.mode == teamwire_core::Mode::Worktree)
+        .collect();
+    if worktrees.is_empty() {
+        return "no worktrees".to_owned();
+    }
+    let paths: Vec<String> = worktrees
+        .iter()
         .map(|m| format!("{} ({})", m.role, m.cwd.display()))
         .collect();
-    if paths.is_empty() {
-        "no worktrees".to_owned()
-    } else {
-        format!("git worktree remove, without force: {}", paths.join(", "))
-    }
+    let mut parts = vec![format!(
+        "git worktree remove, without force: {}",
+        paths.join(", ")
+    )];
+    parts.extend(
+        worktrees
+            .iter()
+            .filter(|m| matches!(facts::detached(ctx, &team.name, m), Ok(Some(_))))
+            .map(|m| {
+                format!(
+                    "{}'s HEAD is detached, so its place is closed right before its worktree \
+                     is removed",
+                    m.role
+                )
+            }),
+    );
+    parts.join("; ")
 }
 
 fn place_list(members: &[Member]) -> String {
