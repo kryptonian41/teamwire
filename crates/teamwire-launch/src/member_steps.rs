@@ -236,7 +236,7 @@ pub(crate) fn run_setup(
     }
     if ok {
         if m.worktree.is_some() {
-            let (notes, excluded) = worktree::exclude_setup_files(ctx.platform, &m.cwd);
+            let (notes, excluded) = worktree::exclude_setup_files(ctx.platform, ctx.home, &m.cwd);
             made.excluded.extend(excluded);
             warnings.extend(notes.into_iter().map(|n| format!("member {role}: {n}")));
         }
@@ -336,7 +336,7 @@ pub(crate) fn write_member_files(
         )
         .map_err(fail)?;
         made.excluded
-            .extend(worktree::exclude_task_md(ctx.platform, &m.cwd).map_err(fail)?);
+            .extend(worktree::exclude_task_md(ctx.platform, ctx.home, &m.cwd).map_err(fail)?);
     }
     for file in files {
         if !file.path.starts_with(&launch.member_dir) {

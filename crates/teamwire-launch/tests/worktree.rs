@@ -234,3 +234,104 @@ fn only_the_brief_at_the_root_is_hidden_from_git() {
     common::write(&repo.join("docs/TASK.md"), "the user's own notes\n");
     assert_eq!(git(&repo, &["status", "--porcelain"]), "?? docs/");
 }
+
+/// The lock directory launch and close take for `repo`'s `info/exclude`.
+#[cfg(test)]
+fn exclude_lock(rig: &Rig, repo: &std::path::Path) -> std::path::PathBuf {
+    use sha2::{Digest, Sha256};
+    let info = std::fs::canonicalize(repo.join(".git/info")).unwrap();
+    let key = info.join("exclude");
+    let digest = Sha256::digest(key.to_string_lossy().as_bytes());
+    rig.home
+        .path()
+        .join("locks")
+        .join(format!("exclude-{}", hex::encode(digest)))
+}
+
+/// A team of one worktree member on `repo` whose setup creates `files`.
+fn team_making(team: &str, role: &str, repo: &std::path::Path, files: &str) -> serde_json::Value {
+    let member = common::with(
+        common::worktree_member(role, role, repo),
+        "setup",
+        serde_json::json!(format!("touch {files}")),
+    );
+    common::team_spec(team, &[member])
+}
+
+#[test]
+fn two_launches_on_one_repository_at_once_keep_both_sets_of_lines() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let start = std::sync::Barrier::new(2);
+    std::thread::scope(|s| {
+        for (team, role, files) in [("one", "a", "a1 a2 a3"), ("two", "b", "b1 b2 b3")] {
+            let (rig, repo, start) = (&rig, &repo, &start);
+            s.spawn(move || {
+                let plan = rig
+                    .validate(&team_making(team, role, repo, files), false)
+                    .unwrap();
+                start.wait();
+                let (report, _) = rig.launch(team, plan);
+                assert_eq!(
+                    report.members.first().unwrap().outcome,
+                    LaunchOutcome::Started
+                );
+            });
+        }
+    });
+    let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    for line in ["/a1", "/a2", "/a3", "/b1", "/b2", "/b3", "/TASK.md"] {
+        assert_eq!(
+            exclude.lines().filter(|l| *l == line).count(),
+            1,
+            "{line} in {exclude}"
+        );
+    }
+    assert!(
+        !exclude_lock(&rig, &repo).exists(),
+        "both launches released the lock"
+    );
+}
+
+#[test]
+fn a_launch_waits_for_a_live_exclude_lock() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let lock = exclude_lock(&rig, &repo);
+    std::fs::create_dir_all(&lock).unwrap();
+    // This process's own pid: the holder is alive.
+    common::write(&lock.join("pid"), &std::process::id().to_string());
+    let exclude = repo.join(".git/info/exclude");
+    std::thread::scope(|s| {
+        let launch = s.spawn(|| rig.launch("demo", rig.validate(&spec, false).unwrap()));
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let held = std::fs::read_to_string(&exclude).unwrap_or_default();
+        assert!(!held.contains("/TASK.md"), "written under a held lock: {held}");
+        std::fs::remove_dir_all(&lock).unwrap();
+        let (report, _) = launch.join().unwrap();
+        assert_eq!(
+            report.members.first().unwrap().outcome,
+            LaunchOutcome::Started
+        );
+    });
+    let after = std::fs::read_to_string(&exclude).unwrap();
+    assert!(after.lines().any(|l| l == "/TASK.md"), "{after}");
+}
+
+#[test]
+fn an_exclude_lock_whose_owner_is_dead_is_removed() {
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let lock = exclude_lock(&rig, &repo);
+    std::fs::create_dir_all(&lock).unwrap();
+    // The fake platform knows no pid as alive except those set alive.
+    common::write(&lock.join("pid"), "999999");
+    let (report, _) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert!(exclude.lines().any(|l| l == "/TASK.md"), "{exclude}");
+    assert!(!lock.exists());
+}

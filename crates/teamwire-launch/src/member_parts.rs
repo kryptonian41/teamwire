@@ -109,7 +109,7 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
         }
     }
     for e in &made.excluded {
-        notes.push(worktree::unexclude(ctx.platform, e));
+        notes.push(worktree::unexclude(ctx.platform, ctx.home, e));
     }
     (notes.join("; "), left)
 }
