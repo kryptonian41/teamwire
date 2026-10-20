@@ -73,7 +73,11 @@ fn kill9_after_the_agent_started_and_was_recorded_is_closed_by_close() {
         "the place was recorded before the kill"
     );
     assert_eq!(agents(&rig), [AGENT]);
+    drop(store);
 
+    // The fake agent works on the task the kill interrupted; close refuses a
+    // busy member.
+    wait_idle(&rig);
     let out = rig.run(&["close", "alpha"], &Identity::Nobody);
     assert_eq!(out.code, Some(0), "{out:?}");
     assert!(
