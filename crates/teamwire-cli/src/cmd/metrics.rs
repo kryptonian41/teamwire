@@ -8,7 +8,7 @@ use teamwire_core::{Clock, Config, TeamName};
 use teamwire_otel::{ExportError, MetricValue, MetricsQuery, MetricsView};
 use teamwire_store::{Ctx, Store, database_path};
 
-use crate::cmd::send::{REFUSED, STORE, home_or_refuse};
+use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, say, warn};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, MetricsArgs, MetricsCommand, USAGE};
@@ -39,26 +39,26 @@ fn show(
 ) -> ExitCode {
     let team = match team.map(TeamName::parse).transpose() {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("metrics", &e.to_string(), USAGE),
     };
     let since = match since.map(parse_duration).transpose() {
         Ok(since) => since,
-        Err(message) => return fail(&message, USAGE),
+        Err(message) => return fail("metrics", &message, USAGE),
     };
     if let Some(team) = &team
         && !database_path(home, team).is_file()
         && !teamwire_otel::team_is_known(home, team)
     {
         if let Some(error) = unreadable_archive_of(home, team) {
-            return fail(&error, STORE);
+            return fail("metrics", &error, STORE);
         }
-        return fail(&format!("no database for team {team}"), REFUSED);
+        return fail("metrics", &format!("no database for team {team}"), REFUSED);
     }
     let named = team.is_some();
     let query = MetricsQuery { team, since };
     let view = teamwire_otel::metrics_at(home, wiring.clock.now(), &query);
     for error in &view.errors {
-        warn(error);
+        warn(&format!("teamwire metrics: {error}"));
     }
     // A named team has one source, so an error means its store was not read
     // and an empty view would be a false "no events"; a listing goes on past
@@ -69,7 +69,7 @@ fn show(
     if json {
         match serde_json::to_string_pretty(&view) {
             Ok(text) => say(&format!("{text}\n")),
-            Err(e) => return fail(&e.to_string(), STORE),
+            Err(e) => return fail("metrics", &e.to_string(), STORE),
         }
     } else {
         say(&render(&view));
@@ -152,7 +152,7 @@ fn export(home: &Path, wiring: &Wiring, once: bool) -> ExitCode {
     loop {
         let Some(config) = teamwire_otel::load_otlp_config(home, &|key| std::env::var(key).ok())
         else {
-            warn("export is off: set OTEL_EXPORTER_OTLP_ENDPOINT to turn it on");
+            warn("teamwire metrics: export is off: set OTEL_EXPORTER_OTLP_ENDPOINT to turn it on");
             return ExitCode::SUCCESS;
         };
         let code = export_pass(home, wiring, &config);
@@ -169,14 +169,14 @@ fn export(home: &Path, wiring: &Wiring, once: bool) -> ExitCode {
 fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig) -> ExitCode {
     let teams = match teamwire_store::team_names(home) {
         Ok(teams) => teams,
-        Err(e) => return fail(&e.to_string(), STORE),
+        Err(e) => return fail("metrics", &e.to_string(), STORE),
     };
     let app_config = Config::default();
     for team in teams {
         let mut store = match Store::open_existing(home, &team) {
             Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
             Err(e) => {
-                warn(&format!("team {team}: {e}"));
+                warn(&format!("teamwire metrics: team {team}: {e}"));
                 continue;
             }
         };
@@ -200,25 +200,12 @@ fn export_pass(home: &Path, wiring: &Wiring, config: &teamwire_otel::OtlpConfig)
             Err(ExportError::Claimed(why)) => {
                 say(&format!("{team}: another exporter has the batch ({why})\n"));
             }
-            Err(e) => warn(&format!("team {team}: export failed, will retry: {e}")),
+            Err(e) => warn(&format!(
+                "teamwire metrics: team {team}: export failed, will retry: {e}"
+            )),
         }
     }
     ExitCode::SUCCESS
-}
-
-#[expect(clippy::print_stdout, reason = "the metrics are the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(clippy::print_stderr, reason = "the binary reports problems on stderr")]
-fn warn(message: &str) {
-    eprintln!("teamwire metrics: {message}");
-}
-
-fn fail(message: &str, code: u8) -> ExitCode {
-    warn(message);
-    ExitCode::from(code)
 }
 
 #[cfg(test)]

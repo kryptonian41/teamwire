@@ -12,7 +12,7 @@ use std::time::Duration;
 use teamwire_core::Command;
 
 use crate::cmd::lead_setup_check::is_build_output;
-use crate::cmd::send::{PARTIAL, REFUSED, fail, state_home};
+use crate::cmd::send::{PARTIAL, REFUSED, fail, say_line, state_home};
 use crate::wiring::{Change, CodexChange, CodexCommand, McpEntry, SKILL_TEXT, Wiring};
 use crate::{Global, InstallArgs, USAGE, UninstallArgs};
 
@@ -177,14 +177,6 @@ pub(crate) fn wanted_entry(global: &Global) -> Result<McpEntry, String> {
     Ok(lead_entry(&this_binary()?, &home, user_home.as_deref()))
 }
 
-#[expect(
-    clippy::print_stdout,
-    reason = "the change list is the command's output"
-)]
-fn say(text: &str) {
-    println!("{text}");
-}
-
 /// One harness's planned changes.
 enum Plan {
     Claude(Vec<Change>),
@@ -248,7 +240,7 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
         }
     }
     if plans.iter().all(|p| p.lines().is_empty()) {
-        say("the lead setup is already installed");
+        say_line("the lead setup is already installed");
         return ExitCode::SUCCESS;
     }
     finish("install", wiring, &plans, args.dry_run)
@@ -273,7 +265,7 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiri
         }
     }
     if plans.iter().all(|p| p.lines().is_empty()) {
-        say("no lead setup to remove");
+        say_line("no lead setup to remove");
         return ExitCode::SUCCESS;
     }
     finish("uninstall", wiring, &plans, args.dry_run)
@@ -292,7 +284,7 @@ fn skipped(command: &str, why: &str) {
 fn finish(command: &str, wiring: &Wiring, plans: &[Plan], dry_run: bool) -> ExitCode {
     if dry_run {
         for line in plans.iter().flat_map(Plan::lines) {
-            say(&format!("would {line}"));
+            say_line(&format!("would {line}"));
         }
         return ExitCode::SUCCESS;
     }
@@ -318,20 +310,22 @@ fn finish(command: &str, wiring: &Wiring, plans: &[Plan], dry_run: bool) -> Exit
         }
         done.extend(plan.lines());
         for line in plan.lines() {
-            say(&format!("did {line}"));
+            say_line(&format!("did {line}"));
         }
     }
     if plans
         .iter()
         .any(|p| matches!(p, Plan::Claude(c) if c.iter().any(Change::is_claude)))
     {
-        say("Claude Code loads plugins at start: new sessions see the change, open ones do not");
+        say_line(
+            "Claude Code loads plugins at start: new sessions see the change, open ones do not",
+        );
     }
     if plans
         .iter()
         .any(|p| matches!(p, Plan::Codex(c) if c.iter().any(CodexChange::needs_hook_review)))
     {
-        say("Codex will ask you to review the plugin's hook once after this change");
+        say_line("Codex will ask you to review the plugin's hook once after this change");
     }
     ExitCode::SUCCESS
 }

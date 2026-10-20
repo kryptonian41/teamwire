@@ -94,6 +94,9 @@ mod cmd {
         /// The exit code of a run that found a problem; same value as the real one.
         pub(crate) const PARTIAL: u8 = 2;
 
+        /// Prints nothing; the tests read the report text, not the output.
+        pub(crate) fn say(_text: &str) {}
+
         /// The state directory the test names; the real helper is not compiled here.
         pub(crate) fn home_or_refuse(_command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
             global.home.clone().ok_or(ExitCode::from(1))

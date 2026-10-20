@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
-use crate::cmd::send::{REFUSED, STORE, carries_member_identity, home_or_refuse};
+use crate::cmd::send::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say, warn};
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
 
@@ -35,30 +35,30 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let ExportArgs { team, out } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("export", &e.to_string(), USAGE),
     };
     let home = match home_or_refuse("export", global) {
         Ok(home) => home,
         Err(code) => return code,
     };
     if !database_path(&home, &team).is_file() {
-        return fail(&format!("no database for team {team}"), REFUSED);
+        return fail("export", &format!("no database for team {team}"), REFUSED);
     }
     let (text, skipped) = match Store::open_read_only(&home, &team).and_then(|s| render(&s, &team))
     {
         Ok(done) => done,
-        Err(e) => return fail(&e.to_string(), STORE),
+        Err(e) => return fail("export", &e.to_string(), STORE),
     };
     for row in &skipped {
         warn(&format!(
-            "skipped {} row {}: {}",
+            "teamwire export: skipped {} row {}: {}",
             row.table, row.key, row.reason
         ));
     }
     if let Some(path) = out {
         return match wiring.platform.write_atomic(path, text.as_bytes()) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(e) => fail(&format!("{}: {e}", path.display()), STORE),
+            Err(e) => fail("export", &format!("{}: {e}", path.display()), STORE),
         };
     }
     say(&text);
@@ -280,19 +280,4 @@ fn hex(bytes: &[u8]) -> String {
         .flat_map(|b| [b >> 4, b & 0x0f])
         .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
         .collect()
-}
-
-#[expect(clippy::print_stdout, reason = "the records are the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(clippy::print_stderr, reason = "the binary reports problems on stderr")]
-fn warn(message: &str) {
-    eprintln!("teamwire export: {message}");
-}
-
-fn fail(message: &str, code: u8) -> ExitCode {
-    warn(message);
-    ExitCode::from(code)
 }

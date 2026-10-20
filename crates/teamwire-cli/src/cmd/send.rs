@@ -2,6 +2,7 @@
 //! (`resend`, `log`, `inbox`, `ack`, `members`, `lead`) share: opening the
 //! team's store, reading who the caller says it is, and printing.
 
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -397,6 +398,15 @@ pub(crate) fn with_read_ctx<T>(
 #[expect(clippy::print_stdout, reason = "the command's result is its output")]
 pub(crate) fn say(text: &str) {
     print!("{text}");
+}
+
+/// `say` for one line. The line is flushed because another program may read it.
+#[expect(clippy::print_stdout, reason = "the command's result is its output")]
+pub(crate) fn say_line(text: &str) {
+    println!("{text}");
+    if let Err(e) = std::io::stdout().flush() {
+        tracing::warn!(error = %e, "could not flush standard output");
+    }
 }
 
 #[expect(clippy::print_stderr, reason = "the binary reports on stderr")]

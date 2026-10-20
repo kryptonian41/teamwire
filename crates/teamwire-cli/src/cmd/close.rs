@@ -6,7 +6,9 @@ use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, 
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::{PARTIAL, REFUSED, STORE, home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{
+    PARTIAL, REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line, warn,
+};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
@@ -24,12 +26,12 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("close", &e.to_string(), USAGE),
     };
     let target = match role.as_deref().map(Role::parse).transpose() {
         Ok(Some(role)) => CloseTarget::Member(role),
         Ok(None) => CloseTarget::Team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("close", &e.to_string(), USAGE),
     };
     let opts = CloseOpts {
         stop: *stop,
@@ -56,9 +58,9 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Ok(store) => Recorded::new(store, &wiring.clock, "close"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
-            return fail(&message, REFUSED);
+            return fail("close", &message, REFUSED);
         }
-        Err(e) => return fail(&e.to_string(), STORE),
+        Err(e) => return fail("close", &e.to_string(), STORE),
     };
     // A row that does not parse is a broken store (exit 6), not a rule that
     // refused, so it is read here before the close library turns it into one.
@@ -66,7 +68,7 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
         tx.team()?;
         tx.members()?.all_or_corrupt()
     }) {
-        return fail(&format!("the team cannot be read: {e}"), STORE);
+        return fail("close", &format!("the team cannot be read: {e}"), STORE);
     }
     let config = Config::default();
     let mut ctx = Ctx {
@@ -152,7 +154,7 @@ fn removal_stopped_message(
 
 fn show_plan(plan: &ClosePlan) -> ExitCode {
     for CloseStep { step, detail } in &plan.steps {
-        say(&format!("[dry-run] {step}: {detail}"));
+        say_line(&format!("[dry-run] {step}: {detail}"));
     }
     if plan.refusals.is_empty() {
         return ExitCode::SUCCESS;
@@ -166,7 +168,7 @@ fn show_plan(plan: &ClosePlan) -> ExitCode {
 fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> ExitCode {
     for StepOutcome { step, ok, detail } in &report.steps {
         if *ok {
-            say(&format!("{step}: {detail}"));
+            say_line(&format!("{step}: {detail}"));
         } else {
             warn(&format!("PROBLEM {step}: {detail}"));
         }
@@ -179,10 +181,10 @@ fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> E
         return ExitCode::from(REFUSED);
     }
     for line in &report.unpushed {
-        say(&format!("unpushed: {line}"));
+        say_line(&format!("unpushed: {line}"));
     }
     if !report.branches_kept.is_empty() {
-        say(&format!(
+        say_line(&format!(
             "branches kept: {}",
             report.branches_kept.join(", ")
         ));
@@ -199,33 +201,15 @@ fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> E
     }
     match target {
         CloseTarget::Team => match &report.archive {
-            Some(archive) => say(&format!(
+            Some(archive) => say_line(&format!(
                 "closed team {team}. Archive: {}",
                 archive.display()
             )),
-            None => say(&format!("team {team}: done")),
+            None => say_line(&format!("team {team}: done")),
         },
-        CloseTarget::Member(role) => say(&format!("removed {role} from team {team}")),
+        CloseTarget::Member(role) => say_line(&format!("removed {role} from team {team}")),
     }
     ExitCode::SUCCESS
-}
-
-#[expect(clippy::print_stdout, reason = "the steps are the command's output")]
-fn say(text: &str) {
-    println!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal or a problem on stderr"
-)]
-fn warn(text: &str) {
-    eprintln!("{text}");
-}
-
-fn fail(message: &str, code: u8) -> ExitCode {
-    warn(&format!("teamwire close: {message}"));
-    ExitCode::from(code)
 }
 
 #[cfg(test)]
