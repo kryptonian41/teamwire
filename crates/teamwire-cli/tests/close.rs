@@ -634,7 +634,8 @@ fn a_member_cannot_watch_or_add_members() {
 fn a_member_whose_start_failed_leaves_no_branch_in_status_or_close() {
     let mut rig = Rig::new();
     rig.herdr
-        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        // Not `agent_pane_busy`: the adapter retries that 8 times, 1.5 s apart.
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "invalid_params"))
         .unwrap();
     let repo = rig.repo();
     let spec = json!({"team": "alpha", "title": "Alpha", "children": [

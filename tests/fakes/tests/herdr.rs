@@ -1033,7 +1033,7 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
                 ],
                 &[
                     ("FAKE_CLAUDE_BIN", &slow),
-                    ("FAKE_HERDR_START_WAIT_MS", "20000"),
+                    ("FAKE_HERDR_START_WAIT_MS", "5000"),
                 ],
             )
             .unwrap()
@@ -1054,7 +1054,7 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
             assert!(began.elapsed().as_secs() < 60, "the agent was never listed");
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        // The start waits 20 s for readiness, so a list that waited for the
+        // The start waits 5 s for readiness, so a list that waited for the
         // start could only answer after it.
         assert!(!starting.is_finished(), "agent list waited for agent start");
         let started = starting.join().unwrap();
