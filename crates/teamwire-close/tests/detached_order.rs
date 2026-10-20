@@ -6,11 +6,18 @@
 #[path = "support/rig.rs"]
 pub mod rig;
 
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::Duration;
 
-use rig::{Rig, git};
+use rig::{GitPlatform, Rig, git};
 use teamwire_close::{CloseOpts, CloseReport, CloseTarget, close, close_observed};
-use teamwire_core::{Host, MemberKind, Occupant, Pid};
+use teamwire_core::{
+    Command, Host, MemberKind, Occupant, Pid, Place, Platform, PlatformError, RunOutput, SleepHold,
+    Timestamp,
+};
+use teamwire_fakes::FakeHost;
+use teamwire_store::Ctx;
 
 /// An implementer that detached its HEAD and committed there, so the commit
 /// is on no branch, tag or remote ref. Returns the commit's sha.
@@ -24,6 +31,51 @@ fn detached_commit(rig: &mut Rig, role: &str) -> String {
 fn commit(cwd: &std::path::Path, message: &str) -> String {
     git(cwd, &["commit", "-q", "--allow-empty", "-m", message]);
     git(cwd, &["rev-parse", "HEAD"])
+}
+
+/// The agent of `place`, at work in `cwd`. If its place is still open when
+/// close starts `git worktree remove`, the agent commits first: the commit
+/// lands after the last HEAD check and is on no ref once the worktree goes.
+/// Every call then goes on to the rig's platform.
+struct AgentAtRemoval<'a> {
+    inner: &'a GitPlatform,
+    host: &'a FakeHost,
+    place: Place,
+    cwd: PathBuf,
+    commit: OnceLock<String>,
+}
+
+impl Platform for AgentAtRemoval<'_> {
+    fn pid_alive(&self, pid: Pid) -> bool {
+        self.inner.pid_alive(pid)
+    }
+    fn process_started(&self, pid: Pid) -> Option<Timestamp> {
+        self.inner.process_started(pid)
+    }
+    fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
+        self.inner.env_of(pid, var)
+    }
+    fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
+        let removal = cmd.args.windows(2).any(|w| w == ["worktree", "remove"]);
+        if removal && self.host.state(&self.place, Duration::ZERO).is_ok() {
+            self.commit
+                .set(commit(&self.cwd, "a commit as the worktree goes"))
+                .ok();
+        }
+        self.inner.run(cmd, timeout)
+    }
+    fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
+        self.inner.write_atomic(path, bytes)
+    }
+    fn sleep_hold(&self) -> Option<&dyn SleepHold> {
+        self.inner.sleep_hold()
+    }
+    fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError> {
+        self.inner.free_bytes(path)
+    }
+    fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError> {
+        self.inner.on_network_fs(path)
+    }
 }
 
 #[cfg(test)]
@@ -152,22 +204,33 @@ fn a_member_on_a_branch_keeps_its_place_until_close_places() {
 }
 
 #[test]
-fn a_commit_made_as_remove_worktrees_begins_is_kept_on_a_ref() {
+fn every_commit_the_agent_makes_during_remove_worktrees_is_kept_on_a_ref() {
     let mut rig = Rig::new();
     let first = detached_commit(&mut rig, "api");
     let cwd = rig.member("api").cwd;
+    let (platform, host) = (rig.platform.clone(), rig.host.clone());
+    let agent = AgentAtRemoval {
+        inner: &platform,
+        host: &host,
+        place: rig.place_of("api"),
+        cwd: cwd.clone(),
+        commit: OnceLock::new(),
+    };
     let last = std::cell::RefCell::new(String::new());
-    // The agent's last act before its place closes.
-    let report = close_observed(
-        &mut rig.ctx(),
-        CloseTarget::Team,
-        CloseOpts::default(),
-        &|step| {
-            if step == "remove_worktrees" {
-                *last.borrow_mut() = commit(&cwd, "a last commit");
-            }
-        },
-    );
+    let mut ctx = Ctx {
+        home: rig.home.path(),
+        store: &mut rig.store,
+        registry: &rig.registry,
+        platform: &agent,
+        clock: &rig.clock,
+        config: &rig.config,
+    };
+    // The agent's commit as the step begins, before the rescue branch.
+    let report = close_observed(&mut ctx, CloseTarget::Team, CloseOpts::default(), &|step| {
+        if step == "remove_worktrees" {
+            *last.borrow_mut() = commit(&cwd, "a last commit");
+        }
+    });
     let last = last.into_inner();
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert!(!cwd.exists());
@@ -178,13 +241,18 @@ fn a_commit_made_as_remove_worktrees_begins_is_kept_on_a_ref() {
     );
     assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue.clone()]);
     assert_eq!(git(&rig.repo, &["rev-parse", &rescue]), last);
-    for sha in [&first, &last] {
+    let at_removal = agent.commit.get();
+    for sha in [&first, &last].into_iter().chain(at_removal) {
         assert_ne!(
             git(&rig.repo, &["for-each-ref", "--contains", sha]),
             "",
             "{sha} is on no ref"
         );
     }
+    assert_eq!(
+        at_removal, None,
+        "the place was closed before git worktree remove"
+    );
 }
 
 #[test]
