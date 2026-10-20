@@ -1033,12 +1033,13 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
                 ],
                 &[
                     ("FAKE_CLAUDE_BIN", &slow),
-                    ("FAKE_HERDR_START_WAIT_MS", "6000"),
+                    ("FAKE_HERDR_START_WAIT_MS", "20000"),
                 ],
             )
             .unwrap()
         });
-        // The slow agent is in the state file once the pane lists it.
+        // The slow agent is in the state file once the pane lists it. The
+        // 60 s only guards against a hang: what matters is the order.
         let began = std::time::Instant::now();
         loop {
             let out = env.run(&["agent", "list"]).unwrap();
@@ -1050,13 +1051,12 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
             if listed {
                 break;
             }
-            assert!(began.elapsed().as_secs() < 5, "the agent was never listed");
+            assert!(began.elapsed().as_secs() < 60, "the agent was never listed");
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        assert!(
-            began.elapsed().as_secs() < 5,
-            "agent list waited for agent start"
-        );
+        // The start waits 20 s for readiness, so a list that waited for the
+        // start could only answer after it.
+        assert!(!starting.is_finished(), "agent list waited for agent start");
         let started = starting.join().unwrap();
         assert_eq!(
             started.error_code().as_deref(),
@@ -1100,7 +1100,27 @@ fn a_call_killed_while_it_holds_the_state_lock_leaves_no_stuck_lock() {
         .stderr(std::process::Stdio::null())
         .spawn()
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    // Kill the prompt only once the test sees the lock held. A probe that
+    // gets the lock lets go at once, so the prompt can still take it.
+    let probe = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(env.state_path().with_extension("lock"))
+        .unwrap();
+    let began = std::time::Instant::now();
+    loop {
+        match probe.try_lock() {
+            Err(std::fs::TryLockError::WouldBlock) => break,
+            Ok(()) => probe.unlock().unwrap(),
+            Err(std::fs::TryLockError::Error(e)) => panic!("{e}"),
+        }
+        assert!(
+            began.elapsed().as_secs() < 60,
+            "the prompt never held the state lock"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
     assert!(
         child.try_wait().unwrap().is_none(),
         "the prompt ended before it was killed"
@@ -1108,10 +1128,13 @@ fn a_call_killed_while_it_holds_the_state_lock_leaves_no_stuck_lock() {
     child.kill().unwrap();
     child.wait().unwrap();
     signal("-CONT", &agent);
-    let began = std::time::Instant::now();
+    assert!(
+        probe.try_lock().is_ok(),
+        "the killed call left the state lock held"
+    );
+    probe.unlock().unwrap();
     let out = env.run(&["agent", "list"]).unwrap();
     assert_eq!(out.code, Some(0), "{out:?}");
-    assert!(began.elapsed().as_secs() < 3, "agent list waited on a lock");
 }
 
 #[test]
