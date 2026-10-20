@@ -100,8 +100,9 @@ fn recorded(ctx: &Ctx<'_>, role: &Role) -> Result<Vec<(PathBuf, Vec<String>)>, S
 }
 
 /// Removes from one exclude file each of `lines` it holds that no remaining
-/// worktree needs. The worktrees are listed under the lock, so a launch that
-/// is adding a worktree now is either seen or adds its line back itself.
+/// worktree needs. The worktrees are listed under the lock, and launch both
+/// checks for its lines and appends them under the same lock, so a launch
+/// running now is either seen here or adds its line back itself.
 fn take_back_file(ctx: &Ctx<'_>, file: &Path, repo: &Path, lines: &[String]) -> Option<String> {
     let shown = file.display();
     let _lock = match lock_exclude(ctx.platform, ctx.home, file) {

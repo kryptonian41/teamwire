@@ -268,9 +268,20 @@ fn exclude_lines(
 ) -> Result<(PathBuf, Vec<String>), String> {
     let path = exclude_path(platform, worktree)?;
     let _lock = lock_exclude(platform, home, &path)?;
+    let added = append_locked(platform, &path, entries)?;
+    Ok((path, added))
+}
+
+/// `exclude_lines` for a caller that already holds the exclude lock on
+/// `path`. Returns the entries that were added.
+fn append_locked(
+    platform: &dyn Platform,
+    path: &Path,
+    entries: &[String],
+) -> Result<Vec<String>, String> {
     // Only a missing file is empty. Any other read error must not turn into
     // a fresh file that replaces the repository's shared rules.
-    let bytes = match std::fs::read(&path) {
+    let bytes = match std::fs::read(path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
         Err(e) => return Err(format!("cannot read {}: {e}", path.display())),
@@ -278,10 +289,10 @@ fn exclude_lines(
     let (bytes, added) = exclude::add(&bytes, entries);
     if !added.is_empty() {
         platform
-            .write_atomic(&path, &bytes)
+            .write_atomic(path, &bytes)
             .map_err(|e| format!("cannot write {}: {e}", path.display()))?;
     }
-    Ok((path, added))
+    Ok(added)
 }
 
 /// Removes the lines `excluded` added, one occurrence each, under the
@@ -316,6 +327,27 @@ pub(crate) fn exclude_setup_files(
     home: &Path,
     worktree: &Path,
 ) -> (Vec<String>, Option<Excluded>) {
+    let file = match exclude_path(platform, worktree) {
+        Ok(file) => file,
+        Err(e) => {
+            return (
+                vec![format!("setup created files git does not ignore: {e}")],
+                None,
+            );
+        }
+    };
+    // The listing runs under the lock: it reads the exclude file, and a close
+    // that takes a line back between the listing and the append would leave
+    // a file setup made neither listed nor ignored.
+    let _lock = match lock_exclude(platform, home, &file) {
+        Ok(lock) => lock,
+        Err(e) => {
+            return (
+                vec![format!("setup created files git does not ignore: {e}")],
+                None,
+            );
+        }
+    };
     // One entry per file, never per directory: a directory line would also hide
     // files a member writes there later, and close would then delete them.
     // `-z` gives raw names, so quote-escaping never reaches the exclude file.
@@ -346,9 +378,9 @@ pub(crate) fn exclude_setup_files(
         return (notes, None);
     }
     let mut excluded = None;
-    match exclude_lines(platform, home, worktree, &entries) {
-        Ok((_, added)) if added.is_empty() => {}
-        Ok((file, added)) => {
+    match append_locked(platform, &file, &entries) {
+        Ok(added) if added.is_empty() => {}
+        Ok(added) => {
             let them = if added.len() == 1 { "it" } else { "them" };
             notes.push(format!(
                 "setup created {}; launch added {them} to {} so git ignores {them} (every worktree of the repository shares that file)",

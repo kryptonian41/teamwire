@@ -374,3 +374,46 @@ fn a_base_that_is_not_a_commit_is_refused() {
     assert_eq!(common::codes(&errors), ["bad_base"]);
     assert!(errors.first().unwrap().message.contains("no-such-ref"));
 }
+
+#[test]
+fn a_close_taking_its_line_back_during_setup_does_not_lose_the_new_members_line() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let exclude = repo.join(".git/info/exclude");
+    // Another team's setup line, which that team's close is about to take back.
+    common::write(&exclude, "/gen-x\n");
+    let lock = exclude_lock(&rig, &repo);
+    std::fs::create_dir_all(&lock).unwrap();
+    common::write(&lock.join("pid"), &std::process::id().to_string());
+    let made = repo.join(".worktrees/b/gen-x");
+    let pause = std::time::Duration::from_millis(50);
+    std::thread::scope(|s| {
+        let launch = s.spawn(|| {
+            let spec = team_making("two", "b", &repo, "gen-x");
+            rig.launch("two", rig.validate(&spec, false).unwrap())
+        });
+        for _ in 0..200 {
+            if made.exists() {
+                break;
+            }
+            std::thread::sleep(pause);
+        }
+        assert!(made.exists(), "setup ran");
+        // Let launch get as far as it can before the close lets go.
+        std::thread::sleep(pause * 10);
+        // The other team's close, holding the lock, takes its line back.
+        common::write(&exclude, "");
+        std::fs::remove_dir_all(&lock).unwrap();
+        let (report, _) = launch.join().unwrap();
+        assert_eq!(
+            report.members.first().unwrap().outcome,
+            LaunchOutcome::Started
+        );
+    });
+    let after = std::fs::read_to_string(&exclude).unwrap();
+    assert!(after.lines().any(|l| l == "/gen-x"), "{after}");
+    assert_eq!(
+        git(&repo.join(".worktrees/b"), &["status", "--porcelain"]),
+        ""
+    );
+}
