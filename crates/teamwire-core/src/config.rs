@@ -19,6 +19,9 @@ pub struct Config {
     pub hook_budget_s: u64,
     pub hook_timeout_s: u64,
     pub delivering_stale_s: u64,
+    /// How long close waits, once a member's place is closed, for the
+    /// processes that ran in it to end before it removes the worktree.
+    pub close_exit_wait_ms: u64,
     pub min_free_bytes: u64,
     pub otel: OtelConfig,
 }
@@ -26,7 +29,8 @@ pub struct Config {
 impl Default for Config {
     /// The values the design names: a 20 s poll, 3 quiet polls, 90 s grace,
     /// a 600 s setup limit and 150 s spawn limit, a 1800 s deadline, the 40 s hook budget under a 60 s hook timeout,
-    /// 90 s before `delivering` counts as interrupted, and 200 MB free.
+    /// 90 s before `delivering` counts as interrupted, a 5 s wait for a closed
+    /// place's processes to end, and 200 MB free.
     fn default() -> Self {
         Self {
             poll_s: 20,
@@ -38,6 +42,7 @@ impl Default for Config {
             hook_budget_s: 40,
             hook_timeout_s: 60,
             delivering_stale_s: 90,
+            close_exit_wait_ms: 5000,
             min_free_bytes: 200 * 1024 * 1024,
             otel: OtelConfig::default(),
         }

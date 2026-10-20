@@ -824,6 +824,8 @@ fn a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs
         },
     );
     rig.platform.inner.set_alive(late, true);
+    // The process never ends here, so the wait would always run out.
+    rig.config.close_exit_wait_ms = 100;
     let report = remove(&mut rig, "api", CloseOpts::default());
     assert_eq!(
         report.stopped_at.as_deref(),

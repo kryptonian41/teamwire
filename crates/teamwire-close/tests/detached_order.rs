@@ -138,6 +138,8 @@ fn a_process_that_outlives_the_closed_place_keeps_the_worktree_until_it_ends() {
         },
     );
     rig.platform.inner.set_alive(late, true);
+    // The process never ends here, so the wait would always run out.
+    rig.config.close_exit_wait_ms = 100;
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert_eq!(
         report.stopped_at.as_deref(),

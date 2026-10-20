@@ -462,6 +462,7 @@ pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s:
                     pub default_deadline_s: u64, pub hook_budget_s: u64,  // 40
                     pub hook_timeout_s: u64,                              // 60; the Stop hook timeout of both adapters
                     pub delivering_stale_s: u64,                          // 90
+                    pub close_exit_wait_ms: u64,                          // 5000; close's wait for a closed place's processes (CLS-1)
                     pub min_free_bytes: u64, pub otel: OtelConfig }
 pub struct OtelConfig { pub endpoint: Option<String>, pub headers: Vec<(String, String)> }
 ```
