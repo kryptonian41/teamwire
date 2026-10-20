@@ -1468,3 +1468,31 @@ fn a_symlinked_closer_cache_is_removed_as_a_link() {
     assert!(cache.symlink_metadata().is_err());
     assert!(outside.path().join("keep").is_file());
 }
+
+#[test]
+fn the_closer_cache_is_staged_before_the_team_directory_is_deleted() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let teams_dir = rig.home.path().join("teams");
+    // The team directory cannot be moved out: the parent is read-only. A
+    // kill after that move would leave the cache with no team to close, so
+    // the cache must already be out of its path when the move is tried.
+    let report = close_observed(
+        &mut rig.ctx(),
+        CloseTarget::Team,
+        CloseOpts::default(),
+        &|step| {
+            if step == "delete_state" {
+                set_mode(&teams_dir, 0o555);
+            }
+        },
+    );
+    set_mode(&teams_dir, 0o755);
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("delete_state"),
+        "{report:?}"
+    );
+    assert!(rig.team_dir().is_dir());
+    assert!(!cache.exists());
+}

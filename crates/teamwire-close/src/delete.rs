@@ -50,7 +50,7 @@ fn stage(ctx: &Ctx<'_>, name: &str, from: &Path) -> Result<PathBuf, String> {
             .map_err(|e| format!("cannot remove {}: {e}", doomed.display()))?;
     }
     move_dir(from, &doomed)
-        .map_err(|e| format!("cannot move {} out of teams/: {e}", from.display()))?;
+        .map_err(|e| format!("cannot move {} to deleting/: {e}", from.display()))?;
     Ok(doomed)
 }
 
@@ -60,32 +60,34 @@ pub(crate) fn closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> PathBuf {
     ctx.home.join("cache").join("closer").join(team.as_str())
 }
 
-/// Deletes the closer's cache folder if there is one. Returns a note for the
-/// step's detail, or nothing when there was no folder. A failure is only a
-/// note: the team's work is already safe in the archive.
-pub(crate) fn delete_closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> Option<String> {
+/// Moves the closer's cache folder into `deleting/` if there is one. The
+/// caller does this before it deletes the team directory, so a kill between
+/// the two leaves the folder where a later close of any team removes it.
+/// A failure is only a note: the team's work is already safe in the archive.
+pub(crate) fn stage_closer_cache(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+) -> Option<Result<PathBuf, String>> {
     let dir = closer_cache(ctx, team);
-    let meta = std::fs::symlink_metadata(&dir).ok()?;
-    // A link is removed as a link: renaming then `remove_dir_all` could walk
-    // into whatever it points at.
-    if meta.file_type().is_symlink() {
-        return Some(match std::fs::remove_file(&dir) {
-            Ok(()) => format!("deleted the link {}", dir.display()),
-            Err(e) => format!("cannot remove the link {}: {e}", dir.display()),
-        });
+    std::fs::symlink_metadata(&dir).ok()?;
+    // `_` cannot occur in a team name, so this never collides with a team's
+    // own staged directory.
+    Some(stage(ctx, &format!("closer_{}", team.as_str()), &dir))
+}
+
+/// Removes a folder `stage_closer_cache` moved, and returns the note for the
+/// step's detail.
+pub(crate) fn remove_staged_cache(staged: Result<PathBuf, String>) -> String {
+    match staged {
+        Err(e) => format!("closer cache kept: {e}"),
+        Ok(doomed) => match std::fs::remove_dir_all(&doomed) {
+            Ok(()) => "deleted the closer cache".to_owned(),
+            Err(e) => format!(
+                "closer cache moved to {}, left for a later close to remove: {e}",
+                doomed.display()
+            ),
+        },
     }
-    let doomed = match stage(ctx, &format!("closer-{}", team.as_str()), &dir) {
-        Ok(doomed) => doomed,
-        Err(e) => return Some(format!("closer cache kept: {e}")),
-    };
-    Some(match std::fs::remove_dir_all(&doomed) {
-        Ok(()) => format!("deleted {}", dir.display()),
-        Err(e) => format!(
-            "deleted {}; {} is left for a later close to remove: {e}",
-            dir.display(),
-            doomed.display()
-        ),
-    })
 }
 
 /// Removes every `<name>.<pid>` directory under `deleting` whose pid is
@@ -107,7 +109,7 @@ fn remove_left_over(ctx: &Ctx<'_>, deleting: &Path) {
             continue;
         }
         if let Err(e) = std::fs::remove_dir_all(entry.path()) {
-            tracing::warn!(path = %entry.path().display(), error = %e, "a left-over team directory could not be removed");
+            tracing::warn!(path = %entry.path().display(), error = %e, "a left-over directory in deleting/ could not be removed");
         }
     }
 }
