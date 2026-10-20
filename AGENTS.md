@@ -1,8 +1,9 @@
 # teamwire
 
 Rust tool that runs teams of coding agents. Map: docs/ARCHITECTURE.md.
-Your task: the TASK.md brief in your working directory (docs/build-plan.md is
-the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
+Your task: your brief. A member with a worktree finds it as TASK.md there; any
+other member finds it at the path its first message names, under
+$TEAMWIRE_HOME/teams/<team>/briefs/ (docs/build-plan.md is the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
 
 ## Separate project: never touch the running setup
 
@@ -26,8 +27,7 @@ runs the user's real agent teams. So:
 - Before you finish: scripts/test-changed.sh tests your changed crates
   (against $TEAMWIRE_BASE, else main, else origin/main) and every crate that
   depends on them (--dry-run lists them first)
-- Your check: the command in your brief (TASK.md); without a brief, the Check
-  column of your row in docs/build-plan.md
+- Your check: the command in your brief
 - Full gate (the lead, after each wave): scripts/gate.sh
 - GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.
   Plain sed -i is BSD sed.

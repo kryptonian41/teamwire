@@ -82,6 +82,7 @@ Layout rules, each checked by `cargo xtask tidy`:
 | Every crate's `lib.rs` or `main.rs` opens with a `//!` comment of at most 15 lines: purpose, what it must never do, invariants. `ARCHITECTURE.md`'s Components table has one row per crate under `crates/`, and no row without a crate | repopract R28 |
 | `CLAUDE.md`'s first line is `@AGENTS.md`; `AGENTS.md` is under 120 lines | repopract R1, R3 |
 | The crate dependency graph follows the layers in section 5 | repopract R22 |
+| Only `teamwire-store` calls `.connection()`, which reaches SQLite without `Store::write`. Test code is skipped: `tests/` directories, `tests.rs`, and everything from the first `#[cfg(test)]` line | `xtask/src/connection.rs` |
 | With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`; a new `#[ignore]`, `#[expect(`, `#![expect(`, `#[allow(`, `#![allow(` or `#[should_panic`; a removed or changed `#[cfg(test)]` or `mod tests;` line; or an added `#[cfg_attr(..., ignore | allow | expect | should_panic)]` prints `WEAKENED <path>:<line>`. Removed `#[test]` lines are counted net per file, so a test moved within a file is not flagged. It also prints `PROTECTED-CHANGED` for a protected file moved away (at the old path) and for an untracked file under a protected path, and `WEAKENED` for an added non-test `#[cfg(` or `#![cfg(` line, for a test file moved to another path (at the old path), and for assert lines removed on net. Each line appears once The adapter check skips comments and string literals | repopract R17, R18 |
 
 Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file, or,
@@ -116,7 +117,7 @@ starts the doctest runner for every crate.
 changes dependencies by accident. `-D warnings` goes on the clippy call, not
 in `RUSTFLAGS`, so the build cache is not thrown away.
 
-A ticket runs its build-plan **Check** and `scripts/gate.sh fast`. The lead
+A member runs the check its brief names and `scripts/gate.sh fast`. (The closed first build ran its build-plan **Check**.) The lead
 runs the full `scripts/gate.sh` once after integrating each wave.
 
 `scripts/test-changed.sh` is the test run for the inner loop. Given crate
@@ -270,6 +271,10 @@ disallowed-methods = [
   { path = "std::time::SystemTime::now", reason = "use the Clock trait so the watch is testable" },
   { path = "std::time::Instant::now",    reason = "use the Clock trait so the watch is testable" },
   { path = "std::env::set_var",          reason = "process-wide state; pass configuration explicitly" },
+  { path = "std::fs::OpenOptions::open",            reason = "files outside SQLite go through Platform::write_atomic" },
+  { path = "time::OffsetDateTime::now_utc",         reason = "use the Clock trait so the watch is testable" },
+  { path = "std::fs::copy",                         reason = "files outside SQLite go through Platform::write_atomic" },
+  { path = "tempfile::NamedTempFile::persist",      reason = "files outside SQLite go through Platform::write_atomic" },
 ]
 ```
 
@@ -278,7 +283,9 @@ disallowed-methods = [
 crate may also call one where the call cannot go through `Platform`, such as
 `teamwire-close` renaming a directory it owns. Every such call site sits
 under `#[expect(clippy::disallowed_methods, reason = "...")]`, and the reason
-says why `Platform` does not fit. T01 runs clippy once
+says why `Platform` does not fit. The sites today are the 0600 environment
+file in `teamwire-host-tmux`, `SystemClock` and `persist` in `teamwire-platform`,
+and the test fakes. T01 runs clippy once
 and fixes any option name clippy rejects (repopract marked two names as
 unverified; those two are left out above).
 
@@ -359,8 +366,9 @@ for word in meaning):
 # teamwire
 
 Rust tool that runs teams of coding agents. Map: docs/ARCHITECTURE.md.
-Your task: the TASK.md brief in your working directory (docs/build-plan.md is
-the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
+Your task: your brief. A member with a worktree finds it as TASK.md there; any
+other member finds it at the path its first message names, under
+$TEAMWIRE_HOME/teams/<team>/briefs/ (docs/build-plan.md is the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
 
 ## Separate project: never touch the running setup
 
@@ -381,8 +389,7 @@ the user's real agent teams. So:
 ## Commands (from the repo root)
 
 - While working: cargo test -p <your crate> --locked, then scripts/gate.sh fast
-- Your check: the command in your brief (TASK.md); without a brief, the Check
-  column of your row in docs/build-plan.md
+- Your check: the command in your brief
 - Full gate (the lead, after each wave): scripts/gate.sh
 - GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.
   Plain sed -i is BSD sed.

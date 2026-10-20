@@ -3,7 +3,8 @@
 Files for you to copy by hand, except the skills and the lead's MCP server,
 which `teamwire install` puts into the teamwire plugin (ADR 0018, ADR 0023).
 No command writes under `~/.claude/`. `teamwire install` only deletes the
-skill file and MCP entry that an old build (ADR 0012) put there.
+skill file that an old build (ADR 0012) put in `~/.claude/skills/teamwire/`,
+and its MCP entry in `~/.claude.json`.
 
 | Path | What it is | Where it goes |
 | --- | --- | --- |

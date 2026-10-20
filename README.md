@@ -308,8 +308,9 @@ own. [ui/AGENTS.md](ui/AGENTS.md) has the dashboard's rules and commands.
 teamwire writes nothing under `~/.claude/` itself. Only `teamwire install`
 and `teamwire uninstall` change a harness's setup, and they do it through
 `claude plugin` and `codex plugin`. `teamwire install` also deletes the
-skill file and the `teamwire` MCP entry that a build before v0.3.0 put in
-`~/.claude/`. It refuses to delete a skill file you edited, unless you pass
+skill file that a build before v0.3.0 put in `~/.claude/skills/teamwire/`, and
+the `teamwire` MCP entry it put in `~/.claude.json` (through `claude mcp
+remove`). It refuses to delete a skill file you edited, unless you pass
 `--force`.
 
 ## Documentation
