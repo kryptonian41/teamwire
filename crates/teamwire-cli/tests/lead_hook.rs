@@ -268,10 +268,19 @@ fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
     assert_eq!((run.code, run.out.as_str()), (0, ""));
 }
 
-/// Two teams' databases are each held under an exclusive lock by another
-/// process, so each read waits for the database engine's own 5 s busy timeout. Read one
-/// after the other that is 10 s; the hook must give up at its own 5 s bound
-/// and let the stop through with no output.
+/// Four teams' databases are each held under an exclusive lock by another
+/// process, so each read waits for the database engine's own 5 s busy
+/// timeout. Read one after the other that is at least 20 s; the hook must
+/// give up at its own 5 s bound and let the stop through with no output.
+///
+/// What this proves: the whole hook, the part after its bound included,
+/// ends near the bound however many stores are locked. What it cannot
+/// prove: that the part after the bound reads no store. A hook whose later
+/// part still read stores passes too, because once the bounded part gives
+/// up the hook lets the stop through and nothing runs after it. Catching
+/// that needs a lock that starts between the bounded reads and the later
+/// ones, which a test cannot time reliably. The signature of
+/// `lead_reads_watch_lines`, which takes no path, guards it instead.
 #[test]
 fn locked_stores_let_the_stop_through_at_the_bound() {
     let fx = team();
@@ -282,10 +291,13 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
     let db = |name: &str| {
         teamwire_store::database_path(&home, &teamwire_core::TeamName::parse(name).unwrap())
     };
-    std::fs::create_dir_all(db("beta").parent().unwrap()).unwrap();
-    std::fs::copy(db("alpha"), db("beta")).unwrap();
+    let teams = ["alpha", "beta", "gamma", "delta"];
+    for name in &teams[1..] {
+        std::fs::create_dir_all(db(name).parent().unwrap()).unwrap();
+        std::fs::copy(db("alpha"), db(name)).unwrap();
+    }
     let mut holders = Vec::new();
-    for name in ["alpha", "beta"] {
+    for name in teams {
         let mut holder = Command::new("sqlite3")
             .arg(db(name))
             .stdin(Stdio::piped())
@@ -315,7 +327,7 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
     // Not much below 5 s: a hook that failed fast on the lock would also print
     // nothing, and only the wait shows it used its bound.
     assert!(waited >= std::time::Duration::from_secs(4), "{waited:?}");
-    // Well under the 10 s that two unbounded reads take, yet loose enough for
-    // process start and exit on a loaded machine.
-    assert!(waited < std::time::Duration::from_secs(8), "{waited:?}");
+    // Well under the 20 s that four unbounded reads take, yet loose enough
+    // for process start and exit on a loaded machine.
+    assert!(waited < std::time::Duration::from_secs(15), "{waited:?}");
 }
