@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use teamwire_core::{Clock, Config};
-use teamwire_launch::{LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, validate};
+use teamwire_launch::{
+    LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, unknown_key_warnings, validate,
+};
 use teamwire_store::{Ctx, Store};
 
 use crate::cmd::send::{home_or_refuse, refuse_member};
@@ -103,7 +105,8 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         eprintln!("nothing was created");
         return ExitCode::from(REFUSED);
     }
-    for warning in &plan.warnings {
+    // Unknown keys are warned about, never refused: the spec still launches.
+    for warning in unknown_key_warnings(&text).iter().chain(&plan.warnings) {
         eprintln!("warning: {warning}");
     }
     if args.dry_run {
