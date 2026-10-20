@@ -47,6 +47,10 @@ pub struct Remote { /* team, role (None for the lead) */ }
 
 ```rust
 pub enum MemberKind { Implementer, Reviewer, Investigator, Closer }
+impl MemberKind {
+    pub fn is_quiet(self) -> bool;                       // reviewers and closers (MSG-3)
+    pub fn may_send(self, kind: MessageType) -> bool;    // a member never sends reprompt or note; a quiet kind sends nothing
+}
 pub enum Mode { Worktree, Pane }
 pub enum MemberState { Creating, Started, Failed, Removed }
 
@@ -161,7 +165,7 @@ names in `docs/metrics.md` section 1:
 
 ```
 team.created team.closing team.closed team.lead_adopted
-member.creating member.started member.failed member.replaced member.removed member.reprompted
+member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted
 member.completed member.completion_refused member.held
 message.sent message.refused
 delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
@@ -178,6 +182,7 @@ so they need no schema change:
 | Event | Key | Meaning |
 | --- | --- | --- |
 | `member.started` | `model`, `effort` | What the member was launched with. `null` when the spec named none. A missing key means an older build started the member. |
+| `member.started` | `excluded` | The `info/exclude` lines this launch added, as `[{ "file": <absolute path>, "lines": [...] }]`, one entry per append (setup files, then `/TASK.md`). A line that was already in the file is not listed. Close takes these back. A missing key means an older build started the member. |
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.created` | `afk_budget_ends_at` | When an AFK run's budget ends, written by `teamwire afk start`. Missing on an ordinary team. |
@@ -201,7 +206,13 @@ a typed code, never a string to match (ADP-5).
 pub trait Host: Send + Sync {
     fn id(&self) -> HostId;
     fn capabilities(&self) -> HostCaps;
-    /// Create a new place for a member and run `argv` in it.
+    /// Create a new place for a member and run `argv` in it. A name a live
+    /// agent holds is refused with `BadArgument` and a detail starting
+    /// `agent_name_taken:` (herdr, tmux and the fake); on tmux a pane whose
+    /// program has exited holds no live agent. A method that runs several host
+    /// commands splits the caller's timeout across them, so their sum never
+    /// passes it (tmux `submit`, `send_keys`, `close`, `spawn`; herdr `spawn`
+    /// uses a deadline).
     fn spawn(&self, req: &SpawnRequest, timeout: Duration) -> Result<Place, HostError>;
     /// Type `text` and submit it. `Ok` means the host accepted it, no more.
     fn submit(&self, place: &Place, text: &OneLine, timeout: Duration) -> Result<(), HostError>;
@@ -210,7 +221,10 @@ pub trait Host: Send + Sync {
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError>;
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError>;
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError>;
+    /// Close `place` only if the agent in it is `expected`. A place that holds
+    /// another agent, or none, is left alone and reported `NotFound`: a place
+    /// id can be reused after the member's agent died (CLS-7).
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError>;
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError>;
     /// Names of every live agent the host knows, from any tool (for LCH-25).
     fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, HostError>;
@@ -264,11 +278,20 @@ pub trait Harness: Send + Sync {
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError>;
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
-    /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
+    /// Classify a screen tail for delivery: at the input prompt with an empty
+    /// box, showing a dialog, or unknown. A box holding text (other than
+    /// Claude's one `Try "..."` placeholder) is `Unknown`, so delivery waits
+    /// and then refuses with `not_at_input_prompt`.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether a line just submitted still sits unsent in the input box.
     /// Default false, so a harness that cannot tell gets no second Enter.
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool;
+    /// Whether `box_holds_text` can tell anything. Delivery on a host that
+    /// guards dialogs reads the screen only when this is true. Default false.
+    fn reads_input_box(&self) -> bool;
+    /// Whether the input box shown by `tail` holds text. Delivery waits while
+    /// it does, on every host. Default false.
+    fn box_holds_text(&self, tail: &str) -> bool;
     /// Handle a startup dialog on the member's screen, if the harness has one.
     fn answer_startup(&self, host: &dyn Host, place: &Place, policy: TrustPolicy)
         -> Result<StartupOutcome, HarnessError>;
@@ -289,6 +312,8 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          pub reads_watch_lines: bool }   // lead can read `teamwire watch` lines (ADR 0023)
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
+                     // read only when it is a regular file of at most 64 MiB,
+                     // for the final-message fallback and the usage alike
                      pub transcript: Option<PathBuf> }
 pub enum Liveness { Alive(PlaceState), Dead, Unknown }
 pub enum ScreenState { InputPrompt, Dialog, Unknown }
@@ -320,6 +345,11 @@ pub trait Platform: Send + Sync {
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
 }
 
+impl RunOutput {
+    pub fn failure_text(&self) -> String;    // the one-line reason a failed command gives
+    pub fn stdout_trimmed(&self) -> String;
+}
+
 pub trait SleepHold {
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo>;
     fn start(&self, lead_pid: Pid) -> Result<HoldInfo, PlatformError>;
@@ -336,7 +366,8 @@ pub trait Clock: Send + Sync {
 `OneLine` is a string that has been through `sanitize::one_line(text, max)`:
 every run of white space (line breaks and tabs included) turned into one
 space and the ends trimmed, ANSI escape sequences and other control characters
-removed, characters that print nothing dropped, cut to `max` characters with
+removed, characters that print nothing dropped (the whole Unicode
+default-ignorable set plus U+FFF9-FFFB), cut to `max` characters with
 `…`. So `"a\nb"` becomes `"a b"`. It is the only type `Host::submit`
 accepts, so an unsanitised string cannot reach a session (DEL-11).
 
@@ -370,9 +401,10 @@ each member row records its own `harness` and `host`. Every service looks the
 adapter up for the party it is dealing with: the lead's harness to prove the
 lead or locate the lead, the recipient member's harness and host to deliver to
 that member. A Claude Code lead with a member whose harness id is `codex`
-type-checks and routes per member; with no `codex` adapter registered, that
-member's deliveries are `undelivered` with `unknown_adapter` and its launch is
-refused.
+type-checks and routes per member, because both harnesses (`claude-code` and
+`codex`) and both hosts (`herdr` and `tmux`) are registered. A member whose
+harness or host id no adapter registers has its deliveries `undelivered` with
+`unknown_adapter`, and its launch is refused.
 
 ## 6b. Supporting types
 
@@ -408,7 +440,10 @@ pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Addre
                           pub member_dir: PathBuf,           // $TEAMWIRE_HOME/teams/<team>/members/<role>
                           pub contract_path: PathBuf, pub identity: Vec<(String, String)>,
                           pub otel: OtelConfig, pub teamwire_bin: PathBuf,
-                          pub plugins: BTreeMap<String, bool> } // team map overlaid by member map
+                          pub plugins: BTreeMap<String, bool>, // team map overlaid by member map
+                          pub accept_trust: bool }  // the spec's accept_trust; a harness that takes folder trust as a start option (Codex, ADR 0023) reads it
+impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>; }
+impl LaunchSpec { pub fn shell_word(text: &str) -> String; }  // single-quotes any word outside [A-Za-z0-9/._-+:=@,]; "%" is quoted
 /// What the harness returns. Files are written by launch (mode given) before spawn.
 pub struct LaunchSpec { pub argv: Vec<String>,
                         /// Honoured only when the host has `sets_env_at_spawn`.
@@ -425,7 +460,7 @@ pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s:
                     pub setup_timeout_s: u64,                             // 600
                     pub spawn_timeout_s: u64,                             // 150
                     pub default_deadline_s: u64, pub hook_budget_s: u64,  // 40
-                    pub hook_timeout_s: u64,                              // 60
+                    pub hook_timeout_s: u64,                              // 60; the Stop hook timeout of both adapters
                     pub delivering_stale_s: u64,                          // 90
                     pub min_free_bytes: u64, pub otel: OtelConfig }
 pub struct OtelConfig { pub endpoint: Option<String>, pub headers: Vec<(String, String)> }
@@ -458,12 +493,18 @@ impl Store {
     pub fn backup_to(&self, path: &Path) -> Result<(), StoreError>;
     pub fn quick_check(&self) -> Result<String, StoreError>;
     pub fn integrity_check(&self) -> Result<String, StoreError>;
+    /// Writes the first failed transaction's `store.error` row, best effort.
+    pub fn record_failure(&mut self, at: Timestamp, op: &str);
 }
 
-pub enum StoreError { Busy, Full, SchemaNewer { db: u32, binary: u32 }, SchemaOlder { db: u32, binary: u32 },
+pub enum StoreError { Busy, Full { path: PathBuf }, SchemaNewer { db: u32, binary: u32 }, SchemaOlder { db: u32, binary: u32 },
                       NotTeamwire, Corrupt(String), Constraint(String),
                       NoDatabase { path: PathBuf },  // the team has no database file
                       Io(String) }
+impl StoreError { pub fn code(&self) -> &'static str; }  // busy, full, schema_newer, schema_older, not_teamwire, corrupt, constraint, no_database, io
+
+pub fn token_hash(token: &str) -> [u8; 32];
+pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit; msg, report, launch and the CLI hook use these two
 ```
 
 A command treats `NoDatabase` as "no such team", not as a broken store.
@@ -473,24 +514,33 @@ is the one scan of `<home>/teams` every command uses.
 `Tx` offers one typed method per operation the services need, for example
 `insert_message`, `insert_received` (another team's message under its own
 ULID, ADR 0016), `set_delivery_state`, `next_counter`, `insert_completion`,
-`claim_completion_for_delivery`, `bump_generation`, `set_member_state`,
-`record_event`, `announce_once` (returns false if the key already exists).
+`claim_completion_for_delivery`, `claim_completion_for_delivery_with`,
+`finish_completion_delivery_with`, `mark_result_received`, `bump_generation`,
+`set_member_state`, `create_team_with`, `create_afk_team`, `adopt_lead_in`,
+`insert_member_with`, `relaunch_failed_member_with`, `record_event`,
+`announce_once` (returns false if the key already exists). The reads on
+`ReadTx` include `latest_event(role: Option<&Role>, kind)` (the newest event of
+a type; it fails only when that row is damaged), `events_of_kinds(role, kinds)`
+(events of those types only), `announcements()` and `message_bodies()` (raw
+id, body and hash rows, with no hash refusal).
 Every `Tx` method that makes a lifecycle or message change also records the
 matching event. A few bookkeeping writes record none, because the closed event
 list has no type for them: `set_sleep_hold`, `set_member_place`,
 `set_member_session`, `set_member_token_hash`, `set_gate_told_generation`,
-`set_completion_final`, `announce_once`, `heartbeat_watch_lease`, and the
+`set_completion_final`, `clear_member_branch`, `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-Schema version 2 is `crates/teamwire-store/src/schema/v1.sql` followed by
-`src/schema/v2.sql`. Version 2 adds `team.closing_pid_started_at` and
+The schema is version 6: `crates/teamwire-store/src/schema/v1.sql` to `v6.sql`,
+applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
 Version 3 changes no table. Version 4 rebuilds `events` (ADR 0020). Version 5
 adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
-on an ordinary team (ADR 0025). The tables and columns are those in
+on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
+in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
+row, every `seq` and the AUTOINCREMENT counter. The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 
@@ -525,7 +575,7 @@ impl Ctx<'_> {
 }
 
 // teamwire-deliver
-pub fn locate(ctx: &Ctx, party: &Party) -> Result<Place, DeliveryError>;
+pub fn locate(ctx: &Ctx, party: &Party) -> Result<Place, DeliveryError>;  // the locator tests' entry point; delivery calls locate_with inside its own time budget
 pub fn deliver_line(ctx: &mut Ctx, party: &Party, line: &OneLine) -> DeliveryOutcome;
 pub fn deliver_line_within(ctx: &mut Ctx, party: &Party, line: &OneLine, deadline: Instant)
     -> DeliveryOutcome;
@@ -553,7 +603,7 @@ pub fn validate(spec: &TeamSpec, add: bool, env: &ValidateEnv) -> Result<ValidPl
 pub fn launch(ctx: &mut Ctx, plan: ValidPlan) -> LaunchReport;          // per-member outcomes
 
 // teamwire-verify
-pub fn verify(ctx: &mut Ctx, role: Option<&Role>, opts: VerifyOpts) -> Vec<VerifyRecord>;
+pub fn run(ctx: &mut Ctx, role: Option<&Role>, opts: VerifyOpts) -> Result<VerifyReport, VerifyError>;
 pub fn waive(ctx: &mut Ctx, role: &Role, flag: &FlagId, reason: &str) -> Result<(), VerifyError>;
 
 // teamwire-close
@@ -562,7 +612,7 @@ pub fn close(ctx: &mut Ctx, target: CloseTarget, opts: CloseOpts) -> CloseReport
 
 // teamwire-watch
 pub fn poll(ctx: &mut Ctx, state: &mut WatchMemory) -> Option<OneLine>;  // at most one line
-pub fn status(ctx: &Ctx) -> StatusView;                                  // reads only
+pub fn status_with(ctx: &Ctx, role: Option<&Role>) -> StatusView;       // reads only; role adds that member's resume command
 
 // teamwire-otel
 pub fn metrics(ctx: &Ctx, q: MetricsQuery) -> MetricsView;
