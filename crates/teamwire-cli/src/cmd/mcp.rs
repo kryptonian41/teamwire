@@ -6,7 +6,7 @@ use std::sync::Arc;
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_mcp::{McpCaller, ServerEnv, serve_stdio};
 
-use crate::cmd::send::{REFUSED, fail, home_or_refuse, member_token};
+use crate::cmd::send::{REFUSED, caller_env, fail, home_or_refuse, member_token};
 use crate::wiring::{Wiring, WiringEnv, wire};
 use crate::{Global, McpArgs, USAGE};
 
@@ -61,6 +61,7 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
         platform: owned.platform,
         clock: Arc::new(owned.clock),
         config: Config::default(),
+        process: caller_env(None),
     };
     match serve_stdio(env, caller) {
         Ok(()) => ExitCode::SUCCESS,

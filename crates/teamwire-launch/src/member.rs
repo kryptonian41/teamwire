@@ -10,12 +10,11 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use teamwire_core::{
     EventType, IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState,
     TrustPolicy, Ulid, one_line,
 };
-use teamwire_store::{Ctx, NewMember, NewTeam, StoreError, Tx};
+use teamwire_store::{Ctx, NewMember, NewTeam, StoreError, Tx, token_hash};
 
 use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
@@ -246,10 +245,6 @@ fn new_token() -> Result<String, String> {
     Ok(hex::encode(bytes))
 }
 
-fn sha256(text: &str) -> [u8; 32] {
-    Sha256::digest(text.as_bytes()).into()
-}
-
 #[expect(
     clippy::too_many_arguments,
     reason = "one sequence, each argument a distinct input"
@@ -303,7 +298,7 @@ fn run_member(
         owns: m.spec.owns.clone(),
         deadline_s: m.deadline_s,
     };
-    let hash = sha256(&token);
+    let hash = token_hash(&token);
     let at = ctx.clock.now();
     // The close lock is read inside the write that records the member, so a
     // close that took it after validation cannot be missed (CLS-3).

@@ -306,3 +306,33 @@ pub fn sha256(bytes: &[u8]) -> [u8; 32] {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes).into()
 }
+
+/// The SHA-256 of a token's text: what launch stores for a member and what a
+/// caller's token is checked against (ADR 0008 point 1).
+pub fn token_hash(token: &str) -> [u8; 32] {
+    sha256(token.as_bytes())
+}
+
+/// True when two hashes are equal. Every byte is compared, so the time taken
+/// does not tell a caller where a guessed hash first differs (ADR 0008).
+pub fn same_hash(a: &[u8], b: &[u8]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).fold(0_u8, |acc, (x, y)| acc | (x ^ y)) == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{same_hash, token_hash};
+
+    #[test]
+    fn same_hash_is_true_only_for_equal_bytes_of_equal_length() {
+        let a = token_hash("secret");
+        let mut b = a;
+        b[31] ^= 1;
+        assert!(same_hash(&a, &token_hash("secret")));
+        assert!(!same_hash(&a, &b));
+        assert!(!same_hash(&a, &token_hash("other")));
+        assert!(!same_hash(&a, &a[..31]));
+        assert!(!same_hash(&a[..31], &a));
+        assert!(same_hash(&[], &[]));
+    }
+}

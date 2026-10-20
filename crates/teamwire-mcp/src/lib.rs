@@ -3,8 +3,8 @@
 //! so every rule and refusal is the CLI's.
 //!
 //! Never: offer launch, watch, verify, close or removal; hold state between
-//! calls; accept a member call without its token or a lead call without the
-//! recorded lead session.
+//! calls; accept a member call without its token, or a lead call without the
+//! recorded lead session or from a process that carries a member's variables.
 //!
 //! Invariants: the store is opened for each call and closed after it; a
 //! refused call stores nothing.
@@ -21,6 +21,7 @@ use std::sync::Arc;
 
 use rmcp::ServiceExt;
 use teamwire_core::{Clock, Config, Platform, Registry, Role, TeamName};
+use teamwire_msg::CallerEnv;
 use thiserror::Error;
 
 pub use server::McpServer;
@@ -68,6 +69,11 @@ pub struct ServerEnv {
     pub platform: Arc<dyn Platform>,
     pub clock: Arc<dyn Clock>,
     pub config: Config,
+    /// What the server's own process environment says about its caller:
+    /// `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` and the token, read once at start.
+    /// The lead's proof sees them, so a lead server started in a member's
+    /// session refuses every call as the CLI would (ADR 0008).
+    pub process: CallerEnv,
 }
 
 impl fmt::Debug for ServerEnv {
@@ -76,6 +82,7 @@ impl fmt::Debug for ServerEnv {
             .field("home", &self.home)
             .field("registry", &self.registry)
             .field("config", &self.config)
+            .field("process", &self.process)
             .finish_non_exhaustive()
     }
 }

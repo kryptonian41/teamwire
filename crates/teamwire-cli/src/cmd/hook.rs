@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::json;
 use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_msg::CallerEnv;
-use teamwire_store::{Ctx, Store};
+use teamwire_store::{Ctx, Store, same_hash, token_hash};
 
 use crate::cmd::send::{caller_env, carries_member_identity, state_home, warn};
 use crate::recorded::Recorded;
@@ -149,7 +149,7 @@ fn member_hook_in(
         let (Some(stored), Some(token)) = (stored_hash, token) else {
             return quit("no member token to prove the session with");
         };
-        if !same_bytes(&teamwire_msg::token_hash(token), &stored) {
+        if !same_hash(&token_hash(token), &stored) {
             return quit("the token does not belong to this member");
         }
         said(
@@ -201,11 +201,6 @@ fn said<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T> 
         Ok(value) => Some(value),
         Err(e) => quit(&format!("{what}: {e}")),
     }
-}
-
-/// Compares two hashes without stopping at the first difference.
-fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a.iter().zip(b).fold(0_u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each

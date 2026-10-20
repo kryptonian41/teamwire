@@ -35,6 +35,10 @@ enum HostView {
 /// places. The place is returned only when exactly one place is named and
 /// confirmed. The pid and place recorded at launch are never evidence.
 /// No store transaction is open while the adapters are called.
+///
+/// Delivery calls `locate_with` itself, inside its own time budget, so
+/// nothing in the product calls this function. It is the entry point the
+/// locator tests drive, with no budget of their own.
 pub fn locate(ctx: &Ctx<'_>, party: &Party) -> Result<Place, DeliveryError> {
     let (harness, host) = ctx.adapters(party)?;
     let budget = Budget::new(ctx.clock, None);

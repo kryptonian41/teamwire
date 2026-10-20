@@ -1,9 +1,8 @@
 //! Proving who is calling (ADR 0008): a member by its token, the lead by its
 //! harness session.
 
-use sha2::{Digest, Sha256};
 use teamwire_core::{Actor, MemberState, Refusal, Role, SessionKind};
-use teamwire_store::{Ctx, Party};
+use teamwire_store::{Ctx, Party, same_hash, token_hash};
 
 use crate::send::read_team;
 
@@ -57,7 +56,7 @@ fn prove_member(ctx: &Ctx<'_>, env: &CallerEnv, token: &str) -> Result<Actor, Re
     if env.team.as_deref() != Some(team.as_str()) || member.state == MemberState::Removed {
         return Err(Refusal::Identity);
     }
-    if same_bytes(&token_hash(token), &stored) {
+    if same_hash(&token_hash(token), &stored) {
         Ok(Actor::Member(role))
     } else {
         Err(Refusal::Identity)
@@ -84,15 +83,4 @@ fn prove_lead(ctx: &Ctx<'_>, env: &CallerEnv) -> Result<Actor, Refusal> {
     } else {
         Err(Refusal::Identity)
     }
-}
-
-/// The SHA-256 of a token's text, which is what launch stores for a member
-/// and what a caller's token is checked against (ADR 0008).
-pub fn token_hash(token: &str) -> [u8; 32] {
-    Sha256::digest(token.as_bytes()).into()
-}
-
-/// Compares two hashes without stopping at the first difference.
-fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a.iter().zip(b).fold(0_u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }

@@ -19,14 +19,14 @@ const STORE: u8 = 6;
 pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let DoneArgs { status, summary } = args;
     let caller = caller_env(None);
-    let (Some(team), Some(role), Some(token)) = (caller.team, caller.role, caller.token) else {
+    let (Some(team), Some(role), Some(_)) = (&caller.team, &caller.role, &caller.token) else {
         return fail(
             "refused.identity: only a team member can record a completion \
              (TEAMWIRE_TEAM, TEAMWIRE_ROLE and TEAMWIRE_TOKEN are not all set)",
             REFUSED,
         );
     };
-    let (Ok(team), Ok(role)) = (TeamName::parse(&team), Role::parse(&role)) else {
+    let (Ok(team), Ok(role)) = (TeamName::parse(team), Role::parse(role)) else {
         return fail(
             "refused.identity: the team or role name is not valid",
             REFUSED,
@@ -53,7 +53,9 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
         clock: &wiring.clock,
         config: &config,
     };
-    if !teamwire_report::token_matches(&ctx, &team, &role, &token) {
+    // The proof the message tools use, so a wrong token is logged as
+    // `message.refused` here as it is for MCP `team_done`.
+    if teamwire_msg::prove_actor_logged(&mut ctx, &caller).is_err() {
         return fail(
             "refused.identity: the token does not belong to this member",
             REFUSED,
