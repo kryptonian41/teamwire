@@ -155,7 +155,7 @@ pub fn send_with(
         if tries.is_empty() {
             continue;
         }
-        let results = deliver_to_team(ctx, &team, &message, &other, &rows, &tries);
+        let results = deliver_to_team(ctx, &team, &message, &other, &rows, &tries, "send");
         for (t, result) in tries.iter().zip(results) {
             deliveries.push(survive_error(result, t.row, t.attempts)?);
         }
