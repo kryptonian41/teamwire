@@ -3,11 +3,12 @@
 //! is never used (INV-23). Every change to the repository's shared
 //! `info/exclude` holds the exclude lock that close also takes.
 
+use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use teamwire_core::{Pid, Platform, exclude};
+use teamwire_core::{Platform, exclude};
 
 use crate::WorktreePlan;
 use crate::git::{failure_text, run, stdout_of};
@@ -180,26 +181,24 @@ pub(crate) fn exclude_task_md(
 const LOCK_TRIES: u32 = 200;
 const LOCK_PAUSE: Duration = Duration::from_millis(50);
 
-/// A held lock on one `info/exclude`. Dropping it releases the lock.
+/// A held lock on one `info/exclude`. Dropping it closes the file, which
+/// releases the lock.
 struct ExcludeLock {
-    dir: PathBuf,
-}
-
-impl Drop for ExcludeLock {
-    fn drop(&mut self) {
-        // A lock left here names this pid, so it is cleared once this process ends.
-        if let Err(e) = std::fs::remove_dir_all(&self.dir) {
-            tracing::warn!(lock = %self.dir.display(), error = %e, "an exclude lock could not be released");
-        }
-    }
+    _file: File,
 }
 
 /// Takes the lock every read-modify-write of `file` holds, so two launches
 /// (or a launch and a close) on one repository never drop each other's
-/// lines: a directory `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>`,
-/// which `create_dir` makes in one atomic step, holding the owner's pid. A
-/// lock whose owner is dead is removed. Close takes the same lock.
-fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<ExcludeLock, String> {
+/// lines: the kernel's `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of
+/// the path>.lock`, a file made if missing and never deleted. The lock ends
+/// with the open file, so a holder that is killed leaves nothing held, and
+/// each open file waits for the others, threads of one process too. Close
+/// takes the same lock.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the exclude lock file is only ever locked, never written"
+)]
+fn lock_exclude(home: &Path, file: &Path) -> Result<ExcludeLock, String> {
     let (Some(parent), Some(name)) = (file.parent(), file.file_name()) else {
         return Err(format!("{} has no folder", file.display()));
     };
@@ -212,49 +211,28 @@ fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<Exc
     let locks = home.join("locks");
     std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
     let digest = Sha256::digest(key.to_string_lossy().as_bytes());
-    let dir = locks.join(format!("exclude-{}", hex::encode(digest)));
+    let path = locks.join(format!("exclude-{}.lock", hex::encode(digest)));
+    let lock = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
     for _ in 0..LOCK_TRIES {
-        match std::fs::create_dir(&dir) {
-            Ok(()) => {
-                let lock = ExcludeLock { dir };
-                let pid = std::process::id().to_string();
-                platform
-                    .write_atomic(&lock.dir.join("pid"), pid.as_bytes())
-                    .map_err(|e| format!("cannot write the lock {}: {e}", lock.dir.display()))?;
-                return Ok(lock);
+        match lock.try_lock() {
+            Ok(()) => return Ok(ExcludeLock { _file: lock }),
+            Err(TryLockError::WouldBlock) => std::thread::sleep(LOCK_PAUSE),
+            Err(TryLockError::Error(e)) => {
+                return Err(format!("cannot take the lock {}: {e}", path.display()));
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                if holder_is_dead(platform, &dir) {
-                    std::fs::remove_dir_all(&dir).ok();
-                } else {
-                    std::thread::sleep(LOCK_PAUSE);
-                }
-            }
-            Err(e) => return Err(format!("cannot make the lock {}: {e}", dir.display())),
         }
     }
     Err(format!(
-        "another teamwire process held the lock {} on {} for {} s; try again, or remove \
-         that directory if no teamwire process is running",
-        dir.display(),
+        "another teamwire process held the lock {} on {} for {} s; try again",
+        path.display(),
         file.display(),
         (LOCK_PAUSE * LOCK_TRIES).as_secs()
     ))
-}
-
-/// True when the lock's pid file names a process that is not running. A
-/// pid of this process is another thread's hold, which is live.
-fn holder_is_dead(platform: &dyn Platform, dir: &Path) -> bool {
-    // shortcut: a lock with no pid file counts as held, because its owner may
-    // be between `create_dir` and the pid write; a process killed in that gap
-    // leaves a lock someone must delete. Upgrade if that is ever seen.
-    let Ok(text) = std::fs::read_to_string(dir.join("pid")) else {
-        return false;
-    };
-    let Ok(pid) = text.trim().parse::<u32>() else {
-        return false;
-    };
-    pid != std::process::id() && !platform.pid_alive(Pid::new(pid))
 }
 
 /// Appends each entry to the repository's `info/exclude` unless a line
@@ -267,7 +245,7 @@ fn exclude_lines(
     entries: &[String],
 ) -> Result<(PathBuf, Vec<String>), String> {
     let path = exclude_path(platform, worktree)?;
-    let _lock = lock_exclude(platform, home, &path)?;
+    let _lock = lock_exclude(home, &path)?;
     let added = append_locked(platform, &path, entries)?;
     Ok((path, added))
 }
@@ -300,7 +278,7 @@ fn append_locked(
 /// undo output.
 pub(crate) fn unexclude(platform: &dyn Platform, home: &Path, excluded: &Excluded) -> String {
     let file = excluded.file.display();
-    let _lock = match lock_exclude(platform, home, &excluded.file) {
+    let _lock = match lock_exclude(home, &excluded.file) {
         Ok(lock) => lock,
         Err(e) => return format!("could not take back the lines launch added to {file}: {e}"),
     };
@@ -339,7 +317,7 @@ pub(crate) fn exclude_setup_files(
     // The listing runs under the lock: it reads the exclude file, and a close
     // that takes a line back between the listing and the append would leave
     // a file setup made neither listed nor ignored.
-    let _lock = match lock_exclude(platform, home, &file) {
+    let _lock = match lock_exclude(home, &file) {
         Ok(lock) => lock,
         Err(e) => {
             return (
@@ -396,4 +374,40 @@ pub(crate) fn exclude_setup_files(
 
 fn list_failed(why: &str) -> String {
     format!("could not list what setup created, so none of it is ignored: {why}")
+}
+
+#[cfg(test)]
+mod tests {
+    use teamwire_fakes::FakePlatform;
+
+    use super::{append_locked, lock_exclude};
+
+    #[test]
+    fn eight_writers_through_the_lock_keep_every_line_exactly_once() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let file = repo.path().join("info/exclude");
+        let platform = FakePlatform::new();
+        let line = |t: u32, round: u32| format!("/t{t}-r{round}");
+        std::thread::scope(|s| {
+            for t in 0..8 {
+                let (home, file, platform) = (home.path(), &file, &platform);
+                s.spawn(move || {
+                    for round in 0..5 {
+                        let _lock = lock_exclude(home, file).unwrap();
+                        append_locked(platform, file, &[line(t, round)]).unwrap();
+                    }
+                });
+            }
+        });
+        let text = std::fs::read_to_string(&file).unwrap();
+        for t in 0..8 {
+            for round in 0..5 {
+                let want = line(t, round);
+                let count = text.lines().filter(|l| *l == want).count();
+                assert_eq!(count, 1, "{want} in {text}");
+            }
+        }
+        assert_eq!(text.lines().count(), 40, "{text}");
+    }
 }

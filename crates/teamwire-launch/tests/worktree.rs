@@ -235,7 +235,7 @@ fn only_the_brief_at_the_root_is_hidden_from_git() {
     assert_eq!(git(&repo, &["status", "--porcelain"]), "?? docs/");
 }
 
-/// The lock directory launch and close take for `repo`'s `info/exclude`.
+/// The lock file launch and close take for `repo`'s `info/exclude`.
 #[cfg(test)]
 fn exclude_lock(rig: &Rig, repo: &std::path::Path) -> std::path::PathBuf {
     use sha2::{Digest, Sha256};
@@ -245,7 +245,33 @@ fn exclude_lock(rig: &Rig, repo: &std::path::Path) -> std::path::PathBuf {
     rig.home
         .path()
         .join("locks")
-        .join(format!("exclude-{}", hex::encode(digest)))
+        .join(format!("exclude-{}.lock", hex::encode(digest)))
+}
+
+/// Holds `repo`'s exclude lock through an open file of the test's own, as
+/// another teamwire process would. Dropping the file releases the lock.
+#[cfg(test)]
+fn hold_exclude_lock(rig: &Rig, repo: &std::path::Path) -> std::fs::File {
+    let path = exclude_lock(rig, repo);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    if !path.exists() {
+        common::write(&path, "");
+    }
+    let file = std::fs::File::open(&path).unwrap();
+    file.try_lock().unwrap();
+    file
+}
+
+/// True once `path` exists. Waits up to 60 s, the suite's budget, and gives
+/// up early when the launch has finished without making it.
+fn appears<T>(path: &std::path::Path, launch: &std::thread::ScopedJoinHandle<'_, T>) -> bool {
+    for _ in 0..1200 {
+        if path.exists() || launch.is_finished() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    path.exists()
 }
 
 /// A team of one worktree member on `repo` whose setup creates `files`.
@@ -287,9 +313,19 @@ fn two_launches_on_one_repository_at_once_keep_both_sets_of_lines() {
             "{line} in {exclude}"
         );
     }
+    let lock = exclude_lock(&rig, &repo);
     assert!(
-        !exclude_lock(&rig, &repo).exists(),
+        std::fs::File::open(&lock).unwrap().try_lock().is_ok(),
         "both launches released the lock"
+    );
+    let left: Vec<std::path::PathBuf> = std::fs::read_dir(lock.parent().unwrap())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(
+        left,
+        [lock],
+        "the lock file stays, and no lock folder or pid file is made"
     );
 }
 
@@ -297,20 +333,22 @@ fn two_launches_on_one_repository_at_once_keep_both_sets_of_lines() {
 fn a_launch_waits_for_a_live_exclude_lock() {
     let rig = Rig::new();
     let (spec, repo) = one_worktree_team(&rig, "demo");
-    let lock = exclude_lock(&rig, &repo);
-    std::fs::create_dir_all(&lock).unwrap();
-    // This process's own pid: the holder is alive.
-    common::write(&lock.join("pid"), &std::process::id().to_string());
     let exclude = repo.join(".git/info/exclude");
+    common::write(&exclude, "# the user's own\n*.log\n");
+    // Another teamwire process's hold: its own open file, locked.
+    let held = hold_exclude_lock(&rig, &repo);
     std::thread::scope(|s| {
         let launch = s.spawn(|| rig.launch("demo", rig.validate(&spec, false).unwrap()));
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        let held = std::fs::read_to_string(&exclude).unwrap_or_default();
+        // Launch writes the brief right before it asks for the lock.
+        let brief = repo.join(".worktrees/api/TASK.md");
+        assert!(appears(&brief, &launch), "launch wrote the brief");
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let during = std::fs::read_to_string(&exclude).unwrap_or_default();
         assert!(
-            !held.contains("/TASK.md"),
-            "written under a held lock: {held}"
+            !during.contains("/TASK.md"),
+            "written under a held lock: {during}"
         );
-        std::fs::remove_dir_all(&lock).unwrap();
+        drop(held);
         let (report, _) = launch.join().unwrap();
         assert_eq!(
             report.members.first().unwrap().outcome,
@@ -318,17 +356,15 @@ fn a_launch_waits_for_a_live_exclude_lock() {
         );
     });
     let after = std::fs::read_to_string(&exclude).unwrap();
-    assert!(after.lines().any(|l| l == "/TASK.md"), "{after}");
+    assert_eq!(after, "# the user's own\n*.log\n/TASK.md\n");
 }
 
 #[test]
-fn an_exclude_lock_whose_owner_is_dead_is_removed() {
+fn an_exclude_lock_whose_holder_closed_its_file_is_taken_at_once() {
     let rig = Rig::new();
     let (spec, repo) = one_worktree_team(&rig, "demo");
-    let lock = exclude_lock(&rig, &repo);
-    std::fs::create_dir_all(&lock).unwrap();
-    // The fake platform knows no pid as alive except those set alive.
-    common::write(&lock.join("pid"), "999999");
+    // A holder that is gone: its file took the lock and was closed.
+    drop(hold_exclude_lock(&rig, &repo));
     let (report, _) = rig.launch("demo", rig.validate(&spec, false).unwrap());
     assert_eq!(
         report.members.first().unwrap().outcome,
@@ -336,7 +372,52 @@ fn an_exclude_lock_whose_owner_is_dead_is_removed() {
     );
     let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
     assert!(exclude.lines().any(|l| l == "/TASK.md"), "{exclude}");
-    assert!(!lock.exists());
+    assert!(
+        exclude_lock(&rig, &repo).is_file(),
+        "the lock file is never deleted"
+    );
+}
+
+#[test]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "a real process must take the lock and be killed while it holds it"
+)]
+fn an_exclude_lock_held_by_a_killed_process_is_taken_at_once() {
+    use std::io::BufRead;
+    let rig = Rig::new();
+    let (spec, repo) = one_worktree_team(&rig, "demo");
+    let lock = exclude_lock(&rig, &repo);
+    std::fs::create_dir_all(lock.parent().unwrap()).unwrap();
+    // perl's flock is the kernel lock that `File::try_lock` takes.
+    let mut holder = std::process::Command::new("/usr/bin/perl")
+        .args([
+            "-MFcntl=:flock",
+            "-e",
+            r#"$| = 1; open(my $f, ">>", $ARGV[0]) or die "open: $!"; flock($f, LOCK_EX) or die "flock: $!"; print "held\n"; sleep 60"#,
+        ])
+        .arg(&lock)
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut said = String::new();
+    std::io::BufReader::new(holder.stdout.take().unwrap())
+        .read_line(&mut said)
+        .unwrap();
+    assert_eq!(said, "held\n");
+    assert!(
+        std::fs::File::open(&lock).unwrap().try_lock().is_err(),
+        "the child holds the lock"
+    );
+    holder.kill().unwrap();
+    holder.wait().unwrap();
+    let (report, _) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    assert_eq!(
+        report.members.first().unwrap().outcome,
+        LaunchOutcome::Started
+    );
+    let exclude = std::fs::read_to_string(repo.join(".git/info/exclude")).unwrap();
+    assert!(exclude.lines().any(|l| l == "/TASK.md"), "{exclude}");
 }
 
 #[test]
@@ -382,9 +463,7 @@ fn a_close_taking_its_line_back_during_setup_does_not_lose_the_new_members_line(
     let exclude = repo.join(".git/info/exclude");
     // Another team's setup line, which that team's close is about to take back.
     common::write(&exclude, "/gen-x\n");
-    let lock = exclude_lock(&rig, &repo);
-    std::fs::create_dir_all(&lock).unwrap();
-    common::write(&lock.join("pid"), &std::process::id().to_string());
+    let held = hold_exclude_lock(&rig, &repo);
     let made = repo.join(".worktrees/b/gen-x");
     let pause = std::time::Duration::from_millis(50);
     std::thread::scope(|s| {
@@ -403,7 +482,7 @@ fn a_close_taking_its_line_back_during_setup_does_not_lose_the_new_members_line(
         std::thread::sleep(pause * 10);
         // The other team's close, holding the lock, takes its line back.
         common::write(&exclude, "");
-        std::fs::remove_dir_all(&lock).unwrap();
+        drop(held);
         let (report, _) = launch.join().unwrap();
         assert_eq!(
             report.members.first().unwrap().outcome,
