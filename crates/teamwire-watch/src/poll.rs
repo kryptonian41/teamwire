@@ -67,7 +67,7 @@ fn step(
         return Ok(Some(closed(memory)));
     }
     let decided = plan(ctx, &snap, memory, now);
-    let watching = (memory.polls == 0).then_some(snap.members.len());
+    let watching = (!memory.said_watching).then_some(snap.members.len());
     let applied = apply(
         ctx,
         decided,
@@ -80,6 +80,7 @@ fn step(
         memory.end = Some(WatchEnd::LeaseLost);
         return Ok(None);
     }
+    memory.said_watching = true;
     let events: Vec<String> = applied.emitted.iter().map(|e| e.text.clone()).collect();
     if applied.emitted.iter().any(|e| e.name == "TEAM-COMPLETE") {
         memory.end = Some(WatchEnd::TeamComplete);

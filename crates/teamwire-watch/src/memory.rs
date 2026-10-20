@@ -26,6 +26,9 @@ pub enum WatchEnd {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WatchMemory {
     pub polls: u64,
+    /// A poll has printed `WATCHING`. A poll that failed did not, so the
+    /// count of polls cannot say this.
+    pub(crate) said_watching: bool,
     pub last_poll: Option<Timestamp>,
     /// The monotonic clock at `last_poll`. It stops while the machine
     /// sleeps and the wall clock does not, so the two differ by the sleep.
