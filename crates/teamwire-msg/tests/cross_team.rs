@@ -598,3 +598,60 @@ fn a_copy_still_pending_in_a_closing_team_is_unconfirmed() {
     );
     assert!(t.typed("db").is_empty());
 }
+
+/// The `store.error` rows of the team's store: `{op, code}` of each.
+fn store_errors(store: &Store) -> Vec<serde_json::Value> {
+    store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect()
+}
+
+/// Damages a row of beta's members as the recipient's copy is stored, which
+/// is after the sender's rules read beta read-only, and before the delivery
+/// reads the row. The row is valid JSON, so the CHECK passes, but not a list
+/// of paths.
+fn damage_beta_on_receive(t: &mut Two) {
+    t.beta
+        .write(|tx| {
+            tx.connection().execute_batch(
+                "CREATE TRIGGER damage AFTER INSERT ON messages
+                 BEGIN UPDATE members SET owns = '{}'; END",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_send_that_fails_in_the_other_teams_store_leaves_its_row_there() {
+    let mut t = two_teams();
+    damage_beta_on_receive(&mut t);
+    let req = t
+        .rig
+        .request("api", &["db@beta"], MessageType::Finding, "hello");
+    assert!(send(&mut t.rig.ctx(), req).is_ok());
+    assert_eq!(
+        store_errors(&t.beta),
+        [serde_json::json!({ "op": "send", "code": "corrupt" })]
+    );
+    assert!(store_errors(&t.rig.store).is_empty());
+}
+
+#[test]
+fn a_resend_that_fails_in_the_other_teams_store_leaves_its_row_there() {
+    let mut t = two_teams();
+    stored_in_alpha_only(&mut t, "copy me");
+    damage_beta_on_receive(&mut t);
+    t.rig.clock.advance(Duration::from_secs(61));
+    let actor = Actor::Member(role("api"));
+    assert!(resend(&mut t.rig.ctx(), &actor, &id("m001"), None).is_ok());
+    assert_eq!(
+        store_errors(&t.beta),
+        [serde_json::json!({ "op": "resend", "code": "corrupt" })]
+    );
+    assert!(store_errors(&t.rig.store).is_empty());
+}

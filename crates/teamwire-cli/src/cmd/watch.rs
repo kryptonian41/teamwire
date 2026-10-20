@@ -73,28 +73,40 @@ fn export_loop(
             continue;
         }
         waited = Duration::ZERO;
-        let mut store = match Store::open_existing(home, team) {
-            Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
-            Err(e) => {
-                tracing::warn!(error = %e, "the exporter could not open the store");
-                continue;
-            }
-        };
-        let mut ctx = Ctx {
-            home,
-            store: &mut store,
-            registry: &wiring.registry,
-            platform: wiring.platform.as_ref(),
-            clock: &wiring.clock,
-            config,
-        };
-        match teamwire_otel::export_once_until(&mut ctx, target, Some(cutoff(stop))) {
-            Ok(report) => tracing::debug!(?report, "exported"),
-            Err(teamwire_otel::ExportError::Claimed(by)) => {
-                tracing::debug!(%by, "another exporter holds the batch");
-            }
-            Err(e) => tracing::warn!(error = %e, "the export failed"),
+        export_pass(home, team, wiring, config, target, stop);
+    }
+}
+
+/// One export of the loop, with its own store connection.
+fn export_pass(
+    home: &Path,
+    team: &TeamName,
+    wiring: &Wiring,
+    config: &Config,
+    target: &OtlpConfig,
+    stop: &AtomicBool,
+) {
+    let mut store = match Store::open_existing(home, team) {
+        Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
+        Err(e) => {
+            tracing::warn!(error = %e, "the exporter could not open the store");
+            return;
         }
+    };
+    let mut ctx = Ctx {
+        home,
+        store: &mut store,
+        registry: &wiring.registry,
+        platform: wiring.platform.as_ref(),
+        clock: &wiring.clock,
+        config,
+    };
+    match teamwire_otel::export_once_until(&mut ctx, target, Some(cutoff(stop))) {
+        Ok(report) => tracing::debug!(?report, "exported"),
+        Err(teamwire_otel::ExportError::Claimed(by)) => {
+            tracing::debug!(%by, "another exporter holds the batch");
+        }
+        Err(e) => tracing::warn!(error = %e, "the export failed"),
     }
 }
 
@@ -221,6 +233,72 @@ fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_export_that_fails_in_the_store_leaves_one_store_error_row() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        let team = TeamName::parse("alpha").unwrap();
+        let mut store = Store::open(home.path(), &team).unwrap();
+        // A function that does not exist fails the claim's update with an
+        // `io` error, before anything is sent. The claim is only made when
+        // an event waits to be sent.
+        store
+            .write(|tx| {
+                let long_ago = teamwire_core::Timestamp::from_unix_millis(1_000_000_000_000)
+                    .expect("a valid time");
+                tx.record_event(
+                    long_ago,
+                    teamwire_core::EventType::WatchLine,
+                    None,
+                    None,
+                    &serde_json::json!({ "events": [] }),
+                )?;
+                tx.connection()
+                    .execute_batch(
+                        "CREATE TRIGGER no_claim BEFORE UPDATE ON metric_export
+                         BEGIN SELECT no_such_function(); END",
+                    )
+                    .map_err(StoreError::from)
+            })
+            .unwrap();
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+        })
+        .unwrap();
+        let target = OtlpConfig {
+            endpoint: "http://127.0.0.1:1".to_owned(),
+            headers: Vec::new(),
+            timeout: Duration::from_secs(1),
+        };
+        export_pass(
+            home.path(),
+            &team,
+            &wiring,
+            &Config::default(),
+            &target,
+            &AtomicBool::new(false),
+        );
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(
+            errors,
+            [serde_json::json!({ "op": "metrics", "code": "io" })]
+        );
+    }
 
     #[test]
     fn the_short_grace_applies_only_once_the_watch_is_stopping() {

@@ -108,7 +108,7 @@ pub fn resend(
         if tries.is_empty() {
             continue;
         }
-        let results = deliver_to_team(ctx, &team, &message, &other, &group, &tries);
+        let results = deliver_to_team(ctx, &team, &message, &other, &group, &tries, "resend");
         for (t, result) in tries.iter().zip(results) {
             deliveries.push(survive_error(result, t.row, t.attempts)?);
         }
