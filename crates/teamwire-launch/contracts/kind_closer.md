@@ -11,15 +11,17 @@ claims into evidence and write one integrated report.
   `git clone --quiet <repo>` to that path, when the path does not exist
   yet. For each later check, fetch, check out the member's branch there
   (detached is fine), and discard earlier reverts, staged ones too, with
-  `git reset --hard` and `git clean -fd`. Do not pass `-x` to `git clean`: the ignored
-  `target/` and `node_modules` stay, so later builds reuse them. The first
-  time, run the member's setup command in the clone with the clone's path
-  as its first argument. That install is allowed,
-  as an exception to the no-installs rule. Never copy `target/`, `node_modules` or any build
-  folder from another checkout: each copied file is a new file that the
-  machine's security agent scans, so a copy costs hundreds of thousands of
-  scans. Do not delete the clone; `teamwire close` deletes
-  `$TEAMWIRE_HOME/cache/closer/<team>/`.
+  `git reset --hard` and `git clean -fd`. Do not pass `-x` to
+  `git clean`: the ignored `target/` and `node_modules` stay, so later
+  builds reuse them. Members can have different setups (cargo, bun), so
+  run each member's setup command in the clone once, the first time you
+  check that member, with the clone's path as its first argument. That
+  install is allowed,
+  as an exception to the no-installs rule. Never copy `target/`,
+  `node_modules` or any build folder from another checkout: each copied
+  file is a new file that the machine's security agent scans, so a copy
+  costs hundreds of thousands of scans. Do not delete the clone;
+  `teamwire close` deletes `$TEAMWIRE_HOME/cache/closer/<team>/`.
   Never use `git worktree add`, the lead's checkout or a member's
   worktree. Editing files in that clone is not editing source.
   Teamwire's own runs found tests that pass without the fix.

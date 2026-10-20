@@ -611,15 +611,18 @@ becomes one tree that passes the full gate.
    The closer runs `teamwire verify` and every claimed check, on each
    member's branch and again on the joined head when one exists, and records
    real exit codes. It works in one clone it makes at
-   `$TEAMWIRE_HOME/cache/closer/<team>/clone`. The first time, it runs the
-   member's `setup` there with the clone's path as its first argument, an
-   install allowed there. It never copies a `target/` or `node_modules`
+   `$TEAMWIRE_HOME/cache/closer/<team>/clone`. Members can have different
+   setups, so the closer runs each member's `setup` there once, the first
+   time it checks that member, with the clone's path as its first argument,
+   an install allowed there. It never copies a `target/` or `node_modules`
    folder in, because each copied file costs a scan by the machine's
    security agent. For each check it fetches and checks out the member's
-   branch, runs `git reset --hard` to drop staged reverts, and `git clean -fd` keeps the ignored build folders. `teamwire
-   close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding
-   graded wrong conclusion, and confirms the test then fails. A passing test
-   can prove nothing: in at least six of teamwire's own runs, a closer found a
+   branch, runs `git reset --hard` to drop staged reverts, and
+   `git clean -fd` keeps the ignored build folders. `teamwire close`
+   deletes the clone. Then it reverts the fix behind each claimed new test
+   and each finding graded wrong conclusion, and confirms the test then
+   fails. A passing test can prove nothing: in at least six of teamwire's own
+   runs, a closer found a
    test that passed without its fix. Spotify calls code that "passes CI but is
    functionally incorrect" "the most serious error". At Bun, Claude read "get
    all the crates to compile" as "stub out the functions with compilation
