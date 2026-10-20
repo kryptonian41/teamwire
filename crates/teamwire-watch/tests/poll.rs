@@ -1229,3 +1229,40 @@ fn idle_polls_before_done_do_not_make_unreported_early() {
     let later = bed.ticks(1);
     assert_eq!(count(&later, "UNREPORTED"), 1, "{later:?}");
 }
+
+#[test]
+fn events_past_the_line_limit_wait_for_a_later_poll_and_team_complete_comes_last() {
+    let mut bed = Bed::new();
+    let members: Vec<String> = (0..10).map(|i| format!("m{i}")).collect();
+    for name in &members {
+        bed.add(name);
+        bed.working(name);
+    }
+    bed.age(secs(120));
+    bed.poll();
+    for name in &members {
+        bed.delivered(name, CompletionStatus::Done);
+    }
+    for name in &members {
+        for _ in 0..5 {
+            bed.send(teamwire_core::MessageType::Note, name, None);
+        }
+    }
+    bed.age(secs(601));
+    // Fifty UNREAD events do not fit in one line of 2000 characters.
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(10));
+    for line in &lines {
+        assert!(line.chars().count() <= 2000, "{line}");
+        assert!(!line.ends_with('…'), "a line was cut: {line}");
+    }
+    assert!(lines.len() > 1, "{lines:?}");
+    assert_eq!(count(&lines, "UNREAD"), 50, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+    let last = lines.last().unwrap();
+    assert_eq!(
+        names(last).last().map(String::as_str),
+        Some("TEAM-COMPLETE")
+    );
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
