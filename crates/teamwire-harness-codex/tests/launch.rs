@@ -16,8 +16,8 @@ use std::path::Path;
 use std::sync::Arc;
 
 use teamwire_core::{
-    Address, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind, MemberLaunch,
-    OtelConfig, Role, SessionId, TeamName,
+    Address, Config, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind,
+    MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
@@ -292,7 +292,13 @@ fn hooks_run_one_quoted_command_that_sets_the_identity() {
     let token = m.member_dir.join("token");
     let stop = &o["hooks.Stop"][0]["hooks"][0];
     assert_eq!(stop["type"].as_str(), Some("command"));
-    assert_eq!(stop["timeout"].as_integer(), Some(60));
+    let config = Config::default();
+    assert_eq!(
+        stop["timeout"].as_integer(),
+        i64::try_from(config.hook_timeout_s).ok()
+    );
+    // Codex must not kill the hook before its own delivery budget ends.
+    assert!(config.hook_budget_s < config.hook_timeout_s);
     assert_eq!(
         stop["command"].as_str().unwrap(),
         format!(

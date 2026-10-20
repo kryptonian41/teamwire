@@ -8,15 +8,10 @@
 use std::path::{Path, PathBuf};
 
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
+    Config, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
     SessionId,
 };
 use toml::{Table, Value};
-
-/// The hook timeout Codex enforces on the Stop hook, in seconds. It is the
-/// `hook_timeout_s` default of core's `Config`, kept above the 40 s budget the
-/// hook itself works to.
-const STOP_HOOK_TIMEOUT_S: i64 = 60;
 
 const PRIVATE: u32 = 0o600;
 
@@ -109,7 +104,7 @@ pub(crate) fn build(
             home.as_ref(),
             &token_path,
             "turn-end",
-            Some(STOP_HOOK_TIMEOUT_S),
+            i64::try_from(Config::default().hook_timeout_s).ok(),
         ),
     );
     set(

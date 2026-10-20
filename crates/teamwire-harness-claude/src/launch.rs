@@ -9,14 +9,9 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
+    Config, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
     OtelConfig, Role, SessionId, TeamName,
 };
-
-/// The hook timeout Claude Code enforces on the Stop hook, in seconds. It is
-/// the `hook_timeout_s` default of core's `Config`, kept above the 40 s
-/// budget the hook itself works to.
-const STOP_HOOK_TIMEOUT_S: u64 = 60;
 
 const PRIVATE: u32 = 0o600;
 
@@ -151,7 +146,7 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     settings.insert(
         "hooks".to_owned(),
         json!({
-            "Stop": hook_entry(m, "claude-stop", Some(STOP_HOOK_TIMEOUT_S)),
+            "Stop": hook_entry(m, "claude-stop", Some(Config::default().hook_timeout_s)),
             "PostToolUse": hook_entry(m, "claude-post-tool", None),
         }),
     );
