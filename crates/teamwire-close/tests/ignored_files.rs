@@ -118,10 +118,7 @@ fn build_folders_are_not_named_but_everything_else_is() -> std::io::Result<()> {
 
 /// Records `lines` in `role`'s `member.started` data as the lines launch
 /// added to the repository's exclude file.
-#[expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
+#[cfg(test)]
 fn record_excluded(rig: &mut Rig, role: &str, lines: &[&str]) {
     let file = rig.repo.join(".git/info/exclude").display().to_string();
     let data = serde_json::json!({ "excluded": [{ "file": file, "lines": lines }] });
