@@ -1,6 +1,6 @@
 //! teamwire's shared vocabulary: names and ids, member, message, completion
 //! and event types, the `Host`, `Harness`, `Platform` and `Clock` traits,
-//! the adapter registry, and the sanitiser.
+//! the adapter registry, the sanitiser, and the `info/exclude` line edits.
 //!
 //! Never: do I/O, read the clock, spawn a process, or name a product. An
 //! adapter is known only by its string id and its capability record.
@@ -14,6 +14,7 @@ mod strings;
 pub mod completion;
 pub mod config;
 pub mod event;
+pub mod exclude;
 pub mod harness;
 pub mod host;
 pub mod member;
