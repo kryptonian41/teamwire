@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MdNode } from "../shared/api.ts";
-import { MAX_MD_CHARS, MAX_MD_DEPTH, parseMarkdown, parseMarkdownBounded } from "./markdown.ts";
+import { MAX_MD_CHARS, MAX_MD_DEPTH, createBoundedParser, parseMarkdown, parseMarkdownBounded } from "./markdown.ts";
 
 const all = (nodes: MdNode[]): MdNode[] => nodes.flatMap((n) => [n, ...all(n.c ?? [])]);
 
@@ -73,5 +73,45 @@ describe("limits", () => {
 
   test("a file over the size limit is not parsed", async () => {
     expect(await parseMarkdownBounded("x".repeat(MAX_MD_CHARS + 1))).toBeNull();
+  });
+
+  const counting = () => {
+    const made = { n: 0 };
+    const parse = createBoundedParser(() => {
+      made.n++;
+      return new Worker(new URL("./markdown-worker.ts", import.meta.url).href);
+    });
+    return { made, parse };
+  };
+  const slow = "[".repeat(30000) + "]".repeat(30000);
+
+  test("ten parses in a row use one Worker", async () => {
+    const { made, parse } = counting();
+    for (let i = 0; i < 10; i++) expect(await parse(`**${i}**`)).not.toBeNull();
+    expect(made.n).toBe(1);
+  });
+
+  test("a parse after a timeout starts a new Worker and still returns its tree", async () => {
+    const { made, parse } = counting();
+    expect(await parse(slow, 200)).toBeNull();
+    expect(await parse("**hi**")).toEqual([{ t: "paragraph", c: [{ t: "strong", c: [{ t: "text", v: "hi" }] }] }]);
+    expect(made.n).toBe(2);
+  });
+
+  test("a Worker that fails to start gives null once, and the next parse starts one", async () => {
+    let calls = 0;
+    const parse = createBoundedParser(() => {
+      if (calls++ === 0) throw new Error("cannot start");
+      return new Worker(new URL("./markdown-worker.ts", import.meta.url).href);
+    });
+    expect(await parse("**hi**")).toBeNull();
+    expect(await parse("**hi**")).not.toBeNull();
+    expect(calls).toBe(2);
+  });
+
+  test("parses sent together resolve in order with their own trees", async () => {
+    const { parse } = counting();
+    const out = await Promise.all(["# a", "# b", "# c"].map((t) => parse(t)));
+    expect(out.map((doc) => doc?.[0]?.c?.[0])).toEqual([{ t: "text", v: "a" }, { t: "text", v: "b" }, { t: "text", v: "c" }]);
   });
 });

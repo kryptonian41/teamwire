@@ -103,18 +103,24 @@ export async function listFiles(base: string): Promise<FileRef[]> {
     } catch {
       continue;
     }
-    for (const entry of entries.sort()) {
-      if (!entry.endsWith(spec.ext)) continue;
-      const name = entry.slice(0, -spec.ext.length);
-      const real = await resolveFile(base, kind, name);
-      if (!real) continue;
-      try {
-        const info = await stat(real);
-        if (info.isFile()) out.push({ kind, name, bytes: info.size, modifiedAt: info.mtime.toISOString() });
-      } catch {
-        // The file vanished between listing and stat.
-      }
-    }
+    // The stats of one kind run at the same time; Promise.all keeps the sorted order.
+    const refs = await Promise.all(
+      entries
+        .sort()
+        .filter((entry) => entry.endsWith(spec.ext))
+        .map(async (entry): Promise<FileRef | null> => {
+          const name = entry.slice(0, -spec.ext.length);
+          const real = await resolveFile(base, kind, name);
+          if (!real) return null;
+          try {
+            const info = await stat(real);
+            return info.isFile() ? { kind, name, bytes: info.size, modifiedAt: info.mtime.toISOString() } : null;
+          } catch {
+            return null; // The file vanished between listing and stat.
+          }
+        }),
+    );
+    for (const ref of refs) if (ref) out.push(ref);
   }
   return out;
 }

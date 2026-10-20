@@ -109,6 +109,28 @@ describe("listFiles / teamDir", () => {
     expect(files.some((f) => f.name === "evil" || f.name === "tok")).toBe(false);
   });
 
+  test("lists several files per kind in name order, skipping other files and vanished ones", async () => {
+    const names = (kind: keyof typeof FILE_KINDS) => (FILE_KINDS[kind].name === "display_id" ? ["m001", "m002", "m003"] : ["a", "b", "c"]);
+    const dir = mkdtempSync(join(tmpdir(), "twui-list-"));
+    try {
+      for (const kind of FILE_KIND_NAMES) {
+        const spec = FILE_KINDS[kind];
+        mkdirSync(join(dir, spec.dir), { recursive: true });
+        for (const name of names(kind).reverse()) writeFileSync(join(dir, spec.dir, name + spec.ext), "xyz");
+        writeFileSync(join(dir, spec.dir, "other.txt"), "x");
+        // A link to a missing file stands for one deleted after readdir.
+        symlinkSync(join(dir, "missing"), join(dir, spec.dir, "gone" + spec.ext));
+      }
+      const files = await listFiles(dir);
+      expect(files.map((f) => `${f.kind}/${f.name}`)).toEqual(
+        FILE_KIND_NAMES.flatMap((kind) => names(kind).map((n) => `${kind}/${n}`)),
+      );
+      expect(files.every((f) => f.bytes === 3)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("teamDir needs a valid name and team.db", async () => {
     expect(await teamDir(home, "alpha")).toBe(team);
     expect(await teamDir(home, "nope")).toBeNull();

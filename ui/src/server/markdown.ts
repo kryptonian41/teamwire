@@ -76,22 +76,45 @@ function depth(doc: MdNode[]): number {
 }
 
 /**
- * `parseMarkdown` in a Worker, stopped after `MD_PARSE_TIMEOUT_MS`. The parse
- * is synchronous, so on the server's own thread one slow file would stall
- * every request. Null means the page shows the plain text.
+ * Makes a `parseMarkdown` that runs in one reused Worker, one parse at a time,
+ * and stops a parse after `MD_PARSE_TIMEOUT_MS`. The parse is synchronous, so
+ * on the server's own thread one slow file would stall every request. A
+ * timeout or a Worker error ends that Worker; the next parse starts a new one.
+ * Null means the page shows the plain text.
  */
-export function parseMarkdownBounded(text: string, timeoutMs = MD_PARSE_TIMEOUT_MS): Promise<MdNode[] | null> {
-  if (text.length > MAX_MD_CHARS) return Promise.resolve(null);
-  return new Promise((resolve) => {
-    const worker = new Worker(new URL("./markdown-worker.ts", import.meta.url).href);
-    const finish = (doc: MdNode[] | null) => {
-      clearTimeout(timer);
-      worker.terminate();
-      resolve(doc);
-    };
-    const timer = setTimeout(() => finish(null), timeoutMs);
-    worker.onmessage = (event: MessageEvent<MdNode[] | null>) => finish(event.data);
-    worker.onerror = () => finish(null);
-    worker.postMessage(text);
-  });
+export function createBoundedParser(makeWorker: () => Worker) {
+  let worker: Worker | null = null;
+  let queue: Promise<unknown> = Promise.resolve();
+  const run = (text: string, timeoutMs: number) =>
+    new Promise<MdNode[] | null>((resolve) => {
+      let w: Worker;
+      try {
+        w = worker ??= makeWorker();
+      } catch {
+        // A failed start must not reject: the queue would then fail every later parse.
+        resolve(null);
+        return;
+      }
+      const finish = (doc: MdNode[] | null, end: boolean) => {
+        clearTimeout(timer);
+        w.onmessage = w.onerror = null;
+        if (end) {
+          w.terminate();
+          if (worker === w) worker = null;
+        }
+        resolve(doc);
+      };
+      const timer = setTimeout(() => finish(null, true), timeoutMs);
+      w.onmessage = (event: MessageEvent<MdNode[] | null>) => finish(event.data, false);
+      w.onerror = () => finish(null, true);
+      w.postMessage(text);
+    });
+  return (text: string, timeoutMs = MD_PARSE_TIMEOUT_MS): Promise<MdNode[] | null> => {
+    if (text.length > MAX_MD_CHARS) return Promise.resolve(null);
+    const result = queue.then(() => run(text, timeoutMs));
+    queue = result;
+    return result;
+  };
 }
+
+export const parseMarkdownBounded = createBoundedParser(() => new Worker(new URL("./markdown-worker.ts", import.meta.url).href));
