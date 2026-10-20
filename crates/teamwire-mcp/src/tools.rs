@@ -114,7 +114,7 @@ pub(crate) fn call(
         clock: env.clock.as_ref(),
         config: &env.config,
     };
-    let env_of_caller = caller_env(caller, &team, meta);
+    let env_of_caller = caller_env(caller, &env.process, &team, meta);
     let proof = if reads {
         prove_actor(&ctx, &env_of_caller)
     } else {
@@ -168,7 +168,14 @@ fn team_of(caller: &McpCaller, args: &JsonObject) -> Result<TeamName, ToolFailur
 
 /// What ADR 0008 asks each kind of caller to present.
 /// The lead's request `_meta` reaches the proof as hints; a member's never does.
-fn caller_env(caller: &McpCaller, team: &TeamName, meta: &JsonObject) -> CallerEnv {
+/// The lead also carries the member variables of the server's own process,
+/// because a member's environment proves no lead.
+fn caller_env(
+    caller: &McpCaller,
+    process: &CallerEnv,
+    team: &TeamName,
+    meta: &JsonObject,
+) -> CallerEnv {
     match caller {
         McpCaller::Member { role, token, .. } => CallerEnv {
             team: Some(team.as_str().to_owned()),
@@ -185,7 +192,7 @@ fn caller_env(caller: &McpCaller, team: &TeamName, meta: &JsonObject) -> CallerE
                     Some((format!("MCP_META_{key}"), value.as_str()?.to_owned()))
                 })
                 .collect(),
-            ..CallerEnv::default()
+            ..process.clone()
         },
     }
 }
@@ -428,6 +435,7 @@ mod tests {
             platform: Arc::new(FakePlatform::new()),
             clock: clock.clone(),
             config: Config::default(),
+            process: CallerEnv::default(),
         };
         let caller = McpCaller::Member {
             team,
