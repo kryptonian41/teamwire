@@ -87,7 +87,14 @@ export function createBoundedParser(makeWorker: () => Worker) {
   let queue: Promise<unknown> = Promise.resolve();
   const run = (text: string, timeoutMs: number) =>
     new Promise<MdNode[] | null>((resolve) => {
-      const w = (worker ??= makeWorker());
+      let w: Worker;
+      try {
+        w = worker ??= makeWorker();
+      } catch {
+        // A failed start must not reject: the queue would then fail every later parse.
+        resolve(null);
+        return;
+      }
       const finish = (doc: MdNode[] | null, end: boolean) => {
         clearTimeout(timer);
         w.onmessage = w.onerror = null;

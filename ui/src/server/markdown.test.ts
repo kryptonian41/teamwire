@@ -98,6 +98,17 @@ describe("limits", () => {
     expect(made.n).toBe(2);
   });
 
+  test("a Worker that fails to start gives null once, and the next parse starts one", async () => {
+    let calls = 0;
+    const parse = createBoundedParser(() => {
+      if (calls++ === 0) throw new Error("cannot start");
+      return new Worker(new URL("./markdown-worker.ts", import.meta.url).href);
+    });
+    expect(await parse("**hi**")).toBeNull();
+    expect(await parse("**hi**")).not.toBeNull();
+    expect(calls).toBe(2);
+  });
+
   test("parses sent together resolve in order with their own trees", async () => {
     const { parse } = counting();
     const out = await Promise.all(["# a", "# b", "# c"].map((t) => parse(t)));
