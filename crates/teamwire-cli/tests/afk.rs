@@ -444,3 +444,81 @@ fn a_start_that_cannot_find_the_leads_process_is_refused_before_anything_is_made
     refused(&bed.start_run("run", &[]), "no_lead_process");
     assert!(bed.nothing_made("run"));
 }
+
+/// A store file in `dir` with the schema and a trigger that fails the insert
+/// of the team row with an `io` error.
+fn store_that_cannot_take_a_team(dir: &std::path::Path, team: &str) -> PathBuf {
+    let prep = TestHome::new().unwrap();
+    let name = TeamName::parse(team).unwrap();
+    let mut store = Store::open(prep.path(), &name).unwrap();
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_team BEFORE INSERT ON team
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    drop(store);
+    let path = dir.join("prepared.db");
+    std::fs::copy(teamwire_store::database_path(prep.path(), &name), &path).unwrap();
+    path
+}
+
+/// The store is made after the start looked for one and before it opens
+/// one: the task file is a named pipe, the start waits on it, and the test
+/// puts the store in place before it lets the task through.
+#[test]
+fn a_start_that_fails_in_the_store_leaves_one_store_error_row() {
+    let bed = Bed::new(true);
+    let fifo = bed.work.path().join("task.fifo");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let team = TeamName::parse("run").unwrap();
+    let prepared = store_that_cannot_take_a_team(bed.work.path(), "run");
+    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
+    cmd.arg("--home")
+        .arg(bed.home.path())
+        .args([
+            "afk",
+            "start",
+            "--team",
+            "run",
+            "--title",
+            "Overnight",
+            "--task",
+        ])
+        .arg(&fifo)
+        .current_dir(bed.repo.path())
+        .env_clear()
+        .env("PATH", &bed.path)
+        .env("TEAMWIRE_CLAUDE_DIR", bed.claude.path())
+        .env("HERDR_ENV", "1")
+        .env("CLAUDE_CODE_SESSION_ID", SESSION)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let child = cmd.spawn().unwrap();
+    // Opens only once the start reads the task file.
+    let mut writer = std::fs::OpenOptions::new().write(true).open(&fifo).unwrap();
+    let db = teamwire_store::database_path(bed.home.path(), &team);
+    std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+    std::fs::copy(&prepared, &db).unwrap();
+    std::io::Write::write_all(&mut writer, b"build it\n").unwrap();
+    drop(writer);
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(6), "{}", err(&out));
+    let errors: Vec<serde_json::Value> = bed
+        .store("run")
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(errors, [serde_json::json!({ "op": "afk", "code": "io" })]);
+}

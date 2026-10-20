@@ -464,3 +464,44 @@ fn a_member_cannot_launch_a_team_but_may_ask_for_the_plan() {
         assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
     }
 }
+
+#[test]
+fn a_launch_that_fails_in_the_store_leaves_one_store_error_row() {
+    let rig = Rig::new();
+    let first = rig.spec_file(&pane_spec("demo", rig.work.path()));
+    let out = rig.launch(&["--spec", first.to_str().unwrap()], None, false);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let team = TeamName::parse("demo").unwrap();
+    let mut store = Store::open_existing(rig.home.path(), &team).unwrap();
+    // Added after the plan was checked: a function that does not exist fails
+    // the new member's insert with an `io` error.
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_member BEFORE INSERT ON members
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let more = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "b", "title": "Beta", "mode": "pane", "cwd": rig.work.path(), "task": "look around"}]});
+    let file = rig.spec_file(&more);
+    let out = rig.launch(&["--add", "--spec", file.to_str().unwrap()], None, false);
+    assert_ne!(out.status.code(), Some(0), "{}", text(&out.stdout));
+    let errors: Vec<Value> = store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [json!({ "op": "launch", "code": "io" })],
+        "{}{}",
+        text(&out.stdout),
+        text(&out.stderr)
+    );
+}
