@@ -423,6 +423,10 @@ impl Platform for FakePlatform {
         let n = self.temp_counter.fetch_add(1, Ordering::Relaxed);
         let name = path.file_name().map(|s| s.to_string_lossy().into_owned());
         let temp = dir.join(format!(".{}.tmp{n}", name.unwrap_or_default()));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the fake Platform is the write_atomic stand-in for tests"
+        )]
         let result = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

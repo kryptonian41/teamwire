@@ -214,6 +214,10 @@ fn foreign_database_refused_untouched() {
     assert_eq!(file_bytes(&path), before);
 
     // A file that is not SQLite at all.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test overwrites a store file with text on purpose"
+    )]
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .truncate(true)

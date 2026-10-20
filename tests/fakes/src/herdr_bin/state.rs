@@ -101,6 +101,10 @@ pub(crate) struct Lock {
 
 /// Takes the lock on the file beside the state file, waiting up to five
 /// seconds. The file stays on disk; only the lock on it comes and goes.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the fake state lock opens a file that is never replaced"
+)]
 pub(crate) fn lock(state_path: &Path) -> Result<Lock, String> {
     let lock_path = state_path.with_extension("lock");
     let file = OpenOptions::new()

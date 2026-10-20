@@ -28,6 +28,10 @@ const CHECK_EVERY: Duration = Duration::from_secs(1);
 
 /// Creates the lock file and takes the owner's exclusive lock on it. The
 /// lock lasts while the returned file stays open.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the owner lock opens a file that is never replaced"
+)]
 pub(crate) fn hold(path: &Path) -> std::io::Result<File> {
     let file = OpenOptions::new()
         .write(true)

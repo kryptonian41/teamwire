@@ -12,6 +12,7 @@
 mod adapters;
 mod base;
 mod code_text;
+mod connection;
 mod crates;
 #[cfg(test)]
 mod fixture;
@@ -125,6 +126,7 @@ fn tidy(root: &Path, metadata: &Value) -> Result<Findings> {
     sizes::check_sizes(root, &mut found)?;
     layers::check_layers(metadata, &mut found.problems);
     adapters::check_adapters(root, &mut found.problems)?;
+    connection::check_connection(root, &members, &mut found.problems)?;
     Ok(found)
 }
 

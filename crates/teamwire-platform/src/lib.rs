@@ -110,7 +110,12 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now(&self) -> Timestamp {
-        Timestamp::from_datetime(OffsetDateTime::now_utc())
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "SystemClock is the one Clock that reads the real wall clock"
+        )]
+        let now = OffsetDateTime::now_utc();
+        Timestamp::from_datetime(now)
     }
 
     #[expect(

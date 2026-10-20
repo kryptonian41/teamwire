@@ -279,6 +279,10 @@ impl Tmux {
         // `write_atomic` keeps the mode of the file it replaces and gives a new
         // file 0644. Make the file first at 0600 so the values are private.
         let file = dir.join("env");
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "creates the file at 0600 before write_atomic fills it"
+        )]
         let written = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)

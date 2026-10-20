@@ -548,6 +548,10 @@ async fn a_read_tool_on_an_older_database_fails_and_leaves_the_file_alone() {
     let dir = rig.home.path().join("teams").join("old");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("team.db");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test makes an empty file, not a store file"
+    )]
     std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)

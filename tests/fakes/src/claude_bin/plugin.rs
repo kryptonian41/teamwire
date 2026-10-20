@@ -53,7 +53,12 @@ fn copy_tree(from: &Path, to: &Path) -> std::io::Result<()> {
         if entry.file_type()?.is_dir() {
             copy_tree(&entry.path(), &target)?;
         } else {
-            std::fs::copy(entry.path(), target)?;
+            #[expect(
+                clippy::disallowed_methods,
+                reason = "the fake copies a fixture tree into a temp dir; it is not a store file"
+            )]
+            let copied = std::fs::copy(entry.path(), target);
+            copied?;
         }
     }
     Ok(())

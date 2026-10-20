@@ -313,12 +313,20 @@ mod tests {
             format!("{}: {}\n", bin.display(), source.display()).as_bytes(),
         )
         .unwrap();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test sets the file's mtime directly to build a stale or fresh binary; it writes no content"
+        )]
         File::options()
             .write(true)
             .open(&source)
             .unwrap()
             .set_modified(source_time)
             .unwrap();
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the test sets the file's mtime directly to build a stale or fresh binary; it writes no content"
+        )]
         File::options()
             .write(true)
             .open(&bin)
