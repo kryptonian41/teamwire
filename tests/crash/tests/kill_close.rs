@@ -22,8 +22,8 @@ pub mod rig;
 use std::time::{Duration, Instant};
 
 use rig::{
-    Identity, Rig, archive_verifies, archives, assert_integrity, launch_scout, stop_agents,
-    team_name,
+    Identity, Rig, archive_verifies, archives, assert_closed_for_good, assert_integrity,
+    close_until_done, launch_scout, stop_agents, team_name,
 };
 use teamwire_core::TeamState;
 use teamwire_store::Store;
@@ -43,40 +43,6 @@ fn team_state(rig: &Rig) -> Option<TeamState> {
     let store = Store::open_read_only(rig.home.path(), &team_name()).ok()?;
     let team = store.read(|tx| tx.team()).ok()??;
     Some(team.state)
-}
-
-/// Runs `close` until it succeeds, clearing a lock a dead close left. Returns
-/// how many runs it took.
-fn close_until_done(rig: &Rig) -> usize {
-    let mut finished = None;
-    for run in 1..=4 {
-        let out = rig.run(&["close", "alpha"], &Identity::Nobody);
-        if out.code == Some(0) {
-            finished = Some(run);
-            break;
-        }
-        assert!(
-            out.stderr.contains("--clear-stale-lock"),
-            "close refused for another reason: {out:?}"
-        );
-        let cleared = rig.run(&["close", "alpha", "--clear-stale-lock"], &Identity::Nobody);
-        assert_eq!(cleared.code, Some(0), "{cleared:?}");
-    }
-    finished.expect("close never finished")
-}
-
-fn assert_closed_for_good(rig: &Rig) {
-    assert!(
-        !rig.home.path().join("teams/alpha").exists(),
-        "the state directory is still there"
-    );
-    let all = archives(rig.home.path());
-    let newest = all.last().expect("an archive exists");
-    assert!(
-        archive_verifies(newest),
-        "the newest archive {} does not match its SHA256SUMS",
-        newest.display()
-    );
 }
 
 #[test]
