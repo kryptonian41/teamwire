@@ -207,3 +207,51 @@ fn the_dry_run_names_each_detached_member_whose_place_closes_first() {
         "{plan:?}"
     );
 }
+
+#[test]
+fn the_worktree_is_still_there_when_the_place_closes_and_goes_once_its_processes_end() {
+    let mut rig = Rig::new();
+    detached_commit(&mut rig, "api");
+    let cwd = rig.member("api").cwd;
+    let place = rig.place_of("api");
+    // A git command the hangup reached, still finishing as the place closes.
+    let late = Pid::new(7003);
+    rig.host.set_occupant(
+        &place,
+        Occupant {
+            session: None,
+            pids: vec![late],
+        },
+    );
+    rig.platform.inner.set_alive(late, true);
+    let (host, platform) = (rig.host.clone(), rig.platform.clone());
+    let finished = std::sync::atomic::AtomicBool::new(false);
+    let (report, seen) = std::thread::scope(|s| {
+        // The moment the place is gone, look at the worktree, then let the
+        // process end. Gives up with the close, or after the suite's 60 s.
+        let watcher = s.spawn(|| {
+            for _ in 0..12_000 {
+                if finished.load(std::sync::atomic::Ordering::SeqCst) {
+                    return None;
+                }
+                if host.state(&place, Duration::ZERO).is_err() {
+                    let there = cwd.is_dir();
+                    platform.inner.set_alive(late, false);
+                    return Some(there);
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            None
+        });
+        let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+        finished.store(true, std::sync::atomic::Ordering::SeqCst);
+        (report, watcher.join().unwrap())
+    });
+    assert_eq!(
+        seen,
+        Some(true),
+        "the worktree was there when the place closed"
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!cwd.exists(), "removed once the process ended");
+}

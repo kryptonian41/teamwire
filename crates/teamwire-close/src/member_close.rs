@@ -152,10 +152,11 @@ fn still_running(platform: &dyn Platform, mut pids: Vec<Pid>) -> Vec<Pid> {
     for _ in 0..EXIT_TRIES {
         pids.retain(|p| platform.pid_alive(*p));
         if pids.is_empty() {
-            break;
+            return pids;
         }
         std::thread::sleep(EXIT_PAUSE);
     }
+    pids.retain(|p| platform.pid_alive(*p));
     pids
 }
 
