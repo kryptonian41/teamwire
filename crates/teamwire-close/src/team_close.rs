@@ -406,7 +406,15 @@ impl Seq<'_, '_> {
         if let Err(why) = archive::verify(self.ctx, &self.team_dir, &dest, true) {
             return self.done("delete_state", Err(why));
         }
+        // Staged first: a kill after the team directory is gone must not
+        // leave a cache no later close can reach.
+        let staged = delete::stage_closer_cache(self.ctx, &self.team);
         let result = delete::delete_team_dir(self.ctx, &self.team, &self.team_dir);
+        let note = staged.map(delete::remove_staged_cache);
+        let result = match note {
+            Some(note) => result.map(|detail| format!("{detail}; {note}")),
+            None => result,
+        };
         self.done("delete_state", result)
     }
 

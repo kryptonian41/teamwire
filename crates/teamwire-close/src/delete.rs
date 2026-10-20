@@ -7,7 +7,7 @@
 //! one filesystem, and only then removed. A directory a killed close left
 //! there is removed by a later close, once the pid in its name is dead.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use teamwire_core::{Pid, TeamName};
 use teamwire_store::Ctx;
@@ -25,19 +25,7 @@ pub(crate) fn delete_team_dir(
     team: &TeamName,
     team_dir: &Path,
 ) -> Result<String, String> {
-    let deleting = ctx.home.join(DELETING);
-    std::fs::create_dir_all(&deleting)
-        .map_err(|e| format!("cannot create {}: {e}", deleting.display()))?;
-    remove_left_over(ctx, &deleting);
-    let doomed = deleting.join(format!("{}.{}", team.as_str(), std::process::id()));
-    // A directory under this name was left by an earlier process with the
-    // same pid, which is dead: this process now owns the pid.
-    if doomed.exists() {
-        std::fs::remove_dir_all(&doomed)
-            .map_err(|e| format!("cannot remove {}: {e}", doomed.display()))?;
-    }
-    move_dir(team_dir, &doomed)
-        .map_err(|e| format!("cannot move {} out of teams/: {e}", team_dir.display()))?;
+    let doomed = stage(ctx, team.as_str(), team_dir)?;
     Ok(match std::fs::remove_dir_all(&doomed) {
         Ok(()) => format!("deleted {}", team_dir.display()),
         Err(e) => format!(
@@ -48,7 +36,61 @@ pub(crate) fn delete_team_dir(
     })
 }
 
-/// Removes every `<team>.<pid>` directory under `deleting` whose pid is
+/// Moves `from` into `<home>/deleting/<name>.<pid>` and returns that path.
+fn stage(ctx: &Ctx<'_>, name: &str, from: &Path) -> Result<PathBuf, String> {
+    let deleting = ctx.home.join(DELETING);
+    std::fs::create_dir_all(&deleting)
+        .map_err(|e| format!("cannot create {}: {e}", deleting.display()))?;
+    remove_left_over(ctx, &deleting);
+    let doomed = deleting.join(format!("{name}.{}", std::process::id()));
+    // A directory under this name was left by an earlier process with the
+    // same pid, which is dead: this process now owns the pid.
+    if doomed.exists() {
+        std::fs::remove_dir_all(&doomed)
+            .map_err(|e| format!("cannot remove {}: {e}", doomed.display()))?;
+    }
+    move_dir(from, &doomed)
+        .map_err(|e| format!("cannot move {} to deleting/: {e}", from.display()))?;
+    Ok(doomed)
+}
+
+/// The closer's clone and build folder for a team. Nothing else removes it,
+/// and a build in it can hold tens of gigabytes.
+pub(crate) fn closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> PathBuf {
+    ctx.home.join("cache").join("closer").join(team.as_str())
+}
+
+/// Moves the closer's cache folder into `deleting/` if there is one. The
+/// caller does this before it deletes the team directory, so a kill between
+/// the two leaves the folder where a later close of any team removes it.
+/// A failure is only a note: the team's work is already safe in the archive.
+pub(crate) fn stage_closer_cache(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+) -> Option<Result<PathBuf, String>> {
+    let dir = closer_cache(ctx, team);
+    std::fs::symlink_metadata(&dir).ok()?;
+    // `_` cannot occur in a team name, so this never collides with a team's
+    // own staged directory.
+    Some(stage(ctx, &format!("closer_{}", team.as_str()), &dir))
+}
+
+/// Removes a folder `stage_closer_cache` moved, and returns the note for the
+/// step's detail.
+pub(crate) fn remove_staged_cache(staged: Result<PathBuf, String>) -> String {
+    match staged {
+        Err(e) => format!("closer cache kept: {e}"),
+        Ok(doomed) => match std::fs::remove_dir_all(&doomed) {
+            Ok(()) => "deleted the closer cache".to_owned(),
+            Err(e) => format!(
+                "closer cache moved to {}, left for a later close to remove: {e}",
+                doomed.display()
+            ),
+        },
+    }
+}
+
+/// Removes every `<name>.<pid>` directory under `deleting` whose pid is
 /// dead. A live pid is a close that is removing its own directory now.
 fn remove_left_over(ctx: &Ctx<'_>, deleting: &Path) {
     let Ok(entries) = std::fs::read_dir(deleting) else {
@@ -67,7 +109,7 @@ fn remove_left_over(ctx: &Ctx<'_>, deleting: &Path) {
             continue;
         }
         if let Err(e) = std::fs::remove_dir_all(entry.path()) {
-            tracing::warn!(path = %entry.path().display(), error = %e, "a left-over team directory could not be removed");
+            tracing::warn!(path = %entry.path().display(), error = %e, "a left-over directory in deleting/ could not be removed");
         }
     }
 }
