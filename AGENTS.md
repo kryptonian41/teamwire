@@ -1,7 +1,9 @@
 # teamwire
 
 Rust tool that runs teams of coding agents. Map: docs/ARCHITECTURE.md.
-Your ticket: docs/build-plan.md. Interfaces: docs/api/. Conventions: docs/conventions.md.
+Your task: your brief. A member with a worktree finds it as TASK.md there; any
+other member finds it at the path its first message names, under
+$TEAMWIRE_HOME/teams/<team>/briefs/ (docs/build-plan.md is the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
 
 ## Separate project: never touch the running setup
 
@@ -22,9 +24,10 @@ runs the user's real agent teams. So:
 ## Commands (from the repo root)
 
 - While working: cargo test -p <your crate> --locked, then scripts/gate.sh fast
-- Before you finish: scripts/test-changed.sh tests your changed crates and
-  every crate that depends on them (--dry-run lists them first)
-- Your ticket's check: the Check column of your row in docs/build-plan.md
+- Before you finish: scripts/test-changed.sh tests your changed crates
+  (against $TEAMWIRE_BASE, else main, else origin/main) and every crate that
+  depends on them (--dry-run lists them first)
+- Your check: the command in your brief
 - Full gate (the lead, after each wave): scripts/gate.sh
 - GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.
   Plain sed -i is BSD sed.
@@ -42,11 +45,14 @@ runs the user's real agent teams. So:
 - Suppress a lint only with #[expect(lint, reason = "...")]. [clippy]
 - A crate depends only on lower layers (docs/conventions.md section 5). [tidy]
 - Do not add dependencies or touch Cargo.lock; ask the lead. [--locked]
-- Do not edit protected files unless your ticket owns them: root Cargo.toml,
-  clippy.toml, rustfmt.toml, rust-toolchain.toml, scripts/, xtask/,
-  tests/fakes/, docs/adr/. [tidy --base prints PROTECTED-CHANGED]
-- Never delete, #[ignore] or loosen a test to get green. Fix the code.
-  [tidy --base prints WEAKENED; teamwire verify flags it]
+- Do not edit protected files unless your brief owns them: root Cargo.toml,
+  Cargo.lock, clippy.toml, rustfmt.toml, rust-toolchain.toml,
+  .cargo/config.toml, scripts/, xtask/, tests/fakes/, docs/adr/.
+  [tidy --base prints PROTECTED-CHANGED, also for a protected file moved away
+  or added untracked]
+- Never delete, #[ignore], move or loosen a test to get green. Fix the code.
+  [tidy --base prints WEAKENED, also for a net-removed assert, an added
+  non-test #[cfg(, or a test file moved; teamwire verify flags it]
 
 ## Where things go
 

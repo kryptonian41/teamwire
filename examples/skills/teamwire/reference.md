@@ -53,7 +53,7 @@ lead (you)
 
 ## Watch lines
 
-`DIED <role>` (the session is gone with no completion), `BLOCKED <role>` (at
+`DIED <role>` (the session is gone with no reported completion), `BLOCKED <role>` (at
 a dialog), `LATE <role> <age>` (past its deadline with nothing recorded),
 `SILENT <role>` (quiet with no completion, so ask it) and
 `TEAM-STALLED <roles>` (every remaining member stuck) report trouble to act
@@ -64,7 +64,8 @@ database, so run `teamwire doctor`. The other lines:
 | --- | --- |
 | `WATCHING n members` | The watch started. |
 | `DECLARED <role>` | A completion is recorded while its turn still runs. The report lands at turn end. |
-| `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. |
+| `UNREPORTED <role>: ...` | The member recorded done and its turn ended, but its turn-end hook never reported. Run `teamwire doctor`, then read the member's report. The team keeps waiting. |
+| `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. When the result file is missing or out of date, the path is the report, `reports/<role>.md`. |
 | `UNDELIVERED <role> <reason> Result: <path>` | The hook did not type the result into your pane. This line is your only notice. Read the path, then run `teamwire received <team> <role>`, so `status` stops listing the result. |
 | `UNCONFIRMED <role> ...` | Typing the result stalled. It may or may not be on your screen. Once you have the result, run `teamwire received <team> <role>`. |
 | `QUESTION-UNDELIVERED <id> from <role>` or `QUESTION-UNCONFIRMED <id> from <role>` | A question to you could not be typed, or its typing stalled. `teamwire log` shows an excerpt, and the team's `comms/` directory holds the full text. |

@@ -1,6 +1,6 @@
 ---
 name: teamwire
-description: The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task.
+description: "The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
 ---
 
 # Agent teams with teamwire
@@ -21,7 +21,7 @@ names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
 lines start with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
-For a run the user will not be present for, use `/teamwire:afk`.
+For a run the user will not be present for, use `/teamwire:afk`. Only a Claude Code lead can run it.
 
 ## Your tools
 
@@ -356,7 +356,12 @@ Check three things first:
   folder-trust prompt itself. It refuses the stronger prompt that also grants
   the folder's own settings, so open Claude Code in that repository yourself,
   accept the dialog, then add the member again with `--add`. A member rooted
-  at the home directory is refused.
+  at the home directory is refused. The plain prompt is not proof that the
+  folder is safe. Claude Code 2.1.303 shows it also for a folder whose
+  settings declare hooks, project MCP servers or an `apiKeyHelper`, and those
+  then run with the member's rights. The user accepted this risk on
+  2026-10-19. Read the folder's `.claude/` and `.mcp.json` before you launch
+  members into it for the first time.
 
 ```bash
 teamwire launch --dry-run --spec team.json    # validate and print the plan; touches nothing
@@ -657,12 +662,17 @@ becomes one tree that passes the full gate.
    lint, type, test or CI configuration. Even inside `owns`, it flags a
    deleted or removed test and an added line that skips or silences a check.
    It flags `no-commits` when an implementer said `done` with no commit
-   beyond its base. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
+   beyond its base, `no-owns` for an implementer with an empty `owns` list,
+   `uncommitted:<path>` for each uncommitted path, `asserts-removed:<path>`
+   for a file that lost assert lines, and `head-moved` when a commit landed
+   while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
    `SKIPPED`. A brief may have asked for a flagged change, so read every
    flag, and never merge past one you have not read.
    `teamwire verify <team> --role R --waive FLAG --reason TEXT`
    waives one flag, named as verify prints it in brackets, at the member's
-   current HEAD. A later commit needs a new waiver. `--deep` adds the database
+   current HEAD. A later commit needs a new waiver. `uncommitted:<path>` is
+   one flag per path, so a waiver covers that path only. `head-moved` cannot
+   be waived: run verify again. `--deep` adds the database
    integrity check and a check of every message hash.
 
    Your own commits show up here. A commit you make on a member's branch
@@ -724,7 +734,7 @@ Read each member's token use with `teamwire metrics <team>`. After close,
 that form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but
 an archive put elsewhere with `--archive-to` is not read, so read it before
 you close in that case. The counter `teamwire.member.tokens` has the
-labels `team`, `role`, `kind`, `model` and `type` (`input`, `output`,
+labels `team`, `role`, `kind`, `model`, `effort` and `type` (`input`, `output`,
 `cache_read`, `cache_creation`). A team whose results reach you as
 `COMPLETED` watch lines, because your host cannot type into your pane,
 records no tokens.
@@ -741,7 +751,9 @@ Close runs in the only safe order and stops at the first step that fails:
    adding `--unverified` when its verify or the closer has not passed, and
    tell the user plainly.
 2. It refuses while a worktree has uncommitted changes. Commit them or copy
-   them out, then run again.
+   them out, then run again. A worktree on a detached HEAD whose commits are
+   on no branch gets the branch `teamwire/rescue/<team>-<role>-<sha7>`, and
+   close prints it among the kept branches.
 3. It archives the team (briefs, contracts, messages, results, reports, setup
    logs) to `$TEAMWIRE_HOME/archive/<team>-<date>`, or to
    `DIR/<team>-<date>` with `--archive-to DIR`, and adds a time to the name
