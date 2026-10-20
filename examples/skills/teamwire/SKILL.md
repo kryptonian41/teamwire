@@ -189,7 +189,7 @@ without `harness` runs on the lead's harness; `"harness": "codex"` or
 | `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) | `sonnet` | `medium` |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` | `opus` | `xhigh` |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` | `high` |
-| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In a temporary clone it makes itself, runs the member's `setup` with the clone's path as its first argument (an install allowed there), or copies an existing `target/` or `node_modules` folder in. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
+| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode. Every member is
@@ -610,12 +610,19 @@ becomes one tree that passes the full gate.
    preset, add it to the finished team with `--add`, and start a new watch.
    The closer runs `teamwire verify` and every claimed check, on each
    member's branch and again on the joined head when one exists, and records
-   real exit codes. In a temporary clone it makes itself, it first runs the
-   member's `setup` with the clone's path as its first argument, an install
-   allowed there, or copies an existing `target/` or `node_modules` folder in.
-   Then it reverts the fix behind each claimed new test and each finding
-   graded wrong conclusion, and confirms the test then fails. A passing test
-   can prove nothing: in at least six of teamwire's own runs, a closer found a
+   real exit codes. It works in one clone it makes at
+   `$TEAMWIRE_HOME/cache/closer/<team>/clone`. Members can have different
+   setups, so the closer runs each member's `setup` there once, the first
+   time it checks that member, with the clone's path as its first argument,
+   an install allowed there. It never copies a `target/` or `node_modules`
+   folder in, because each copied file costs a scan by the machine's
+   security agent. For each check it fetches and checks out the member's
+   branch, runs `git reset --hard` to drop staged reverts, and
+   `git clean -fd` keeps the ignored build folders. `teamwire close`
+   deletes the clone. Then it reverts the fix behind each claimed new test
+   and each finding graded wrong conclusion, and confirms the test then
+   fails. A passing test can prove nothing: in at least six of teamwire's own
+   runs, a closer found a
    test that passed without its fix. Spotify calls code that "passes CI but is
    functionally incorrect" "the most serious error". At Bun, Claude read "get
    all the crates to compile" as "stub out the functions with compilation
