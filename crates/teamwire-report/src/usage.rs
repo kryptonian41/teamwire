@@ -8,7 +8,17 @@ use std::path::Path;
 use serde_json::{Value, json};
 
 /// A transcript larger than this is not read: the hook has a time budget.
-const MAX_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const MAX_TRANSCRIPT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// The bytes of the transcript file at `path`, or `None` when it is not a
+/// regular file, is larger than `limit` bytes or cannot be read. Only a
+/// regular file is opened: opening a FIFO would block the Stop hook.
+pub(crate) fn read_transcript(path: &Path, limit: u64) -> Option<Vec<u8>> {
+    std::fs::metadata(path)
+        .ok()
+        .filter(|m| m.is_file() && m.len() <= limit)?;
+    std::fs::read(path).ok()
+}
 
 const KEYS: [(&str, &str); 4] = [
     ("input_tokens", "input"),
@@ -42,14 +52,9 @@ pub(crate) fn session_usage(path: &Path) -> Option<Value> {
     let mut size = 0_u64;
     let mut texts = Vec::new();
     for (i, file) in files.iter().enumerate() {
-        // Only a regular file: opening a FIFO would block the Stop hook.
-        let read = std::fs::metadata(file)
-            .ok()
-            .filter(|m| m.is_file() && size.saturating_add(m.len()) <= MAX_TRANSCRIPT_BYTES)
-            .and_then(|m| Some((m.len(), std::fs::read(file).ok()?)));
-        match read {
-            Some((len, bytes)) => {
-                size += len;
+        match read_transcript(file, MAX_TRANSCRIPT_BYTES.saturating_sub(size)) {
+            Some(bytes) => {
+                size = size.saturating_add(bytes.len() as u64);
                 texts.push(String::from_utf8_lossy(&bytes).into_owned());
             }
             // The main transcript decides whether the session has usage; a

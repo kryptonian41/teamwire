@@ -18,7 +18,7 @@ use teamwire_core::{
 };
 use teamwire_fakes::{FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_mcp::{McpCaller, McpServer, ServerEnv};
-use teamwire_msg::{LogFilter, token_hash};
+use teamwire_msg::{CallerEnv, LogFilter, token_hash};
 use teamwire_store::{Ctx, NewMember, NewTeam, Store};
 
 pub(crate) type Client = RunningService<RoleClient, ()>;
@@ -164,6 +164,7 @@ impl Rig {
             platform: self.platform.clone(),
             clock: self.clock.clone(),
             config: Config::default(),
+            process: CallerEnv::default(),
         }
     }
 
@@ -188,8 +189,12 @@ impl Rig {
     }
 
     pub(crate) async fn client(&self, caller: McpCaller) -> Client {
+        self.client_with(self.env(), caller).await
+    }
+
+    pub(crate) async fn client_with(&self, env: ServerEnv, caller: McpCaller) -> Client {
         let (server_side, client_side) = tokio::io::duplex(1 << 20);
-        let server = McpServer::new(self.env(), caller);
+        let server = McpServer::new(env, caller);
         tokio::spawn(async move {
             if let Ok(running) = server.serve(server_side).await {
                 running.waiting().await.ok();

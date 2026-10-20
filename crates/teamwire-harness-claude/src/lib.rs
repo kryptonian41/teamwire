@@ -89,11 +89,6 @@ impl ClaudeCode {
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
     }
-
-    /// The platform Claude's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
 }
 
 impl fmt::Debug for ClaudeCode {
@@ -182,11 +177,19 @@ impl Harness for ClaudeCode {
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {
-        screen::classify(tail)
+        screen::delivery_state(tail)
     }
 
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
         screen::line_pending(tail, line)
+    }
+
+    fn reads_input_box(&self) -> bool {
+        true
+    }
+
+    fn box_holds_text(&self, tail: &str) -> bool {
+        screen::box_holds_text(tail)
     }
 
     fn answer_startup(

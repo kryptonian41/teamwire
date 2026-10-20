@@ -7,14 +7,13 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use teamwire_core::Command;
+use teamwire_core::{Command, LaunchSpec};
 
 use super::mcp::{McpEntry, claude};
 use super::skill;
 use super::skill::{AFK_TEXT, REFERENCE_TEXT};
 use super::{LeadSetupError, SKILL_TEXT};
 use crate::ClaudeConfig;
-use crate::launch::shell_word;
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -59,8 +58,8 @@ impl PluginFiles {
             .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let afk = skill::stamp(AFK_TEXT)
             .ok_or_else(|| "the compiled-in afk skill has no frontmatter".to_owned())?;
-        let mut hook_words = vec![shell_word(&want.command)];
-        hook_words.extend(want.home_args().iter().map(|a| shell_word(a)));
+        let mut hook_words = vec![LaunchSpec::shell_word(&want.command)];
+        hook_words.extend(want.home_args().iter().map(|a| LaunchSpec::shell_word(a)));
         hook_words.extend(["hook".to_owned(), "claude-lead-stop".to_owned()]);
         let body = [
             (

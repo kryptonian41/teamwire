@@ -7,7 +7,7 @@
 use std::path::Path;
 
 use teamwire_core::{Actor, CompletionStatus, DisplayId, MessageType, Recipient, Role, TeamName};
-use teamwire_deliver::{line_holds_whole, message_line, message_line_to, result_line};
+use teamwire_deliver::{CommsCopy, line_holds_whole, message_line, message_line_to, result_line};
 
 fn team() -> TeamName {
     TeamName::parse("tw").unwrap()
@@ -238,7 +238,10 @@ fn a_question_to_the_lead_names_the_team_from_lead_and_the_stored_copy() {
         &member("api"),
         &long_body(),
         &Recipient::Lead,
-        comms,
+        CommsCopy {
+            path: comms,
+            written: true,
+        },
     );
     let text = line.as_str();
     assert!(
@@ -262,7 +265,10 @@ fn a_member_reader_gets_the_member_line() {
         &member("api"),
         "which schema version?",
         &Recipient::Member(Role::parse("rust").unwrap()),
-        comms,
+        CommsCopy {
+            path: comms,
+            written: true,
+        },
     );
     let plain = message_line(
         &team(),
@@ -341,7 +347,10 @@ fn a_line_from_another_team_names_that_team_and_never_says_the_lead() {
         &Actor::parse("db@beta").unwrap(),
         "which port?",
         &Recipient::Lead,
-        Path::new("/h/teams/tw/comms/m014.md"),
+        CommsCopy {
+            path: Path::new("/h/teams/tw/comms/m014.md"),
+            written: true,
+        },
     );
     assert!(
         to_lead
@@ -362,7 +371,10 @@ fn a_short_question_to_the_lead_needs_no_stored_copy_but_keeps_its_answer_comman
         &member("api"),
         "which schema version?",
         &Recipient::Lead,
-        comms,
+        CommsCopy {
+            path: comms,
+            written: true,
+        },
     );
     let text = line.as_str();
     assert!(!text.contains("Full text"), "{text}");
@@ -373,6 +385,31 @@ fn a_short_question_to_the_lead_needs_no_stored_copy_but_keeps_its_answer_comman
     );
     assert!(
         text.contains("Answer with: teamwire send tw --from lead --to api --type answer --re m014"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_stored_copy_that_was_not_written_points_at_the_repair() {
+    let comms = Path::new("/home/u/.teamwire/teams/tw/comms/m014.md");
+    let line = message_line_to(
+        &team(),
+        &id(),
+        MessageType::Finding,
+        &member("api"),
+        &long_body(),
+        &Recipient::Lead,
+        CommsCopy {
+            path: comms,
+            written: false,
+        },
+    );
+    let text = line.as_str();
+    assert!(
+        text.contains(
+            "Full text: /home/u/.teamwire/teams/tw/comms/m014.md \
+             (not written; run teamwire verify tw --repair-files)"
+        ),
         "{text}"
     );
 }

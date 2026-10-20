@@ -14,10 +14,14 @@ use std::time::Duration;
 use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnRequest, one_line};
 use teamwire_fakes::contract::{HostSetup, host_contract};
 
-use server::{PrivateServer, request, screen_shows};
+use server::{
+    CLOSE, LOOKS, OCCUPANT, PrivateServer, SPAWN, SUBMIT, T, keys, request, screen_shows,
+};
 use teamwire_host_tmux::Tmux;
 
-const T: Duration = Duration::from_secs(10);
+fn name(text: &str) -> Address {
+    Address::parse(text).unwrap()
+}
 
 /// The `%<n>` part of a place id, which is what `TMUX_PANE` holds.
 fn bare(place: &Place) -> &str {
@@ -39,6 +43,10 @@ fn passes_host_contract_on_a_private_socket() {
     let mut setup = HostSetup::new(&tmux, &make);
     setup.echoes_input = true;
     setup.lists_agent_names = false;
+    // The contract passes one timeout to every call, so it gets the largest
+    // method's budget: spawn's.
+    setup.timeout = SPAWN;
+    setup.screen_attempts = LOOKS;
     host_contract(&setup);
 }
 
@@ -57,7 +65,7 @@ fn the_environment_reaches_the_program_at_spawn() {
         ],
     );
     req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "s3cret value".to_owned())];
-    let place = tmux.spawn(&req, T).unwrap();
+    let place = tmux.spawn(&req, SPAWN).unwrap();
     assert!(screen_shows(&tmux, &place, "token=s3cret value"));
     let shown = tmux.read_tail(&place, 20, T).unwrap();
     assert!(
@@ -79,7 +87,7 @@ fn the_working_directory_is_the_requested_one() {
         .to_string_lossy()
         .into_owned();
     let req = request("tw_t_a", dir.path(), &["sh", "-c", "pwd; sleep 30"]);
-    let place = tmux.spawn(&req, T).unwrap();
+    let place = tmux.spawn(&req, SPAWN).unwrap();
     assert!(screen_shows(&tmux, &place, &unique));
 }
 
@@ -89,13 +97,58 @@ fn list_and_names_hold_only_panes_this_adapter_started() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let a = tmux
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     // A pane somebody else made on the same server.
     server.raw(&["new-window", "-d", "--", "cat"]);
     assert!(server.raw(&["list-panes", "-a"]).lines().count() == 2);
     assert_eq!(tmux.list(T).unwrap(), [a]);
     assert_eq!(tmux.live_agent_names(T).unwrap(), ["tw_t_a"]);
+}
+
+#[test]
+fn a_second_spawn_under_a_live_name_is_refused() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let req = request("tw_t_a", dir.path(), &["cat"]);
+    let first = tmux.spawn(&req, SPAWN).unwrap();
+    let err = tmux.spawn(&req, SPAWN).unwrap_err();
+    assert_eq!(err.code, HostErrorCode::BadArgument);
+    assert!(
+        err.detail.starts_with("agent_name_taken:"),
+        "{}",
+        err.detail
+    );
+    assert_eq!(tmux.list(T).unwrap(), [first]);
+}
+
+#[test]
+fn a_pane_whose_program_exited_holds_no_live_name_and_reopen_can_replace_it() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let old = tmux
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    // A dead session leaves its pane in the tab, as `remain-on-exit` does.
+    server.raw(&["set-option", "-g", "remain-on-exit", "on"]);
+    tmux.send_keys(&old, &[Key::CtrlC], keys(1)).unwrap();
+    for _ in 0..LOOKS {
+        if tmux.state(&old, T).unwrap() == PlaceState::Gone {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(tmux.state(&old, T).unwrap(), PlaceState::Gone);
+    assert!(tmux.live_agent_names(T).unwrap().is_empty());
+    // Reopen starts the new tab first, then closes the old one.
+    let new = tmux
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    assert_eq!(tmux.live_agent_names(T).unwrap(), ["tw_t_a"]);
+    tmux.close(&old, &name("tw_t_a"), CLOSE).unwrap();
+    assert_eq!(tmux.list(T).unwrap(), [new]);
 }
 
 #[test]
@@ -110,7 +163,7 @@ fn list_with_no_server_is_empty_and_a_place_is_gone() {
     };
     assert_eq!(tmux.state(&place, T).unwrap(), PlaceState::Gone);
     assert_eq!(
-        tmux.close(&place, T).unwrap_err().code,
+        tmux.close(&place, &name("tw_t_a"), CLOSE).unwrap_err().code,
         HostErrorCode::NotFound
     );
 }
@@ -120,7 +173,7 @@ fn a_session_or_window_name_is_never_a_place() {
     let server = PrivateServer::new();
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
-    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     // `teamwire` is the session `spawn` made: tmux would resolve it to a pane.
     let by_name = Place {
@@ -128,11 +181,13 @@ fn a_session_or_window_name_is_never_a_place() {
         id: "teamwire".to_owned(),
     };
     assert_eq!(
-        tmux.occupant(&by_name, T).unwrap_err().code,
+        tmux.occupant(&by_name, OCCUPANT).unwrap_err().code,
         HostErrorCode::NotFound
     );
     assert_eq!(
-        tmux.close(&by_name, T).unwrap_err().code,
+        tmux.close(&by_name, &name("tw_t_a"), CLOSE)
+            .unwrap_err()
+            .code,
         HostErrorCode::NotFound
     );
     assert_eq!(tmux.list(T).unwrap().len(), 1, "nothing was closed");
@@ -146,13 +201,13 @@ fn occupant_holds_the_panes_process_and_its_children() {
     let place = tmux
         .spawn(
             &request("tw_t_a", dir.path(), &["sh", "-c", "sleep 30 & wait"]),
-            T,
+            SPAWN,
         )
         .unwrap();
     let want = server.raw(&["display-message", "-p", "-t", bare(&place), "#{pane_pid}"]);
     let mut pids = Vec::new();
-    for _ in 0..100 {
-        let occupant = tmux.occupant(&place, T).unwrap();
+    for _ in 0..LOOKS {
+        let occupant = tmux.occupant(&place, OCCUPANT).unwrap();
         assert_eq!(occupant.session, None);
         pids = occupant.pids;
         if pids.len() >= 2 {
@@ -173,10 +228,10 @@ fn text_with_shell_and_tmux_special_characters_arrives_whole() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let place = tmux
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let text = r#"a; b "q" 'r' $HOME `x` \n #{pane_id} -t %1 Enter"#;
-    tmux.submit(&place, &one_line(text, 200), T).unwrap();
+    tmux.submit(&place, &one_line(text, 200), SUBMIT).unwrap();
     assert!(
         screen_shows(&tmux, &place, text),
         "{}",
@@ -185,7 +240,7 @@ fn text_with_shell_and_tmux_special_characters_arrives_whole() {
     // Enter was pressed: cat echoes the line back, so it shows twice. The
     // echo comes after the typed text, so wait for it as for the text.
     let mut shown = String::new();
-    for _ in 0..100 {
+    for _ in 0..LOOKS {
         shown = tmux.read_tail(&place, 20, T).unwrap();
         if shown.matches("#{pane_id}").count() >= 2 {
             break;
@@ -201,16 +256,16 @@ fn a_paste_buffer_is_not_left_behind() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let place = tmux
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
-    tmux.submit(&place, &one_line("hello", 20), T).unwrap();
+    tmux.submit(&place, &one_line("hello", 20), SUBMIT).unwrap();
     assert_eq!(server.raw(&["list-buffers"]).trim(), "");
     let gone = Place {
         host: tmux.id(),
         id: "%99".to_owned(),
     };
     assert_eq!(
-        tmux.submit(&gone, &one_line("hello", 20), T)
+        tmux.submit(&gone, &one_line("hello", 20), SUBMIT)
             .unwrap_err()
             .code,
         HostErrorCode::NotFound
@@ -228,18 +283,18 @@ fn send_keys_types_characters_literally_and_presses_named_keys() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let place = tmux
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
-    let keys = [
+    let typed = [
         Key::Char('-'),
         Key::Char(';'),
         Key::Char('E'),
         Key::Char('n'),
         Key::Enter,
     ];
-    tmux.send_keys(&place, &keys, T).unwrap();
+    tmux.send_keys(&place, &typed, keys(typed.len())).unwrap();
     assert!(screen_shows(&tmux, &place, "-;En"));
-    tmux.send_keys(&place, &[], T).unwrap();
+    tmux.send_keys(&place, &[], keys(0)).unwrap();
 }
 
 #[test]
@@ -248,13 +303,13 @@ fn a_closed_pane_is_gone_and_the_others_stay() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let a = tmux
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let b = tmux
-        .spawn(&request("tw_t_b", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_b", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     assert_ne!(a, b);
-    tmux.close(&a, T).unwrap();
+    tmux.close(&a, &name("tw_t_a"), CLOSE).unwrap();
     assert_eq!(tmux.state(&a, T).unwrap(), PlaceState::Gone);
     assert_eq!(tmux.state(&b, T).unwrap(), PlaceState::Unknown);
     assert_eq!(tmux.list(T).unwrap(), [b]);
@@ -267,13 +322,13 @@ fn spawn_needs_a_program_and_a_sane_environment_name() {
     let dir = tempfile::tempdir().unwrap();
     let none = request("tw_t_a", dir.path(), &[]);
     assert_eq!(
-        tmux.spawn(&none, T).unwrap_err().code,
+        tmux.spawn(&none, SPAWN).unwrap_err().code,
         HostErrorCode::BadArgument
     );
     let mut bad = request("tw_t_a", dir.path(), &["cat"]);
     bad.env = vec![("A=B".to_owned(), "c".to_owned())];
     assert_eq!(
-        tmux.spawn(&bad, T).unwrap_err().code,
+        tmux.spawn(&bad, SPAWN).unwrap_err().code,
         HostErrorCode::BadArgument
     );
     assert_eq!(tmux.list(T).unwrap(), []);
@@ -285,7 +340,7 @@ fn a_place_composed_from_a_process_env_works_from_outside_tmux() {
     let dir = tempfile::tempdir().unwrap();
     let placed = server
         .tmux()
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let socket = server.raw(&["display-message", "-p", "#{socket_path}"]);
     let tmux_value = format!("{},123,0", socket.trim());
@@ -302,7 +357,7 @@ fn a_place_composed_from_a_process_env_works_from_outside_tmux() {
         host: outside.id(),
         id,
     };
-    assert!(outside.occupant(&place, T).is_ok());
+    assert!(outside.occupant(&place, OCCUPANT).is_ok());
 }
 
 #[test]
@@ -320,7 +375,7 @@ fn close_refuses_a_pane_without_the_teamwire_mark() {
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     // One marked pane keeps the server alive; the plain pane is "the user's".
-    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let id = server
         .raw(&["new-window", "-d", "-P", "-F", "#{pane_id}", "cat"])
@@ -330,7 +385,7 @@ fn close_refuses_a_pane_without_the_teamwire_mark() {
         host: tmux.id(),
         id: id.clone(),
     };
-    let err = tmux.close(&theirs, T).unwrap_err();
+    let err = tmux.close(&theirs, &name("tw_t_a"), CLOSE).unwrap_err();
     assert_eq!(err.code, HostErrorCode::NotFound);
     assert!(
         server
@@ -340,13 +395,28 @@ fn close_refuses_a_pane_without_the_teamwire_mark() {
 }
 
 #[test]
+fn close_leaves_a_pane_that_holds_another_members_name() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    // As after a server restart: the id close has on record is now the
+    // pane of another team's member.
+    let reused = tmux
+        .spawn(&request("tw_other_web", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    let err = tmux.close(&reused, &name("tw_t_a"), CLOSE).unwrap_err();
+    assert_eq!(err.code, HostErrorCode::NotFound);
+    assert_eq!(tmux.list(T).unwrap(), [reused]);
+}
+
+#[test]
 fn a_title_ending_in_a_semicolon_still_spawns() {
     let server = PrivateServer::new();
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
     let mut req = request("tw_t_a", dir.path(), &["cat"]);
     req.title = "x;".to_owned();
-    tmux.spawn(&req, T).unwrap();
+    tmux.spawn(&req, SPAWN).unwrap();
     let names = server.raw(&["list-windows", "-a", "-F", "#{window_name}"]);
     assert!(names.lines().any(|n| n == "x;"), "{names}");
 }
@@ -415,7 +485,7 @@ fn the_environment_values_never_appear_in_any_tmux_argument() {
         &["sh", "-c", "echo token=$TEAMWIRE_TEST_TOKEN; sleep 30"],
     );
     req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "it's s3cret".to_owned())];
-    let place = tmux.spawn(&req, T).unwrap();
+    let place = tmux.spawn(&req, SPAWN).unwrap();
     assert!(screen_shows(&tmux, &place, "token=it's s3cret"));
     let argv = recording.argv.lock().unwrap().join("\n");
     assert!(!argv.contains("s3cret"), "a tmux argument holds the value");
@@ -433,7 +503,7 @@ fn the_environment_file_is_readable_by_its_owner_only() {
     let dir = tempfile::tempdir().unwrap();
     let mut req = request("tw_t_a", dir.path(), &["sleep", "30"]);
     req.env = vec![("TEAMWIRE_TEST_TOKEN".to_owned(), "s3cret".to_owned())];
-    tmux.spawn(&req, T).unwrap();
+    tmux.spawn(&req, SPAWN).unwrap();
     assert_eq!(*recording.modes.lock().unwrap(), [0o600]);
 }
 
@@ -443,7 +513,7 @@ fn a_place_records_its_server_and_any_adapter_can_reach_it() {
     let dir = tempfile::tempdir().unwrap();
     let place = server
         .tmux()
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let (pane, path) = place
         .id
@@ -460,12 +530,13 @@ fn a_place_records_its_server_and_any_adapter_can_reach_it() {
         teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform)),
     ] {
         assert_eq!(tmux.state(&place, T).unwrap(), PlaceState::Unknown);
-        tmux.submit(&place, &one_line("from afar", 20), T).unwrap();
+        tmux.submit(&place, &one_line("from afar", 20), SUBMIT)
+            .unwrap();
         assert!(screen_shows(&tmux, &place, "from afar"));
-        assert!(tmux.occupant(&place, T).unwrap().pids.len() == 1);
+        assert!(tmux.occupant(&place, OCCUPANT).unwrap().pids.len() == 1);
     }
     teamwire_host_tmux::Tmux::new(std::sync::Arc::clone(&server.platform))
-        .close(&place, T)
+        .close(&place, &name("tw_t_a"), CLOSE)
         .unwrap();
     assert_eq!(server.tmux().list(T).unwrap(), []);
 }
@@ -476,7 +547,7 @@ fn a_bare_pane_id_goes_to_the_server_the_client_value_names() {
     let dir = tempfile::tempdir().unwrap();
     let placed = server
         .tmux()
-        .spawn(&request("tw_t_a", dir.path(), &["cat"]), T)
+        .spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
     let (pane, path) = placed.id.split_once('@').unwrap();
     // What an older team stored, and what a locate finds in `TMUX_PANE`.

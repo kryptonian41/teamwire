@@ -597,6 +597,38 @@ fn sent_points(stub: &Stub) -> Vec<(u64, f64)> {
         .collect()
 }
 
+#[test]
+fn the_lag_gauge_counts_the_events_still_behind_the_mark() {
+    use opentelemetry_proto::tonic::metrics::v1::number_data_point::Value;
+    let mut e = env();
+    // The first message is in a finished minute; the second is in the open
+    // one, so it waits for a later export.
+    e.message(10);
+    e.message(7200);
+    let stub = Stub::start(Mode::Ok);
+    let report = e.export(&stub.url()).unwrap();
+    assert_eq!(e.last_seq(), report.to_seq + 1);
+    let lag: Vec<f64> = stub
+        .metrics()
+        .iter()
+        .flat_map(|r| &r.resource_metrics)
+        .flat_map(|r| &r.scope_metrics)
+        .flat_map(|s| &s.metrics)
+        .filter(|m| m.name == "teamwire.export.lag")
+        .filter_map(|m| match &m.data {
+            Some(Data::Gauge(g)) => Some(g.data_points.clone()),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|p| match p.value {
+            Some(Value::AsDouble(v)) => Some(v),
+            Some(Value::AsInt(v)) => Some(f64::from(i32::try_from(v).unwrap())),
+            None => None,
+        })
+        .collect();
+    assert_eq!(lag, [1.0]);
+}
+
 /// A team that writes an event early in every minute still exports: each
 /// export sends the minutes that are over and leaves the open one for later.
 #[test]

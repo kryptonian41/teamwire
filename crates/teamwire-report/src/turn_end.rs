@@ -14,14 +14,22 @@ use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
 use crate::lead_stop::watch_command;
-use crate::note::{gap_note, unread_note};
+use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::unread;
-use crate::result_file::{MISSING_FROM_HARNESS, write_current};
+use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
 
 /// The cap on a result line that ends with the no-watch note: the 1000
 /// characters `result_line` allows, and room for the note after them.
 const NOTE_LINE_CHARS: usize = 1200;
+
+/// The pause between two tries of a claim that failed. A busy store has
+/// already waited its own busy timeout before it fails.
+const CLAIM_PAUSE: Duration = Duration::from_millis(500);
+
+/// The most claim tries in one hook, so the retries end even on a clock
+/// that stands still. Eight busy timeouts of 5 s fill the 40 s budget.
+const CLAIM_TRIES: u32 = 8;
 
 /// The name a hook run gives its events (`docs/metrics.md` section 5). The
 /// two harnesses that existed before this name was derived keep theirs.
@@ -36,16 +44,22 @@ fn hook_name(harness: &HarnessId) -> String {
 /// Route A of ADR 0007: hold once for gaps or unread messages, else write
 /// the result and deliver it.
 ///
-/// Never fails: every problem is logged and the turn ends normally.
+/// Never fails: every problem is logged and the turn ends normally. A failed
+/// write still leaves its `store.error` row. A failed hold write still
+/// holds, a failed final-message write is skipped, and a failed claim is
+/// tried again inside the hook budget, so a busy store at the last turn end
+/// does not leave the result `pending`. Nothing is typed without a claim.
 pub fn on_turn_end(ctx: &mut Ctx<'_>, me: &Role, t: &TurnEnd) -> TurnEndReply {
     let started = ctx.clock.monotonic();
-    match run(ctx, me, t, started) {
+    let reply = match run(ctx, me, t, started) {
         Ok(reply) => reply,
         Err(e) => {
             tracing::warn!(error = %e, role = %me, "the turn-end hook could not finish");
             TurnEndReply::Continue
         }
-    }
+    };
+    ctx.store.record_failure(ctx.clock.now(), "turn_end");
+    reply
 }
 
 /// `started + budget`, or `None` when that is beyond what an `Instant` can
@@ -189,7 +203,11 @@ fn hold(
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
     let mut parts = Vec::new();
     if told {
-        parts.push(gap_note(&gaps, &report_file(ctx, &member.role)));
+        parts.push(gap_note(
+            &gaps,
+            &report_file(ctx, &member.role),
+            FIX_THEN_STOP,
+        ));
     }
     if !ids.is_empty() {
         parts.push(unread_note(&ids));
@@ -205,7 +223,7 @@ fn hold(
         fields.insert("report_check_error".to_owned(), json!(error));
     }
     let recipient = teamwire_core::Recipient::Member(member.role.clone());
-    ctx.store.write(|tx| {
+    let held = ctx.store.write(|tx| {
         if told {
             tx.hold_member(at, &member.role, member.generation, &data)?;
         } else {
@@ -216,7 +234,12 @@ fn hold(
             tx.mark_reminded(at, &u.message, &recipient).ok();
         }
         Ok(())
-    })?;
+    });
+    // The member still hears the facts. With nothing recorded, the next
+    // stop may hold once more, which is better than a result it never fixed.
+    if let Err(e) = held {
+        tracing::warn!(error = %e, role = %member.role, "could not record the hold");
+    }
     Ok((Some(parts.join(" ")), check_error))
 }
 
@@ -240,11 +263,19 @@ fn deliver(
             record.completion.final_source,
         )
     };
-    ctx.store.write(|tx| {
+    // The result matters more than its final message: a failed write keeps
+    // the row as it was, and the delivery goes on. The result file still
+    // carries the text this hook holds.
+    let saved = ctx.store.write(|tx| {
         tx.set_completion_final(&ulid, text.as_deref(), source)
             .map(|_| ())
-    })?;
-    let record = ctx.store.read(|tx| tx.completion(&ulid))?.unwrap_or(record);
+    });
+    let mut record = ctx.store.read(|tx| tx.completion(&ulid))?.unwrap_or(record);
+    if let Err(e) = saved {
+        tracing::warn!(error = %e, role = %member.role, "could not record the final message");
+        record.completion.final_message = text;
+        record.completion.final_source = source;
+    }
 
     #[expect(
         clippy::redundant_closure_for_method_calls,
@@ -257,7 +288,19 @@ fn deliver(
     let Some(dir) = team_dir(ctx) else {
         return Ok(());
     };
-    let written = match write_current(ctx, member, &ulid, MISSING_FROM_HARNESS) {
+    let report = report_file(ctx, &member.role);
+    let rendered = Rendered {
+        team: team.name.as_str(),
+        team_dir: &dir,
+        member,
+        record: &record,
+        final_message: record.completion.final_message.as_deref(),
+        final_source: record.completion.final_source,
+        report: &report,
+        final_missing: MISSING_FROM_HARNESS,
+        now: ctx.clock.now(),
+    };
+    let written = match crate::result_file::write(ctx, &rendered) {
         Ok(w) => Some(w),
         Err(e) => {
             // The lead still hears about the result; the summary is in the line.
@@ -273,11 +316,6 @@ fn deliver(
         return Ok(());
     }
 
-    // Take the delivery. No write transaction is open while the host works.
-    // A Stop hook blocks the next stop of the same session, so two hooks of
-    // one member never overlap: a `delivering` row seen here is a crash left
-    // over, at any age, and is delivered once more (REP-2).
-    let stale = Duration::ZERO;
     // The session's token usage rides on the claim event. A transcript that
     // cannot be read leaves the key out and never stops the delivery.
     // `session` lets the metrics tell one session's running totals from the next.
@@ -290,16 +328,19 @@ fn deliver(
     ) {
         data.insert("usage".to_owned(), usage);
     }
-    let claimed = ctx.store.write(|tx| {
-        tx.claim_completion_for_delivery_with(ctx.clock.now(), &ulid, stale, &claim_data)
-    })?;
-    if claimed.is_none() {
+    // Take the delivery. No write transaction is open while the host works.
+    // A Stop hook blocks the next stop of the same session, so two hooks of
+    // one member never overlap: a `delivering` row seen here is a crash left
+    // over, at any age, and is delivered once more (REP-2).
+    let deadline = deadline_after(started, Duration::from_secs(ctx.config.hook_budget_s));
+    if claim(ctx, &ulid, &claim_data, deadline)?.is_none() {
         return Ok(());
     }
-    let path = written.as_ref().map_or_else(
-        || crate::result_file::path_of(&dir, member),
-        |w| w.path.clone(),
-    );
+    // A result file that was not written is missing or holds an older
+    // result, so the line names the member's own report instead.
+    let path = written
+        .as_ref()
+        .map_or_else(|| report.clone(), |w| w.path.clone());
     let c = &record.completion;
     let mut line = result_line(&team.name, &c.role, c.status, &c.summary, &path);
     // A lead that is idle reads the result before it ever stops, so the line
@@ -312,7 +353,7 @@ fn deliver(
             NOTE_LINE_CHARS,
         );
     }
-    let outcome = match deadline_after(started, Duration::from_secs(ctx.config.hook_budget_s)) {
+    let outcome = match deadline {
         Some(deadline) => deliver_line_within(ctx, &Party::Lead, &line, deadline),
         // A budget too large for the clock is no deadline at all.
         None => deliver_line(ctx, &Party::Lead, &line),
@@ -346,6 +387,35 @@ fn deliver(
         tx.finish_completion_delivery_with(at, &ulid, &result, &extra)
             .map(|_| ())
     })
+}
+
+/// Claims the completion for delivery, trying again after a failed write
+/// while the deadline and `CLAIM_TRIES` allow. The last error is returned.
+fn claim(
+    ctx: &mut Ctx<'_>,
+    ulid: &teamwire_core::Ulid,
+    data: &serde_json::Value,
+    deadline: Option<std::time::Instant>,
+) -> Result<Option<ReportState>, StoreError> {
+    let mut tries = 1;
+    loop {
+        let at = ctx.clock.now();
+        // `delivering` at any age is a crash left over (see the caller).
+        let claimed = ctx
+            .store
+            .write(|tx| tx.claim_completion_for_delivery_with(at, ulid, Duration::ZERO, data));
+        let e = match claimed {
+            Ok(claimed) => return Ok(claimed),
+            Err(e) => e,
+        };
+        let left = deadline.map(|d| d.saturating_duration_since(ctx.clock.monotonic()));
+        if tries >= CLAIM_TRIES || left.is_some_and(|l| l.is_zero()) {
+            return Err(e);
+        }
+        tracing::warn!(error = %e, try_n = tries, "could not claim the result; trying again");
+        std::thread::sleep(left.map_or(CLAIM_PAUSE, |l| CLAIM_PAUSE.min(l)));
+        tries += 1;
+    }
 }
 
 #[cfg(test)]

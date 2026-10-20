@@ -188,22 +188,12 @@ impl Tx<'_> {
         op: &str,
         error: &StoreError,
     ) -> Result<(), StoreError> {
-        let code = match error {
-            StoreError::Busy => "busy",
-            StoreError::Full => "full",
-            StoreError::SchemaNewer { .. } => "schema_newer",
-            StoreError::SchemaOlder { .. } => "schema_older",
-            StoreError::NotTeamwire => "not_teamwire",
-            StoreError::Corrupt(_) => "corrupt",
-            StoreError::Constraint(_) => "constraint",
-            StoreError::NoDatabase { .. } | StoreError::Io(_) => "io",
-        };
         self.record_event(
             at,
             EventType::StoreError,
             None,
             None,
-            &json!({ "op": op, "code": code }),
+            &json!({ "op": op, "code": error.code() }),
         )?;
         Ok(())
     }

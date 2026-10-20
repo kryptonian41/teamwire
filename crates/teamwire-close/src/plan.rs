@@ -5,7 +5,7 @@ use teamwire_core::{Member, Role, TeamState};
 use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::ignored_warning;
+use crate::member_close::{ignored_warning, kept_branches};
 use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, remove};
 
 fn step(name: &str, detail: impl Into<String>) -> CloseStep {
@@ -100,7 +100,7 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
     ));
     if team.state == TeamState::Open {
         plan.steps
-            .push(step("remove_worktrees", worktree_list(members)));
+            .push(step("remove_worktrees", worktree_list(ctx, team, members)));
         plan.steps.extend(ignored_steps(ctx, members));
         plan.steps.push(step("close_places", place_list(members)));
         plan.steps.push(step("release_hold", hold_detail(team)));
@@ -118,9 +118,11 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
             )
         },
     ));
-    let kept: Vec<&str> = live(members)
+    // An error here is already a refusal from the dirty check.
+    let kept: Vec<String> = live(members)
         .filter(|m| m.mode == teamwire_core::Mode::Worktree)
-        .filter_map(|m| m.branch.as_deref())
+        .filter_map(|m| kept_branches(ctx, &team.name, m, true).ok())
+        .flat_map(|k| k.branches)
         .collect();
     if !kept.is_empty() {
         plan.steps.push(step("branches_kept", kept.join(", ")));
@@ -137,16 +139,36 @@ fn ignored_steps<'a>(
     live(members).filter_map(|m| ignored_warning(ctx, m).map(|d| step(m.role.as_str(), d)))
 }
 
-fn worktree_list(members: &[Member]) -> String {
-    let paths: Vec<String> = live(members)
+/// The worktrees, and each member whose place closes right before its
+/// worktree goes because its HEAD is detached.
+fn worktree_list(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member]) -> String {
+    let worktrees: Vec<&Member> = live(members)
         .filter(|m| m.mode == teamwire_core::Mode::Worktree)
+        .collect();
+    if worktrees.is_empty() {
+        return "no worktrees".to_owned();
+    }
+    let paths: Vec<String> = worktrees
+        .iter()
         .map(|m| format!("{} ({})", m.role, m.cwd.display()))
         .collect();
-    if paths.is_empty() {
-        "no worktrees".to_owned()
-    } else {
-        format!("git worktree remove, without force: {}", paths.join(", "))
-    }
+    let mut parts = vec![format!(
+        "git worktree remove, without force: {}",
+        paths.join(", ")
+    )];
+    parts.extend(
+        worktrees
+            .iter()
+            .filter(|m| matches!(facts::detached(ctx, &team.name, m), Ok(Some(_))))
+            .map(|m| {
+                format!(
+                    "{}'s HEAD is detached, so its place is closed right before its worktree \
+                     is removed",
+                    m.role
+                )
+            }),
+    );
+    parts.join("; ")
 }
 
 fn place_list(members: &[Member]) -> String {
@@ -224,5 +246,11 @@ fn member_plan(
         "mark_removed",
         format!("keep {role}'s row, marked removed"),
     ));
+    if let Ok(kept) = kept_branches(ctx, &team.name, member, true)
+        && !kept.branches.is_empty()
+    {
+        plan.steps
+            .push(step("branches_kept", kept.branches.join(", ")));
+    }
     plan
 }

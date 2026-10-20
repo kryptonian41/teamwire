@@ -57,16 +57,7 @@ fn git(dir: &Path, args: &[&str]) {
 /// The preset with its placeholders replaced by a real repository, real
 /// brief files and the branches its members start from.
 fn filled(name: &str, work: &Path) -> String {
-    let repo = work.join("repo");
-    if !repo.exists() {
-        std::fs::create_dir_all(&repo).unwrap();
-        git(&repo, &["init", "-q", "-b", "main"]);
-        std::fs::write(repo.join(".gitignore"), ".worktrees/\n").unwrap();
-        git(&repo, &["add", "-A"]);
-        git(&repo, &["commit", "-q", "-m", "first"]);
-    }
-    let briefs = work.join("briefs");
-    std::fs::create_dir_all(&briefs).unwrap();
+    let (repo, briefs) = fixture(work);
     let text = preset_text(name)
         .replace("/abs/path/repo", &repo.display().to_string())
         .replace("/abs/path/briefs", &briefs.display().to_string());
@@ -82,8 +73,26 @@ fn filled(name: &str, work: &Path) -> String {
     text
 }
 
+/// The repository and the briefs folder that `filled` puts in a preset.
+fn fixture(work: &Path) -> (PathBuf, PathBuf) {
+    let repo = work.join("repo");
+    if !repo.exists() {
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        std::fs::write(repo.join(".gitignore"), ".worktrees/\n").unwrap();
+        git(&repo, &["add", "-A"]);
+        git(&repo, &["commit", "-q", "-m", "first"]);
+    }
+    let briefs = work.join("briefs");
+    std::fs::create_dir_all(&briefs).unwrap();
+    (repo, briefs)
+}
+
 fn validates(name: &str, work: &Path) {
-    let text = filled(name, work);
+    validates_text(name, &filled(name, work), work);
+}
+
+fn validates_text(name: &str, text: &str, work: &Path) {
     let home = TestHome::new().unwrap();
     let harness = Arc::new(FakeHarness::new());
     harness.set_interactive_caller(teamwire_core::SessionId::parse("lead-session").unwrap());
@@ -107,7 +116,7 @@ fn validates(name: &str, work: &Path) {
         user_home: Some(user_home),
         teamwire_bin: PathBuf::from("/usr/local/bin/teamwire"),
     };
-    let spec = parse_spec(&text).unwrap_or_else(|e| unreachable!("{name}: {e:?}"));
+    let spec = parse_spec(text).unwrap_or_else(|e| unreachable!("{name}: {e:?}"));
     let plan = validate(&spec, false, &env).unwrap_or_else(|e| unreachable!("{name}: {e:?}"));
     assert_eq!(plan.members.len(), spec.children.len(), "{name}");
 }
@@ -252,6 +261,39 @@ fn a_named_shape_prints_its_rules_and_a_spec_skeleton_that_parses() {
         assert_eq!(printed, file, "{name}: the skeleton is the file's spec");
         assert!(parse_spec(skeleton).is_ok(), "{name}");
     }
+}
+
+/// The skeleton as printed, without the members that carry a launch note
+/// (they are added later, once their blockers are done), launches with no
+/// branch made beforehand.
+#[test]
+fn the_dependent_skeleton_without_its_later_members_validates_as_printed() {
+    let run = teamwire(&["preset", "dependent-tickets"]);
+    assert_eq!(run.code, 0, "{}", run.err);
+    assert!(
+        run.out.contains("`--add`"),
+        "the text must say how to add the later members: {}",
+        run.out
+    );
+    let (_, skeleton) = run
+        .out
+        .split_once("`teamwire launch --spec FILE`:\n")
+        .unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let (repo, briefs) = fixture(work.path());
+    let mut doc: Value = serde_json::from_str(
+        &skeleton
+            .replace("/abs/path/repo", &repo.display().to_string())
+            .replace("/abs/path/briefs", &briefs.display().to_string()),
+    )
+    .unwrap();
+    let children = doc["children"].as_array_mut().unwrap();
+    children.retain(|c| c.get("_launch").is_none() && c.get("_launch_after").is_none());
+    assert!(!children.is_empty());
+    for child in children {
+        std::fs::write(child["task_file"].as_str().unwrap(), "the brief\n").unwrap();
+    }
+    validates_text("dependent-tickets", &doc.to_string(), work.path());
 }
 
 #[test]

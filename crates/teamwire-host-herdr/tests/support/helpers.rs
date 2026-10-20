@@ -14,7 +14,9 @@ use teamwire_core::{
 use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, HerdrFaults, LoggedCall};
 use teamwire_host_herdr::Herdr;
 
-pub(crate) const T: Duration = Duration::from_secs(10);
+/// The budget of one herdr call. A loaded machine takes seconds to start a
+/// freshly built test binary, and the limit only guards against a hang.
+pub(crate) const T: Duration = Duration::from_secs(60);
 
 /// Runs every command with `env` on top of the inherited environment, which
 /// is how `PATH` finds the fake `herdr`. Everything else is the real platform.

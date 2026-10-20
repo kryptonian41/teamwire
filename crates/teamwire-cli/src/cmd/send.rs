@@ -2,6 +2,7 @@
 //! (`resend`, `log`, `inbox`, `ack`, `members`, `lead`) share: opening the
 //! team's store, reading who the caller says it is, and printing.
 
+use std::io::Write as _;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -12,11 +13,14 @@ use teamwire_msg::{
 };
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
 
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
 
 /// Refused by a rule; nothing changed (docs/api/cli.md).
 pub(crate) const REFUSED: u8 = 1;
+/// Part of the work was done, or the check found a problem.
+pub(crate) const PARTIAL: u8 = 2;
 /// At least one recipient is `undelivered`.
 const NOT_DELIVERED: u8 = 4;
 /// At least one recipient is `unconfirmed`, none `undelivered`.
@@ -56,7 +60,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(parts) => parts,
         Err(e) => return fail("send", &e, USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "send", |ctx| {
         // A member's `--from` defaults to its role. With no role and no
         // token the caller claims to be the lead, as `resend` does, and the
         // harness session decides.
@@ -191,6 +195,12 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
                 d.reason.map_or("unknown", |r| r.as_str())
             )),
             RecipientState::Pending => warn(&pending_line(team, &report.display_id, &d.to)),
+            // In a resume by key a reached row keeps its own state, so
+            // `skipped` means another command may still be typing it.
+            RecipientState::Skipped if report.duplicate_of_key => warn(&format!(
+                "SKIPPED for {}: another command may still be delivering it; if it does not arrive, run teamwire resend {team} {} after 60 s",
+                d.to, report.display_id
+            )),
             RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => {}
         }
     }
@@ -217,14 +227,17 @@ fn state_word(state: RecipientState) -> &'static str {
 
 /// 6 when any recipient is still pending, because its delivery record could
 /// not be written; else 4 when any is undelivered, else 5 when any is
-/// unconfirmed.
+/// unconfirmed, or skipped in a resume by key because another command may
+/// still be delivering it.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
     let any = |s| report.deliveries.iter().any(|d| d.state == s);
     if any(RecipientState::Pending) {
         STORE
     } else if any(RecipientState::Undelivered) {
         NOT_DELIVERED
-    } else if any(RecipientState::Unconfirmed) {
+    } else if any(RecipientState::Unconfirmed)
+        || (report.duplicate_of_key && any(RecipientState::Skipped))
+    {
         UNCONFIRMED
     } else {
         0
@@ -240,11 +253,13 @@ pub(crate) fn error_code(e: &SendError) -> u8 {
 }
 
 /// What the process says about itself: the member's variables and the
-/// claimed sender (ADR 0008).
+/// claimed sender (ADR 0008). Every command reads the caller here, so an
+/// empty variable counts as unset for all of them, as it does for the token.
 pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
+    let var = |name| std::env::var(name).ok().filter(|v: &String| !v.is_empty());
     CallerEnv {
-        team: std::env::var("TEAMWIRE_TEAM").ok(),
-        role: std::env::var("TEAMWIRE_ROLE").ok(),
+        team: var("TEAMWIRE_TEAM"),
+        role: var("TEAMWIRE_ROLE"),
         token: member_token(),
         from,
         hints: Vec::new(),
@@ -265,7 +280,7 @@ pub(crate) fn carries_member_identity() -> bool {
     caller_env(None).is_member_session()
 }
 
-/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
+/// A lead-only command (`close`, `watch`, a real `launch`) run from a member's
 /// session is refused.
 pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
     carries_member_identity().then(|| {
@@ -311,16 +326,18 @@ pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> Strin
 }
 
 /// Opens the team's store and runs `f` with a `Ctx` on it. A store that
-/// cannot be opened is reported and turned into the exit code to return.
+/// cannot be opened is reported and turned into the exit code to return. A
+/// failed write is recorded as `op` (`Recorded`).
 pub(crate) fn with_ctx<T>(
     global: &Global,
     wiring: &Wiring,
     team: &TeamName,
+    op: &'static str,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
     let home = home_or_refuse("", global)?;
     let mut store = match Store::open_existing(&home, team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, op),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(team, &path);
             return Err(fail("", &message, REFUSED));
@@ -383,6 +400,15 @@ pub(crate) fn say(text: &str) {
     print!("{text}");
 }
 
+/// `say` for one line. The line is flushed because another program may read it.
+#[expect(clippy::print_stdout, reason = "the command's result is its output")]
+pub(crate) fn say_line(text: &str) {
+    println!("{text}");
+    if let Err(e) = std::io::stdout().flush() {
+        tracing::warn!(error = %e, "could not flush standard output");
+    }
+}
+
 #[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
 pub(crate) fn warn(text: &str) {
     eprintln!("{text}");
@@ -404,6 +430,41 @@ pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_command_on_with_ctx_records_a_failed_write_under_its_name() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        drop(Store::open(home.path(), &team()).unwrap());
+        let global = Global {
+            home: Some(home.path().to_path_buf()),
+        };
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+        })
+        .unwrap();
+        let out = with_ctx(&global, &wiring, &team(), "ack", |ctx| {
+            ctx.store.write(|_| Err::<(), _>(StoreError::Busy))
+        });
+        assert!(matches!(out, Ok(Err(StoreError::Busy))));
+        let store = Store::open_existing(home.path(), &team()).unwrap();
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(errors, [serde_json::json!({ "op": "ack", "code": "busy" })]);
+    }
 
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()

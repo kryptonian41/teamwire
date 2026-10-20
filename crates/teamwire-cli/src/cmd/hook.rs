@@ -9,9 +9,11 @@ use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
-use teamwire_store::{Ctx, Store};
+use teamwire_msg::CallerEnv;
+use teamwire_store::{Ctx, Store, same_hash, token_hash};
 
-use crate::cmd::send::state_home;
+use crate::cmd::send::{caller_env, carries_member_identity, state_home, warn};
+use crate::recorded::Recorded;
 use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
@@ -57,12 +59,12 @@ fn member_hook(
     wiring: &Wiring,
 ) -> Option<Vec<u8>> {
     // A session that is not a team member leaves before opening any file.
-    let team_var = std::env::var("TEAMWIRE_TEAM")
-        .ok()
-        .filter(|v| !v.is_empty());
-    let role_var = std::env::var("TEAMWIRE_ROLE")
-        .ok()
-        .filter(|v| !v.is_empty());
+    let CallerEnv {
+        team: team_var,
+        role: role_var,
+        token,
+        ..
+    } = caller_env(None);
     // The command line names the same member as the environment, or this is
     // not that member's session (ADR 0008 point 4). A session-start hook may
     // have no member environment: its token proves who it is instead.
@@ -80,10 +82,13 @@ fn member_hook(
         }
         (team_var, role_var)
     };
-    let team = TeamName::parse(&team_var).ok()?;
-    let role = Role::parse(&role_var).ok()?;
-    let home = state_home(global)?;
-    let token = teamwire_msg::caller_token(|k| std::env::var(k).ok());
+    // From here on the session is a member's, so every way out says why on
+    // stderr: a hook that does nothing must not look like one that worked.
+    let team = said(TeamName::parse(&team_var), "the team name is not valid")?;
+    let role = said(Role::parse(&role_var), "the role name is not valid")?;
+    let Some(home) = state_home(global) else {
+        return quit("no state directory: set --home, TEAMWIRE_HOME or HOME");
+    };
     let mut stdin = std::io::stdin().lock().take(STDIN_LIMIT);
     member_hook_in(
         &home,
@@ -107,31 +112,50 @@ fn member_hook_in(
     wiring: &Wiring,
     stdin: &mut dyn Read,
 ) -> Option<Vec<u8>> {
-    let mut store = Store::open_existing(home, team).ok()?;
-    let found = store
-        .read(|tx| Ok((tx.member(role)?, tx.member_token_hash(role)?)))
-        .ok()?;
-    let (member, stored_hash) = (found.0?, found.1);
+    let opened = said(
+        Store::open_existing(home, team),
+        "the store could not be opened",
+    )?;
+    let mut store = Recorded::new(opened, &wiring.clock, kind.op());
+    let found = said(
+        store.read(|tx| Ok((tx.member(role)?, tx.member_token_hash(role)?))),
+        "the member could not be read",
+    )?;
+    let (Some(member), stored_hash) = found else {
+        return quit(&format!("team {team} has no member {role}"));
+    };
     if member.state == MemberState::Removed {
-        return None;
+        return quit(&format!("member {role} was removed"));
     }
-    let harness = wiring.registry.harness(&member.harness).ok()?;
+    let harness = said(
+        wiring.registry.harness(&member.harness),
+        "the member's harness is not in this binary",
+    )?;
     if kind == MemberHook::PostTool && !harness.capabilities().in_turn_hook {
-        return None;
+        return quit(&format!("harness {} has no in-turn hook", member.harness));
     }
     let mut input = Vec::new();
-    stdin.read_to_end(&mut input).ok()?;
-    let turn = harness.parse_turn_end(&input).ok()?;
+    said(
+        stdin.read_to_end(&mut input),
+        "standard input could not be read",
+    )?;
+    let turn = said(
+        harness.parse_turn_end(&input),
+        "the hook input did not parse",
+    )?;
 
     if kind == MemberHook::SessionStart {
         // Only the member's own token may name its session (ADR 0023 point 5).
-        let stored = stored_hash?;
-        if !same_bytes(&teamwire_msg::token_hash(token?), &stored) {
-            return None;
+        let (Some(stored), Some(token)) = (stored_hash, token) else {
+            return quit("no member token to prove the session with");
+        };
+        if !same_hash(&token_hash(token), &stored) {
+            return quit("the token does not belong to this member");
         }
-        if let Err(e) = store.write(|tx| tx.set_member_session(role, &turn.session)) {
-            tracing::warn!(error = %e, %role, "could not record the session");
-        }
+        said(
+            store.write(|tx| tx.set_member_session(role, &turn.session)),
+            "could not record the session",
+        )?;
         return None;
     }
 
@@ -154,9 +178,29 @@ fn member_hook_in(
     }
 }
 
-/// Compares two hashes without stopping at the first difference.
-fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
-    a.iter().zip(b).fold(0_u8, |acc, (x, y)| acc | (x ^ y)) == 0
+impl MemberHook {
+    /// The `op` of a `store.error` row this hook writes.
+    fn op(self) -> &'static str {
+        match self {
+            Self::TurnEnd => "turn_end",
+            Self::PostTool => "post_tool",
+            Self::SessionStart => "session_start",
+        }
+    }
+}
+
+/// The member hook gives up: one stderr line says why, and the turn goes on.
+fn quit<T>(why: &str) -> Option<T> {
+    warn(&format!("teamwire hook: {why}"));
+    None
+}
+
+/// `result`'s value, or `quit` with what failed and the error.
+fn said<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T> {
+    match result {
+        Ok(value) => Some(value),
+        Err(e) => quit(&format!("{what}: {e}")),
+    }
 }
 
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
@@ -164,7 +208,7 @@ fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// nothing will wake. It reads stores and writes nothing.
 fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
     // A member never runs this hook; the plugin is also switched off for it.
-    if std::env::var_os("TEAMWIRE_TEAM").is_some() {
+    if carries_member_identity() {
         return None;
     }
     let home = state_home(global)?;
@@ -196,16 +240,25 @@ fn lead_stop_in(
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
     let at = home.to_path_buf();
+    // Every store read, the lead harness's included, stays inside the bound.
     let (teams, afk_notes) = within(LEAD_STOP_BUDGET, move || {
+        let teams: Vec<_> =
+            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
+                .into_iter()
+                .map(|team| {
+                    let lead = lead_harness_of(&at, &team);
+                    (team, lead)
+                })
+                .collect();
         (
-            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock),
+            teams,
             teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
         )
     })?;
     let mut note: Vec<String> = teams
         .iter()
-        .map(|team| {
-            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(home, team, wiring))
+        .map(|(team, lead)| {
+            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(lead.as_ref(), wiring))
         })
         .collect();
     note.extend(afk_notes);
@@ -215,18 +268,23 @@ fn lead_stop_in(
     Some(harness.hold_reply(&note.join("\n")))
 }
 
-/// Whether the team's recorded lead harness reads a command's output as it is
-/// printed. A team that cannot be read gets the Monitor wording, which is the
-/// older one.
+/// The team's recorded lead harness, or `None` when the team cannot be read.
 #[expect(
     clippy::redundant_closure_for_method_calls,
     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
 )]
-fn lead_reads_watch_lines(home: &Path, team: &TeamName, wiring: &Wiring) -> bool {
+fn lead_harness_of(home: &Path, team: &TeamName) -> Option<HarnessId> {
     Store::open_read_only(home, team)
         .ok()
         .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
-        .and_then(|row| wiring.registry.harness(&row.lead_harness).ok())
+        .map(|row| row.lead_harness)
+}
+
+/// Whether the lead harness reads a command's output as it is printed. A
+/// team that could not be read, or a harness this binary does not have, gets
+/// the Monitor wording, which is the older one.
+fn lead_reads_watch_lines(lead: Option<&HarnessId>, wiring: &Wiring) -> bool {
+    lead.and_then(|id| wiring.registry.harness(id).ok())
         .is_none_or(|harness| harness.capabilities().reads_watch_lines)
 }
 

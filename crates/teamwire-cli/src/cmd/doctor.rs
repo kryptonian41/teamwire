@@ -11,17 +11,16 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
-use teamwire_core::{Clock, Command, Config, Pid, Platform, Registry, TeamName, TeamState};
+use teamwire_core::{
+    Clock, Command, Config, Pid, Platform, Registry, ReportState, TeamName, TeamState,
+};
 use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 
 use crate::Global;
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check::{self, Outcome};
-use crate::cmd::send::home_or_refuse;
+use crate::cmd::send::{PARTIAL, home_or_refuse, say};
 use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, Wiring};
-
-/// Exit code of a doctor run that found a problem (`docs/api/cli.md`).
-const PARTIAL: u8 = 2;
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
@@ -331,12 +330,23 @@ fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
             }
             checks.push(counters_check(&mut store, team));
             if let Some(lease) = lease
-                && !inputs.platform.pid_alive(lease.pid)
+                && teamwire_deliver::watch_lease_is_dead(
+                    &lease,
+                    inputs.platform,
+                    inputs.clock.now(),
+                )
             {
+                // The same rule as `status`: a live pid with an old heartbeat
+                // is a pid the system gave to another process.
+                let why = if inputs.platform.pid_alive(lease.pid) {
+                    "is alive but has not beaten for over 600 s"
+                } else {
+                    "is gone"
+                };
                 checks.push(Check::warn(
                     name("watch lease"),
                     format!(
-                        "held by pid {}, which is gone; the next `teamwire watch {team}` takes it over",
+                        "held by pid {}, which {why}; the next `teamwire watch {team}` takes it over",
                         lease.pid
                     ),
                 ));
@@ -401,9 +411,15 @@ fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) 
     let older: Vec<String> = view
         .members
         .iter()
-        // A member with a result for its current generation has finished, so
-        // relaunching it changes nothing (the rule of the lead's Stop hook).
-        .filter(|m| m.older_build && m.result.is_none())
+        // A member whose result is settled has finished, so relaunching it
+        // changes nothing (the rule of the lead's Stop hook). A result still
+        // pending or delivering is what the watch's UNREPORTED line is about,
+        // so that member stays listed.
+        .filter(|m| {
+            m.older_build
+                && m.result
+                    .is_none_or(|r| matches!(r, ReportState::Pending | ReportState::Delivering))
+        })
         .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
         .collect();
     if older.is_empty() {
@@ -654,11 +670,6 @@ pub(crate) fn exit_code(checks: &[Check]) -> u8 {
 
 pub(crate) fn render(checks: &[Check]) -> String {
     checks.iter().map(|c| c.line() + "\n").collect()
-}
-
-#[expect(clippy::print_stdout, reason = "the report is the command's output")]
-fn say(text: &str) {
-    print!("{text}");
 }
 
 pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {

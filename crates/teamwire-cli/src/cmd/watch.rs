@@ -1,24 +1,27 @@
 //! `teamwire watch`: one line per poll when something needs the lead.
 
-use std::io::Write as _;
 use std::path::Path;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{Config, OneLine, Pid, TeamName};
-use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_within};
+use teamwire_deliver::{DeliveryOutcome, WATCH_LEASE_STALE, deliver_line, deliver_line_within};
 use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::send::{
+    REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line,
+};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
 
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const STORE_ERROR: u8 = 6;
+/// The longest `--interval`. Each poll refreshes the lease, and a lease
+/// unrefreshed for `WATCH_LEASE_STALE` looks dead to a second watch. Half
+/// of that leaves room for a slow poll.
+const MAX_INTERVAL_S: u64 = WATCH_LEASE_STALE.as_secs() / 2;
 
 /// How often the exporter runs while the watch does (ARCHITECTURE "Metrics").
 const EXPORT_EVERY: Duration = Duration::from_secs(60);
@@ -70,46 +73,40 @@ fn export_loop(
             continue;
         }
         waited = Duration::ZERO;
-        let mut store = match Store::open_existing(home, team) {
-            Ok(store) => store,
-            Err(e) => {
-                tracing::warn!(error = %e, "the exporter could not open the store");
-                continue;
-            }
-        };
-        let mut ctx = Ctx {
-            home,
-            store: &mut store,
-            registry: &wiring.registry,
-            platform: wiring.platform.as_ref(),
-            clock: &wiring.clock,
-            config,
-        };
-        match teamwire_otel::export_once_until(&mut ctx, target, Some(cutoff(stop))) {
-            Ok(report) => tracing::debug!(?report, "exported"),
-            Err(teamwire_otel::ExportError::Claimed(by)) => {
-                tracing::debug!(%by, "another exporter holds the batch");
-            }
-            Err(e) => tracing::warn!(error = %e, "the export failed"),
-        }
+        export_pass(home, team, wiring, config, target, stop);
     }
 }
 
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str, code: u8) -> ExitCode {
-    eprintln!("teamwire watch: {message}");
-    ExitCode::from(code)
-}
-
-#[expect(clippy::print_stdout, reason = "the watch's lines are its output")]
-fn say(line: &str) {
-    println!("{line}");
-    // A line must reach the reader now: it is read by another program.
-    if let Err(e) = std::io::stdout().flush() {
-        tracing::warn!(error = %e, "could not flush standard output");
+/// One export of the loop, with its own store connection.
+fn export_pass(
+    home: &Path,
+    team: &TeamName,
+    wiring: &Wiring,
+    config: &Config,
+    target: &OtlpConfig,
+    stop: &AtomicBool,
+) {
+    let mut store = match Store::open_existing(home, team) {
+        Ok(store) => Recorded::new(store, &wiring.clock, "metrics"),
+        Err(e) => {
+            tracing::warn!(error = %e, "the exporter could not open the store");
+            return;
+        }
+    };
+    let mut ctx = Ctx {
+        home,
+        store: &mut store,
+        registry: &wiring.registry,
+        platform: wiring.platform.as_ref(),
+        clock: &wiring.clock,
+        config,
+    };
+    match teamwire_otel::export_once_until(&mut ctx, target, Some(cutoff(stop))) {
+        Ok(report) => tracing::debug!(?report, "exported"),
+        Err(teamwire_otel::ExportError::Claimed(by)) => {
+            tracing::debug!(%by, "another exporter holds the batch");
+        }
+        Err(e) => tracing::warn!(error = %e, "the export failed"),
     }
 }
 
@@ -126,7 +123,7 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("watch", &e.to_string(), USAGE),
     };
     // A member's single poll takes the lease and uses up announcement keys
     // that the lead's watch would then never print, so `--once` is refused too.
@@ -134,19 +131,26 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         return code;
     }
     if *interval == 0 {
-        return fail("--interval must be at least 1 second", USAGE);
+        return fail("watch", "--interval must be at least 1 second", USAGE);
+    }
+    if *interval > MAX_INTERVAL_S {
+        return fail(
+            "watch",
+            &format!("--interval must be at most {MAX_INTERVAL_S} seconds"),
+            USAGE,
+        );
     }
     let home = match home_or_refuse("watch", global) {
         Ok(home) => home,
         Err(code) => return code,
     };
     let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "watch"),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(&team, &path);
-            return fail(&message, REFUSED);
+            return fail("watch", &message, REFUSED);
         }
-        Err(e) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e) => return fail("watch", &e.to_string(), STORE),
     };
     let config = Config {
         poll_s: *interval,
@@ -168,8 +172,8 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
         &host_name(),
     ) {
         Ok(()) => {}
-        Err(e @ WatchError::Held { .. }) => return fail(&e.to_string(), REFUSED),
-        Err(WatchError::Store(e)) => return fail(&e.to_string(), STORE_ERROR),
+        Err(e @ WatchError::Held { .. }) => return fail("watch", &e.to_string(), REFUSED),
+        Err(WatchError::Store(e)) => return fail("watch", &e.to_string(), STORE),
     }
 
     let stop = AtomicBool::new(false);
@@ -211,14 +215,14 @@ fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
 fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: bool) -> ExitCode {
     loop {
         if let Some(line) = teamwire_watch::poll(ctx, memory) {
-            say(line.as_str());
+            say_line(line.as_str());
             if deliver {
                 deliver_to_lead(ctx, &line);
             }
         }
         match memory.end {
             Some(WatchEnd::TeamComplete | WatchEnd::TeamClosed) => return ExitCode::SUCCESS,
-            Some(WatchEnd::StoreError) => return ExitCode::from(STORE_ERROR),
+            Some(WatchEnd::StoreError) => return ExitCode::from(STORE),
             Some(WatchEnd::LeaseLost) => return ExitCode::from(REFUSED),
             None if once => return ExitCode::SUCCESS,
             None => std::thread::sleep(Duration::from_secs(ctx.config.poll_s)),
@@ -229,6 +233,72 @@ fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: b
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_export_that_fails_in_the_store_leaves_one_store_error_row() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        let team = TeamName::parse("alpha").unwrap();
+        let mut store = Store::open(home.path(), &team).unwrap();
+        // A function that does not exist fails the claim's update with an
+        // `io` error, before anything is sent. The claim is only made when
+        // an event waits to be sent.
+        store
+            .write(|tx| {
+                let long_ago = teamwire_core::Timestamp::from_unix_millis(1_000_000_000_000)
+                    .expect("a valid time");
+                tx.record_event(
+                    long_ago,
+                    teamwire_core::EventType::WatchLine,
+                    None,
+                    None,
+                    &serde_json::json!({ "events": [] }),
+                )?;
+                tx.connection()
+                    .execute_batch(
+                        "CREATE TRIGGER no_claim BEFORE UPDATE ON metric_export
+                         BEGIN SELECT no_such_function(); END",
+                    )
+                    .map_err(StoreError::from)
+            })
+            .unwrap();
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+        })
+        .unwrap();
+        let target = OtlpConfig {
+            endpoint: "http://127.0.0.1:1".to_owned(),
+            headers: Vec::new(),
+            timeout: Duration::from_secs(1),
+        };
+        export_pass(
+            home.path(),
+            &team,
+            &wiring,
+            &Config::default(),
+            &target,
+            &AtomicBool::new(false),
+        );
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(
+            errors,
+            [serde_json::json!({ "op": "metrics", "code": "io" })]
+        );
+    }
 
     #[test]
     fn the_short_grace_applies_only_once_the_watch_is_stopping() {

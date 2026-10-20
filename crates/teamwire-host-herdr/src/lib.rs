@@ -7,7 +7,8 @@
 //! herdr except through `Platform::run` with a timeout.
 //!
 //! Invariants: `agent start` is retried only on `agent_pane_busy`, a bounded
-//! number of times; `agent_not_ready` counts as started; labels are set once.
+//! number of times and never past the caller's timeout; `agent_not_ready`
+//! counts as started; labels are set once.
 
 mod cli;
 mod errors;
@@ -19,8 +20,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place, PlaceState,
-    Platform, SessionId, SpawnRequest, SubmitAck,
+    Address, Clock, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine,
+    Place, PlaceState, Platform, SessionId, SpawnRequest, SubmitAck,
 };
 
 /// How often `agent start` tries, and how long it waits between tries,
@@ -50,6 +51,8 @@ pub struct Herdr {
     platform: Arc<dyn Platform>,
     start_tries: u32,
     start_retry_delay: Duration,
+    /// Measures the caller's timeout across the calls of one `spawn`.
+    clock: Arc<dyn Clock>,
 }
 
 impl Herdr {
@@ -61,7 +64,15 @@ impl Herdr {
             platform,
             start_tries: START_TRIES,
             start_retry_delay: START_RETRY_DELAY,
+            clock: Arc::new(teamwire_platform::SystemClock),
         }
+    }
+
+    /// Measures time with `clock`, so a test moves the deadline of a `spawn`.
+    #[must_use]
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
     }
 
     /// Changes how `agent start` retries a busy or not-ready pane. Tests use
@@ -71,11 +82,6 @@ impl Herdr {
         self.start_tries = tries.max(1);
         self.start_retry_delay = delay;
         self
-    }
-
-    /// The platform herdr's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
     }
 
     fn call(&self, args: &[&str], timeout: Duration) -> Result<serde_json::Value, HostError> {
@@ -190,8 +196,19 @@ impl Host for Herdr {
         self.call(&args, timeout).map(drop)
     }
 
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
-        self.call(&["pane", "close", &place.id], timeout).map(drop)
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
+        // Two herdr calls run one after the other, so each gets half: the
+        // whole call stays inside the caller's `timeout`. A pane with no
+        // agent fails `agent get` with a not-found code and is left alone.
+        let each = timeout / 2;
+        let info = self.agent(place, each)?;
+        if info.name.as_deref() != Some(expected.as_str()) {
+            return Err(HostError::new(
+                HostErrorCode::NotFound,
+                format!("{} holds no agent named {expected}", place.id),
+            ));
+        }
+        self.call(&["pane", "close", &place.id], each).map(drop)
     }
 
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError> {

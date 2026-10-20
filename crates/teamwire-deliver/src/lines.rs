@@ -81,10 +81,20 @@ pub fn message_line(
     )
 }
 
+/// The lead's stored copy of a message, `comms/<id>.md`, and whether it
+/// holds this message's text. A failed write leaves it missing or out of
+/// date.
+#[derive(Debug, Clone, Copy)]
+pub struct CommsCopy<'a> {
+    pub path: &'a Path,
+    pub written: bool,
+}
+
 /// `message_line` for a known reader. A member reads the full text with
 /// `teamwire inbox` and answers a question from its own team; the lead has
 /// no inbox and no `TEAMWIRE_TEAM`, so its line points at the stored copy
-/// `comms_path` and its answer command names the team and `--from lead`.
+/// `comms` and its answer command names the team and `--from lead`. A copy
+/// that was not written is named as such, with the command that rewrites it.
 pub fn message_line_to(
     team: &TeamName,
     id: &DisplayId,
@@ -92,7 +102,7 @@ pub fn message_line_to(
     sender: &Actor,
     body: &str,
     reader: &Recipient,
-    comms_path: &Path,
+    comms: CommsCopy<'_>,
 ) -> OneLine {
     let Recipient::Lead = reader else {
         return message_line(team, id, kind, sender, body);
@@ -101,6 +111,12 @@ pub fn message_line_to(
     let team_name = clean(team.as_str());
     let id_text = clean(id.as_str());
     let reminder = peer_reminder(sender, "a team member");
+    let path = one_line(&comms.path.display().to_string(), PATH_CHARS);
+    let pointer = if comms.written {
+        path.into_string()
+    } else {
+        format!("{path} (not written; run teamwire verify {team_name} --repair-files)")
+    };
     let tail = if kind == MessageType::Question {
         format!(
             "{reminder} Answer with: teamwire send {team_name} --from lead --to {sender_name} --type answer --re {id_text} --text \"...\""
@@ -111,10 +127,7 @@ pub fn message_line_to(
     one_line(
         &format!(
             "[teamwire:{team_name} msg {id_text} {kind} from {sender_name}] {} {tail}",
-            excerpt_with_pointer(
-                body,
-                one_line(&comms_path.display().to_string(), PATH_CHARS).as_str()
-            ),
+            excerpt_with_pointer(body, &pointer),
             kind = clean(kind.as_str()),
         ),
         LINE_CHARS,

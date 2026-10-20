@@ -1,15 +1,17 @@
 //! The watch loop's single poll (WAT-1..WAT-16) and the read-only status
-//! view. Both derive each member's state the same way.
+//! view. Both derive each member's state the same way, with two intended
+//! differences: status reads an idle `"dispatch": false` member `quiet` at
+//! once (WAT-3), and status ages are wall time, since only a running watch
+//! measures the machine's sleeps.
 //!
 //! Never: call a writing host method; print more than one line per poll;
-//! announce the same key twice (a restarted watch prints
-//! its `WATCHING` line again, and `TEAM-COMPLETE` for a finished team); write anything from `status` (WAT-11).
+//! announce the same key twice (a restarted watch prints its `WATCHING`
+//! line again, and `TEAM-COMPLETE` for a finished team); write anything
+//! from `status` (WAT-11).
 //!
 //! Invariants: announcements are stored before they are printed, and each
 //! key carries its generation or episode number; `TEAM-COMPLETE` is printed
-//! once per watch, when every live member is settled. A restarted watch
-//! prints it again for a finished team, and `WATCHING` on its first poll;
-//! both are intended.
+//! once per watch, when every live member is settled.
 
 mod afk;
 mod apply;
@@ -30,7 +32,6 @@ use teamwire_core::{
     Actor, DeliveryState, DisplayId, Liveness, MessageType, Pid, Recipient, ReportState, Role,
     SessionId, TeamName, TeamState, Timestamp,
 };
-use teamwire_store::Ctx;
 
 pub use lease::{WatchError, start, stop};
 pub use memory::{WatchEnd, WatchMemory};
@@ -54,8 +55,9 @@ pub struct LeadView {
 pub struct MemberView {
     pub role: Role,
     pub title: String,
-    /// `done(<status>)`, `unreported`, `undelivered`, `died?`, `blocked`,
-    /// `working`, `quiet`, `late` or `prompted outside teamwire`.
+    /// `done(<status>)`, `unreported`, `undelivered`, `unconfirmed`,
+    /// `died?`, `blocked`, `working`, `quiet`, `late`, `prompted outside
+    /// teamwire`, `not started` or `failed to start`.
     pub state: String,
     pub generation: u32,
     pub age_s: u64,
@@ -174,11 +176,6 @@ pub struct StatusView {
     pub undelivered_results: Vec<UndeliveredResult>,
     /// Why part of the view could not be read.
     pub errors: Vec<String>,
-}
-
-/// The status view. Reads only.
-pub fn status(ctx: &Ctx<'_>) -> StatusView {
-    status::status_with(ctx, None)
 }
 
 pub use status::status_with;

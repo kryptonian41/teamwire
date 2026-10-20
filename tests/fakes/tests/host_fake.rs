@@ -39,20 +39,35 @@ fn spawn_list_state_close_round_trip() {
     assert_eq!(h.list(T).unwrap(), std::slice::from_ref(&p));
     assert_eq!(h.live_agent_names(T).unwrap(), ["tw_demo_api"]);
     assert_eq!(h.state(&p, T).unwrap(), PlaceState::Idle);
-    h.close(&p, T).unwrap();
+    let name = Address::parse("tw_demo_api").unwrap();
+    h.close(&p, &name, T).unwrap();
     assert!(h.list(T).unwrap().is_empty());
     assert_eq!(h.state(&p, T).unwrap_err().code, HostErrorCode::NotFound);
-    assert_eq!(h.close(&p, T).unwrap_err().code, HostErrorCode::NotFound);
+    assert_eq!(
+        h.close(&p, &name, T).unwrap_err().code,
+        HostErrorCode::NotFound
+    );
+}
+
+#[test]
+fn close_leaves_a_place_that_holds_another_name() {
+    let h = FakeHost::new();
+    let p = h.spawn(&req("tw_other_web"), T).unwrap();
+    let mine = Address::parse("tw_demo_api").unwrap();
+    assert_eq!(
+        h.close(&p, &mine, T).unwrap_err().code,
+        HostErrorCode::NotFound
+    );
+    assert_eq!(h.live_agent_names(T).unwrap(), ["tw_other_web"]);
 }
 
 #[test]
 fn a_name_already_live_is_refused_including_foreign_agents() {
     let h = FakeHost::new();
     h.add_foreign_agent("tw_demo_api");
-    assert_eq!(
-        h.spawn(&req("tw_demo_api"), T).unwrap_err().code,
-        HostErrorCode::BadArgument
-    );
+    let e = h.spawn(&req("tw_demo_api"), T).unwrap_err();
+    assert_eq!(e.code, HostErrorCode::BadArgument);
+    assert!(e.detail.starts_with("agent_name_taken:"), "{}", e.detail);
 }
 
 #[test]
@@ -256,4 +271,20 @@ fn answer_startup_types_into_the_place_only_for_the_plain_dialog() {
         harness.answer_startup(&h, &p, TrustPolicy::Accept).unwrap(),
         StartupOutcome::NoDialog
     );
+}
+
+#[test]
+fn a_gone_place_holds_no_live_agent_for_spawn_or_the_name_list() {
+    let h = FakeHost::new();
+    h.add_place(
+        "tw_demo_api",
+        PlaceState::Gone,
+        Occupant {
+            session: None,
+            pids: vec![],
+        },
+    );
+    assert!(h.live_agent_names(T).unwrap().is_empty());
+    h.spawn(&req("tw_demo_api"), T).unwrap();
+    assert_eq!(h.live_agent_names(T).unwrap(), ["tw_demo_api"]);
 }

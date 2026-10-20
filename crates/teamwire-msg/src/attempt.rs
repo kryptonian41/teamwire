@@ -4,13 +4,75 @@
 
 use serde_json::json;
 use teamwire_core::{
-    DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient, Refusal,
-    Route, TeamName, Timestamp,
+    Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
+    Refusal, Route, TeamName, TeamState, Timestamp,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, message_line_to};
+use teamwire_deliver::{
+    CommsCopy, DeliveryOutcome, attempt_in_flight, deliver_line, message_line_to,
+};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
-use crate::{RecipientReport, SendError};
+use crate::send::record_refusal;
+use crate::{RecipientReport, RecipientState, SendError};
+
+/// Claims one more attempt at `row`, which the caller read earlier, for a
+/// resend or a send resumed by its key. `None` when another command is on
+/// the row: the row moved since the caller read it, or its latest attempt
+/// began under `PENDING_STALE` ago with no outcome recorded since, which is
+/// a command still delivering it. The checks, the count and its
+/// `delivery.resent` are one write, so of two commands claiming one row
+/// only the first types; the second sees the fresh attempt. A team that is
+/// not open refuses `team_closed`, recorded as `message.refused` (CLS-3).
+pub(crate) fn claim_attempt(
+    ctx: &mut Ctx<'_>,
+    actor: &Actor,
+    message: &Message,
+    row: &DeliveryRecord,
+) -> Result<Option<u32>, SendError> {
+    enum Claim {
+        Counted(u32),
+        Busy,
+        Closed,
+    }
+    let recipient = &row.delivery.recipient;
+    let now = ctx.clock.now();
+    let claim = ctx.store.write(|tx| {
+        let reader = tx.reader();
+        if reader.team()?.is_none_or(|t| t.state != TeamState::Open) {
+            return Ok(Claim::Closed);
+        }
+        let moved = reader.delivery(&message.ulid, recipient)?.is_none_or(|c| {
+            c.delivery.state != row.delivery.state || c.delivery.attempts != row.delivery.attempts
+        });
+        if moved || attempt_in_flight(&reader, message, recipient, now)? {
+            return Ok(Claim::Busy);
+        }
+        tx.begin_resend(now, &message.ulid, recipient)
+            .map(Claim::Counted)
+    })?;
+    match claim {
+        Claim::Counted(attempts) => Ok(Some(attempts)),
+        Claim::Busy => Ok(None),
+        Claim::Closed => {
+            record_refusal(
+                ctx,
+                Some(actor),
+                &Refusal::TeamClosed,
+                Some(message.kind),
+                std::slice::from_ref(recipient),
+            );
+            Err(Refusal::TeamClosed.into())
+        }
+    }
+}
+
+/// The report for a row this command left to another.
+pub(crate) fn skipped(row: &DeliveryRecord) -> RecipientReport {
+    RecipientReport {
+        state: RecipientState::Skipped,
+        ..report_of(row)
+    }
+}
 
 /// The member's generation before a reprompt bumped it, kept to undo the
 /// bump when the reprompt is known not to have arrived.
@@ -57,9 +119,10 @@ pub(crate) fn earlier_bump(
     if message.kind != MessageType::Reprompt {
         return Ok(None);
     }
-    let (events, member) = ctx
-        .store
-        .read(|tx| Ok((tx.events_of_role(role)?.all_or_corrupt()?, tx.member(role)?)))?;
+    let (events, member) = ctx.store.read(|tx| {
+        let kinds = [EventType::MemberCreating, EventType::MemberReprompted];
+        Ok((tx.events_of_kinds(role, &kinds)?, tx.member(role)?))
+    })?;
     let Some(member) = member else {
         return Ok(None);
     };
@@ -151,6 +214,10 @@ pub(crate) fn deliver_one(
         .join(team.as_str())
         .join("comms")
         .join(format!("{}.md", message.display_id));
+    // A failed write leaves the copy missing or holding an older text, and
+    // the lead must not read either as this message.
+    let comms_written = *recipient != Recipient::Lead
+        || std::fs::read(&comms_path).is_ok_and(|b| b == message.body.as_bytes());
     let line = message_line_to(
         team,
         &message.display_id,
@@ -158,7 +225,10 @@ pub(crate) fn deliver_one(
         &message.sender,
         &message.body,
         recipient,
-        &comms_path,
+        CommsCopy {
+            path: &comms_path,
+            written: comms_written,
+        },
     );
     let party = match recipient {
         Recipient::Lead => Party::Lead,

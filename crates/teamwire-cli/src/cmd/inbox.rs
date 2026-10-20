@@ -22,7 +22,7 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
     else {
         return fail("inbox", "TEAMWIRE_TEAM does not name a team", USAGE);
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "inbox", |ctx| {
         match prove_actor_logged(ctx, &caller_env(None)).map_err(SendError::Refused)? {
             Actor::Member(role) => inbox(ctx, &role, *all),
             Actor::Lead => Err(SendError::InvalidArgument(

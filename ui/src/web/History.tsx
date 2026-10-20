@@ -5,7 +5,7 @@ import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
 import { href } from "./model/route.ts";
-import { summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
+import { formatDuration, summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
 
 export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
   const client = useClient();
@@ -67,10 +67,12 @@ function SummaryLine({ m, live }: { m: TeamMetrics | undefined; live: boolean })
   const done = Object.entries(m.completions)
     .map(([status, n]) => `${n} ${status}`)
     .join(", ");
+  const run = m.durations["teamwire.member.run.duration"];
   return (
     <p className="summary">
       Completions: {done || "none"} · {m.messagesSent} messages sent · {m.leadWakeups} lead wakeups · {m.verifyRuns} verify
       runs
+      {run && run.count > 0 && ` · member runs averaged ${formatDuration(run.mean)} over ${run.count}`}
       {live && " · Totals include the live team of the same name."}
     </p>
   );

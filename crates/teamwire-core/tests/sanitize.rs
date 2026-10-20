@@ -51,6 +51,15 @@ fn invisible_format_characters_dropped() {
         '\u{1160}',
         '\u{3164}',
         '\u{ffa0}',
+        '\u{034f}',
+        '\u{17b4}',
+        '\u{180b}',
+        '\u{180f}',
+        '\u{206a}',
+        '\u{206f}',
+        '\u{1bca0}',
+        '\u{1d173}',
+        '\u{e0080}',
     ];
     for c in points {
         let text = format!("a{c}b");
@@ -69,6 +78,7 @@ fn text_with_traps() -> impl Strategy<Value = String> {
         Just("\u{202e}\u{200b}\u{feff}".to_owned()),
         Just("\u{e0041}\u{fe0f}\u{e0100}\u{061c}\u{180e}\u{fff9}".to_owned()),
         Just("\u{115f}\u{1160}\u{3164}\u{ffa0}".to_owned()),
+        Just("\u{034f}\u{17b4}\u{180b}\u{206a}\u{1d173}\u{e0080}".to_owned()),
         Just("   \t ".to_owned()),
         Just("…".to_owned()),
     ];

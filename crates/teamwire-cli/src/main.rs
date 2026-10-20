@@ -8,6 +8,7 @@
 //! error); a `hook` invocation always exits 0, even when its arguments do
 //! not parse, so a hook never fails the harness's turn (REP-10).
 
+use std::io::IsTerminal as _;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -42,6 +43,7 @@ mod cmd {
     pub(crate) mod watch;
 }
 mod args;
+mod recorded;
 mod wiring;
 
 /// Exit code for a usage error.
@@ -130,6 +132,8 @@ fn init_logging() {
     let installed = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
+        // Colour codes are noise to an agent reading stderr through a pipe.
+        .with_ansi(std::io::stderr().is_terminal())
         .try_init();
     if installed.is_err() {
         tracing::debug!("a log subscriber was already installed");

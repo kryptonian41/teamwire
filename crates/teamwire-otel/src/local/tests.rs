@@ -286,7 +286,7 @@ fn an_undone_reprompt_is_not_a_reprompt_and_only_a_completed_close_says_so() {
             "teamwire.member.reprompts",
             &[("team", "alpha"), ("kind", "implementer")]
         ),
-        Some(1.0)
+        None
     );
     assert_eq!(
         value(
@@ -878,6 +878,45 @@ fn a_completed_close_leaves_no_live_members() {
 }
 
 #[test]
+fn a_launch_counts_started_failed_and_refused_members() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    let launch = json!({"launch": "L1", "requested": 3});
+    let with_code = |code: &str| {
+        json!({"launch": "L1", "requested": 3,
+               "reason_code": code, "reason": format!("{code}: why")})
+    };
+    let events = [
+        (EventType::MemberStarted, "api", launch),
+        (EventType::MemberFailed, "web", with_code("spawn")),
+        (
+            EventType::MemberRefused,
+            "db",
+            with_code("afk_budget_spent"),
+        ),
+    ];
+    for (secs, (kind, who, data)) in (1..).zip(&events) {
+        ev(&mut s, secs, *kind, Some(who), None, data);
+    }
+    let v = view(&home, &query(Some("alpha")), 100);
+    for (outcome, reason) in [
+        ("started", "none"),
+        ("failed", "spawn"),
+        ("refused", "afk_budget_spent"),
+    ] {
+        assert_eq!(
+            value(
+                &v,
+                "teamwire.launch.members",
+                &[("team", "alpha"), ("outcome", outcome), ("reason", reason)]
+            ),
+            Some(1.0),
+            "{outcome}"
+        );
+    }
+}
+
+#[test]
 fn a_launch_failure_reason_label_is_a_short_code_never_free_text() {
     let home = TestHome::new().unwrap();
     let mut s = open(&home, "alpha");
@@ -1028,4 +1067,133 @@ fn member_tokens_carry_the_effort_the_member_started_with_or_unset() {
     };
     assert_eq!(effort_of("api").as_deref(), Some("high"));
     assert_eq!(effort_of("web").as_deref(), Some("unset"));
+}
+
+#[test]
+fn an_undone_reprompt_is_not_counted_and_keeps_the_run_start() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    ev(
+        &mut s,
+        0,
+        EventType::MemberCreating,
+        Some("api"),
+        None,
+        &json!({"kind": "implementer"}),
+    );
+    ev(
+        &mut s,
+        10,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        &json!({}),
+    );
+    // What Tx::bump_generation and Tx::restore_generation write.
+    ev(
+        &mut s,
+        100,
+        EventType::MemberReprompted,
+        Some("api"),
+        None,
+        &json!({"generation": 2, "message": "m1"}),
+    );
+    ev(
+        &mut s,
+        101,
+        EventType::MemberReprompted,
+        Some("api"),
+        None,
+        &json!({"generation": 1, "undone": true}),
+    );
+    let c = ulid(200);
+    ev(
+        &mut s,
+        200,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(&c),
+        &json!({"status": "done", "generation": 1, "n": 1}),
+    );
+    let v = view(&home, &query(Some("alpha")), 300);
+    let reprompts = value(
+        &v,
+        "teamwire.member.reprompts",
+        &[("team", "alpha"), ("kind", "implementer")],
+    );
+    let run = value(
+        &v,
+        "teamwire.member.run.duration",
+        &[
+            ("team", "alpha"),
+            ("kind", "implementer"),
+            ("status", "done"),
+        ],
+    );
+    assert_eq!(reprompts, None);
+    assert_eq!(run, Some(190.0));
+}
+
+#[test]
+fn a_verify_flag_label_is_the_kind_without_the_path() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    // The data Tx::insert_verify_record writes (store/src/verify.rs:101-106).
+    ev(
+        &mut s,
+        10,
+        EventType::VerifyRecorded,
+        Some("api"),
+        None,
+        &json!({"verdict": "FLAGGED", "flags": ["outside-owns:src/billing/secret_plan.rs"], "exit": 0, "seconds": 3}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    let flag = v
+        .metrics
+        .iter()
+        .find(|m| m.name == "teamwire.verify.flags")
+        .unwrap();
+    assert!(
+        flag.labels
+            .iter()
+            .any(|(k, val)| k == "flag" && val == "outside-owns")
+    );
+    assert!(
+        !flag
+            .labels
+            .iter()
+            .any(|(_, val)| val.contains("secret_plan"))
+    );
+}
+
+#[test]
+fn a_question_to_another_teams_member_is_not_a_lead_wakeup() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    let m = ulid(10);
+    // What Tx::insert_message and Tx::set_delivery_state write for a member
+    // of alpha asking api@beta.
+    ev(
+        &mut s,
+        10,
+        EventType::MessageSent,
+        Some("web"),
+        Some(&m),
+        &json!({"type": "question", "sender_kind": "member", "recipients": ["api@beta"], "chars": 4}),
+    );
+    ev(
+        &mut s,
+        11,
+        EventType::DeliveryHandedOff,
+        None,
+        Some(&m),
+        &json!({"to": "api@beta", "route": "host", "attempts": 1, "code": null, "seconds": 1.0}),
+    );
+    let v = view(&home, &query(Some("alpha")), 100);
+    let w = value(
+        &v,
+        "teamwire.lead.wakeups",
+        &[("team", "alpha"), ("source", "question")],
+    );
+    assert_eq!(w, None);
 }

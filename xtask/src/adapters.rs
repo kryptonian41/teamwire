@@ -44,7 +44,7 @@ pub(crate) fn check_adapters(root: &Path, problems: &mut Vec<String>) -> Result<
 }
 
 /// Every `.rs` file under `dir`; a missing directory holds none.
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+pub(crate) fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());
     };

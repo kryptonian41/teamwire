@@ -9,15 +9,12 @@ use teamwire_launch::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reop
 use teamwire_store::Ctx;
 use teamwire_watch::UndeliveredResult;
 
-use crate::cmd::send::{fail, refuse_member, say, warn, with_ctx, with_read_ctx};
+use crate::cmd::send::{
+    PARTIAL, REFUSED, STORE, fail, refuse_member, say, warn, with_ctx, with_read_ctx,
+};
 use crate::cmd::status::results_block;
 use crate::wiring::Wiring;
 use crate::{Global, ReopenArgs, USAGE};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const PARTIAL: u8 = 2;
-const STORE_ERROR: u8 = 6;
 
 pub(crate) fn run(args: &ReopenArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let ReopenArgs {
@@ -51,13 +48,13 @@ pub(crate) fn run(args: &ReopenArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let outcome = if opts.dry_run {
         with_read_ctx(global, wiring, &team, work)
     } else {
-        with_ctx(global, wiring, &team, work)
+        with_ctx(global, wiring, &team, "reopen", work)
     };
     match outcome {
         Err(code) => code,
         Ok((Err(e), _, _)) => {
             let code = match e {
-                ReopenError::Store(_) => STORE_ERROR,
+                ReopenError::Store(_) => STORE,
                 ReopenError::NoTeam | ReopenError::NotOpen { .. } | ReopenError::NoMember(_) => {
                     REFUSED
                 }

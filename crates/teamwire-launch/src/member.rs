@@ -1,23 +1,25 @@
 //! The per-member sequence (LCH-3). Each member is recorded `creating` before
 //! its first irreversible step, then: worktree, setup, files, spawn, trust,
 //! `started`, and the first message. A failure at any step undoes that
-//! member only, without force, and records it `failed` (LCH-4).
+//! member only, without force, and records it `failed` (LCH-4). A refusal
+//! (the AFK budget has ended, checked at the start and again right before
+//! spawn, or the team has started closing) is undone the same way and
+//! writes `member.refused`.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use sha2::{Digest, Sha256};
 use teamwire_core::{
-    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
-    Ulid, one_line,
+    EventType, IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState,
+    TrustPolicy, Ulid, one_line,
 };
-use teamwire_store::{Ctx, NewMember, NewTeam};
+use teamwire_store::{Ctx, NewMember, NewTeam, StoreError, Tx, token_hash};
 
 use crate::member_parts::{Dirs, Progress, Steps, undo};
 use crate::member_steps::{
-    ReasonCode, Stop, dispatch, escalated_trust_message, run_setup, spawn, write_contract,
-    write_member_files,
+    ReasonCode, Stop, dispatch, escalated_trust_message, not_open, run_setup, spawn,
+    write_contract, write_member_files,
 };
 use crate::worktree;
 use crate::{
@@ -27,6 +29,9 @@ use crate::{
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest reason kept in an event.
 const REASON_MAX: usize = 300;
+/// The refusals that write `member.refused` instead of `member.failed`, by
+/// their `reason_code`. Each one's reason starts with its code and a colon.
+const REFUSALS: [&str; 2] = ["afk_budget_spent", "team_closed"];
 
 pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let mut warnings = plan.warnings.clone();
@@ -57,10 +62,7 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
         team: ctx.home.join("teams").join(plan.spec.team.as_str()),
     };
     for m in &plan.members {
-        let outcome = match crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
-            Some(why) => LaunchOutcome::Refused(why),
-            None => launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings),
-        };
+        let outcome = launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings);
         members.push(MemberOutcome {
             role: m.spec.role.clone(),
             outcome,
@@ -141,6 +143,9 @@ fn launch_member(
     match result {
         Ok(()) => LaunchOutcome::Started,
         Err(stop) => {
+            let refusal = REFUSALS
+                .into_iter()
+                .find(|code| stop.refused && stop.reason.starts_with(&format!("{code}:")));
             let stop_code = stop.code;
             let (undo, left) = undo(ctx, m, &made);
             let mut reason = if undo.is_empty() {
@@ -151,8 +156,10 @@ fn launch_member(
             if let (Some(advice), false) = (stop.advice, left) {
                 reason = format!("{reason}; {advice}");
             }
-            if made.recorded {
-                record_failed(ctx, m, stop_code, &reason, &extra, &steps);
+            match refusal {
+                Some(code) => record_refused(ctx, m, code, &reason, &extra, &steps, made.recorded),
+                None if made.recorded => record_failed(ctx, m, stop_code, &reason, &extra, &steps),
+                None => {}
             }
             if stop.refused {
                 LaunchOutcome::Refused(reason)
@@ -189,6 +196,42 @@ fn record_failed(
     }
 }
 
+/// Writes `member.refused`. A member launch had already recorded is left
+/// `failed`, as a failed launch leaves it, so close still finds whatever the
+/// undo could not remove and `--add` can start it again. When the store
+/// refuses the write (the team is being closed), nothing is recorded.
+fn record_refused(
+    ctx: &mut Ctx<'_>,
+    m: &PlannedMember,
+    code: &str,
+    reason: &str,
+    extra: &Value,
+    steps: &Steps,
+    recorded: bool,
+) {
+    let at = ctx.clock.now();
+    let mut data = extra.clone();
+    put(&mut data, "reason_code", json!(code));
+    put(
+        &mut data,
+        "reason",
+        json!(one_line(reason, REASON_MAX).as_str()),
+    );
+    put(&mut data, "steps", steps.json());
+    let role = m.spec.role.clone();
+    let written = ctx.store.write(|tx| {
+        if recorded {
+            tx.refuse_member(at, &role, &data)
+        } else {
+            tx.record_event(at, EventType::MemberRefused, Some(&role), None, &data)
+                .map(|_| ())
+        }
+    });
+    if let Err(e) = written {
+        tracing::warn!(role = %m.spec.role, error = %e, "could not record the refused launch");
+    }
+}
+
 /// Sets `key` on a JSON object.
 fn put(data: &mut Value, key: &str, value: Value) {
     if let Some(map) = data.as_object_mut() {
@@ -200,10 +243,6 @@ fn new_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| format!("no random bytes for the token: {e}"))?;
     Ok(hex::encode(bytes))
-}
-
-fn sha256(text: &str) -> [u8; 32] {
-    Sha256::digest(text.as_bytes()).into()
 }
 
 #[expect(
@@ -221,6 +260,10 @@ fn run_member(
     warnings: &mut Vec<String>,
 ) -> Result<(), Stop> {
     let role = &m.spec.role;
+    // The code of a refusal is never written: `REFUSALS` gives its own.
+    if let Some(why) = crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
+        return Err(Stop::refuse(ReasonCode::Prepare, why));
+    }
     let harness = ctx
         .registry
         .harness(&m.harness)
@@ -255,44 +298,28 @@ fn run_member(
         owns: m.spec.owns.clone(),
         deadline_s: m.deadline_s,
     };
-    let hash = sha256(&token);
+    let hash = token_hash(&token);
     let at = ctx.clock.now();
     // The close lock is read inside the write that records the member, so a
     // close that took it after validation cannot be missed (CLS-3).
-    let mut closed = None;
-    let recorded = ctx.store.write(|tx| {
-        if let Some(team) = tx.reader().team()?
-            && team.state != TeamState::Open
-        {
-            closed = Some(team.state);
-            return Ok(());
-        }
-        if m.relaunch {
-            if !tx.relaunch_failed_member_with(at, &new, extra)? {
-                return Err(teamwire_store::StoreError::Constraint(format!(
-                    "member {role} is not a failed member"
-                )));
+    write_if_open(
+        ctx,
+        plan,
+        ReasonCode::Record,
+        "the member could not be recorded",
+        |tx| {
+            if m.relaunch {
+                if !tx.relaunch_failed_member_with(at, &new, extra)? {
+                    return Err(StoreError::Constraint(format!(
+                        "member {role} is not a failed member"
+                    )));
+                }
+            } else {
+                tx.insert_member_with(at, &new, extra)?;
             }
-        } else {
-            tx.insert_member_with(at, &new, extra)?;
-        }
-        tx.set_member_token_hash(role, &hash)
-    });
-    if let Some(state) = closed {
-        return Err(Stop::refuse(
-            ReasonCode::Record,
-            format!(
-                "team_closed: team {} is {state}; the member was not started",
-                plan.spec.team
-            ),
-        ));
-    }
-    recorded.map_err(|e| {
-        Stop::fail(
-            ReasonCode::Record,
-            format!("the member could not be recorded: {e}"),
-        )
-    })?;
+            tx.set_member_token_hash(role, &hash)
+        },
+    )?;
     made.recorded = true;
     steps.mark(ctx, "record");
 
@@ -308,7 +335,18 @@ fn run_member(
     run_setup(ctx, plan, dirs, m, made, warnings)?;
     steps.mark(ctx, "setup");
 
-    // 4. Contract, brief, and the harness's launch files.
+    // 4. Contract, brief, and the harness's launch files. A close may have
+    // taken the lock while setup ran; files written now would re-create a
+    // folder that close removes.
+    let state = ctx.store.read(not_open).map_err(|e| {
+        Stop::fail(
+            ReasonCode::Files,
+            format!("the team could not be read: {e}"),
+        )
+    })?;
+    if let Some(state) = state {
+        return Err(team_closed(plan, ReasonCode::Files, state));
+    }
     let member_dir = dirs.member(role);
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string())
         .map_err(|e| Stop::fail(ReasonCode::Prepare, e.to_string()))?;
@@ -367,23 +405,26 @@ fn run_member(
         argv: spec.argv,
         env,
     };
+    // Setup can outlast the AFK budget; no member starts after it ends.
+    if let Some(why) = crate::afk::budget_refusal(ctx.store, ctx.clock, m) {
+        return Err(Stop::refuse(ReasonCode::Spawn, why));
+    }
     let place = spawn(host, &request)?;
     made.place = Some(place.clone());
     let chosen = harness.capabilities().choose_session_id;
-    ctx.store
-        .write(|tx| {
+    write_if_open(
+        ctx,
+        plan,
+        ReasonCode::Place,
+        "the place could not be recorded",
+        |tx| {
             tx.set_member_place(role, &place)?;
             if chosen {
                 tx.set_member_session(role, &session)?;
             }
             Ok(())
-        })
-        .map_err(|e| {
-            Stop::fail(
-                ReasonCode::Place,
-                format!("the place could not be recorded: {e}"),
-            )
-        })?;
+        },
+    )?;
     steps.mark(ctx, "spawn");
 
     // 6. Trust, through the harness.
@@ -434,20 +475,27 @@ fn run_member(
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
     put(&mut data, "plugins", json!(launch.plugins));
+    // Close takes these lines back when the team ends; a line that was
+    // already in the file is not launch's, so it is not listed.
+    let excluded: Vec<Value> = made
+        .excluded
+        .iter()
+        .map(|e| json!({ "file": e.file.display().to_string(), "lines": e.lines }))
+        .collect();
+    put(&mut data, "excluded", json!(excluded));
     put(
         &mut data,
         "session_id",
         json!(session_known.as_ref().map(SessionId::as_str)),
     );
     let at = ctx.clock.now();
-    ctx.store
-        .write(|tx| tx.set_member_state(at, role, MemberState::Started, &data))
-        .map_err(|e| {
-            Stop::fail(
-                ReasonCode::Started,
-                format!("the member could not be marked started: {e}"),
-            )
-        })?;
+    write_if_open(
+        ctx,
+        plan,
+        ReasonCode::Started,
+        "the member could not be marked started",
+        |tx| tx.set_member_state(at, role, MemberState::Started, &data),
+    )?;
     made.recorded = false;
 
     // 8. The first message, once (LCH-14, LCH-19).
@@ -455,6 +503,43 @@ fn run_member(
         dispatch(host, &place, plan, dirs, m, warnings);
     }
     Ok(())
+}
+
+/// Runs `f` in one write that first reads the team state. A team a close has
+/// locked gets no write, and the member is refused with `team_closed`, so its
+/// undo runs (CLS-3). The check is in launch, not in the store's setters,
+/// because the undo must still record a closing team's member `failed`.
+fn write_if_open(
+    ctx: &mut Ctx<'_>,
+    plan: &ValidPlan,
+    code: ReasonCode,
+    what: &str,
+    f: impl FnOnce(&Tx<'_>) -> Result<(), StoreError>,
+) -> Result<(), Stop> {
+    let mut closed = None;
+    ctx.store
+        .write(|tx| {
+            closed = not_open(&tx.reader())?;
+            match closed {
+                Some(_) => Ok(()),
+                None => f(tx),
+            }
+        })
+        .map_err(|e| Stop::fail(code, format!("{what}: {e}")))?;
+    match closed {
+        Some(state) => Err(team_closed(plan, code, state)),
+        None => Ok(()),
+    }
+}
+
+fn team_closed(plan: &ValidPlan, code: ReasonCode, state: TeamState) -> Stop {
+    Stop::refuse(
+        code,
+        format!(
+            "team_closed: team {} is {state}; the member was not started",
+            plan.spec.team
+        ),
+    )
 }
 
 /// The team's plugin map overlaid by the member's: the member wins per key.

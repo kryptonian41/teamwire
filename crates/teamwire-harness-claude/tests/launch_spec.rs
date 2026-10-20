@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use teamwire_core::{
-    Address, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind, MemberLaunch,
-    OtelConfig, Role, SessionId, TeamName,
+    Address, Config, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind,
+    MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
@@ -263,7 +263,7 @@ fn otel_env_matches_what_launch_puts_in_settings() {
 }
 
 #[test]
-fn stop_hook_names_team_and_role_and_has_a_60_second_timeout() {
+fn stop_hook_names_team_and_role_and_has_the_configured_timeout() {
     let spec = claude().launch_spec(&member()).unwrap();
     let hook = &file_json(&spec, "settings.json")["hooks"]["Stop"][0]["hooks"][0];
     assert_eq!(hook["type"], "command");
@@ -271,7 +271,10 @@ fn stop_hook_names_team_and_role_and_has_a_60_second_timeout() {
         hook["command"],
         "/usr/local/bin/teamwire hook claude-stop --team demo --role api"
     );
-    assert_eq!(hook["timeout"], 60);
+    let config = Config::default();
+    assert_eq!(hook["timeout"], config.hook_timeout_s);
+    // Claude must not kill the hook before its own delivery budget ends.
+    assert!(config.hook_budget_s < config.hook_timeout_s);
 }
 
 #[test]

@@ -280,8 +280,9 @@ fn background_lead() -> SpecError {
 }
 
 /// The lead of a team that does not exist yet: the caller's own session, as
-/// `validate` would resolve it. A caller with no session, or one in the
-/// background, is refused.
+/// `validate` would resolve it. A caller with no session, one in the
+/// background, or one whose pane cannot be found when its harness cannot read
+/// `teamwire watch` (ADR 0023 point 9), is refused.
 pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     let harness = env
         .registry
@@ -306,7 +307,10 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
             "host none cannot start a member; v1 needs herdr or tmux",
         ));
     }
-    lead_plan(env, None, Some((session.id, session.kind)))
+    let lead = lead_plan(env, None, Some((session.id, session.kind)))?;
+    let mut errors = Vec::new();
+    lead_must_be_locatable(env, &lead, &mut errors);
+    errors.into_iter().next().map_or(Ok(lead), Err)
 }
 
 /// A refusal for each plugin key that is not `name@marketplace`. The id goes

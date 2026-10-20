@@ -3,11 +3,11 @@
 //! nobody has looked at yet. The member's row stays, marked removed.
 
 use serde_json::json;
-use teamwire_core::{HostErrorCode, Member, MemberKind, MemberState, Mode, Role, TeamState};
-use teamwire_store::{Ctx, Party, TeamRow};
+use teamwire_core::{Member, MemberKind, MemberState, Mode, Role, TeamState};
+use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal, unplaced_refusal};
-use crate::{CloseOpts, CloseReport, StepOutcome, git, team_close};
+use crate::{CloseOpts, CloseReport, StepOutcome, exclude, git, member_close, team_close};
 
 /// What stands between this member and removal.
 #[derive(Debug, Default)]
@@ -187,16 +187,15 @@ pub(crate) fn run(
         )),
         Busy::Idle => {}
     }
-    if let Some(branch) = member.branch.as_ref().filter(|b| {
-        !member
-            .repo
-            .as_deref()
-            .is_some_and(|r| git::branch_is_gone(ctx.platform, r, b))
-    }) {
-        report.branches_kept.push(branch.clone());
-        report
-            .unpushed
-            .extend(crate::member_close::unpushed(ctx, member, branch));
+    match member_close::kept_branches(ctx, &team.name, member, false) {
+        Ok(kept) => {
+            report.branches_kept.extend(kept.branches);
+            report.unpushed.extend(kept.unpushed);
+        }
+        Err(why) => {
+            report.refusals.push(why);
+            return report;
+        }
     }
     let member = member.clone();
     // The lock is read inside a write transaction, so a close that took it
@@ -205,7 +204,7 @@ pub(crate) fn run(
         report.refusals.push(why);
         return report;
     }
-    if let Some(detail) = crate::member_close::ignored_warning(ctx, &member) {
+    if let Some(detail) = member_close::ignored_warning(ctx, &member) {
         report.steps.push(step(role.as_str(), true, detail));
     }
     let mut go = |name: &str,
@@ -227,7 +226,8 @@ pub(crate) fn run(
     // uncommitted work.
     if go("close_place", &mut report, &|c| {
         guard(c, &member, opts.stop)?;
-        close_place(c, &member)
+        Ok(member_close::close_place(c, &team.name, &member)?
+            .unwrap_or_else(|| format!("{role} has no place recorded")))
     }) && go("remove_worktree", &mut report, &|c| {
         guard(c, &member, opts.stop)?;
         remove_worktree(c, &member)
@@ -266,51 +266,20 @@ fn guard(ctx: &Ctx<'_>, member: &Member, stop: bool) -> Result<(), String> {
     }
 }
 
-fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
-    let role = &member.role;
-    let Some(place) = &member.place else {
-        return Ok(format!("{role} has no place recorded"));
-    };
-    let (_, host) = ctx
-        .adapters(&Party::Member(role.clone()))
-        .map_err(|e| format!("{role}: {e}"))?;
-    match host.close(place, std::time::Duration::from_secs(30)) {
-        Ok(()) => Ok(format!("{role}'s place {} closed", place.id)),
-        Err(e) if e.code == HostErrorCode::NotFound => {
-            Ok(format!("{role}'s place {} was already gone", place.id))
-        }
-        Err(e) => Err(format!("{role}: closing place {}: {e}", place.id)),
-    }
-}
-
+/// `member_close::remove_worktree` plus what a removal adds: a pane member
+/// has no worktree, git forgets the removed one, and the note names the kept
+/// branch.
 fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
     let role = &member.role;
     let (Mode::Worktree, Some(repo)) = (member.mode, &member.repo) else {
         return Ok(format!("{role} has no worktree"));
     };
-    if !member.cwd.is_dir() {
-        return Ok(format!(
-            "{role}'s worktree {} was already gone",
-            member.cwd.display()
-        ));
-    }
-    let path = member.cwd.display().to_string();
-    let out = git::run(ctx.platform, repo, &["worktree", "remove", &path])
-        .map_err(|e| format!("{role}: {e}"))?;
-    if !out.success() {
-        return Err(format!(
-            "{role}: git worktree remove: {}",
-            git::failure_text(&out)
-        ));
-    }
+    let note = member_close::remove_worktree(ctx, member)?;
     git::run(ctx.platform, repo, &["worktree", "prune"]).ok();
-    Ok(format!(
-        "{role}'s worktree {path} removed{}",
-        member
-            .branch
-            .as_ref()
-            .map_or(String::new(), |b| format!("; branch {b} kept"))
-    ))
+    let mut notes = vec![note];
+    notes.extend(member.branch.as_ref().map(|b| format!("branch {b} kept")));
+    notes.extend(exclude::take_back(ctx, &[member]));
+    Ok(notes.join("; "))
 }
 
 /// The row stays, with `removed_at` and a note, so the role is never reused

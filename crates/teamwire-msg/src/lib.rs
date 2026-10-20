@@ -37,12 +37,13 @@ pub use directory::{TeamEntry, describe, roster_of, teams};
 pub use inbox::{ack, inbox};
 pub use lead::{AdoptReport, adopt_lead};
 pub use log::{log, log_party};
-pub use prove::{prove_actor, token_hash};
+pub use prove::prove_actor;
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
 pub use send::{
     Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with, watch_running,
 };
+pub use teamwire_store::token_hash;
 pub use token::caller_token;
 
 /// What the calling process says about itself, read from its environment
@@ -93,7 +94,8 @@ impl fmt::Debug for CallerEnv {
 }
 
 /// One recipient's state in a send, resend or log row. `Skipped` appears
-/// only in a resend, for a recipient that was already reached.
+/// only in a resend or a send resumed by its key, for a recipient that was
+/// already reached or that another command is still delivering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RecipientState {

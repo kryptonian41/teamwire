@@ -9,6 +9,7 @@ test("parses every route", () => {
   expect(parseRoute("#/history")).toEqual({ page: "history" });
   expect(parseRoute("#/history/ads-2026-10-07-153012")).toEqual({ page: "archive", dir: "ads-2026-10-07-153012" });
   expect(parseRoute("#/history/ads-2026-10-07")).toEqual({ page: "archive", dir: "ads-2026-10-07" });
+  expect(parseRoute("#/history/ads-2026-10-07-153012-2")).toEqual({ page: "archive", dir: "ads-2026-10-07-153012-2" });
 });
 
 test("rejects names that could escape an API path", () => {

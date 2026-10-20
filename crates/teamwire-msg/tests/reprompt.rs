@@ -249,6 +249,8 @@ fn a_resumed_pending_reprompt_that_fails_gives_the_generation_back() {
     rig.clock.advance(Duration::from_secs(5));
     crashed_after_the_bump(&mut rig, "k");
     assert_eq!(generation(&rig, "api").0, before.0 + 1);
+    // Over a minute later, so the dead sender's attempt is no longer live.
+    rig.clock.advance(Duration::from_secs(61));
     rig.set_reachable("api", false);
     let mut req = reprompt(&rig, &["api"]);
     req.client_key = Some("k".to_owned());
@@ -270,6 +272,43 @@ fn a_resent_pending_reprompt_that_fails_gives_the_generation_back() {
     rig.clock.advance(Duration::from_secs(61));
     rig.set_reachable("api", false);
     let report = resend(&mut rig.ctx(), &Actor::Lead, &display, None).unwrap();
+    assert_eq!(
+        report.deliveries.first().unwrap().state,
+        RecipientState::Undelivered
+    );
+    assert_eq!(generation(&rig, "api"), before);
+}
+
+#[test]
+fn an_unrelated_damaged_event_does_not_stop_the_undo_of_a_resumed_reprompt() {
+    let mut rig = team_rig();
+    let before = generation(&rig, "api");
+    rig.clock.advance(Duration::from_secs(5));
+    crashed_after_the_bump(&mut rig, "k");
+    let at = rig.now();
+    rig.store
+        .write(|tx| {
+            tx.record_event(
+                at,
+                EventType::WatchLine,
+                Some(&role("api")),
+                None,
+                &serde_json::json!({}),
+            )?;
+            tx.connection()
+                .execute(
+                    "UPDATE events SET time = 'yesterday' WHERE type = 'watch.line'",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(61));
+    rig.set_reachable("api", false);
+    let mut req = reprompt(&rig, &["api"]);
+    req.client_key = Some("k".to_owned());
+    let report = send(&mut rig.ctx(), req).unwrap();
     assert_eq!(
         report.deliveries.first().unwrap().state,
         RecipientState::Undelivered

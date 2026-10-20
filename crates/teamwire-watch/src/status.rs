@@ -99,9 +99,7 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
                     .iter()
                     .any(|e| e.kind == teamwire_core::EventType::MemberReprompted && e.seq > s.seq)
         });
-        let run_start = started
-            .as_ref()
-            .map_or(member.gen_started_at, |e| e.time.max(member.gen_started_at));
+        let run_start = crate::snapshot::run_start(&member, started.map(|e| e.time));
         let completion = tx
             .latest_completion(&member.role)?
             .filter(|c| c.completion.generation == member.generation);
@@ -210,7 +208,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             continue;
         }
         view.undelivered_results.push(UndeliveredResult {
-            path: PathBuf::from(result_path(&team_dir, &c.role)),
+            path: PathBuf::from(result_path(
+                &team_dir,
+                &c.role,
+                record.result_sha256.as_ref(),
+            )),
             role: c.role,
             n: c.n,
             report_state: c.report_state,
@@ -248,6 +250,9 @@ fn state_word(
                 "prompted outside teamwire".to_owned()
             }
             ReportState::Delivered => format!("done({})", c.status),
+            // Only the member's own hook reports a pending result, so a
+            // member gone before it ran is dead, as the watch says.
+            ReportState::Pending if seen == Seen::Absent => "died?".to_owned(),
             ReportState::Pending | ReportState::Delivering => "unreported".to_owned(),
             ReportState::Undelivered => "undelivered".to_owned(),
             ReportState::Unconfirmed => "unconfirmed".to_owned(),

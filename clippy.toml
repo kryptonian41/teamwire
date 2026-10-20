@@ -8,4 +8,8 @@ disallowed-methods = [
   { path = "std::time::SystemTime::now", reason = "use the Clock trait so the watch is testable" },
   { path = "std::time::Instant::now",    reason = "use the Clock trait so the watch is testable" },
   { path = "std::env::set_var",          reason = "process-wide state; pass configuration explicitly" },
+  { path = "std::fs::OpenOptions::open",            reason = "files outside SQLite go through Platform::write_atomic" },
+  { path = "time::OffsetDateTime::now_utc",         reason = "use the Clock trait so the watch is testable" },
+  { path = "std::fs::copy",                         reason = "files outside SQLite go through Platform::write_atomic" },
+  { path = "tempfile::NamedTempFile::persist",      reason = "files outside SQLite go through Platform::write_atomic" },
 ]

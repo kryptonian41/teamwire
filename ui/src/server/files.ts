@@ -40,7 +40,8 @@ function inside(base: string, child: string): boolean {
 
 /**
  * Resolves one file to its real path, or null. The result is inside `base`
- * and never inside `base/members`, whatever symlinks say.
+ * and never inside `base/members`, whatever symlinks say. A file with more
+ * than one hard link is refused.
  */
 async function resolveFile(base: string, kind: FileKind, name: string): Promise<string | null> {
   if (!nameOk(kind, name)) return null;
@@ -50,6 +51,11 @@ async function resolveFile(base: string, kind: FileKind, name: string): Promise<
   try {
     realBase = await realpath(base);
     real = await realpath(join(base, spec.dir, name + spec.ext));
+    // A hard link to a member's token has the same real path rules as a
+    // plain file, so only its link count gives it away. An archive copies a
+    // hard link as a separate file with one link; that gap is accepted.
+    const info = await stat(real);
+    if (info.isFile() && info.nlink > 1) return null;
   } catch {
     return null;
   }
@@ -97,18 +103,24 @@ export async function listFiles(base: string): Promise<FileRef[]> {
     } catch {
       continue;
     }
-    for (const entry of entries.sort()) {
-      if (!entry.endsWith(spec.ext)) continue;
-      const name = entry.slice(0, -spec.ext.length);
-      const real = await resolveFile(base, kind, name);
-      if (!real) continue;
-      try {
-        const info = await stat(real);
-        if (info.isFile()) out.push({ kind, name, bytes: info.size, modifiedAt: info.mtime.toISOString() });
-      } catch {
-        // The file vanished between listing and stat.
-      }
-    }
+    // The stats of one kind run at the same time; Promise.all keeps the sorted order.
+    const refs = await Promise.all(
+      entries
+        .sort()
+        .filter((entry) => entry.endsWith(spec.ext))
+        .map(async (entry): Promise<FileRef | null> => {
+          const name = entry.slice(0, -spec.ext.length);
+          const real = await resolveFile(base, kind, name);
+          if (!real) return null;
+          try {
+            const info = await stat(real);
+            return info.isFile() ? { kind, name, bytes: info.size, modifiedAt: info.mtime.toISOString() } : null;
+          } catch {
+            return null; // The file vanished between listing and stat.
+          }
+        }),
+    );
+    for (const ref of refs) if (ref) out.push(ref);
   }
   return out;
 }
@@ -120,7 +132,8 @@ export async function teamDir(home: string, team: string): Promise<string | null
   return (await Bun.file(join(dir, "team.db")).exists()) ? dir : null;
 }
 
-const ARCHIVE_RE = /^([a-z][a-z0-9_]*)-(\d{4}-\d{2}-\d{2})(?:-(\d{6}))?$/;
+// `-<n>` is how close names a second archive made in the same second.
+const ARCHIVE_RE = /^([a-z][a-z0-9_]*)-(\d{4}-\d{2}-\d{2})(?:-(\d{6})(?:-(\d+))?)?$/;
 
 export function parseArchiveName(dir: string): { team: string; date: string; time: string } | null {
   const m = ARCHIVE_RE.exec(dir);
@@ -153,7 +166,12 @@ export async function listArchives(home: string): Promise<ArchiveEntry[]> {
     const p = parseArchiveName(dir);
     return p ? [{ dir, ...p }] : [];
   });
-  parsed.sort((a, b) => (a.date + a.time < b.date + b.time ? 1 : a.date + a.time > b.date + b.time ? -1 : a.dir.localeCompare(b.dir)));
+  const suffix = (dir: string) => Number(/-\d{6}-(\d+)$/.exec(dir)?.[1] ?? 0);
+  parsed.sort((a, b) => {
+    const ka = a.date + a.time;
+    const kb = b.date + b.time;
+    return ka < kb ? 1 : ka > kb ? -1 : suffix(b.dir) - suffix(a.dir) || a.dir.localeCompare(b.dir);
+  });
   const out: ArchiveEntry[] = [];
   for (const p of parsed) {
     const path = await archiveDir(home, p.dir);

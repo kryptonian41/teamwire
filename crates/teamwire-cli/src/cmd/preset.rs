@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 use serde_json::Value;
 
+use crate::cmd::send::{fail, say};
 use crate::wiring::Wiring;
 use crate::{Global, PresetArgs, USAGE};
 
@@ -170,26 +171,13 @@ fn show(name: &str, text: &str) -> Result<String, serde_json::Error> {
         }
     }
     out.push(
-        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values, then run \
+        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values. Leave out each member \
+         with a `_launch` or `_launch_after` note and add it later with `--add`. Then run \
          `teamwire launch --spec FILE`:"
             .to_owned(),
     );
     out.push(pretty(&Value::Object(skeleton), 0));
     Ok(out.join("\n") + "\n")
-}
-
-#[expect(clippy::print_stdout, reason = "the shapes are the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str) -> ExitCode {
-    eprintln!("teamwire preset: {message}");
-    ExitCode::from(USAGE)
 }
 
 pub(crate) fn run(args: &PresetArgs, _global: &Global, _wiring: &Wiring) -> ExitCode {
@@ -200,16 +188,21 @@ pub(crate) fn run(args: &PresetArgs, _global: &Global, _wiring: &Wiring) -> Exit
     };
     let Some((_, text)) = PRESETS.iter().find(|(n, _)| n == name) else {
         let names: Vec<&str> = PRESETS.iter().map(|(n, _)| *n).collect();
-        return fail(&format!(
-            "no shape named {name}; the shapes are {}",
-            names.join(", ")
-        ));
+        return fail(
+            "preset",
+            &format!("no shape named {name}; the shapes are {}", names.join(", ")),
+            USAGE,
+        );
     };
     match show(name, text) {
         Ok(text) => {
             say(&text);
             ExitCode::SUCCESS
         }
-        Err(e) => fail(&format!("the shape {name} is damaged: {e}")),
+        Err(e) => fail(
+            "preset",
+            &format!("the shape {name} is damaged: {e}"),
+            USAGE,
+        ),
     }
 }

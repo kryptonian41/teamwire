@@ -527,3 +527,131 @@ fn each_team_logs_its_own_copy_and_only_beta_may_resend_it_there() {
     .unwrap();
     assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
 }
+
+/// Beta holds alpha's message for `db` in `state`, and then starts closing.
+fn held_by_a_closing_beta(t: &mut Two, text: &str, state: Option<DeliveryState>) -> Ulid {
+    let ulid = stored_in_alpha_only(t, text);
+    let at = t.rig.now();
+    t.beta
+        .write(|tx| {
+            tx.insert_received(
+                at,
+                &ReceivedMessage {
+                    ulid,
+                    sender: Remote::member_of(&TeamName::parse("alpha").unwrap(), &role("api")),
+                    kind: MessageType::Finding,
+                    re: None,
+                    commit: None,
+                    body: text.to_owned(),
+                    recipients: vec![Recipient::Member(role("db"))],
+                },
+            )?;
+            if let Some(state) = state {
+                tx.set_delivery_state(
+                    at,
+                    &ulid,
+                    &to("db"),
+                    &teamwire_store::DeliveryUpdate {
+                        state,
+                        route: Some(teamwire_core::Route::HostTyping),
+                        error: None,
+                        attempts: 1,
+                    },
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let pid = teamwire_core::Pid::new(4242);
+    t.beta.write(|tx| tx.begin_close(t.rig.now(), pid)).unwrap();
+    t.rig.clock.advance(Duration::from_secs(61));
+    ulid
+}
+
+#[test]
+fn a_line_that_arrived_stays_handed_off_after_the_other_team_starts_closing() {
+    let mut t = two_teams();
+    let ulid = held_by_a_closing_beta(&mut t, "already there", Some(DeliveryState::HandedOff));
+    let actor = Actor::Member(role("api"));
+    let report = resend(&mut t.rig.ctx(), &actor, &id("m001"), None).unwrap();
+    assert_eq!(state_in(&t.beta, &ulid, "db"), DeliveryState::HandedOff);
+    assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
+    assert_eq!(
+        state_in(&t.rig.store, &ulid, "db@beta"),
+        DeliveryState::HandedOff
+    );
+    assert!(t.typed("db").is_empty());
+}
+
+#[test]
+fn a_copy_still_pending_in_a_closing_team_is_unconfirmed() {
+    let mut t = two_teams();
+    let ulid = held_by_a_closing_beta(&mut t, "maybe there", None);
+    let actor = Actor::Member(role("api"));
+    let report = resend(&mut t.rig.ctx(), &actor, &id("m001"), None).unwrap();
+    let only = &report.deliveries[0];
+    assert_eq!(only.state, RecipientState::Unconfirmed);
+    assert_eq!(only.reason, Some(DeliveryErrorCode::TeamClosed));
+    assert_eq!(
+        state_in(&t.rig.store, &ulid, "db@beta"),
+        DeliveryState::Unconfirmed
+    );
+    assert!(t.typed("db").is_empty());
+}
+
+/// The `store.error` rows of the team's store: `{op, code}` of each.
+fn store_errors(store: &Store) -> Vec<serde_json::Value> {
+    store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect()
+}
+
+/// Damages a row of beta's members as the recipient's copy is stored, which
+/// is after the sender's rules read beta read-only, and before the delivery
+/// reads the row. The row is valid JSON, so the CHECK passes, but not a list
+/// of paths.
+fn damage_beta_on_receive(t: &mut Two) {
+    t.beta
+        .write(|tx| {
+            tx.connection().execute_batch(
+                "CREATE TRIGGER damage AFTER INSERT ON messages
+                 BEGIN UPDATE members SET owns = '{}'; END",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
+fn a_send_that_fails_in_the_other_teams_store_leaves_its_row_there() {
+    let mut t = two_teams();
+    damage_beta_on_receive(&mut t);
+    let req = t
+        .rig
+        .request("api", &["db@beta"], MessageType::Finding, "hello");
+    assert!(send(&mut t.rig.ctx(), req).is_ok());
+    assert_eq!(
+        store_errors(&t.beta),
+        [serde_json::json!({ "op": "send", "code": "corrupt" })]
+    );
+    assert!(store_errors(&t.rig.store).is_empty());
+}
+
+#[test]
+fn a_resend_that_fails_in_the_other_teams_store_leaves_its_row_there() {
+    let mut t = two_teams();
+    stored_in_alpha_only(&mut t, "copy me");
+    damage_beta_on_receive(&mut t);
+    t.rig.clock.advance(Duration::from_secs(61));
+    let actor = Actor::Member(role("api"));
+    assert!(resend(&mut t.rig.ctx(), &actor, &id("m001"), None).is_ok());
+    assert_eq!(
+        store_errors(&t.beta),
+        [serde_json::json!({ "op": "resend", "code": "corrupt" })]
+    );
+    assert!(store_errors(&t.rig.store).is_empty());
+}

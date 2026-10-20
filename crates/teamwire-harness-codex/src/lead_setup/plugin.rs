@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use teamwire_core::LaunchSpec;
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -73,31 +74,16 @@ fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
-/// Quote `text` for `sh -c` only when it holds a character the shell would
-/// treat specially.
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
-}
-
 /// The skill: the shared text's frontmatter, the Codex part, the shared body,
 /// and a `metadata` block holding the hash of that text as the last
 /// frontmatter key. `None` when the shared text has no frontmatter.
 fn skill(shared: &str) -> Option<String> {
     let rest = shared.strip_prefix("---\n")?;
-    let end = "---\n".len() + rest.find("\n---\n")? + 1;
-    let (head, body) = shared.split_at(end);
-    let text = format!("{head}{CODEX_PART}\n{body}");
-    // The text is split again at the same line, which still starts the
-    // closing fence of the frontmatter.
-    let (head, tail) = text.split_at(end);
+    // `fence` starts the closing `---` line; the Codex part goes after it.
+    let fence = "---\n".len() + rest.find("\n---\n")? + 1;
+    let (head, body) = shared.split_at(fence + "---\n".len());
+    let text = format!("{head}\n{CODEX_PART}{body}");
+    let (head, tail) = text.split_at(fence);
     Some(format!(
         "{head}metadata:\n{STAMP_KEY}{}\n{tail}",
         sha256_hex(&text)
@@ -123,7 +109,11 @@ impl PluginFiles {
             skill(shared).ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut mcp_args = want.words().split_off(1);
         mcp_args.extend(["mcp".to_owned(), "--lead".to_owned()]);
-        let mut hook_words: Vec<String> = want.words().iter().map(|w| shell_word(w)).collect();
+        let mut hook_words: Vec<String> = want
+            .words()
+            .iter()
+            .map(|w| LaunchSpec::shell_word(w))
+            .collect();
         hook_words.extend(["hook", "lead-stop", "--harness", "codex"].map(str::to_owned));
         let body = [
             (
@@ -301,6 +291,19 @@ mod tests {
         );
         let codex = text.find("codex --no-daemon").unwrap();
         assert!(codex < text.find("# Body").unwrap());
+    }
+
+    #[test]
+    fn the_codex_part_of_the_real_skill_sits_in_the_body() {
+        let shared = include_str!("../../../../examples/skills/teamwire/SKILL.md");
+        let files = PluginFiles::render(Path::new("/d"), &want(None), shared).unwrap();
+        let text = file(&files, "teamwire/skills/teamwire/SKILL.md");
+        let rest = text.strip_prefix("---\n").unwrap();
+        let end = rest.find("\n---\n").unwrap();
+        let (frontmatter, body) = rest.split_at(end);
+        assert!(!frontmatter.contains("codex --no-daemon"), "{frontmatter}");
+        assert!(frontmatter.contains(STAMP_KEY), "{frontmatter}");
+        assert_eq!(body.matches("codex --no-daemon").count(), 1, "{body}");
     }
 
     #[test]

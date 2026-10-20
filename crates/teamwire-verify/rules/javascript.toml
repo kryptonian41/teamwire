@@ -10,6 +10,7 @@ test_paths = [
   "**/*.spec.{js,jsx,mjs,cjs,ts,tsx,mts,cts}",
 ]
 test_markers = ["it(", "test("]
+assert_markers = ["expect(", "assert"]
 config_files = [
   "**/.eslintrc",
   "**/.eslintrc.*",
@@ -98,3 +99,9 @@ contains = "@ts-expect-error"
 [[weakening]]
 id = "ts-nocheck"
 contains = "@ts-nocheck"
+
+# node:test: `it('x', { skip: true }, fn)`.
+[[weakening]]
+id = "skip-option"
+contains = "skip:true"
+squeeze = true

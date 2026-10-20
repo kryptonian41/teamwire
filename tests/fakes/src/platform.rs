@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -350,6 +351,12 @@ fn io_to_platform(e: &std::io::Error) -> PlatformError {
     PlatformError::new(code, e.to_string())
 }
 
+/// The mode `write_atomic` gives the new file, as the real platform does:
+/// the mode of the file it replaces, else 0644.
+fn mode_of(target: &Path) -> u32 {
+    std::fs::metadata(target).map_or(0o644, |meta| meta.permissions().mode() & 0o7777)
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "the fake platform is what stands in for Platform::write_atomic, so it does the temp-file-then-rename itself"
@@ -416,11 +423,19 @@ impl Platform for FakePlatform {
         let n = self.temp_counter.fetch_add(1, Ordering::Relaxed);
         let name = path.file_name().map(|s| s.to_string_lossy().into_owned());
         let temp = dir.join(format!(".{}.tmp{n}", name.unwrap_or_default()));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the fake Platform is the write_atomic stand-in for tests"
+        )]
         let result = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp)
-            .and_then(|mut f| f.write_all(bytes).and_then(|()| f.sync_all()))
+            .and_then(|mut f| {
+                f.write_all(bytes)?;
+                f.set_permissions(std::fs::Permissions::from_mode(mode_of(path)))?;
+                f.sync_all()
+            })
             .and_then(|()| rename(&temp, path));
         match result {
             Ok(()) => {

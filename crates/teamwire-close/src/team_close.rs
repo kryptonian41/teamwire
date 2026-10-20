@@ -8,8 +8,8 @@ use teamwire_core::{EventType, Member, Mode, Pid, TeamName, TeamState};
 use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
-use crate::member_close::{close_place, ignored_warning, remove_worktree, unpushed};
-use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, git, hold};
+use crate::member_close::{close_place, ignored_warning, kept_branches, remove_worktree};
+use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, exclude, git, hold};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
 /// else. A live owner is never cleared.
@@ -267,23 +267,35 @@ impl Seq<'_, '_> {
         let mut notes = Vec::new();
         let mut repos: Vec<&Path> = Vec::new();
         for member in live(&members).filter(|m| m.mode == Mode::Worktree) {
-            if let Some(branch) = member.branch.as_ref().filter(|b| {
-                !member
-                    .repo
-                    .as_deref()
-                    .is_some_and(|r| git::branch_is_gone(self.ctx.platform, r, b))
-            }) {
-                self.report.branches_kept.push(branch.clone());
-                self.report
-                    .unpushed
-                    .extend(unpushed(self.ctx, member, branch));
-            }
+            let detached = match kept_branches(self.ctx, &self.team, member, false) {
+                Ok(kept) => {
+                    self.report.branches_kept.extend(kept.branches);
+                    self.report.unpushed.extend(kept.unpushed);
+                    kept.detached
+                }
+                Err(why) => {
+                    problems.push(why);
+                    continue;
+                }
+            };
             if let Some(detail) = ignored_warning(self.ctx, member) {
                 self.report.steps.push(StepOutcome {
                     step: member.role.to_string(),
                     ok: true,
                     detail,
                 });
+            }
+            // A commit on a detached HEAD moves no branch, so one made after
+            // the last HEAD check would be on no ref once the worktree goes:
+            // the agent stops first. A HEAD on a branch keeps such a commit.
+            if detached {
+                match close_place(self.ctx, &self.team, member) {
+                    Ok(note) => notes.extend(note),
+                    Err(why) => {
+                        problems.push(why);
+                        continue;
+                    }
+                }
             }
             match remove_worktree(self.ctx, member) {
                 Ok(note) => notes.push(note),
@@ -297,6 +309,8 @@ impl Seq<'_, '_> {
             // Forget worktree records whose directory is gone; never a force.
             git::run(self.ctx.platform, repo, &["worktree", "prune"]).ok();
         }
+        let alive: Vec<&Member> = live(&members).collect();
+        notes.extend(exclude::take_back(self.ctx, &alive));
         self.done_all(
             "remove_worktrees",
             &notes,
@@ -314,7 +328,7 @@ impl Seq<'_, '_> {
         let mut problems = Vec::new();
         let mut notes = Vec::new();
         for member in live(&members) {
-            match close_place(self.ctx, member) {
+            match close_place(self.ctx, &self.team, member) {
                 Ok(Some(note)) => notes.push(note),
                 Ok(None) => {}
                 Err(why) => problems.push(why),

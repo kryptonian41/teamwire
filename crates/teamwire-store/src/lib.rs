@@ -45,12 +45,12 @@ pub use store::{
     APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path, team_names,
 };
 pub use team::{CloseEnd, NewTeam, TeamRow};
-pub use tx::{BadRow, Listing, ReadTx, Tx};
+pub use tx::{BadRow, Listing, ReadTx, Tx, same_hash, sha256, token_hash};
 pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 5;
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -71,9 +71,12 @@ pub const SCHEMA_V4_SQL: &str = include_str!("schema/v4.sql");
 /// on an AFK run's team.
 pub const SCHEMA_V5_SQL: &str = include_str!("schema/v5.sql");
 
+/// The step from schema version 5 to 6: the `events` table rebuilt with the
+/// `member.refused` type in its CHECK list. Every row is kept.
+pub const SCHEMA_V6_SQL: &str = include_str!("schema/v6.sql");
+
 #[cfg(test)]
 mod tests {
-    use super::*;
     use teamwire_core::{
         CompletionStatus, DeliveryState, EventType, FinalSource, MemberKind, MemberState,
         MessageType, Mode, ReportState, Route,
@@ -97,10 +100,10 @@ mod tests {
     fn schema() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
-        conn.execute_batch(SCHEMA_V1_SQL).unwrap();
-        conn.execute_batch(SCHEMA_V2_SQL).unwrap();
-        conn.execute_batch(SCHEMA_V3_SQL).unwrap();
-        conn.execute_batch(SCHEMA_V4_SQL).unwrap();
+        // The migration list itself, so a new step cannot be left out here.
+        for step in crate::store::MIGRATIONS {
+            conn.execute_batch(step).unwrap();
+        }
         conn
     }
 

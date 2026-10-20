@@ -252,6 +252,17 @@ impl Tx<'_> {
         exactly_one(rows, format!("member {role}"))
     }
 
+    /// Clears the stored branch after launch deleted it, so `status` does not
+    /// show it and `close` does not list it as kept. No event (see
+    /// `set_member_place`).
+    pub fn clear_member_branch(&self, role: &Role) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET branch = NULL WHERE role = ?1",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("member {role}"))
+    }
+
     /// Records the member's harness session id. No event (see `set_member_place`).
     pub fn set_member_session(&self, role: &Role, session: &SessionId) -> Result<(), StoreError> {
         let rows = self.connection().execute(
@@ -297,6 +308,26 @@ impl Tx<'_> {
         )?;
         exactly_one(rows, format!("member {role}"))?;
         self.record_event(at, state_event(to), Some(role), None, data)?;
+        Ok(())
+    }
+
+    /// Moves a member from `creating` to `failed` because launch refused it
+    /// after recording it, and writes `member.refused` with `data`. No
+    /// `member.failed` is written: the member counts once, as refused. The row
+    /// stays, so close still finds what the undo left and `--add` can start it
+    /// again. A member that is missing or not `creating` is a constraint error.
+    pub fn refuse_member(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        data: &Value,
+    ) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET state = 'failed' WHERE role = ?1 AND state = 'creating'",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("creating member {role}"))?;
+        self.record_event(at, EventType::MemberRefused, Some(role), None, data)?;
         Ok(())
     }
 

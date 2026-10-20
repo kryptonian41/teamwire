@@ -1484,7 +1484,6 @@ dependencies = [
 name = "teamwire-cli"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "clap",
  "proptest",
  "serde",
@@ -1507,7 +1506,6 @@ dependencies = [
  "teamwire-verify",
  "teamwire-watch",
  "tempfile",
- "time",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1785,17 +1783,13 @@ dependencies = [
 name = "teamwire-store"
 version = "0.0.0"
 dependencies = [
- "hex",
  "proptest",
  "rusqlite",
- "serde",
  "serde_json",
  "sha2",
  "teamwire-core",
  "teamwire-fakes",
- "tempfile",
  "thiserror",
- "time",
  "tracing",
  "ulid",
 ]

@@ -7,6 +7,8 @@ docs, errors and commands share.
 ## Language
 
 **Lead setup**:
-The `teamwire` skill and the lead's MCP server entry, installed in the
-harness's user configuration.
+The teamwire plugin that `teamwire install` registers with the lead's
+harness (ADR 0018, ADR 0023). The plugin carries the `teamwire` skill, the
+`afk` skill (Claude Code only), `reference.md`, the lead's MCP server and the
+lead's Stop hook.
 _Avoid_: lead tools (those are the lead's MCP tools, such as `team_status`), install, integration

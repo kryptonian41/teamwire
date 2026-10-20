@@ -24,3 +24,6 @@ hold for every section below.
   to run on Codex's default. The `sonnet` and `opus` advice below is for
   Claude members.
 
+- **No AFK runs.** An unattended AFK run (`/teamwire:afk`,
+  `teamwire afk start`) needs a Claude Code lead. Codex has no `afk` skill,
+  so a request for one is a run you tell the user to start from Claude Code.

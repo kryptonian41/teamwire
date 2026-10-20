@@ -41,7 +41,7 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
     `ack`, `install`, `hook`, `mcp` or `metrics export`.
 - Start processes with an argument array (`Bun.spawn([...])`), never a shell
   string. Every call has a time limit and is killed when it passes it.
-- Remove `TEAMWIRE_TOKEN`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM` from the
+- Remove `TEAMWIRE_TOKEN`, `TEAMWIRE_TOKEN_FILE`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM` from the
   environment of every `teamwire` call. With them set, teamwire treats the
   caller as a member and hides the lead's details.
 - Serve files only through `FILE_KINDS` in `src/shared/api.ts`. Never serve

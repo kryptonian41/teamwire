@@ -25,6 +25,7 @@ use teamwire_store::{DeliveryUpdate, NewMessage};
 struct Run {
     code: i32,
     out: String,
+    err: String,
 }
 
 fn team() -> Fixture {
@@ -69,6 +70,7 @@ fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
     Run {
         code: out.status.code().unwrap(),
         out: String::from_utf8(out.stdout).unwrap(),
+        err: String::from_utf8(out.stderr).unwrap(),
     }
 }
 
@@ -116,9 +118,75 @@ fn garbage_stdin_exits_zero() {
             let run = hook(&fx, which, &as_api(), input);
             assert_eq!(run.code, 0, "{which} {input:?}");
             assert_eq!(run.out, "", "{which} {input:?}");
+            assert!(
+                run.err
+                    .starts_with("teamwire hook: the hook input did not parse: "),
+                "{which} {input:?}: {}",
+                run.err
+            );
+            assert_eq!(run.err.lines().count(), 1, "{which} {input:?}: {}", run.err);
         }
     }
     assert_eq!(events(&fx), before, "nothing changed");
+}
+
+/// A hook exits 0 on every path (REP-10), even when its arguments do not
+/// parse: a settings file written for a newer binary names a hook this one
+/// lacks, and a non-zero exit is a hook error on every turn.
+#[test]
+fn hook_arguments_that_do_not_parse_exit_zero() {
+    let fx = team();
+    let home = fx.home.path().to_str().unwrap();
+    for args in [
+        &["hook", "not-a-hook"][..],
+        &["--home", home, "hook", "claude-stop", "--bogus"],
+        &[&format!("--home={home}"), "hook", "turn-end", "--bogus"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {out:?}");
+    }
+    // Any other command still exits 3 on a bad argument.
+    let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .args(["status", "--bogus"])
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+}
+
+#[test]
+fn every_member_hook_on_a_newer_schema_says_so_and_changes_nothing() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            tx.connection().pragma_update(None, "user_version", 99)?;
+            Ok(())
+        })
+        .unwrap();
+    let before = events(&fx);
+    for which in [
+        "claude-stop",
+        "turn-end",
+        "claude-post-tool",
+        "session-start",
+    ] {
+        let run = hook(&fx, which, &as_api(), &stop_input("sess-1"));
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{which}");
+        assert!(
+            run.err
+                .starts_with("teamwire hook: the store could not be opened: ")
+                && run.err.contains("schema 99"),
+            "{which}: {}",
+            run.err
+        );
+    }
+    assert_eq!(events(&fx), before, "a refused schema is never written to");
 }
 
 #[test]
@@ -261,4 +329,43 @@ fn post_tool_reminds_once_per_unread_message() {
 
     let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
     assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
+}
+
+#[test]
+fn a_member_hook_that_meets_a_damaged_row_says_so_and_records_it() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = hook(&fx, "claude-stop", &as_api(), &stop_input("sess-1"));
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    // The store's own log line about the row may come first.
+    let said: Vec<&str> = run
+        .err
+        .lines()
+        .filter(|l| l.starts_with("teamwire hook: "))
+        .collect();
+    assert_eq!(said.len(), 1, "{}", run.err);
+    assert!(
+        said[0].starts_with("teamwire hook: the member could not be read: "),
+        "{}",
+        run.err
+    );
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "turn_end", "code": "corrupt" })]
+    );
 }

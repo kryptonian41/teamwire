@@ -19,7 +19,10 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
   session-file directory and its `~/.claude.json` path from its config; tests
   point both at the temporary home (`TEAMWIRE_CLAUDE_DIR`).
 - No test depends on wall-clock sleeps for correctness. Time comes from the
-  `Clock` trait; tests use `FakeClock` and advance it.
+  `Clock` trait; tests use `FakeClock` and advance it. A time limit in a test
+  only guards against a hang and is at least 60 s per external call; a test
+  about order asserts the order, not a duration; and the gate is checked with
+  a second `cargo test --workspace` run loading the machine.
 - A test that needs git makes a throwaway repository in its temporary
   directory.
 
@@ -27,18 +30,18 @@ These come from the repository's `CLAUDE.md`, and they are hard rules:
 
 | Fake | Kind | What it does | Faults it can inject |
 | --- | --- | --- | --- |
-| `FakeHost` | in-process `Host` | Places in a map; records every call with its kind (read or write) | Per call: fail with any `HostErrorCode`, hang past the timeout, succeed but report failure, report the wrong occupant, change the occupant between two calls |
+| `FakeHost` | in-process `Host` | Places in a map; records every call with its kind (read or write). `close` leaves a place whose agent is not the expected one and returns `NotFound`. `spawn` refuses a name that a live place holds with `agent_name_taken:` | Per call: fail with any `HostErrorCode`, hang past the timeout, succeed but report failure, report the wrong occupant, change the occupant between two calls |
 | `FakeHarness` | in-process `Harness` | Sessions, pids and liveness in a map; configurable capabilities (with or without turn-end hook) | Background caller, dead session, two processes for one session, listing failure |
 | `FakePlatform` | in-process `Platform` | Environments per pid, free space, a sleep hold that records start and release | Env read failure, low disk, network filesystem |
 | `FakeClock` | in-process `Clock` | Time moves only when the test says so | Jumps (sleep and wake) |
-| `fake-herdr` | binary | Starts every agent with a **cleared environment** (only `PATH`, `HOME`, `TMPDIR` and its own `FAKE_*` variables), as real herdr does in effect, so a member can get its identity only through its declared channel. Speaks herdr's JSON CLI for the commands teamwire uses (`agent start/prompt/get/list/read/send-keys`, `pane close/list/get`, `workspace` and `tab` create and rename). State in a JSON file named by `FAKE_HERDR_STATE`; every call appended to `FAKE_HERDR_LOG` | `agent start` takes `--kind claude` and `--kind codex` (the Codex kind runs a `sh` script that draws a Codex prompt), and refuses any other kind; the newline rule for arguments holds for both. A fault file (`FAKE_HERDR_FAULTS`) scripts errors by command and target: `agent_pane_busy` twice then success, `agent_prompt_stalled`, a hang, `agent_not_found`, garbage output |
+| `fake-herdr` | binary | Starts every agent with a **cleared environment** (only `PATH`, `HOME`, `TMPDIR` and its own `FAKE_*` variables), as real herdr does in effect, so a member can get its identity only through its declared channel. Speaks herdr's JSON CLI for the commands teamwire uses (`agent start/prompt/get/list/read/send-keys`, `pane close/list/get`, `workspace` and `tab` create and rename). State in a JSON file named by `FAKE_HERDR_STATE`; every call appended to `FAKE_HERDR_LOG` | `agent start` takes `--kind claude` and `--kind codex` (the Codex kind runs a `sh` script that draws a Codex prompt), and refuses any other kind; the newline rule for arguments holds for both. A fault file (`FAKE_HERDR_FAULTS`) scripts errors by command and target: `agent_pane_busy` twice then success, `agent_prompt_stalled` (only for `agent prompt --wait`), `timeout` after the text was typed, a hang, `agent_not_found`, garbage output. The state lock is a kernel file lock, and `agent start` releases it while it waits for readiness. Unknown flags and bad `--source`, `--format` or `--until` values exit 2 with the usage line. A missing or malformed fault file exits 2 with `fake_misconfigured` |
 | `fake-claude` | binary | Started by `fake-herdr agent start` in a fake pane. Writes a session file into `TEAMWIRE_CLAUDE_DIR/sessions/`, reads its `--settings` file and applies its `env` key to every shell step and hook it runs (as Claude Code does), and plays a script (`FAKE_CLAUDE_SCRIPT`) of steps: run a shell command (for example `teamwire send ...`, `teamwire done ...`), then end the turn by running the Stop hook from its settings with the JSON Claude Code would send | Never stop, stop twice, send a wrong session id, exit without stopping, print the trust dialog or the escalated trust dialog |
 
 Each trait has a **contract suite** in `teamwire_fakes::contract`
 (`host_contract(&HostSetup)`, `harness_contract(&HarnessSetup)`,
 `platform_contract(&PlatformSetup)`; each setup record carries the adapter
 and what the suite needs to make its own places, sessions or processes;
-`tests/fakes/README.md` has one example per caller). The fake passes it in `tests/fakes`, and
+`tests/fakes/README.md` has one example per caller). The platform contract also checks that `write_atomic` keeps a file's mode (else 0644) and that a timeout kills a grandchild. The harness contract also checks that no secret identity value is in any argv. The fake passes it in `tests/fakes`, and
 every real adapter crate calls it from its own tests: herdr against
 `fake-herdr`, tmux against a real tmux on a private socket (`tmux -L
 teamwire-test-<pid>`), macOS and Linux platforms against the real OS.
@@ -57,12 +60,16 @@ rules, spec validation, the close plan.
 | Property | Crate | Generated input |
 | --- | --- | --- |
 | Committed `(sender, seq)` values are 1..n with no gap and no repeat; `(sender, key)` never makes two rows; display ids never repeat | store | Random interleavings of send, resend with the same key, and a rollback in the middle of a transaction |
-| Every migration path from each older `user_version` ends in the same schema | store | Each older version's fixture database |
 | `one_line(s, n)` has no control characters, no newline, at most `n` characters, and `one_line(one_line(s, n), n) == one_line(s, n)` | core | Arbitrary strings, including ESC sequences and fake event lines |
 | The locator returns a place only when the harness view and the host view name exactly one common place for the session | deliver | Random evidence sets |
 | Delivery states only move forward; `acked` is final; a `pending` row is never set back to `pending` | msg | Random sequences of outcomes and acks |
 | The watch prints at most one line per poll; each announcement key (which carries a generation or episode number) appears at most once across a run; once every live member is settled, `TEAM-COMPLETE` is printed exactly once | watch | Random observation sequences, including listing failures, clock jumps, added and removed members, reprompts |
 | `owns` matching agrees with a reference implementation for `dir/`, `*` and `**` | verify | Random paths and patterns |
+
+The migration test is a plain test, not a property test:
+`crates/teamwire-store/tests/migrate.rs::migration_from_every_older_version_ends_in_the_same_schema`
+opens a fixture database of each older `user_version` and compares the schema
+with a fresh open.
 
 ### 3. Crash tests (`tests/crash`, crate `teamwire-crash-tests`)
 
@@ -74,18 +81,18 @@ random moment. Then they reopen the store and assert:
 - resending every id with its key creates no second row;
 - no completion is left in `delivering` after one more turn end.
 
-Scenarios: kill during `send` (200 random kill points), kill after the host
+Scenarios: kill during `send` (200 random kill points), kill right after `git worktree add` in launch (the member row and the worktree exist, and close removes the worktree or refuses naming it), kill right after `git worktree remove` in close (the branch and commits survive, and a second close finishes), kill after the host
 call and before the outcome is recorded (a fake host that pauses on a signal
 file), kill during `done`, kill during the Stop hook between `delivering` and
 the outcome, kill during `launch` after the agent started, kill during
-`close` after the archive and before deletion. Each has its row in
+`close` after the archive and before deletion (this test runs 8 to 40 times until 2 kills land). Each has its row in
 `docs/failure-modes.md` section 2.
 
 ### 4. Fault-injection tests
 
 Service crates run against `FakeHost`, `FakeHarness` and `FakePlatform` with
 scripted faults: a host that hangs, a host that accepts and reports failure,
-a host that reports a stall, busy-then-ready, a listing that fails for ten
+a host that reports a stall or a timeout, busy-then-ready, a listing that fails for ten
 polls, an occupant that changes between the check and the send, a disk that
 fills (SQLite `max_page_count` set low), a clock that jumps an hour. These
 tests are where most rows of `docs/failure-modes.md` live.
@@ -102,7 +109,7 @@ temporary `TEAMWIRE_HOME` and temporary repository. Scenarios:
 | A member's report lacks a progress line | Held once with the facts, then delivered on the next stop |
 | The lead's pane is taken over by another fake session before a member finishes | Nothing typed into it; `UNDELIVERED` printed once; `status` shows the result path |
 | A reprompt to a finished member | Watch re-arms; the second completion is a second result |
-| `fake-herdr` stalls on a message | Sender exits 5; state `unconfirmed`; nothing resent |
+| `fake-herdr` times out after typing a message (fault `timed_out`) | Sender exits 5; state `unconfirmed`; nothing resent |
 | A member added with `--add` after wave 1 | Watched; `TEAM-COMPLETE` waits for it |
 | Remove an implementer without verify, then with verify | First refused, second accepted |
 | Launch with a failing setup for one member | Exit 2; that member refused and cleaned; the others run |
@@ -148,5 +155,5 @@ commit, and turn each surviving mutant in the delivery path into a ticket.
 ## Gates
 
 The gates, in the order they run, are listed in `docs/conventions.md`. A
-ticket runs only the check named in its build-plan row; the lead runs the full
+member runs only the check named in its brief; the lead runs the full
 gate once after integrating a wave.

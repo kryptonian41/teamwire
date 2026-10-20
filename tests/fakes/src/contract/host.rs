@@ -22,6 +22,10 @@ pub struct HostSetup<'a> {
     /// True when `live_agent_names` lists a place this host started. A host
     /// with no notion of a named agent (tmux) sets this false.
     pub lists_agent_names: bool,
+    /// True when a second `spawn` under a name a live place holds is refused
+    /// with `BadArgument` and a detail starting `agent_name_taken:`. Every
+    /// adapter does this; a host that cannot sets it false.
+    pub refuses_live_names: bool,
     /// How many times to look at the screen, 50 ms apart, before giving up.
     pub screen_attempts: u32,
 }
@@ -43,6 +47,7 @@ impl<'a> HostSetup<'a> {
             timeout: Duration::from_secs(10),
             echoes_input: false,
             lists_agent_names: true,
+            refuses_live_names: true,
             screen_attempts: 100,
         }
     }
@@ -78,6 +83,18 @@ pub fn host_contract(setup: &HostSetup<'_>) {
         "a spawned place belongs to this host",
         place.host == host.id(),
     );
+
+    if setup.refuses_live_names {
+        match host.spawn(&(setup.request)(&name), t) {
+            Err(e)
+                if e.code == HostErrorCode::BadArgument
+                    && e.detail.starts_with("agent_name_taken:") => {}
+            other => fail(
+                "a second spawn under a live name is bad_argument with agent_name_taken:",
+                other,
+            ),
+        }
+    }
 
     let listed = ok("list", host.list(t));
     require("list() holds a place just spawned", listed.contains(&place));
@@ -120,7 +137,19 @@ pub fn host_contract(setup: &HostSetup<'_>) {
 
     unknown_place_rules(setup);
 
-    ok("close", host.close(&place, t));
+    match host.close(&place, &address("someone_else"), t) {
+        Err(e) if e.code == HostErrorCode::NotFound => {}
+        other => fail(
+            "close of a place that holds another agent's name is not_found",
+            other,
+        ),
+    }
+    require(
+        "close with another agent's name leaves the place",
+        ok("list", host.list(t)).contains(&place),
+    );
+
+    ok("close", host.close(&place, &name, t));
     require(
         "list() no longer holds a closed place",
         !ok("list", host.list(t)).contains(&place),
@@ -156,7 +185,12 @@ fn unknown_place_rules(setup: &HostSetup<'_>) {
         "read_tail",
         host.read_tail(&missing, 5, t).err().map(|e| e.code),
     );
-    not_found("close", host.close(&missing, t).err().map(|e| e.code));
+    not_found(
+        "close",
+        host.close(&missing, &address("a1"), t)
+            .err()
+            .map(|e| e.code),
+    );
     not_found(
         "submit",
         host.submit(&missing, &one_line("hello", 20), t)

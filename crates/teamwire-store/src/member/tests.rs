@@ -11,7 +11,9 @@ use serde_json::json;
 use teamwire_core::{EventType, MemberState, Place, SessionId};
 
 use crate::StoreError;
-use crate::testkit::{at, count_events, event_types, last_event, new_member, role, with_members};
+use crate::testkit::{
+    at, count_events, event_types, fixture, last_event, new_member, new_team, role, with_members,
+};
 
 fn state_of(f: &crate::testkit::Fixture, name: &str) -> MemberState {
     f.store
@@ -397,4 +399,60 @@ fn creating_event_carries_extra_data_but_kind_and_mode_win() {
             .unwrap()
     );
     assert_eq!(last_event(&f.store).data["launch"], "02L");
+}
+
+#[test]
+fn clearing_the_branch_empties_only_that_column_and_writes_no_event() {
+    let mut f = fixture();
+    let mut m = new_member("api");
+    m.branch = Some("api".to_owned());
+    f.store
+        .write(|tx| {
+            tx.create_team(at(0), &new_team())?;
+            tx.insert_member(at(1), &m)
+        })
+        .unwrap();
+    let before = event_types(&f.store);
+    f.store
+        .write(|tx| tx.clear_member_branch(&role("api")))
+        .unwrap();
+    let row = f.store.read(|tx| tx.member(&role("api"))).unwrap().unwrap();
+    assert_eq!((row.branch, row.state), (None, MemberState::Creating));
+    assert_eq!(event_types(&f.store), before);
+    let err = f
+        .store
+        .write(|tx| tx.clear_member_branch(&role("ghost")))
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Constraint(_)), "{err:?}");
+}
+
+#[test]
+fn refusing_a_creating_member_leaves_it_failed_with_only_member_refused() {
+    let mut f = with_members(&["api", "web"]);
+    let data = json!({ "reason_code": "afk_budget_spent" });
+    f.store
+        .write(|tx| tx.refuse_member(at(2), &role("api"), &data))
+        .unwrap();
+    assert_eq!(state_of(&f, "api"), MemberState::Failed);
+    let event = last_event(&f.store);
+    assert_eq!(
+        (event.kind, event.role),
+        (EventType::MemberRefused, Some(role("api")))
+    );
+    assert_eq!(event.data["reason_code"], "afk_budget_spent");
+    assert_eq!(count_events(&f.store, EventType::MemberFailed), 0);
+
+    f.store
+        .write(|tx| tx.set_member_state(at(3), &role("web"), MemberState::Started, &json!({})))
+        .unwrap();
+    let before = event_types(&f.store);
+    for who in ["api", "web", "ghost"] {
+        let err = f
+            .store
+            .write(|tx| tx.refuse_member(at(4), &role(who), &data))
+            .unwrap_err();
+        assert!(matches!(err, StoreError::Constraint(_)), "{who}: {err:?}");
+    }
+    assert_eq!(event_types(&f.store), before);
+    assert_eq!(state_of(&f, "web"), MemberState::Started);
 }

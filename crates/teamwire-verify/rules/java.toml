@@ -4,6 +4,7 @@ extensions = ["java", "kt"]
 marker_comment_prefixes = ["//"]
 test_paths = ["**/src/test/**", "**/*Test.java", "**/*Tests.java", "**/*Test.kt", "**/*Tests.kt"]
 test_markers = ["@Test"]
+assert_markers = ["assert", "Assert."]
 config_files = ["**/checkstyle*.xml", "**/spotbugs*.xml", "**/detekt*.yml", "**/.editorconfig"]
 
 [[weakening]]

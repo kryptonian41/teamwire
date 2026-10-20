@@ -3,6 +3,7 @@ import status from "../../fixtures/status.json";
 import teams from "../../fixtures/teams.json";
 import log from "../../fixtures/log.json";
 import metrics from "../../fixtures/metrics.json";
+import { createRunner } from "../server/cli.ts";
 import { LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
 
 describe("fixtures match the teamwire schemas", () => {
@@ -57,13 +58,17 @@ describe("schemas refuse a changed shape", () => {
 });
 
 // Reads the real teamwire on this machine. Opt in with TW_UI_LIVE=1, so a
-// member's check never depends on which teams happen to be running.
+// member's check never depends on which teams happen to be running. It runs
+// through the server's own runner: identity variables removed, time limits.
 describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {
-  const run = (args: string[]) => {
-    const out = Bun.spawnSync(["teamwire", ...args], { stdout: "pipe", stderr: "pipe" });
-    return JSON.parse(out.stdout.toString());
-  };
-  test("status --json", () => void StatusAll.parse(run(["status", "--json"])));
-  test("teams --json", () => void TeamsList.parse(run(["teams", "--json"])));
-  test("metrics --json", () => void MetricsView.parse(run(["metrics", "--json"])));
+  const run = createRunner({ bin: "teamwire" });
+  test("status --json", async () => expect((await run({ cmd: "status" })).ok).toBe(true));
+  test("teams --json", async () => expect((await run({ cmd: "teams" })).ok).toBe(true));
+  test("metrics --json", async () => expect((await run({ cmd: "metrics" })).ok).toBe(true));
+  test("log --json", async () => {
+    const list = await run({ cmd: "teams" });
+    const team = list.ok ? list.data.teams[0]?.name : undefined;
+    if (team === undefined) return; // No team to read a log from.
+    expect((await run({ cmd: "log", team })).ok).toBe(true);
+  });
 });

@@ -7,12 +7,11 @@
 //! (tmux does not guard dialogs); run tmux except through `Platform::run`
 //! with a timeout.
 //!
-//! Invariants: every call after `spawn` names its pane by its `%` id and
-//! nothing else, never a session or window name; a place is
-//! `%<n>@<socket path>` and every call for it goes to that server, whatever
-//! the caller's `TMUX`; a bare `%<n>` goes to the adapter's own server;
-//! `list` and `live_agent_names` report only panes this adapter started,
-//! marked with the pane option `@teamwire_name`.
+//! Invariants: every call after `spawn` names its pane by its `%` id, never a
+//! session or window name; a place is `%<n>@<socket path>` and its calls go to
+//! that server; `list` and `live_agent_names` report only panes marked with
+//! `@teamwire_name`; a pane whose program exited holds no live name, and
+//! `spawn` refuses a live one; each method splits the caller's timeout.
 
 mod call;
 mod keys;
@@ -25,8 +24,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Pid, Place,
-    PlaceState, Platform, SpawnRequest, SubmitAck,
+    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, LaunchSpec, Occupant, OneLine,
+    Pid, Place, PlaceState, Platform, SpawnRequest, SubmitAck,
 };
 
 use call::{Failure, Socket, call};
@@ -93,11 +92,6 @@ impl Tmux {
         self
     }
 
-    /// The platform tmux's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
-
     /// The server a call goes to when its place names none.
     fn own_server(&self) -> Option<Socket<'_>> {
         self.socket_path
@@ -137,9 +131,10 @@ impl Tmux {
         })
     }
 
-    /// `(place id, member name)` for every pane this adapter started.
-    fn marked_panes(&self, timeout: Duration) -> Result<Vec<(String, String)>, HostError> {
-        let format = format!("#{{pane_id}}\t#{{socket_path}}\t#{{{NAME_OPTION}}}");
+    /// `(place id, member name, program has exited)` for every pane this
+    /// adapter started.
+    fn marked_panes(&self, timeout: Duration) -> Result<Vec<(String, String, bool)>, HostError> {
+        let format = format!("#{{pane_id}}\t#{{socket_path}}\t#{{pane_dead}}\t#{{{NAME_OPTION}}}");
         let listing = match self.run(&["list-panes", "-a", "-F", &format], timeout) {
             Ok(text) => text,
             Err(Failure::NoServer(_)) => return Ok(Vec::new()),
@@ -148,15 +143,26 @@ impl Tmux {
         Ok(listing
             .lines()
             .filter_map(|line| {
-                let mut fields = line.splitn(3, '\t');
-                Some((fields.next()?, fields.next()?, fields.next()?.trim()))
+                let mut fields = line.splitn(4, '\t');
+                Some((
+                    fields.next()?,
+                    fields.next()?,
+                    fields.next()? == "1",
+                    fields.next()?.trim(),
+                ))
             })
-            .filter(|(_, _, name)| !name.is_empty())
-            .map(|(id, socket, name)| (pane::place_id(id, socket), name.to_owned()))
+            .filter(|(_, _, _, name)| !name.is_empty())
+            .map(|(id, socket, dead, name)| (pane::place_id(id, socket), name.to_owned(), dead))
             .collect())
     }
 
-    fn spawn_pane(&self, req: &SpawnRequest, timeout: Duration) -> Result<String, HostError> {
+    /// The new pane's place id, and the environment folder its program has
+    /// not yet read and removed (none without an environment).
+    fn spawn_pane(
+        &self,
+        req: &SpawnRequest,
+        timeout: Duration,
+    ) -> Result<(String, Option<std::path::PathBuf>), HostError> {
         if req.argv.is_empty() {
             return Err(HostError::new(
                 HostErrorCode::BadArgument,
@@ -243,7 +249,7 @@ impl Tmux {
         if let (Err(_), Some(dir)) = (&result, &env_dir) {
             drop(std::fs::remove_dir_all(dir));
         }
-        result
+        Ok((result?, env_dir))
     }
 
     /// Writes `export KEY='value'` lines to a file in a new directory only the
@@ -267,12 +273,16 @@ impl Tmux {
             text.push_str("export ");
             text.push_str(k);
             text.push('=');
-            text.push_str(&sh_quote(v));
+            text.push_str(&LaunchSpec::shell_word(v));
             text.push('\n');
         }
         // `write_atomic` keeps the mode of the file it replaces and gives a new
         // file 0644. Make the file first at 0600 so the values are private.
         let file = dir.join("env");
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "creates the file at 0600 before write_atomic fills it"
+        )]
         let written = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -292,6 +302,12 @@ impl Tmux {
     }
 }
 
+/// One share of `timeout` for each of `calls` tmux calls that may run one
+/// after the other, so their sum never passes the caller's `timeout`.
+fn share(timeout: Duration, calls: usize) -> Duration {
+    timeout / u32::try_from(calls.max(1)).unwrap_or(u32::MAX)
+}
+
 /// A name `sh` accepts in `export NAME=...`.
 fn is_env_name(name: &str) -> bool {
     let mut chars = name.chars();
@@ -299,11 +315,6 @@ fn is_env_name(name: &str) -> bool {
         .next()
         .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// A word for `sh`: single-quoted, each `'` written `'\''`.
-fn sh_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
 }
 
 /// The words that load the environment file in `dir`, remove `dir`, and then
@@ -342,7 +353,25 @@ impl Host for Tmux {
     }
 
     fn spawn(&self, req: &SpawnRequest, timeout: Duration) -> Result<Place, HostError> {
-        let id = self.spawn_pane(req, timeout)?;
+        // The calls in a spawn: the name check, up to three to make the pane,
+        // the mark, and the kill after a failed mark.
+        let each = share(timeout, 6);
+        // shortcut: check then act, so two spawns of one name at the same
+        // instant could both pass; launch spawns one member at a time.
+        if self
+            .live_agent_names(each)?
+            .iter()
+            .any(|n| n == req.name.as_str())
+        {
+            return Err(HostError::new(
+                HostErrorCode::BadArgument,
+                format!(
+                    "agent_name_taken: an agent named {} is already live",
+                    req.name
+                ),
+            ));
+        }
+        let (id, env_dir) = self.spawn_pane(req, each)?;
         let place = Place {
             host: self.id(),
             id,
@@ -359,9 +388,13 @@ impl Host for Tmux {
                 NAME_OPTION,
                 req.name.as_str(),
             ],
-            timeout,
+            each,
         ) {
-            drop(self.run_at(&pane, &["kill-pane", "-t", pane.id], timeout));
+            drop(self.run_at(&pane, &["kill-pane", "-t", pane.id], each));
+            // The killed program may never have read the environment folder.
+            if let Some(dir) = &env_dir {
+                drop(std::fs::remove_dir_all(dir));
+            }
             return Err(e.into());
         }
         Ok(place)
@@ -374,6 +407,9 @@ impl Host for Tmux {
             std::process::id(),
             BUFFER_COUNTER.fetch_add(1, Ordering::Relaxed)
         );
+        // Load, paste and then either the delete after a failed paste or the
+        // Enter: three calls at most.
+        let each = share(timeout, 3);
         // The buffer lives on the pane's server, so load, paste and delete
         // all go there.
         call(
@@ -381,20 +417,20 @@ impl Host for Tmux {
             pane.server().or_else(|| self.own_server()),
             &["load-buffer", "-b", &buffer, "-"],
             Some(text.as_str().as_bytes()),
-            timeout,
+            each,
         )?;
         // `-p` sends the text as a bracketed paste where the program asked
         // for one; `-d` drops the buffer afterwards.
         if let Err(e) = self.run_at(
             &pane,
             &["paste-buffer", "-p", "-d", "-b", &buffer, "-t", pane.id],
-            timeout,
+            each,
         ) {
-            drop(self.run_at(&pane, &["delete-buffer", "-b", &buffer], timeout));
+            drop(self.run_at(&pane, &["delete-buffer", "-b", &buffer], each));
             return Err(e.into());
         }
         std::thread::sleep(PASTE_SETTLE);
-        self.run_at(&pane, &["send-keys", "-t", pane.id, "Enter"], timeout)?;
+        self.run_at(&pane, &["send-keys", "-t", pane.id, "Enter"], each)?;
         Ok(())
     }
 
@@ -453,33 +489,36 @@ impl Host for Tmux {
 
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError> {
         let pane = Self::pane(place)?;
+        let each = share(timeout, keys.len());
         for key in keys {
             let tail = keys::send_args(*key);
             let mut args = vec!["send-keys", "-t", pane.id];
             args.extend(tail.iter().map(String::as_str));
-            self.run_at(&pane, &args, timeout)?;
+            self.run_at(&pane, &args, each)?;
         }
         Ok(())
     }
 
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
         let pane = Self::pane(place)?;
         // After a tmux server restart the pane ids start again at `%0`, so a
-        // recorded id can name a pane that is not ours. Only a pane this
-        // adapter marked is killed.
+        // recorded id can name another member's pane. Only the pane this
+        // adapter marked with the expected name is killed.
         let format = format!("#{{{NAME_OPTION}}}");
+        // Reading the mark and killing the pane: two calls.
+        let each = share(timeout, 2);
         let mark = self.run_at(
             &pane,
             &["display-message", "-p", "-t", pane.id, &format],
-            timeout,
+            each,
         )?;
-        if mark.trim().is_empty() {
+        if mark.trim() != expected.as_str() {
             return Err(HostError::new(
                 HostErrorCode::NotFound,
-                format!("{} is not a pane teamwire started", pane.id),
+                format!("{} is not {expected}'s pane", pane.id),
             ));
         }
-        self.run_at(&pane, &["kill-pane", "-t", pane.id], timeout)?;
+        self.run_at(&pane, &["kill-pane", "-t", pane.id], each)?;
         Ok(())
     }
 
@@ -488,7 +527,7 @@ impl Host for Tmux {
         Ok(self
             .marked_panes(timeout)?
             .into_iter()
-            .map(|(id, _)| Place {
+            .map(|(id, _, _)| Place {
                 host: host.clone(),
                 id,
             })
@@ -499,7 +538,8 @@ impl Host for Tmux {
         Ok(self
             .marked_panes(timeout)?
             .into_iter()
-            .map(|(_, name)| name)
+            .filter(|(_, _, dead)| !dead)
+            .map(|(_, name, _)| name)
             .collect())
     }
 
@@ -531,7 +571,7 @@ fn last_lines(screen: &str, n: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use teamwire_core::RunOutput;
+    use teamwire_core::{Key, RunOutput};
     use teamwire_fakes::FakePlatform;
 
     fn ok(stdout: &str) -> RunOutput {
@@ -561,6 +601,120 @@ mod tests {
         assert!(total <= Duration::from_secs(8), "{runs:?}");
     }
 
+    fn place_in(tmux: &Tmux) -> Place {
+        Place {
+            host: tmux.id(),
+            id: "%1".to_owned(),
+        }
+    }
+
+    /// The sum of the timeouts of every command the platform ran.
+    fn total_timeout(platform: &FakePlatform) -> Duration {
+        platform.runs().iter().map(|(_, t)| *t).sum()
+    }
+
+    #[test]
+    fn submit_keeps_its_three_calls_inside_the_callers_timeout() {
+        let platform = Arc::new(FakePlatform::new());
+        for _ in 0..3 {
+            platform.queue_run(Ok(ok("")));
+        }
+        let tmux = Tmux::new(platform.clone());
+        let text = teamwire_core::one_line("hello", 20);
+        tmux.submit(&place_in(&tmux), &text, Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(platform.runs().len(), 3, "{:?}", platform.runs());
+        assert!(total_timeout(&platform) <= Duration::from_secs(5));
+    }
+
+    #[test]
+    fn send_keys_keeps_all_its_keys_inside_the_callers_timeout() {
+        let platform = Arc::new(FakePlatform::new());
+        for _ in 0..3 {
+            platform.queue_run(Ok(ok("")));
+        }
+        let tmux = Tmux::new(platform.clone());
+        let keys = [Key::Char('x'), Key::Escape, Key::Enter];
+        tmux.send_keys(&place_in(&tmux), &keys, Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(platform.runs().len(), 3, "{:?}", platform.runs());
+        assert!(total_timeout(&platform) <= Duration::from_secs(5));
+    }
+
+    #[test]
+    fn close_keeps_its_two_calls_inside_the_callers_timeout() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(Ok(ok("tw_demo_api\n")));
+        platform.queue_run(Ok(ok("")));
+        let tmux = Tmux::new(platform.clone());
+        let mine = Address::parse("tw_demo_api").unwrap();
+        tmux.close(&place_in(&tmux), &mine, Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(platform.runs().len(), 2, "{:?}", platform.runs());
+        assert!(total_timeout(&platform) <= Duration::from_secs(5));
+    }
+
+    fn spawn_request(env: Vec<(String, String)>) -> SpawnRequest {
+        SpawnRequest {
+            name: Address::parse("tw_demo_api").unwrap(),
+            title: "api".to_owned(),
+            cwd: std::env::temp_dir(),
+            argv: vec!["cat".to_owned()],
+            env,
+        }
+    }
+
+    #[test]
+    fn spawn_keeps_its_calls_inside_the_callers_timeout_even_when_it_starts_the_server() {
+        let platform = Arc::new(FakePlatform::new());
+        // The longest path: no server for the name check, none for the first
+        // `new-window`, a new session, then the mark.
+        let no_server = |msg: &str| {
+            Ok(RunOutput {
+                exit_code: 1,
+                stdout: Vec::new(),
+                stderr: msg.as_bytes().to_vec(),
+                timed_out: false,
+            })
+        };
+        platform.queue_run(no_server("no server running on /tmp/tmux-1/default"));
+        platform.queue_run(no_server("no server running on /tmp/tmux-1/default"));
+        platform.queue_run(Ok(ok("%1 /tmp/tmux-1/default\n")));
+        platform.queue_run(Ok(ok("")));
+        let tmux = Tmux::new(platform.clone());
+        tmux.spawn(&spawn_request(Vec::new()), Duration::from_secs(6))
+            .unwrap();
+        assert_eq!(platform.runs().len(), 4, "{:?}", platform.runs());
+        assert!(total_timeout(&platform) <= Duration::from_secs(6));
+    }
+
+    #[test]
+    fn a_failed_mark_removes_the_environment_folder() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(Ok(ok("")));
+        platform.queue_run(Ok(ok("%1 /tmp/tmux-1/default\n")));
+        // The mark fails, then the pane is killed.
+        platform.queue_run(Ok(RunOutput {
+            exit_code: 1,
+            stdout: Vec::new(),
+            stderr: b"boom".to_vec(),
+            timed_out: false,
+        }));
+        platform.queue_run(Ok(ok("")));
+        let tmux = Tmux::new(platform.clone());
+        let req = spawn_request(vec![("SECRET".to_owned(), "x".to_owned())]);
+        tmux.spawn(&req, Duration::from_secs(6)).unwrap_err();
+        // The wrapper in the pane's argv names the folder it would have read.
+        let runs = platform.runs();
+        let dir = runs
+            .iter()
+            .flat_map(|(c, _)| c.args.iter())
+            .find(|a| a.contains("teamwire-tmux-env-"))
+            .map(|a| a.trim_matches('\'').to_owned())
+            .unwrap();
+        assert!(!std::path::Path::new(&dir).exists(), "{dir} was left");
+    }
+
     fn env<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
         move |var| {
             pairs
@@ -587,6 +741,30 @@ mod tests {
             Some("%4")
         );
         assert_eq!(tmux.place_from_env(&env(&[("TMUX", "/x,1,0")])), None);
+    }
+
+    #[test]
+    fn close_leaves_a_pane_marked_with_another_name() {
+        let platform = Arc::new(FakePlatform::new());
+        platform.queue_run(Ok(ok("tw_other_web\n")));
+        let tmux = Tmux::new(platform.clone());
+        let place = Place {
+            host: tmux.id(),
+            id: "%0".to_owned(),
+        };
+        let mine = Address::parse("tw_demo_api").unwrap();
+        let err = tmux
+            .close(&place, &mine, Duration::from_secs(5))
+            .unwrap_err();
+        assert_eq!(err.code, HostErrorCode::NotFound);
+        let runs = platform.runs();
+        assert_eq!(runs.len(), 1, "only the mark was read: {runs:?}");
+        assert!(
+            !runs
+                .iter()
+                .any(|(c, _)| c.args.iter().any(|a| a == "kill-pane")),
+            "{runs:?}"
+        );
     }
 
     #[test]

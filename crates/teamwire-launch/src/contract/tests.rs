@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use teamwire_core::MessageType;
+
 use super::*;
 
 fn render(kind: MemberKind, check: Option<&str>, owns: &[String]) -> String {
@@ -229,12 +231,15 @@ fn contract_names_the_launching_binary() {
 
 #[test]
 fn a_binary_path_with_a_space_or_a_quote_is_shell_quoted() {
-    assert_eq!(shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
+    assert_eq!(LaunchSpec::shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
     assert_eq!(
-        shell_word("/Users/a b/Application Support/teamwire"),
+        LaunchSpec::shell_word("/Users/a b/Application Support/teamwire"),
         "'/Users/a b/Application Support/teamwire'"
     );
-    assert_eq!(shell_word("/o'k/teamwire"), "'/o'\\''k/teamwire'");
+    assert_eq!(
+        LaunchSpec::shell_word("/o'k/teamwire"),
+        "'/o'\\''k/teamwire'"
+    );
     let text = render_contract(&ContractParts {
         team: &TeamName::parse("demo").unwrap(),
         role: &Role::parse("api").unwrap(),
@@ -249,34 +254,20 @@ fn a_binary_path_with_a_space_or_a_quote_is_shell_quoted() {
     assert!(text.contains("echo {teamwire}"), "a check is not rewritten");
 }
 
-/// The message types each kind may send, as `teamwire-msg`'s `check_type`
-/// allows them. Launch sits below the message crate, so the table is copied.
-fn sendable(kind: MemberKind) -> &'static [&'static str] {
-    match kind {
-        MemberKind::Reviewer | MemberKind::Closer => &[],
-        MemberKind::Implementer | MemberKind::Investigator => {
-            &["notice", "finding", "question", "answer"]
-        }
-    }
-}
-
 #[test]
 fn each_contract_names_only_message_types_its_kind_may_send() {
-    const TYPES: &[&str] = &[
-        "notice", "finding", "question", "answer", "reprompt", "note",
-    ];
     for kind in MemberKind::ALL {
         let text = render(*kind, Some("true"), &["a/".to_owned()]);
-        for ty in TYPES {
+        for ty in MessageType::ALL {
             let named = text.contains(&format!("--type {ty}"))
                 || text.contains(&format!("- {ty}:"))
                 || text.contains(&format!("{ty} message"));
             // The lead's reprompt and note reach every kind; only a sent type counts.
-            if matches!(*ty, "reprompt" | "note") {
+            if matches!(ty, MessageType::Reprompt | MessageType::Note) {
                 continue;
             }
             assert!(
-                !named || sendable(*kind).contains(ty),
+                !named || kind.may_send(*ty),
                 "{kind}: names the {ty} type, which it may not send"
             );
         }

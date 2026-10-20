@@ -12,7 +12,8 @@ mod rig;
 use rmcp::model::CacheScope;
 use serde_json::{Value, json};
 use teamwire_core::{EventType, MemberKind};
-use teamwire_mcp::McpCaller;
+use teamwire_mcp::{McpCaller, ServerEnv};
+use teamwire_msg::CallerEnv;
 
 use rig::{Rig, call, ok, refused, sid, token_of, two_members};
 
@@ -405,6 +406,45 @@ async fn a_lead_call_without_the_recorded_session_is_refused() {
 }
 
 #[tokio::test]
+async fn a_lead_server_started_in_a_member_session_refuses_and_logs_it() {
+    let (mut rig, _api, _web) = two_members().await;
+    // With the member's own token, and with only its team and role: either
+    // way the environment is a member's, so it proves no lead (ADR 0008).
+    let with_token = CallerEnv {
+        team: Some("alpha".to_owned()),
+        role: Some("api".to_owned()),
+        token: Some(token_of("api")),
+        ..CallerEnv::default()
+    };
+    let without_token = CallerEnv {
+        token: None,
+        ..with_token.clone()
+    };
+    for process in [with_token, without_token] {
+        let env = ServerEnv {
+            process: process.clone(),
+            ..rig.env()
+        };
+        let lead = rig.client_with(env, McpCaller::Lead).await;
+        let before = rig.stored();
+        let result = call(
+            &lead,
+            "team_send",
+            json!({"team": "alpha", "to": ["web"], "type": "note", "text": "ship it"}),
+        )
+        .await;
+        assert_eq!(refused(&result), "refused.identity", "{process:?}");
+        let after = rig.stored();
+        assert_eq!(after.1, before.1, "nothing is sent: {process:?}");
+        assert_eq!(
+            after.0[before.0.len()..],
+            [EventType::MessageRefused],
+            "{process:?}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn a_lead_server_with_no_session_id_says_so() {
     let rig = Rig::new();
     rig.harness.set_caller(None);
@@ -508,6 +548,10 @@ async fn a_read_tool_on_an_older_database_fails_and_leaves_the_file_alone() {
     let dir = rig.home.path().join("teams").join("old");
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("team.db");
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test makes an empty file, not a store file"
+    )]
     std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
