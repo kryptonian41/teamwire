@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{Config, OneLine, Pid, TeamName};
-use teamwire_deliver::{DeliveryOutcome, deliver_line, deliver_line_within};
+use teamwire_deliver::{DeliveryOutcome, WATCH_LEASE_STALE, deliver_line, deliver_line_within};
 use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
@@ -20,6 +20,11 @@ use crate::{Global, USAGE, WatchArgs};
 /// Exit codes of `docs/api/cli.md`.
 const REFUSED: u8 = 1;
 const STORE_ERROR: u8 = 6;
+
+/// The longest `--interval`. Each poll refreshes the lease, and a lease
+/// unrefreshed for `WATCH_LEASE_STALE` looks dead to a second watch. Half
+/// of that leaves room for a slow poll.
+const MAX_INTERVAL_S: u64 = WATCH_LEASE_STALE.as_secs() / 2;
 
 /// How often the exporter runs while the watch does (ARCHITECTURE "Metrics").
 const EXPORT_EVERY: Duration = Duration::from_secs(60);
@@ -136,6 +141,12 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
     }
     if *interval == 0 {
         return fail("--interval must be at least 1 second", USAGE);
+    }
+    if *interval > MAX_INTERVAL_S {
+        return fail(
+            &format!("--interval must be at most {MAX_INTERVAL_S} seconds"),
+            USAGE,
+        );
     }
     let home = match home_or_refuse("watch", global) {
         Ok(home) => home,

@@ -12,8 +12,11 @@ pub(crate) use teamwire_deliver::agent_text;
 /// The longest one event may be. A poll joins several, so each is cut alone
 /// and a long summary cannot push a later event out of the line.
 const EVENT_MAX: usize = 300;
-/// The longest a whole line may be.
+/// The longest a whole line may be. A poll whose events do not all fit
+/// prints those that do and leaves the rest for a later poll.
 pub(crate) const LINE_MAX: usize = 2000;
+/// What a poll puts between two events in its line.
+pub(crate) const SEP: &str = " | ";
 
 pub(crate) fn silent_prefix(role: &Role, generation: u32) -> String {
     format!("SILENT:{role}:{generation}:")

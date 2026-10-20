@@ -1229,3 +1229,83 @@ fn idle_polls_before_done_do_not_make_unreported_early() {
     let later = bed.ticks(1);
     assert_eq!(count(&later, "UNREPORTED"), 1, "{later:?}");
 }
+
+#[test]
+fn events_past_the_line_limit_wait_for_a_later_poll_and_team_complete_comes_last() {
+    let mut bed = Bed::new();
+    let members: Vec<String> = (0..10).map(|i| format!("m{i}")).collect();
+    for name in &members {
+        bed.add(name);
+        bed.working(name);
+    }
+    bed.age(secs(120));
+    bed.poll();
+    for name in &members {
+        bed.delivered(name, CompletionStatus::Done);
+    }
+    for name in &members {
+        for _ in 0..5 {
+            bed.send(teamwire_core::MessageType::Note, name, None);
+        }
+    }
+    bed.age(secs(601));
+    // Fifty UNREAD events do not fit in one line of 2000 characters.
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(10));
+    for line in &lines {
+        assert!(line.chars().count() <= 2000, "{line}");
+        assert!(!line.ends_with('…'), "a line was cut: {line}");
+    }
+    assert!(lines.len() > 1, "{lines:?}");
+    assert_eq!(count(&lines, "UNREAD"), 50, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+    let last = lines.last().unwrap();
+    assert_eq!(
+        names(last).last().map(String::as_str),
+        Some("TEAM-COMPLETE")
+    );
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
+
+/// Sets one member's `gen_started_at` to `value`, past the store's checks.
+#[expect(clippy::unwrap_used, reason = "a failure fails the test")]
+fn set_started_at(bed: &mut Bed, name: &str, value: &str) {
+    bed.store
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE members SET gen_started_at = ?1 WHERE role = ?2",
+                    [value, name],
+                )
+                .map(|_| ())
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+}
+
+#[test]
+fn the_first_good_poll_says_watching_after_a_failed_one() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.working("api");
+    let started: String = bed
+        .store
+        .read(|tx| {
+            tx.connection()
+                .query_row(
+                    "SELECT gen_started_at FROM members WHERE role = 'api'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    set_started_at(&mut bed, "api", "not a time");
+    let failed = bed.poll().unwrap();
+    assert!(failed.contains("STORE-ERROR"), "{failed}");
+    assert_eq!(bed.memory.end, None, "the failure is not final");
+    set_started_at(&mut bed, "api", &started);
+    let line = bed.tick().unwrap();
+    assert_eq!(line, "[teamwire:alpha] WATCHING 1 members");
+    assert!(bed.ticks(3).is_empty());
+}
