@@ -306,7 +306,10 @@ fn a_launch_waits_for_a_live_exclude_lock() {
         let launch = s.spawn(|| rig.launch("demo", rig.validate(&spec, false).unwrap()));
         std::thread::sleep(std::time::Duration::from_millis(1500));
         let held = std::fs::read_to_string(&exclude).unwrap_or_default();
-        assert!(!held.contains("/TASK.md"), "written under a held lock: {held}");
+        assert!(
+            !held.contains("/TASK.md"),
+            "written under a held lock: {held}"
+        );
         std::fs::remove_dir_all(&lock).unwrap();
         let (report, _) = launch.join().unwrap();
         assert_eq!(

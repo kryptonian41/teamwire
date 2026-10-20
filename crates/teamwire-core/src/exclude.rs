@@ -121,7 +121,14 @@ mod tests {
 
     #[test]
     fn path_of_reads_back_what_anchored_wrote() {
-        for path in ["TASK.md", "a b/c ", "#x", "!y", "w*[?]\\z", "dir/!not-first"] {
+        for path in [
+            "TASK.md",
+            "a b/c ",
+            "#x",
+            "!y",
+            "w*[?]\\z",
+            "dir/!not-first",
+        ] {
             assert_eq!(path_of(&anchored(path)).as_deref(), Some(path), "{path}");
         }
     }

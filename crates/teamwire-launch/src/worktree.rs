@@ -210,8 +210,7 @@ fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<Exc
         .unwrap_or_else(|_| parent.to_path_buf())
         .join(name);
     let locks = home.join("locks");
-    std::fs::create_dir_all(&locks)
-        .map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
+    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
     let digest = Sha256::digest(key.to_string_lossy().as_bytes());
     let dir = locks.join(format!("exclude-{}", hex::encode(digest)));
     for _ in 0..LOCK_TRIES {
