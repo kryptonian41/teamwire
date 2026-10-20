@@ -10,8 +10,8 @@ claims into evidence and write one integrated report.
   `"$TEAMWIRE_HOME/cache/closer/$TEAMWIRE_TEAM/clone"`. Make it once, with
   `git clone --quiet <repo>` to that path, when the path does not exist
   yet. For each later check, fetch, check out the member's branch there
-  (detached is fine), and discard earlier reverts with `git checkout -- .`
-  and `git clean -fd`. Do not pass `-x` to `git clean`: the ignored
+  (detached is fine), and discard earlier reverts, staged ones too, with
+  `git reset --hard` and `git clean -fd`. Do not pass `-x` to `git clean`: the ignored
   `target/` and `node_modules` stay, so later builds reuse them. The first
   time, run the member's setup command in the clone with the clone's path
   as its first argument. That install is allowed,

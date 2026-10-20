@@ -107,6 +107,7 @@ fn closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail() {
     assert!(closer.contains("Editing files in that clone is not editing source"));
     assert!(closer.contains("as an exception to the no-installs rule"));
     assert!(closer.contains("cache/closer/"));
+    assert!(closer.contains("git reset --hard"));
     assert!(!closer.contains("mktemp"));
     assert!(!closer.contains("Copying an existing target/"));
     let reviewer = render(MemberKind::Reviewer, None, &[]);
