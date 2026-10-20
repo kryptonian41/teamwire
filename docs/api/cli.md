@@ -319,14 +319,20 @@ every name is taken or refused). The branch is listed among the kept branches,
 and `--dry-run` names it and creates none. Close never moves or deletes a
 branch. On the whole-team path, a member whose HEAD is detached has its place
 closed right before its worktree is removed, inside `remove_worktrees`, so
-nothing can commit between the last HEAD check and the removal; every other
-place closes in `close_places`. `--dry-run` names each such member in its
+the agent is gone before the last HEAD check; every other place closes in
+`close_places`. `--dry-run` names each such member in its
 `remove_worktrees` line: `<role>'s HEAD is detached, so its place is closed
 right before its worktree is removed`. When close closes a place right before
 it removes the worktree (a detached member on the whole-team path, and every
-`--role` removal), it first waits up to 5 s for the processes that ran in the
-place to end. If one still runs, the worktree is kept, the step names the
-processes, and close stops; stop them, then run close again. A `--role`
+`--role` removal), it first waits up to 5 s for the processes the host
+reported in the place to end. If one still runs, the worktree is kept, the
+step names the processes, and close stops; stop them, then run close again.
+tmux reports every process in the pane's tree as close reads it, so on tmux
+only a process that had already left that tree (a daemon that detached
+itself) can commit between the last HEAD check and the removal. herdr reports
+no processes, so on herdr close does not wait: a process from the pane that
+ignores the hangup can still commit in that window, and its commit is then on
+no ref. A `--role`
 removal stopped there says the place was closed and the worktree kept.
 Close takes back the `info/exclude` lines launch added (and `/TASK.md`)
 that no remaining worktree needs; the `remove_worktrees` (or `remove_worktree`)
