@@ -267,22 +267,35 @@ impl Seq<'_, '_> {
         let mut notes = Vec::new();
         let mut repos: Vec<&Path> = Vec::new();
         for member in live(&members).filter(|m| m.mode == Mode::Worktree) {
-            match kept_branches(self.ctx, &self.team, member, false) {
+            let detached = match kept_branches(self.ctx, &self.team, member, false) {
                 Ok(kept) => {
                     self.report.branches_kept.extend(kept.branches);
                     self.report.unpushed.extend(kept.unpushed);
+                    kept.detached
                 }
                 Err(why) => {
                     problems.push(why);
                     continue;
                 }
-            }
+            };
             if let Some(detail) = ignored_warning(self.ctx, member) {
                 self.report.steps.push(StepOutcome {
                     step: member.role.to_string(),
                     ok: true,
                     detail,
                 });
+            }
+            // A commit on a detached HEAD moves no branch, so one made after
+            // the last HEAD check would be on no ref once the worktree goes:
+            // the agent stops first. A HEAD on a branch keeps such a commit.
+            if detached {
+                match close_place(self.ctx, &self.team, member) {
+                    Ok(note) => notes.extend(note),
+                    Err(why) => {
+                        problems.push(why);
+                        continue;
+                    }
+                }
             }
             match remove_worktree(self.ctx, member) {
                 Ok(note) => notes.push(note),

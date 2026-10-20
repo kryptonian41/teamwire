@@ -4,7 +4,9 @@
 
 use std::time::Duration;
 
-use teamwire_core::{Address, HostErrorCode, Member, MemberState, Mode, RunOutput, TeamName};
+use teamwire_core::{
+    Address, HostErrorCode, Member, MemberState, Mode, Pid, Platform, RunOutput, TeamName,
+};
 use teamwire_store::{Ctx, Party};
 
 use crate::facts::{self, Detached, Rescue};
@@ -87,9 +89,20 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     Some(format!("removal deletes ignored files: {named}"))
 }
 
+/// How long a close waits for the processes that ran in a place to end once
+/// the place is closed: they only have to exit on the hangup.
+const EXIT_TRIES: u32 = 100;
+const EXIT_PAUSE: Duration = Duration::from_millis(50);
+
 /// Closes the member's own place through the member's own host (CLS-7).
 /// A place the host no longer knows, or one that now holds another agent
-/// (a reused id), is closed already.
+/// (a reused id), is closed already. When the member's worktree is still
+/// there, it is removed next, so close waits for the processes that ran in
+/// the place to end: the host returns once the place is closed, and a git
+/// command the hangup reached may still be finishing. If they still run when
+/// the wait ends, the error keeps the worktree and names them; it is the
+/// only error that starts with `<role>'s place `, which the CLI reads to say
+/// the place is already closed.
 pub(crate) fn close_place(
     ctx: &Ctx<'_>,
     team: &TeamName,
@@ -102,8 +115,29 @@ pub(crate) fn close_place(
     let (_, host) = ctx
         .adapters(&Party::Member(role.clone()))
         .map_err(|e| format!("{role}: {e}"))?;
+    // Read before the close: a closed place has no occupant to ask about.
+    let pids = if member.mode == Mode::Worktree && member.cwd.is_dir() {
+        host.occupant(place, HOST_TIMEOUT)
+            .map(|o| o.pids)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     match host.close(place, &Address::of(team, role), HOST_TIMEOUT) {
-        Ok(()) => Ok(Some(format!("{role}'s place {} closed", place.id))),
+        Ok(()) => {
+            let running = still_running(ctx.platform, pids);
+            if running.is_empty() {
+                return Ok(Some(format!("{role}'s place {} closed", place.id)));
+            }
+            let named: Vec<String> = running.iter().map(ToString::to_string).collect();
+            Err(format!(
+                "{role}'s place {} closed, but process(es) {} that ran in it still run {} s \
+                 later; the worktree is kept. Stop them, then run close again",
+                place.id,
+                named.join(", "),
+                (EXIT_PAUSE * EXIT_TRIES).as_secs()
+            ))
+        }
         Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
             "{role}'s place {} was already gone",
             place.id
@@ -112,12 +146,28 @@ pub(crate) fn close_place(
     }
 }
 
+/// The processes of `pids` still running after the wait. A pid seen gone is
+/// not asked about again, so a later process that reuses it does not count.
+fn still_running(platform: &dyn Platform, mut pids: Vec<Pid>) -> Vec<Pid> {
+    for _ in 0..EXIT_TRIES {
+        pids.retain(|p| platform.pid_alive(*p));
+        if pids.is_empty() {
+            return pids;
+        }
+        std::thread::sleep(EXIT_PAUSE);
+    }
+    pids.retain(|p| platform.pid_alive(*p));
+    pids
+}
+
 /// The branches close keeps for one member, and what they hold that no
 /// remote has.
 #[derive(Debug, Default)]
 pub(crate) struct Kept {
     pub(crate) branches: Vec<String>,
     pub(crate) unpushed: Vec<String>,
+    /// The worktree's HEAD was detached when the branches were read.
+    pub(crate) detached: bool,
 }
 
 /// The branches close keeps for one member: the recorded one, unless the
@@ -140,7 +190,9 @@ pub(crate) fn kept_branches(
             .as_deref()
             .is_some_and(|r| git::branch_is_gone(ctx.platform, r, b))
     }));
-    let rescue = match facts::detached(ctx, team, member).map_err(|e| format!("{role}: {e}"))? {
+    let head = facts::detached(ctx, team, member).map_err(|e| format!("{role}: {e}"))?;
+    kept.detached = head.is_some();
+    let rescue = match head {
         Some(head) if dry_run => head
             .pick(&[])
             .map_err(|e| format!("{role}'s {e}"))?

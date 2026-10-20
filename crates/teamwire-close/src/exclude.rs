@@ -6,14 +6,15 @@
 //! records nothing, so it goes once no worktree needs it, whoever added it.
 //!
 //! Every read-modify-write holds the exclude lock launch also takes:
-//! `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>`.
+//! `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>.lock`.
 
 use std::collections::BTreeMap;
+use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use teamwire_core::{EventType, Member, Mode, Pid, Platform, Role, exclude};
+use teamwire_core::{EventType, Member, Mode, Platform, Role, exclude};
 use teamwire_store::Ctx;
 
 use crate::git;
@@ -105,7 +106,7 @@ fn recorded(ctx: &Ctx<'_>, role: &Role) -> Result<Vec<(PathBuf, Vec<String>)>, S
 /// running now is either seen here or adds its line back itself.
 fn take_back_file(ctx: &Ctx<'_>, file: &Path, repo: &Path, lines: &[String]) -> Option<String> {
     let shown = file.display();
-    let _lock = match lock_exclude(ctx.platform, ctx.home, file) {
+    let _lock = match lock_exclude(ctx.home, file) {
         Ok(lock) => lock,
         Err(why) => return Some(format!("{why}; its lines are left in place")),
     };
@@ -192,67 +193,44 @@ fn canonical(file: &Path) -> PathBuf {
     }
 }
 
-/// A held lock on one `info/exclude`. Dropping it releases the lock.
+/// A held lock on one `info/exclude`. Dropping it closes the file, which
+/// releases the lock.
 struct ExcludeLock {
-    dir: PathBuf,
+    _file: File,
 }
 
-impl Drop for ExcludeLock {
-    fn drop(&mut self) {
-        // A lock left here names this pid, so it is cleared once this process ends.
-        if let Err(e) = std::fs::remove_dir_all(&self.dir) {
-            tracing::warn!(lock = %self.dir.display(), error = %e, "an exclude lock could not be released");
-        }
-    }
-}
-
-/// The lock launch takes too (teamwire-launch's worktree.rs): a directory
-/// that `create_dir` makes in one atomic step, holding the owner's pid. A
-/// lock whose owner is dead is removed; waiting is bounded.
-fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<ExcludeLock, String> {
+/// The lock launch takes too (teamwire-launch's worktree.rs): the kernel's
+/// `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>.lock`, a
+/// file made if missing and never deleted. The lock ends with the open file,
+/// so a holder that is killed leaves nothing held; waiting is bounded.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the exclude lock file is only ever locked, never written"
+)]
+fn lock_exclude(home: &Path, file: &Path) -> Result<ExcludeLock, String> {
     let locks = home.join("locks");
     std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
     let digest = Sha256::digest(canonical(file).to_string_lossy().as_bytes());
-    let dir = locks.join(format!("exclude-{}", hex::encode(digest)));
+    let path = locks.join(format!("exclude-{}.lock", hex::encode(digest)));
+    let lock = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
     for _ in 0..LOCK_TRIES {
-        match std::fs::create_dir(&dir) {
-            Ok(()) => {
-                let lock = ExcludeLock { dir };
-                let pid = std::process::id().to_string();
-                platform
-                    .write_atomic(&lock.dir.join("pid"), pid.as_bytes())
-                    .map_err(|e| format!("cannot write the lock {}: {e}", lock.dir.display()))?;
-                return Ok(lock);
+        match lock.try_lock() {
+            Ok(()) => return Ok(ExcludeLock { _file: lock }),
+            Err(TryLockError::WouldBlock) => std::thread::sleep(LOCK_PAUSE),
+            Err(TryLockError::Error(e)) => {
+                return Err(format!("cannot take the lock {}: {e}", path.display()));
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                if holder_is_dead(platform, &dir) {
-                    std::fs::remove_dir_all(&dir).ok();
-                } else {
-                    std::thread::sleep(LOCK_PAUSE);
-                }
-            }
-            Err(e) => return Err(format!("cannot make the lock {}: {e}", dir.display())),
         }
     }
     Err(format!(
         "another teamwire process held the lock {} on {} for {} s",
-        dir.display(),
+        path.display(),
         file.display(),
         (LOCK_PAUSE * LOCK_TRIES).as_secs()
     ))
-}
-
-/// True when the lock's pid file names a process that is not running. A
-/// pid of this process is another thread's hold, which is live.
-fn holder_is_dead(platform: &dyn Platform, dir: &Path) -> bool {
-    // shortcut: a lock with no pid file counts as held, because its owner may
-    // be between `create_dir` and the pid write; a process killed in that gap
-    // leaves a lock someone must delete. Upgrade if that is ever seen.
-    let Ok(text) = std::fs::read_to_string(dir.join("pid")) else {
-        return false;
-    };
-    let Ok(pid) = text.trim().parse::<u32>() else {
-        return false;
-    };
-    pid != std::process::id() && !platform.pid_alive(Pid::new(pid))
 }

@@ -810,6 +810,54 @@ fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
 }
 
 #[test]
+fn a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    let place = rig.place_of("api");
+    // A git command the hangup reached, still finishing after the place closed.
+    let late = teamwire_core::Pid::new(7002);
+    rig.host.set_occupant(
+        &place,
+        teamwire_core::Occupant {
+            session: None,
+            pids: vec![late],
+        },
+    );
+    rig.platform.inner.set_alive(late, true);
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("close_place"),
+        "{report:?}"
+    );
+    let failed = report.steps.last().unwrap();
+    assert!(
+        !failed.ok && failed.detail.contains("7002") && failed.detail.contains("run close again"),
+        "{report:?}"
+    );
+    // The CLI reads this start to say the place is closed and the worktree kept.
+    assert!(
+        failed
+            .detail
+            .starts_with(&format!("api's place {} closed, but ", place.id)),
+        "{report:?}"
+    );
+    assert!(place_is_closed(&rig, "api"));
+    assert!(
+        api.cwd.is_dir(),
+        "the worktree stays while the process runs"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Started);
+
+    // The process ends: a rerun removes the worktree and marks the row.
+    rig.platform.inner.set_alive(late, false);
+    let rerun = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(rerun.stopped_at, None, "{rerun:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}
+
+#[test]
 fn a_reused_place_id_is_not_closed_by_a_removal_with_stop() {
     let mut rig = Rig::without_repo();
     rig.add_pane_member("api", MemberKind::Investigator);
