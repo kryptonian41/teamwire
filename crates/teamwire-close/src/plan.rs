@@ -6,7 +6,7 @@ use teamwire_store::{Ctx, TeamRow};
 
 use crate::facts::{self, live};
 use crate::member_close::{ignored_warning, kept_branches};
-use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, remove};
+use crate::{CloseOpts, ClosePlan, CloseStep, CloseTarget, archive, delete, remove};
 
 fn step(name: &str, detail: impl Into<String>) -> CloseStep {
     CloseStep {
@@ -112,10 +112,15 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         if opts.keep_state {
             "keep the team directory, marked closed".to_owned()
         } else {
-            format!(
+            let mut detail = format!(
                 "delete {}",
                 ctx.home.join("teams").join(team.name.as_str()).display()
-            )
+            );
+            let cache = delete::closer_cache(ctx, &team.name);
+            if cache.symlink_metadata().is_ok() {
+                detail.push_str(&format!(" and {}", cache.display()));
+            }
+            detail
         },
     ));
     // An error here is already a refusal from the dirty check.

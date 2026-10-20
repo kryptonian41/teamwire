@@ -406,7 +406,12 @@ impl Seq<'_, '_> {
         if let Err(why) = archive::verify(self.ctx, &self.team_dir, &dest, true) {
             return self.done("delete_state", Err(why));
         }
-        let result = delete::delete_team_dir(self.ctx, &self.team, &self.team_dir);
+        let result = delete::delete_team_dir(self.ctx, &self.team, &self.team_dir).map(|detail| {
+            match delete::delete_closer_cache(self.ctx, &self.team) {
+                Some(note) => format!("{detail}; {note}"),
+                None => detail,
+            }
+        });
         self.done("delete_state", result)
     }
 

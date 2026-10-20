@@ -7,7 +7,7 @@
 //! one filesystem, and only then removed. A directory a killed close left
 //! there is removed by a later close, once the pid in its name is dead.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use teamwire_core::{Pid, TeamName};
 use teamwire_store::Ctx;
@@ -25,19 +25,7 @@ pub(crate) fn delete_team_dir(
     team: &TeamName,
     team_dir: &Path,
 ) -> Result<String, String> {
-    let deleting = ctx.home.join(DELETING);
-    std::fs::create_dir_all(&deleting)
-        .map_err(|e| format!("cannot create {}: {e}", deleting.display()))?;
-    remove_left_over(ctx, &deleting);
-    let doomed = deleting.join(format!("{}.{}", team.as_str(), std::process::id()));
-    // A directory under this name was left by an earlier process with the
-    // same pid, which is dead: this process now owns the pid.
-    if doomed.exists() {
-        std::fs::remove_dir_all(&doomed)
-            .map_err(|e| format!("cannot remove {}: {e}", doomed.display()))?;
-    }
-    move_dir(team_dir, &doomed)
-        .map_err(|e| format!("cannot move {} out of teams/: {e}", team_dir.display()))?;
+    let doomed = stage(ctx, team.as_str(), team_dir)?;
     Ok(match std::fs::remove_dir_all(&doomed) {
         Ok(()) => format!("deleted {}", team_dir.display()),
         Err(e) => format!(
@@ -48,7 +36,59 @@ pub(crate) fn delete_team_dir(
     })
 }
 
-/// Removes every `<team>.<pid>` directory under `deleting` whose pid is
+/// Moves `from` into `<home>/deleting/<name>.<pid>` and returns that path.
+fn stage(ctx: &Ctx<'_>, name: &str, from: &Path) -> Result<PathBuf, String> {
+    let deleting = ctx.home.join(DELETING);
+    std::fs::create_dir_all(&deleting)
+        .map_err(|e| format!("cannot create {}: {e}", deleting.display()))?;
+    remove_left_over(ctx, &deleting);
+    let doomed = deleting.join(format!("{name}.{}", std::process::id()));
+    // A directory under this name was left by an earlier process with the
+    // same pid, which is dead: this process now owns the pid.
+    if doomed.exists() {
+        std::fs::remove_dir_all(&doomed)
+            .map_err(|e| format!("cannot remove {}: {e}", doomed.display()))?;
+    }
+    move_dir(from, &doomed)
+        .map_err(|e| format!("cannot move {} out of teams/: {e}", from.display()))?;
+    Ok(doomed)
+}
+
+/// The closer's clone and build folder for a team. Nothing else removes it,
+/// and a build in it can hold tens of gigabytes.
+pub(crate) fn closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> PathBuf {
+    ctx.home.join("cache").join("closer").join(team.as_str())
+}
+
+/// Deletes the closer's cache folder if there is one. Returns a note for the
+/// step's detail, or nothing when there was no folder. A failure is only a
+/// note: the team's work is already safe in the archive.
+pub(crate) fn delete_closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> Option<String> {
+    let dir = closer_cache(ctx, team);
+    let meta = std::fs::symlink_metadata(&dir).ok()?;
+    // A link is removed as a link: renaming then `remove_dir_all` could walk
+    // into whatever it points at.
+    if meta.file_type().is_symlink() {
+        return Some(match std::fs::remove_file(&dir) {
+            Ok(()) => format!("deleted the link {}", dir.display()),
+            Err(e) => format!("cannot remove the link {}: {e}", dir.display()),
+        });
+    }
+    let doomed = match stage(ctx, &format!("closer-{}", team.as_str()), &dir) {
+        Ok(doomed) => doomed,
+        Err(e) => return Some(format!("closer cache kept: {e}")),
+    };
+    Some(match std::fs::remove_dir_all(&doomed) {
+        Ok(()) => format!("deleted {}", dir.display()),
+        Err(e) => format!(
+            "deleted {}; {} is left for a later close to remove: {e}",
+            dir.display(),
+            doomed.display()
+        ),
+    })
+}
+
+/// Removes every `<name>.<pid>` directory under `deleting` whose pid is
 /// dead. A live pid is a close that is removing its own directory now.
 fn remove_left_over(ctx: &Ctx<'_>, deleting: &Path) {
     let Ok(entries) = std::fs::read_dir(deleting) else {

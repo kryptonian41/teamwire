@@ -1408,3 +1408,59 @@ fn a_reused_place_id_is_not_closed_by_a_whole_team_close() {
         ["tw_other_web"]
     );
 }
+
+fn closer_cache_file(rig: &Rig) -> std::path::PathBuf {
+    let dir = rig
+        .home
+        .path()
+        .join("cache/closer")
+        .join(rig.team().name.as_str());
+    std::fs::create_dir_all(dir.join("clone/target")).unwrap();
+    std::fs::write(dir.join("clone/target/x"), "build output").unwrap();
+    dir
+}
+
+#[test]
+fn closing_the_team_deletes_the_closer_cache() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let detail = &plan
+        .steps
+        .iter()
+        .find(|s| s.step == "delete_state")
+        .unwrap()
+        .detail;
+    assert!(detail.contains(&cache.display().to_string()), "{detail}");
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!cache.exists());
+    assert!(!rig.team_dir().exists());
+}
+
+#[test]
+fn keep_state_keeps_the_closer_cache() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let opts = CloseOpts {
+        keep_state: true,
+        ..CloseOpts::default()
+    };
+    let report = close(&mut rig.ctx(), CloseTarget::Team, opts);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(cache.join("clone/target/x").is_file());
+}
+
+#[test]
+fn a_symlinked_closer_cache_is_removed_as_a_link() {
+    let mut rig = busy_team();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("keep"), "mine").unwrap();
+    let cache = closer_cache_file(&rig);
+    std::fs::remove_dir_all(&cache).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &cache).unwrap();
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(cache.symlink_metadata().is_err());
+    assert!(outside.path().join("keep").is_file());
+}
