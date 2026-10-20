@@ -1268,6 +1268,7 @@ fn events_past_the_line_limit_wait_for_a_later_poll_and_team_complete_comes_last
 }
 
 /// Sets one member's `gen_started_at` to `value`, past the store's checks.
+#[expect(clippy::unwrap_used, reason = "a failure fails the test")]
 fn set_started_at(bed: &mut Bed, name: &str, value: &str) {
     bed.store
         .write(|tx| {
