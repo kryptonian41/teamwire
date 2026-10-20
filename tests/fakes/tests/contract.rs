@@ -275,6 +275,26 @@ fn platform_contract_tries_longer_timeouts_until_the_child_prints_its_pid() {
     );
 }
 
+/// A grandchild that ends on its own before the last attempt's timeout lets a
+/// platform that leaks it pass, and lets the shell exit 0 before a correct
+/// platform kills it. So its sleep must outlast the longest attempt.
+#[test]
+fn the_grandchild_outlives_the_longest_attempt() {
+    let cases = RunCase::unix_standard();
+    let case = cases.iter().find(|c| c.expect.ends_grandchild).unwrap();
+    let longest = case.timeout.saturating_mul(100);
+    let script = case.command.args.last().unwrap();
+    let secs: u64 = script
+        .strip_prefix("sleep ")
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .expect("the grandchild case starts with `sleep <seconds>`");
+    assert!(
+        Duration::from_secs(secs) >= longest.saturating_mul(2),
+        "sleep {secs} against a longest attempt of {longest:?}"
+    );
+}
+
 #[test]
 fn platform_contract_fails_when_no_attempt_prints_a_pid() {
     let dir = tempfile::tempdir().unwrap();

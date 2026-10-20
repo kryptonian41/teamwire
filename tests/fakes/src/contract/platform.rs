@@ -118,7 +118,10 @@ impl RunCase {
             },
             Self {
                 name: "a timeout kills what the child started too",
-                command: sh("sleep 30 & echo $!; wait"),
+                // The grandchild outlives the longest attempt (30 s): one that
+                // ended on its own would hide a leak, and would let the shell
+                // exit 0 before a correct platform's timeout.
+                command: sh("sleep 300 & echo $!; wait"),
                 timeout: Duration::from_millis(300),
                 expect: RunExpect {
                     exit_code: RunOutput::TIMEOUT_EXIT,
