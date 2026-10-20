@@ -11,7 +11,7 @@ Every later test runs on these. Nothing here touches the real `~/.claude`,
 | `FakeClock` | in-process `Clock` | Time moves when the test says. `advance`, `sleep_and_wake` (wall clock jumps, monotonic does not), `set_wall`. |
 | `FakePlatform` | in-process `Platform` | Environments and start times per pid, free space, network-filesystem flag, a sleep hold that records start and release (`hold_events`). It writes real files, so give it a temporary directory. |
 | `FakeHarness` | in-process `Harness` | Sessions, pids, liveness; switchable capabilities (`set_caps`); a background caller; a listing failure. |
-| `FakeHost` | in-process `Host` | Places in a map; scripted faults per method. |
+| `FakeHost` | in-process `Host` | Places in a map; scripted faults per method. `close` leaves a place whose agent name is not the expected one and returns `NotFound`. `spawn` refuses a name that a live place holds with `BadArgument` and a detail starting `agent_name_taken:`; a place in state `Gone` holds no live agent. |
 | `NoTmuxConfig` | wrapper `Platform` | The real platform it wraps, except that every `tmux` call gets `-f /dev/null`. A test's private tmux server then never reads the user's `~/.tmux.conf`, whose plugins can make a server start slow enough to time out. |
 | `fake-herdr`, `fake-claude` | binaries | See below. |
 | `contract::*` | suites | See below. |
@@ -55,7 +55,7 @@ returns the request for one new place (the program must keep running until
 the place is closed). Fields to adjust: `timeout` (default 10 s),
 `echoes_input` (true when the program echoes typed text, so the suite can look
 for it in `read_tail`), `lists_agent_names` (false for a host without named
-agents), `screen_attempts`.
+agents), `refuses_live_names` (default true: the suite checks that `spawn` refuses a name a live place holds), `screen_attempts`.
 
 T05, the herdr adapter against `fake-herdr`:
 
