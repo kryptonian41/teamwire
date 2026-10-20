@@ -276,19 +276,26 @@ fn platform_contract_tries_longer_timeouts_until_the_child_prints_its_pid() {
 }
 
 #[test]
-#[should_panic(
-    expected = "a timeout kills what the child started too: the grandchild is gone: \"the child printed no pid\""
-)]
 fn platform_contract_fails_when_no_attempt_prints_a_pid() {
     let dir = tempfile::tempdir().unwrap();
     let platform = FakePlatform::new();
     let cases = RunCase::unix_standard();
     let setup = platform_setup(&platform, dir.path(), Vec::new());
     queue_with_early_kills(&platform, &cases, 3);
-    platform_contract(&PlatformSetup {
-        run_cases: cases,
-        ..setup
-    });
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        platform_contract(&PlatformSetup {
+            run_cases: cases,
+            ..setup
+        });
+    }))
+    .unwrap_err();
+    let message = failed.downcast_ref::<String>().unwrap();
+    assert!(
+        message.ends_with(
+            "a timeout kills what the child started too: the grandchild is gone: \"the child printed no pid\""
+        ),
+        "{message}"
+    );
 }
 
 #[test]
