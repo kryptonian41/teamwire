@@ -1409,6 +1409,10 @@ fn a_reused_place_id_is_not_closed_by_a_whole_team_close() {
     );
 }
 
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
 fn closer_cache_file(rig: &Rig) -> std::path::PathBuf {
     let dir = rig
         .home

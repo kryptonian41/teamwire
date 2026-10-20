@@ -112,15 +112,13 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         if opts.keep_state {
             "keep the team directory, marked closed".to_owned()
         } else {
-            let mut detail = format!(
-                "delete {}",
-                ctx.home.join("teams").join(team.name.as_str()).display()
-            );
+            let teams = ctx.home.join("teams").join(team.name.as_str());
             let cache = delete::closer_cache(ctx, &team.name);
             if cache.symlink_metadata().is_ok() {
-                detail.push_str(&format!(" and {}", cache.display()));
+                format!("delete {} and {}", teams.display(), cache.display())
+            } else {
+                format!("delete {}", teams.display())
             }
-            detail
         },
     ));
     // An error here is already a refusal from the dirty check.
