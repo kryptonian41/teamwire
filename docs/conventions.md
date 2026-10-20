@@ -32,16 +32,18 @@ teamwire/
 ├── docs/                      architecture, ADRs, API, plans (this directory)
 ├── scripts/
 │   ├── check-docs.sh          architecture-phase docs check (lead)
-│   └── gate.sh                the full gate, in order; `gate.sh fast` for steps 1-3
+│   ├── gate.sh                the full gate, in order; `gate.sh fast` for steps 1-3
+│   └── test-changed.sh        tests the changed crates and their dependents
 ├── xtask/                     `cargo xtask tidy`: structure, layering, protected files
 ├── crates/                    flat; folder name equals crate name
 │   ├── teamwire-core/         types, traits, sanitiser; no I/O
-│   ├── teamwire-store/        SQLite; src/schema/v1.sql, v2.sql
+│   ├── teamwire-store/        SQLite; src/schema/v1.sql to v6.sql
 │   ├── teamwire-platform/     the only crate that spawns processes, reads the
 │   │                          clock, or writes files outside SQLite
 │   ├── teamwire-host-herdr/
 │   ├── teamwire-host-tmux/
 │   ├── teamwire-harness-claude/
+│   ├── teamwire-harness-codex/
 │   ├── teamwire-deliver/
 │   ├── teamwire-msg/
 │   ├── teamwire-report/
@@ -60,6 +62,9 @@ teamwire/
 │   └── e2e/                   crate teamwire-e2e
 └── examples/
     ├── skills/teamwire/SKILL.md   the lead's skill; `teamwire install` embeds it
+    ├── skills/teamwire/reference.md  the skill's lookup tables, embedded too
+    ├── skills/afk/SKILL.md        the AFK skill (Claude Code leads only)
+    ├── skills/codex-lead.md       the Codex lead's changes to the skill
     ├── presets/*.json             the six team shapes
     └── mcp/lead.json              the lead MCP server, which the teamwire
                                    plugin carries; never merged into a
@@ -77,7 +82,7 @@ Layout rules, each checked by `cargo xtask tidy`:
 | Every crate's `lib.rs` or `main.rs` opens with a `//!` comment of at most 15 lines: purpose, what it must never do, invariants. `ARCHITECTURE.md`'s Components table has one row per crate under `crates/`, and no row without a crate | repopract R28 |
 | `CLAUDE.md`'s first line is `@AGENTS.md`; `AGENTS.md` is under 120 lines | repopract R1, R3 |
 | The crate dependency graph follows the layers in section 5 | repopract R22 |
-| With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`; a new `#[ignore]`, `#[expect(`, `#![expect(`, `#[allow(`, `#![allow(` or `#[should_panic`; a removed or changed `#[cfg(test)]` or `mod tests;` line; or an added `#[cfg_attr(..., ignore | allow | expect | should_panic)]` prints `WEAKENED <path>:<line>`. Removed `#[test]` lines are counted net per file, so a test moved within a file is not flagged. The adapter check skips comments and string literals | repopract R17, R18 |
+| With `--base <ref>`: any change to a protected file prints `PROTECTED-CHANGED <path>`; a removed `#[test]`; a new `#[ignore]`, `#[expect(`, `#![expect(`, `#[allow(`, `#![allow(` or `#[should_panic`; a removed or changed `#[cfg(test)]` or `mod tests;` line; or an added `#[cfg_attr(..., ignore | allow | expect | should_panic)]` prints `WEAKENED <path>:<line>`. Removed `#[test]` lines are counted net per file, so a test moved within a file is not flagged. It also prints `PROTECTED-CHANGED` for a protected file moved away (at the old path) and for an untracked file under a protected path, and `WEAKENED` for an added non-test `#[cfg(` or `#![cfg(` line, for a test file moved to another path (at the old path), and for assert lines removed on net. Each line appears once The adapter check skips comments and string literals | repopract R17, R18 |
 
 Unit tests go in a `#[cfg(test)] mod tests` at the bottom of the file, or,
 when the file would pass 400 lines, in a sibling file declared with
@@ -95,7 +100,7 @@ wall time, and stops at the first failure. `scripts/gate.sh fast` runs steps
 | # | Command | What it stops |
 | --- | --- | --- |
 | 1 | `cargo fmt --all -- --check` | Format changes |
-| 2 | `cargo xtask tidy --base main` | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
+| 2 | `cargo xtask tidy --base <base>`, where `<base>` is `$TEAMWIRE_BASE`, else a local `main`, else `origin/main`; the gate prints the base it used | The layout rules of section 1 and layering. `PROTECTED-CHANGED` and `WEAKENED` lines are printed without failing the step; the gate shows them even when the step passes, so the reviewer sees them |
 | 3 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | The lint table, disallowed methods, suppressions without a reason |
 | 4 | `cargo build --workspace --locked`, then `TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked` | Behaviour (unit, property, contract, crash, end-to-end) |
 | 5 | `RUSTDOCFLAGS=-D warnings cargo doc --workspace --no-deps --locked` | Broken doc links |
@@ -115,9 +120,13 @@ A ticket runs its build-plan **Check** and `scripts/gate.sh fast`. The lead
 runs the full `scripts/gate.sh` once after integrating each wave.
 
 `scripts/test-changed.sh` is the test run for the inner loop. Given crate
-names, or by default the crates with files that differ from `main` (committed,
-staged, unstaged and untracked), it tests those crates and every workspace
-crate that depends on them, dev-dependencies included. The end-to-end and
+names, or by default the crates with files that differ from the base
+(`$TEAMWIRE_BASE`, else `main`, else `origin/main`; committed, staged,
+unstaged and untracked), it tests those crates and every workspace crate that
+depends on them, dev-dependencies included. It prints the base it used. With
+none of the three refs it exits 1 and names `TEAMWIRE_BASE`. A change under
+`examples/` also tests `teamwire-harness-codex`, which embeds the skill files.
+The script never reads standard input. The end-to-end and
 crash test crates count as dependents. It builds the tests, the fakes and the
 CLI binary in one command, then runs `cargo test --locked -p ...` with
 `TEAMWIRE_FAKES_PREBUILT=1`. `--dry-run` prints the package list and the
@@ -264,9 +273,12 @@ disallowed-methods = [
 ]
 ```
 
-Only `teamwire-platform` (the real `Platform` and `Clock`), `tests/fakes`,
-`tests/crash`, `tests/e2e` and `xtask` may call these, each call site under
-`#[expect(clippy::disallowed_methods, reason = "...")]`. T01 runs clippy once
+`teamwire-platform` (the real `Platform` and `Clock`), `tests/fakes`,
+`tests/crash`, `tests/e2e` and `xtask` call these as their job. A library
+crate may also call one where the call cannot go through `Platform`, such as
+`teamwire-close` renaming a directory it owns. Every such call site sits
+under `#[expect(clippy::disallowed_methods, reason = "...")]`, and the reason
+says why `Platform` does not fit. T01 runs clippy once
 and fixes any option name clippy rejects (repopract marked two names as
 unverified; those two are left out above).
 
@@ -279,7 +291,7 @@ A crate may depend only on crates in lower layers. `cargo xtask tidy` reads
 | --- | --- | --- |
 | 0 | `teamwire-core` | external crates only |
 | 1 | `teamwire-store`, `teamwire-platform` | 0 |
-| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude` | 0, `teamwire-platform` |
+| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude`, `teamwire-harness-codex` | 0, `teamwire-platform` |
 | 3 | `teamwire-deliver`, `teamwire-verify` | 0, 1 |
 | 4 | `teamwire-msg`, `teamwire-report`, `teamwire-launch`, `teamwire-watch`, `teamwire-otel`, `teamwire-close` | 0, 1, 3. No layer-4 crate depends on another; `teamwire-close` reads what launch recorded from the store |
 | 5 | `teamwire-mcp` | 0, 1, 3, 4 |
@@ -299,9 +311,9 @@ Service crates never depend on an adapter crate. They receive adapters as
 The standing rules are in `AGENTS.md`. Each brief restates these, filled in
 for its ticket (repopract section 5.5):
 
-1. **Owns**: the exact paths from the build-plan row. You own no shared file
+1. **Owns**: the exact paths from the brief (in the first build, the build-plan row). You own no shared file
    unless it is listed. Anything else goes to the lead as a question.
-2. **Check**: the row's command, already run once by the lead on the base
+2. **Check**: the brief's command, already run once by the lead on the base
    commit, plus `scripts/gate.sh fast`. Done means both pass on your last
    commit, with the real output in your report.
 3. **Contract**: match `docs/api/core.md` exactly. Changing a trait or a type
@@ -347,7 +359,8 @@ for word in meaning):
 # teamwire
 
 Rust tool that runs teams of coding agents. Map: docs/ARCHITECTURE.md.
-Your ticket: docs/build-plan.md. Interfaces: docs/api/. Conventions: docs/conventions.md.
+Your task: the TASK.md brief in your working directory (docs/build-plan.md is
+the closed first build). Interfaces: docs/api/. Conventions: docs/conventions.md.
 
 ## Separate project: never touch the running setup
 
@@ -368,7 +381,8 @@ the user's real agent teams. So:
 ## Commands (from the repo root)
 
 - While working: cargo test -p <your crate> --locked, then scripts/gate.sh fast
-- Your ticket's check: the Check column of your row in docs/build-plan.md
+- Your check: the command in your brief (TASK.md); without a brief, the Check
+  column of your row in docs/build-plan.md
 - Full gate (the lead, after each wave): scripts/gate.sh
 - GNU tools on this Mac carry a g prefix: gsed -i, gdate, gtimeout.
   Plain sed -i is BSD sed.
@@ -389,6 +403,7 @@ the user's real agent teams. So:
 - Do not edit protected files unless your ticket owns them: root Cargo.toml,
   clippy.toml, rustfmt.toml, rust-toolchain.toml, scripts/, xtask/,
   tests/fakes/, docs/adr/. [tidy --base prints PROTECTED-CHANGED]
+  (the real list also holds Cargo.lock and .cargo/config.toml)
 - Never delete, #[ignore] or loosen a test to get green. Fix the code.
   [tidy --base prints WEAKENED; teamwire verify flags it]
 
