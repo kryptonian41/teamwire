@@ -444,3 +444,106 @@ fn a_start_that_cannot_find_the_leads_process_is_refused_before_anything_is_made
     refused(&bed.start_run("run", &[]), "no_lead_process");
     assert!(bed.nothing_made("run"));
 }
+
+/// A store file in `dir` with the schema and a trigger that fails the insert
+/// of the team row with an `io` error.
+fn store_that_cannot_take_a_team(dir: &std::path::Path, team: &str) -> PathBuf {
+    let prep = TestHome::new().unwrap();
+    let name = TeamName::parse(team).unwrap();
+    let mut store = Store::open(prep.path(), &name).unwrap();
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_team BEFORE INSERT ON team
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    drop(store);
+    let path = dir.join("prepared.db");
+    std::fs::copy(teamwire_store::database_path(prep.path(), &name), &path).unwrap();
+    path
+}
+
+/// `afk start` for `team` whose task file is a named pipe. The start waits
+/// on the pipe when it reads the task, and `before_task` runs then, before
+/// the task goes through. `Err` holds the output of a start that ended
+/// without reading the task, so a refusal before that step fails the caller
+/// instead of leaving it waiting on the pipe.
+fn start_on_pipe(bed: &Bed, team: &str, before_task: impl FnOnce()) -> Result<Output, Output> {
+    let fifo = bed.work.path().join("task.fifo");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(bed.home.path())
+        .args(["afk", "start", "--team", team, "--title", "Overnight"])
+        .arg("--task")
+        .arg(&fifo)
+        .current_dir(bed.repo.path())
+        .env_clear()
+        .env("PATH", &bed.path)
+        .env("TEAMWIRE_CLAUDE_DIR", bed.claude.path())
+        .env("HERDR_ENV", "1")
+        .env("CLAUDE_CODE_SESSION_ID", SESSION)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    // Opening a pipe for writing waits for a reader, which is the start
+    // reading the task. A thread waits, so the start ending first is seen.
+    let opener = std::thread::spawn({
+        let fifo = fifo.clone();
+        move || std::fs::OpenOptions::new().write(true).open(fifo).unwrap()
+    });
+    while !opener.is_finished() {
+        if child.try_wait().unwrap().is_some() {
+            return Err(child.wait_with_output().unwrap());
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let mut writer = opener.join().unwrap();
+    before_task();
+    std::io::Write::write_all(&mut writer, b"build it\n").unwrap();
+    drop(writer);
+    Ok(child.wait_with_output().unwrap())
+}
+
+/// The store is made after the start looked for one and before it opens
+/// one: the test puts it in place while the start waits for the task.
+#[test]
+fn a_start_that_fails_in_the_store_leaves_one_store_error_row() {
+    let bed = Bed::new(true);
+    let team = TeamName::parse("run").unwrap();
+    let prepared = store_that_cannot_take_a_team(bed.work.path(), "run");
+    let out = start_on_pipe(&bed, "run", || {
+        let db = teamwire_store::database_path(bed.home.path(), &team);
+        std::fs::create_dir_all(db.parent().unwrap()).unwrap();
+        std::fs::copy(&prepared, &db).unwrap();
+    })
+    .map_err(|early| format!("the start ended before the task: {}", err(&early)))
+    .unwrap();
+    assert_eq!(out.status.code(), Some(6), "{}", err(&out));
+    let errors: Vec<serde_json::Value> = bed
+        .store("run")
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(errors, [serde_json::json!({ "op": "afk", "code": "io" })]);
+}
+
+#[test]
+fn a_start_refused_before_the_task_is_read_ends_the_pipe_helper_with_its_output() {
+    let bed = Bed::new(true);
+    // A hyphen is refused as `bad_name` before the task file is opened.
+    let early = start_on_pipe(&bed, "my-run", || unreachable!("the task was read")).unwrap_err();
+    refused(&early, "bad_name");
+}

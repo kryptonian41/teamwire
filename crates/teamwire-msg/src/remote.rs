@@ -33,7 +33,9 @@ pub(crate) struct Try<'r> {
 /// Delivers `message`, stored in team `own`, to the rows in `tries`, all of
 /// which name agents of `team`. `all` is every row of the message for that
 /// team, so the copy there is complete even when only some are tried. One
-/// result per try, in order.
+/// result per try, in order. `op` names the command in the `store.error` row
+/// that the recipient team's store keeps of its first failure, written
+/// before that store is dropped, whichever way this returns.
 pub(crate) fn deliver_to_team(
     ctx: &mut Ctx<'_>,
     own: &TeamName,
@@ -41,6 +43,7 @@ pub(crate) fn deliver_to_team(
     team: &TeamName,
     all: &[&DeliveryRecord],
     tries: &[Try<'_>],
+    op: &str,
 ) -> Vec<Result<RecipientReport, SendError>> {
     let mut store = match Store::open_existing(ctx.home, team) {
         Ok(store) => store,
@@ -53,9 +56,24 @@ pub(crate) fn deliver_to_team(
         }
         Err(e) => return tries.iter().map(|_| Err(e.clone().into())).collect(),
     };
+    let results = deliver_in(ctx, &mut store, own, message, team, all, tries);
+    store.record_failure(ctx.clock.now(), op);
+    results
+}
+
+/// The part of `deliver_to_team` that runs with the recipient team's store open.
+fn deliver_in(
+    ctx: &mut Ctx<'_>,
+    store: &mut Store,
+    own: &TeamName,
+    message: &Message,
+    team: &TeamName,
+    all: &[&DeliveryRecord],
+    tries: &[Try<'_>],
+) -> Vec<Result<RecipientReport, SendError>> {
     let mut there = Ctx {
         home: ctx.home,
-        store: &mut store,
+        store,
         registry: ctx.registry,
         platform: ctx.platform,
         clock: ctx.clock,

@@ -863,3 +863,37 @@ fn a_delivery_reentered_event_is_exported_and_does_not_stop_the_metrics_export()
     );
     assert_eq!(mark(&home, "alpha"), 6);
 }
+
+#[test]
+fn an_export_that_fails_in_the_store_leaves_one_store_error_row() {
+    let home = TestHome::new().unwrap();
+    let mut store = busy_team(&home, "alpha");
+    // A function that does not exist fails the claim's update with an `io`
+    // error, before anything is sent.
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_claim BEFORE UPDATE ON metric_export
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let rx = receiver(200);
+    let run = teamwire(
+        &home,
+        &[("OTEL_EXPORTER_OTLP_ENDPOINT", &rx.url())],
+        &["metrics", "export", "--once"],
+    );
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(run.err.contains("export failed, will retry"), "{}", run.err);
+    let errors: Vec<Value> = store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(errors, [json!({ "op": "metrics", "code": "io" })]);
+}

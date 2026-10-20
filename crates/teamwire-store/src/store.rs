@@ -309,6 +309,15 @@ impl Store {
     /// too, the failure is kept for the next call, so a full disk is recorded
     /// once it has room again. A file another binary migrated since is not
     /// written to (STO-6), and the failure is dropped.
+    ///
+    /// A failure while the store is being opened leaves no row, because
+    /// there is no `Store` to call this on. The open failed with no
+    /// connection, or with an unreadable header, or in the switch to WAL or
+    /// the migration of a file that is not yet at this binary's schema, which
+    /// this method refuses to write to. A busy header read means another
+    /// process held the database past the busy timeout, so an immediate
+    /// second write would wait again and fail the same way. The caller still
+    /// reports the failure where it happens.
     pub fn record_failure(&mut self, at: Timestamp, op: &str) {
         let Some(failed) = self.failed.take() else {
             return;
@@ -507,6 +516,66 @@ mod full_path_tests {
         });
         let path = std::fs::canonicalize(crate::database_path(home.path(), &team)).unwrap();
         assert_eq!(full, Err(StoreError::Full { path }));
+    }
+
+    /// An open that fails has no `Store`, so nothing can write its
+    /// `store.error` row (`record_failure` also refuses a file at another
+    /// schema). Writing the row some other way is decided against: a busy
+    /// header read means the database stayed locked past the busy timeout, so
+    /// a second write would wait and fail the same way.
+    #[test]
+    fn an_open_that_fails_while_migrating_leaves_no_store_error_row() {
+        let home = TestHome::new().unwrap();
+        let team = teamwire_core::TeamName::parse("alpha").unwrap();
+        let path = crate::database_path(home.path(), &team);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let conn = Connection::open(&path).unwrap();
+        for step in [
+            crate::SCHEMA_V1_SQL,
+            crate::SCHEMA_V2_SQL,
+            crate::SCHEMA_V3_SQL,
+            crate::SCHEMA_V4_SQL,
+            crate::SCHEMA_V5_SQL,
+        ] {
+            conn.execute_batch(step).unwrap();
+        }
+        conn.pragma_update(None, "application_id", crate::APPLICATION_ID)
+            .unwrap();
+        conn.pragma_update(None, "user_version", 5).unwrap();
+        // Version 6 rebuilds `events`, so the file needs room for a second
+        // copy of this row.
+        conn.execute(
+            "INSERT INTO events (ulid, time, type, data, writer_version)
+             VALUES ('01J9ZQ000000000000000EVT01', '2026-10-01T00:00:01.000Z',
+                     'team.created', ?1, '0.3.0')",
+            [format!("\"{}\"", "x".repeat(256 * 1024))],
+        )
+        .unwrap();
+        let pages: i64 = conn
+            .query_row("PRAGMA page_count", [], |r| r.get(0))
+            .unwrap();
+        let _max: i64 = conn
+            .query_row(&format!("PRAGMA max_page_count = {pages}"), [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        let named = std::fs::canonicalize(&path).unwrap();
+        assert_eq!(
+            Store::ready(conn).unwrap_err(),
+            StoreError::Full { path: named }
+        );
+
+        // The failed migration rolled back, so a normal open migrates the
+        // file, and no row of the failure is in it.
+        let store = Store::open(home.path(), &team).unwrap();
+        assert_eq!(store.schema_version().unwrap(), crate::SCHEMA_VERSION);
+        let kinds: Vec<_> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect();
+        assert_eq!(kinds, [teamwire_core::EventType::TeamCreated]);
     }
 }
 
