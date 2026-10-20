@@ -25,7 +25,10 @@ pub struct RunExpect {
     pub timed_out: bool,
     pub stdout_contains: Option<String>,
     /// The first line of stdout is the pid of a process the child started,
-    /// and that process must be gone once `run` has returned.
+    /// and that process must be gone once `run` has returned. A run that
+    /// timed out before the child printed its pid is tried again with ten
+    /// times the timeout, twice at most: a busy machine can take longer than
+    /// the case's timeout to start a shell.
     pub ends_grandchild: bool,
 }
 
@@ -115,7 +118,10 @@ impl RunCase {
             },
             Self {
                 name: "a timeout kills what the child started too",
-                command: sh("sleep 30 & echo $!; wait"),
+                // The grandchild outlives the longest attempt (30 s): one that
+                // ended on its own would hide a leak, and would let the shell
+                // exit 0 before a correct platform's timeout.
+                command: sh("sleep 300 & echo $!; wait"),
                 timeout: Duration::from_millis(300),
                 expect: RunExpect {
                     exit_code: RunOutput::TIMEOUT_EXIT,
@@ -156,16 +162,19 @@ impl std::fmt::Debug for PlatformSetup<'_> {
     }
 }
 
+fn first_line_pid(stdout: &[u8]) -> Option<u32> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .next()
+        .and_then(|l| l.trim().parse::<u32>().ok())
+}
+
 /// The first line of `stdout` names a process the child started. A timeout
 /// must have ended it with the child, so it is gone within a short wait (the
 /// kernel needs a moment to reap a killed process).
 fn grandchild_rule(p: &dyn Platform, case: &str, stdout: &[u8]) {
     let rule = format!("run: {case}: the grandchild is gone");
-    let pid = String::from_utf8_lossy(stdout)
-        .lines()
-        .next()
-        .and_then(|l| l.trim().parse::<u32>().ok());
-    let Some(pid) = pid else {
+    let Some(pid) = first_line_pid(stdout) else {
         fail(&rule, "the child printed no pid");
     };
     for _ in 0..40 {
@@ -197,15 +206,24 @@ pub fn platform_contract(setup: &PlatformSetup<'_>) {
     }
 
     for case in &setup.run_cases {
-        let out = ok(case.name, p.run(&case.command, case.timeout));
-        require(
-            &format!("run: {}: exit code", case.name),
-            out.exit_code == case.expect.exit_code,
-        );
-        require(
-            &format!("run: {}: timed_out", case.name),
-            out.timed_out == case.expect.timed_out,
-        );
+        let mut timeout = case.timeout;
+        let mut attempts = if case.expect.ends_grandchild { 3 } else { 1 };
+        let out = loop {
+            let out = ok(case.name, p.run(&case.command, timeout));
+            require(
+                &format!("run: {}: exit code", case.name),
+                out.exit_code == case.expect.exit_code,
+            );
+            require(
+                &format!("run: {}: timed_out", case.name),
+                out.timed_out == case.expect.timed_out,
+            );
+            attempts -= 1;
+            if attempts == 0 || first_line_pid(&out.stdout).is_some() {
+                break out;
+            }
+            timeout = timeout.saturating_mul(10);
+        };
         if let Some(want) = &case.expect.stdout_contains {
             let got = String::from_utf8_lossy(&out.stdout);
             require(
