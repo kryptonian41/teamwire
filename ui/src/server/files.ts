@@ -5,6 +5,7 @@
 import { readdir, realpath, stat } from "node:fs/promises";
 import { join, relative, sep, isAbsolute } from "node:path";
 import {
+  AFK_FILE_NAMES,
   FILE_KINDS,
   FILE_KIND_NAMES,
   MAX_FILE_BYTES,
@@ -24,6 +25,8 @@ export function isFileKind(value: string): value is FileKind {
 }
 
 function nameOk(kind: FileKind, name: string): boolean {
+  // The other files under afk/ are the lead's working copies, so only these names pass.
+  if (FILE_KINDS[kind].name === "afk_file") return (AFK_FILE_NAMES as readonly string[]).includes(name);
   return (FILE_KINDS[kind].name === "display_id" ? DISPLAY_ID_RE : NAME_RE).test(name);
 }
 
