@@ -257,6 +257,8 @@ has a hyphen, and `lead` is reserved.
 - `base`: the branch a new member branch is cut from. Set it on every member
   of a contract split and of stacked branches, so `verify` reads the right
   diff.
+- `context_handoff_tokens` sets the token count at which a member is told to
+  hand off (see "When a member's context runs high").
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
   starts a member idle, for you to prompt. With `"accept_trust": false`,
   launch does not answer the folder-trust prompt, and it fails the member
@@ -601,6 +603,45 @@ and the failed member's report. In a 2026 study of restarted coding agents, a
 restart that could see the earlier diff raised one model's solve rate from
 66.6% to 71.8%. A cold restart reached 66.8%.
 
+### When a member's context runs high
+
+A member's answers get worse as its context window fills. With auto-compact
+off, a member that fills its window stops with an error. `teamwire status`
+shows each member's fill in the `ctx` column, for example `ctx 72% 720k`, and
+`ctx -` when teamwire cannot read it. The watch prints one
+`CONTEXT <role> <pct>% <n>k of <window>k (handoff at <n>k)` line per member
+and generation once the member passes its handoff point.
+
+The handoff point is 40% of the model's window unless the spec sets
+`context_handoff_tokens`, a number of tokens, on the team or on a member.
+No measurement backs the 40% for Claude. Measured studies see quality fall
+in absolute tokens, so on a 1M window set the number yourself if 400k is too
+high for the task.
+
+Past its point, the member gets a note after its next tool call. The note tells
+it to finish its step, commit, run `teamwire handoff --guide`, write a handoff
+document at `reports/<role>.handoff.md` and record `done` with a summary that
+starts with `handoff:`. When that `done` arrives, run:
+
+```bash
+teamwire handoff <team> --role <role>
+```
+
+The command closes the member's old session and opens a fresh one in the same
+worktree, on the same branch, with the same brief, report and token. The new
+session starts a new generation and reads the brief and the handoff document.
+The command refuses a member that is in a turn, at a dialog or has uncommitted
+work, and changes nothing then. Wait for the turn to end and run it again. It
+never stops a turn.
+
+If the command fails after it closed the old session, run
+`teamwire reopen <team> --role <role>` once the old session has ended. That
+resumes the old session, with its full context.
+
+A Claude member that passes its point and gets no handoff compacts its own
+context at twice that point. A Codex member runs to its own limit, so hand it
+off at the `CONTEXT` line.
+
 ## After the last wave: integrate, then verify
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
@@ -650,6 +691,9 @@ becomes one tree that passes the full gate.
    ```bash
    teamwire send <team> --to tenancy --type reprompt --file findings-for-tenancy.md
    ```
+
+   Hand off a member that is past its handoff point before you send it a
+   reprompt with findings, so the fixes run in a fresh context.
 
    The owner checks each finding against the code, fixes what holds, and
    answers with evidence where it does not. Confirm each fix with

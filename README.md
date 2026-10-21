@@ -71,6 +71,8 @@ reports the failure instead of dropping it.
   before it removes anything.
 - **Closed sessions come back.** `teamwire reopen` resumes the lead and every
   member whose session is gone.
+- **A full context gets a fresh session.** `teamwire handoff` gives a member a new
+  session in the same seat when its context runs high.
 - **Team shapes come ready-made.** `teamwire preset` prints a tested spec for
   five common team shapes, plus a closer that checks a finished team.
 - **Metrics stay on your machine.** `teamwire metrics` reads each team's
