@@ -92,6 +92,58 @@ pub trait Harness: Send + Sync {
     fn push(&self, _s: &SessionId, _line: &OneLine, _timeout: Duration) -> Result<(), HostError> {
         Err(HostError::unsupported())
     }
+    /// How full the session's context window is, read without writing.
+    /// `transcript` is the path a hook was handed; without it the harness
+    /// finds the session's own transcript. `Ok(None)` means no reading: none
+    /// yet, or a compaction left none. The caller treats that as unknown,
+    /// never as zero. The default is `Ok(None)`.
+    fn context_fill(
+        &self,
+        _s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        Ok(None)
+    }
+}
+
+/// The share of the window at which a member is told to hand off when its
+/// spec sets no `context_handoff_tokens`. A practitioner's rule of thumb:
+/// no published measurement backs 40% for Claude or for coding agents.
+pub const DEFAULT_HANDOFF_PCT: u64 = 40;
+
+/// How full one session's context is: the tokens the model read on the
+/// session's newest main-chain request, and the window of that model. Every
+/// harness computes `tokens` the same way, so a percentage means one thing
+/// across harnesses and never copies a harness's own display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fill {
+    pub tokens: u64,
+    pub window: u64,
+}
+
+impl Fill {
+    /// Whole percent of the window, rounded down; 0 for an empty window.
+    #[must_use]
+    pub fn pct(self) -> u64 {
+        self.tokens
+            .saturating_mul(100)
+            .checked_div(self.window)
+            .unwrap_or(0)
+    }
+
+    /// The token count at which the member is told to hand off: the spec's
+    /// `context_handoff_tokens` when set, else `DEFAULT_HANDOFF_PCT` of the
+    /// window.
+    #[must_use]
+    pub fn handoff_at(self, configured: Option<u64>) -> u64 {
+        configured.unwrap_or_else(|| self.window.saturating_mul(DEFAULT_HANDOFF_PCT) / 100)
+    }
+
+    /// Whether the session has reached its handoff point.
+    #[must_use]
+    pub fn past_handoff(self, configured: Option<u64>) -> bool {
+        self.tokens >= self.handoff_at(configured)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -414,6 +466,41 @@ impl fmt::Debug for LaunchFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fill_defaults_to_forty_percent_of_the_window() {
+        let f = Fill {
+            tokens: 399_999,
+            window: 1_000_000,
+        };
+        assert_eq!(f.handoff_at(None), 400_000);
+        assert!(!f.past_handoff(None));
+        assert!(
+            Fill {
+                tokens: 400_000,
+                ..f
+            }
+            .past_handoff(None)
+        );
+        assert_eq!(f.handoff_at(Some(120_000)), 120_000);
+        assert!(f.past_handoff(Some(120_000)));
+        assert_eq!(
+            Fill {
+                tokens: 720_091,
+                window: 1_000_000
+            }
+            .pct(),
+            72
+        );
+        assert_eq!(
+            Fill {
+                tokens: 5,
+                window: 0
+            }
+            .pct(),
+            0
+        );
+    }
 
     #[test]
     fn shell_word_quotes_only_what_needs_it() {
