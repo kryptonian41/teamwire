@@ -104,7 +104,8 @@ fn locate(
     if let Some(name) = archive {
         if !archive_name_ok(team, name) {
             return Err(format!(
-                "invalid archive {name:?}: write {team}-YYYY-MM-DD or {team}-YYYY-MM-DD-HHMMSS"
+                "invalid archive {name:?}: write {team}-YYYY-MM-DD, {team}-YYYY-MM-DD-HHMMSS or \
+                 {team}-YYYY-MM-DD-HHMMSS-<n>"
             ));
         }
         let dir = home.join("archive").join(name);
