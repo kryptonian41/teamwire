@@ -441,6 +441,72 @@ excerpt and each recipient's delivery state. `--role` takes the same address as
 messages to or from that address; `lead` lists messages to or from the lead. A
 member's view stays its own messages.
 
+Each `--json` row also carries `re`, the display id of the message it answers
+(`null` when it answers none), and `commit`, the commit a `notice` names
+(`null` otherwise). Each element of a row's `deliveries` carries `reason`, the
+error code of an undelivered or unconfirmed delivery, `null` otherwise.
+
+### `teamwire events <team> [--archive DIR] [--after SEQ] [--json]`
+
+Reads a team's event rows, oldest first, and changes nothing. It opens the
+store read-only, like `export`. A caller that carries a member identity is
+refused with `refused.identity`, exit 1, because the rows name every member's
+work.
+
+Which store it reads:
+
+- With no `--archive`, the live team's store. When the team has no live
+  store, it reads the team's newest archive under `$TEAMWIRE_HOME/archive/`,
+  found the same way `metrics <team>` finds it. A team never seen is refused,
+  exit 1.
+- `--archive DIR` reads `$TEAMWIRE_HOME/archive/DIR/team.db`. DIR is a plain
+  directory name that matches `<team>-YYYY-MM-DD` or `<team>-YYYY-MM-DD-HHMMSS`
+  for the named team. Any other value, including one with a `/` or `..`, is
+  refused, exit 1. An archive without its `SHA256SUMS` file is read anyway,
+  and `errors` says the copy may be incomplete.
+
+`--after SEQ` prints only rows with `seq` greater than SEQ, so a caller that
+polls asks only for new rows. Without `--json`, it prints one line per row:
+`<time> <seq> <type> <role or -> <message display id or ->`.
+
+`--json` prints one object:
+
+```json
+{
+  "team": "payments",
+  "source": "live",
+  "archive": null,
+  "last_seq": 412,
+  "events": [
+    {
+      "seq": 411,
+      "time": "2026-10-13T07:05:44.001Z",
+      "type": "verify.recorded",
+      "role": "api",
+      "message": null,
+      "data": {"exit": 0, "flags": ["outside-owns:src/shared/money.ts"], "seconds": 4, "verdict": "FLAGGED"}
+    }
+  ],
+  "errors": []
+}
+```
+
+- `source` is `live` or `archive`. `archive` is the archive's directory name,
+  or `null` for a live store.
+- `last_seq` is the highest `seq` in the store, also when `--after` leaves
+  every row out, so a poller knows where it stands. It is 0 with no events.
+- `type` is one of the event types in `docs/metrics.md` section 1.
+- `role` is the member the row is about, or `null`.
+- `message` is the display id (such as `m014`) of the message the row's
+  `subject` names, or `null` when the subject is not a message or there is
+  none.
+- `data` is the row's `data` column as stored, an object.
+- `errors` holds one line per damaged row that was skipped, and the
+  incomplete-archive line.
+
+A store that cannot be opened, such as one with a schema newer than this
+binary, prints the error and exits 6.
+
 ### `teamwire lead --adopt <team>`
 
 Run from a new lead session. Records that session as the team's lead and
