@@ -42,6 +42,8 @@ pub(crate) struct MemberInfo {
     /// current generation.
     pub silent_seen: u32,
     pub blocked_seen: u32,
+    /// The handoff point the spec set, if any.
+    pub context_handoff_tokens: Option<u64>,
 }
 
 /// A question to the lead that did not get there cleanly.
@@ -99,6 +101,7 @@ fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError
         .latest_completion(&member.role)?
         .filter(|c| c.completion.generation == member.generation);
     Ok(MemberInfo {
+        context_handoff_tokens: tx.context_handoff_tokens(&member.role)?,
         silent_seen: highest_episode(tx, &silent_prefix(&member.role, member.generation))?,
         blocked_seen: highest_episode(tx, &blocked_prefix(&member.role, member.generation))?,
         member,

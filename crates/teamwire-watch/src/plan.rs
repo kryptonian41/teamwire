@@ -15,8 +15,8 @@ use crate::memory::{MemberMemory, WatchMemory, slept_since};
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
-    STALLED_PREFIX, age, agent_text, blocked_key, died_key, late_key, question_key, result_key,
-    result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
+    STALLED_PREFIX, age, agent_text, blocked_key, context_key, died_key, late_key, question_key,
+    result_key, result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -427,6 +427,24 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     let Some(seen) = look(env, info, mm) else {
         return Verdict::settled("died");
     };
+
+    // One read per live member per poll; the announcement key keeps it to
+    // one line per generation.
+    if let Some(c) = crate::context::read(env.ctx, &info.member, info.context_handoff_tokens)
+        && c.tokens >= c.handoff_at
+    {
+        env.announce(
+            context_key(role, generation),
+            "CONTEXT",
+            format!(
+                "CONTEXT {role} {}% {}k of {}k (handoff at {}k)",
+                c.pct,
+                c.tokens / 1000,
+                c.window / 1000,
+                c.handoff_at / 1000
+            ),
+        );
+    }
 
     // The quiet grace counts from the later of the run's start and the last
     // sleep gap. `LATE` counts from the run's start alone.

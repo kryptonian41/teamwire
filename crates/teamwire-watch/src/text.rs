@@ -56,6 +56,10 @@ pub(crate) fn unreported_key(role: &Role, generation: u32) -> String {
     format!("UNREPORTED:{role}:{generation}")
 }
 
+pub(crate) fn context_key(role: &Role, generation: u32) -> String {
+    format!("CONTEXT:{role}:{generation}")
+}
+
 pub(crate) fn result_key(kind: &str, completion: &Ulid) -> String {
     format!("{kind}:{completion}")
 }
