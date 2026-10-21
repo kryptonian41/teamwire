@@ -17,6 +17,7 @@ use thiserror::Error;
 
 mod done;
 mod final_message;
+mod handoff;
 mod lead_stop;
 mod note;
 mod paths;
@@ -27,6 +28,7 @@ mod turn_end;
 mod usage;
 
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
+pub use handoff::handoff_note;
 pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};
 pub use received::{Received, mark_received};
 pub use reminder::on_tool_use;
