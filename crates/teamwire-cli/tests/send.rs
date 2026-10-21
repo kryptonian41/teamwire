@@ -14,11 +14,11 @@ use std::process::{Child, Command, Output, Stdio};
 
 use serde_json::Value;
 use teamwire_core::{
-    HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Place, Role, SessionId,
-    SessionKind, TeamName, Timestamp,
+    Actor, HarnessId, HostId, LeadRoute, MemberKind, MemberState, MessageType, Mode, Place,
+    Recipient, Role, SessionId, SessionKind, TeamName, Timestamp,
 };
 use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, HerdrFaults, TestHome};
-use teamwire_store::{NewMember, NewTeam, Store};
+use teamwire_store::{NewMember, NewMessage, NewTeam, Store};
 
 struct Rig {
     herdr: FakeHerdrEnv,
@@ -758,6 +758,20 @@ fn log_json_rows_carry_re_and_commit() {
         // message is stored all the same, and the log below proves it.
         rig.run(args, &who);
     }
+    // A notice is checked against git in the sender's checkout, which this
+    // rig has none of, so the notice is stored directly.
+    let notice = NewMessage {
+        sender: Actor::parse("api").unwrap(),
+        kind: MessageType::Notice,
+        re: None,
+        commit: Some("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312".to_owned()),
+        body: "renamed".to_owned(),
+        client_key: None,
+        recipients: vec![Recipient::Member(Role::parse("scout").unwrap())],
+    };
+    rig.store()
+        .write(|tx| tx.insert_message(at(), &notice).map(|_| ()))
+        .unwrap();
     let out = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);
     let value: Value = serde_json::from_slice(&out.stdout).unwrap();
     let rows = value.get("messages").and_then(Value::as_array).unwrap();
@@ -771,6 +785,10 @@ fn log_json_rows_carry_re_and_commit() {
             (Value::Null, Value::Null),
             (Value::from("m001"), Value::Null),
             (Value::Null, Value::Null),
+            (
+                Value::Null,
+                Value::from("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312")
+            ),
         ]
     );
 }

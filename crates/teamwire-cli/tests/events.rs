@@ -175,8 +175,8 @@ fn archive_reads_the_named_directory() {
 
 #[test]
 fn archive_refuses_a_name_that_is_not_this_team_s_archive() {
-    let home = archived(populated(), &["alpha-2026-10-12", "beta-2026-10-12"], true);
-    for name in [
+    // Each bad name holds a real database, so only the name check can refuse it.
+    let bad = [
         "../x",
         "a/b",
         "alpha-2026-10-12/..",
@@ -188,8 +188,17 @@ fn archive_refuses_a_name_that_is_not_this_team_s_archive() {
         "alpha-2026-10-12-091500-0",
         "alpha",
         "alpha-2026-10-12x",
-    ] {
-        refused(home.path(), &["alpha", "--archive", name]);
+    ];
+    let mut names = vec!["alpha-2026-10-12", "beta-2026-10-12"];
+    names.extend(bad);
+    let home = archived(populated(), &names, true);
+    for name in bad {
+        let text = refused(home.path(), &["alpha", "--archive", name]);
+        assert!(text.contains("invalid archive"), "{name}: {text}");
+        assert!(
+            text.contains("-YYYY-MM-DD-HHMMSS-<n>"),
+            "the refusal names all three forms: {text}"
+        );
     }
     // A well-formed name whose database belongs to another team.
     let text = refused(home.path(), &["beta", "--archive", "beta-2026-10-12"]);
