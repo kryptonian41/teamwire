@@ -456,3 +456,128 @@ fn refusing_a_creating_member_leaves_it_failed_with_only_member_refused() {
     assert_eq!(event_types(&f.store), before);
     assert_eq!(state_of(&f, "web"), MemberState::Started);
 }
+
+fn started_web() -> crate::testkit::Fixture {
+    let mut f = with_members(&["api", "web"]);
+    f.store
+        .write(|tx| {
+            tx.set_member_session(&role("web"), &SessionId::parse("old-sess").unwrap())?;
+            tx.set_member_state(at(2), &role("web"), MemberState::Started, &json!({}))
+        })
+        .unwrap();
+    f
+}
+
+fn handoff_place() -> Place {
+    Place {
+        host: teamwire_core::HostId::from_static("herdr"),
+        id: "w9:p9".to_owned(),
+    }
+}
+
+/// Sends a note from `api` to `web` and returns its ulid.
+fn note_to_web(f: &mut crate::testkit::Fixture, secs: i64) -> teamwire_core::Ulid {
+    use teamwire_core::{Actor, MessageType};
+
+    use crate::NewMessage;
+    use crate::testkit::member;
+
+    f.store
+        .write(|tx| {
+            tx.insert_message(
+                at(secs),
+                &NewMessage {
+                    sender: Actor::Member(role("api")),
+                    kind: MessageType::Note,
+                    re: None,
+                    commit: None,
+                    body: "hi".to_owned(),
+                    client_key: None,
+                    recipients: vec![member("web")],
+                },
+            )
+        })
+        .unwrap()
+        .message
+        .ulid
+}
+
+#[test]
+fn a_handoff_moves_the_member_to_a_new_generation_session_and_place() {
+    let mut f = started_web();
+    let r = role("web");
+    let session = SessionId::parse("new-sess").unwrap();
+    let g = f
+        .store
+        .write(|tx| tx.record_handoff(at(50), &r, Some(&session), &handoff_place()))
+        .unwrap();
+    assert_eq!(g, 2);
+    let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
+    assert_eq!(m.generation, 2);
+    assert_eq!(m.gen_started_at, at(50));
+    assert_eq!(m.session_id, Some(session));
+    assert_eq!(m.place, Some(handoff_place()));
+    let event = last_event(&f.store);
+    assert_eq!(event.kind, EventType::MemberHandoff);
+    assert_eq!(event.role, Some(r));
+    assert_eq!(
+        event.data,
+        json!({
+            "generation": 2,
+            "old_session": "old-sess",
+            "new_session": "new-sess",
+            "place": "w9:p9",
+        })
+    );
+    assert_eq!(count_events(&f.store, EventType::MemberReprompted), 0);
+}
+
+#[test]
+fn a_handoff_without_a_session_clears_it_and_records_null() {
+    let mut f = started_web();
+    let r = role("web");
+    f.store
+        .write(|tx| tx.record_handoff(at(50), &r, None, &handoff_place()))
+        .unwrap();
+    let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
+    assert_eq!(m.session_id, None);
+    let data = last_event(&f.store).data;
+    assert_eq!(data["old_session"], "old-sess");
+    assert!(data["new_session"].is_null());
+}
+
+#[test]
+fn a_handoff_clears_the_reminder_of_unread_deliveries_only() {
+    let mut f = started_web();
+    let web = crate::testkit::member("web");
+    let unread = note_to_web(&mut f, 10);
+    let read = note_to_web(&mut f, 11);
+    f.store
+        .write(|tx| {
+            tx.mark_reminded(at(20), &unread, &web)?;
+            tx.mark_reminded(at(21), &read, &web)?;
+            tx.ack_delivery(at(22), &read, &web)
+        })
+        .unwrap();
+    f.store
+        .write(|tx| tx.record_handoff(at(50), &role("web"), None, &handoff_place()))
+        .unwrap();
+    let after = |m| f.store.read(|tx| tx.delivery(m, &web)).unwrap().unwrap();
+    assert_eq!(after(&unread).reminded_at, None);
+    assert_eq!(after(&read).reminded_at, Some(at(21)));
+}
+
+#[test]
+fn only_a_started_member_can_hand_off() {
+    let mut f = with_members(&["api", "web"]);
+    f.store
+        .write(|tx| tx.remove_member(at(3), &role("web"), None, &json!({})))
+        .unwrap();
+    for name in ["api", "web", "nobody"] {
+        let r = f
+            .store
+            .write(|tx| tx.record_handoff(at(4), &role(name), None, &handoff_place()));
+        assert!(matches!(r, Err(StoreError::Constraint(_))), "{name}: {r:?}");
+    }
+    assert_eq!(count_events(&f.store, EventType::MemberHandoff), 0);
+}

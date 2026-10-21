@@ -386,6 +386,57 @@ impl Tx<'_> {
         Ok(generation)
     }
 
+    /// Moves a started member to a new session in a new place: the generation
+    /// goes up by one, `gen_started_at` becomes `at`, and `member.handoff` is
+    /// written. Deliveries the member has not read lose their `reminded_at`,
+    /// so the new session is reminded of them and the Stop hook counts them
+    /// again. `session` is `None` when the harness picks its own id, which
+    /// its session-start hook records afterwards. Returns the new generation.
+    /// Only a `started` member can hand off.
+    pub fn record_handoff(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        session: Option<&SessionId>,
+        place: &Place,
+    ) -> Result<u32, StoreError> {
+        let old = self
+            .reader()
+            .member(role)?
+            .ok_or_else(|| StoreError::Constraint(format!("no such member {role}")))?;
+        let rows = self.connection().execute(
+            "UPDATE members SET session_id = ?2, place = ?3,
+                    generation = generation + 1, gen_started_at = ?4
+             WHERE role = ?1 AND state = 'started'",
+            rusqlite::params![
+                role.as_str(),
+                session.map(SessionId::as_str),
+                place.id,
+                at.to_string()
+            ],
+        )?;
+        exactly_one(rows, format!("started member {role}"))?;
+        self.connection().execute(
+            "UPDATE deliveries SET reminded_at = NULL
+             WHERE recipient = ?1 AND state != 'acked'",
+            [role.as_str()],
+        )?;
+        let generation = old.generation + 1;
+        self.record_event(
+            at,
+            EventType::MemberHandoff,
+            Some(role),
+            None,
+            &json!({
+                "generation": generation,
+                "old_session": old.session_id.as_ref().map(SessionId::as_str),
+                "new_session": session.map(SessionId::as_str),
+                "place": place.id,
+            }),
+        )?;
+        Ok(generation)
+    }
+
     /// Undoes a `bump_generation` after a known failure to deliver the
     /// reprompt: puts back the earlier generation and its start time. The
     /// earlier `member.reprompted` event stays; a second one with

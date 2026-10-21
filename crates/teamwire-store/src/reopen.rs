@@ -112,6 +112,14 @@ impl ReadTx<'_> {
             .map(PathBuf::from))
     }
 
+    /// The context size, in tokens, at which `role` hands off, as its newest
+    /// `member.started` event recorded it. `None` when the key is null or
+    /// missing, or the member has no such event.
+    pub fn context_handoff_tokens(&self, role: &Role) -> Result<Option<u64>, StoreError> {
+        let started = self.latest_event(Some(role), EventType::MemberStarted)?;
+        Ok(started.and_then(|e| e.data.get("context_handoff_tokens")?.as_u64()))
+    }
+
     /// The model and effort of `role`'s newest `member.started` event.
     pub fn run_options(&self, role: &Role) -> Result<RunOptions, StoreError> {
         let started = self.latest_event(Some(role), EventType::MemberStarted)?;
@@ -302,5 +310,46 @@ mod tests {
         damage_events(&mut f, EventType::MemberStarted);
         let err = f.store.read(|tx| tx.run_options(&role("api"))).unwrap_err();
         assert!(matches!(err, crate::StoreError::Corrupt(_)), "{err:?}");
+    }
+
+    #[test]
+    fn context_handoff_tokens_is_the_newest_started_events_number() {
+        let mut f = fixture();
+        let r = role("api");
+        let tokens = |f: &crate::testkit::Fixture| f.store.read(|tx| tx.context_handoff_tokens(&r));
+        assert_eq!(tokens(&f).unwrap(), None, "no event");
+        f.store
+            .write(|tx| {
+                tx.create_team(at(0), &new_team())?;
+                tx.insert_member(at(1), &new_member("api"))
+            })
+            .unwrap();
+        assert_eq!(tokens(&f).unwrap(), None, "no member.started yet");
+        let start = |f: &mut crate::testkit::Fixture, data: serde_json::Value| {
+            f.store
+                .write(|tx| tx.set_member_state(at(2), &role("api"), MemberState::Started, &data))
+                .unwrap();
+        };
+        start(&mut f, json!({ "context_handoff_tokens": 120_000 }));
+        assert_eq!(tokens(&f).unwrap(), Some(120_000));
+    }
+
+    #[test]
+    fn context_handoff_tokens_is_none_for_null_and_for_a_missing_key() {
+        for data in [json!({ "context_handoff_tokens": null }), json!({})] {
+            let mut f = fixture();
+            f.store
+                .write(|tx| {
+                    tx.create_team(at(0), &new_team())?;
+                    tx.insert_member(at(1), &new_member("api"))?;
+                    tx.set_member_state(at(2), &role("api"), MemberState::Started, &data)
+                })
+                .unwrap();
+            let got = f
+                .store
+                .read(|tx| tx.context_handoff_tokens(&role("api")))
+                .unwrap();
+            assert_eq!(got, None, "{data}");
+        }
     }
 }
