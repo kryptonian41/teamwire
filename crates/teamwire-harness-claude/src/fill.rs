@@ -35,6 +35,11 @@ pub(crate) fn model_window(model: &str, disable_1m: bool) -> Option<u64> {
         .into_iter()
         .find(|f| m.contains(f))?;
     let (major, minor) = version_after(&m, family);
+    // An old-style id (`claude-3-5-sonnet-20241022`) puts its version before
+    // the family, so only a date follows it. Those models are all 200K.
+    if major >= 100 {
+        return Some(SMALL_WINDOW);
+    }
     let large = match family {
         "fable" => true,
         "opus" => (major, minor) >= (4, 7),
