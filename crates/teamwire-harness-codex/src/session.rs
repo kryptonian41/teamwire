@@ -7,13 +7,13 @@
 //! `protocol.rs`, commit `8c07694`). While a Codex writer runs, it holds an
 //! OS lock on `<codex_home>/thread-writer-locks/<id>.lock`.
 
-use std::io::{BufRead, BufReader, Read as _};
+use std::io::{BufRead, BufReader, Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::{
-    CallerSession, Command, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState, Platform,
+    CallerSession, Command, Fill, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState, Platform,
     SessionId, SessionKind,
 };
 
@@ -31,6 +31,10 @@ const SESSION_VARS: [&str; 4] = [
 /// The most of a rollout's first line that is read. The line holds the
 /// session's metadata and can be long, but not without bound.
 const FIRST_LINE_BYTES: u64 = 1 << 20;
+
+/// The most of a rollout's end that is read for the fill. A rollout grows
+/// without bound, and the newest `token_count` event is near its end.
+const TAIL_BYTES: u64 = 4 << 20;
 
 /// An id that is also a path part must not leave its directory.
 fn is_plain(id: &SessionId) -> bool {
@@ -176,4 +180,44 @@ pub(crate) fn liveness(
         Ok(_) if rollout_path(codex_home, session).is_some() => Liveness::Dead,
         _ => Liveness::Unknown,
     }
+}
+
+/// The fill of `session`, from the newest `token_count` event in the end of
+/// its rollout. An event line is
+/// `{"type":"event_msg","payload":{"type":"token_count","info":{..}}}`, and
+/// `info` is `TokenUsageInfo` (openai/codex `codex-rs/protocol/src/protocol.rs`):
+/// `last_token_usage.input_tokens` is what the model read on the last request,
+/// cached tokens included, and `model_context_window` is the window. Codex's
+/// own "context left" subtracts a 12,000-token baseline from both; this does
+/// not, so the figure means the same as the Claude one. No live Codex run
+/// checked this: Codex is not installed where it was written, so the shape
+/// comes from that source file alone.
+pub(crate) fn context_fill(codex_home: &Path, session: &SessionId) -> Option<Fill> {
+    let tail = tail_text(&rollout_path(codex_home, session)?)?;
+    tail.lines().rev().find_map(|line| {
+        let doc: Value = serde_json::from_str(line).ok()?;
+        let payload = doc.get("payload")?;
+        if payload.get("type")?.as_str()? != "token_count" {
+            return None;
+        }
+        let info = payload.get("info").filter(|i| !i.is_null())?;
+        let tokens = info.get("last_token_usage")?.get("input_tokens")?.as_u64()?;
+        let window = info.get("model_context_window")?.as_u64()?;
+        Some(Fill { tokens, window })
+    })
+}
+
+/// The last `TAIL_BYTES` of the file, without its first line when the cut
+/// falls inside it.
+fn tail_text(file: &Path) -> Option<String> {
+    let mut f = std::fs::File::open(file).ok()?;
+    let start = f.metadata().ok()?.len().saturating_sub(TAIL_BYTES);
+    f.seek(SeekFrom::Start(start)).ok()?;
+    let mut buf = Vec::new();
+    f.take(TAIL_BYTES).read_to_end(&mut buf).ok()?;
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    if start == 0 {
+        return Some(text);
+    }
+    text.split_once('\n').map(|(_, rest)| rest.to_owned())
 }

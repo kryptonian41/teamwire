@@ -185,3 +185,59 @@ fn the_lead_resumes_with_no_daemon() {
         ["codex", "--no-daemon", "resume", ID]
     );
 }
+
+/// A `token_count` event as Codex writes it (`TokenUsageInfo`, protocol.rs).
+/// Built from the source's struct, not from a live run.
+fn token_count(last_input: u64, window: u64) -> String {
+    serde_json::json!({
+        "timestamp": "2026-10-18T10:01:00.000Z", "type": "event_msg",
+        "payload": {"type": "token_count", "rate_limits": null, "info": {
+            "total_token_usage": {"input_tokens": 900_000, "cached_input_tokens": 0,
+                "output_tokens": 5, "reasoning_output_tokens": 0, "total_tokens": 900_005},
+            "last_token_usage": {"input_tokens": last_input, "cached_input_tokens": 100,
+                "output_tokens": 50, "reasoning_output_tokens": 0,
+                "total_tokens": last_input + 50},
+            "model_context_window": window,
+        }},
+    })
+    .to_string()
+}
+
+fn append(home: &Path, id: &str, lines: &[String]) {
+    use std::io::Write as _;
+    let file = std::fs::read_dir(home.join("sessions/2026/10/18"))
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.to_string_lossy().ends_with(&format!("{id}.jsonl")))
+        .unwrap();
+    let mut f = std::fs::OpenOptions::new().append(true).open(file).unwrap();
+    for l in lines {
+        writeln!(f, "{l}").unwrap();
+    }
+}
+
+#[test]
+fn context_fill_reads_the_newest_token_count_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let (codex, _) = setup(dir.path());
+    assert_eq!(codex.context_fill(&sid(ID), None).unwrap(), None);
+    rollout(dir.path(), ID, "cli", "/w");
+    assert_eq!(codex.context_fill(&sid(ID), None).unwrap(), None);
+    let null_info = r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#;
+    append(
+        dir.path(),
+        ID,
+        &[
+            token_count(1_000, 258_400),
+            token_count(120_000, 258_400),
+            null_info.to_owned(),
+        ],
+    );
+    assert_eq!(
+        codex.context_fill(&sid(ID), None).unwrap(),
+        Some(teamwire_core::Fill {
+            tokens: 120_000,
+            window: 258_400
+        })
+    );
+}
