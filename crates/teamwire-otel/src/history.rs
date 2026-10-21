@@ -26,9 +26,7 @@ impl History {
         for (i, e) in events.iter().enumerate() {
             if let Some(role) = &e.role {
                 let stack = open.entry(role.as_str()).or_default();
-                // A handoff moves the member two generations past any earlier
-                // reprompt, so `restore_generation` can no longer undo it.
-                if matches!(e.kind, EventType::MemberCreating | EventType::MemberHandoff) {
+                if e.kind == EventType::MemberCreating {
                     stack.clear();
                 } else if e.kind == EventType::MemberReprompted {
                     if flag(&e.data, "undone") {
