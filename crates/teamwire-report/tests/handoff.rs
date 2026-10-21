@@ -202,3 +202,42 @@ fn the_transcript_the_hook_was_given_reaches_the_harness() {
         [(sid("api-1"), Some(path.to_path_buf()))]
     );
 }
+
+/// How many inserts into `announcements` were tried, counted by a trigger
+/// that runs before the insert whether or not it is ignored.
+fn count_announcement_inserts(rig: &mut Rig) {
+    rig.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TABLE probe (n INTEGER);
+                     CREATE TRIGGER probe_insert BEFORE INSERT ON announcements
+                     BEGIN INSERT INTO probe VALUES (1); END;",
+                )
+                .map_err(Into::into)
+        })
+        .unwrap();
+}
+
+fn inserts_tried(rig: &Rig) -> i64 {
+    rig.store
+        .read(|tx| {
+            tx.connection()
+                .query_row("SELECT count(*) FROM probe", [], |r| r.get(0))
+                .map_err(Into::into)
+        })
+        .unwrap()
+}
+
+#[test]
+fn a_second_call_past_the_point_makes_no_write() {
+    let (mut rig, api) = team();
+    started(&mut rig, &api, None);
+    count_announcement_inserts(&mut rig);
+    let stub = Stub::new();
+    stub.set(500_000, 1_000_000);
+    assert!(note(&mut rig, &api, &stub).is_some());
+    assert_eq!(inserts_tried(&rig), 1);
+    assert_eq!(note(&mut rig, &api, &stub), None);
+    assert_eq!(inserts_tried(&rig), 1, "the second call only read");
+}

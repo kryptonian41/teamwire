@@ -38,6 +38,24 @@ pub fn handoff_note(
         return None;
     }
     let key = format!("handoff-note:{me}:{}", generation?);
+    // Every tool call past the point comes here, and a write takes the store's
+    // write lock even when it changes nothing, so a read rules out the calls
+    // after the first. The write below still decides, so two hooks at once
+    // give one note.
+    let told = ctx
+        .store
+        .read(|tx| {
+            Ok(tx
+                .announcements_with_prefix(&key)?
+                .items
+                .iter()
+                .any(|a| a.key == key))
+        })
+        .map_err(|e| tracing::warn!(error = %e, "could not read the handoff note record"))
+        .ok()?;
+    if told {
+        return None;
+    }
     let at = ctx.clock.now();
     let first = ctx
         .store
