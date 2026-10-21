@@ -4,8 +4,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use teamwire_core::{
-    Address, HarnessId, HostId, IdentityChannel, MemberKind, MemberSpec, MemberState, Mode, NoHost,
-    Role, TeamSpec,
+    Address, HarnessId, HostId, IdentityChannel, MIN_HANDOFF_TOKENS, MemberKind, MemberSpec,
+    MemberState, Mode, NoHost, Role, TeamSpec,
 };
 
 use crate::validate::{Existing, TITLE_MAX, host_or, is_failed, live_names};
@@ -97,6 +97,18 @@ pub(crate) fn plan_member(
     let before = errors.len();
     let role = child.role.as_str();
     crate::validate::plugin_keys(&child.plugins, Some(role), errors);
+    if let Some(tokens) = child
+        .context_handoff_tokens
+        .or(cx.spec.context_handoff_tokens)
+        .filter(|t| (1..MIN_HANDOFF_TOKENS).contains(t))
+    {
+        warnings.push(format!(
+            "role {role}: context_handoff_tokens {tokens} is below {MIN_HANDOFF_TOKENS}. A fresh \
+             Claude Code session already holds about 60,000 tokens, so a lower point is passed \
+             before the member starts, and {MIN_HANDOFF_TOKENS} is also the compaction \
+             backstop's floor"
+        ));
+    }
     let mut bad = |field: &str, code: &str, message: String| {
         errors.push(SpecError::new(Some(role), Some(field), code, message));
     };

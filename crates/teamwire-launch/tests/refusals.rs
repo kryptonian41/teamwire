@@ -493,3 +493,26 @@ fn the_handoff_threshold_key_draws_no_unknown_key_warning() {
     );
     assert!(teamwire_launch::unknown_key_warnings(&spec.to_string()).is_empty());
 }
+
+#[test]
+fn a_handoff_point_below_a_fresh_session_warns() {
+    let rig = Rig::new();
+    let warnings = |value: Option<u64>| {
+        let mut member = pane_member("a", "Alpha", rig.work.path());
+        if let Some(v) = value {
+            member = common::with(member, "context_handoff_tokens", json!(v));
+        }
+        rig.validate(&team_spec("demo", &[member]), false)
+            .unwrap()
+            .warnings
+    };
+    let low = warnings(Some(30_000));
+    assert_eq!(low.len(), 1, "{low:?}");
+    assert!(
+        low.iter()
+            .all(|w| w.contains("60,000") && w.contains("100000")),
+        "{low:?}"
+    );
+    assert!(warnings(Some(100_000)).is_empty());
+    assert!(warnings(None).is_empty());
+}

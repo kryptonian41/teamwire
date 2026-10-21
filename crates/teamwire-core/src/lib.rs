@@ -34,8 +34,8 @@ pub use config::{Config, OtelConfig};
 pub use event::{Event, EventType};
 pub use harness::{
     CallerSession, DEFAULT_HANDOFF_PCT, Fill, Harness, HarnessCaps, HarnessError, HarnessErrorCode,
-    IdentityChannel, LaunchFile, LaunchSpec, Liveness, MemberLaunch, ScreenState, SessionKind,
-    StartupOutcome, TrustPolicy, TurnEnd, TurnEndReply,
+    IdentityChannel, LaunchFile, LaunchSpec, Liveness, MIN_HANDOFF_TOKENS, MemberLaunch,
+    ScreenState, SessionKind, StartupOutcome, TrustPolicy, TurnEnd, TurnEndReply,
 };
 pub use host::{
     Host, HostCaps, HostError, HostErrorCode, Key, NoHost, Occupant, PlaceState, SpawnRequest,
