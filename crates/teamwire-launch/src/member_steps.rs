@@ -371,12 +371,30 @@ pub(crate) fn dispatch(
         "Your brief is at {where_}. Read it in full now, then carry it out. It is your complete \
          task: what to build, which files you own, which you must not touch, and how to finish."
     );
-    let line = one_line(&text, FIRST_MESSAGE_MAX);
+    first_line(
+        host,
+        place,
+        &text,
+        (&plan.spec.team, &m.spec.role),
+        warnings,
+    );
+}
+
+/// Types a new session's first line, once. A line that may not have arrived
+/// is a warning that says how to send it by hand; it is never resent, since a
+/// second copy would start the work twice.
+pub(crate) fn first_line(
+    host: &dyn teamwire_core::Host,
+    place: &Place,
+    text: &str,
+    (team, role): (&teamwire_core::TeamName, &teamwire_core::Role),
+    warnings: &mut Vec<String>,
+) {
+    let line = one_line(text, FIRST_MESSAGE_MAX);
     if let Err(e) = host.submit(place, &line, SUBMIT_TIMEOUT) {
         warnings.push(format!(
-            "{}: started, but the first message may not have arrived ({e}); it is not resent. \
-             Send it yourself: teamwire send {} --to {} --type note --text \"{}\"",
-            m.spec.role, plan.spec.team, m.spec.role, line
+            "{role}: started, but the first message may not have arrived ({e}); it is not resent. \
+             Send it yourself: teamwire send {team} --to {role} --type note --text \"{line}\""
         ));
     }
 }

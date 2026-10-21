@@ -253,39 +253,18 @@ fn reopen_member<'r>(
             member.cwd.display()
         ));
     }
-    let team_dir = ctx.home.join("teams").join(team.name.as_str());
-    let plugins = match recorded_plugins(ctx, &member.role) {
-        Ok(plugins) => plugins,
-        Err(e) => {
-            return ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"));
-        }
+    let launch = match member_launch(ctx, &team.name, member, options, opts, session) {
+        Ok(launch) => launch,
+        Err(outcome) => return outcome,
     };
-    let launch = MemberLaunch::for_resume(
-        &team_dir,
-        &team.name,
-        member,
-        session,
-        (options.model.clone(), options.effort.clone()),
-    )
-    .with_run_context(
-        opts.teamwire_bin
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("teamwire")),
-        plugins,
-    );
     let spec = match harness.resume_spec(&launch, session) {
         Ok(spec) => spec,
         Err(e) => {
             return ReopenOutcome::failed(format!("the harness could not build the resume: {e}"));
         }
     };
-    if spec.identity_channel == teamwire_core::IdentityChannel::HostEnv {
-        return ReopenOutcome::refused(
-            "its identity travels in the host's environment and its token is not stored",
-        );
-    }
-    if let Some(file) = spec.files.iter().find(|f| !f.path.is_file()) {
-        return ReopenOutcome::refused(format!("its file {} is missing", file.path.display()));
+    if let Err(outcome) = reusable(&spec) {
+        return outcome;
     }
     if !options.recorded {
         warnings.push(format!(
@@ -313,6 +292,54 @@ fn reopen_member<'r>(
 }
 
 const UNKNOWN: &str = "it is not known whether the session runs";
+
+/// What a started member's harness needs to start one of its sessions again
+/// with the per-run files launch wrote: the model and effort, and the plugin
+/// switches, that `member.started` recorded.
+pub(crate) fn member_launch(
+    ctx: &Ctx<'_>,
+    team: &teamwire_core::TeamName,
+    member: &Member,
+    options: &RunOptions,
+    opts: &ReopenOpts,
+    session: &teamwire_core::SessionId,
+) -> Result<MemberLaunch, ReopenOutcome> {
+    let team_dir = ctx.home.join("teams").join(team.as_str());
+    let plugins = recorded_plugins(ctx, &member.role).map_err(|e| {
+        ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"))
+    })?;
+    Ok(MemberLaunch::for_resume(
+        &team_dir,
+        team,
+        member,
+        session,
+        (options.model.clone(), options.effort.clone()),
+    )
+    .with_run_context(
+        opts.teamwire_bin
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("teamwire")),
+        plugins,
+    ))
+}
+
+/// Refuses a spec that needs what only launch had: an identity in the
+/// host's environment (the token is not stored), or a per-run file that is
+/// gone. The files are never written again; their token is a placeholder.
+pub(crate) fn reusable(spec: &teamwire_core::LaunchSpec) -> Result<(), ReopenOutcome> {
+    if spec.identity_channel == teamwire_core::IdentityChannel::HostEnv {
+        return Err(ReopenOutcome::refused(
+            "its identity travels in the host's environment and its token is not stored",
+        ));
+    }
+    if let Some(file) = spec.files.iter().find(|f| !f.path.is_file()) {
+        return Err(ReopenOutcome::refused(format!(
+            "its file {} is missing",
+            file.path.display()
+        )));
+    }
+    Ok(())
+}
 
 /// A session that passed every check, with what its new tab needs.
 pub(crate) struct Ready<'r> {
@@ -486,7 +513,7 @@ fn close_old_place(
 }
 
 /// Closes a tab reopen just opened, and says how that went after `failed`.
-fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> String {
+pub(crate) fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> String {
     match r.host.close(place, &r.request.name, CLOSE_TIMEOUT) {
         Ok(()) => format!("{failed}; the new tab was closed"),
         Err(e) => format!(
