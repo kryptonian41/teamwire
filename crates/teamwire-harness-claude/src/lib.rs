@@ -14,6 +14,7 @@
 //! `env` key of its own `settings.json`.
 
 mod cwd;
+mod fill;
 mod hook;
 mod launch;
 mod lead_setup;
@@ -28,12 +29,12 @@ pub use lead_setup::{
 pub use trust::StartupPoll;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
     MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
     StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
@@ -199,6 +200,14 @@ impl Harness for ClaudeCode {
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
         trust::answer_startup(host, place, policy, self.startup_poll)
+    }
+
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        Ok(fill::context_fill(&self.config.claude_dir, s, transcript))
     }
 
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
