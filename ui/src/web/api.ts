@@ -16,9 +16,17 @@ import {
   type ResumeCommand,
   type Snapshot,
 } from "../shared/api.ts";
-import { LogView as LogViewSchema, MetricsView as MetricsViewSchema, StatusAll, TeamsList } from "../shared/teamwire.ts";
+import {
+  EventsView as EventsViewSchema,
+  LogView as LogViewSchema,
+  MetricsView as MetricsViewSchema,
+  StatusAll,
+  TeamsList,
+  type EventsView,
+} from "../shared/teamwire.ts";
 import statusFixture from "../../fixtures/status.json";
 import teamsFixture from "../../fixtures/teams.json";
+import eventsFixture from "../../fixtures/events.json";
 import logFixture from "../../fixtures/log.json";
 import metricsFixture from "../../fixtures/metrics.json";
 import archivesFixture from "../../fixtures/archives.json";
@@ -49,6 +57,9 @@ export interface ApiClient {
   archives(): Promise<ArchiveEntry[]>;
   archiveFile(dir: string, kind: FileKind, name: string): Promise<FileText>;
   metrics(): Promise<MetricsView>;
+  /** Rows after `after` when given, else every row, oldest first. */
+  teamTimeline(team: string, after?: number): Promise<EventsView>;
+  archiveTimeline(dir: string): Promise<EventsView>;
 }
 
 async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
@@ -109,6 +120,8 @@ export const httpClient: ApiClient = {
   archives: async () => (await getJson(api.archives())) as ArchiveEntry[],
   archiveFile: async (dir, kind, name) => (await getJson(api.archiveFile(dir, kind, name))) as FileText,
   metrics: async () => MetricsViewSchema.parse(await getJson(api.metrics())),
+  teamTimeline: async (team, after) => EventsViewSchema.parse(await getJson(api.teamTimeline(team, after))),
+  archiveTimeline: async (dir) => EventsViewSchema.parse(await getJson(api.archiveTimeline(dir))),
 };
 
 /** The mock moves on every 5 s, like the server's poll. */
@@ -117,6 +130,7 @@ export const MOCK_INTERVAL_MS = 5000;
 const baseStatus = StatusAll.parse(statusFixture);
 const baseTeams = TeamsList.parse(teamsFixture).teams;
 const baseLog = LogViewSchema.parse(logFixture);
+const baseEvents = EventsViewSchema.parse(eventsFixture);
 const baseMetrics = MetricsViewSchema.parse(metricsFixture);
 const baseArchives = archivesFixture as ArchiveEntry[];
 
@@ -186,6 +200,12 @@ export const mockClient: ApiClient = {
     ),
   archiveFile: async (dir, kind, name) => mockText(kind, name, dir),
   metrics: async () => baseMetrics,
+  teamTimeline: async (team, after = 0) =>
+    team === "payments"
+      ? { ...baseEvents, events: baseEvents.events.filter((e) => e.seq > after) }
+      : { team, source: "live", archive: null, last_seq: 0, events: [], errors: [] },
+  // Every mock archive shows the one fixture timeline.
+  archiveTimeline: async (dir) => ({ ...baseEvents, source: "archive", archive: dir }),
 };
 
 /** `?mock=1` in the URL selects the mock client. */

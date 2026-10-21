@@ -33,3 +33,14 @@ test("mock files list a comms file per logged message", async () => {
   expect(files.some((f) => f.kind === "outbox" && f.name === "api")).toBe(true);
   expect(api.teamFile("payments", "comms", "m001")).toBe("/api/teams/payments/file/comms/m001");
 });
+
+test("mock timeline serves the fixture, and only rows after `after`", async () => {
+  const all = await mockClient.teamTimeline("payments");
+  expect(all.events.length).toBe(all.last_seq);
+  const rest = await mockClient.teamTimeline("payments", all.last_seq - 2);
+  expect(rest.events.map((e) => e.seq)).toEqual([all.last_seq - 1, all.last_seq]);
+  expect((await mockClient.teamTimeline("docs")).events).toEqual([]);
+  const arch = await mockClient.archiveTimeline("ads-2026-10-07-153012");
+  expect(arch.source).toBe("archive");
+  expect(arch.archive).toBe("ads-2026-10-07-153012");
+});
