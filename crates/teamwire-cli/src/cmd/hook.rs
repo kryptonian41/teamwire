@@ -8,7 +8,9 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use serde_json::json;
-use teamwire_core::{Config, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
+use teamwire_core::{
+    Config, Harness, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply,
+};
 use teamwire_msg::CallerEnv;
 use teamwire_store::{Ctx, Store, same_hash, token_hash};
 
@@ -169,7 +171,7 @@ fn member_hook_in(
         config: &config,
     };
     if kind == MemberHook::PostTool {
-        post_tool_reply(&mut ctx, role, &turn)
+        post_tool_reply(&mut ctx, role, &turn, harness)
     } else {
         match teamwire_report::on_turn_end(&mut ctx, role, &turn) {
             TurnEndReply::Continue => None,
@@ -302,8 +304,13 @@ fn within<T: Send + 'static>(
     rx.recv_timeout(budget).ok()
 }
 
-/// The in-turn reminder, for the member's own session only.
-fn post_tool_reply(ctx: &mut Ctx<'_>, role: &Role, turn: &TurnEnd) -> Option<Vec<u8>> {
+/// The in-turn reminder and handoff note, for the member's own session only.
+fn post_tool_reply(
+    ctx: &mut Ctx<'_>,
+    role: &Role,
+    turn: &TurnEnd,
+    harness: &dyn Harness,
+) -> Option<Vec<u8>> {
     if turn.subagent {
         return None;
     }
@@ -311,7 +318,24 @@ fn post_tool_reply(ctx: &mut Ctx<'_>, role: &Role, turn: &TurnEnd) -> Option<Vec
     if member.session_id.as_ref() != Some(&turn.session) {
         return None;
     }
-    let note = teamwire_report::on_tool_use(ctx, role)?;
+    // The unread reminder and the handoff note go out in one reply.
+    let note = [
+        teamwire_report::on_tool_use(ctx, role),
+        teamwire_report::handoff_note(
+            ctx,
+            role,
+            harness,
+            &turn.session,
+            turn.transcript.as_deref(),
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>();
+    if note.is_empty() {
+        return None;
+    }
+    let note = note.join("\n");
     serde_json::to_vec(&json!({
         "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": note }
     }))
