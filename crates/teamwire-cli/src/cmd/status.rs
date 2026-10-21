@@ -49,7 +49,6 @@ fn minutes(seconds: u64) -> String {
     }
 }
 
-/// One team on one line, for `status` without a team.
 /// `72% 720k`, or `-` when the fill is unknown.
 fn context_text(context: Option<ContextView>) -> String {
     context.map_or_else(
@@ -58,6 +57,7 @@ fn context_text(context: Option<ContextView>) -> String {
     )
 }
 
+/// One team on one line, for `status` without a team.
 fn summary_line(name: &TeamName, view: &StatusView) -> String {
     let state = view.state.map_or("unreadable", |s| s.as_str());
     let done = view

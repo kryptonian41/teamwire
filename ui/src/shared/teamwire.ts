@@ -42,7 +42,6 @@ export const WatchState = z.enum(["running", "stale", "none"]);
 
 const count = z.number().int().nonnegative();
 
-/** One member in `teamwire status --json`. Removed members are left out. */
 /** How full a member's context window is, and where it hands off. */
 export const ContextView = z.object({
   tokens: count,
@@ -53,6 +52,7 @@ export const ContextView = z.object({
   handoff_at: count,
 });
 
+/** One member in `teamwire status --json`. Removed members are left out. */
 export const MemberView = z.object({
   role: z.string(),
   title: z.string(),
