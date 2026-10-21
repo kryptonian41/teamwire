@@ -28,6 +28,7 @@ use teamwire_watch::WatchMemory;
 struct FillHarness {
     inner: Arc<FakeHarness>,
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
+    reads: Arc<Mutex<Vec<SessionId>>>,
 }
 
 impl Harness for FillHarness {
@@ -77,6 +78,7 @@ impl Harness for FillHarness {
         s: &SessionId,
         _transcript: Option<&Path>,
     ) -> Result<Option<Fill>, HarnessError> {
+        self.reads.lock().unwrap().push(s.clone());
         Ok(self.fills.lock().unwrap().get(s).copied())
     }
 }
@@ -96,6 +98,7 @@ pub struct Bed {
     pub harness: Arc<FakeHarness>,
     pub host: Arc<FakeHost>,
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
+    reads: Arc<Mutex<Vec<SessionId>>>,
     pub memory: WatchMemory,
     places: HashMap<String, Place>,
 }
@@ -135,9 +138,11 @@ impl Bed {
         let host = Arc::new(FakeHost::new());
         let mut registry = Registry::new();
         let fills = Arc::new(Mutex::new(HashMap::new()));
+        let reads = Arc::new(Mutex::new(Vec::new()));
         let wrapped = FillHarness {
             inner: harness.clone(),
             fills: fills.clone(),
+            reads: reads.clone(),
         };
         registry.add_harness(Arc::new(wrapped)).unwrap();
         registry.add_host(host.clone()).unwrap();
@@ -151,6 +156,7 @@ impl Bed {
             harness,
             host,
             fills,
+            reads,
             memory: WatchMemory::default(),
             places: HashMap::new(),
         }
@@ -296,6 +302,25 @@ impl Bed {
             .lock()
             .unwrap()
             .insert(Self::session(name), Fill { tokens, window });
+    }
+
+    /// How many times the harness was asked for the member's context fill.
+    pub fn fill_reads(&self, name: &str) -> usize {
+        let session = Self::session(name);
+        self.reads
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|s| **s == session)
+            .count()
+    }
+
+    /// Marks a started member as failed; it keeps its recorded session.
+    pub fn fail(&mut self, name: &str) {
+        let (now, role) = (self.clock.now(), role(name));
+        self.store
+            .write(|tx| tx.set_member_state(now, &role, MemberState::Failed, &json!({})))
+            .unwrap();
     }
 
     pub fn age(&self, by: Duration) {

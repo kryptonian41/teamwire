@@ -1380,4 +1380,10 @@ fn a_removed_member_is_not_read_for_context() {
     bed.remove("api");
     let lines: Vec<String> = bed.poll().into_iter().collect();
     assert_eq!(count(&lines, "CONTEXT"), 0, "{lines:?}");
+    assert_eq!(bed.fill_reads("api"), 0, "a removed member is not read");
+    assert_eq!(
+        bed.fill_reads("web"),
+        1,
+        "a live member is read once per poll"
+    );
 }

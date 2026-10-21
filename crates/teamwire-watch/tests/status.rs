@@ -519,3 +519,15 @@ fn a_member_that_never_started_has_no_context_even_with_a_reading() {
     bed.fill("api", 500_000, 1_000_000);
     assert_eq!(status_of(&bed, None).members[0].context, None);
 }
+
+#[test]
+fn a_failed_member_with_a_session_is_not_read_for_context() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.fill("api", 500_000, 1_000_000);
+    bed.fail("api");
+    let view = status_of(&bed, None);
+    assert_eq!(view.members[0].state, "failed to start");
+    assert_eq!(view.members[0].context, None);
+    assert_eq!(bed.fill_reads("api"), 0);
+}
