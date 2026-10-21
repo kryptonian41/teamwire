@@ -55,7 +55,9 @@ session that reads a written handoff.
    measured Claude data point, so a team that cares sets tokens directly. Launch
    records the merged value in the `member.started` event under
    `context_handoff_tokens` (a number, or null), so the hook, the watch and
-   `status` read the same value from the store.
+   `status` read the same value from the store. A fresh Claude Code session
+   already holds about 60,000 tokens (system prompt and tools), so a point
+   must sit well above that. Launch warns for a value below 100,000.
 
 4. **The window comes from a table, with a guess for the unknown.** Claude
    models with a 1M window by default (Opus 4.7 and later, Sonnet 5 and later,
@@ -132,6 +134,16 @@ session that reads a written handoff.
    because here the large guess is the safe one: the backstop must never fire
    before the note. A Codex member keeps its default, because its compaction
    settings were not researched.
+
+## Evidence from a live check
+
+On 2026-10-21 a real Claude Code member ran with `context_handoff_tokens` 20,000.
+A fresh session held 61,000 to 64,000 tokens before its first tool call, so it
+was past its point at once, and so was the new session after `teamwire handoff`.
+The fill reader matched the pane's own figure (6%, 64k of 1000k). The note, the
+handoff document, `done` with `handoff:`, the handoff command and the new
+session's Stop hook all worked live. The Codex reader was not part of this
+check.
 
 ## What was ruled out
 

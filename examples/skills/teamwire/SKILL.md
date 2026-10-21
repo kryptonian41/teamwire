@@ -614,7 +614,7 @@ and generation once the member passes its handoff point.
 
 The handoff point is 40% of the model's window unless the spec sets
 `context_handoff_tokens`, a number of tokens, on the team or on a member.
-No measurement backs the 40% for Claude. Measured studies see quality fall
+A fresh Claude Code session already holds about 60,000 tokens, so set a number well above that. Launch warns below 100,000. No measurement backs the 40% for Claude. Measured studies see quality fall
 in absolute tokens, so on a 1M window set the number yourself if 400k is too
 high for the task.
 

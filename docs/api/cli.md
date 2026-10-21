@@ -72,7 +72,7 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's 
 `children`, `context_handoff_tokens`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
-`accept_trust` (default true), `context_handoff_tokens`, `plugins`. A Codex member's arguments hold no
+`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`. A Codex member's arguments hold no
 newline, because herdr refuses one: teamwire writes each `-c key=value` as
 one-line TOML (basic strings that escape `\n`, `\t`, `\r`, `\"`, `\\` and any
 other control character as `\uXXXX`, tables as inline tables), and Codex reads
