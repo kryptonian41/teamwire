@@ -38,6 +38,9 @@ pub(crate) enum Command {
     Launch(LaunchArgs),
     /// Resume the lead and the members of a team whose sessions are gone.
     Reopen(ReopenArgs),
+    /// Give one member a fresh session in the same seat, or print the guide
+    /// a member follows before one.
+    Handoff(HandoffArgs),
     /// Print one line when something needs the lead, until the team completes.
     Watch(WatchArgs),
     /// Open an AFK run: a team with a time budget and no members yet.
@@ -166,6 +169,22 @@ pub(crate) struct ReopenArgs {
     /// Print what would be reopened; open and write nothing.
     #[arg(long)]
     pub(crate) dry_run: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct HandoffArgs {
+    #[arg(required_unless_present = "guide")]
+    pub(crate) team: Option<String>,
+    /// The member that gets a fresh session.
+    #[arg(long, value_name = "R", required_unless_present = "guide")]
+    pub(crate) role: Option<String>,
+    /// Print the steps; close, open and write nothing.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Print the guide a member follows to write its handoff document. Needs
+    /// no team.
+    #[arg(long, conflicts_with_all = ["team", "role", "dry_run"])]
+    pub(crate) guide: bool,
 }
 
 #[derive(Args)]

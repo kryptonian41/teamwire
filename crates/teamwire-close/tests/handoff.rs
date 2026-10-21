@@ -67,9 +67,7 @@ fn closing_the_place_keeps_the_row_the_worktree_and_the_branch() {
     let said = close_handoff_place(&rig.ctx(), &team, &before).unwrap();
     assert_eq!(said, Some(format!("api's place {} closed", place.id)));
     assert!(
-        rig.host
-            .state(&place, std::time::Duration::ZERO)
-            .is_err(),
+        rig.host.state(&place, std::time::Duration::ZERO).is_err(),
         "the place is gone"
     );
     let after = rig.member("api");
