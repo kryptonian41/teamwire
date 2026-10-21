@@ -6,6 +6,10 @@
     clippy::indexing_slicing,
     reason = "helper functions in an integration-test file unwrap and index; a failure there fails the test"
 )]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "a test stands in for a member that writes its handoff document, and dates it"
+)]
 
 #[cfg(test)]
 #[path = "support/common.rs"]
