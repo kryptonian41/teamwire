@@ -42,6 +42,7 @@
     "state": "open",
     "lead": { "session_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "liveness": { "alive": "idle" } },
     "watch": { "state": "stale", "pid": 4300, "heartbeat_age_s": 900 },
+    "afk": { "budget_ends_at": "2026-10-21T18:18:00Z", "seconds_left": 0, "spent": true, "decisions": 3 },
     "members": [
       { "role": "auth", "title": "Survey auth docs", "state": "done(done)", "generation": 1, "age_s": 2200, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
       { "role": "search", "title": "Survey search docs", "state": "done(failed)", "generation": 1, "age_s": 2100, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": null, "resume_command": null },
@@ -54,6 +55,25 @@
     "stuck_deliveries": [],
     "unread_deliveries": [],
     "unanswered_questions": [],
+    "undelivered_results": [],
+    "errors": []
+  },
+  {
+    "team": "nightly",
+    "title": "Nightly dependency bumps",
+    "state": "open",
+    "lead": { "session_id": "bbbbbbbb-cccc-4ddd-8eee-ffffffffffff", "liveness": { "alive": "working" } },
+    "watch": { "state": "running", "pid": 40211, "heartbeat_age_s": 4 },
+    "afk": { "budget_ends_at": "2026-10-21T18:18:00Z", "seconds_left": 4320, "spent": false, "decisions": 3 },
+    "members": [
+      { "role": "bump", "title": "Bump the lockfile", "state": "working", "generation": 1, "age_s": 300, "started_by": "0.0.0+abc123", "older_build": true, "deadline_s": 3600, "result": null, "branch": "nightly/bump", "resume_command": null }
+    ],
+    "messages": [],
+    "stuck_deliveries": [],
+    "unread_deliveries": [],
+    "unanswered_questions": [
+      { "display_id": "m001", "from": "bump", "to": ["db@billing"], "age_s": 180 }
+    ],
     "undelivered_results": [],
     "errors": []
   },

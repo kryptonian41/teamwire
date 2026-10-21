@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { FileRef } from "../../shared/api.ts";
-import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, spanText, startedByLine, unansweredLines, unreadLines, watchLine } from "./status.ts";
+import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, spanText, startedByLine, unansweredLines, unreadLines, watchChip, watchLine } from "./status.ts";
 
 test("watch line for each state", () => {
   expect(watchLine({ state: "running", pid: 40211, heartbeat_age_s: 4 })).toBe("Watch running · pid 40211 · heartbeat 4 s ago");
@@ -73,4 +73,10 @@ test("AFK links list only present files, in order", () => {
     { name: "task", label: "Task" },
   ]);
   expect(afkLinks([])).toEqual([]);
+});
+
+test("only a missing watch gets a card chip", () => {
+  expect(watchChip({ state: "none", pid: null, heartbeat_age_s: null })).toBe("no watch");
+  expect(watchChip({ state: "running", pid: 1, heartbeat_age_s: 1 })).toBeNull();
+  expect(watchChip({ state: "stale", pid: 1, heartbeat_age_s: 900 })).toBeNull();
 });

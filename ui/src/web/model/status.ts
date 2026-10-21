@@ -84,3 +84,8 @@ export function afkLinks(files: readonly FileRef[]): { name: AfkFileName; label:
   const have = new Set(files.filter((f) => f.kind === "afk").map((f) => f.name));
   return AFK_FILE_NAMES.filter((n) => have.has(n)).map((name) => ({ name, label: AFK_LABELS[name] }));
 }
+
+/** Plain info on an Overview card, not a problem flag. */
+export function watchChip(w: StatusView["watch"]): string | null {
+  return w.state === "none" ? "no watch" : null;
+}
