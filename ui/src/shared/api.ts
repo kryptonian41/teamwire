@@ -149,8 +149,9 @@ export interface ResumeCommand {
 
 /**
  * A closed team's archive: a directory directly under
- * `$TEAMWIRE_HOME/archive/` named `<team>-<YYYY-MM-DD>` or
- * `<team>-<YYYY-MM-DD>-<HHMMSS>`. Other directories there are skipped.
+ * `$TEAMWIRE_HOME/archive/` named `<team>-<YYYY-MM-DD>`,
+ * `<team>-<YYYY-MM-DD>-<HHMMSS>` or `<team>-<YYYY-MM-DD>-<HHMMSS>-<n>`, the
+ * three names `teamwire close` writes. Other directories there are skipped.
  */
 export interface ArchiveEntry {
   /** The directory name, used as the id in archive routes. */
