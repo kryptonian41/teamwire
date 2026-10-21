@@ -3,14 +3,35 @@ import status from "../../fixtures/status.json";
 import teams from "../../fixtures/teams.json";
 import log from "../../fixtures/log.json";
 import metrics from "../../fixtures/metrics.json";
+import events from "../../fixtures/events.json";
 import { createRunner } from "../server/cli.ts";
-import { LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
+import { EventsView, LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
 
 describe("fixtures match the teamwire schemas", () => {
   test("status", () => expect(StatusAll.safeParse(status).success).toBe(true));
   test("teams", () => expect(TeamsList.safeParse(teams).success).toBe(true));
   test("log", () => expect(LogView.safeParse(log).success).toBe(true));
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
+  test("events", () => expect(EventsView.safeParse(events).success).toBe(true));
+});
+
+describe("log and events additions", () => {
+  test("log keeps re, commit and a delivery reason", () => {
+    const parsed = LogView.parse(log);
+    const byId = new Map(parsed.messages.map((m) => [m.display_id, m]));
+    expect(byId.get("m008")!.re).toBe("m006");
+    expect(byId.get("m004")!.commit).toBe("4f1c2ab");
+    expect(byId.get("m005")!.deliveries[0]!.reason).toBe("not_at_input_prompt");
+  });
+  test("log from an older teamwire without the new keys still parses", () => {
+    const old = { messages: [{ ...log.messages[0]!, re: undefined, commit: undefined, deliveries: [{ to: "ledger", state: "acked", attempts: 1 }] }] };
+    expect(LogView.safeParse(old).success).toBe(true);
+  });
+  test("an unknown event type fails the parse", () => {
+    const changed = structuredClone(events);
+    changed.events[0]!.type = "member.teleported";
+    expect(EventsView.safeParse(changed).success).toBe(false);
+  });
 });
 
 describe("AFK output", () => {

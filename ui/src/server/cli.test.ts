@@ -30,6 +30,7 @@ case "$*" in
   *"status"*"--role"*) echo '{"team":null,"title":null,"state":null,"lead":null,"members":[],"messages":[],"stuck_deliveries":[],"undelivered_results":[],"errors":[]}' ;;
   *"status"*) cat ${root}status.json ;;
   *"teams"*) cat ${root}teams.json ;;
+  *"events"*) cat ${root}events.json ;;
   *"log"*) cat ${root}log.json ;;
   *"metrics"*) cat ${root}metrics.json ;;
   *"version"*) echo "teamwire 0.0.0" ;;
@@ -53,6 +54,12 @@ describe("buildArgs", () => {
     [{ cmd: "statusRole", team: "alpha", role: "impl" }, ["status", "alpha", "--role", "impl", "--json"]],
     [{ cmd: "teams" }, ["teams", "--json"]],
     [{ cmd: "log", team: "alpha" }, ["log", "alpha", "--json"]],
+    [{ cmd: "events", team: "alpha" }, ["events", "alpha", "--json"]],
+    [{ cmd: "events", team: "alpha", after: 0 }, ["events", "alpha", "--after", "0", "--json"]],
+    [{ cmd: "events", team: "alpha", after: 412 }, ["events", "alpha", "--after", "412", "--json"]],
+    [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07" }, ["events", "alpha", "--archive", "alpha-2026-10-07", "--json"]],
+    [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012", "--json"]],
+    [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012-2" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012-2", "--json"]],
     [{ cmd: "metrics" }, ["metrics", "--json"]],
     [{ cmd: "version" }, ["version"]],
   ];
@@ -67,6 +74,41 @@ describe("buildArgs", () => {
   });
 });
 
+describe("buildArgs for events", () => {
+  test("refuses a bad team name", () => {
+    for (const team of ["../x", "a-b", "Alpha", ""]) {
+      expect(() => buildArgs({ cmd: "events", team })).toThrow();
+      expect(() => buildArgs({ cmd: "eventsArchive", team, archive: "alpha-2026-10-07" })).toThrow();
+    }
+  });
+  test("refuses an after that is negative, fractional or not a number", () => {
+    for (const after of [-1, 1.5, Number.NaN, Infinity, Number.MAX_SAFE_INTEGER + 2, "3" as unknown as number]) {
+      expect(() => buildArgs({ cmd: "events", team: "alpha", after })).toThrow();
+    }
+  });
+  test("refuses an archive name that is a path or has the wrong shape", () => {
+    const bad = [
+      "../alpha-2026-10-07",
+      "alpha-2026-10-07/x",
+      "a/alpha-2026-10-07",
+      "..",
+      "alpha",
+      "alpha-2026-10-07-1530",
+      "alpha-2026-10-07-2",
+      "alpha-2026-10-07-153012-",
+      "alpha-2026-10-07-153012-x",
+      "alpha-2026-10-07-153012-2-3",
+      "alpha-2026-10-07-091500-02",
+      "alpha-2026-10-07-091500-0",
+      "beta-2026-10-07",
+      "alpha-2026-10-07\n",
+      "xalpha-2026-10-07",
+      "",
+    ];
+    for (const archive of bad) expect(() => buildArgs({ cmd: "eventsArchive", team: "alpha", archive })).toThrow();
+  });
+});
+
 describe("runner", () => {
   const make = (timeoutMs?: number) => createRunner({ bin: fake }, timeoutMs ? { timeoutMs } : {});
 
@@ -78,6 +120,23 @@ describe("runner", () => {
     }
     const v = await r({ cmd: "version" });
     expect(v.ok && v.data).toBe("teamwire 0.0.0");
+  }, 20_000);
+
+  test("parses events output for both call forms", async () => {
+    const r = make();
+    const live = await r({ cmd: "events", team: "payments", after: 3 });
+    expect(live.ok && live.data.last_seq).toBe(53);
+    const arch = await r({ cmd: "eventsArchive", team: "payments", archive: "payments-2026-10-07" });
+    expect(arch.ok).toBe(true);
+  });
+
+  test("refuses a leading-zero archive suffix before starting a process", async () => {
+    const run = createRunner({ bin: "/nonexistent/never" });
+    for (const archive of ["alpha-2026-10-07-091500-02", "alpha-2026-10-07-091500-0"]) {
+      const res = await run({ cmd: "eventsArchive", team: "alpha", archive });
+      expect(res).toEqual({ ok: false, problems: [{ code: "bad_request", detail: "bad archive name" }] });
+    }
+    expect(buildArgs({ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-091500-2" })).toContain("alpha-2026-10-07-091500-2");
   });
 
   test("refuses a bad name before starting a process", async () => {
@@ -110,6 +169,13 @@ describe("runner", () => {
     const res = await withMode("shape", () => make()({ cmd: "teams" }));
     expect(res.ok).toBe(false);
     expect(res.problems.at(-1)?.code).toBe("shape_changed");
+  });
+
+  test("events output that does not match EventsView is shape_changed", async () => {
+    const res = await withMode("shape", () => make()({ cmd: "events", team: "alpha" }));
+    expect(res.ok).toBe(false);
+    expect(res.problems.at(-1)?.code).toBe("shape_changed");
+    expect(res.problems.at(-1)?.detail).toContain("teamwire events");
   });
 
   test("a hang is killed and reported as cli_timeout", async () => {

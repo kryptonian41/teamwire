@@ -2,6 +2,7 @@ import { CATEGORY_ORDER } from "../shared/state.ts";
 import { Empty, StateChip } from "./components.tsx";
 import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
+import { afkChip, watchChip } from "./model/status.ts";
 
 export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; loaded: boolean; neverPolled: boolean }) {
   if (!loaded) return <Empty title="Waiting for the first poll…" />;
@@ -83,6 +84,12 @@ function TeamRow({ team }: { team: TeamModel }) {
             {team.members.map((m) => (
               <StateChip key={m.role} word={`${m.role} · ${m.state}`} category={m.category} />
             ))}
+          </p>
+        )}
+        {(s.afk || watchChip(s.watch)) && (
+          <p className="chips">
+            {s.afk && <span className="chip cat-active">{afkChip(s.afk)}</span>}
+            {watchChip(s.watch) && <span className="chip cat-idle">{watchChip(s.watch)}</span>}
           </p>
         )}
         {(reasons.length > 0 || s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (

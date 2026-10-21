@@ -182,6 +182,18 @@ fn newest_archive_of(home: &Path, team: &TeamName, errors: &mut Vec<String>) -> 
         .collect()
 }
 
+/// The directory of `team`'s newest archive, found the way `metrics <team>`
+/// finds it. `errors` collects the directories that could not be listed.
+pub fn newest_archive_dir_of(
+    home: &Path,
+    team: &TeamName,
+    errors: &mut Vec<String>,
+) -> Option<PathBuf> {
+    newest_archive_of(home, team, errors)
+        .into_iter()
+        .find_map(|s| s.path.parent().map(Path::to_path_buf))
+}
+
 /// Whether `team` has a live database or an archive to read.
 pub fn team_is_known(home: &Path, team: &TeamName) -> bool {
     !sources(

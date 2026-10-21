@@ -192,6 +192,10 @@ pub struct LogRow {
     #[serde(rename = "type")]
     pub kind: MessageType,
     pub from: Actor,
+    /// The message this one answers.
+    pub re: Option<DisplayId>,
+    /// The commit a `notice` names.
+    pub commit: Option<String>,
     pub to: Vec<Recipient>,
     /// At most 300 characters, sanitised.
     pub excerpt: String,

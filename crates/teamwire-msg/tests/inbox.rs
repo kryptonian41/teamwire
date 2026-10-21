@@ -340,3 +340,52 @@ fn a_damaged_message_does_not_stop_ack_of_the_others() {
     assert_eq!(outcomes, [AckOutcome::Unknown, AckOutcome::Acked]);
     assert_eq!(rig.events(EventType::StoreError).len(), 1);
 }
+
+#[test]
+fn log_rows_carry_what_an_answer_and_a_notice_point_at() {
+    let mut rig = team_rig();
+    say(&mut rig, "api", "lead", MessageType::Question, "which one?");
+    let mut answer = rig.request("lead", &["api"], MessageType::Answer, "this one");
+    answer.re = Some(id("m001"));
+    send(&mut rig.ctx(), answer).unwrap();
+    // The notice's commit is checked with git: rev-parse, then merge-base.
+    let sha = "3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312";
+    for (code, out) in [(0, format!("{sha}\n")), (0, String::new())] {
+        rig.platform.queue_run(Ok(teamwire_core::RunOutput {
+            exit_code: code,
+            stdout: out.into_bytes(),
+            stderr: Vec::new(),
+            timed_out: false,
+        }));
+    }
+    let mut notice = rig.request("api", &["web"], MessageType::Notice, "renamed");
+    notice.commit = Some("3f2a9c1".to_owned());
+    send(&mut rig.ctx(), notice).unwrap();
+    say(&mut rig, "lead", "api", MessageType::Note, "plain");
+    let rows = log(
+        &rig.ctx(),
+        LogFilter {
+            viewer: Actor::Lead,
+            role: None,
+            limit: None,
+        },
+    )
+    .unwrap();
+    let pairs: Vec<_> = rows
+        .iter()
+        .map(|r| (r.re.as_ref().map(ToString::to_string), r.commit.clone()))
+        .collect();
+    assert_eq!(
+        pairs,
+        [
+            (None, None),
+            (Some("m001".to_owned()), None),
+            (None, Some(sha.to_owned())),
+            (None, None),
+        ]
+    );
+    let json = serde_json::to_value(&rows).unwrap();
+    assert_eq!(json.pointer("/1/re"), Some(&json!("m001")));
+    assert_eq!(json.pointer("/3/re"), Some(&serde_json::Value::Null));
+    assert_eq!(json.pointer("/3/commit"), Some(&serde_json::Value::Null));
+}

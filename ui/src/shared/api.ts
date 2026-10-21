@@ -6,7 +6,7 @@
 // and it never will: teamwire accepts lead actions only from the lead's own
 // Claude Code session (teamwire ADR 0008).
 
-import type { LogView, MetricsView, StatusView, TeamEntry } from "./teamwire.ts";
+import type { EventsView, LogView, MetricsView, StatusView, TeamEntry } from "./teamwire.ts";
 
 /** Default port. The server binds 127.0.0.1 only. */
 export const DEFAULT_PORT = 7878;
@@ -74,8 +74,9 @@ export interface Snapshot {
 /**
  * Files the page may read, and where each one lives inside a team's
  * directory (`$TEAMWIRE_HOME/teams/<team>/` or an archive directory).
- * `name` is a role for every kind except `comms`, where it is a display id.
- * Nothing outside this table is ever served. In particular the server never
+ * `name` is a role for every kind except `comms`, where it is a display id,
+ * and `afk`, where it is one of `AFK_FILE_NAMES`. Nothing outside this table
+ * is ever served. In particular the server never
  * serves `members/<role>/`, which holds each member's token.
  */
 export const FILE_KINDS = {
@@ -86,7 +87,18 @@ export const FILE_KINDS = {
   verify: { dir: "verify", ext: ".log", name: "role" },
   setup: { dir: "setup", ext: ".log", name: "role" },
   comms: { dir: "comms", ext: ".md", name: "display_id" },
+  /** An AFK run's lead files (teamwire ADR 0025). Only the names in `AFK_FILE_NAMES`. */
+  afk: { dir: "afk", ext: ".md", name: "afk_file" },
 } as const;
+
+/**
+ * The only `afk/` files served: the lead's decisions log, its final report
+ * and the task it was given. The other files there (briefs, specs, scratch)
+ * are the lead's working copies and are left out. `REPORT` is upper-case on
+ * disk, so these names are matched exactly and not with `NAME_RE`.
+ */
+export const AFK_FILE_NAMES = ["decisions", "REPORT", "task"] as const;
+export type AfkFileName = (typeof AFK_FILE_NAMES)[number];
 
 export type FileKind = keyof typeof FILE_KINDS;
 export const FILE_KIND_NAMES = Object.keys(FILE_KINDS) as FileKind[];
@@ -97,7 +109,7 @@ export const MAX_FILE_BYTES = 1_000_000;
 /** A file that exists, as listed by the server. */
 export interface FileRef {
   kind: FileKind;
-  /** A role, or a display id for `comms`. */
+  /** A role, a display id for `comms`, or one of `AFK_FILE_NAMES` for `afk`. */
   name: string;
   bytes: number;
   /** ISO time of the last change. */
@@ -137,8 +149,9 @@ export interface ResumeCommand {
 
 /**
  * A closed team's archive: a directory directly under
- * `$TEAMWIRE_HOME/archive/` named `<team>-<YYYY-MM-DD>` or
- * `<team>-<YYYY-MM-DD>-<HHMMSS>`. Other directories there are skipped.
+ * `$TEAMWIRE_HOME/archive/` named `<team>-<YYYY-MM-DD>`,
+ * `<team>-<YYYY-MM-DD>-<HHMMSS>` or `<team>-<YYYY-MM-DD>-<HHMMSS>-<n>`, the
+ * three names `teamwire close` writes. Other directories there are skipped.
  */
 export interface ArchiveEntry {
   /** The directory name, used as the id in archive routes. */
@@ -151,7 +164,7 @@ export interface ArchiveEntry {
   files: FileRef[];
 }
 
-export type { LogView, MetricsView };
+export type { EventsView, LogView, MetricsView };
 
 /**
  * Every route. The page builds URLs only through these functions, and the
@@ -169,6 +182,8 @@ export type { LogView, MetricsView };
  * | `GET /api/archives` | `ArchiveEntry[]`, newest first |
  * | `GET /api/archives/:dir/file/:kind/:name` | `FileText` |
  * | `GET /api/metrics` | `MetricsView` for every live team and archive |
+ * | `GET /api/teams/:team/timeline?after=SEQ` | `EventsView` from `teamwire events <team> [--after SEQ] --json`. `after` is optional, a non-negative integer |
+ * | `GET /api/archives/:dir/timeline` | `EventsView` from `teamwire events <team> --archive <dir> --json`, the team taken from the archive entry |
  *
  * Any other status than 200 carries a `Problem` as JSON.
  */
@@ -183,4 +198,7 @@ export const api = {
   archives: () => "/api/archives",
   archiveFile: (dir: string, kind: FileKind, name: string) => `/api/archives/${dir}/file/${kind}/${name}`,
   metrics: () => "/api/metrics",
+  teamTimeline: (team: string, after?: number) =>
+    after === undefined ? `/api/teams/${team}/timeline` : `/api/teams/${team}/timeline?after=${after}`,
+  archiveTimeline: (dir: string) => `/api/archives/${dir}/timeline`,
 } as const;

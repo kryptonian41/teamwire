@@ -14,7 +14,7 @@
       ]
     },
     {
-      "name": "docs", "title": "Survey API docs gaps", "state": "open",
+      "name": "docs", "title": "Survey API docs gaps", "state": "open", "afk_budget_ends_at": "2026-10-21T18:18:00Z",
       "members": [
         { "role": "auth", "title": "Survey auth docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
         { "role": "search", "title": "Survey search docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
@@ -22,6 +22,12 @@
         { "role": "closer", "title": "Grade the survey", "kind": "closer", "lifecycle": "creating", "generation": 1, "owns": [], "accepts_from_members": [], "can_be_typed_to": true },
         { "role": "extra", "title": "Survey extra docs", "kind": "investigator", "lifecycle": "failed", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
         { "role": "oddone", "title": "Has a new state word", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true }
+      ]
+    },
+    {
+      "name": "nightly", "title": "Nightly dependency bumps", "state": "open", "afk_budget_ends_at": "2026-10-21T18:18:00Z",
+      "members": [
+        { "role": "bump", "title": "Bump the lockfile", "kind": "implementer", "lifecycle": "started", "generation": 1, "owns": ["package.json", "bun.lock"], "accepts_from_members": ["finding", "question"], "can_be_typed_to": false }
       ]
     }
   ]
