@@ -41,7 +41,7 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
 
 /** The archive directory names `teamwire events --archive` accepts for `team`. */
-const archiveNameRe = (team: string) => new RegExp(`^${team}-\\d{4}-\\d{2}-\\d{2}(-\\d{6}(-\\d+)?)?$`);
+const archiveNameRe = (team: string) => new RegExp(`^${team}-\\d{4}-\\d{2}-\\d{2}(-\\d{6}(-[1-9]\\d*)?)?$`);
 
 /** Builds the arguments after the binary. Throws on a name that is not a team or role name. */
 export function buildArgs(call: CliCall, home?: string): string[] {
