@@ -26,6 +26,10 @@ const CODEX_PART: &str = include_str!("../../../../examples/skills/codex-lead.md
 /// so the plugin carries the text as it is.
 const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/reference.md");
 
+/// The skill a lead loads when promptwire is installed. It names no Claude
+/// tool, so the plugin carries it as it is.
+const PROMPTWIRE_TEXT: &str = include_str!("../../../../examples/skills/promptwire/SKILL.md");
+
 const STAMP_KEY: &str = "  teamwire-sha256: ";
 
 /// The program the plugin runs: `<bin> [--home DIR]`, then `mcp --lead` or
@@ -136,6 +140,10 @@ impl PluginFiles {
                 format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
                 reference.to_owned(),
             ),
+            (
+                format!("{PLUGIN_DIR}/skills/promptwire/SKILL.md"),
+                PROMPTWIRE_TEXT.to_owned(),
+            ),
         ];
         let mut content = String::new();
         for (path, text) in &body {
@@ -228,7 +236,12 @@ mod tests {
                 "teamwire/hooks/hooks.json",
                 "teamwire/skills/teamwire/SKILL.md",
                 "teamwire/skills/teamwire/reference.md",
+                "teamwire/skills/promptwire/SKILL.md",
             ]
+        );
+        assert_eq!(
+            file(&files, "teamwire/skills/promptwire/SKILL.md"),
+            PROMPTWIRE_TEXT
         );
         assert_eq!(
             file(&files, "teamwire/.mcp.json"),
