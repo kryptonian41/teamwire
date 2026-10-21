@@ -460,8 +460,9 @@ Which store it reads:
   found the same way `metrics <team>` finds it. A team never seen is refused,
   exit 1.
 - `--archive DIR` reads `$TEAMWIRE_HOME/archive/DIR/team.db`. DIR is a plain
-  directory name that matches `<team>-YYYY-MM-DD` or `<team>-YYYY-MM-DD-HHMMSS`
-  for the named team. Any other value, including one with a `/` or `..`, is
+  directory name for the named team, in one of the three forms `close` writes:
+  `<team>-YYYY-MM-DD`, `<team>-YYYY-MM-DD-HHMMSS` or
+  `<team>-YYYY-MM-DD-HHMMSS-<n>`. Any other value, including one with a `/` or `..`, is
   refused, exit 1. An archive without its `SHA256SUMS` file is read anyway,
   and `errors` says the copy may be incomplete.
 
