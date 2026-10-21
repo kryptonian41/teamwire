@@ -1134,6 +1134,78 @@ fn an_undone_reprompt_is_not_counted_and_keeps_the_run_start() {
     assert_eq!(run, Some(190.0));
 }
 
+/// A handoff starts a new generation, so the run is timed from it, and it
+/// adds nothing to the reprompt count.
+#[test]
+fn a_handoff_starts_a_run_and_is_not_a_reprompt() {
+    for (reprompted, expected_reprompts) in [(false, None), (true, Some(1.0))] {
+        let home = TestHome::new().unwrap();
+        let mut s = open(&home, "alpha");
+        ev(
+            &mut s,
+            1,
+            EventType::MemberCreating,
+            Some("api"),
+            None,
+            &json!({"kind": "implementer"}),
+        );
+        ev(
+            &mut s,
+            10,
+            EventType::MemberStarted,
+            Some("api"),
+            None,
+            &json!({}),
+        );
+        let mut generation = 1;
+        if reprompted {
+            generation += 1;
+            ev(
+                &mut s,
+                100,
+                EventType::MemberReprompted,
+                Some("api"),
+                None,
+                &json!({"generation": generation, "message": "m1"}),
+            );
+        }
+        generation += 1;
+        ev(
+            &mut s,
+            150,
+            EventType::MemberHandoff,
+            Some("api"),
+            None,
+            &json!({"generation": generation, "old_session": "a", "new_session": "b", "place": "p"}),
+        );
+        ev(
+            &mut s,
+            200,
+            EventType::MemberCompleted,
+            Some("api"),
+            Some(&ulid(200)),
+            &json!({"status": "done", "generation": generation, "n": 1}),
+        );
+        let v = view(&home, &query(Some("alpha")), 300);
+        let reprompts = value(
+            &v,
+            "teamwire.member.reprompts",
+            &[("team", "alpha"), ("kind", "implementer")],
+        );
+        let run = value(
+            &v,
+            "teamwire.member.run.duration",
+            &[
+                ("team", "alpha"),
+                ("kind", "implementer"),
+                ("status", "done"),
+            ],
+        );
+        assert_eq!(reprompts, expected_reprompts, "reprompted: {reprompted}");
+        assert_eq!(run, Some(50.0), "reprompted: {reprompted}");
+    }
+}
+
 #[test]
 fn a_verify_flag_label_is_the_kind_without_the_path() {
     let home = TestHome::new().unwrap();

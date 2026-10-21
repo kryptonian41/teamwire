@@ -263,6 +263,36 @@ fn a_resumed_pending_reprompt_that_fails_gives_the_generation_back() {
     assert_eq!(generation(&rig, "api"), before);
 }
 
+/// Reprompt, handoff, reprompt: the generations are 2, 3 and 4, and giving
+/// the last one back returns to the handoff's generation and start time.
+#[test]
+fn a_reprompt_after_a_handoff_gets_the_next_generation_and_gives_back_to_the_handoff() {
+    let mut rig = Rig::new();
+    let place = rig.add_member("api", MemberKind::Implementer);
+    rig.clock.advance(Duration::from_secs(5));
+    go(&mut rig, &["api"]).unwrap();
+    assert_eq!(generation(&rig, "api").0, 2);
+
+    rig.clock.advance(Duration::from_secs(5));
+    let at = rig.now();
+    rig.store
+        .write(|tx| tx.record_handoff(at, &role("api"), None, &place))
+        .unwrap();
+    assert_eq!(generation(&rig, "api"), (3, at));
+
+    rig.clock.advance(Duration::from_secs(5));
+    crashed_after_the_bump(&mut rig, "k");
+    assert_eq!(generation(&rig, "api").0, 4);
+
+    // The dead sender's attempt is no longer live; the resume fails cleanly.
+    rig.clock.advance(Duration::from_secs(61));
+    rig.set_reachable("api", false);
+    let mut req = reprompt(&rig, &["api"]);
+    req.client_key = Some("k".to_owned());
+    send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(generation(&rig, "api"), (3, at));
+}
+
 #[test]
 fn a_resent_pending_reprompt_that_fails_gives_the_generation_back() {
     let mut rig = team_rig();

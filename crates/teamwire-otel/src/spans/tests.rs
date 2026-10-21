@@ -86,6 +86,74 @@ fn a_generation_span_carries_the_harness_session_id() {
 }
 
 #[test]
+fn a_handoff_opens_a_new_generation_span_with_the_new_session() {
+    let mut log = Log(Vec::new());
+    log.add(
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        json!({"session_id": "sess-1"}),
+    );
+    let handoff = log.add(
+        21,
+        EventType::MemberHandoff,
+        Some("api"),
+        None,
+        json!({"generation": 2, "old_session": "sess-1", "new_session": "sess-2", "place": "p"}),
+    );
+    assert!(log.spans(&handoff).is_empty());
+    let done = log.add(
+        51,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(51), 1)),
+        json!({"status": "done", "generation": 2}),
+    );
+    let spans = log.spans(&done);
+    let span = spans
+        .iter()
+        .find(|s| s.name == "teamwire.member.generation")
+        .unwrap();
+    assert_eq!(span.end.saturating_since(span.start).as_secs(), 30);
+    assert_eq!(
+        attr(span, "session.id"),
+        Some(&Attr::Str("sess-2".to_owned()))
+    );
+
+    // A harness that picks its own session leaves none known until its hook
+    // records one; the old session must not be shown for the new generation.
+    let mut log = Log(Vec::new());
+    log.add(
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        json!({"session_id": "sess-1"}),
+    );
+    log.add(
+        21,
+        EventType::MemberHandoff,
+        Some("api"),
+        None,
+        json!({"generation": 2, "old_session": "sess-1", "new_session": null, "place": "p"}),
+    );
+    let done = log.add(
+        51,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(51), 1)),
+        json!({"status": "done", "generation": 2}),
+    );
+    let spans = log.spans(&done);
+    let span = spans
+        .iter()
+        .find(|s| s.name == "teamwire.member.generation")
+        .unwrap();
+    assert_eq!(attr(span, "session.id"), None);
+}
+
+#[test]
 fn a_launch_span_ends_at_the_event_that_settles_the_last_member() {
     let mut log = Log(Vec::new());
     let data = |extra: Value| {

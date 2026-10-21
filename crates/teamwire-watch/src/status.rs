@@ -92,13 +92,7 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             .iter()
             .rev()
             .find(|e| e.kind == teamwire_core::EventType::MemberStarted);
-        // An older build's event has no `dispatch` key and keeps the grace period.
-        let unprompted = started.is_some_and(|s| {
-            s.data.get("dispatch") == Some(&serde_json::Value::Bool(false))
-                && !events
-                    .iter()
-                    .any(|e| e.kind == teamwire_core::EventType::MemberReprompted && e.seq > s.seq)
-        });
+        let unprompted = is_unprompted(started, &events);
         let run_start = crate::snapshot::run_start(&member, started.map(|e| e.time));
         let completion = tx
             .latest_completion(&member.role)?
@@ -364,4 +358,65 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         view.errors.push(format!("no member {wanted} in this team"));
     }
     view
+}
+
+/// Whether the member got no first prompt and nothing since. An older build's
+/// `member.started` has no `dispatch` key and keeps the grace period. A
+/// handoff counts as a prompt: its new session is about to be given work.
+fn is_unprompted(started: Option<&teamwire_core::Event>, events: &[teamwire_core::Event]) -> bool {
+    use teamwire_core::EventType;
+    started.is_some_and(|s| {
+        s.data.get("dispatch") == Some(&serde_json::Value::Bool(false))
+            && !events.iter().any(|e| {
+                matches!(
+                    e.kind,
+                    EventType::MemberReprompted | EventType::MemberHandoff
+                ) && e.seq > s.seq
+            })
+    })
+}
+
+#[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
+mod tests {
+    use serde_json::json;
+    use teamwire_core::{Event, EventType, Timestamp, Ulid};
+
+    use super::is_unprompted;
+
+    fn event(seq: u64, kind: EventType, data: serde_json::Value) -> Event {
+        let time = Timestamp::from_unix_millis(1_790_000_000_000).unwrap();
+        Event {
+            seq,
+            ulid: Ulid::from_parts(time, u128::from(seq)),
+            time,
+            kind,
+            role: None,
+            subject: None,
+            data,
+            writer_version: "test".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_member_without_a_first_prompt_is_unprompted_until_a_reprompt_or_a_handoff() {
+        let started = event(1, EventType::MemberStarted, json!({ "dispatch": false }));
+        let both = |later: EventType| {
+            let events = [started.clone(), event(2, later, json!({}))];
+            is_unprompted(Some(&started), &events)
+        };
+        assert!(is_unprompted(Some(&started), &[started.clone()]));
+        assert!(!both(EventType::MemberReprompted));
+        assert!(!both(EventType::MemberHandoff));
+        assert!(both(EventType::MessageSent));
+    }
+
+    #[test]
+    fn a_dispatched_member_and_an_older_build_are_not_unprompted() {
+        let dispatched = event(1, EventType::MemberStarted, json!({ "dispatch": true }));
+        let older = event(1, EventType::MemberStarted, json!({}));
+        assert!(!is_unprompted(Some(&dispatched), &[]));
+        assert!(!is_unprompted(Some(&older), &[]));
+        assert!(!is_unprompted(None, &[]));
+    }
 }

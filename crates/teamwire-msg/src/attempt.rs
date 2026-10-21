@@ -120,19 +120,33 @@ pub(crate) fn earlier_bump(
         return Ok(None);
     }
     let (events, member) = ctx.store.read(|tx| {
-        let kinds = [EventType::MemberCreating, EventType::MemberReprompted];
+        let kinds = [
+            EventType::MemberCreating,
+            EventType::MemberReprompted,
+            EventType::MemberHandoff,
+        ];
         Ok((tx.events_of_kinds(role, &kinds)?, tx.member(role)?))
     })?;
     let Some(member) = member else {
         return Ok(None);
     };
     // Each generation with the time it started and the message that started
-    // it. A `member.creating` event starts generation 1, a bump pushes the
-    // next one, and its undo pops it again.
+    // it. A `member.creating` event starts generation 1, a bump or a handoff
+    // pushes the next one, and an undo pops a bump again. A handoff has no
+    // undo and no message.
     let mut starts: Vec<(u32, Timestamp, Option<String>)> = Vec::new();
     for e in &events {
         if e.kind == EventType::MemberCreating {
             starts = vec![(1, e.time, None)];
+        } else if e.kind == EventType::MemberHandoff {
+            if let Some(g) = e
+                .data
+                .get("generation")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|g| u32::try_from(g).ok())
+            {
+                starts.push((g, e.time, None));
+            }
         } else if e.kind == EventType::MemberReprompted {
             if e.data.get("undone") == Some(&json!(true)) {
                 if starts.len() > 1 {
