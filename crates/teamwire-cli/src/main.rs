@@ -20,6 +20,7 @@ mod cmd {
     pub(crate) mod doctor;
     pub(crate) mod done;
     pub(crate) mod export;
+    pub(crate) mod handoff;
     pub(crate) mod hook;
     pub(crate) mod inbox;
     pub(crate) mod install;
@@ -51,8 +52,8 @@ const USAGE: u8 = 3;
 
 pub(crate) use args::{
     AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs,
-    Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs,
-    LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
+    Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs,
+    LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
     ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs,
     VerifyArgs, WatchArgs,
 };
@@ -73,6 +74,7 @@ fn main() -> ExitCode {
         Command::Afk(a) => cmd::afk::run(a, global, &wiring),
         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
         Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
+        Command::Handoff(a) => cmd::handoff::run(a, global, &wiring),
         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
         Command::Status(a) => cmd::status::run(a, global, &wiring),
         Command::Verify(a) => cmd::verify::run(a, global, &wiring),
@@ -171,6 +173,8 @@ mod tests {
             "afk start --team run --title Run --task t.md --budget 90m",
             "launch",
             "launch --add --dry-run --spec s.json",
+            "handoff tw --role api --dry-run",
+            "handoff --guide",
             "watch tw --interval 5 --once",
             "status",
             "status tw --role api --json",
@@ -243,6 +247,9 @@ mod tests {
             "verify tw --waive F",
             "pr-watch -R o/r",
             "ack",
+            "handoff tw",
+            "handoff --role api",
+            "handoff tw --role api --guide",
             "afk start --team run --title Run --task t.md --budget 0h",
             "afk start --team run --title Run --task t.md --budget 8",
             "afk start --team run --title Run --task t.md --budget 8d",
