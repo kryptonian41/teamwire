@@ -1,16 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
-import type { LogMessage } from "../shared/teamwire.ts";
+import type { EventRow, LogMessage } from "../shared/teamwire.ts";
 import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
-import { useClient, useLoad, useNow } from "./hooks.ts";
+import { useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
 import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
+import { removal, tokensText, modelText, verifyChip } from "./model/memberEvents.ts";
+import { Timeline } from "./Timeline.tsx";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
 /** The longest the files and the log go without a reload. */
@@ -28,7 +30,10 @@ export function TeamDetail({
   const client = useClient();
   const name = team?.name ?? "";
   const tick = useNow(REFRESH_MS);
-  const files = useLoad(() => client.teamFiles(name), name, team ? `${refreshKey(team.status)}|${tick}` : "");
+  const refresh = team ? `${refreshKey(team.status)}|${tick}` : "";
+  const files = useLoad(() => client.teamFiles(name), name, refresh);
+  const timeline = useTimeline((after) => client.teamTimeline(name, after), name, refresh);
+  const [pick, setPick] = useState<{ id: string; n: number } | null>(null);
   if (!snapshot) return <Empty title="Waiting for the first poll…" />;
   if (!team || team.name === null) {
     return (
@@ -89,7 +94,7 @@ export function TeamDetail({
       )}
 
       <h2>Members</h2>
-      <MemberTable team={team} />
+      <MemberTable team={team} rows={timeline.rows} />
 
       {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || unread.length > 0 || unanswered.length > 0 || older.length > 0) && (
         <>
@@ -160,7 +165,15 @@ export function TeamDetail({
         </>
       )}
 
-      <MessageSection team={team} />
+      <MessageSection team={team} pick={pick} />
+
+      <h2>Timeline</h2>
+      <Timeline
+        rows={timeline.rows}
+        loading={timeline.loading}
+        error={timeline.error}
+        onPickMessage={(id) => setPick({ id, n: (pick?.n ?? 0) + 1 })}
+      />
 
       {team.removed.length > 0 && (
         <details>
@@ -173,6 +186,7 @@ export function TeamDetail({
                   <th>Title</th>
                   <th>Kind</th>
                   <th>Generation</th>
+                  <th>Why removed</th>
                 </tr>
               </thead>
               <tbody>
@@ -182,6 +196,7 @@ export function TeamDetail({
                     <td>{m.title}</td>
                     <td>{m.kind}</td>
                     <td>{m.generation}</td>
+                    <td>{removalText(timeline.rows, m.role)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -196,6 +211,7 @@ export function TeamDetail({
           member={open}
           roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
           files={files.data ?? []}
+          rows={timeline.rows}
           onClose={() => {
             location.hash = href.team(team.name ?? "");
           }}
@@ -205,7 +221,7 @@ export function TeamDetail({
   );
 }
 
-function MemberTable({ team }: { team: TeamModel }) {
+function MemberTable({ team, rows }: { team: TeamModel; rows: readonly EventRow[] }) {
   if (team.members.length === 0) return <p className="quiet">No members reported.</p>;
   const name = team.name ?? "";
   const go = (role: string) => {
@@ -224,6 +240,9 @@ function MemberTable({ team }: { team: TeamModel }) {
             <th>Age / deadline</th>
             <th>Result</th>
             <th>Branch</th>
+            <th>Model</th>
+            <th>Verify</th>
+            <th>Tokens</th>
           </tr>
         </thead>
         <tbody>
@@ -260,6 +279,7 @@ function MemberTable({ team }: { team: TeamModel }) {
                 </td>
                 <td>{m.result ?? "–"}</td>
                 <td>{m.branch ? <code>{m.branch}</code> : "–"}</td>
+                <MemberEventCells rows={rows} role={m.role} />
               </tr>
             );
           })}
@@ -269,12 +289,25 @@ function MemberTable({ team }: { team: TeamModel }) {
   );
 }
 
-function MessageSection({ team }: { team: TeamModel }) {
+function MessageSection({ team, pick }: { team: TeamModel; pick: { id: string; n: number } | null }) {
   const client = useClient();
   const name = team.name ?? "";
   const tick = useNow(REFRESH_MS);
   const log = useLoad(() => client.teamLog(name), name, `${refreshKey(team.status)}|${tick}`);
   const [selected, setSelected] = useState<Selected | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const shown = log.data && (selected ? filterByPair(log.data.messages, selected.from, selected.to) : log.data.messages);
+
+  // A timeline row asked for a message. The pair filter may hide it, so clear the filter first; the effect runs again then.
+  useEffect(() => {
+    if (!pick || !log.data) return;
+    if (shown?.some((m) => m.display_id === pick.id)) {
+      setPicked(pick.id);
+      document.getElementById(`msg-${pick.id}`)?.scrollIntoView({ block: "center" });
+    } else if (log.data.messages.some((m) => m.display_id === pick.id)) {
+      setSelected(null);
+    }
+  }, [pick, log.data, selected]);
 
   const categories = new Map<string, StateCategory>(team.members.map((m) => [m.role, m.category]));
   categories.set("lead", leadCategory(team.status.lead));
@@ -303,20 +336,16 @@ function MessageSection({ team }: { team: TeamModel }) {
               </button>
             </div>
           )}
-          <MessageTable
-            team={name}
-            messages={selected ? filterByPair(log.data.messages, selected.from, selected.to) : log.data.messages}
-          />
+          <MessageTable team={name} messages={shown ?? []} picked={picked} setPicked={setPicked} />
         </>
       )}
     </>
   );
 }
 
-function MessageTable({ team, messages }: { team: string; messages: LogMessage[] }) {
+function MessageTable({ team, messages, picked, setPicked }: { team: string; messages: LogMessage[]; picked: string | null; setPicked: (id: string) => void }) {
   const client = useClient();
   const [open, setOpen] = useState<string | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
   if (messages.length === 0) return <p className="quiet">No messages yet.</p>;
   const ids = new Set(messages.map((m) => m.display_id));
   const pick = (id: string) => {
@@ -385,4 +414,23 @@ function MessageTable({ team, messages }: { team: string; messages: LogMessage[]
       </table>
     </div>
   );
+}
+
+function MemberEventCells({ rows, role }: { rows: readonly EventRow[]; role: string }) {
+  const verify = verifyChip(rows, role);
+  return (
+    <>
+      <td>{modelText(rows, role) ?? "—"}</td>
+      <td>
+        <StateChip word={verify.text} category={verify.category} />
+      </td>
+      <td className="num">{tokensText(rows, role)}</td>
+    </>
+  );
+}
+
+function removalText(rows: readonly EventRow[], role: string): string {
+  const r = removal(rows, role);
+  if (!r) return "—";
+  return r.reasons[0] ?? (r.unverified ? "removed without a passing verify" : "removed");
 }

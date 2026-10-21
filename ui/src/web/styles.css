@@ -404,3 +404,27 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .msgs tr.picked td { background: var(--bg-active); }
 .afk-files { margin-top: var(--s2); }
 .facts { margin: var(--s2) 0 var(--s3); padding: 0; list-style: none; color: var(--muted); font-size: var(--t-small); }
+
+/* Event timeline: one row per event, newest first. A problem row gets a bar
+   as well as its hidden "Problem:" text, so colour is never the only cue. */
+.timeline .filter { justify-content: space-between; }
+.switch { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t-small); color: var(--muted); }
+.events { list-style: none; margin: 0 0 var(--s3); padding: 0; background: var(--surface); border-radius: var(--r-lg); }
+.events li {
+  display: grid; grid-template-columns: 9ch 12ch 1fr; gap: var(--s1) var(--s3);
+  padding: var(--s2) var(--s3); border-left: 3px solid transparent; border-top: 1px solid var(--line);
+}
+.events li:first-child { border-top: 0; }
+.events li.problem { border-left-color: var(--c-failed); }
+.events time, .events .who { color: var(--muted); font-size: var(--t-small); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.events .who { overflow: hidden; text-overflow: ellipsis; }
+.events .what { min-width: 0; overflow-wrap: anywhere; }
+.events .details { display: block; }
+@media (max-width: 720px) {
+  .events li { grid-template-columns: 1fr; }
+}
+.verify-runs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s3); }
+.verify-runs .flags { margin: var(--s1) 0 0; padding-left: var(--s4); font-size: var(--t-small); }
+.verify-runs .flags code { overflow-wrap: anywhere; }
+.verify-runs p { margin: var(--s1) 0 0; }
+td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }

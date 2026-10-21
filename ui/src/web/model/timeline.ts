@@ -288,8 +288,9 @@ export function mergeRows(have: readonly EventRow[], more: readonly EventRow[]):
 /** The highest seq held, or undefined when no row is held (ask for the full timeline). */
 export const lastSeq = (rows: readonly EventRow[]): number | undefined => rows.reduce<number | undefined>((hi, r) => (hi === undefined || r.seq > hi ? r.seq : hi), undefined);
 
-/** `just now`, `3 min ago`, `2 h 5 min ago`; a time in the future reads as `just now`. */
+/** `just now`, `3 min ago`, `2 h 5 min ago`, `8 days ago`; a time in the future reads as `just now`. */
 export function agoText(iso: string, now: number): string {
   const s = Math.round((now - new Date(iso).getTime()) / 1000);
-  return s < 5 ? "just now" : `${spanText(s)} ago`;
+  if (s < 5) return "just now";
+  return s >= 172_800 ? `${Math.floor(s / 86_400)} days ago` : `${spanText(s)} ago`;
 }

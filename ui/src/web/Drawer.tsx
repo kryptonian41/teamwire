@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FileRef } from "../shared/api.ts";
-import type { RosterMember } from "../shared/teamwire.ts";
+import type { EventRow, RosterMember } from "../shared/teamwire.ts";
 import { StateChip } from "./components.tsx";
+import { Timeline } from "./Timeline.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
 import { href } from "./model/route.ts";
-import { acceptsLine, ownsLine, startedByLine } from "./model/status.ts";
+import { countText, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
+import { acceptsLine, ownsLine, spanText, startedByLine } from "./model/status.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
 export function Drawer({
@@ -15,12 +17,14 @@ export function Drawer({
   member,
   roster,
   files,
+  rows,
   onClose,
 }: {
   team: string;
   member: JoinedMember;
   roster: RosterMember | null;
   files: FileRef[];
+  rows: readonly EventRow[];
   onClose: () => void;
 }) {
   const client = useClient();
@@ -95,6 +99,8 @@ export function Drawer({
           {roster && <li>{acceptsLine(roster)}</li>}
         </ul>
 
+        <MemberEvents rows={rows} role={member.role} />
+
         <div className="resume">
           <h3>Resume</h3>
           {resume.loading && <span className="note">Loading…</span>}
@@ -142,5 +148,83 @@ export function Drawer({
       </aside>
     </>,
     document.body,
+  );
+}
+
+/** What the event log says about the member: verify history, token use and its own events. */
+function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string }) {
+  const runs = verifyHistory(rows, role);
+  const tokens = [...tokensByModel(rows, role)];
+  const model = modelText(rows, role);
+  return (
+    <>
+      {model && <p className="sub">Model: {model}</p>}
+      <h3>Verify history</h3>
+      {runs.length === 0 ? (
+        <p className="quiet">No verify run recorded.</p>
+      ) : (
+        <ol className="verify-runs">
+          {runs.map((r) => (
+            <li key={r.seq}>
+              <span className="chips">
+                <StateChip word={r.verdict ?? "unknown"} category={verdictCategory(r.verdict)} />
+                <span className="sub">
+                  {[r.exit === null ? null : `exit ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
+                    .filter((p) => p !== null)
+                    .join(" · ")}
+                </span>
+              </span>
+              {r.flags.length > 0 && (
+                <ul className="flags">
+                  {r.flags.map((f) => (
+                    <li key={f}>
+                      <code>{f}</code>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {r.waivers.map((w) => (
+                <p key={w.seq} className="sub">
+                  Waived{w.headSha ? ` at ${w.headSha}` : ""}: {w.flags.length > 0 ? w.flags.join(", ") : "no flags listed"}
+                </p>
+              ))}
+            </li>
+          ))}
+        </ol>
+      )}
+      <h3>Token use</h3>
+      {tokens.length === 0 ? (
+        <p className="quiet">No token use recorded.</p>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Model</th>
+                <th>In</th>
+                <th>Out</th>
+                <th>Cache read</th>
+                <th>Cache written</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.map(([name, u]) => (
+                <tr key={name}>
+                  <td>{name}</td>
+                  <td className="num">{countText(u.input)}</td>
+                  <td className="num">{countText(u.output)}</td>
+                  <td className="num">{countText(u.cacheRead)}</td>
+                  <td className="num">{countText(u.cacheCreation)}</td>
+                  <td className="num">{countText(usageTotal(u))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <h3>Events</h3>
+      <Timeline rows={rowsForRole(rows, role)} loading={false} error={null} />
+    </>
   );
 }

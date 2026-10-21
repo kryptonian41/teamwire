@@ -64,6 +64,7 @@ export function verifyHistory(rows: readonly EventRow[], role: string): VerifyRu
 }
 
 const VERDICT_CATEGORY: Record<string, StateCategory> = { PASS: "done", FLAGGED: "attention", FAIL: "failed" };
+export const verdictCategory = (verdict: string | null): StateCategory => (verdict === null ? "idle" : (VERDICT_CATEGORY[verdict] ?? "attention"));
 
 /** The chip text and colour: `PASS`, `FLAGGED · 2`, `FAIL`, or `—` when the member never ran verify. */
 export function verifyChip(rows: readonly EventRow[], role: string): { text: string; category: StateCategory } {
@@ -71,7 +72,7 @@ export function verifyChip(rows: readonly EventRow[], role: string): { text: str
   if (!run?.verdict) return { text: "—", category: "idle" };
   return {
     text: run.flags.length > 0 ? `${run.verdict} · ${run.flags.length}` : run.verdict,
-    category: VERDICT_CATEGORY[run.verdict] ?? "attention",
+    category: verdictCategory(run.verdict),
   };
 }
 

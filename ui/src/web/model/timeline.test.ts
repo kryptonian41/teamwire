@@ -104,4 +104,5 @@ test("oneLine and agoText", () => {
   expect(agoText(t, at + 2000)).toBe("just now");
   expect(agoText(t, at - 5000)).toBe("just now");
   expect(agoText(t, at + 180_000)).toBe("3 min ago");
+  expect(agoText(t, at + 8 * 86_400_000)).toBe("8 days ago");
 });
