@@ -38,7 +38,7 @@ test("counts members per category, keeping unknown words apart", () => {
 
 test("sorts problem teams first, then by title", () => {
   const sorted = sortTeams(joinAll(S, T));
-  expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs"]);
+  expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs", "nightly"]);
   const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [], team: "aaa", title: "Zed" }, T);
   const other = joinTeam({ ...quiet.status, team: "bbb", title: "Alpha" }, T);
   const bad = joinTeam({ ...quiet.status, team: "ccc", title: "Zzz", errors: ["x"] }, T);

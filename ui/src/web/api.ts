@@ -4,6 +4,7 @@
 
 import {
   api,
+  AFK_FILE_NAMES,
   FILE_KINDS,
   type ArchiveEntry,
   type FileKind,
@@ -169,13 +170,20 @@ export const mockClient: ApiClient = {
       if (m.role === "api") files.push({ kind: "verify", name: m.role, bytes: 90, modifiedAt: now });
       if (m.role === "ledger") files.push({ kind: "setup", name: m.role, bytes: 90, modifiedAt: now });
     }
+    // Mock AFK files for the two AFK teams.
+    if (team === "nightly" || team === "docs") {
+      for (const name of AFK_FILE_NAMES) files.push({ kind: "afk", name, bytes: 200, modifiedAt: now });
+    }
     if (team === "payments") {
       for (const msg of baseLog.messages) files.push({ kind: "comms", name: msg.display_id, bytes: 300, modifiedAt: msg.time });
     }
     return files;
   },
   teamFile: async (team, kind, name) => mockText(kind, name, team),
-  archives: async () => baseArchives,
+  archives: async () =>
+    baseArchives.map((a, i) =>
+      i === 0 ? { ...a, files: [...a.files, ...AFK_FILE_NAMES.map((name) => ({ kind: "afk" as const, name, bytes: 200, modifiedAt: a.closedAt ?? a.date }))] } : a,
+    ),
   archiveFile: async (dir, kind, name) => mockText(kind, name, dir),
   metrics: async () => baseMetrics,
 };

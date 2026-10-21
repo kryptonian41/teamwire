@@ -2,13 +2,14 @@ import { useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
 import type { LogMessage } from "../shared/teamwire.ts";
-import { DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
+import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
+import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -45,6 +46,9 @@ export function TeamDetail({
   const live = livenessInfo(s.lead);
   const open = member === null ? null : team.members.find((m) => m.role === member);
   const counts = countByCategory(team.members);
+  const unread = unreadLines(s);
+  const unanswered = unansweredLines(s);
+  const older = team.members.filter((m) => m.older_build);
 
   return (
     <>
@@ -61,6 +65,10 @@ export function TeamDetail({
             {live.label}
           </span>
         </p>
+        <p className="meta">
+          <span>{watchLine(s.watch)}</span>
+          {s.afk && <span className={s.afk.spent ? "flag bad" : undefined}>{afkLine(s.afk)}</span>}
+        </p>
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
@@ -70,6 +78,7 @@ export function TeamDetail({
             ))}
           </p>
         )}
+        {s.afk && <AfkFiles id={name} files={files.data ?? []} load={(n) => client.teamFile(name, "afk", n)} />}
       </div>
       {s.errors.length > 0 && (
         <ul className="errors page-errors">
@@ -82,9 +91,31 @@ export function TeamDetail({
       <h2>Members</h2>
       <MemberTable team={team} />
 
-      {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0) && (
+      {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || unread.length > 0 || unanswered.length > 0 || older.length > 0) && (
         <>
           <h2>Needs a look</h2>
+          {(unread.length > 0 || unanswered.length > 0) && (
+            <>
+              <h3>Waiting on a reply</h3>
+              <ul className="results">
+                {[...unread, ...unanswered].map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {older.length > 0 && (
+            <>
+              <h3>Older builds</h3>
+              <ul className="results">
+                {older.map((m) => (
+                  <li key={m.role}>
+                    <strong>{m.role}</strong>: {startedByLine(m)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {s.stuck_deliveries.length > 0 && (
             <>
             <h3>Stuck deliveries</h3>
@@ -163,6 +194,7 @@ export function TeamDetail({
         <Drawer
           team={team.name}
           member={open}
+          roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
           files={files.data ?? []}
           onClose={() => {
             location.hash = href.team(team.name ?? "");
@@ -207,6 +239,7 @@ function MemberTable({ team }: { team: TeamModel }) {
               >
                 <td>
                   <a href={href.member(name, m.role)}>{m.role}</a>
+                  {m.older_build && <span className="chip cat-attention badge" title={startedByLine(m) ?? undefined}>older build</span>}
                 </td>
                 <td className="title">{m.title}</td>
                 <td>{m.kind ?? "?"}</td>
@@ -283,7 +316,13 @@ function MessageSection({ team }: { team: TeamModel }) {
 function MessageTable({ team, messages }: { team: string; messages: LogMessage[] }) {
   const client = useClient();
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   if (messages.length === 0) return <p className="quiet">No messages yet.</p>;
+  const ids = new Set(messages.map((m) => m.display_id));
+  const pick = (id: string) => {
+    setPicked(id);
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ block: "center" });
+  };
   return (
     <div className="table-wrap">
       <table className="msgs">
@@ -299,16 +338,30 @@ function MessageTable({ team, messages }: { team: string; messages: LogMessage[]
         </thead>
         <tbody>
           {messages.map((m) => (
-            <tr key={m.display_id}>
+            <tr key={m.display_id} id={`msg-${m.display_id}`} className={picked === m.display_id ? "picked" : undefined}>
               <td title={m.time}>{new Date(m.time).toLocaleTimeString()}</td>
               <td>{m.display_id}</td>
-              <td>{m.type}</td>
+              <td>
+                {m.type}
+                {m.commit && <code className="commit-chip badge">{m.commit}</code>}
+                {(() => {
+                  const link = answersLink(m, ids);
+                  if (!link) return null;
+                  return link.target === null ? (
+                    <span className="sub badge">{link.text}</span>
+                  ) : (
+                    <button className="link-btn badge" onClick={() => pick(link.target!)}>
+                      {link.text}
+                    </button>
+                  );
+                })()}
+              </td>
               <td>{m.from}</td>
               <td>
                 <div className="deliveries">
                   {m.to.map((to) => {
                     const d = m.deliveries.find((x) => x.to === to);
-                    return d ? <DeliveryChip key={to} to={to} state={d.state} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
+                    return d ? <DeliveryChip key={to} to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
                   })}
                 </div>
               </td>
