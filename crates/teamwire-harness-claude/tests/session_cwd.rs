@@ -170,3 +170,32 @@ fn a_huge_file_is_read_only_from_its_tail() {
     ]);
     assert_eq!(fill(d.path(), Some(&p)), None);
 }
+
+#[test]
+fn api_error_lines_are_no_reading_and_the_real_one_before_them_counts() {
+    let error = json!({"type":"assistant","isSidechain":false,"isApiErrorMessage":true,
+        "message":{"model":"<synthetic>","usage":{"input_tokens":0,
+        "cache_read_input_tokens":0,"cache_creation_input_tokens":0}}})
+    .to_string();
+    let (d, p) = transcript(&[
+        assistant("claude-fable-5-1", 1, 900_000, 17_370, false),
+        error.clone(),
+        error,
+    ]);
+    assert_eq!(
+        fill(d.path(), Some(&p)),
+        Some(Fill {
+            tokens: 917_371,
+            window: 1_000_000
+        })
+    );
+}
+
+#[test]
+fn an_assistant_line_without_a_message_is_skipped() {
+    let (d, p) = transcript(&[
+        assistant("claude-opus-5-5", 10, 0, 0, false),
+        json!({"type":"assistant","isSidechain":false}).to_string(),
+    ]);
+    assert_eq!(fill(d.path(), Some(&p)).unwrap().tokens, 10);
+}
