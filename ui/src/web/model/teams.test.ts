@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } fro
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
+import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -138,4 +138,10 @@ test("the refresh key changes when a message arrives, whatever order the list is
 test("durations round to whole seconds", () => {
   expect(formatDuration(10.666666666666666)).toBe("11s");
   expect(formatDuration(59.6)).toBe("1m");
+});
+
+test("the context label is the percentage, and nothing when unknown", () => {
+  expect(contextLabel({ tokens: 720091, window: 1000000, pct: 72, handoff_at: 400000 })).toBe("72%");
+  expect(contextLabel(null)).toBeNull();
+  expect(contextLabel(undefined)).toBeNull();
 });

@@ -1309,3 +1309,75 @@ fn the_first_good_poll_says_watching_after_a_failed_one() {
     assert_eq!(line, "[teamwire:alpha] WATCHING 1 members");
     assert!(bed.ticks(3).is_empty());
 }
+
+#[test]
+fn a_member_past_its_handoff_point_gets_one_context_line_per_generation() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.working("api");
+    bed.fill("api", 720_091, 1_000_000);
+    let first = bed.poll().unwrap();
+    assert!(
+        first.contains("CONTEXT api 72% 720k of 1000k (handoff at 400k)"),
+        "{first}"
+    );
+    assert_eq!(count(&bed.ticks(5), "CONTEXT"), 0, "announced once");
+
+    bed.reprompt("api");
+    bed.fill("api", 410_000, 1_000_000);
+    let lines = bed.ticks(3);
+    assert_eq!(
+        count(&lines, "CONTEXT"),
+        1,
+        "a new generation is a new key: {lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("CONTEXT api 41% 410k of 1000k")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_member_below_its_point_or_without_a_reading_gets_no_context_line() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("web");
+    bed.working("api");
+    bed.working("web");
+    bed.fill("api", 399_999, 1_000_000);
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(5));
+    assert_eq!(count(&lines, "CONTEXT"), 0, "{lines:?}");
+}
+
+#[test]
+fn a_configured_point_moves_the_context_line() {
+    let mut bed = Bed::new();
+    bed.add_started_with(
+        "api",
+        &serde_json::json!({ "context_handoff_tokens": 150_000 }),
+    );
+    bed.working("api");
+    bed.fill("api", 160_000, 1_000_000);
+    let lines: Vec<String> = bed.poll().into_iter().collect();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.contains("16% 160k of 1000k (handoff at 150k)")),
+        "{lines:?}"
+    );
+}
+
+#[test]
+fn a_removed_member_is_not_read_for_context() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("web");
+    bed.working("web");
+    bed.fill("api", 900_000, 1_000_000);
+    bed.remove("api");
+    let lines: Vec<String> = bed.poll().into_iter().collect();
+    assert_eq!(count(&lines, "CONTEXT"), 0, "{lines:?}");
+}

@@ -13,6 +13,20 @@ describe("fixtures match the teamwire schemas", () => {
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
 });
 
+describe("context output", () => {
+  const context = { tokens: 720091, window: 1000000, pct: 72, handoff_at: 400000 };
+  const withContext = (value: unknown) =>
+    StatusAll.parse([{ ...status[0]!, members: [{ ...status[0]!.members[0]!, context: value }] }])[0]!
+      .members[0]!.context;
+  test("a member accepts a context object and keeps it", () => {
+    expect(withContext(context)).toEqual(context);
+  });
+  test("a member accepts a null context and an older output without the key", () => {
+    expect(withContext(null)).toBeNull();
+    expect(StatusAll.parse(status)[0]!.members[0]!.context).toBeUndefined();
+  });
+});
+
 describe("AFK output", () => {
   const afk = {
     budget_ends_at: "2026-10-20T08:00:00.000Z",

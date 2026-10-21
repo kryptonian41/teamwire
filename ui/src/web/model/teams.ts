@@ -3,6 +3,11 @@
 import type { Metric, MemberKind, MemberView, RosterMember, StatusView, TeamEntry } from "../../shared/teamwire.ts";
 import { CATEGORY_ORDER, classifyState, type StateCategory } from "../../shared/state.ts";
 
+/** `72%` beside a member's state; null when the fill is unknown. */
+export function contextLabel(context: MemberView["context"]): string | null {
+  return context ? `${context.pct}%` : null;
+}
+
 export interface JoinedMember extends MemberView {
   /** From the roster. Null when the roster has no entry for this role. */
   kind: MemberKind | null;

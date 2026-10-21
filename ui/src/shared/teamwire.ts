@@ -43,6 +43,16 @@ export const WatchState = z.enum(["running", "stale", "none"]);
 const count = z.number().int().nonnegative();
 
 /** One member in `teamwire status --json`. Removed members are left out. */
+/** How full a member's context window is, and where it hands off. */
+export const ContextView = z.object({
+  tokens: count,
+  window: count,
+  /** Whole percent of the window. */
+  pct: count,
+  /** The token count at which the member is told to hand off. */
+  handoff_at: count,
+});
+
 export const MemberView = z.object({
   role: z.string(),
   title: z.string(),
@@ -65,6 +75,8 @@ export const MemberView = z.object({
   branch: z.string().nullable(),
   /** Only set by `status <team> --role R`. */
   resume_command: z.string().nullable(),
+  /** `null` when unknown. An older teamwire leaves the key out. */
+  context: ContextView.nullish(),
 });
 
 export const LeadView = z.object({
@@ -218,6 +230,7 @@ export type MessageType = z.infer<typeof MessageType>;
 export type MemberKind = z.infer<typeof MemberKind>;
 export type Lifecycle = z.infer<typeof Lifecycle>;
 export type Liveness = z.infer<typeof Liveness>;
+export type ContextView = z.infer<typeof ContextView>;
 export type MemberView = z.infer<typeof MemberView>;
 export type LeadView = z.infer<typeof LeadView>;
 export type MessageView = z.infer<typeof MessageView>;

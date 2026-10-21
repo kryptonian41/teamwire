@@ -471,3 +471,51 @@ fn an_undelivered_result_points_at_a_file_that_is_there() {
         team_dir.join("outbox").join("web.md")
     );
 }
+
+#[test]
+fn a_started_member_shows_its_context_fill_and_handoff_point() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("web");
+    bed.fill("api", 720_091, 1_000_000);
+    let view = status_of(&bed, None);
+    let context = |name: &str| {
+        view.members
+            .iter()
+            .find(|m| m.role == role(name))
+            .unwrap()
+            .context
+    };
+    let got = context("api").unwrap();
+    assert_eq!(
+        (got.tokens, got.window, got.pct, got.handoff_at),
+        (720_091, 1_000_000, 72, 400_000)
+    );
+    assert_eq!(context("web"), None, "no reading means unknown");
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(
+        json["members"][0]["context"],
+        serde_json::json!({"tokens": 720_091, "window": 1_000_000, "pct": 72, "handoff_at": 400_000})
+    );
+    assert!(json["members"][1]["context"].is_null());
+}
+
+#[test]
+fn a_configured_handoff_point_replaces_the_default() {
+    let mut bed = Bed::new();
+    bed.add_started_with(
+        "api",
+        &serde_json::json!({ "context_handoff_tokens": 150_000 }),
+    );
+    bed.fill("api", 100_000, 1_000_000);
+    let view = status_of(&bed, None);
+    assert_eq!(view.members[0].context.unwrap().handoff_at, 150_000);
+}
+
+#[test]
+fn a_member_that_never_started_has_no_context_even_with_a_reading() {
+    let mut bed = Bed::new();
+    bed.add_creating("api");
+    bed.fill("api", 500_000, 1_000_000);
+    assert_eq!(status_of(&bed, None).members[0].context, None);
+}

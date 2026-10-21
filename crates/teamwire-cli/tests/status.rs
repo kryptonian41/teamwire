@@ -94,6 +94,7 @@ fn a_team_shows_members_messages_and_stuck_deliveries() {
         "{}",
         run.out
     );
+    assert!(run.out.contains("  ctx -  branch"), "{}", run.out);
     assert!(run.out.contains("last messages:"), "{}", run.out);
     assert!(run.out.contains("which branch?"), "{}", run.out);
     assert!(
@@ -201,6 +202,7 @@ fn json_is_the_view() {
     assert_eq!(view["watch"]["state"], "none");
     assert_eq!(view["members"][0]["older_build"], false);
     assert!(view["members"][0]["started_by"].is_string(), "{view}");
+    assert!(view["members"][0]["context"].is_null(), "{view}");
     assert_eq!(view["unread_deliveries"], serde_json::json!([]));
     assert_eq!(view["unanswered_questions"][0]["from"], "web");
 }
