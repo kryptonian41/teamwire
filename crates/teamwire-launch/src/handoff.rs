@@ -58,32 +58,24 @@ pub struct Handoff {
 /// Checks that `role` can get a fresh session, and builds its tab request:
 /// the team is open, the member started, its folder and per-run files are
 /// there. Writes nothing.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 pub fn plan_handoff<'r>(
     ctx: &Ctx<'r>,
     role: &Role,
     teamwire_bin: Option<PathBuf>,
 ) -> Result<HandoffPlan<'r>, String> {
     let store_error = |e: teamwire_store::StoreError| format!("the store could not be read: {e}");
-    let team = ctx
+    let (team, member, options) = ctx
         .store
-        .read(|tx| tx.team())
-        .map_err(store_error)?
-        .ok_or("the team has no record")?;
+        .read(|tx| Ok((tx.team()?, tx.member(role)?, tx.run_options(role)?)))
+        .map_err(store_error)?;
+    let team = team.ok_or("the team has no record")?;
     if team.state != TeamState::Open {
         return Err(format!(
             "team {} is {}; only an open team can hand off",
             team.name, team.state
         ));
     }
-    let member = ctx
-        .store
-        .read(|tx| tx.member(role))
-        .map_err(store_error)?
-        .ok_or_else(|| format!("no member {role} in team {}", team.name))?;
+    let member = member.ok_or_else(|| format!("no member {role} in team {}", team.name))?;
     if member.state != MemberState::Started {
         return Err(format!(
             "{role} is {}; only a started member can hand off",
@@ -101,10 +93,6 @@ pub fn plan_handoff<'r>(
             member.cwd.display()
         ));
     }
-    let options = ctx
-        .store
-        .read(|tx| tx.run_options(role))
-        .map_err(store_error)?;
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| e.to_string())?;
     let opts = ReopenOpts {
         teamwire_bin,

@@ -4,10 +4,6 @@
     clippy::disallowed_methods,
     reason = "a test stands in for a member that edits files in its worktree"
 )]
-#![expect(
-    clippy::indexing_slicing,
-    reason = "a test indexes the refusals it just checked the length of"
-)]
 
 #[path = "support/rig.rs"]
 pub mod rig;
@@ -43,19 +39,23 @@ fn a_running_turn_a_dialog_and_uncommitted_work_are_refused() {
     rig.add_worktree_member("api", MemberKind::Implementer);
     rig.set_place_state("api", PlaceState::Working);
     let busy = refusals(&mut rig, "api");
-    assert_eq!(busy.len(), 1, "{busy:?}");
-    assert!(busy[0].contains("api is busy"), "{busy:?}");
-    assert!(!busy[0].contains("--stop"), "a handoff never stops a turn");
+    let [busy] = busy.as_slice() else {
+        unreachable!("one refusal: {busy:?}");
+    };
+    assert!(busy.contains("api is busy"), "{busy}");
+    assert!(!busy.contains("--stop"), "a handoff never stops a turn");
 
     rig.set_place_state("api", PlaceState::Blocked);
     let dialog = refusals(&mut rig, "api");
-    assert!(dialog[0].contains("dialog"), "{dialog:?}");
+    assert!(dialog.iter().any(|r| r.contains("dialog")), "{dialog:?}");
 
     rig.set_place_state("api", PlaceState::Idle);
     std::fs::write(rig.member("api").cwd.join("half.rs"), "fn f() {}\n").unwrap();
     let dirty = refusals(&mut rig, "api");
-    assert_eq!(dirty.len(), 1, "{dirty:?}");
-    assert!(dirty[0].contains("1 uncommitted path(s)"), "{dirty:?}");
+    let [dirty] = dirty.as_slice() else {
+        unreachable!("one refusal: {dirty:?}");
+    };
+    assert!(dirty.contains("1 uncommitted path(s)"), "{dirty}");
 }
 
 #[test]
