@@ -9,7 +9,7 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { afkLine, watchLine } from "./model/status.ts";
+import { afkLine, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -46,6 +46,9 @@ export function TeamDetail({
   const live = livenessInfo(s.lead);
   const open = member === null ? null : team.members.find((m) => m.role === member);
   const counts = countByCategory(team.members);
+  const unread = unreadLines(s);
+  const unanswered = unansweredLines(s);
+  const older = team.members.filter((m) => m.older_build);
 
   return (
     <>
@@ -88,9 +91,31 @@ export function TeamDetail({
       <h2>Members</h2>
       <MemberTable team={team} />
 
-      {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0) && (
+      {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || unread.length > 0 || unanswered.length > 0 || older.length > 0) && (
         <>
           <h2>Needs a look</h2>
+          {(unread.length > 0 || unanswered.length > 0) && (
+            <>
+              <h3>Waiting on a reply</h3>
+              <ul className="results">
+                {[...unread, ...unanswered].map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
+          {older.length > 0 && (
+            <>
+              <h3>Older builds</h3>
+              <ul className="results">
+                {older.map((m) => (
+                  <li key={m.role}>
+                    <strong>{m.role}</strong>: {startedByLine(m)}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           {s.stuck_deliveries.length > 0 && (
             <>
             <h3>Stuck deliveries</h3>
@@ -213,6 +238,7 @@ function MemberTable({ team }: { team: TeamModel }) {
               >
                 <td>
                   <a href={href.member(name, m.role)}>{m.role}</a>
+                  {m.older_build && <span className="chip cat-attention badge" title={startedByLine(m) ?? undefined}>older build</span>}
                 </td>
                 <td className="title">{m.title}</td>
                 <td>{m.kind ?? "?"}</td>
