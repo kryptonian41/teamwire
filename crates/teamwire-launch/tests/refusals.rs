@@ -509,7 +509,8 @@ fn a_handoff_point_below_a_fresh_session_warns() {
     let low = warnings(Some(30_000));
     assert_eq!(low.len(), 1, "{low:?}");
     assert!(
-        low[0].contains("60,000") && low[0].contains("100000"),
+        low.iter()
+            .all(|w| w.contains("60,000") && w.contains("100000")),
         "{low:?}"
     );
     assert!(warnings(Some(100_000)).is_empty());
