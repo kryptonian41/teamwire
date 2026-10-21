@@ -81,7 +81,7 @@ database, so run `teamwire doctor`. The other lines:
 | --- | --- |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. |
-| `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. `teamwire handoff --guide` prints the guide a member follows. |
+| `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |
 

@@ -614,7 +614,7 @@ and generation once the member passes its handoff point.
 
 The handoff point is 40% of the model's window unless the spec sets
 `context_handoff_tokens`, a number of tokens, on the team or on a member.
-No measurement backs the 40% for Claude. Measured studies see quality fall
+A fresh Claude Code session already holds about 60,000 tokens, so set a number well above that. Launch warns below 100,000. No measurement backs the 40% for Claude. Measured studies see quality fall
 in absolute tokens, so on a 1M window set the number yourself if 400k is too
 high for the task.
 
@@ -631,12 +631,18 @@ The command closes the member's old session and opens a fresh one in the same
 worktree, on the same branch, with the same brief, report and token. The new
 session starts a new generation and reads the brief and the handoff document.
 The command refuses a member that is in a turn, at a dialog or has uncommitted
-work, and changes nothing then. Wait for the turn to end and run it again. It
+work, and changes nothing then. When the handoff document is missing or older
+than the member's session, the command prints a `warning:` line and points the
+new session at the brief, the member's report and `git log` instead. Read that
+warning: the member may not have finished writing. The first line also tells
+the new session how many unread messages it has. Wait for the turn to end and run it again. It
 never stops a turn.
 
 If the command fails after it closed the old session, run
 `teamwire reopen <team> --role <role>` once the old session has ended. That
-resumes the old session, with its full context.
+resumes the old session, with its full context. The command writes the old
+session back first when it can. When the member had no recorded session, the
+error says `reopen` has nothing to resume.
 
 A Claude member that passes its point and gets no handoff compacts its own
 context at twice that point. A Codex member runs to its own limit, so hand it

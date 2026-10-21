@@ -13,7 +13,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; install or uninstall made some changes and then failed |
+| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; handoff failed after it began to close the old place; install or uninstall made some changes and then failed |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered`; or a resume by `--key` skipped a recipient that another command may still be delivering |
@@ -72,7 +72,7 @@ Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's 
 `children`, `context_handoff_tokens`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
-`accept_trust` (default true), `context_handoff_tokens`, `plugins`. A Codex member's arguments hold no
+`accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`. A Codex member's arguments hold no
 newline, because herdr refuses one: teamwire writes each `-c key=value` as
 one-line TOML (basic strings that escape `\n`, `\t`, `\r`, `\"`, `\\` and any
 other control character as `\uXXXX`, tables as inline tables), and Codex reads
@@ -323,7 +323,11 @@ The steps run in this order, one line on stdout for each:
    member's unread messages so the new session is told of them.
 6. Type the first line: the brief path (`TASK.md`, or `briefs/<role>.md`) and
    the handoff document `reports/<role>.handoff.md`. Nothing is ever typed
-   into the old session.
+   into the old session. When the member has unread messages (any delivery
+   not yet acknowledged, counted when the command plans), the line also says
+   how many and tells the new session to read them with `team_inbox` or
+   `teamwire inbox`. A short message typed whole into the old pane is never
+   reminded of, so this line is how the new session hears of it.
 
 Exit codes:
 
@@ -333,11 +337,26 @@ Exit codes:
 | 1 | Refused, and nothing was touched: a team that is not open, an unknown member, a member that is not `started`, a folder or per-run file that is gone, a running turn, a dialog, an unknown state, uncommitted paths, or a caller with a member identity |
 | 2 | A failure after the old place close began: the close did not finish, the spawn or the trust step failed, or the write failed |
 | 3 | A usage error |
+| 6 | The store could not be read while planning, with or without `--dry-run` |
+
+The handoff document must be current. When `reports/<role>.handoff.md` is
+missing, cannot be read, or is older than the start of the member's current
+generation, the command prints `warning: ...`, also on `--dry-run`. The first
+line then names the brief, the member's report `reports/<role>.md` and, for a
+member with a branch, `git log <branch>` instead of the document.
+
+The old place close waits for its processes to end for every member mode,
+worktree or pane. `close --role` is unchanged.
 
 When the close does not finish, no session is opened and the old one is still
 recorded. After the old session has ended, `teamwire reopen <team> --role R`
-resumes it. When the spawn or the trust step fails after the close, the same
-command recovers the member.
+resumes it. After a failure past the close (the spawn, the trust step or the
+write), the command closes the new tab and writes the old session id back when
+the row holds another one, which a harness that records its own session (Codex)
+can cause. The error then says that `reopen` resumes the old session. When the
+row held no session before the handoff, the error says `reopen` has nothing to
+resume. When the old id cannot be written back, the error says the member may
+hold a new, empty session.
 
 `--dry-run` prints the checks, then `would close`, `would open` and `would
 answer the trust dialog, record the handoff and send` lines, then `dry run:
