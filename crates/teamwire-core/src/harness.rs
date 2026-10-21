@@ -111,6 +111,14 @@ pub trait Harness: Send + Sync {
 /// no published measurement backs 40% for Claude or for coding agents.
 pub const DEFAULT_HANDOFF_PCT: u64 = 40;
 
+/// The lowest `context_handoff_tokens` that makes sense for Claude Code. A
+/// live check on 2026-10-21 (sonnet, three plugins off) found a fresh session
+/// already holds 61,000 to 64,000 tokens before its first tool call, so a
+/// lower point is passed at once and every handoff starts a session that is
+/// told to hand off again. It is also the floor of `autoCompactWindow`
+/// (<https://code.claude.com/docs/en/settings-reference#autocompactwindow>).
+pub const MIN_HANDOFF_TOKENS: u64 = 100_000;
+
 /// How full one session's context is: the tokens the model read on the
 /// session's newest main-chain request, and the window of that model. Every
 /// harness computes `tokens` the same way, so a percentage means one thing

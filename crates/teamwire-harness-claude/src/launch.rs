@@ -11,7 +11,7 @@ use crate::fill;
 use serde_json::{Map, Value, json};
 use teamwire_core::{
     Config, Fill, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec,
-    MemberLaunch, OtelConfig, Role, SessionId, TeamName,
+    MIN_HANDOFF_TOKENS, MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
 
 const PRIVATE: u32 = 0o600;
@@ -175,7 +175,10 @@ fn compact_window(m: &MemberLaunch) -> u64 {
         .and_then(|model| fill::model_window(model, fill::disable_1m_from_env()))
         .unwrap_or(fill::LARGE_WINDOW);
     let handoff = Fill { tokens: 0, window }.handoff_at(m.context_handoff_tokens);
-    handoff.saturating_mul(2).max(100_000).min(window)
+    handoff
+        .saturating_mul(2)
+        .max(MIN_HANDOFF_TOKENS)
+        .min(window)
 }
 
 fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
