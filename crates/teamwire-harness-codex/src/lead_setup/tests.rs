@@ -290,7 +290,7 @@ fn apply_writes_the_files_through_the_platform() {
         .plan_install(&want(), SHARED, &b.home(), false)
         .unwrap();
     b.cli.apply_lead_setup(&changes[..1]).unwrap();
-    assert_eq!(b.platform.written().len(), 6);
+    assert_eq!(b.platform.written().len(), 7);
 }
 
 #[test]

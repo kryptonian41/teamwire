@@ -395,6 +395,24 @@ fn the_afk_skill_names_only_commands_that_exist() {
 }
 
 #[test]
+fn the_promptwire_skill_names_only_commands_that_exist() {
+    let skill = example("skills/promptwire/SKILL.md");
+    assert!(
+        skill.starts_with("---\nname: promptwire\ndescription: "),
+        "the front matter names the skill"
+    );
+    let commands = subcommands();
+    let shown = shown_commands(&skill);
+    assert!(!shown.is_empty(), "the skill names no teamwire command");
+    for (word, line) in &shown {
+        assert!(
+            commands.contains(word),
+            "`teamwire {word}` is not a command: {line}"
+        );
+    }
+}
+
+#[test]
 fn the_skill_names_only_commands_and_tools_that_exist() {
     // A command named only in the reference file is checked too.
     let skill = example("skills/teamwire/SKILL.md");

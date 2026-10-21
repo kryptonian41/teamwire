@@ -181,7 +181,7 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
         unreachable!("{changes:?}")
     };
     assert_eq!(dir, &bed.plugin_dir());
-    assert_eq!(files.len(), 7);
+    assert_eq!(files.len(), 8);
     assert_eq!(
         rest,
         [

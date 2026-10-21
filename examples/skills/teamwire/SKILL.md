@@ -235,6 +235,10 @@ under `~/.claude/skills/`. Ponytail marks a deliberate limit with a
 `shortcut: <limit>, <when to upgrade>` comment, and the closer lists the new
 ones as known debt.
 
+When `command -v promptwire` finds the tool, load the `teamwire:promptwire`
+skill before you write the briefs. It picks vendor skills for members whose
+task touches a domain such as Stripe, Terraform or PostgreSQL.
+
 ## Write the spec
 
 Start from `teamwire preset <name>`. The team and each member need a `title`
