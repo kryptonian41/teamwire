@@ -100,6 +100,19 @@ pub(crate) fn plan_member(
     let mut bad = |field: &str, code: &str, message: String| {
         errors.push(SpecError::new(Some(role), Some(field), code, message));
     };
+    // The value this member would run with. A value that is not a positive
+    // integer never parses, so only 0 is left to refuse here.
+    if child
+        .context_handoff_tokens
+        .or(cx.spec.context_handoff_tokens)
+        == Some(0)
+    {
+        bad(
+            "context_handoff_tokens",
+            "bad_context_handoff_tokens",
+            format!("role {role}: context_handoff_tokens must be a positive integer"),
+        );
+    }
     if !cx.roles.insert(role.to_owned()) {
         bad(
             "role",

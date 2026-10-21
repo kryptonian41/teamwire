@@ -7,10 +7,11 @@
 
 use std::path::Path;
 
+use crate::fill;
 use serde_json::{Map, Value, json};
 use teamwire_core::{
-    Config, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
-    OtelConfig, Role, SessionId, TeamName,
+    Config, Fill, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec,
+    MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
 
 const PRIVATE: u32 = 0o600;
@@ -156,7 +157,25 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     let mut plugins = m.plugins.clone();
     plugins.insert(LEAD_PLUGIN_ID.to_owned(), false);
     settings.insert("enabledPlugins".to_owned(), json!(plugins));
+    settings.insert("autoCompactEnabled".to_owned(), json!(true));
+    settings.insert("autoCompactWindow".to_owned(), json!(compact_window(m)));
     Ok(Value::Object(settings))
+}
+
+/// The backstop: Claude Code compacts at `autoCompactWindow` tokens, set to
+/// twice the handoff point so the handoff note always comes first. The floor
+/// is 100,000 (<https://code.claude.com/docs/en/settings-reference#autocompactwindow>)
+/// and Claude Code caps the value at the real window anyway. With no model or
+/// an unknown one the window is guessed large: here the large guess is the
+/// safe one, because the backstop must never fire before the note.
+fn compact_window(m: &MemberLaunch) -> u64 {
+    let window = m
+        .model
+        .as_deref()
+        .and_then(|model| fill::model_window(model, fill::disable_1m_from_env()))
+        .unwrap_or(fill::LARGE_WINDOW);
+    let handoff = Fill { tokens: 0, window }.handoff_at(m.context_handoff_tokens);
+    handoff.saturating_mul(2).max(100_000).min(window)
 }
 
 fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {

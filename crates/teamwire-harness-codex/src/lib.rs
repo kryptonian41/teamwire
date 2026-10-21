@@ -23,12 +23,12 @@ mod startup;
 pub use startup::StartupPoll;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
     MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
     StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
@@ -170,6 +170,16 @@ impl Harness for CodexCli {
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
         startup::answer_startup(host, place, policy, self.startup_poll)
+    }
+
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        // Codex hooks hand over no rollout path, so the rollout is always
+        // found from the session id.
+        Ok(session::context_fill(&self.config.codex_home, s))
     }
 
     fn otel_env(

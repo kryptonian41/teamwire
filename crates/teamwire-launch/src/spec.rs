@@ -63,12 +63,19 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
 }
 
 /// The keys `TeamSpec` reads. A test keeps this list equal to the type.
-const TEAM_KEYS: [&str; 7] = [
-    "team", "title", "setup", "harness", "host", "children", "plugins",
+const TEAM_KEYS: [&str; 8] = [
+    "team",
+    "title",
+    "setup",
+    "harness",
+    "host",
+    "children",
+    "plugins",
+    "context_handoff_tokens",
 ];
 
 /// The keys `MemberSpec` reads. A test keeps this list equal to the type.
-const MEMBER_KEYS: [&str; 20] = [
+const MEMBER_KEYS: [&str; 21] = [
     "role",
     "title",
     "kind",
@@ -89,6 +96,7 @@ const MEMBER_KEYS: [&str; 20] = [
     "dispatch",
     "accept_trust",
     "plugins",
+    "context_handoff_tokens",
 ];
 
 /// One warning per key the spec does not use, naming the role (or the team

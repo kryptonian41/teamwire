@@ -52,6 +52,7 @@ fn debug_output_hides_the_token() {
         },
         teamwire_bin: "/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     };
     let spec = LaunchSpec {
