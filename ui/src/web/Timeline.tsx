@@ -63,7 +63,7 @@ export function Timeline({
               <time dateTime={l.time} title={new Date(l.time).toLocaleString()}>
                 {agoText(l.time, now)}
               </time>
-              <span className="who">{l.role ?? "lead"}</span>
+              <span className="who">{l.role ?? "—"}</span>
               <span className="what">
                 {l.problem && <span className="visually-hidden">Problem: </span>}
                 {l.label}

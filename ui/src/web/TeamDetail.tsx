@@ -229,7 +229,7 @@ function MemberTable({ team, rows }: { team: TeamModel; rows: readonly EventRow[
   };
   return (
     <div className="table-wrap">
-      <table>
+      <table className="members">
         <thead>
           <tr>
             <th>Role</th>

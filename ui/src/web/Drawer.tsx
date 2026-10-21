@@ -179,6 +179,7 @@ function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string 
                   {r.flags.map((f) => (
                     <li key={f}>
                       <code>{f}</code>
+                      {r.flagsWaived && <span className="sub"> · waived</span>}
                     </li>
                   ))}
                 </ul>

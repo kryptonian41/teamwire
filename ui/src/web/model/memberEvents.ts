@@ -39,6 +39,8 @@ export interface VerifyRun {
   flags: string[];
   /** Waivers recorded after this run and before the member's next run. */
   waivers: Waiver[];
+  /** `teamwire verify` gives PASS only when every flag is waived, so a PASS run's flags are all waived. */
+  flagsWaived: boolean;
 }
 
 /** The member's verify runs, newest first, each with the waivers recorded for it. */
@@ -55,6 +57,7 @@ export function verifyHistory(rows: readonly EventRow[], role: string): VerifyRu
         seconds: num(r.data, "seconds"),
         flags: strs(r.data, "flags"),
         waivers: [],
+        flagsWaived: str(r.data, "verdict") === "PASS" && strs(r.data, "flags").length > 0,
       });
     } else if (r.type === "verify.waived") {
       runs.at(-1)?.waivers.push({ seq: r.seq, time: r.time, flags: strs(r.data, "flags"), headSha: str(r.data, "head_sha")?.slice(0, 7) ?? null });
@@ -71,7 +74,7 @@ export function verifyChip(rows: readonly EventRow[], role: string): { text: str
   const run = verifyHistory(rows, role)[0];
   if (!run?.verdict) return { text: "—", category: "idle" };
   return {
-    text: run.flags.length > 0 ? `${run.verdict} · ${run.flags.length}` : run.verdict,
+    text: run.flags.length === 0 ? run.verdict : `${run.verdict} · ${run.flags.length}${run.flagsWaived ? " waived" : ""}`,
     category: verdictCategory(run.verdict),
   };
 }
@@ -86,13 +89,21 @@ export interface Usage {
 const zero = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheCreation: 0 });
 export const usageTotal = (u: Usage): number => u.input + u.output + u.cacheRead + u.cacheCreation;
 
-/** Token use per model, summed over the member's `result.delivering` rows. Empty when no row carries usage. */
+/**
+ * Token use per model. A `result.delivering` row carries the session's
+ * running totals, so only the newest row of each session counts and the
+ * sessions add up. Empty when no row carries usage.
+ */
 export function tokensByModel(rows: readonly EventRow[], role: string): Map<string, Usage> {
-  const out = new Map<string, Usage>();
+  const newestPerSession = new Map<string, unknown>();
   for (const r of rows) {
-    const usage = r.type === "result.delivering" && r.role === role ? r.data["usage"] : null;
-    if (typeof usage !== "object" || usage === null) continue;
-    for (const [model, u] of Object.entries(usage)) {
+    if (r.type !== "result.delivering" || r.role !== role || typeof r.data["usage"] !== "object" || r.data["usage"] === null) continue;
+    // A row without a session id cannot be matched to another, so it stands alone.
+    newestPerSession.set(str(r.data, "session") ?? `seq ${r.seq}`, r.data["usage"]);
+  }
+  const out = new Map<string, Usage>();
+  for (const usage of newestPerSession.values()) {
+    for (const [model, u] of Object.entries(usage as object)) {
       if (typeof u !== "object" || u === null) continue;
       const have = out.get(model) ?? zero();
       const d = u as EventRow["data"];

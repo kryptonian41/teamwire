@@ -58,14 +58,18 @@ export function oneLine(s: string, max = 140): string {
 export const PROBLEM_TYPES: ReadonlySet<string> = new Set([
   "member.failed", "member.refused", "member.held", "member.completion_refused", "message.refused",
   "delivery.undelivered", "delivery.unconfirmed", "result.undelivered", "result.unconfirmed",
-  "watch.line", "close.refused", "store.error",
+  "close.refused", "store.error",
 ]);
 
 export const ROUTINE_TYPES: ReadonlySet<string> = new Set([
   "delivery.handed_off", "delivery.acked", "result.delivering", "result.delivered", "member.creating", "close.step",
 ]);
 
+/** `watch.line` words that report progress, not a problem. `WATCHING` may carry a member count after it. */
+const calm = (word: string): boolean => /^(WATCHING\b.*|TEAM-COMPLETE|COMPLETED)$/.test(word);
+
 export function isProblem(row: EventRow): boolean {
+  if (row.type === "watch.line") return strs(row.data, "events").some((w) => !calm(w));
   if (PROBLEM_TYPES.has(row.type)) return true;
   if (row.type === "verify.recorded") {
     const v = str(row.data, "verdict");
@@ -284,6 +288,12 @@ export function mergeRows(have: readonly EventRow[], more: readonly EventRow[]):
   for (const r of [...have, ...more]) bySeq.set(r.seq, r);
   return [...bySeq.values()].sort((a, b) => a.seq - b.seq);
 }
+
+/** True when the server's newest seq is below the newest row held: the store was replaced, so the held rows no longer belong to it. */
+export const storeRestarted = (rows: readonly EventRow[], serverLastSeq: number): boolean => {
+  const held = lastSeq(rows);
+  return held !== undefined && serverLastSeq < held;
+};
 
 /** The highest seq held, or undefined when no row is held (ask for the full timeline). */
 export const lastSeq = (rows: readonly EventRow[]): number | undefined => rows.reduce<number | undefined>((hi, r) => (hi === undefined || r.seq > hi ? r.seq : hi), undefined);
