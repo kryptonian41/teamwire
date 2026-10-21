@@ -11,10 +11,11 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | --- | --- | --- |
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` (null in an export taken from a member session) |
-| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `excluded`, `session_id` (started) |
+| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
+| `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null when the harness picks its own id), `place` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |
 | `member.held` | the report check or unread messages hold a member | `gaps`, `unread` |
@@ -90,7 +91,7 @@ after the fact, with their recorded start and end times.
 | `teamwire.team` | none | `team.created` | `team.closed` (open while the team lives) | `teamwire.team`, `teamwire.harness`, `teamwire.host` |
 | `teamwire.launch` | `teamwire.team` | first event with a given `data.launch` | the event that makes every requested member started, failed or refused | `teamwire.members.requested`, `.started` |
 | `teamwire.launch.member` | `teamwire.launch` | `member.creating` of the same launch | `member.started`, `member.failed` or `member.refused` | `teamwire.role`, `teamwire.kind`, `error.type` |
-| `teamwire.member.generation` | `teamwire.team` | `member.started` or `member.reprompted` | `member.completed` | `teamwire.role`, `teamwire.generation`, `teamwire.status`, `session.id` |
+| `teamwire.member.generation` | `teamwire.team` | `member.started`, `member.reprompted` or `member.handoff` | `member.completed` | `teamwire.role`, `teamwire.generation`, `teamwire.status`, `session.id` |
 | `teamwire.message` | `teamwire.team` | `message.sent` | last recipient's final delivery event | `teamwire.message.id`, `teamwire.message.type`, `teamwire.from` (the event's `data.from`, else the sender's role, else `lead`; a message from another team shows `role@team`) |
 | `teamwire.delivery` | `teamwire.message` | `message.sent` | that recipient's outcome | `teamwire.to`, `teamwire.route`, `teamwire.outcome`, `teamwire.attempts`, `error.type` |
 | `teamwire.result` | `teamwire.member.generation` | `member.completed` | `result.delivered` or `.undelivered` | `teamwire.route`, `teamwire.outcome` |
@@ -148,6 +149,11 @@ wave-1 contract:
   `data.hook_ms`; only then is the run's duration known. Only the turn-end
   hook is measured: the post-tool hook's reminder event
   (`delivery.reminded`) carries no duration.
+- A `member.handoff` event starts a generation and is not a reprompt. The
+  run duration and the generation span count from it, and the span's
+  `session.id` is the new session (absent when `new_session` is null). The event
+  adds to no counter, sets no member state, and is not counted as a reprompt.
+  An undo of a later reprompt returns to the handoff's generation.
 - A `member.reprompted` event with `data.undone: true` records an undone
   reprompt. The undone reprompt is neither counted as a reprompt nor taken as the start of a
   generation. A `team.closed` event carries
