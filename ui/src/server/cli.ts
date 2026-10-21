@@ -4,6 +4,7 @@
 import type { z } from "zod";
 import type { Problem } from "../shared/api.ts";
 import {
+  EventsView,
   LogView,
   MetricsView,
   NAME_RE,
@@ -17,6 +18,8 @@ export type CliCall =
   | { cmd: "statusRole"; team: string; role: string }
   | { cmd: "teams" }
   | { cmd: "log"; team: string }
+  | { cmd: "events"; team: string; after?: number }
+  | { cmd: "eventsArchive"; team: string; archive: string }
   | { cmd: "metrics" }
   | { cmd: "version" };
 
@@ -37,6 +40,9 @@ export const DEFAULT_TIMEOUT_MS = 10_000;
 
 const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
 
+/** The archive directory names `teamwire events --archive` accepts for `team`. */
+const archiveNameRe = (team: string) => new RegExp(`^${team}-\\d{4}-\\d{2}-\\d{2}(-\\d{6}(-\\d+)?)?$`);
+
 /** Builds the arguments after the binary. Throws on a name that is not a team or role name. */
 export function buildArgs(call: CliCall, home?: string): string[] {
   const prefix = home ? ["--home", home] : [];
@@ -53,6 +59,17 @@ export function buildArgs(call: CliCall, home?: string): string[] {
       return [...prefix, "teams", "--json"];
     case "log":
       return [...prefix, "log", name("team", call.team), "--json"];
+    case "events": {
+      const team = name("team", call.team);
+      if (call.after === undefined) return [...prefix, "events", team, "--json"];
+      if (!Number.isSafeInteger(call.after) || call.after < 0) throw new Error("bad after value");
+      return [...prefix, "events", team, "--after", String(call.after), "--json"];
+    }
+    case "eventsArchive": {
+      const team = name("team", call.team);
+      if (!archiveNameRe(team).test(call.archive)) throw new Error("bad archive name");
+      return [...prefix, "events", team, "--archive", call.archive, "--json"];
+    }
     case "metrics":
       return [...prefix, "metrics", "--json"];
     case "version":
@@ -74,6 +91,9 @@ function schemaFor(call: CliCall): z.ZodType | null {
       return TeamsList;
     case "log":
       return LogView;
+    case "events":
+    case "eventsArchive":
+      return EventsView;
     case "metrics":
       return MetricsView;
     case "version":
@@ -87,6 +107,8 @@ export interface CliOutput {
   statusRole: z.infer<typeof StatusView>;
   teams: z.infer<typeof TeamsList>;
   log: z.infer<typeof LogView>;
+  events: z.infer<typeof EventsView>;
+  eventsArchive: z.infer<typeof EventsView>;
   metrics: z.infer<typeof MetricsView>;
   version: string;
 }
@@ -135,7 +157,7 @@ function cleanEnv(): Record<string, string> {
 
 export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {}): Runner {
   return (async (call: CliCall) => {
-    const name = call.cmd;
+    const name = call.cmd === "eventsArchive" ? "events" : call.cmd;
     let args: string[];
     try {
       args = buildArgs(call, config.home);

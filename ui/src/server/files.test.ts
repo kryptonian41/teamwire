@@ -2,11 +2,16 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FILE_KINDS, FILE_KIND_NAMES, MAX_FILE_BYTES } from "../shared/api.ts";
+import { AFK_FILE_NAMES, FILE_KINDS, FILE_KIND_NAMES, MAX_FILE_BYTES } from "../shared/api.ts";
 import { archiveDir, listArchives, listFiles, parseArchiveName, readKindFile, teamDir } from "./files.ts";
 
 let home: string;
 let team: string;
+
+const sampleName = (kind: keyof typeof FILE_KINDS) => {
+  const name = FILE_KINDS[kind].name;
+  return name === "display_id" ? "m001" : name === "afk_file" ? "decisions" : "impl";
+};
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "twui-files-"));
@@ -14,9 +19,12 @@ beforeAll(() => {
   for (const kind of FILE_KIND_NAMES) {
     const spec = FILE_KINDS[kind];
     mkdirSync(join(team, spec.dir), { recursive: true });
-    const name = spec.name === "display_id" ? "m001" : "impl";
-    writeFileSync(join(team, spec.dir, name + spec.ext), `${kind} text`);
+    writeFileSync(join(team, spec.dir, sampleName(kind) + spec.ext), `${kind} text`);
   }
+  // The other afk/ files exist on disk and must stay unserved.
+  for (const f of ["notes.md", "spec-api.json"]) writeFileSync(join(team, "afk", f), "private");
+  mkdirSync(join(team, "afk", "briefs"), { recursive: true });
+  writeFileSync(join(team, "afk", "briefs", "x.md"), "private");
   writeFileSync(join(team, "team.db"), "");
   mkdirSync(join(team, "members", "impl"), { recursive: true });
   writeFileSync(join(team, "members", "impl", "token"), "SECRET");
@@ -40,8 +48,7 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 describe("readKindFile", () => {
   test("every kind resolves", async () => {
     for (const kind of FILE_KIND_NAMES) {
-      const name = FILE_KINDS[kind].name === "display_id" ? "m001" : "impl";
-      const r = await readKindFile(team, kind, name);
+      const r = await readKindFile(team, kind, sampleName(kind));
       expect(r.ok && r.file.text).toBe(`${kind} text`);
     }
   });
@@ -59,6 +66,49 @@ describe("readKindFile", () => {
       const r = await readKindFile(team, kind, "impl");
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.problem.code).toBe("bad_request");
+    }
+  });
+
+  test("afk serves decisions, REPORT and task, and nothing else", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "twui-afk-"));
+    try {
+      mkdirSync(join(dir, "afk"), { recursive: true });
+      for (const name of AFK_FILE_NAMES) writeFileSync(join(dir, "afk", name + ".md"), `${name} text`);
+      for (const name of AFK_FILE_NAMES) {
+        const r = await readKindFile(dir, "afk", name);
+        expect(r.ok && r.file.text).toBe(`${name} text`);
+        expect(r.ok && r.file.doc).not.toBeNull();
+      }
+      expect(await listFiles(dir)).toEqual(
+        ["REPORT", "decisions", "task"].map((name) => expect.objectContaining({ kind: "afk", name })),
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("afk refuses any other name, a wrong-case name and a sub-path", async () => {
+    for (const name of ["notes", "report", "Decisions", "TASK", "briefs/x", "spec-api", "../afk/decisions", "decisions.md", ""]) {
+      const r = await readKindFile(team, "afk", name);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.problem.code).toBe("bad_request");
+    }
+    // REPORT is not on disk in this team, so a valid name is a plain not_found.
+    expect(await readKindFile(team, "afk", "REPORT")).toMatchObject({ ok: false, problem: { code: "not_found" } });
+  });
+
+  test("afk listing leaves out every other file under afk/", async () => {
+    const afk = (await listFiles(team)).filter((f) => f.kind === "afk");
+    expect(afk.map((f) => f.name)).toEqual(["decisions"]);
+  });
+
+  test("afk keeps the members/ rule: a symlink into members/ is refused", async () => {
+    symlinkSync(join(team, "members", "impl", "token"), join(team, "afk", "task.md"));
+    try {
+      expect(await readKindFile(team, "afk", "task")).toMatchObject({ ok: false, problem: { code: "not_found" } });
+      expect((await listFiles(team)).some((f) => f.kind === "afk" && f.name === "task")).toBe(false);
+    } finally {
+      rmSync(join(team, "afk", "task.md"));
     }
   });
 
@@ -110,7 +160,11 @@ describe("listFiles / teamDir", () => {
   });
 
   test("lists several files per kind in name order, skipping other files and vanished ones", async () => {
-    const names = (kind: keyof typeof FILE_KINDS) => (FILE_KINDS[kind].name === "display_id" ? ["m001", "m002", "m003"] : ["a", "b", "c"]);
+    const names = (kind: keyof typeof FILE_KINDS) => {
+      const type = FILE_KINDS[kind].name;
+      // Sorted order: capital letters come before lower case.
+      return type === "display_id" ? ["m001", "m002", "m003"] : type === "afk_file" ? ["REPORT", "decisions", "task"] : ["a", "b", "c"];
+    };
     const dir = mkdtempSync(join(tmpdir(), "twui-list-"));
     try {
       for (const kind of FILE_KIND_NAMES) {

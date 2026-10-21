@@ -26,7 +26,8 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 const ok = (data: unknown, problems: unknown[] = []) => ({ ok: true, data, problems });
 const emptyStatus = { team: "alpha", title: null, state: null, lead: null, messages: [], stuck_deliveries: [], undelivered_results: [] };
 
-function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number } = {}) {
+function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean } = {}) {
+  const { failEvents, ...appOpts } = opts;
   const calls: CliCall[] = [];
   const run = (async (call: CliCall) => {
     calls.push(call);
@@ -39,6 +40,10 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
         return ok({ metrics: [], errors: [] });
       case "log":
         return ok({ messages: [] });
+      case "events":
+      case "eventsArchive":
+        if (failEvents) return { ok: false, problems: [{ code: "cli_failed", detail: "teamwire events exited 1: boom" }] };
+        return ok({ team: call.team, source: call.cmd === "events" ? "live" : "archive", archive: null, last_seq: 7, events: [], errors: [] });
       case "statusRole":
         return ok({
           ...emptyStatus,
@@ -50,7 +55,7 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
     }
   }) as unknown as Runner;
   const poller = createPoller({ run, intervalMs: 5000 });
-  const app = createApp({ security: createSecurity({ token, port }), poller, run, home, ...opts });
+  const app = createApp({ security: createSecurity({ token, port }), poller, run, home, ...appOpts });
   const get = (path: string, headers: Record<string, string> = { cookie: `tw_ui_7878=${token}` }) =>
     app.handle(new Request(`http://127.0.0.1:${port}${path}`, { headers: { host: `127.0.0.1:${port}`, ...headers } }));
   return { app, poller, get, calls };
@@ -148,6 +153,65 @@ describe("archives", () => {
     expect((await get("/api/archives/alpha-2026-10-07/file/report/ghost")).status).toBe(404);
     expect((await get("/api/archives/alpha-2026-10-07/file/bogus/impl")).status).toBe(400);
     expect((await get("/api/archives/..%2Fteams/file/brief/impl")).status).toBe(404);
+  });
+});
+
+describe("timeline routes", () => {
+  test("live: 200 with the runner's data, with and without after", async () => {
+    const { get, calls } = setup();
+    const res = await get("/api/teams/alpha/timeline");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ team: "alpha", source: "live", last_seq: 7 });
+    expect((await get("/api/teams/alpha/timeline?after=0")).status).toBe(200);
+    expect((await get("/api/teams/alpha/timeline?after=41")).status).toBe(200);
+    expect(calls).toEqual([
+      { cmd: "events", team: "alpha" },
+      { cmd: "events", team: "alpha", after: 0 },
+      { cmd: "events", team: "alpha", after: 41 },
+    ]);
+  });
+  test("live: 400 for an after that is negative, fractional or not a number, with no CLI call", async () => {
+    const { get, calls } = setup();
+    for (const after of ["-1", "abc", "1.5", "", "1e3", "0x10", "%201", "99999999999999999999"]) {
+      const res = await get(`/api/teams/alpha/timeline?after=${after}`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ code: "bad_request" });
+    }
+    expect(calls).toHaveLength(0);
+  });
+  test("live: 404 for an unknown team, with no CLI call", async () => {
+    const { get, calls } = setup();
+    expect((await get("/api/teams/nope/timeline")).status).toBe(404);
+    expect((await get("/api/teams/..%2Fx/timeline")).status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+  test("live: 502 when the CLI fails", async () => {
+    const { get } = setup({ failEvents: true });
+    const res = await get("/api/teams/alpha/timeline");
+    expect(res.status).toBe(502);
+    expect(await res.json()).toMatchObject({ code: "cli_failed" });
+  });
+  test("archive: 200 with the team taken from the archive name", async () => {
+    const { get, calls } = setup();
+    const res = await get("/api/archives/alpha-2026-10-07/timeline");
+    expect(res.status).toBe(200);
+    expect(calls).toEqual([{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07" }]);
+  });
+  test("archive: 404 for a name that is not listed, and no CLI call for a refused name", async () => {
+    const { get, calls } = setup();
+    for (const name of ["nope-2026-01-01", "..%2Fteams", "alpha-2026-10-07%2F..", "bad-name", "alpha"]) {
+      expect((await get(`/api/archives/${name}/timeline`)).status).toBe(404);
+    }
+    expect(calls).toHaveLength(0);
+  });
+  test("archive: 502 when the CLI fails", async () => {
+    const { get } = setup({ failEvents: true });
+    expect((await get("/api/archives/alpha-2026-10-07/timeline")).status).toBe(502);
+  });
+  test("both routes need the cookie", async () => {
+    const { get } = setup();
+    expect((await get("/api/teams/alpha/timeline", {})).status).toBe(403);
+    expect((await get("/api/archives/alpha-2026-10-07/timeline", {})).status).toBe(403);
   });
 });
 
