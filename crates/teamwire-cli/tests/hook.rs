@@ -317,6 +317,10 @@ fn post_tool_reminds_once_per_unread_message() {
     let id = unread_message(&mut fx);
     let input = r#"{"session_id":"sess-1","hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
 
+    // Before the reminder is given, so only the session match can keep it quiet.
+    let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
+
     let run = hook(&fx, "claude-post-tool", &as_api(), input);
     assert_eq!(run.code, 0);
     let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
@@ -330,9 +334,6 @@ fn post_tool_reminds_once_per_unread_message() {
 
     let again = hook(&fx, "claude-post-tool", &as_api(), input);
     assert_eq!((again.code, again.out.as_str()), (0, ""), "each id once");
-
-    let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
-    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
 }
 
 #[test]
@@ -414,6 +415,10 @@ fn post_tool_tells_a_member_past_its_handoff_point_once_per_generation() {
     let below = post_tool_input("sess-1", &transcript(&fx, 399_000));
     assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &below).out, "");
 
+    // Before any note is given, so only the session match can keep it quiet.
+    let other = post_tool_input("someone-else", &transcript(&fx, 412_000));
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &other).out, "");
+
     let past = post_tool_input("sess-1", &transcript(&fx, 412_000));
     let run = hook(&fx, "claude-post-tool", &as_api(), &past);
     assert_eq!(run.code, 0);
@@ -425,9 +430,6 @@ fn post_tool_tells_a_member_past_its_handoff_point_once_per_generation() {
     );
     assert!(text.contains(&report.display().to_string()), "{text}");
     assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &past).out, "");
-
-    let other = post_tool_input("someone-else", &transcript(&fx, 412_000));
-    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &other).out, "");
 
     let place = teamwire_core::Place {
         host: teamwire_core::HostId::from_static("herdr"),
