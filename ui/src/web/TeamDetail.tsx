@@ -2,13 +2,14 @@ import { useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
 import type { LogMessage } from "../shared/teamwire.ts";
-import { DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
+import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
+import { afkLine, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -61,6 +62,10 @@ export function TeamDetail({
             {live.label}
           </span>
         </p>
+        <p className="meta">
+          <span>{watchLine(s.watch)}</span>
+          {s.afk && <span className={s.afk.spent ? "flag bad" : undefined}>{afkLine(s.afk)}</span>}
+        </p>
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
@@ -70,6 +75,7 @@ export function TeamDetail({
             ))}
           </p>
         )}
+        {s.afk && <AfkFiles id={name} files={files.data ?? []} load={(n) => client.teamFile(name, "afk", n)} />}
       </div>
       {s.errors.length > 0 && (
         <ul className="errors page-errors">

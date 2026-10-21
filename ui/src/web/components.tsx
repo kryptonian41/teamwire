@@ -1,8 +1,11 @@
 // Small pieces that every view shares.
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import type { FileRef, FileText } from "../shared/api.ts";
 import type { DeliveryState } from "../shared/teamwire.ts";
 import type { StateCategory } from "../shared/state.ts";
+import { FileView } from "./FileView.tsx";
+import { afkLinks, deliveryText } from "./model/status.ts";
 
 /** A state word, coloured by its category. The word is always shown as text. */
 export function StateChip({ word, category }: { word: string; category: StateCategory }) {
@@ -18,11 +21,30 @@ export const DELIVERY_CATEGORY: Record<DeliveryState, StateCategory> = {
   undelivered: "failed",
 };
 
-export function DeliveryChip({ to, state }: { to: string; state: DeliveryState }) {
+export function DeliveryChip({ to, state, attempts = 0, reason = null }: { to: string; state: DeliveryState; attempts?: number; reason?: string | null }) {
   return (
     <span className={`chip cat-${DELIVERY_CATEGORY[state]}`} title={`${to}: ${state}`}>
-      {to} · {state}
+      {deliveryText({ to, state, attempts, reason })}
     </span>
+  );
+}
+
+/** Links to an AFK run's files that exist; a click opens one in the file viewer below the links. */
+export function AfkFiles({ id, files, load }: { id: string; files: readonly FileRef[]; load: (name: string) => Promise<FileText> }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const links = afkLinks(files);
+  if (links.length === 0) return null;
+  return (
+    <div className="afk-files">
+      <p className="chips">
+        {links.map((l) => (
+          <button key={l.name} className="btn" aria-pressed={open === l.name} onClick={() => setOpen(open === l.name ? null : l.name)}>
+            {l.label}
+          </button>
+        ))}
+      </p>
+      {open && <FileView id={`${id}/afk/${open}`} load={() => load(open)} />}
+    </div>
   );
 }
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ArchiveEntry, FileRef } from "../shared/api.ts";
-import { Empty, ErrorNote, Loading } from "./components.tsx";
+import { AfkFiles, Empty, ErrorNote, Loading } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
@@ -107,7 +107,8 @@ export function Archive({ dir }: { dir: string }) {
       {entry && (
         <>
           {entry.files.length === 0 && <Empty title="This archive has no files" />}
-          {groupFilesByRole(entry.files).map((g) => (
+          <AfkFiles id={dir} files={entry.files} load={(n) => client.archiveFile(dir, "afk", n)} />
+          {groupFilesByRole(entry.files.filter((f) => f.kind !== "afk")).map((g) => (
             <div key={g.role} className="file-group">
               <h3>{g.role}</h3>
               <div className="chips">
