@@ -9,7 +9,7 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { afkLine, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
+import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -315,7 +315,13 @@ function MessageSection({ team }: { team: TeamModel }) {
 function MessageTable({ team, messages }: { team: string; messages: LogMessage[] }) {
   const client = useClient();
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
   if (messages.length === 0) return <p className="quiet">No messages yet.</p>;
+  const ids = new Set(messages.map((m) => m.display_id));
+  const pick = (id: string) => {
+    setPicked(id);
+    document.getElementById(`msg-${id}`)?.scrollIntoView({ block: "center" });
+  };
   return (
     <div className="table-wrap">
       <table className="msgs">
@@ -331,16 +337,30 @@ function MessageTable({ team, messages }: { team: string; messages: LogMessage[]
         </thead>
         <tbody>
           {messages.map((m) => (
-            <tr key={m.display_id}>
+            <tr key={m.display_id} id={`msg-${m.display_id}`} className={picked === m.display_id ? "picked" : undefined}>
               <td title={m.time}>{new Date(m.time).toLocaleTimeString()}</td>
               <td>{m.display_id}</td>
-              <td>{m.type}</td>
+              <td>
+                {m.type}
+                {m.commit && <code className="commit-chip badge">{m.commit}</code>}
+                {(() => {
+                  const link = answersLink(m, ids);
+                  if (!link) return null;
+                  return link.target === null ? (
+                    <span className="sub badge">{link.text}</span>
+                  ) : (
+                    <button className="link-btn badge" onClick={() => pick(link.target!)}>
+                      {link.text}
+                    </button>
+                  );
+                })()}
+              </td>
               <td>{m.from}</td>
               <td>
                 <div className="deliveries">
                   {m.to.map((to) => {
                     const d = m.deliveries.find((x) => x.to === to);
-                    return d ? <DeliveryChip key={to} to={to} state={d.state} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
+                    return d ? <DeliveryChip key={to} to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
                   })}
                 </div>
               </td>
