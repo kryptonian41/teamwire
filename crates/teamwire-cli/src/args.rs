@@ -89,6 +89,8 @@ pub(crate) enum Command {
     Uninstall(UninstallArgs),
     /// Every record of a team as JSON lines.
     Export(ExportArgs),
+    /// A team's event rows, oldest first, from its store or an archive. Reads only.
+    Events(EventsArgs),
     /// Local metrics from the event rows, or the OpenTelemetry export.
     Metrics(MetricsArgs),
     /// The binary's version and the schema version it writes.
@@ -483,6 +485,19 @@ pub(crate) struct ExportArgs {
     /// Write to FILE instead of stdout.
     #[arg(long, value_name = "FILE")]
     pub(crate) out: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub(crate) struct EventsArgs {
+    pub(crate) team: String,
+    /// Read this directory of `$TEAMWIRE_HOME/archive/` instead of the live store.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) archive: Option<String>,
+    /// Only rows with a `seq` greater than this.
+    #[arg(long, value_name = "SEQ", default_value_t = 0)]
+    pub(crate) after: u64,
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Args)]

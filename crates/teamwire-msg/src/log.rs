@@ -1,7 +1,7 @@
 //! `log`: every message with each recipient's delivery state.
 
 use teamwire_core::{Actor, Message, NameError, Recipient, TeamName, one_line};
-use teamwire_store::{Ctx, MessageFilter};
+use teamwire_store::{Ctx, MessageFilter, StoreError};
 
 use crate::attempt::report_of;
 use crate::{LogFilter, LogRow, RecipientReport, SendError};
@@ -44,13 +44,20 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
         let mut rows = Vec::new();
         for message in found.items {
             let deliveries = tx.deliveries_of(&message.ulid)?.all_or_corrupt()?;
-            rows.push((message, deliveries));
+            // The message this one answers may itself be damaged. That must
+            // not hide this message, so its id is left out.
+            let re = match message.re.as_ref().map(|ulid| tx.message(ulid)) {
+                Some(Ok(parent)) => parent.map(|q| q.display_id),
+                Some(Err(StoreError::Corrupt(_))) | None => None,
+                Some(Err(e)) => return Err(e),
+            };
+            rows.push((message, deliveries, re));
         }
         Ok(rows)
     })?;
     if let (Some(role), Some(_)) = (&role, &viewer_scope) {
         // The store filters one party; a member's own view is narrowed to the role here.
-        rows.retain(|(m, d)| involves(m, d.iter().map(|r| &r.delivery.recipient), role));
+        rows.retain(|(m, d, _)| involves(m, d.iter().map(|r| &r.delivery.recipient), role));
     }
     if let Some(limit) = limit {
         let extra = rows.len().saturating_sub(limit);
@@ -58,13 +65,15 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
     }
     Ok(rows
         .into_iter()
-        .map(|(m, records)| {
+        .map(|(m, records, re)| {
             let deliveries: Vec<RecipientReport> = records.iter().map(report_of).collect();
             LogRow {
                 display_id: m.display_id,
                 time: m.created_at,
                 kind: m.kind,
                 from: m.sender,
+                re,
+                commit: m.commit,
                 to: deliveries.iter().map(|d| d.to.clone()).collect(),
                 excerpt: one_line(&m.body, EXCERPT_CHARS).into_string(),
                 deliveries,

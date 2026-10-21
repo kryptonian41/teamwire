@@ -1,0 +1,814 @@
+{
+ "team": "payments",
+ "source": "live",
+ "archive": null,
+ "last_seq": 53,
+ "events": [
+  {
+   "seq": 1,
+   "time": "2026-10-13T06:30:00.000Z",
+   "type": "team.created",
+   "role": null,
+   "message": null,
+   "data": {
+    "harness": "claude-code",
+    "host": "herdr",
+    "lead_route": "sink",
+    "title": "Partial refunds"
+   }
+  },
+  {
+   "seq": 2,
+   "time": "2026-10-13T06:30:05.120Z",
+   "type": "watch.started",
+   "role": null,
+   "message": null,
+   "data": {
+    "pid": 40211,
+    "host": "localhost"
+   }
+  },
+  {
+   "seq": 3,
+   "time": "2026-10-13T06:31:00.000Z",
+   "type": "member.creating",
+   "role": "oldapi",
+   "message": null,
+   "data": {
+    "kind": "implementer",
+    "mode": "worktree",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 4,
+   "time": "2026-10-13T06:31:03.500Z",
+   "type": "member.started",
+   "role": "oldapi",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "medium",
+    "session_id": "00000000-0000-0000-0000-000000000000",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 5,
+   "time": "2026-10-13T06:31:05.000Z",
+   "type": "member.creating",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "kind": "implementer",
+    "mode": "worktree",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 6,
+   "time": "2026-10-13T06:31:08.500Z",
+   "type": "member.started",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "medium",
+    "session_id": "00000000-0000-0000-0000-000000000001",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 7,
+   "time": "2026-10-13T06:31:10.000Z",
+   "type": "member.creating",
+   "role": "web",
+   "message": null,
+   "data": {
+    "kind": "implementer",
+    "mode": "worktree",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 8,
+   "time": "2026-10-13T06:31:13.500Z",
+   "type": "member.started",
+   "role": "web",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "medium",
+    "session_id": "00000000-0000-0000-0000-000000000002",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 9,
+   "time": "2026-10-13T06:31:15.000Z",
+   "type": "member.creating",
+   "role": "emails",
+   "message": null,
+   "data": {
+    "kind": "implementer",
+    "mode": "worktree",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 10,
+   "time": "2026-10-13T06:31:18.500Z",
+   "type": "member.started",
+   "role": "emails",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "medium",
+    "session_id": "00000000-0000-0000-0000-000000000003",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 11,
+   "time": "2026-10-13T06:31:20.000Z",
+   "type": "member.creating",
+   "role": "audit",
+   "message": null,
+   "data": {
+    "kind": "investigator",
+    "mode": "pane",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 12,
+   "time": "2026-10-13T06:31:23.500Z",
+   "type": "member.started",
+   "role": "audit",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "high",
+    "session_id": "00000000-0000-0000-0000-000000000004",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 13,
+   "time": "2026-10-13T06:31:25.000Z",
+   "type": "member.creating",
+   "role": "fraud",
+   "message": null,
+   "data": {
+    "kind": "investigator",
+    "mode": "pane",
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 14,
+   "time": "2026-10-13T06:31:28.500Z",
+   "type": "member.started",
+   "role": "fraud",
+   "message": null,
+   "data": {
+    "launch": "01M59A1ZK3",
+    "requested": 6,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "high",
+    "session_id": "00000000-0000-0000-0000-000000000005",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 15,
+   "time": "2026-10-13T06:34:10.000Z",
+   "type": "member.removed",
+   "role": "oldapi",
+   "message": null,
+   "data": {
+    "stopped": true,
+    "unverified": true,
+    "unverified_reasons": [
+     "oldapi has no passing verify at HEAD 1a2b3c4: it never ran"
+    ]
+   }
+  },
+  {
+   "seq": 16,
+   "time": "2026-10-13T06:34:40.000Z",
+   "type": "member.creating",
+   "role": "api",
+   "message": null,
+   "data": {
+    "kind": "implementer",
+    "mode": "worktree",
+    "launch": "01M59B2QX1",
+    "requested": 1,
+    "dispatch": true
+   }
+  },
+  {
+   "seq": 17,
+   "time": "2026-10-13T06:34:44.200Z",
+   "type": "member.started",
+   "role": "api",
+   "message": null,
+   "data": {
+    "launch": "01M59B2QX1",
+    "requested": 1,
+    "dispatch": true,
+    "model": "sonnet",
+    "effort": "medium",
+    "session_id": "00000000-0000-0000-0000-000000000010",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 18,
+   "time": "2026-10-13T06:35:00.000Z",
+   "type": "member.creating",
+   "role": "review",
+   "message": null,
+   "data": {
+    "kind": "reviewer",
+    "mode": "pane",
+    "launch": "01M59B2QX2",
+    "requested": 1,
+    "dispatch": false
+   }
+  },
+  {
+   "seq": 19,
+   "time": "2026-10-13T06:35:04.000Z",
+   "type": "member.started",
+   "role": "review",
+   "message": null,
+   "data": {
+    "launch": "01M59B2QX2",
+    "requested": 1,
+    "dispatch": false,
+    "model": "opus",
+    "effort": "xhigh",
+    "session_id": "00000000-0000-0000-0000-000000000011",
+    "steps": {
+     "files": 38,
+     "spawn": 5210,
+     "trust": 640,
+     "session": 1900
+    }
+   }
+  },
+  {
+   "seq": 20,
+   "time": "2026-10-13T06:38:12.000Z",
+   "type": "member.completed",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "generation": 1,
+    "n": 1,
+    "status": "done"
+   }
+  },
+  {
+   "seq": 21,
+   "time": "2026-10-13T06:38:12.400Z",
+   "type": "result.delivering",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "route": null,
+    "seconds": 6.2,
+    "session": "00000000-0000-0000-0000-000000000001",
+    "usage": {
+     "claude-sonnet-5-5": {
+      "input": 412,
+      "output": 48210,
+      "cache_read": 3120400,
+      "cache_creation": 201330
+     }
+    }
+   }
+  },
+  {
+   "seq": 22,
+   "time": "2026-10-13T06:38:13.100Z",
+   "type": "result.delivered",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "code": null,
+    "hook": "claude-stop",
+    "hook_ms": 310,
+    "route": "host_typing",
+    "seconds": 0.7
+   }
+  },
+  {
+   "seq": 23,
+   "time": "2026-10-13T06:38:40.000Z",
+   "type": "verify.recorded",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "exit": 0,
+    "flags": [],
+    "seconds": 12,
+    "verdict": "PASS"
+   }
+  },
+  {
+   "seq": 24,
+   "time": "2026-10-13T06:40:00.000Z",
+   "type": "message.sent",
+   "role": null,
+   "message": "m001",
+   "data": {
+    "chars": 48,
+    "recipients": [
+     "ledger"
+    ],
+    "sender_kind": "lead",
+    "type": "reprompt"
+   }
+  },
+  {
+   "seq": 25,
+   "time": "2026-10-13T06:40:00.350Z",
+   "type": "delivery.handed_off",
+   "role": "ledger",
+   "message": "m001",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.35,
+    "to": "ledger"
+   }
+  },
+  {
+   "seq": 26,
+   "time": "2026-10-13T06:40:02.000Z",
+   "type": "member.reprompted",
+   "role": "ledger",
+   "message": "m001",
+   "data": {
+    "generation": 2,
+    "message": "m001"
+   }
+  },
+  {
+   "seq": 27,
+   "time": "2026-10-13T06:40:09.000Z",
+   "type": "delivery.acked",
+   "role": "ledger",
+   "message": "m001",
+   "data": {
+    "seconds": 9.0,
+    "to": "ledger"
+   }
+  },
+  {
+   "seq": 28,
+   "time": "2026-10-13T06:41:10.010Z",
+   "type": "message.sent",
+   "role": null,
+   "message": "m002",
+   "data": {
+    "chars": 36,
+    "recipients": [
+     "api",
+     "ledger",
+     "web",
+     "emails"
+    ],
+    "sender_kind": "lead",
+    "type": "note"
+   }
+  },
+  {
+   "seq": 29,
+   "time": "2026-10-13T06:41:10.400Z",
+   "type": "delivery.handed_off",
+   "role": "api",
+   "message": "m002",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.39,
+    "to": "api"
+   }
+  },
+  {
+   "seq": 30,
+   "time": "2026-10-13T06:41:10.400Z",
+   "type": "delivery.handed_off",
+   "role": "ledger",
+   "message": "m002",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.39,
+    "to": "ledger"
+   }
+  },
+  {
+   "seq": 31,
+   "time": "2026-10-13T06:41:10.400Z",
+   "type": "delivery.handed_off",
+   "role": "web",
+   "message": "m002",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.39,
+    "to": "web"
+   }
+  },
+  {
+   "seq": 32,
+   "time": "2026-10-13T06:41:10.400Z",
+   "type": "delivery.handed_off",
+   "role": "emails",
+   "message": "m002",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.39,
+    "to": "emails"
+   }
+  },
+  {
+   "seq": 33,
+   "time": "2026-10-13T06:43:10.000Z",
+   "type": "delivery.reminded",
+   "role": "web",
+   "message": "m002",
+   "data": {
+    "seconds": 120.0,
+    "to": "web"
+   }
+  },
+  {
+   "seq": 34,
+   "time": "2026-10-13T06:44:00.000Z",
+   "type": "message.refused",
+   "role": "audit",
+   "message": null,
+   "data": {
+    "code": "recipient_not_allowed",
+    "reason": "recipient_not_allowed",
+    "sender": "audit",
+    "to": [
+     "review"
+    ],
+    "type": "finding"
+   }
+  },
+  {
+   "seq": 35,
+   "time": "2026-10-13T06:52:00.000Z",
+   "type": "member.held",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "gaps": {
+     "commits_without_line": [
+      "4f1c2ab"
+     ],
+     "decisions_missing": false,
+     "report_missing": false
+    },
+    "hook": "claude-stop",
+    "hook_ms": 27,
+    "unread": []
+   }
+  },
+  {
+   "seq": 36,
+   "time": "2026-10-13T06:58:30.500Z",
+   "type": "message.sent",
+   "role": "ledger",
+   "message": "m004",
+   "data": {
+    "chars": 57,
+    "recipients": [
+     "api",
+     "web"
+    ],
+    "sender_kind": "member",
+    "type": "notice"
+   }
+  },
+  {
+   "seq": 37,
+   "time": "2026-10-13T06:59:10.000Z",
+   "type": "member.completed",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "generation": 2,
+    "n": 2,
+    "status": "done"
+   }
+  },
+  {
+   "seq": 38,
+   "time": "2026-10-13T06:59:10.300Z",
+   "type": "result.delivering",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "route": null,
+    "seconds": 5.1,
+    "session": "00000000-0000-0000-0000-000000000001",
+    "usage": {
+     "claude-sonnet-5-5": {
+      "input": 198,
+      "output": 21877,
+      "cache_read": 1804211,
+      "cache_creation": 90122
+     }
+    }
+   }
+  },
+  {
+   "seq": 39,
+   "time": "2026-10-13T06:59:11.000Z",
+   "type": "result.delivered",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "code": null,
+    "hook": "claude-stop",
+    "hook_ms": 280,
+    "route": "host_typing",
+    "seconds": 0.7
+   }
+  },
+  {
+   "seq": 40,
+   "time": "2026-10-13T07:00:20.000Z",
+   "type": "verify.recorded",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "exit": 0,
+    "flags": [
+     "outside-owns:src/shared/money.ts"
+    ],
+    "seconds": 11,
+    "verdict": "FLAGGED"
+   }
+  },
+  {
+   "seq": 41,
+   "time": "2026-10-13T07:01:00.000Z",
+   "type": "verify.waived",
+   "role": "ledger",
+   "message": null,
+   "data": {
+    "flags": [
+     "outside-owns:src/shared/money.ts"
+    ],
+    "head_sha": "4f1c2ab9e0d1"
+   }
+  },
+  {
+   "seq": 42,
+   "time": "2026-10-13T07:02:30.000Z",
+   "type": "verify.recorded",
+   "role": "api",
+   "message": null,
+   "data": {
+    "exit": 1,
+    "flags": [],
+    "seconds": 34,
+    "verdict": "FAIL"
+   }
+  },
+  {
+   "seq": 43,
+   "time": "2026-10-13T07:05:44.001Z",
+   "type": "message.sent",
+   "role": "fraud",
+   "message": "m005",
+   "data": {
+    "chars": 88,
+    "recipients": [
+     "api"
+    ],
+    "sender_kind": "member",
+    "type": "finding"
+   }
+  },
+  {
+   "seq": 44,
+   "time": "2026-10-13T07:06:10.000Z",
+   "type": "delivery.undelivered",
+   "role": "api",
+   "message": "m005",
+   "data": {
+    "attempts": 3,
+    "code": "not_at_input_prompt",
+    "route": null,
+    "seconds": 26.0,
+    "to": "api"
+   }
+  },
+  {
+   "seq": 45,
+   "time": "2026-10-13T07:08:00.000Z",
+   "type": "member.completed",
+   "role": "fraud",
+   "message": null,
+   "data": {
+    "generation": 1,
+    "n": 1,
+    "status": "done"
+   }
+  },
+  {
+   "seq": 46,
+   "time": "2026-10-13T07:08:00.300Z",
+   "type": "result.delivering",
+   "role": "fraud",
+   "message": null,
+   "data": {
+    "route": null,
+    "seconds": 4.0,
+    "session": "00000000-0000-0000-0000-000000000005",
+    "usage": {
+     "claude-sonnet-5-5": {
+      "input": 96,
+      "output": 12011,
+      "cache_read": 702113,
+      "cache_creation": 40210
+     }
+    }
+   }
+  },
+  {
+   "seq": 47,
+   "time": "2026-10-13T07:08:40.000Z",
+   "type": "result.undelivered",
+   "role": "fraud",
+   "message": null,
+   "data": {
+    "code": "session_blocked",
+    "hook": "claude-stop",
+    "hook_ms": 38784,
+    "route": null,
+    "seconds": 40.3
+   }
+  },
+  {
+   "seq": 48,
+   "time": "2026-10-13T07:09:00.000Z",
+   "type": "watch.line",
+   "role": null,
+   "message": null,
+   "data": {
+    "events": [
+     "UNDELIVERED",
+     "SILENT"
+    ]
+   }
+  },
+  {
+   "seq": 49,
+   "time": "2026-10-13T07:10:00.000Z",
+   "type": "member.completed",
+   "role": "emails",
+   "message": null,
+   "data": {
+    "generation": 1,
+    "n": 1,
+    "status": "blocked"
+   }
+  },
+  {
+   "seq": 50,
+   "time": "2026-10-13T07:12:09.120Z",
+   "type": "message.sent",
+   "role": "web",
+   "message": "m006",
+   "data": {
+    "chars": 63,
+    "recipients": [
+     "lead"
+    ],
+    "sender_kind": "member",
+    "type": "question"
+   }
+  },
+  {
+   "seq": 51,
+   "time": "2026-10-13T07:12:09.500Z",
+   "type": "delivery.unconfirmed",
+   "role": "lead",
+   "message": "m006",
+   "data": {
+    "attempts": 1,
+    "code": null,
+    "route": "host_typing",
+    "seconds": 0.4,
+    "to": "lead"
+   }
+  },
+  {
+   "seq": 52,
+   "time": "2026-10-13T07:14:30.000Z",
+   "type": "message.sent",
+   "role": null,
+   "message": "m008",
+   "data": {
+    "chars": 33,
+    "recipients": [
+     "web"
+    ],
+    "sender_kind": "lead",
+    "type": "answer"
+   }
+  },
+  {
+   "seq": 53,
+   "time": "2026-10-13T07:15:00.000Z",
+   "type": "close.refused",
+   "role": null,
+   "message": null,
+   "data": {
+    "reason": "web is busy: its current turn is lost if its place closes. api's verify at HEAD 9d8e7f6 is FAIL, not PASS"
+   }
+  }
+ ],
+ "errors": []
+}

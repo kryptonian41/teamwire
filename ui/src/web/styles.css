@@ -397,3 +397,47 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
   .table-wrap table { min-width: 600px; }
   .drawer { padding: var(--s3); }
 }
+
+/* Small chip after a name, such as the older-build badge. */
+.badge { margin-left: var(--s2); }
+.commit-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); background: var(--surface-2); padding: 0 6px; border-radius: var(--r-sm); } /* taste-skill-ignore */
+.msgs tr.picked td { background: var(--bg-active); }
+.afk-files { margin-top: var(--s2); }
+.facts { margin: var(--s2) 0 var(--s3); padding: 0; list-style: none; color: var(--muted); font-size: var(--t-small); }
+
+/* Event timeline: one row per event, newest first. A problem row gets a bar
+   as well as its hidden "Problem:" text, so colour is never the only cue. */
+.timeline .filter { justify-content: space-between; }
+.switch { display: inline-flex; align-items: center; gap: var(--s2); font-size: var(--t-small); color: var(--muted); }
+.events { list-style: none; margin: 0 0 var(--s3); padding: 0; background: var(--surface); border-radius: var(--r-lg); }
+.events li {
+  display: grid; grid-template-columns: 9ch 12ch 1fr; gap: var(--s1) var(--s3);
+  padding: var(--s2) var(--s3); border-left: 3px solid transparent; border-top: 1px solid var(--line);
+}
+.events li:first-child { border-top: 0; }
+.events li.problem { border-left-color: var(--c-failed); }
+.events time, .events .who { color: var(--muted); font-size: var(--t-small); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.events .who { overflow: hidden; text-overflow: ellipsis; }
+.events .what { min-width: 0; overflow-wrap: anywhere; }
+.events .details { display: block; }
+@media (max-width: 720px) {
+  .events li { grid-template-columns: 1fr; }
+}
+.verify-runs { list-style: none; margin: 0 0 var(--s3); padding: 0; display: grid; gap: var(--s3); }
+.verify-runs .flags { margin: var(--s1) 0 0; padding-left: var(--s4); font-size: var(--t-small); }
+.verify-runs .flags code { overflow-wrap: anywhere; }
+.verify-runs p { margin: var(--s1) 0 0; }
+td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Members table: eleven columns have to fit the 1240px page, so the cells use
+   less padding. Below its minimum width the table scrolls inside its box. */
+.members { min-width: 1100px; }
+.members th, .members td { padding: 10px 6px; }
+.members .bar { width: 48px; }
+.members td.title { min-width: 10ch; }
+/* Kind, State, Gen, Age, Model, Verify and Tokens stay on one line. */
+.members td:nth-child(3), .members td:nth-child(4), .members td:nth-child(5), .members td:nth-child(6),
+.members td:nth-child(n+9) { white-space: nowrap; }
+/* The drawer is a flex column. A box with overflow (a table's scroll box) would
+   otherwise shrink to no height once the content is taller than the screen. */
+.drawer > * { flex-shrink: 0; }

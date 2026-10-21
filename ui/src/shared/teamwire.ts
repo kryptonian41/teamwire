@@ -192,6 +192,8 @@ export const LogDelivery = z.object({
   to: Party,
   state: DeliveryState,
   attempts: count,
+  /** The error code of an undelivered or unconfirmed delivery. An older teamwire leaves the key out. */
+  reason: z.string().nullish(),
 });
 
 export const LogMessage = z.object({
@@ -203,6 +205,10 @@ export const LogMessage = z.object({
   /** At most 300 characters. The full text is the `comms` file. */
   excerpt: z.string(),
   deliveries: z.array(LogDelivery),
+  /** The display id of the message this one answers. An older teamwire leaves the key out. */
+  re: z.string().nullish(),
+  /** The commit a `notice` names. An older teamwire leaves the key out. */
+  commit: z.string().nullish(),
 });
 
 /** `teamwire log <team> --json`, oldest first. */
@@ -219,6 +225,54 @@ export const Metric = z.object({
 /** `teamwire metrics [<team>] --json`: live teams and archives alike. */
 export const MetricsView = z.object({
   metrics: z.array(Metric),
+  errors: z.array(z.string()),
+});
+
+/**
+ * The closed list of event types (teamwire `EventType`, docs/metrics.md
+ * section 1). Adding one changes teamwire's store schema, so a new value
+ * fails the parse like every other enum here.
+ */
+export const EventType = z.enum([
+  "team.created", "team.closing", "team.closed", "team.lead_adopted",
+  "member.creating", "member.started", "member.failed", "member.refused", "member.replaced",
+  "member.removed", "member.reprompted", "member.completed", "member.completion_refused", "member.held",
+  "message.sent", "message.refused",
+  "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
+  "delivery.reminded", "delivery.resent", "delivery.reentered",
+  "result.delivering", "result.delivered", "result.undelivered", "result.unconfirmed",
+  "watch.started", "watch.line", "watch.stopped",
+  "verify.recorded", "verify.waived",
+  "close.step", "close.refused",
+  "store.error",
+]);
+
+/**
+ * One row of `teamwire events <team> --json`. `data` keys differ per type
+ * and are not part of this schema: the page reads each key it needs with
+ * its own check and shows the row plainly when a key is missing, because
+ * older rows carry fewer keys (for example `usage` on `result.delivering`).
+ */
+export const EventRow = z.object({
+  seq: z.number().int().positive(),
+  /** UTC RFC 3339 with milliseconds. */
+  time: z.string(),
+  type: EventType,
+  role: z.string().nullable(),
+  /** Display id of the message the row is about, such as `m014`. */
+  message: z.string().nullable(),
+  data: z.record(z.string(), z.unknown()),
+});
+
+/** `teamwire events <team> [--archive DIR] [--after SEQ] --json`, oldest first. */
+export const EventsView = z.object({
+  team: z.string(),
+  source: z.enum(["live", "archive"]),
+  /** The archive directory name, or null for a live store. */
+  archive: z.string().nullable(),
+  /** The highest seq in the store, also when `--after` left every row out. */
+  last_seq: count,
+  events: z.array(EventRow),
   errors: z.array(z.string()),
 });
 
@@ -246,3 +300,6 @@ export type LogMessage = z.infer<typeof LogMessage>;
 export type LogView = z.infer<typeof LogView>;
 export type Metric = z.infer<typeof Metric>;
 export type MetricsView = z.infer<typeof MetricsView>;
+export type EventType = z.infer<typeof EventType>;
+export type EventRow = z.infer<typeof EventRow>;
+export type EventsView = z.infer<typeof EventsView>;

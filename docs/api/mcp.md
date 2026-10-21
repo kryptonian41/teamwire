@@ -208,8 +208,10 @@ session ids.
 
 Message log. Input: `{"role": "specmsg", "limit": 50}` (both optional). `role` takes the same
 address as `team_send`'s `to`: `<role>`, `lead`, `<role>@<team>` or `lead@<team>`.
-Output per row: `display_id`, `time`, `type`, `from`, `to`, `excerpt` (300
-chars, sanitised), and each recipient's delivery state. Members see only
+Output per row: `display_id`, `time`, `type`, `from`, `re` (the display id the
+message answers, or `null`), `commit` (the commit a `notice` names, or
+`null`), `to`, `excerpt` (300 chars, sanitised), and each recipient's delivery
+state. Members see only
 messages they sent or received; the lead sees all.
 
 ## `team_teams`

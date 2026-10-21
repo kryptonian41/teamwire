@@ -14,11 +14,11 @@ use std::process::{Child, Command, Output, Stdio};
 
 use serde_json::Value;
 use teamwire_core::{
-    HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Place, Role, SessionId,
-    SessionKind, TeamName, Timestamp,
+    Actor, HarnessId, HostId, LeadRoute, MemberKind, MemberState, MessageType, Mode, Place,
+    Recipient, Role, SessionId, SessionKind, TeamName, Timestamp,
 };
 use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, HerdrFaults, TestHome};
-use teamwire_store::{NewMember, NewTeam, Store};
+use teamwire_store::{NewMember, NewMessage, NewTeam, Store};
 
 struct Rig {
     herdr: FakeHerdrEnv,
@@ -727,6 +727,69 @@ fn log_shows_states_and_a_member_sees_only_its_own_messages() {
     assert_eq!(
         rows.first().unwrap().get("display_id"),
         Some(&Value::from("m002"))
+    );
+}
+
+#[test]
+fn log_json_rows_carry_re_and_commit() {
+    let rig = live_rig();
+    for (who, args) in [
+        (
+            Identity::Member("scout"),
+            &[
+                "send", "alpha", "--to", "lead", "--type", "question", "--text", "which?",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "answer", "--re", "m001", "--text",
+                "this",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "note", "--text", "plain",
+            ][..],
+        ),
+    ] {
+        // The lead has no live process here, so a send to it exits 4; the
+        // message is stored all the same, and the log below proves it.
+        rig.run(args, &who);
+    }
+    // A notice is checked against git in the sender's checkout, which this
+    // rig has none of, so the notice is stored directly.
+    let notice = NewMessage {
+        sender: Actor::parse("api").unwrap(),
+        kind: MessageType::Notice,
+        re: None,
+        commit: Some("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312".to_owned()),
+        body: "renamed".to_owned(),
+        client_key: None,
+        recipients: vec![Recipient::Member(Role::parse("scout").unwrap())],
+    };
+    rig.store()
+        .write(|tx| tx.insert_message(at(), &notice).map(|_| ()))
+        .unwrap();
+    let out = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = value.get("messages").and_then(Value::as_array).unwrap();
+    let keys: Vec<(Value, Value)> = rows
+        .iter()
+        .map(|r| (r["re"].clone(), r["commit"].clone()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            (Value::Null, Value::Null),
+            (Value::from("m001"), Value::Null),
+            (Value::Null, Value::Null),
+            (
+                Value::Null,
+                Value::from("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312")
+            ),
+        ]
     );
 }
 

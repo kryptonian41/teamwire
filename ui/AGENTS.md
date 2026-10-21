@@ -32,8 +32,10 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
 
 - The app only reads. The server runs `teamwire` with exactly these
   argument forms and no others: `status --json`, `status <team> --role <role> --json`,
-  `teams --json`, `log <team> --json`, `metrics --json`, `version`, each
-  with an optional `--home <dir>` first.
+  `teams --json`, `log <team> --json`, `metrics --json`,
+  `events <team> [--after <seq>] --json`, `events <team> --archive <dir> --json`,
+  `version`, each with an optional `--home <dir>` first. `<dir>` is an
+  archive directory name that `listArchives` returned, never a path.
   - Never `watch`, not even `watch --once`. A watch poll takes the lead's
     watch lease and uses up its announcements.
   - Never `inbox`: it marks messages read.
