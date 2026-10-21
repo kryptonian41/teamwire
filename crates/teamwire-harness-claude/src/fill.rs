@@ -128,7 +128,17 @@ fn fill_from_tail(tail: &str, disable_1m: bool) -> Option<Fill> {
         {
             continue;
         }
-        let message = doc.get("message")?;
+        let Some(message) = doc.get("message") else {
+            continue;
+        };
+        // Claude Code writes an API error ("Prompt is too long") as a main-chain
+        // assistant line with model `<synthetic>` and every usage field 0. It
+        // is no reading, and counting it would show a full member as empty.
+        if doc.get("isApiErrorMessage").and_then(Value::as_bool) == Some(true)
+            || message.get("model").and_then(Value::as_str) == Some("<synthetic>")
+        {
+            continue;
+        }
         let Some(usage) = message.get("usage") else {
             continue;
         };
