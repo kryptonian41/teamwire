@@ -232,11 +232,15 @@ fn generation(h: &History, e: &Event, team_span: SpanId) -> Option<Span> {
     let session = h
         .of_role(role.as_str())
         .take_while(|p| p.seq <= e.seq)
-        .filter_map(|p| match p.kind {
-            EventType::MemberStarted => Some(text(&p.data, "session_id")),
-            // A handoff replaces the session; a null `new_session` leaves none known.
-            EventType::MemberHandoff => Some(text(&p.data, "new_session")),
-            _ => None,
+        .filter_map(|p| {
+            if p.kind == EventType::MemberStarted {
+                Some(text(&p.data, "session_id"))
+            } else if p.kind == EventType::MemberHandoff {
+                // A handoff replaces the session; a null `new_session` leaves none known.
+                Some(text(&p.data, "new_session"))
+            } else {
+                None
+            }
         })
         .last()
         .flatten();

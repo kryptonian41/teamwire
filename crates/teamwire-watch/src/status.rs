@@ -377,7 +377,6 @@ fn is_unprompted(started: Option<&teamwire_core::Event>, events: &[teamwire_core
 }
 
 #[cfg(test)]
-#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
     use serde_json::json;
     use teamwire_core::{Event, EventType, Timestamp, Ulid};
@@ -405,7 +404,10 @@ mod tests {
             let events = [started.clone(), event(2, later, json!({}))];
             is_unprompted(Some(&started), &events)
         };
-        assert!(is_unprompted(Some(&started), &[started.clone()]));
+        assert!(is_unprompted(
+            Some(&started),
+            std::slice::from_ref(&started)
+        ));
         assert!(!both(EventType::MemberReprompted));
         assert!(!both(EventType::MemberHandoff));
         assert!(both(EventType::MessageSent));
