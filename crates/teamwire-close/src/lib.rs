@@ -24,12 +24,14 @@ mod empty;
 mod exclude;
 mod facts;
 mod git;
+mod handoff;
 mod hold;
 mod member_close;
 mod plan;
 mod remove;
 mod team_close;
 
+pub use handoff::{close_handoff_place, handoff_refusals};
 pub use plan::plan_close_with;
 
 /// The whole team, or one member.
