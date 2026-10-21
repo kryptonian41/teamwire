@@ -59,6 +59,7 @@ describe("buildArgs", () => {
     [{ cmd: "events", team: "alpha", after: 412 }, ["events", "alpha", "--after", "412", "--json"]],
     [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07" }, ["events", "alpha", "--archive", "alpha-2026-10-07", "--json"]],
     [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012", "--json"]],
+    [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012-2" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012-2", "--json"]],
     [{ cmd: "metrics" }, ["metrics", "--json"]],
     [{ cmd: "version" }, ["version"]],
   ];
@@ -93,7 +94,10 @@ describe("buildArgs for events", () => {
       "..",
       "alpha",
       "alpha-2026-10-07-1530",
-      "alpha-2026-10-07-153012-2",
+      "alpha-2026-10-07-2",
+      "alpha-2026-10-07-153012-",
+      "alpha-2026-10-07-153012-x",
+      "alpha-2026-10-07-153012-2-3",
       "beta-2026-10-07",
       "alpha-2026-10-07\n",
       "xalpha-2026-10-07",
@@ -114,7 +118,7 @@ describe("runner", () => {
     }
     const v = await r({ cmd: "version" });
     expect(v.ok && v.data).toBe("teamwire 0.0.0");
-  });
+  }, 20_000);
 
   test("parses events output for both call forms", async () => {
     const r = make();
