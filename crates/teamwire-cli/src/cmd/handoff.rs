@@ -10,11 +10,11 @@ use std::process::ExitCode;
 
 use teamwire_close::{close_handoff_place, handoff_refusals};
 use teamwire_core::{Address, Role, TeamName};
-use teamwire_launch::{open_handoff, plan_handoff};
+use teamwire_launch::{HandoffError, open_handoff, plan_handoff};
 use teamwire_store::Ctx;
 
 use crate::cmd::send::{
-    PARTIAL, REFUSED, fail, refuse_member, say, say_line, warn, with_ctx, with_read_ctx,
+    PARTIAL, REFUSED, STORE, fail, refuse_member, say, say_line, warn, with_ctx, with_read_ctx,
 };
 use crate::wiring::Wiring;
 use crate::{Global, HandoffArgs, USAGE};
@@ -58,10 +58,13 @@ pub(crate) fn run(args: &HandoffArgs, global: &Global, wiring: &Wiring) -> ExitC
 }
 
 /// Runs the steps in order and prints one line per step. An error carries
-/// its exit code: `REFUSED` when nothing was touched, `PARTIAL` after the old
-/// place was closed.
+/// its exit code: `REFUSED` when nothing was touched, `STORE` when the store
+/// cannot be read, `PARTIAL` after the old place was closed.
 fn hand_off(ctx: &mut Ctx<'_>, role: &Role, dry_run: bool) -> Result<(), (String, u8)> {
-    let plan = plan_handoff(ctx, role, std::env::current_exe().ok()).map_err(|e| (e, REFUSED))?;
+    let plan = plan_handoff(ctx, role, std::env::current_exe().ok()).map_err(|e| match e {
+        HandoffError::Refused(why) => (why, REFUSED),
+        HandoffError::Store(_) => (e.to_string(), STORE),
+    })?;
     let refusals = handoff_refusals(ctx, &plan.member);
     if !refusals.is_empty() {
         return Err((refusals.join("; "), REFUSED));
@@ -77,6 +80,9 @@ fn hand_off(ctx: &mut Ctx<'_>, role: &Role, dry_run: bool) -> Result<(), (String
         || "the session it picks".to_owned(),
         |s| format!("session {s}"),
     );
+    for w in &plan.warnings {
+        warn(&format!("warning: {w}"));
+    }
     if dry_run {
         say_line(&format!("{role}: would close {old}"));
         say_line(&format!(
