@@ -385,6 +385,7 @@ fn log_rows_carry_what_an_answer_and_a_notice_point_at() {
         ]
     );
     let json = serde_json::to_value(&rows).unwrap();
-    assert_eq!(json[1]["re"], "m001");
-    assert!(json[3]["re"].is_null() && json[3]["commit"].is_null());
+    assert_eq!(json.pointer("/1/re"), Some(&json!("m001")));
+    assert_eq!(json.pointer("/3/re"), Some(&serde_json::Value::Null));
+    assert_eq!(json.pointer("/3/commit"), Some(&serde_json::Value::Null));
 }
