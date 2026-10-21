@@ -9,12 +9,15 @@
 //! real files exist); type into the old session; send a reprompt (the store
 //! write already started the new generation).
 
-use std::path::PathBuf;
+use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 
 use teamwire_core::{
-    Address, Member, MemberState, Mode, Place, Role, SessionId, SpawnRequest, TeamName, TeamState,
+    Address, DeliveryState, Member, MemberState, Mode, Place, Recipient, Role, SessionId,
+    SpawnRequest, TeamName, TeamState, Timestamp,
 };
 use teamwire_store::Ctx;
+use thiserror::Error;
 
 use crate::member_steps::{first_line, not_open};
 use crate::reopen::{
@@ -33,7 +36,19 @@ pub struct HandoffPlan<'r> {
     pub argv: Vec<String>,
     /// The new session's first line.
     pub first_line: String,
+    /// For the lead: the handoff document is missing or out of date, so the
+    /// first line points at the report and the git log instead.
+    pub warnings: Vec<String>,
     ready: Ready<'r>,
+}
+
+/// Why `plan_handoff` stopped. Nothing was touched either way.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum HandoffError {
+    #[error("{0}")]
+    Refused(String),
+    #[error("the store could not be read: {0}")]
+    Store(String),
 }
 
 impl std::fmt::Debug for HandoffPlan<'_> {
@@ -62,12 +77,46 @@ pub fn plan_handoff<'r>(
     ctx: &Ctx<'r>,
     role: &Role,
     teamwire_bin: Option<PathBuf>,
-) -> Result<HandoffPlan<'r>, String> {
-    let store_error = |e: teamwire_store::StoreError| format!("the store could not be read: {e}");
-    let (team, member, options) = ctx
+) -> Result<HandoffPlan<'r>, HandoffError> {
+    let (team, member, options, unread) = ctx
         .store
-        .read(|tx| Ok((tx.team()?, tx.member(role)?, tx.run_options(role)?)))
-        .map_err(store_error)?;
+        .read(|tx| {
+            let unread = tx.deliveries_for(&Recipient::Member(role.clone()), &UNREAD)?;
+            Ok((
+                tx.team()?,
+                tx.member(role)?,
+                tx.run_options(role)?,
+                unread.items.len(),
+            ))
+        })
+        .map_err(|e| HandoffError::Store(e.to_string()))?;
+    plan_with(ctx, role, teamwire_bin, (team, member, options, unread))
+        .map_err(HandoffError::Refused)
+}
+
+/// Every delivery state but `acked`: what `teamwire inbox` still returns,
+/// including a short message typed whole into the old pane, which the old
+/// session may never have read.
+const UNREAD: [DeliveryState; 4] = [
+    DeliveryState::Pending,
+    DeliveryState::HandedOff,
+    DeliveryState::Unconfirmed,
+    DeliveryState::Undelivered,
+];
+
+type Read = (
+    Option<teamwire_store::TeamRow>,
+    Option<Member>,
+    teamwire_store::RunOptions,
+    usize,
+);
+
+fn plan_with<'r>(
+    ctx: &Ctx<'r>,
+    role: &Role,
+    teamwire_bin: Option<PathBuf>,
+    (team, member, options, unread): Read,
+) -> Result<HandoffPlan<'r>, String> {
     let team = team.ok_or("the team has no record")?;
     if team.state != TeamState::Open {
         return Err(format!(
@@ -110,14 +159,42 @@ pub fn plan_handoff<'r>(
     } else {
         team_dir.join("briefs").join(format!("{role}.md"))
     };
-    let handoff = team_dir.join("reports").join(format!("{role}.handoff.md"));
-    let first_line = format!(
-        "This is a fresh session in your seat. Your brief is at {} and your previous session's \
-         handoff document is at {}. Read both in full now, then carry on from where the \
-         handoff document says.",
-        brief.display(),
-        handoff.display()
-    );
+    let reports = team_dir.join("reports");
+    let handoff = reports.join(format!("{role}.handoff.md"));
+    let mut warnings = Vec::new();
+    let mut first_line = match stale_document(&handoff, member.gen_started_at) {
+        None => format!(
+            "This is a fresh session in your seat. Your brief is at {} and your previous \
+             session's handoff document is at {}. Read both in full now, then carry on from \
+             where the handoff document says.",
+            brief.display(),
+            handoff.display()
+        ),
+        Some(why) => {
+            warnings.push(format!(
+                "{role}: {why}, so the new session is pointed at its report and git log instead"
+            ));
+            let log = member
+                .branch
+                .as_ref()
+                .map_or_else(String::new, |b| format!(" and `git log {b}`"));
+            format!(
+                "This is a fresh session in your seat. Your brief is at {}. Your previous \
+                 session left no current handoff document, so read the brief, your report {}{log} \
+                 to see what is done, then carry on.",
+                brief.display(),
+                reports.join(format!("{role}.md")).display()
+            )
+        }
+    };
+    if unread > 0 {
+        write!(
+            first_line,
+            " You have {unread} unread message(s): read them with the team_inbox tool or \
+             `teamwire inbox`."
+        )
+        .ok();
+    }
     let request = SpawnRequest {
         name: Address::of(&team.name, role),
         title: member.title.clone(),
@@ -137,6 +214,7 @@ pub fn plan_handoff<'r>(
         member,
         argv: spec.argv,
         first_line,
+        warnings,
         ready,
     })
 }
@@ -146,7 +224,10 @@ pub fn plan_handoff<'r>(
 /// the old session is still recorded, and the error says how to resume it.
 pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff, String> {
     let role = &plan.member.role;
-    let place = open_place(&plan.ready).map_err(|o| resume_hint(plan, &reason(o)))?;
+    let place = match open_place(&plan.ready) {
+        Ok(place) => place,
+        Err(o) => return Err(failed(ctx, plan, &reason(o))),
+    };
     let at = ctx.clock.now();
     let old = plan.member.session_id.as_ref();
     let written = ctx.store.write(|tx| {
@@ -170,11 +251,13 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
         Ok(Ok(generation)) => generation,
         Ok(Err(state)) => {
             let why = format!("team_closed: the team is {state}");
-            return Err(resume_hint(plan, &close_new_tab(&plan.ready, &place, &why)));
+            let why = close_new_tab(&plan.ready, &place, &why);
+            return Err(failed(ctx, plan, &why));
         }
         Err(e) => {
             let why = format!("the handoff could not be recorded: {e}");
-            return Err(resume_hint(plan, &close_new_tab(&plan.ready, &place, &why)));
+            let why = close_new_tab(&plan.ready, &place, &why);
+            return Err(failed(ctx, plan, &why));
         }
     };
     let mut warnings = Vec::new();
@@ -192,6 +275,35 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
     })
 }
 
+/// Why the handoff document at `path` cannot be trusted, if it cannot: it is
+/// missing, or older than the generation it should describe, such as one a
+/// member that handed off before left behind.
+fn stale_document(path: &Path, generation_started: Timestamp) -> Option<String> {
+    let written = match std::fs::metadata(path).and_then(|m| m.modified()) {
+        Ok(written) => written,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Some(format!(
+                "the handoff document {} is missing",
+                path.display()
+            ));
+        }
+        Err(e) => {
+            return Some(format!(
+                "the handoff document {} cannot be read ({e})",
+                path.display()
+            ));
+        }
+    };
+    let written = Timestamp::from_datetime(time::OffsetDateTime::from(written));
+    (written < generation_started).then(|| {
+        format!(
+            "the handoff document {} was written before this session started ({written}, \
+             session started {generation_started})",
+            path.display()
+        )
+    })
+}
+
 fn reason(outcome: ReopenOutcome) -> String {
     match outcome {
         ReopenOutcome::Reopened => "reopened".to_owned(),
@@ -201,18 +313,35 @@ fn reason(outcome: ReopenOutcome) -> String {
     }
 }
 
-/// `why`, and how to get the member back: nothing recorded the handoff, so
-/// the old session is still the member's, and reopen resumes it.
-fn resume_hint(plan: &HandoffPlan<'_>, why: &str) -> String {
+/// `why`, and how to get the member back. Nothing recorded the handoff, but
+/// a harness that records its own session (Codex, through its session-start
+/// hook) may have put the new session on the row before the failure. The
+/// old one is written back, after the new tab is closed, so reopen resumes
+/// the session that holds the member's work.
+fn failed(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>, why: &str) -> String {
     let role = &plan.member.role;
-    let old = plan
-        .member
-        .session_id
-        .as_ref()
-        .map_or_else(String::new, |s| format!(" {s}"));
-    format!(
-        "{role}: {why}. The old session{old} is still recorded, so `teamwire reopen {} --role \
-         {role}` resumes it",
-        plan.team
-    )
+    let Some(old) = &plan.member.session_id else {
+        return format!(
+            "{role}: {why}. No session was recorded for {role} before the handoff, so there is \
+             no old session for `teamwire reopen` to resume"
+        );
+    };
+    let restored = ctx.store.write(|tx| {
+        let now = tx.reader().member(role)?.and_then(|m| m.session_id);
+        if now.as_ref() == Some(old) {
+            return Ok(());
+        }
+        tx.set_member_session(role, old)
+    });
+    match restored {
+        Ok(()) => format!(
+            "{role}: {why}. The old session {old} is still recorded, so `teamwire reopen {} \
+             --role {role}` resumes it",
+            plan.team
+        ),
+        Err(e) => format!(
+            "{role}: {why}. The old session {old} could not be recorded again ({e}), so the \
+             member may hold a new, empty session; reopen would resume that one"
+        ),
+    }
 }

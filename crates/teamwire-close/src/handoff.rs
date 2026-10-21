@@ -49,13 +49,20 @@ pub fn handoff_refusals(ctx: &Ctx<'_>, member: &Member) -> Vec<String> {
 }
 
 /// Closes the member's place through its own host and waits for the
-/// processes that ran there to end, as `close --role` does. `Ok` names what
-/// happened, `None` when no place is recorded; an error means the old
-/// session may still run, so no new one may start.
+/// processes that ran there to end, as `close --role` does before it removes
+/// a worktree. A handoff waits in every mode: the host refuses a second live
+/// agent of one name. `Ok` names what happened, `None` when no place is
+/// recorded; an error means the old session may still run, so no new one may
+/// start.
 pub fn close_handoff_place(
     ctx: &Ctx<'_>,
     team: &TeamName,
     member: &Member,
 ) -> Result<Option<String>, String> {
-    member_close::close_place(ctx, team, member)
+    member_close::close_place_then(
+        ctx,
+        team,
+        member,
+        Some("no new session opens while they run"),
+    )
 }

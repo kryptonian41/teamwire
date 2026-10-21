@@ -191,6 +191,29 @@ fn the_guide_needs_no_team_and_carries_the_document_path_the_summary_and_the_lic
 fn an_idle_member_gets_a_fresh_session_in_a_new_tab_and_its_first_line() {
     let rig = Rig::new();
     let worktree = rig.launch();
+    // A short note is typed whole into the old pane, and stays unread there.
+    let lead = [("CLAUDE_CODE_SESSION_ID", "lead-sess")];
+    let adopt = rig.teamwire_with(&["lead", "--adopt", "alpha"], None, &lead);
+    assert_eq!(adopt.code, 0, "{}{}", adopt.out, adopt.err);
+    let note = rig.teamwire_with(
+        &[
+            "send",
+            "alpha",
+            "--to",
+            "api",
+            "--type",
+            "note",
+            "--text",
+            "short note",
+        ],
+        None,
+        &lead,
+    );
+    assert_eq!(note.code, 0, "{}{}", note.out, note.err);
+    rig.wait_for_status("done");
+    let document = rig.home.path().join("teams/alpha/reports/api.handoff.md");
+    std::fs::create_dir_all(document.parent().unwrap()).unwrap();
+    std::fs::write(&document, "# api handoff\n").unwrap();
     let before = rig.api();
     let old_place = before.place.clone().unwrap();
     let from = rig.herdr.calls().len();
@@ -232,6 +255,9 @@ fn an_idle_member_gets_a_fresh_session_in_a_new_tab_and_its_first_line() {
         "{prompt}"
     );
     assert!(prompt.contains("reports/api.handoff.md"), "{prompt}");
+    assert!(prompt.contains("1 unread message(s)"), "{prompt}");
+    assert!(prompt.contains("teamwire inbox"), "{prompt}");
+    assert!(!run.err.contains("warning"), "{}", run.err);
     assert!(
         !calls.iter().any(|c| c.contains("reprompt")),
         "no reprompt: {calls:?}"
@@ -321,5 +347,39 @@ fn a_member_session_cannot_hand_off_and_a_missing_team_or_role_is_a_usage_error(
         &["handoff", "--role", "api"],
     ] {
         assert_eq!(rig.teamwire(args, None).code, 3, "{args:?}");
+    }
+}
+
+#[test]
+fn a_missing_document_is_a_warning_and_a_damaged_row_is_exit_six() {
+    let rig = Rig::new();
+    rig.launch();
+    let dry = rig.teamwire(&["handoff", "alpha", "--role", "api", "--dry-run"], None);
+    assert_eq!(dry.code, 0, "{}{}", dry.out, dry.err);
+    assert!(
+        dry.err.contains("warning: api: the handoff document") && dry.err.contains("is missing"),
+        "{}",
+        dry.err
+    );
+    assert!(dry.out.contains("reports/api.md"), "{}", dry.out);
+
+    let team = TeamName::parse("alpha").unwrap();
+    let mut store = Store::open_existing(rig.home.path(), &team).unwrap();
+    store
+        .write(|tx| {
+            Ok(tx.connection().execute(
+                "UPDATE members SET harness = 'Not A Harness!' WHERE role = 'api'",
+                (),
+            )?)
+        })
+        .unwrap();
+    drop(store);
+    for args in [
+        &["handoff", "alpha", "--role", "api"][..],
+        &["handoff", "alpha", "--role", "api", "--dry-run"],
+    ] {
+        let run = rig.teamwire(args, None);
+        assert_eq!(run.code, 6, "{args:?}: {}{}", run.out, run.err);
+        assert!(run.err.contains("could not be read"), "{}", run.err);
     }
 }

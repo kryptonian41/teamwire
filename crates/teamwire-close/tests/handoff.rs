@@ -10,7 +10,7 @@ pub mod rig;
 
 use rig::{Rig, git};
 use teamwire_close::{close_handoff_place, handoff_refusals};
-use teamwire_core::{Host, MemberKind, MemberState, PlaceState, TeamName};
+use teamwire_core::{Host, MemberKind, MemberState, Occupant, Pid, PlaceState, TeamName};
 
 fn refusals(rig: &mut Rig, name: &str) -> Vec<String> {
     let member = rig.member(name);
@@ -79,4 +79,25 @@ fn closing_the_place_keeps_the_row_the_worktree_and_the_branch() {
         "+ br-api",
         "the branch stays checked out in the worktree"
     );
+}
+
+#[test]
+fn a_pane_members_place_close_waits_for_its_processes_too() {
+    let mut rig = Rig::new();
+    let member = rig.add_pane_member("scout", MemberKind::Investigator);
+    let place = rig.place_of("scout");
+    let old = Pid::new(7011);
+    rig.host.set_occupant(
+        &place,
+        Occupant {
+            session: None,
+            pids: vec![old],
+        },
+    );
+    rig.platform.inner.set_alive(old, true);
+    rig.config.close_exit_wait_ms = 100;
+    let team = TeamName::parse(rig::TEAM).unwrap();
+    let why = close_handoff_place(&rig.ctx(), &team, &member).unwrap_err();
+    assert!(why.contains("7011"), "{why}");
+    assert!(why.contains("no new session opens while they run"), "{why}");
 }

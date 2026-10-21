@@ -108,6 +108,23 @@ pub(crate) fn close_place(
     team: &TeamName,
     member: &Member,
 ) -> Result<Option<String>, String> {
+    let removing = member.mode == Mode::Worktree && member.cwd.is_dir();
+    close_place_then(
+        ctx,
+        team,
+        member,
+        removing.then_some("the worktree is kept. Stop them, then run close again"),
+    )
+}
+
+/// `close_place`, waiting for the place's processes whenever `kept` is
+/// given; `kept` says what the caller does not do while they still run.
+pub(crate) fn close_place_then(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+    kept: Option<&str>,
+) -> Result<Option<String>, String> {
     let Some(place) = &member.place else {
         return Ok(None);
     };
@@ -116,7 +133,7 @@ pub(crate) fn close_place(
         .adapters(&Party::Member(role.clone()))
         .map_err(|e| format!("{role}: {e}"))?;
     // Read before the close: a closed place has no occupant to ask about.
-    let pids = if member.mode == Mode::Worktree && member.cwd.is_dir() {
+    let pids = if kept.is_some() {
         host.occupant(place, HOST_TIMEOUT)
             .map(|o| o.pids)
             .unwrap_or_default()
@@ -133,10 +150,11 @@ pub(crate) fn close_place(
             let named: Vec<String> = running.iter().map(ToString::to_string).collect();
             Err(format!(
                 "{role}'s place {} closed, but process(es) {} that ran in it still run {:?} \
-                 later; the worktree is kept. Stop them, then run close again",
+                 later; {}",
                 place.id,
                 named.join(", "),
-                wait
+                wait,
+                kept.unwrap_or_default()
             ))
         }
         Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
