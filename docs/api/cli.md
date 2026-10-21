@@ -26,7 +26,7 @@ These refuse a caller that carries a member identity (`TEAMWIRE_TOKEN`,
 an empty variable counts as unset for every command) with
 `refused.identity`, exit 1, before opening the store: `launch` (any, with or
 without `--add`; only `--dry-run` is allowed, because it creates nothing),
-`reopen`, `afk start`, `received`, `watch` (with or without `--once`,
+`reopen`, `handoff` (except `--guide`), `afk start`, `received`, `watch` (with or without `--once`,
 because a single poll takes the lease and uses up announcement keys the lead's
 watch would then never print), `close` (except `--dry-run`) and
 `verify --waive`. Plain `verify` stays open, because the closer runs it. A
@@ -69,10 +69,10 @@ With the `tmux` host and no running tmux server, launch and reopen open the tabs
 in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
-`children`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
+`children`, `context_handoff_tokens`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
-`accept_trust` (default true), `plugins`. A Codex member's arguments hold no
+`accept_trust` (default true), `context_handoff_tokens`, `plugins`. A Codex member's arguments hold no
 newline, because herdr refuses one: teamwire writes each `-c key=value` as
 one-line TOML (basic strings that escape `\n`, `\t`, `\r`, `\"`, `\\` and any
 other control character as `\uXXXX`, tables as inline tables), and Codex reads
@@ -181,6 +181,7 @@ Events, each announced once per occurrence:
 | `QUESTION-UNCONFIRMED <id> from <role>` | A question to the lead whose typing stalled or timed out |
 | `UNREAD <id> -> <role> <age>` | A message to a member still in the team stayed `handed_off` for 10 minutes of awake time (`UNREAD_AFTER`), counted from its latest attempt; time the machine slept is not counted. A message whose whole body fit in the typed line is never unread (ADR 0021), and neither is one the member recorded a completion after (ADR 0022). Once per message and recipient |
 | `UNANSWERED <id> from <role> <age>` | A question to the lead, handed off or acknowledged, has no `answer` whose `re` points at it after 10 minutes of awake time (`UNANSWERED_AFTER`). Once per question. Questions between members appear only in `status` |
+| `CONTEXT <role> <pct>% <n>k of <window>k (handoff at <n>k)` | A started member's context fill reached its handoff point. Once per generation (key `CONTEXT:<role>:<generation>`). A member with no reading, or below its point, gets no line |
 | `STORE-ERROR <code>` | The store could not be read or written; once per code. `<code>` is `StoreError::code()` (`busy`, `full`, `schema_newer`, ...) |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done, and every member not done is stuck: quiet (`SILENT`), at a dialog, overdue and idle, or still creating past its limits. A member whose completion is recorded but not yet reported (`DECLARED` or `UNREPORTED`) is waited on and never counted as stuck, so a team whose only unsettled member is `UNREPORTED` prints no `TEAM-STALLED`. Re-armed when something moves |
 | `TEAM-CLOSED` | The team was closed, or its row is gone, before the watch printed `TEAM-COMPLETE`. The watch exits 0 after it. It is never printed after `TEAM-COMPLETE`, because the watch has already exited |
@@ -196,7 +197,8 @@ member identity); per member: state
 `blocked`, `working`, `quiet`, `late`, `prompted outside teamwire`,
 `not started`, `failed to start`; `died?` also covers a member gone while its
 completion is still pending), generation, age against
-deadline, delivery state of its newest result, branch, title; then the last
+deadline, delivery state of its newest result, `ctx` (the context fill as
+`72% 720k`, or `-` when unknown), branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
 `undelivered`, and results the lead has not received: a member's newest
 completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `reports/<role>.md` when the result file is missing or out of date. It also shows the team's watch
@@ -204,7 +206,7 @@ completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `rep
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
-binary. `--json` carries the same fields as `watch`, `unread_deliveries`,
+binary. `--json` gives each member a `context` object, `{"tokens", "window", "pct", "handoff_at"}` (integers; `pct` is a whole percent, rounded down, `handoff_at` the token count at which the member is told to hand off), or `null` when the member is not `started`, has no session, or the harness gives no reading. Output of an older build has no `context` key. The fill is the input, cache-read and cache-creation tokens of the session's newest main-chain request. `--json` carries the same fields as `watch`, `unread_deliveries`,
 `unanswered_questions`, and `started_by` and `older_build` per member. An AFK team shows one line
 right after the `team <name> "<title>" <state>` header: `afk: budget ends <RFC 3339 ms Z>, <NhMMm|Nm|Ns> left, <n>
 decisions`, or `afk: budget spent at <time>, <n> decisions` once the budget is
@@ -287,6 +289,59 @@ place of `<who> reopened`, then `dry run: nothing was opened
 and nothing was written`. It starts no tab, writes no row, and opens the
 database read-only, so it does not migrate an older database. Exit 0 when no
 session was refused or failed, and 2 otherwise.
+
+### `teamwire handoff <team> --role R [--dry-run]` and `teamwire handoff --guide`
+
+Gives one member a fresh session in the same seat (ADR 0027). The member
+keeps its row, worktree, branch, `base_sha`, token, per-run files, brief and
+report. The lead runs it when the `CONTEXT` line or the `ctx` column shows a
+member past its handoff point and the member has recorded `done` with a
+summary that starts with `handoff:`. A caller that carries a member identity
+is refused with `refused.identity`, exit 1, except for `--guide`.
+
+`--guide` prints the guide a member follows before a handoff, with its licence
+notice, and needs no team, no store and no identity. It conflicts with a team,
+`--role` and `--dry-run`. Without `--guide`, a team and `--role` are required,
+and a name that does not parse is a usage error.
+
+The steps run in this order, one line on stdout for each:
+
+1. Check. The team is open, the member is `started`, its folder and per-run
+   files exist, and the harness can build the launch. The member must also be
+   idle (not in a turn), at no dialog, in a state the host can read, and have
+   no uncommitted path. Verify is not required.
+2. Close the old place, as `close --role` does, including the wait for its
+   processes to end. A member with no recorded place has nothing to close.
+3. Open a new tab with a new session id, in the member's folder, with the
+   per-run files and the model and effort the member was launched with. A
+   harness that picks its own session id (Codex) is recorded with no session
+   until its session-start hook records one.
+4. Answer the plain folder-trust dialog, as launch does. A failure closes the
+   new tab.
+5. Record the handoff in one store write: the new session and place, the next
+   generation, and `member.handoff`. The write clears the reminder mark on the
+   member's unread messages so the new session is told of them.
+6. Type the first line: the brief path (`TASK.md`, or `briefs/<role>.md`) and
+   the handoff document `reports/<role>.handoff.md`. Nothing is ever typed
+   into the old session.
+
+Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | The new session is open and recorded |
+| 1 | Refused, and nothing was touched: a team that is not open, an unknown member, a member that is not `started`, a folder or per-run file that is gone, a running turn, a dialog, an unknown state, uncommitted paths, or a caller with a member identity |
+| 2 | A failure after the old place close began: the close did not finish, the spawn or the trust step failed, or the write failed |
+| 3 | A usage error |
+
+When the close does not finish, no session is opened and the old one is still
+recorded. After the old session has ended, `teamwire reopen <team> --role R`
+resumes it. When the spawn or the trust step fails after the close, the same
+command recovers the member.
+
+`--dry-run` prints the checks, then `would close`, `would open` and `would
+answer the trust dialog, record the handoff and send` lines, then `dry run:
+nothing was closed, opened or written`. It opens the database read-only.
 
 ### `teamwire verify <team> [--role R] [--waive FLAG --reason TEXT] [--deep] [--repair-files]`
 
@@ -540,7 +595,7 @@ and still exits 0.
 | `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing on stdout and always exits 0. |
 | `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
-| `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
+| `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. When the member's context fill has reached its handoff point, it adds one note per generation (key `handoff-note:<role>:<generation>`) that names `teamwire handoff --guide` and `reports/<role>.handoff.md`, after the reminder. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
 | `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. When the session leads an open AFK team and nothing will wake the lead (no open team this session leads has a working member and a live watch lease), it holds once more with `[teamwire:<team>] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to <team dir>/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close <team>` once <team dir>/afk/REPORT.md exists. If a command you started will wake you, stop again.` (`<team dir>` is the absolute `$TEAMWIRE_HOME/teams/<team>`). For an AFK team that has never had a member, the part after `carry on.` reads `The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close <team>`, which needs no report for a team that never had a member.`, because close accepts such a team without a report. Past the budget that note is `[teamwire:<team>] budget spent at <RFC 3339 ms Z>: finish what is running, write <team dir>/afk/REPORT.md, then run `teamwire close <team>`. Start no new implementer. If a command you started will wake you, stop again.` When the no-watch note also applies, both come back in one reply, joined by a newline. Returns nothing in a member session (any non-empty `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` or token), for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; every store read, the lead harness's included, happens inside a bound of about 5 s. Always exits 0. |
 | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 

@@ -165,7 +165,7 @@ names in `docs/metrics.md` section 1:
 
 ```
 team.created team.closing team.closed team.lead_adopted
-member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted
+member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff
 member.completed member.completion_refused member.held
 message.sent message.refused
 delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
@@ -272,6 +272,11 @@ pub trait Harness: Send + Sync {
     /// first, then the session's own record. `None` when neither names it.
     /// Default `Ok(None)`.
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError>;
+    /// How full the session's context window is, read without writing.
+    /// `transcript` is the path a hook was handed; without it the harness
+    /// finds the session's own transcript. `Ok(None)` means unknown (none yet,
+    /// or a compaction left none), never zero. Default `Ok(None)`.
+    fn context_fill(&self, s: &SessionId, transcript: Option<&Path>) -> Result<Option<Fill>, HarnessError>;
     fn processes_for_session(&self, s: &SessionId, timeout: Duration) -> Result<Vec<Pid>, HarnessError>;
     fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError>;
     /// Parse turn-end hook stdin into the neutral form.
@@ -422,6 +427,7 @@ pub enum TrustPolicy { Accept, Refuse }               // from the spec's accept_
 pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<String>,
                       pub harness: Option<HarnessId>, pub host: Option<HostId>,
                       pub children: Vec<MemberSpec>,
+                      pub context_handoff_tokens: Option<u64>,
                       pub plugins: BTreeMap<String, bool> }     // plugin id -> on/off, all members
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
@@ -431,6 +437,7 @@ pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<Memb
                         pub task: Option<String>, pub task_file: Option<PathBuf>,
                         pub deadline_s: Option<u64>, pub setup: Option<String>,
                         pub dispatch: bool, pub accept_trust: bool,
+                        pub context_handoff_tokens: Option<u64>,   // overrides the team's; 0 is refused
                         pub plugins: BTreeMap<String, bool> }   // overrides the team's, per key
 
 /// Everything a harness needs to build one member's start.
@@ -441,7 +448,21 @@ pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Addre
                           pub contract_path: PathBuf, pub identity: Vec<(String, String)>,
                           pub otel: OtelConfig, pub teamwire_bin: PathBuf,
                           pub plugins: BTreeMap<String, bool>, // team map overlaid by member map
+                          pub context_handoff_tokens: Option<u64>, // member's value, else the team's; a Claude member's compaction backstop is twice its point
                           pub accept_trust: bool }  // the spec's accept_trust; a harness that takes folder trust as a start option (Codex, ADR 0023) reads it
+/// How full one session's context is: the tokens the model read on the
+/// session's newest main-chain request (input + cache read + cache creation),
+/// and the window of that model. Every harness computes `tokens` the same way.
+pub struct Fill { pub tokens: u64, pub window: u64 }
+impl Fill {
+    pub fn pct(self) -> u64;                       // whole percent, rounded down; 0 for an empty window
+    pub fn handoff_at(self, configured: Option<u64>) -> u64;  // configured, else DEFAULT_HANDOFF_PCT of the window
+    pub fn past_handoff(self, configured: Option<u64>) -> bool; // tokens >= handoff_at
+}
+/// Percent of the window at which a member is told to hand off when its spec sets no
+/// `context_handoff_tokens`. A rule of thumb: no published measurement backs 40% for Claude.
+pub const DEFAULT_HANDOFF_PCT: u64 = 40;
+
 impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>; }
 impl LaunchSpec { pub fn shell_word(text: &str) -> String; }  // single-quotes any word outside [A-Za-z0-9/._-+:=@,]; "%" is quoted
 /// What the harness returns. Files are written by launch (mode given) before spawn.
@@ -533,7 +554,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 6: `crates/teamwire-store/src/schema/v1.sql` to `v6.sql`,
+The schema is version 7: `crates/teamwire-store/src/schema/v1.sql` to `v7.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -541,7 +562,8 @@ Version 3 changes no table. Version 4 rebuilds `events` (ADR 0020). Version 5
 adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
-row, every `seq` and the AUTOINCREMENT counter. The tables and columns are those in
+row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 
