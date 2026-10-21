@@ -194,6 +194,7 @@ export function TeamDetail({
         <Drawer
           team={team.name}
           member={open}
+          roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
           files={files.data ?? []}
           onClose={() => {
             location.hash = href.team(team.name ?? "");

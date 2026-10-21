@@ -403,3 +403,4 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .commit-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); background: var(--surface-2); padding: 0 6px; border-radius: var(--r-sm); } /* taste-skill-ignore */
 .msgs tr.picked td { background: var(--bg-active); }
 .afk-files { margin-top: var(--s2); }
+.facts { margin: var(--s2) 0 var(--s3); padding: 0; list-style: none; color: var(--muted); font-size: var(--t-small); }

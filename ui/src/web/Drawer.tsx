@@ -1,21 +1,25 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { FileRef } from "../shared/api.ts";
+import type { RosterMember } from "../shared/teamwire.ts";
 import { StateChip } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
 import { href } from "./model/route.ts";
+import { acceptsLine, ownsLine, startedByLine } from "./model/status.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
 export function Drawer({
   team,
   member,
+  roster,
   files,
   onClose,
 }: {
   team: string;
   member: JoinedMember;
+  roster: RosterMember | null;
   files: FileRef[];
   onClose: () => void;
 }) {
@@ -84,6 +88,12 @@ export function Drawer({
           {age.overdue ? <span className="flag bad">{age.label} · past its deadline</span> : <span className="sub num">{age.label}</span>}
           {member.branch && <code>{member.branch}</code>}
         </p>
+
+        <ul className="facts">
+          {startedByLine(member) && <li>{startedByLine(member)}</li>}
+          {roster && <li>{ownsLine(roster)}</li>}
+          {roster && <li>{acceptsLine(roster)}</li>}
+        </ul>
 
         <div className="resume">
           <h3>Resume</h3>
