@@ -20,7 +20,7 @@ use std::time::Duration;
 use common::{Rig, member_row, pane_member, role_events, team_spec};
 use teamwire_core::{Address, Clock, Host, HostError, HostErrorCode, Pid, Role, SessionId};
 use teamwire_fakes::{FakeHarness, Fault};
-use teamwire_launch::{Handoff, open_handoff, plan_handoff};
+use teamwire_launch::{Handoff, HandoffError, open_handoff, plan_handoff};
 use teamwire_store::{Ctx, Store};
 
 const T: Duration = Duration::from_secs(5);
@@ -64,7 +64,7 @@ fn ctx<'a>(rig: &'a Rig, store: &'a mut Store) -> Ctx<'a> {
 
 fn hand_off(rig: &Rig, store: &mut Store) -> Result<Handoff, String> {
     let mut ctx = ctx(rig, store);
-    let plan = plan_handoff(&ctx, &role("api"), None)?;
+    let plan = plan_handoff(&ctx, &role("api"), None).map_err(|e| e.to_string())?;
     open_handoff(&mut ctx, &plan)
 }
 
@@ -76,6 +76,17 @@ fn host_calls(rig: &Rig, name: &str) -> Vec<String> {
         .filter(|c| c.name == name)
         .map(|c| c.detail)
         .collect()
+}
+
+fn document(rig: &Rig) -> std::path::PathBuf {
+    rig.home.path().join("teams/demo/reports/api.handoff.md")
+}
+
+/// The handoff document, written now: after the fake clock's start, so in
+/// the generation being replaced.
+fn write_document(rig: &Rig) {
+    std::fs::create_dir_all(document(rig).parent().unwrap()).unwrap();
+    std::fs::write(document(rig), "# api handoff\n").unwrap();
 }
 
 fn settings(rig: &Rig) -> Vec<u8> {
@@ -90,6 +101,7 @@ fn a_handoff_starts_a_new_session_with_the_old_files_and_records_it() {
     let before = member_row(&store, "api").unwrap();
     let old = before.session_id.clone().unwrap();
     let files = settings(&rig);
+    write_document(&rig);
     close_old_place(&rig, &store);
 
     let done = hand_off(&rig, &mut store).unwrap();
@@ -193,13 +205,19 @@ fn planning_refuses_a_closing_team_and_an_unknown_member_and_writes_nothing() {
     {
         let ctx = ctx(&rig, &mut store);
         let why = plan_handoff(&ctx, &role("nobody"), None).unwrap_err();
-        assert!(why.contains("no member nobody"), "{why}");
+        assert!(
+            matches!(&why, HandoffError::Refused(w) if w.contains("no member nobody")),
+            "{why}"
+        );
     }
     let now = rig.clock.now();
     store.write(|tx| tx.begin_close(now, Pid::new(1))).unwrap();
     let ctx = ctx(&rig, &mut store);
     let why = plan_handoff(&ctx, &role("api"), None).unwrap_err();
-    assert!(why.contains("only an open team can hand off"), "{why}");
+    assert!(
+        matches!(&why, HandoffError::Refused(w) if w.contains("only an open team can hand off")),
+        "{why}"
+    );
     assert!(
         host_calls(&rig, "spawn").len() == 1,
         "only the launch spawned"
@@ -223,4 +241,90 @@ fn a_session_its_start_hook_recorded_before_the_handoff_write_is_kept() {
         .unwrap();
     open_handoff(&mut ctx, &plan).unwrap();
     assert_eq!(member_row(&store, "api").unwrap().session_id, Some(hooked));
+}
+
+#[test]
+fn a_current_document_is_named_and_a_missing_or_old_one_is_replaced_by_the_report() {
+    let rig = Rig::new();
+    let mut store = running_team(&rig);
+    let plan_of = |store: &mut Store| {
+        let ctx = ctx(&rig, store);
+        let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+        (plan.first_line.clone(), plan.warnings.clone())
+    };
+
+    let (line, warnings) = plan_of(&mut store);
+    assert!(
+        warnings.len() == 1 && warnings[0].contains("is missing"),
+        "{warnings:?}"
+    );
+    assert!(!line.contains("api.handoff.md"), "{line}");
+    assert!(line.contains("teams/demo/reports/api.md"), "{line}");
+    assert!(line.contains("teams/demo/briefs/api.md"), "{line}");
+
+    write_document(&rig);
+    let (line, warnings) = plan_of(&mut store);
+    assert!(warnings.is_empty(), "{warnings:?}");
+    assert!(line.contains("teams/demo/reports/api.handoff.md"), "{line}");
+
+    // A document from 2020, before this generation started.
+    let old = std::time::UNIX_EPOCH + Duration::from_secs(1_600_000_000);
+    std::fs::File::options()
+        .write(true)
+        .open(document(&rig))
+        .unwrap()
+        .set_modified(old)
+        .unwrap();
+    let (line, warnings) = plan_of(&mut store);
+    assert!(
+        warnings.len() == 1 && warnings[0].contains("written before this session started"),
+        "{warnings:?}"
+    );
+    assert!(!line.contains("api.handoff.md"), "{line}");
+    assert!(line.contains("teams/demo/reports/api.md"), "{line}");
+}
+
+#[test]
+fn a_failed_trust_step_puts_back_the_old_session_a_start_hook_replaced() {
+    let rig = Rig::new();
+    let mut store = running_team(&rig);
+    let old = member_row(&store, "api").unwrap().session_id.unwrap();
+    close_old_place(&rig, &store);
+    let mut caps = FakeHarness::caps();
+    caps.choose_session_id = false;
+    rig.harness.set_caps(caps);
+    rig.host.inject(
+        "read_tail",
+        Fault::Fail(HostError::new(HostErrorCode::Other, "screen unreadable")),
+        1,
+    );
+    let mut ctx = ctx(&rig, &mut store);
+    let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+    // The new Codex session's start hook records it while the tab opens.
+    ctx.store
+        .write(|tx| tx.set_member_session(&role("api"), &SessionId::parse("codex-new").unwrap()))
+        .unwrap();
+    let why = open_handoff(&mut ctx, &plan).unwrap_err();
+    assert!(
+        why.contains(&format!("The old session {old} is still recorded")),
+        "{why}"
+    );
+    assert_eq!(member_row(&store, "api").unwrap().session_id, Some(old));
+}
+
+#[test]
+fn a_store_that_cannot_be_read_is_a_store_error() {
+    let rig = Rig::new();
+    let mut store = running_team(&rig);
+    store
+        .write(|tx| {
+            Ok(tx.connection().execute(
+                "UPDATE members SET harness = 'Not A Harness!' WHERE role = 'api'",
+                (),
+            )?)
+        })
+        .unwrap();
+    let ctx = ctx(&rig, &mut store);
+    let why = plan_handoff(&ctx, &role("api"), None).unwrap_err();
+    assert!(matches!(why, HandoffError::Store(_)), "{why}");
 }
