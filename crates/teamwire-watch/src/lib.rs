@@ -15,6 +15,7 @@
 
 mod afk;
 mod apply;
+mod context;
 mod lease;
 mod memory;
 mod observe;
@@ -73,6 +74,19 @@ pub struct MemberView {
     /// With `--role`: the command that resumes this member's session with
     /// its per-run configuration.
     pub resume_command: Option<String>,
+    /// The fill of the member's session; `None` when unknown.
+    pub context: Option<ContextView>,
+}
+
+/// How full a member's context window is, and where it hands off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContextView {
+    pub tokens: u64,
+    pub window: u64,
+    /// Whole percent of the window, rounded down.
+    pub pct: u64,
+    /// The token count at which the member is told to hand off.
+    pub handoff_at: u64,
 }
 
 /// One of the last messages.

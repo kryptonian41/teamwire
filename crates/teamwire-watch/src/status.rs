@@ -31,6 +31,7 @@ type MemberRow = (
     Timestamp,
     Option<String>,
     bool,
+    Option<u64>,
 );
 
 /// The rows status shows, read in one transaction.
@@ -97,12 +98,14 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let completion = tx
             .latest_completion(&member.role)?
             .filter(|c| c.completion.generation == member.generation);
+        let configured = tx.context_handoff_tokens(&member.role)?;
         members.push((
             member,
             completion,
             run_start,
             started.map(|e| e.writer_version.clone()),
             unprompted,
+            configured,
         ));
     }
 
@@ -310,7 +313,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         team_dir,
     } = rows;
     let mut listings = Listings::default();
-    for (member, completion, run_start, started_by, unprompted) in &members {
+    for (member, completion, run_start, started_by, unprompted, configured) in &members {
         let seen = observe(ctx, member, &mut listings);
         let age = now.saturating_since(*run_start);
         let resume = match (role, &view.team, &member.session_id) {
@@ -343,6 +346,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             result: completion.as_ref().map(|c| c.completion.report_state),
             branch: member.branch.clone(),
             resume_command: resume,
+            context: crate::context::read(ctx, member, *configured),
         });
     }
     if let (Some(lead), Ok((harness, _))) = (view.lead.as_mut(), ctx.adapters(&Party::Lead))

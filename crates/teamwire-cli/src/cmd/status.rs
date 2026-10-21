@@ -5,7 +5,7 @@ use std::process::ExitCode;
 
 use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
-use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
+use teamwire_watch::{ContextView, StatusView, UndeliveredResult, WatchState};
 
 use crate::cmd::send::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
 use crate::wiring::Wiring;
@@ -50,6 +50,14 @@ fn minutes(seconds: u64) -> String {
 }
 
 /// One team on one line, for `status` without a team.
+/// `72% 720k`, or `-` when the fill is unknown.
+fn context_text(context: Option<ContextView>) -> String {
+    context.map_or_else(
+        || "-".to_owned(),
+        |c| format!("{}% {}k", c.pct, c.tokens / 1000),
+    )
+}
+
 fn summary_line(name: &TeamName, view: &StatusView) -> String {
     let state = view.state.map_or("unreadable", |s| s.as_str());
     let done = view
@@ -136,12 +144,13 @@ fn render(view: &StatusView) -> String {
     for m in &view.members {
         let result = m.result.map_or("-", |r| r.as_str());
         out.push(format!(
-            "  {:<12} {:<26} gen {}  {} of {}  result {result}  branch {}  {}",
+            "  {:<12} {:<26} gen {}  {} of {}  result {result}  ctx {}  branch {}  {}",
             m.role.as_str(),
             m.state,
             m.generation,
             minutes(m.age_s),
             minutes(m.deadline_s),
+            context_text(m.context),
             m.branch.as_deref().unwrap_or("-"),
             m.title
         ));
@@ -330,4 +339,21 @@ fn all_teams(home: &Path, json: bool, wiring: &Wiring) -> ExitCode {
         say(&(summary_line(name, view) + "\n"));
     }
     code
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn context_shows_the_percent_and_thousands_of_tokens_or_a_dash() {
+        let c = ContextView {
+            tokens: 720_091,
+            window: 1_000_000,
+            pct: 72,
+            handoff_at: 400_000,
+        };
+        assert_eq!(context_text(Some(c)), "72% 720k");
+        assert_eq!(context_text(None), "-");
+    }
 }

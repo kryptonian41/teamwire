@@ -6,19 +6,80 @@
 )]
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Arc;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, Clock, CompletionStatus, Config, DeliveryError, DeliveryErrorCode, FinalSource,
-    HarnessId, HostId, LeadRoute, Liveness, Member, MemberKind, MemberState, MessageType, Mode,
-    Occupant, Place, PlaceState, Recipient, Registry, ReportState, Role, Route, SessionId,
-    TeamName, Ulid,
+    Actor, CallerSession, Clock, CompletionStatus, Config, DeliveryError, DeliveryErrorCode, Fill,
+    FinalSource, Harness, HarnessCaps, HarnessError, HarnessId, Host, HostId, LaunchSpec,
+    LeadRoute, Liveness, Member, MemberKind, MemberLaunch, MemberState, MessageType, Mode,
+    Occupant, OtelConfig, Pid, Place, PlaceState, Recipient, Registry, ReportState, Role, Route,
+    ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd, Ulid,
 };
 use teamwire_fakes::{FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_store::{Ctx, NewCompletion, NewMember, NewMessage, NewTeam, ResultOutcome, Store};
 use teamwire_watch::WatchMemory;
+
+/// The fake harness plus a context reading per session, which the fake
+/// cannot give. Every other call goes to the fake.
+#[derive(Debug)]
+struct FillHarness {
+    inner: Arc<FakeHarness>,
+    fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
+}
+
+impl Harness for FillHarness {
+    fn id(&self) -> HarnessId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> HarnessCaps {
+        self.inner.capabilities()
+    }
+    fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
+        self.inner.launch_spec(m)
+    }
+    fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
+        self.inner.resume_spec(m, s)
+    }
+    fn current_session(&self) -> Option<CallerSession> {
+        self.inner.current_session()
+    }
+    fn processes_for_session(&self, s: &SessionId, t: Duration) -> Result<Vec<Pid>, HarnessError> {
+        self.inner.processes_for_session(s, t)
+    }
+    fn is_alive(&self, s: &SessionId, t: Duration) -> Result<Liveness, HarnessError> {
+        self.inner.is_alive(s, t)
+    }
+    fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError> {
+        self.inner.parse_turn_end(stdin)
+    }
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        self.inner.hold_reply(note)
+    }
+    fn screen_state(&self, tail: &str) -> ScreenState {
+        self.inner.screen_state(tail)
+    }
+    fn answer_startup(
+        &self,
+        host: &dyn Host,
+        place: &Place,
+        policy: TrustPolicy,
+    ) -> Result<StartupOutcome, HarnessError> {
+        self.inner.answer_startup(host, place, policy)
+    }
+    fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
+        self.inner.otel_env(team, role, base)
+    }
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        Ok(self.fills.lock().unwrap().get(s).copied())
+    }
+}
 
 pub const TEAM: &str = "alpha";
 /// One poll's worth of time.
@@ -34,6 +95,7 @@ pub struct Bed {
     pub config: Config,
     pub harness: Arc<FakeHarness>,
     pub host: Arc<FakeHost>,
+    fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
     pub memory: WatchMemory,
     places: HashMap<String, Place>,
 }
@@ -72,7 +134,12 @@ impl Bed {
         let harness = Arc::new(FakeHarness::new());
         let host = Arc::new(FakeHost::new());
         let mut registry = Registry::new();
-        registry.add_harness(harness.clone()).unwrap();
+        let fills = Arc::new(Mutex::new(HashMap::new()));
+        let wrapped = FillHarness {
+            inner: harness.clone(),
+            fills: fills.clone(),
+        };
+        registry.add_harness(Arc::new(wrapped)).unwrap();
         registry.add_host(host.clone()).unwrap();
         Self {
             home,
@@ -83,6 +150,7 @@ impl Bed {
             config: Config::default(),
             harness,
             host,
+            fills,
             memory: WatchMemory::default(),
             places: HashMap::new(),
         }
@@ -112,6 +180,11 @@ impl Bed {
     /// teamwire `version`.
     pub fn add_started_by(&mut self, name: &str, version: &str) -> Member {
         self.insert(name, 1800, true, Some(version), &json!({}))
+    }
+
+    /// Adds a started member whose `member.started` event carries `data`.
+    pub fn add_started_with(&mut self, name: &str, data: &serde_json::Value) -> Member {
+        self.insert(name, 1800, true, None, data)
     }
 
     /// Adds a member whose launch stopped in `creating`: no place, no
@@ -215,6 +288,14 @@ impl Bed {
     pub fn vanish(&self, name: &str) {
         self.harness
             .set_liveness(&Self::session(name), Liveness::Dead);
+    }
+
+    /// What the harness reads as the member's context fill.
+    pub fn fill(&self, name: &str, tokens: u64, window: u64) {
+        self.fills
+            .lock()
+            .unwrap()
+            .insert(Self::session(name), Fill { tokens, window });
     }
 
     pub fn age(&self, by: Duration) {
