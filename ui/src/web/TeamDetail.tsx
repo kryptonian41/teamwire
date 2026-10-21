@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
 import type { EventRow, LogMessage } from "../shared/teamwire.ts";
-import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, StateChip } from "./components.tsx";
+import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, MemberEventCells, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
@@ -11,7 +11,7 @@ import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
 import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
-import { removal, tokensText, modelText, verifyChip } from "./model/memberEvents.ts";
+import { removalText } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -414,23 +414,4 @@ function MessageTable({ team, messages, picked, setPicked }: { team: string; mes
       </table>
     </div>
   );
-}
-
-function MemberEventCells({ rows, role }: { rows: readonly EventRow[]; role: string }) {
-  const verify = verifyChip(rows, role);
-  return (
-    <>
-      <td>{modelText(rows, role) ?? "—"}</td>
-      <td>
-        <StateChip word={verify.text} category={verify.category} />
-      </td>
-      <td className="num">{tokensText(rows, role)}</td>
-    </>
-  );
-}
-
-function removalText(rows: readonly EventRow[], role: string): string {
-  const r = removal(rows, role);
-  if (!r) return "—";
-  return r.reasons[0] ?? (r.unverified ? "removed without a passing verify" : "removed");
 }

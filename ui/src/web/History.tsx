@@ -1,9 +1,11 @@
 import { useState } from "react";
 import type { ArchiveEntry, FileRef } from "../shared/api.ts";
-import { AfkFiles, Empty, ErrorNote, Loading } from "./components.tsx";
+import { AfkFiles, Empty, ErrorNote, Loading, MemberEventCells } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
-import { useClient, useLoad } from "./hooks.ts";
+import { useClient, useLoad, useTimeline } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
+import { removalText, rolesIn } from "./model/memberEvents.ts";
+import { Timeline } from "./Timeline.tsx";
 import { href } from "./model/route.ts";
 import { formatDuration, summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
 
@@ -83,6 +85,8 @@ export function Archive({ dir }: { dir: string }) {
   const archives = useLoad(() => client.archives(), "archives");
   const [picked, setPicked] = useState<FileRef | null>(null);
   const entry: ArchiveEntry | undefined = archives.data?.find((a) => a.dir === dir);
+  const timeline = useTimeline(() => client.archiveTimeline(dir), dir);
+  const roles = rolesIn(timeline.rows);
 
   return (
     <>
@@ -125,6 +129,35 @@ export function Archive({ dir }: { dir: string }) {
               </div>
             </div>
           ))}
+          {roles.length > 0 && (
+            <>
+              <h2>Members</h2>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Role</th>
+                      <th>Model</th>
+                      <th>Verify</th>
+                      <th>Tokens</th>
+                      <th>Why removed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roles.map((role) => (
+                      <tr key={role}>
+                        <td>{role}</td>
+                        <MemberEventCells rows={timeline.rows} role={role} />
+                        <td>{removalText(timeline.rows, role)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          <h2>Timeline</h2>
+          <Timeline rows={timeline.rows} loading={timeline.loading} error={timeline.error} />
           {picked && (
             <>
               <h2>

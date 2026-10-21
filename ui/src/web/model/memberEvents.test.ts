@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import eventsFixture from "../../../fixtures/events.json";
 import { EventsView, type EventRow } from "../../shared/teamwire.ts";
-import { countText, modelText, removal, rowsForRole, tokensByModel, tokensText, verifyChip, verifyHistory } from "./memberEvents.ts";
+import { countText, modelText, removal, removalText, rolesIn, rowsForRole, tokensByModel, tokensText, verifyChip, verifyHistory } from "./memberEvents.ts";
 
 const rows = EventsView.parse(eventsFixture).events;
 const ev = (type: EventRow["type"], role: string, data: EventRow["data"] = {}, seq = 1): EventRow => ({
@@ -73,4 +73,12 @@ test("removal reason", () => {
 
 test("rowsForRole keeps only that member's rows in order", () => {
   expect(rowsForRole(rows, "fraud").map((r) => r.seq)).toEqual([13, 14, 43, 45, 46, 47]);
+});
+
+test("roles in order of first appearance, and the removal cell", () => {
+  expect(rolesIn(rows)).toEqual(["oldapi", "ledger", "web", "emails", "audit", "fraud", "api", "review"]);
+  expect(removalText(rows, "oldapi")).toBe("oldapi has no passing verify at HEAD 1a2b3c4: it never ran");
+  expect(removalText(rows, "ledger")).toBe("—");
+  expect(removalText([ev("member.removed", "x", { unverified: true })], "x")).toBe("removed without a passing verify");
+  expect(removalText([ev("member.removed", "x")], "x")).toBe("removed");
 });

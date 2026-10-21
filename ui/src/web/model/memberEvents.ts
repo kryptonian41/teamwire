@@ -139,3 +139,17 @@ export function removal(rows: readonly EventRow[], role: string): Removal | null
   const r = newest(rows, role, "member.removed");
   return r ? { time: r.time, unverified: r.data["unverified"] === true, reasons: strs(r.data, "unverified_reasons") } : null;
 }
+
+/** The roles that were ever created, in the order their first row appears. */
+export function rolesIn(rows: readonly EventRow[]): string[] {
+  const roles = new Set<string>();
+  for (const r of rows) if (r.role !== null && (r.type === "member.creating" || r.type === "member.started")) roles.add(r.role);
+  return [...roles];
+}
+
+/** Why a member is gone, for a table cell: its first reason, else a plain sentence; `—` when never removed. */
+export function removalText(rows: readonly EventRow[], role: string): string {
+  const r = removal(rows, role);
+  if (!r) return "—";
+  return r.reasons[0] ?? (r.unverified ? "removed without a passing verify" : "removed");
+}
