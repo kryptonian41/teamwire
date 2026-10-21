@@ -214,6 +214,16 @@ fn an_idle_member_gets_a_fresh_session_in_a_new_tab_and_its_first_line() {
     let document = rig.home.path().join("teams/alpha/reports/api.handoff.md");
     std::fs::create_dir_all(document.parent().unwrap()).unwrap();
     std::fs::write(&document, "# api handoff\n").unwrap();
+    // The typed note can keep the fake agent working for a moment after its
+    // status file reads done, so wait until the handoff's own busy check agrees.
+    let idle = (0..1500).any(|_| {
+        let dry = rig.teamwire(&["handoff", "alpha", "--role", "api", "--dry-run"], None);
+        if dry.code != 0 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        dry.code == 0
+    });
+    assert!(idle, "api never became idle enough to hand off");
     let before = rig.api();
     let old_place = before.place.clone().unwrap();
     let from = rig.herdr.calls().len();
