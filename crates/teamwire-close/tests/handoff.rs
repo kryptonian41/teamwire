@@ -5,8 +5,8 @@
     reason = "a test stands in for a member that edits files in its worktree"
 )]
 #![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+    clippy::indexing_slicing,
+    reason = "a test indexes the refusals it just checked the length of"
 )]
 
 #[path = "support/rig.rs"]
