@@ -64,6 +64,7 @@ fn codex_passes_the_harness_contract() {
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     };
     harness_contract(&HarnessSetup {

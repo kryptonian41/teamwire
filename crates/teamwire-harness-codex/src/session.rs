@@ -13,8 +13,8 @@ use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::{
-    CallerSession, Command, Fill, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState, Platform,
-    SessionId, SessionKind,
+    CallerSession, Command, Fill, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState,
+    Platform, SessionId, SessionKind,
 };
 
 /// The variables that name the caller's session, in the order they are read.
@@ -201,7 +201,10 @@ pub(crate) fn context_fill(codex_home: &Path, session: &SessionId) -> Option<Fil
             return None;
         }
         let info = payload.get("info").filter(|i| !i.is_null())?;
-        let tokens = info.get("last_token_usage")?.get("input_tokens")?.as_u64()?;
+        let tokens = info
+            .get("last_token_usage")?
+            .get("input_tokens")?
+            .as_u64()?;
         let window = info.get("model_context_window")?.as_u64()?;
         Some(Fill { tokens, window })
     })

@@ -64,3 +64,49 @@ fn the_team_records_the_folder_of_the_lead_session() {
     let cwd = store.read(|tx| tx.lead_cwd()).unwrap();
     assert_eq!(cwd, Some(std::path::PathBuf::from("/work/lead")));
 }
+
+#[test]
+fn a_started_member_records_the_merged_handoff_threshold() {
+    let rig = Rig::new();
+    let own = with(
+        pane_member("a", "a", rig.work.path()),
+        "context_handoff_tokens",
+        json!(150_000),
+    );
+    let inherits = pane_member("b", "b", rig.work.path());
+    let spec = with(
+        team_spec("demo", &[own, inherits]),
+        "context_handoff_tokens",
+        json!(300_000),
+    );
+    let (_, store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    let recorded = |role: &str| {
+        role_events(&store, role)
+            .into_iter()
+            .find(|(kind, _)| kind == "member.started")
+            .unwrap()
+            .1["context_handoff_tokens"]
+            .clone()
+    };
+    assert_eq!(recorded("a"), json!(150_000));
+    assert_eq!(recorded("b"), json!(300_000));
+}
+
+#[test]
+fn an_unset_handoff_threshold_is_recorded_as_null() {
+    let rig = Rig::new();
+    let spec = team_spec("demo", &[pane_member("a", "a", rig.work.path())]);
+    let (_, store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    let started = role_events(&store, "a")
+        .into_iter()
+        .find(|(kind, _)| kind == "member.started")
+        .unwrap()
+        .1;
+    assert!(
+        started
+            .as_object()
+            .unwrap()
+            .contains_key("context_handoff_tokens")
+    );
+    assert!(started["context_handoff_tokens"].is_null());
+}

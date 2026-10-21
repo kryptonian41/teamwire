@@ -92,7 +92,10 @@ fn an_assistant_line_after_the_boundary_counts() {
 fn an_empty_or_missing_file_gives_none() {
     let (d, p) = transcript(&[]);
     assert_eq!(fill(d.path(), Some(&p)), None);
-    assert_eq!(fill(d.path(), Some(&p.with_file_name("missing.jsonl"))), None);
+    assert_eq!(
+        fill(d.path(), Some(&p.with_file_name("missing.jsonl"))),
+        None
+    );
     assert_eq!(fill(&d.path().join("nowhere"), None), None);
 }
 

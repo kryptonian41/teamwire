@@ -57,6 +57,7 @@ fn member(root: &Path) -> MemberLaunch {
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
         plugins: BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     }
 }

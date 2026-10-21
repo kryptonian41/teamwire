@@ -87,6 +87,7 @@ fn main() -> Result<(), String> {
         otel: OtelConfig::default(),
         teamwire_bin: stub,
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     };
     let claude = ClaudeCode::new(

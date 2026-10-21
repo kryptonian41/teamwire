@@ -371,6 +371,10 @@ fn run_member(
         otel: ctx.config.otel.clone(),
         teamwire_bin: plan.teamwire_bin.clone(),
         plugins: merged_plugins(&plan.spec.plugins, &m.spec.plugins),
+        context_handoff_tokens: m
+            .spec
+            .context_handoff_tokens
+            .or(plan.spec.context_handoff_tokens),
         accept_trust: m.spec.accept_trust,
     };
     write_contract(ctx, dirs, m, &launch)?;
@@ -475,6 +479,11 @@ fn run_member(
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
     put(&mut data, "plugins", json!(launch.plugins));
+    put(
+        &mut data,
+        "context_handoff_tokens",
+        json!(launch.context_handoff_tokens),
+    );
     // Close takes these lines back when the team ends; a line that was
     // already in the file is not launch's, so it is not listed.
     let excluded: Vec<Value> = made

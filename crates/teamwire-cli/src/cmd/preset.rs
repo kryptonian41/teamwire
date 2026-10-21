@@ -45,7 +45,7 @@ const PRESETS: [(&str, &str); 6] = [
 /// The order keys are printed in. A spec reads best with the team and title
 /// first and each member's identity before its task; `serde_json` would sort
 /// them alphabetically.
-const KEY_ORDER: [&str; 27] = [
+const KEY_ORDER: [&str; 28] = [
     "_wave",
     "_blocked_by",
     "_launch_after",
@@ -67,6 +67,7 @@ const KEY_ORDER: [&str; 27] = [
     "model",
     "effort",
     "plugins",
+    "context_handoff_tokens",
     "deadline_s",
     "check",
     "owns",

@@ -244,6 +244,10 @@ pub struct MemberLaunch {
     /// without plugins ignores it.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+    /// The team's `context_handoff_tokens` overlaid by the member's. A Claude
+    /// member's compaction backstop is set from it (and from the model).
+    #[serde(default)]
+    pub context_handoff_tokens: Option<u64>,
     /// The spec's `accept_trust`. Read by a harness that takes folder trust
     /// as a start option rather than answering a dialog (Codex, ADR 0023).
     #[serde(default)]
@@ -279,6 +283,8 @@ impl MemberLaunch {
             otel: OtelConfig::default(),
             teamwire_bin: PathBuf::from("teamwire"),
             plugins: BTreeMap::new(),
+            // A resume never rewrites the per-run files.
+            context_handoff_tokens: None,
             // The member started once, so its folder was accepted then.
             accept_trust: true,
         }
@@ -437,6 +443,7 @@ impl fmt::Debug for MemberLaunch {
             .field("otel", &self.otel)
             .field("teamwire_bin", &self.teamwire_bin)
             .field("plugins", &self.plugins)
+            .field("context_handoff_tokens", &self.context_handoff_tokens)
             .field("accept_trust", &self.accept_trust)
             .finish()
     }
