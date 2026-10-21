@@ -98,6 +98,8 @@ describe("buildArgs for events", () => {
       "alpha-2026-10-07-153012-",
       "alpha-2026-10-07-153012-x",
       "alpha-2026-10-07-153012-2-3",
+      "alpha-2026-10-07-091500-02",
+      "alpha-2026-10-07-091500-0",
       "beta-2026-10-07",
       "alpha-2026-10-07\n",
       "xalpha-2026-10-07",
@@ -126,6 +128,15 @@ describe("runner", () => {
     expect(live.ok && live.data.last_seq).toBe(53);
     const arch = await r({ cmd: "eventsArchive", team: "payments", archive: "payments-2026-10-07" });
     expect(arch.ok).toBe(true);
+  });
+
+  test("refuses a leading-zero archive suffix before starting a process", async () => {
+    const run = createRunner({ bin: "/nonexistent/never" });
+    for (const archive of ["alpha-2026-10-07-091500-02", "alpha-2026-10-07-091500-0"]) {
+      const res = await run({ cmd: "eventsArchive", team: "alpha", archive });
+      expect(res).toEqual({ ok: false, problems: [{ code: "bad_request", detail: "bad archive name" }] });
+    }
+    expect(buildArgs({ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-091500-2" })).toContain("alpha-2026-10-07-091500-2");
   });
 
   test("refuses a bad name before starting a process", async () => {
