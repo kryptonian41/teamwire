@@ -135,8 +135,8 @@ fn locate(
     })
 }
 
-/// `<team>-YYYY-MM-DD` or `<team>-YYYY-MM-DD-HHMMSS`, the names `close` gives
-/// an archive. A team name holds no hyphen, so the prefix is unambiguous.
+/// `<team>-YYYY-MM-DD`, `<team>-YYYY-MM-DD-HHMMSS` or
+/// `<team>-YYYY-MM-DD-HHMMSS-<n>`, the names `close` gives an archive. A team name holds no hyphen, so the prefix is unambiguous.
 fn archive_name_ok(team: &TeamName, name: &str) -> bool {
     let Some(stamp) = name
         .strip_prefix(team.as_str())
@@ -151,7 +151,18 @@ fn archive_name_ok(team: &TeamName, name: &str) -> bool {
                 _ => c == p,
             })
     };
-    shape(stamp, "9999-99-99") || shape(stamp, "9999-99-99-999999")
+    let numbered = stamp.get(18..).is_some_and(|n| {
+        stamp.as_bytes().get(17) == Some(&b'-')
+            && !n.is_empty()
+            && !n.starts_with('0')
+            && n.bytes().all(|c| c.is_ascii_digit())
+    });
+    shape(stamp, "9999-99-99")
+        || shape(stamp, "9999-99-99-999999")
+        || (numbered
+            && stamp
+                .get(..17)
+                .is_some_and(|t| shape(t, "9999-99-99-999999")))
 }
 
 enum Failure {

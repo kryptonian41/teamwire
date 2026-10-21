@@ -444,7 +444,8 @@ member's view stays its own messages.
 Each `--json` row also carries `re`, the display id of the message it answers
 (`null` when it answers none), and `commit`, the commit a `notice` names
 (`null` otherwise). Each element of a row's `deliveries` carries `reason`, the
-error code of an undelivered or unconfirmed delivery, `null` otherwise.
+error code of an undelivered or unconfirmed delivery; the key is left out
+otherwise.
 
 ### `teamwire events <team> [--archive DIR] [--after SEQ] [--json]`
 

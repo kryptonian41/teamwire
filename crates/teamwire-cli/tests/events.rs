@@ -183,6 +183,9 @@ fn archive_refuses_a_name_that_is_not_this_team_s_archive() {
         "beta-2026-10-12",
         "alpha-2026-1-12",
         "alpha-2026-10-12-0915",
+        "alpha-2026-10-12-091500-",
+        "alpha-2026-10-12-091500-x",
+        "alpha-2026-10-12-091500-0",
         "alpha",
         "alpha-2026-10-12x",
     ] {
