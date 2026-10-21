@@ -731,6 +731,50 @@ fn log_shows_states_and_a_member_sees_only_its_own_messages() {
 }
 
 #[test]
+fn log_json_rows_carry_re_and_commit() {
+    let rig = live_rig();
+    for (who, args) in [
+        (
+            Identity::Member("scout"),
+            &[
+                "send", "alpha", "--to", "lead", "--type", "question", "--text", "which?",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "answer", "--re", "m001", "--text",
+                "this",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "note", "--text", "plain",
+            ][..],
+        ),
+    ] {
+        let sent = rig.run(args, &who);
+        assert_eq!(sent.status.code(), Some(0), "{}", text(&sent.stderr));
+    }
+    let out = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = value.get("messages").and_then(Value::as_array).unwrap();
+    let keys: Vec<(Value, Value)> = rows
+        .iter()
+        .map(|r| (r["re"].clone(), r["commit"].clone()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            (Value::Null, Value::Null),
+            (Value::from("m001"), Value::Null),
+            (Value::Null, Value::Null),
+        ]
+    );
+}
+
+#[test]
 fn members_lists_the_roster_without_secrets() {
     let rig = live_rig();
     let out = rig.run(&["members", "alpha", "--json"], &Identity::Nobody);

@@ -19,6 +19,7 @@ mod cmd {
     pub(crate) mod close;
     pub(crate) mod doctor;
     pub(crate) mod done;
+    pub(crate) mod events;
     pub(crate) mod export;
     pub(crate) mod hook;
     pub(crate) mod inbox;
@@ -50,9 +51,9 @@ mod wiring;
 const USAGE: u8 = 3;
 
 pub(crate) use args::{
-    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs,
-    Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs,
-    LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
+    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DoneArgs, EventsArgs,
+    ExportArgs, Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs,
+    LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
     ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs,
     VerifyArgs, WatchArgs,
 };
@@ -95,6 +96,7 @@ fn main() -> ExitCode {
         Command::Install(a) => cmd::install::run(a, global, &wiring),
         Command::Uninstall(a) => cmd::install::run_uninstall(a, global, &wiring),
         Command::Export(a) => cmd::export::run(a, global, &wiring),
+        Command::Events(a) => cmd::events::run(a, global, &wiring),
         Command::Metrics(a) => cmd::metrics::run(a, global, &wiring),
         Command::Version => cmd::version::run(global, &wiring),
     }
