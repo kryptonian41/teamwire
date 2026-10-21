@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import eventsFixture from "../../../fixtures/events.json";
 import { EventsView, EventType, type EventRow } from "../../shared/teamwire.ts";
-import { agoText, describeRows, isProblem, isRoutine, lastSeq, mergeRows, oneLine, visibleLines, type Filter } from "./timeline.ts";
+import { agoText, describeRows, isProblem, isRoutine, lastSeq, matchesFilter, mergeRows, oneLine, storeRestarted, visibleLines, type Filter } from "./timeline.ts";
 
 const rows = EventsView.parse(eventsFixture).events;
 const lines = describeRows(rows);
@@ -62,15 +62,54 @@ test("a wrongly typed key is ignored, not thrown on", () => {
 
 test("problem and routine rules", () => {
   const problems = rows.filter(isProblem).map((r) => r.seq);
-  expect(problems).toEqual([15, 34, 35, 40, 42, 44, 47, 48, 51, 53]);
+  expect(problems).toEqual([15, 34, 35, 40, 42, 44, 47, 48, 51, 53]); // 48 is a watch line with alerts
   expect(isProblem(ev("verify.recorded", "a", { verdict: "PASS" }))).toBe(false);
   expect(isProblem(ev("verify.recorded", "a"))).toBe(false);
   expect(isProblem(ev("member.removed", "a", { unverified: false }))).toBe(false);
+  expect(isProblem(ev("watch.line", null, { events: ["WATCHING"] }))).toBe(false);
   for (const t of ["delivery.handed_off", "delivery.acked", "result.delivering", "result.delivered", "member.creating", "close.step"] as const) {
     expect(isRoutine(ev(t))).toBe(true);
   }
   expect(isRoutine(ev("member.started"))).toBe(false);
   expect(rows.filter((r) => isProblem(r) && isRoutine(r))).toEqual([]);
+});
+
+test("a watch line is a problem only when one of its words is an alert", () => {
+  const watch = (...events: string[]) => isProblem(ev("watch.line", null, { events }));
+  for (const calm of [["WATCHING"], ["WATCHING 3"], ["TEAM-COMPLETE"], ["COMPLETED"], ["WATCHING 2", "TEAM-COMPLETE"]]) {
+    expect(watch(...calm)).toBe(false);
+  }
+  for (const word of ["UNDELIVERED", "SILENT", "DIED", "LATE", "TEAM-STALLED", "UNREAD", "UNCONFIRMED", "DECLARED"]) {
+    expect(watch(word)).toBe(true);
+    expect(watch("WATCHING", word)).toBe(true);
+  }
+  expect(watch()).toBe(false);
+});
+
+test("the Messages filter covers message, delivery and result rows only", () => {
+  for (const t of ["message.sent", "delivery.undelivered", "result.delivered", "result.undelivered"] as const) {
+    expect(matchesFilter(ev(t), "messages")).toBe(true);
+  }
+  for (const t of ["member.started", "verify.recorded", "watch.line", "close.refused"] as const) {
+    expect(matchesFilter(ev(t), "messages")).toBe(false);
+  }
+  expect(visibleLines(lines, "messages", true).map((l) => l.seq)).toContain(47);
+});
+
+test("a fallback label drops the details even when data has keys", () => {
+  // No sender and no member: the label cannot be built, so the reason must not show on its own.
+  const [l] = describeRows([ev("message.refused", null, { reason: "recipient_not_allowed", type: "finding", to: ["review"] })]);
+  expect(l!.label).toBe("message.refused");
+  expect(l!.details).toBeNull();
+});
+
+test("the timeline starts over when the server's newest seq is below the newest row held", () => {
+  const held = rows.slice(0, 10);
+  expect(storeRestarted(held, 3)).toBe(true);
+  expect(storeRestarted(held, 9)).toBe(true);
+  expect(storeRestarted(held, 10)).toBe(false);
+  expect(storeRestarted(held, 53)).toBe(false);
+  expect(storeRestarted([], 0)).toBe(false);
 });
 
 test("filters pick rows and routine rows hide unless asked", () => {

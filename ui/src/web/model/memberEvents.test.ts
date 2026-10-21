@@ -43,13 +43,44 @@ test("verify history is newest first, with each run's waivers", () => {
 });
 
 test("tokens: output and total over every model, a dash without usage", () => {
-  expect(tokensText(rows, "ledger")).toBe("70k out · 5.3M total");
+  // The fixture's two ledger rows share one session, so only the newer row counts.
+  expect(tokensText(rows, "ledger")).toBe("22k out · 1.9M total");
   expect(tokensText(rows, "api")).toBe("—");
   expect(tokensText([ev("result.delivering", "x", { seconds: 1 })], "x")).toBe("—");
   const per = tokensByModel(rows, "ledger");
-  expect(per.get("claude-sonnet-5-5")).toEqual({ input: 610, output: 70087, cacheRead: 4924611, cacheCreation: 291452 });
+  expect(per.get("claude-sonnet-5-5")).toEqual({ input: 198, output: 21877, cacheRead: 1804211, cacheCreation: 90122 });
   const two = ev("result.delivering", "x", { usage: { a: { output: 5 }, b: { input: 2, output: "bad" } } });
   expect(tokensText([two], "x")).toBe("5 out · 7 total");
+});
+
+test("tokens: rows are running totals, so the newest row of each session counts and sessions add up", () => {
+  // Real shape: three rows of one session that grow (planner, archive fixall-2026-10-20), then a second session.
+  const row = (seq: number, session: string, output: number, model = "m") =>
+    ev("result.delivering", "x", { session, usage: { [model]: { input: 1, output, cache_read: 10, cache_creation: 0 } } }, seq);
+  const series = [row(1, "s1", 100), row(2, "s1", 150), row(3, "s1", 160), row(4, "s2", 40)];
+  expect(tokensByModel(series, "x").get("m")).toEqual({ input: 2, output: 200, cacheRead: 20, cacheCreation: 0 });
+  expect(tokensText(series, "x")).toBe("200 out · 222 total");
+  // A row with no session id stands alone.
+  const bare = ev("result.delivering", "x", { usage: { m: { output: 5 } } }, 5);
+  expect(tokensByModel([...series, bare], "x").get("m")!.output).toBe(205);
+});
+
+test("verify: a PASS run's flags are waived; the FLAGGED run before it keeps the waivers", () => {
+  const flags = ["outside-owns:a", "weakened:b"];
+  const real = [
+    ev("verify.recorded", "x", { verdict: "FLAGGED", flags, exit: 0, seconds: 5 }, 1),
+    ev("verify.waived", "x", { flags: [flags[0]], head_sha: "aaaaaaa1" }, 2),
+    ev("verify.waived", "x", { flags: [flags[1]], head_sha: "aaaaaaa1" }, 3),
+    ev("verify.recorded", "x", { verdict: "PASS", flags, exit: 0, seconds: 5 }, 4),
+  ];
+  expect(verifyChip(real, "x")).toEqual({ text: "PASS · 2 waived", category: "done" });
+  const [pass, flagged] = verifyHistory(real, "x");
+  expect(pass).toMatchObject({ verdict: "PASS", flagsWaived: true, waivers: [] });
+  expect(flagged).toMatchObject({ verdict: "FLAGGED", flagsWaived: false });
+  expect(flagged!.waivers.length).toBe(2);
+  // A PASS run with no flags and a FLAGGED run keep their plain chips.
+  expect(verifyChip([ev("verify.recorded", "x", { verdict: "PASS", flags: [] })], "x").text).toBe("PASS");
+  expect(verifyChip(real.slice(0, 1), "x").text).toBe("FLAGGED · 2");
 });
 
 test("countText", () => {

@@ -428,3 +428,16 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .verify-runs .flags code { overflow-wrap: anywhere; }
 .verify-runs p { margin: var(--s1) 0 0; }
 td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Members table: eleven columns have to fit the 1240px page, so the cells use
+   less padding. Below its minimum width the table scrolls inside its box. */
+.members { min-width: 1100px; }
+.members th, .members td { padding: 10px 6px; }
+.members .bar { width: 48px; }
+.members td.title { min-width: 10ch; }
+/* Kind, State, Gen, Age, Model, Verify and Tokens stay on one line. */
+.members td:nth-child(3), .members td:nth-child(4), .members td:nth-child(5), .members td:nth-child(6),
+.members td:nth-child(n+9) { white-space: nowrap; }
+/* The drawer is a flex column. A box with overflow (a table's scroll box) would
+   otherwise shrink to no height once the content is taller than the screen. */
+.drawer > * { flex-shrink: 0; }

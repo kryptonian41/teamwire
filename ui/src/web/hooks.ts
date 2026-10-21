@@ -3,7 +3,7 @@ import type { Snapshot } from "../shared/api.ts";
 import type { EventRow, EventsView } from "../shared/teamwire.ts";
 import type { ApiClient, Connection } from "./api.ts";
 import { ApiError } from "./api.ts";
-import { lastSeq, mergeRows } from "./model/timeline.ts";
+import { lastSeq, mergeRows, storeRestarted } from "./model/timeline.ts";
 
 export const ClientContext = createContext<ApiClient | null>(null);
 
@@ -100,7 +100,7 @@ export function useTimeline(load: (after?: number) => Promise<EventsView>, key: 
       const after = lastSeq(held.current.rows);
       let view = await load(after);
       // A store with a lower last seq than the rows held was replaced (a team re-created under the same name).
-      if (after !== undefined && view.last_seq < after) {
+      if (storeRestarted(held.current.rows, view.last_seq)) {
         held.current.rows = [];
         view = await load();
       }
