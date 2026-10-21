@@ -9,7 +9,7 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
+import { contextLabel, countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
 /** The longest the files and the log go without a reload. */
@@ -212,6 +212,12 @@ function MemberTable({ team }: { team: TeamModel }) {
                 <td>{m.kind ?? "?"}</td>
                 <td>
                   <StateChip word={m.state} category={m.category} />
+                  {contextLabel(m.context) && (
+                    <span className="ctx" title={`context: ${m.context?.tokens} of ${m.context?.window} tokens`}>
+                      {" "}
+                      {contextLabel(m.context)}
+                    </span>
+                  )}
                 </td>
                 <td>{m.generation}</td>
                 <td>
