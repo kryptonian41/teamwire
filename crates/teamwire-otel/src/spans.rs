@@ -79,6 +79,7 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
         | EventType::MemberReplaced
         | EventType::MemberRemoved
         | EventType::MemberReprompted
+        | EventType::MemberHandoff
         | EventType::MemberCompletionRefused
         | EventType::MemberHeld
         | EventType::MessageSent
@@ -231,9 +232,14 @@ fn generation(h: &History, e: &Event, team_span: SpanId) -> Option<Span> {
     let session = h
         .of_role(role.as_str())
         .take_while(|p| p.seq <= e.seq)
-        .filter(|p| p.kind == EventType::MemberStarted)
-        .filter_map(|p| text(&p.data, "session_id"))
-        .last();
+        .filter_map(|p| match p.kind {
+            EventType::MemberStarted => Some(text(&p.data, "session_id")),
+            // A handoff replaces the session; a null `new_session` leaves none known.
+            EventType::MemberHandoff => Some(text(&p.data, "new_session")),
+            _ => None,
+        })
+        .last()
+        .flatten();
     let mut attrs = vec![
         ("teamwire.role", s(role.as_str())),
         (

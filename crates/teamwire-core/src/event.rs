@@ -33,6 +33,7 @@ string_enum! {
         MemberReplaced => "member.replaced",
         MemberRemoved => "member.removed",
         MemberReprompted => "member.reprompted",
+        MemberHandoff => "member.handoff",
         MemberCompleted => "member.completed",
         MemberCompletionRefused => "member.completion_refused",
         MemberHeld => "member.held",

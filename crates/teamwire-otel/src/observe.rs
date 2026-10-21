@@ -149,6 +149,7 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
         | EventType::MemberReplaced
         | EventType::MemberRemoved
         | EventType::MemberReprompted
+        | EventType::MemberHandoff
         | EventType::DeliveryReminded
         | EventType::DeliveryResent
         | EventType::DeliveryReentered
@@ -451,6 +452,7 @@ fn member_state(kind: EventType) -> Option<&'static str> {
         | EventType::TeamLeadAdopted
         | EventType::MemberReplaced
         | EventType::MemberReprompted
+        | EventType::MemberHandoff
         | EventType::MemberCompleted
         | EventType::MemberCompletionRefused
         | EventType::MemberHeld

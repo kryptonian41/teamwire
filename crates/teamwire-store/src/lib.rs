@@ -50,7 +50,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 6;
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -74,6 +74,10 @@ pub const SCHEMA_V5_SQL: &str = include_str!("schema/v5.sql");
 /// The step from schema version 5 to 6: the `events` table rebuilt with the
 /// `member.refused` type in its CHECK list. Every row is kept.
 pub const SCHEMA_V6_SQL: &str = include_str!("schema/v6.sql");
+
+/// The step from schema version 6 to 7: the `events` table rebuilt with the
+/// `member.handoff` type in its CHECK list. Every row is kept.
+pub const SCHEMA_V7_SQL: &str = include_str!("schema/v7.sql");
 
 #[cfg(test)]
 mod tests {

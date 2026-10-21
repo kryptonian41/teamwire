@@ -26,7 +26,9 @@ impl History {
         for (i, e) in events.iter().enumerate() {
             if let Some(role) = &e.role {
                 let stack = open.entry(role.as_str()).or_default();
-                if e.kind == EventType::MemberCreating {
+                // A handoff moves the member two generations past any earlier
+                // reprompt, so `restore_generation` can no longer undo it.
+                if matches!(e.kind, EventType::MemberCreating | EventType::MemberHandoff) {
                     stack.clear();
                 } else if e.kind == EventType::MemberReprompted {
                     if flag(&e.data, "undone") {
@@ -93,14 +95,14 @@ impl History {
     }
 
     /// The event that began the run `end` closes: the latest
-    /// `member.started` or (not undone) `member.reprompted` of the same role
-    /// before it.
+    /// `member.started`, `member.handoff` or (not undone) `member.reprompted`
+    /// of the same role before it.
     pub(crate) fn generation_start(&self, end: &Event) -> Option<&Event> {
         let role = end.role.as_ref()?;
         self.of_role(role.as_str())
             .take_while(|e| e.seq < end.seq)
             .filter(|e| {
-                e.kind == EventType::MemberStarted
+                matches!(e.kind, EventType::MemberStarted | EventType::MemberHandoff)
                     || (e.kind == EventType::MemberReprompted
                         && !flag(&e.data, "undone")
                         && !self.is_undone(e))

@@ -27,6 +27,7 @@ const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
     &[("team", "afk_budget_ends_at")],
     &[],
+    &[],
 ];
 
 /// Shows the columns that a database at version `db` lacks as NULL, on a
