@@ -631,12 +631,18 @@ The command closes the member's old session and opens a fresh one in the same
 worktree, on the same branch, with the same brief, report and token. The new
 session starts a new generation and reads the brief and the handoff document.
 The command refuses a member that is in a turn, at a dialog or has uncommitted
-work, and changes nothing then. Wait for the turn to end and run it again. It
+work, and changes nothing then. When the handoff document is missing or older
+than the member's session, the command prints a `warning:` line and points the
+new session at the brief, the member's report and `git log` instead. Read that
+warning: the member may not have finished writing. The first line also tells
+the new session how many unread messages it has. Wait for the turn to end and run it again. It
 never stops a turn.
 
 If the command fails after it closed the old session, run
 `teamwire reopen <team> --role <role>` once the old session has ended. That
-resumes the old session, with its full context.
+resumes the old session, with its full context. The command writes the old
+session back first when it can. When the member had no recorded session, the
+error says `reopen` has nothing to resume.
 
 A Claude member that passes its point and gets no handoff compacts its own
 context at twice that point. A Codex member runs to its own limit, so hand it

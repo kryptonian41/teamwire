@@ -38,7 +38,10 @@ session that reads a written handoff.
    `model_context_window`. The Codex reader follows the field names in the
    Codex source and has not run against a live Codex session. `Ok(None)` means
    unknown and is never read as zero. A compaction boundary after the newest
-   assistant line also gives `None`.
+   assistant line also gives `None`. The Claude reader skips an API-error line
+   (`isApiErrorMessage`, or model `<synthetic>` with zero usage, such as
+   "Prompt is too long") and an assistant line with no `message`, and reads the
+   next one back. Counting an error line would show a full member as empty.
    - Beaten: the `teamwire.member.tokens` counter. The counter sums every
      request of a session, so it cannot give the fill. One closer showed
      18.4M cumulative cache-read tokens while its last request held 312K.
@@ -69,12 +72,21 @@ session that reads a written handoff.
    alive, and the host refuses a second live agent of the same name. So the
    command checks, closes the old place, then opens the new one. The checks
    are the ones of `close --role` that protect work: a running turn, a dialog,
-   an unknown state, and uncommitted paths. The command never stops a running
+   an unknown state, and uncommitted paths. The wait for the old place's
+   processes to end runs for every member mode, worktree or pane. The command never stops a running
    turn and never types into the old pane. The old session stays recorded until
    the new one has passed the trust step. A failure after the close began
-   exits 2. A failed place close stops before any spawn, and the error names
-   `teamwire reopen <team> --role R`, which resumes the old session once it has
-   ended.
+   exits 2, and a store that cannot be read exits 6. A failed place close stops
+   before any spawn, and the error names `teamwire reopen <team> --role R`,
+   which resumes the old session once it has ended. After a failure past the
+   spawn, the command closes the new tab and writes the old session id back
+   when the row holds another one. A harness that records its own session
+   (Codex) can leave the new id there. When no old session was recorded, the
+   error says `reopen` has nothing to resume.
+   - Before it closes anything, the command checks the handoff document. A
+     document that is missing, unreadable or older than the generation's start
+     gives a `warning:` line, and the first line points at the brief, the
+     member's report and `git log <branch>` instead.
    - `teamwire-launch` and `teamwire-close` are both layer 4 and may not depend
      on each other (`docs/conventions.md` section 5). `teamwire-cli` runs the
      steps in order, so the order lives in one file, `cmd/handoff.rs`.
@@ -96,7 +108,7 @@ session that reads a written handoff.
    moves the session and place, raises the generation, sets `gen_started_at`,
    clears `reminded_at` on the member's unacknowledged deliveries and records
    the event. Without the clearing, the reminder fires once per message and
-   the new session would never hear of the unread ones. Version 6 is taken by
+   a new session would never be reminded of a long unread message. Only a long message needs the reminder: a message whose whole body fit in the typed line is never reminded of (ADR 0021). Such a short message reached the old pane and not the new session, so the first line of the new session says how many unread messages there are and tells it to read them with `team_inbox` or `teamwire inbox`. Version 6 is taken by
    `member.refused`.
    - Beaten: extra fields on `member.reprompted`. A handoff changes the
      session and the place, a reprompt changes neither, and every reader that
@@ -114,8 +126,9 @@ session that reads a written handoff.
 9. **The compaction backstop is for Claude members only.** A Claude member's
    per-run `settings.json` sets `autoCompactEnabled` to true and
    `autoCompactWindow` to twice the handoff point, at least 100,000 (the floor
-   Claude Code documents) and at most the window. The note therefore comes
-   first. With no model, or an unknown one, the window is guessed large,
+   Claude Code documents) and at most the window. With the 40% default the note
+   therefore comes first. A configured `context_handoff_tokens` at or above the
+   model's real window means the note never fires, and compaction does. With no model, or an unknown one, the window is guessed large,
    because here the large guess is the safe one: the backstop must never fire
    before the note. A Codex member keeps its default, because its compaction
    settings were not researched.
