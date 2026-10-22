@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 
 import clone as clonemod
 import common
@@ -116,33 +117,44 @@ def hidden_binaries(paths):
 # ---------- parsers ----------
 
 def parse_cargo(text, crate):
-    """`cargo test` output -> {"crate::binary::test": "ok"|"FAILED"|"ignored"}."""
-    results, binary = {}, None
+    """`cargo test` output -> {"crate::binary::test": "ok"|"FAILED"|"ignored"}.
+
+    Result lines are read only before a binary's `failures:` section: after it, cargo prints the
+    captured output of failed tests, and that output may itself hold a `test x ... ok` line.
+    """
+    results, binary, in_failures = {}, None, False
     for line in ANSI.sub("", text).splitlines():
         m = re.match(r"\s*Running (unittests )?(\S+)", line)
         if m:
-            binary = ("unittests " if m.group(1) else "") + m.group(2)
+            binary, in_failures = ("unittests " if m.group(1) else "") + m.group(2), False
             continue
         if re.match(r"\s*Doc-tests ", line):
-            binary = "doctests"
+            binary, in_failures = "doctests", False
             continue
+        if line.strip() == "failures:":
+            in_failures = True
         m = re.match(r"test (.+?) \.\.\. (ok|FAILED|ignored)\b", line)
-        if m and binary:
+        if m and binary and not in_failures:
             results["%s::%s::%s" % (crate, binary, m.group(1))] = m.group(2)
     return results
 
 
-def parse_bun(text):
-    """`bun test` output -> {"file::test": "pass"|"fail"|"skip"}."""
-    results, current = {}, None
-    for line in ANSI.sub("", text).splitlines():
-        m = re.match(r"^(\S.*\.test\.tsx?):$", line)
-        if m:
-            current = m.group(1)
-            continue
-        m = re.match(r"^\((pass|fail|skip|todo)\) (.+?)(?: \[[\d.]+m?s\])?$", line)
-        if m and current:
-            results["%s::%s" % (current, m.group(2))] = "skip" if m.group(1) == "todo" else m.group(1)
+def parse_junit(xml_text):
+    """bun's JUnit report -> {"file::describe > name": "pass"|"fail"|"skip"}. Bun prints no (pass) lines to a pipe."""
+    results = {}
+    for tc in ET.fromstring(xml_text).iter("testcase"):
+        name = tc.get("name", "")
+        if tc.get("classname"):
+            name = tc.get("classname") + " > " + name
+        if tc.find("failure") is not None or tc.find("error") is not None:
+            status = "fail"
+        elif tc.find("skipped") is not None:
+            status = "skip"
+        else:
+            status = "pass"
+        tid = "%s::%s" % (tc.get("file", ""), name)
+        if results.get(tid) != "fail":  # a repeated name fails if any copy fails
+            results[tid] = status
     return results
 
 
@@ -173,12 +185,18 @@ def run(args, cwd, out_file, timeout, env=None):
 
 
 def run_hidden(repo, commits, clone, spec, out, timeout):
-    """Run every crate's tests (and bun for ui) in `clone`; return the hidden tests' results."""
-    results, last = {}, commits[-1]
+    """Run every crate's tests (and bun for ui) in `clone`.
+
+    Returns (results of the hidden tests, problems), where a problem is a command that did not finish
+    (bun install failed, a timeout). A crate that does not build shows up as hidden files without tests.
+    """
+    results, problems, last = {}, [], commits[-1]
     for crate, paths in sorted(spec["crates"].items()):
         pkg = package_name(repo, last, crate)
-        _, text = run(["cargo", "test", "-p", pkg, "--locked", "--no-fail-fast"], clone,
-                      os.path.join(out, "raw-cargo-%s.txt" % pkg), timeout)
+        code, text = run(["cargo", "test", "-p", pkg, "--locked", "--no-fail-fast"], clone,
+                         os.path.join(out, "raw-cargo-%s.txt" % pkg), timeout)
+        if code is None:
+            problems.append("cargo test -p %s timed out" % pkg)
         wanted = hidden_binaries(paths)
         for tid, status in parse_cargo(text, pkg).items():
             binary = tid.split("::")[1]
@@ -186,17 +204,56 @@ def run_hidden(repo, commits, clone, spec, out, timeout):
                 results[tid] = status
     if spec["ui_files"]:
         ui = os.path.join(clone, "ui")
-        run(["bun", "install", "--frozen-lockfile"], ui, os.path.join(out, "raw-bun-install.txt"), timeout)
-        _, text = run(["bun", "test"] + spec["ui_files"], ui, os.path.join(out, "raw-bun-test.txt"), timeout)
-        results.update(parse_bun(text))
-    return results
+        code, _ = run(["bun", "install", "--frozen-lockfile"], ui, os.path.join(out, "raw-bun-install.txt"), timeout)
+        if code != 0:
+            problems.append("bun install --frozen-lockfile failed (exit %s)" % code)
+        report = os.path.join(out, "raw-bun-junit.xml")
+        if os.path.exists(report):
+            os.remove(report)
+        run(["bun", "test", "--reporter=junit", "--reporter-outfile=" + report] + spec["ui_files"], ui,
+            os.path.join(out, "raw-bun-test.txt"), timeout)
+        if os.path.exists(report):
+            try:
+                with open(report) as f:
+                    for tid, status in parse_junit(f.read()).items():
+                        if tid.split("::")[0] in spec["ui_files"]:
+                            results[tid] = status
+            except ET.ParseError as e:
+                problems.append("bun's JUnit report does not parse: %s" % e)
+        else:
+            problems.append("bun wrote no JUnit report")
+    return results, problems
 
 
-# ---------- the run's working tree ----------
+def files_without_passing_tests(repo, commits, spec, results):
+    """Hidden files that contribute no passing test. A file in a sub-folder of tests/ (support code)
+    has no binary of its own, so its crate must pass at least one integration test."""
+    ok = {t for t, s in results.items() if passed(s)}
+    missing = []
+    for crate, paths in sorted(spec["crates"].items()):
+        pkg = package_name(repo, commits[-1], crate)
+        for p in paths:
+            rest = p.split("/tests/", 1)[1]
+            prefix = "%s::tests/%s::" % (pkg, rest) if "/" not in rest else "%s::tests/" % pkg
+            if not any(t.startswith(prefix) for t in ok):
+                missing.append(p)
+    for p in spec["ui_files"]:
+        if not any(t.startswith(p + "::") for t in ok):
+            missing.append("ui/" + p)
+    return missing
 
-def snapshot(clone, parent, diff_args):
-    """git diff of the clone's whole working tree against `parent`: committed, staged, unstaged and
-    untracked files, ignored files left out. A temporary index keeps the clone's own index untouched."""
+
+# ---------- the run's work ----------
+
+def snapshot(clone, parent, diff_args, ref=None):
+    """git diff of the run's work against `parent`, teamwire files left out.
+
+    Without `ref`: the clone's whole working tree (committed, staged, unstaged and untracked files,
+    ignored files left out), through a temporary index so the clone's own index is untouched.
+    With `ref`: that branch or sha's tree; the working tree is not used.
+    """
+    if ref:
+        return common.git(clone, "diff", "--no-renames", *diff_args, parent, ref, "--", ".", *TEAMWIRE_EXCLUDES)
     with tempfile.TemporaryDirectory() as d:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(d, "index"))
         common.git(clone, "read-tree", parent, env=env)
@@ -204,40 +261,88 @@ def snapshot(clone, parent, diff_args):
         return common.git(clone, "diff", "--cached", "--no-renames", *diff_args, parent, env=env)
 
 
-def outside_files(clone, parent, original_paths):
-    changed = snapshot(clone, parent, ["--name-only"]).split("\n")
+def outside_files(clone, parent, original_paths, ref=None):
+    changed = snapshot(clone, parent, ["--name-only"], ref).split("\n")
     return sorted(p for p in changed if p and p not in original_paths)
 
 
-def gate(clone, parent, out, timeout):
+def parse_gate(text):
+    steps = [{"n": int(m.group(1)), "name": m.group(3), "result": m.group(4)}
+             for m in re.finditer(r"^gate (\d+)/(\d+) (\w+): (ok|FAILED)", ANSI.sub("", text), re.M)]
+    return {"steps": steps, "last_step": steps[-1]["name"] if steps else None,
+            "reached_tidy": any(s["name"] == "tidy" for s in steps),
+            "flagged_lines": [l.strip() for l in ANSI.sub("", text).splitlines() if GATE_FLAGS.search(l)]}
+
+
+def gate(copy, parent, out, timeout):
     # TEAMWIRE_BASE: a bundle clone has no main or origin/main, and the gate exits 1 without it.
-    code, text = run(["scripts/gate.sh", "fast"], clone, os.path.join(out, "raw-gate.txt"), timeout,
+    code, text = run(["scripts/gate.sh", "fast"], copy, os.path.join(out, "raw-gate.txt"), timeout,
                      env=dict(os.environ, TEAMWIRE_BASE=parent))
-    return {"exit": code, "flagged_lines": [l.strip() for l in ANSI.sub("", text).splitlines() if GATE_FLAGS.search(l)]}
+    return dict(parse_gate(text), exit=code)
+
+
+def make_grading_copy(clone, parent, dest, ref, binary_diff):
+    """A throwaway copy of the agent's tree, so grading never writes into the run's clone.
+
+    The copy is a local clone of the run's clone, checked out at the agent's ref, or at the parent with
+    the working-tree diff applied. The agent's own scripts/ and xtask/ are replaced by the parent's:
+    the gate must run the parent's checks, not ones the agent rewrote.
+    """
+    common.git(os.path.dirname(dest), "clone", "--quiet", "--local", "--no-checkout", clone, dest)
+    common.git(dest, "checkout", "--quiet", "--detach", ref or parent)
+    if not ref:
+        patch = os.path.join(os.path.dirname(dest), "work.patch")
+        with open(patch, "w") as f:
+            f.write(binary_diff)
+        if binary_diff:
+            common.git(dest, "apply", "--whitespace=nowarn", patch)
+    for d in ("scripts", "xtask"):
+        shutil.rmtree(os.path.join(dest, d), ignore_errors=True)
+        if common.git(dest, "ls-tree", "--name-only", parent, d).strip():
+            common.git(dest, "checkout", parent, "--", d)
 
 
 # ---------- commands ----------
 
+def cherry_picked_clone(repo, commits, dest):
+    """A clone at the first commit's parent with the task commits cherry-picked in order: the tree the
+    run's agent is asked to reach. (The reference is the grader's own; it need not be leak-free.)"""
+    env = dict(os.environ, GIT_COMMITTER_NAME="bench", GIT_COMMITTER_EMAIL="bench@localhost",
+               GIT_AUTHOR_NAME="bench", GIT_AUTHOR_EMAIL="bench@localhost")
+    parent = common.git(repo, "rev-parse", "--verify", commits[0] + "^").strip()
+    common.git(os.path.dirname(dest), "clone", "--quiet", "--local", "--no-checkout", repo, dest)
+    common.git(dest, "checkout", "--quiet", "--detach", parent)
+    for c in commits:
+        try:
+            common.git(dest, "cherry-pick", c, env=env)
+        except RuntimeError:
+            common.git(dest, "cherry-pick", "--abort", check=False, env=env)
+            raise SystemExit("error: commit %s does not apply cleanly on the parent %s plus the commits before it" % (c, parent[:12]))
+    return parent
+
+
 def cmd_reference(a):
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
-    spec = hidden_spec(a.repo, a.commit)
+    commits = [common.git(a.repo, "rev-parse", "--verify", c + "^{commit}").strip() for c in a.commit]
+    spec = hidden_spec(a.repo, commits)
     if not spec["files"]:
         raise SystemExit("error: the commits add or change no test-only file")
     base = tempfile.mkdtemp(prefix="bench-ref-")
-    dest = os.path.join(os.path.realpath(base), "clone")
     try:
-        clonemod.make_clone(a.repo, a.commit[-1], dest)
-        copy_hidden(a.repo, spec, dest)
-        results = run_hidden(a.repo, a.commit, dest, spec, out, a.timeout)
+        dest = os.path.join(os.path.realpath(base), "clone")
+        cherry_picked_clone(a.repo, commits, dest)
+        results, problems = run_hidden(a.repo, commits, dest, spec, out, a.timeout)
     finally:
         if not a.keep:
             shutil.rmtree(base, ignore_errors=True)
+    missing = files_without_passing_tests(a.repo, commits, spec, results)
+    if problems or missing:
+        raise SystemExit("error: the reference run is not usable (raw output in %s)\n%s" % (out, "\n".join(
+            ["  " + p for p in problems] + ["  hidden file with no passing test: " + m for m in missing])))
     expected = sorted(t for t, s in results.items() if passed(s))
-    if not expected:
-        raise SystemExit("error: zero hidden tests passed in the reference run (found %d); see raw output in %s" % (len(results), out))
     with open(os.path.join(out, "expected.json"), "w") as f:
-        json.dump({"commits": a.commit, "hidden_files": [p for _, p in spec["files"]], "expected": expected,
+        json.dump({"commits": commits, "hidden_files": [p for _, p in spec["files"]], "expected": expected,
                    "not_passing_in_reference": sorted(t for t in results if t not in expected)}, f, indent=2)
         f.write("\n")
     print("expected set: %d hidden tests pass in the reference clone (%d did not); written to %s" % (
@@ -250,28 +355,41 @@ def cmd_score(a):
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(a.run_dir, "run.json")) as f:
         run_info = json.load(f)
-    clone, parent = run_info["clone"], run_info["parent"]
+    commits = [common.git(a.repo, "rev-parse", "--verify", c + "^{commit}").strip() for c in a.commit]
     with open(a.expected) as f:
-        expected = json.load(f)["expected"]
-    spec = hidden_spec(a.repo, a.commit)
-    # Order matters: the outside-files list, the diff and the gate see the agent's work only.
-    # Copying the hidden tests in comes last because it changes files.
-    outside = outside_files(clone, parent, changed_by_commits(a.repo, a.commit))
-    diff = snapshot(clone, parent, [])
+        expected_info = json.load(f)
+    if expected_info["commits"] != commits or run_info.get("commits") != commits:
+        raise SystemExit("error: the task commits differ: --commit %s, expected.json %s, run.json %s" % (
+            [c[:8] for c in commits], [c[:8] for c in expected_info["commits"]], [c[:8] for c in run_info.get("commits") or []]))
+    clone, parent = run_info["clone"], run_info["parent"]
+    ref = None if a.ref == "HEAD" else common.git(clone, "rev-parse", "--verify", a.ref + "^{commit}").strip()
+    spec = hidden_spec(a.repo, commits)
+    # The run's clone is only read. The outside-files list and the diff come from it untouched;
+    # the gate and the tests run in a throwaway copy that gets the hidden tests.
+    outside = outside_files(clone, parent, changed_by_commits(a.repo, commits), ref)
+    diff = snapshot(clone, parent, [], ref)
     with open(os.path.join(out, "diff.patch"), "w") as f:
         f.write(diff)
-    gate_result = gate(clone, parent, out, a.timeout)
-    copy_hidden(a.repo, spec, clone)
-    results = run_hidden(a.repo, a.commit, clone, spec, out, a.timeout)
-    tests = score_tests(expected, results)
-    score = {"task": run_info["task"], "setup": run_info["setup"], "parent": parent, "commits": a.commit,
+    with tempfile.TemporaryDirectory(prefix="bench-grade-") as tmp:
+        copy = os.path.join(os.path.realpath(tmp), "copy")
+        make_grading_copy(clone, parent, copy, ref, "" if ref else snapshot(clone, parent, ["--binary"]))
+        gate_result = gate(copy, parent, out, a.timeout)
+        copy_hidden(a.repo, spec, copy)
+        results, problems = run_hidden(a.repo, commits, copy, spec, out, a.timeout)
+    tests = score_tests(expected_info["expected"], results)
+    warnings = (["the diff is empty: nothing to grade (is the result on another branch? use --ref)"] if not diff.strip() else []) + problems
+    score = {"task": run_info["task"], "setup": run_info["setup"], "parent": parent, "commits": commits, "ref": a.ref,
              "hidden_passed": sum(1 for v in tests.values() if v == "pass"), "hidden_total": len(tests),
-             "tests": tests, "gate": gate_result, "outside_files": outside, "diff_lines": diff.count("\n")}
+             "tests": tests, "gate": gate_result, "outside_files": outside, "diff_lines": diff.count("\n"),
+             "warnings": warnings}
     with open(os.path.join(out, "score.json"), "w") as f:
         json.dump(score, f, indent=2)
         f.write("\n")
-    print("%s/%s: hidden tests %d/%d, gate exit %s, %d files outside the task" % (
-        score["task"], score["setup"], score["hidden_passed"], score["hidden_total"], gate_result["exit"], len(outside)))
+    print("%s/%s: hidden tests %d/%d, gate exit %s (last step %s), %d files outside the task" % (
+        score["task"], score["setup"], score["hidden_passed"], score["hidden_total"], gate_result["exit"],
+        gate_result["last_step"], len(outside)))
+    for w in warnings:
+        print("WARNING: " + w)
     return 0
 
 
@@ -304,10 +422,14 @@ def cmd_blind(a):
         f.write(RUBRIC)
     with open(os.path.join(out, "order.txt"), "w") as f:
         f.write("\n".join(order) + "\n")
-    with open(os.path.join(out, "key.json"), "w") as f:  # the grader never reads this file
+    key_out = os.path.abspath(a.key_out)
+    if key_out == out or key_out.startswith(out + os.sep):
+        raise SystemExit("error: --key-out must be outside --out (%s)" % out)
+    os.makedirs(os.path.dirname(key_out), exist_ok=True)
+    with open(key_out, "w") as f:
         json.dump(key, f, indent=2)
         f.write("\n")
-    print("%d diffs written to %s/diffs; order in order.txt, key in key.json" % (len(runs), out))
+    print("%d diffs written to %s/diffs; order in order.txt; key in %s" % (len(runs), out, key_out))
     return 0
 
 
@@ -326,12 +448,15 @@ def main(argv=None):
             p.add_argument("--keep", action="store_true", help="keep the temporary clone")
         else:
             p.add_argument("--run-dir", required=True, help="folder that clone.py made (holds run.json and clone/)")
+            p.add_argument("--ref", default="HEAD", help="branch or sha in the run's clone that holds the result; "
+                           "HEAD (default) grades the clone's working tree")
             p.add_argument("--expected", required=True, help="expected.json from the reference command")
     p = sub.add_parser("blind")
     p.add_argument("--runs", nargs="+", required=True, help="result folders of graded runs (each holds score.json and diff.patch)")
     p.add_argument("--brief", action="append", required=True, help="TASK=path to that task's brief; repeat per task")
     p.add_argument("--seed", type=int, help="fixes the ids and the order")
     p.add_argument("--out", default=os.path.join(here, "results", "blind"))
+    p.add_argument("--key-out", required=True, help="where to write key.json; keep it outside --out, where the grader reads")
     a = ap.parse_args(argv)
     return {"reference": cmd_reference, "score": cmd_score, "blind": cmd_blind}[a.cmd](a)
 

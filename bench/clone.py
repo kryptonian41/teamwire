@@ -86,14 +86,28 @@ def make_clone(repo, parent, dest):
     return parent
 
 
-def write_run_files(base, clone, task, setup, parent):
+def task_parent(repo, commits):
+    """The parent of the first task commit. Refuses when any task commit is already in that parent's
+    history: `git show <commit>` in the clone would print the answer."""
+    commits = [common.git(repo, "rev-parse", "--verify", c + "^{commit}").strip() for c in commits]
+    parent = common.git(repo, "rev-parse", "--verify", commits[0] + "^").strip()
+    for c in commits:
+        try:
+            common.git(repo, "merge-base", "--is-ancestor", c, parent)
+        except RuntimeError:
+            continue
+        raise LeakError("task commit %s is in the history of the parent %s: the clone would hold the answer" % (c[:12], parent[:12]))
+    return commits, parent
+
+
+def write_run_files(base, clone, task, setup, parent, commits):
     settings = os.path.join(base, "settings.json")
     with open(settings, "w") as f:
         json.dump({"enabledPlugins": {"claude-mem@thedotmack": False}}, f, indent=2)
         f.write("\n")
     run = os.path.join(base, "run.json")
     with open(run, "w") as f:
-        json.dump({"task": task, "setup": setup, "parent": parent, "clone": clone,
+        json.dump({"task": task, "setup": setup, "parent": parent, "commits": commits, "clone": clone,
                    "started_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
                   f, indent=2)
         f.write("\n")
@@ -104,21 +118,27 @@ def main(argv=None):
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo", default=os.path.dirname(here), help="source repository (read only)")
-    ap.add_argument("--parent", required=True, help="the task commit's parent: the newest commit the run may see")
+    ap.add_argument("--commit", action="append", required=True,
+                    help="a task commit; repeat for a task of several, oldest first. The clone ends at the first one's parent")
     ap.add_argument("--task", required=True, help="task id, for run.json")
     ap.add_argument("--setup", required=True, help="setup name, for run.json")
-    ap.add_argument("--dir", help="folder to create for the run (default: a new folder under the temp directory)")
+    ap.add_argument("--root", required=True,
+                    help="folder that holds all runs; each run gets a new random sub-folder named bn<random>")
     a = ap.parse_args(argv)
 
-    base = a.dir or tempfile.mkdtemp(prefix="bench-%s-%s-" % (a.task, a.setup))
-    os.makedirs(base, exist_ok=True)
-    clone = os.path.join(os.path.realpath(base), "clone")
     try:
-        parent = make_clone(a.repo, a.parent, clone)
+        commits, parent = task_parent(a.repo, a.commit)
+        os.makedirs(a.root, exist_ok=True)
+        # A random name: an agent that lists the runs folder learns nothing about the task or setup.
+        base = tempfile.mkdtemp(prefix="bn", dir=a.root)
+        clone = os.path.join(os.path.realpath(base), "clone")
+        make_clone(a.repo, parent, clone)
     except (LeakError, RuntimeError) as e:
+        if "base" in locals():
+            shutil.rmtree(base, ignore_errors=True)
         print("clone failed: %s" % e, file=sys.stderr)
         return 1
-    settings, run = write_run_files(os.path.realpath(base), clone, a.task, a.setup, parent)
+    settings, run = write_run_files(os.path.realpath(base), clone, a.task, a.setup, parent, commits)
     print("clone:    %s (branch bench at %s)\nsettings: %s\nrun.json: %s" % (clone, parent[:12], settings, run))
     return 0
 

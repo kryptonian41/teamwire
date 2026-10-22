@@ -62,19 +62,38 @@ class Clone(unittest.TestCase):
             clone.verify_clone(dest, self.c2)
 
     def test_main_writes_settings_and_run_json_outside_the_clone(self):
-        base = os.path.join(self.d.name, "run1")
+        root = os.path.join(self.d.name, "runs")
         with contextlib.redirect_stdout(io.StringIO()):
-            self.assertEqual(clone.main(["--repo", self.repo, "--parent", self.c2, "--task", "t1", "--setup", "solo", "--dir", base]), 0)
+            self.assertEqual(clone.main(["--repo", self.repo, "--commit", self.c3, "--task", "t1", "--setup", "solo", "--root", root]), 0)
+        (base,) = os.listdir(root)
+        self.assertTrue(base.startswith("bn"))
+        self.assertNotIn("solo", base)
+        base = os.path.join(root, base)
         self.assertEqual(self.load(os.path.join(base, "settings.json")), {"enabledPlugins": {"claude-mem@thedotmack": False}})
         run = self.load(os.path.join(base, "run.json"))
-        self.assertEqual((run["task"], run["setup"], run["parent"]), ("t1", "solo", self.c2))
+        self.assertEqual((run["task"], run["setup"], run["parent"], run["commits"]), ("t1", "solo", self.c2, [self.c3]))
         self.assertEqual(run["clone"], os.path.join(os.path.realpath(base), "clone"))
         self.assertRegex(run["started_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
         self.assertTrue(os.path.isdir(os.path.join(run["clone"], ".git")))
 
-    def test_main_fails_on_an_unknown_parent(self):
+    def test_two_runs_get_different_random_folders(self):
+        root = os.path.join(self.d.name, "runs")
+        with contextlib.redirect_stdout(io.StringIO()):
+            for setup in ("solo", "team"):
+                clone.main(["--repo", self.repo, "--commit", self.c3, "--task", "t", "--setup", setup, "--root", root])
+        self.assertEqual(len(os.listdir(root)), 2)
+
+    def test_refuses_when_a_task_commit_is_in_the_parents_history(self):
+        # c1 is an ancestor of c2, the parent of c3: a clone for [c3, c1] would let `git show c1` print it
+        root = os.path.join(self.d.name, "runs")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(clone.main(["--repo", self.repo, "--commit", self.c3, "--commit", self.c1, "--task", "t", "--setup", "s", "--root", root]), 1)
+        self.assertIn(self.c1[:12], err.getvalue())
+        self.assertFalse(os.path.exists(root))  # refused before any folder is made
+
+    def test_main_fails_on_an_unknown_commit(self):
         with contextlib.redirect_stderr(io.StringIO()):
-            self.assertEqual(clone.main(["--repo", self.repo, "--parent", "0" * 40, "--task", "t", "--setup", "s", "--dir", os.path.join(self.d.name, "r")]), 1)
+            self.assertEqual(clone.main(["--repo", self.repo, "--commit", "0" * 40, "--task", "t", "--setup", "s", "--root", os.path.join(self.d.name, "r")]), 1)
 
 
 if __name__ == "__main__":
