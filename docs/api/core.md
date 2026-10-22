@@ -220,6 +220,9 @@ pub trait Host: Send + Sync {
     /// Who occupies `place`: a session id if the host knows it, else process ids.
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError>;
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
+    /// `read_tail` with the SGR style codes kept (herdr `--format ansi`, tmux
+    /// `capture-pane -e`). Default: the plain tail.
+    fn read_tail_styled(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError>;
     /// Close `place` only if the agent in it is `expected`. A place that holds
     /// another agent, or none, is left alone and reported `NotFound`: a place
@@ -284,15 +287,17 @@ pub trait Harness: Send + Sync {
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
-    /// box, showing a dialog, or unknown. A box holding text (other than
-    /// Claude's one `Try "..."` placeholder) is `Unknown`, so delivery waits
-    /// and then refuses with `not_at_input_prompt`.
+    /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
+    /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
+    /// dim (a placeholder or a prompt suggestion) does not count.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether a line just submitted still sits unsent in the input box.
     /// Default false, so a harness that cannot tell gets no second Enter.
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool;
     /// Whether `box_holds_text` can tell anything. Delivery on a host that
     /// guards dialogs reads the screen only when this is true. Default false.
+    /// Delivery gives such a harness screens from `Host::read_tail_styled`,
+    /// in `screen_state` and `box_holds_text` both.
     fn reads_input_box(&self) -> bool;
     /// Whether the input box shown by `tail` holds text. Delivery waits while
     /// it does, on every host. Default false.

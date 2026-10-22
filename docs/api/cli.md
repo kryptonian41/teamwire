@@ -477,8 +477,9 @@ it with `resend`. `--type reprompt` (lead only) starts the member's next
 generation and says whether a watch is running, or that it could not tell.
 On every host, delivery waits while the recipient's Claude input box holds
 text, and reports `undelivered` with `not_at_input_prompt` if the text stays
-after 3 reads. Claude's grey suggestion text reads as text too, except the
-`Try "..."` placeholder. A resume with the same `--key` retries a recipient
+after 3 reads. Delivery reads the box with its style codes, and text Claude
+draws dim does not count: a prompt suggestion, the `Press up to edit queued
+messages` hint, the `Try "..."` placeholder. A resume with the same `--key` retries a recipient
 only when no other command is delivering it, as `resend` does. A recipient whose
 latest attempt began under 60 s ago with no outcome since, in any state, is
 `skipped`, and each retry is counted and written as `delivery.resent` in one

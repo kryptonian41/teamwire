@@ -199,10 +199,11 @@ fn at_input_prompt(last: &[&str]) -> bool {
 
 /// The state delivery acts on: `classify`, except that an input box holding
 /// text is `Unknown`, so a line is never appended to what a person half
-/// typed. Claude's grey suggestion text reads the same as typed text in a
-/// plain capture, so a suggestion also delays a delivery until it clears.
+/// typed. `tail` may carry style codes: `classify` reads it with dim text
+/// kept, since a dialog's dim hint still marks a dialog, and the box check
+/// drops dim text.
 pub(crate) fn delivery_state(tail: &str) -> ScreenState {
-    let state = classify(tail);
+    let state = classify(&visible(tail, true));
     if state == ScreenState::InputPrompt && box_holds_text(tail) {
         ScreenState::Unknown
     } else {
@@ -212,9 +213,13 @@ pub(crate) fn delivery_state(tail: &str) -> ScreenState {
 
 /// Whether the last pointer line near the end of the screen, the input box,
 /// holds text. Delivery checks it on every host, since a host that guards
-/// dialogs still types after what a person left in the box.
+/// dialogs still types after what a person left in the box. Dim text does
+/// not count: Claude draws its placeholders dim, such as `Press up to edit
+/// queued messages` while lines wait and a prompt suggestion after a turn,
+/// and draws what a person types plain. A suggestion stays until someone
+/// types, so reading it as text would refuse every line to an idle lead.
 pub(crate) fn box_holds_text(tail: &str) -> bool {
-    last_lines(tail)
+    last_lines(&visible(tail, false))
         .into_iter()
         .rev()
         .find_map(pointer_rest)
@@ -222,9 +227,10 @@ pub(crate) fn box_holds_text(tail: &str) -> bool {
 }
 
 /// Whether the box's text is more than the `Try "…"` placeholder an empty
-/// box shows.
-// shortcut: a person who types exactly `Try "…"` is read as an empty box.
-// Upgrade with a styled capture, which tells the dim placeholder apart.
+/// box shows. A styled screen drops the placeholder as dim text already; this
+/// covers a host that gives only plain text.
+// shortcut: on a plain-text host, a person who types exactly `Try "…"` is
+// read as an empty box. Upgrade when such a host can give styles.
 fn holds_text(text: &str) -> bool {
     let placeholder = text
         .strip_prefix("Try \"")
@@ -250,4 +256,76 @@ pub(crate) fn classify(tail: &str) -> ScreenState {
     } else {
         ScreenState::Unknown
     }
+}
+
+/// The text of `tail` with the terminal's escape codes taken out, so a
+/// screen read with its styles parses as a plain one. With `keep_dim` false,
+/// text drawn dim (SGR 2) is dropped too. A plain screen comes back as it was.
+pub(crate) fn visible(tail: &str, keep_dim: bool) -> String {
+    let mut out = String::with_capacity(tail.len());
+    let mut dim = false;
+    let mut chars = tail.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            if keep_dim || !dim || c == '\n' {
+                out.push(c);
+            }
+            continue;
+        }
+        match chars.next() {
+            // CSI: parameter and intermediate bytes, then one final byte.
+            Some('[') => {
+                let mut params = String::new();
+                for c in chars.by_ref() {
+                    if ('\u{40}'..='\u{7e}').contains(&c) {
+                        if c == 'm' {
+                            dim = sgr_dim(&params, dim);
+                        }
+                        break;
+                    }
+                    params.push(c);
+                }
+            }
+            // OSC, such as a hyperlink: up to BEL, or ESC and one more byte.
+            Some(']') => {
+                while let Some(c) = chars.next() {
+                    if c == '\u{7}' {
+                        break;
+                    }
+                    if c == '\u{1b}' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            // A two-byte escape.
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether text is dim after an SGR sequence with `params`, given `dim`
+/// before it.
+fn sgr_dim(params: &str, mut dim: bool) -> bool {
+    let mut codes = params.split(';');
+    while let Some(code) = codes.next() {
+        // A colon sub-parameter belongs to its code: `4:3` is code 4.
+        match code.split(':').next().unwrap_or_default() {
+            "" | "0" | "22" => dim = false,
+            "2" => dim = true,
+            // An extended colour, `5;n` or `2;r;g;b`, whose `2` is not dim.
+            "38" | "48" | "58" if !code.contains(':') => match codes.next() {
+                Some("5") => {
+                    codes.next();
+                }
+                Some("2") => {
+                    codes.nth(2);
+                }
+                _ => {}
+            },
+            _ => {}
+        }
+    }
+    dim
 }

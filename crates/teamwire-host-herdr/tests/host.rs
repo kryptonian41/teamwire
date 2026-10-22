@@ -173,6 +173,23 @@ fn read_tail_returns_the_screen_lines() {
 }
 
 #[test]
+fn the_styled_tail_asks_herdr_for_ansi_and_the_plain_tail_for_text() {
+    let world = World::new();
+    let place = started(&world, "tw_demo_api", "API");
+    world.herdr.read_tail(&place, 50, T).unwrap();
+    world.herdr.read_tail_styled(&place, 50, T).unwrap();
+    let formats: Vec<String> = calls(&world)
+        .iter()
+        .filter(|c| c[..2] == ["agent", "read"])
+        .map(|c| {
+            let at = c.iter().position(|a| a == "--format").unwrap();
+            c[at + 1].clone()
+        })
+        .collect();
+    assert_eq!(formats, ["text", "ansi"]);
+}
+
+#[test]
 fn send_keys_maps_each_key_to_herdrs_name() {
     let world = World::new();
     let place = started(&world, "tw_demo_api", "API");

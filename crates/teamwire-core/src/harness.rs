@@ -69,7 +69,9 @@ pub trait Harness: Send + Sync {
     }
     /// Whether `box_holds_text` can tell anything. Delivery on a host that
     /// guards dialogs reads the screen only when it can, so a harness that
-    /// cannot costs no extra read. Default `false`.
+    /// cannot costs no extra read. Default `false`. Delivery gives a harness
+    /// that reads the box its screens from `Host::read_tail_styled`, in
+    /// `screen_state` and `box_holds_text` both, so they must parse style codes.
     fn reads_input_box(&self) -> bool {
         false
     }
