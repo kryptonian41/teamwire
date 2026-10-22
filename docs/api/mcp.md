@@ -73,7 +73,7 @@ Input:
   "team": "tw",                    // lead only; members use their own team
   "to": ["harness", "db@billing"],  // roles or "lead"; another team's as role@team or lead@team
   "type": "finding",
-  "text": "…",
+  "text": "…",                    // at most 600 characters for a notice, 800 for a finding, question or answer
   "commit": "abc1234",             // required for notice
   "re": "m012",                    // required for answer
   "key": "optional-idempotency-key"

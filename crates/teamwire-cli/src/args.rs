@@ -279,6 +279,8 @@ pub(crate) struct SendArgs {
     /// notice, finding, question, answer, reprompt or note.
     #[arg(long = "type", value_name = "TYPE")]
     pub(crate) kind: String,
+    /// The message: at most 600 characters for a notice, 800 for a finding,
+    /// question or answer.
     #[arg(long, value_name = "TEXT")]
     pub(crate) text: Option<String>,
     /// Read the message text from PATH.

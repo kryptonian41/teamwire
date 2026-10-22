@@ -6,6 +6,9 @@ TALKING TO THE TEAM
     {teamwire} send --to <role or lead> \
         --type <type> --text "..."
   The roster in your brief lists the other members' roles.
+- A notice holds at most 600 characters; a finding, question or
+  answer at most 800. Send refuses a longer one as too_long. Put
+  long detail in your report file and say where it is.
 - A message to you arrives as one line typed into your session. Read
   its full text with the MCP tool `team_inbox`
   (`mcp__teamwire__team_inbox`; if your tools load on request, load it
