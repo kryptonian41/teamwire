@@ -78,6 +78,19 @@ class Cost(unittest.TestCase):
         r = self.result()
         self.assertEqual((r["claude_total_cost_usd"], r["difference_usd"]), (3.5, 0.5))
 
+    def test_a_transcript_from_an_earlier_run_at_the_same_path_is_left_out(self):
+        def at(ts, i):
+            return json.dumps({"type": "assistant", "cwd": self.clone, "timestamp": ts, "message": {
+                "id": i, "model": "claude-opus-5-5", "usage": {"input_tokens": 1_000_000, "output_tokens": 0}}})
+        self.write("p1/old.jsonl", at("2026-10-22T09:00:00.000Z", "old"))
+        self.write("p1/new.jsonl", at("2026-10-22T11:00:00.000Z", "new"))
+        self.write("p1/same-second.jsonl", at("2026-10-22T10:00:00.250Z", "edge"))
+        self.write("p1/extra.jsonl", at("2026-10-22T08:00:00.000Z", "extra"))
+        with open(os.path.join(os.path.dirname(self.clone), "run.json"), "w") as f:
+            json.dump({"started_at": "2026-10-22T10:00:00Z"}, f)
+        self.run_cost("--session", "extra")  # a session named by flag is always taken
+        self.assertAlmostEqual(self.result()["total_usd"], 3 * 4.0)  # new, edge, extra
+
     def test_unknown_model_fails_and_names_the_id(self):
         self.write("p1/lead.jsonl", msg("m1", self.clone, "claude-mystery-9"))
         code, err = self.run_cost()

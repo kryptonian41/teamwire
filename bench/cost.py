@@ -2,7 +2,8 @@
 """Price every transcript a benchmark run produced (plan 5.5).
 
 A transcript belongs to the run when any of its lines has a `cwd` equal to the clone or under it
-(teamwire members work in <clone>/.worktrees/...). Subagent transcripts beside such a session count too.
+(teamwire members work in <clone>/.worktrees/...).
+When run.json sits beside the clone, a transcript that began before its `started_at` is left out. Subagent transcripts beside such a session count too.
 Use --session for a member whose cwd is elsewhere. Each assistant message id is counted once across all files.
 Reads ~/.claude/projects only; writes one JSON file under --out-dir.
 """
@@ -14,8 +15,18 @@ import sys
 import common
 
 
-def find_transcripts(projects, clone, sessions=()):
-    """Return the sorted transcript paths of a run: by cwd under `clone`, by session id, and their subagents."""
+def started_before(path, since):
+    """True when the transcript's first line is older than `since` (to the second): an earlier run at the same path."""
+    first = common.transcript_first_ts(path)
+    return bool(since and first and first[:19] < since[:19])
+
+
+def find_transcripts(projects, clone, sessions=(), since=None):
+    """Return the sorted transcript paths of a run: by cwd under `clone`, by session id, and their subagents.
+
+    A transcript found by cwd whose first line is older than `since` belongs to an earlier run that used
+    the same path, and is left out. A session named in `sessions` is always taken.
+    """
     clone = os.path.realpath(clone)
     wanted = set(sessions)
     found = set()
@@ -26,7 +37,7 @@ def find_transcripts(projects, clone, sessions=()):
             if e.is_file() and e.name.endswith(".jsonl"):
                 cwd = common.transcript_cwd(e.path)
                 inside = bool(cwd) and (os.path.realpath(cwd) == clone or os.path.realpath(cwd).startswith(clone + os.sep))
-                if inside or e.name[:-6] in wanted:
+                if inside and not started_before(e.path, since) or e.name[:-6] in wanted:
                     found.add(e.path)
                     found.update(_subagents(os.path.join(proj.path, e.name[:-6])))
             elif e.is_dir() and e.name in wanted:
@@ -37,7 +48,8 @@ def find_transcripts(projects, clone, sessions=()):
             for e in os.scandir(proj.path):
                 for p in _subagents(e.path) if e.is_dir() else []:
                     cwd = common.transcript_cwd(p)
-                    if cwd and (os.path.realpath(cwd) == clone or os.path.realpath(cwd).startswith(clone + os.sep)):
+                    if cwd and (os.path.realpath(cwd) == clone or os.path.realpath(cwd).startswith(clone + os.sep)) \
+                            and not started_before(p, since):
                         found.add(p)
     return sorted(found)
 
@@ -85,7 +97,12 @@ def main(argv=None):
     a = ap.parse_args(argv)
 
     prices = common.load_prices(a.prices)
-    paths = find_transcripts(a.projects, a.clone, a.session)
+    since = None
+    run_json = os.path.join(os.path.dirname(os.path.realpath(a.clone)), "run.json")
+    if os.path.exists(run_json):
+        with open(run_json) as f:
+            since = json.load(f).get("started_at")
+    paths = find_transcripts(a.projects, a.clone, a.session, since)
     if not paths:
         print("error: no transcript has a cwd under %s" % os.path.realpath(a.clone), file=sys.stderr)
         return 1

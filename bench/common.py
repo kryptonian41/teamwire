@@ -106,6 +106,20 @@ def transcript_cwd(path):
     return None
 
 
+def transcript_first_ts(path):
+    """The first `timestamp` a transcript's lines carry, or None."""
+    with open(path, errors="replace") as f:
+        for line in f:
+            if '"timestamp"' in line:
+                try:
+                    t = json.loads(line).get("timestamp")
+                except ValueError:
+                    continue
+                if t:
+                    return t
+    return None
+
+
 def add(into, more):
     for k, v in more.items():
         into[k] = into.get(k, 0) + v
