@@ -63,6 +63,11 @@ class Candidates(unittest.TestCase):
                              "crates/a/tests/t.rs": g.lines(40)}, "edits inline test")
         self.assertEqual(self.run_list(), [])
 
+    def test_added_test_in_any_src_file_disqualifies(self):
+        body = "fn a() {}\n\n    #[test]\n    fn t() {}\n" + g.lines(10)
+        g.commit(self.repo, {"crates/a/src/cmd/member_tests.rs": body, "crates/a/tests/t.rs": g.lines(40)}, "tests in a differently named file")
+        self.assertEqual(self.run_list(), [])
+
     def test_src_edit_above_inline_tests_is_fine(self):
         src = "fn a() {}\n#[cfg(test)]\nmod tests {\n}\n"
         g.commit(self.repo, {"crates/a/src/lib.rs": src}, "base")

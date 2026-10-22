@@ -29,6 +29,9 @@ def touches_inline_tests(repo, sha, path):
     """True when the diff of a non-test-only Rust file edits its unit-test section (from the first #[cfg(test)])."""
     if not path.endswith(".rs"):
         return False
+    # Whatever the file is called, a change that adds a #[test] adds a test outside the test-only files.
+    if re.search(r"^\+\s*#\[(tokio::)?test\b", common.git(repo, "diff", "-U0", "--no-renames", sha + "^", sha, "--", path), re.M):
+        return True
     new = common.git(repo, "show", "%s:%s" % (sha, path), check=False).splitlines()
     start = next((i + 1 for i, l in enumerate(new) if l.strip().startswith("#[cfg(test)]")), None)
     if start is None:
