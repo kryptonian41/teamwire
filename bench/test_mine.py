@@ -69,7 +69,8 @@ class Mine(unittest.TestCase):
         self.add_team("demo-2026-10-20", events=ev, members=[("a", "implementer"), ("b", "implementer"), ("r", "reviewer")],
                       completions=[("a", "done"), ("b", "done"), ("r", "blocked")],
                       messages=[("q1", "question"), ("n1", "note")])
-XX, r["members_reviewer"], r["wall_s"]), ("2", "1", "600.0"))
+        r = self.run_mine()[0]
+        self.assertEqual((r["members_implementer"], r["members_reviewer"], r["wall_s"]), ("2", "1", "600.0"))
         self.assertEqual((r["completions_done"], r["completions_blocked"]), ("2", "1"))
         self.assertEqual((r["reprompts"], r["implementers_reprompted"], r["fix_round_rate"]), ("1", "1", "0.5"))
         self.assertEqual((r["verify_first_pass_share"], r["verify_flags"]), ("0.5", "weakened=2"))
