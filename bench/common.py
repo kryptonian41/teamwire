@@ -144,3 +144,28 @@ def merge_models(per_file):
 
 def total_usd(prices, by_model):
     return sum(usd(prices, m, t) for m, t in by_model.items())
+
+
+def git(repo, *args, check=True, env=None):
+    """Run git in `repo` with an argument list (never a shell); return stdout text."""
+    import subprocess
+    r = subprocess.run(["git", "-C", repo] + list(args), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       universal_newlines=True, env=env)
+    if check and r.returncode != 0:
+        raise RuntimeError("git %s failed in %s: %s" % (" ".join(args), repo, r.stderr.strip()))
+    return r.stdout
+
+
+# Files a task must never touch (AGENTS.md "protected files").
+PROTECTED_FILES = {"Cargo.toml", "Cargo.lock", "clippy.toml", "rustfmt.toml", "rust-toolchain.toml", ".cargo/config.toml"}
+PROTECTED_DIRS = ("scripts/", "xtask/", "tests/fakes/", "docs/adr/")
+
+
+def is_protected(path):
+    return path in PROTECTED_FILES or path.startswith(PROTECTED_DIRS)
+
+
+def is_test_only(path):
+    """A file that holds tests and nothing else: crates/<crate>/tests/**, ui/**/*.test.ts(x)."""
+    import re
+    return bool(re.match(r"crates/[^/]+/tests/.+", path) or re.match(r"ui/.+\.test\.tsx?$", path))
