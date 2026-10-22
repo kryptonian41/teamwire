@@ -29,7 +29,7 @@ COLUMNS = (
        "implementers_reprompted", "fix_round_rate", "verify_first_pass_share", "verify_flags",
        "wakeups_result", "wakeups_question", "wakeups_watch"]
     + ["member_" + t for t in TOKEN_TYPES] + ["member_models", "member_usd"]
-    + ["lead_" + t for t in TOKEN_TYPES] + ["lead_models", "lead_usd", "lead_transcripts", "price_error"]
+    + ["lead_" + t for t in TOKEN_TYPES] + ["lead_models", "lead_usd", "lead_transcripts", "lead_shared_with", "price_error"]
 )
 
 
@@ -171,14 +171,29 @@ def team_row(db_path, archive_name, prices, transcripts):
     for e in events:
         if e["type"] == "team.lead_adopted":
             sessions |= {e["data"].get("old_session"), e["data"].get("new_session")} - {None}
+    end = closed or (events[-1]["time"] if events else created)
+    row["_lead"] = (sessions, created, end)
     files = [p for s in sorted(sessions) for p in transcripts.get(s, [])]
     row["lead_transcripts"] = len(files) if files else ""
     if files:
-        end = closed or events[-1]["time"]
         by_model = common.merge_models(common.collect(files, created, end))
         fill_tokens(row, "lead_", by_model, prices)
     c.close()
     return row
+
+
+def mark_shared_leads(rows):
+    """Name, per team, the other teams whose time windows overlap on the same lead session. The lead
+    tokens of both teams then include the same messages, so a sum over teams counts them twice."""
+    for r in rows:
+        sessions, start, end = r.pop("_lead")
+        r["_mine"] = (sessions, start, end)
+    for r in rows:
+        sessions, start, end = r["_mine"]
+        r["lead_shared_with"] = ";".join(sorted(
+            o["archive"] for o in rows if o is not r and sessions & o["_mine"][0] and start < o["_mine"][2] and o["_mine"][1] < end))
+    for r in rows:
+        del r["_mine"]
 
 
 def main(argv=None):
@@ -206,6 +221,7 @@ def main(argv=None):
             skipped += 1
             continue
         rows.append(team_row(db, d, prices, transcripts))
+    mark_shared_leads(rows)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", newline="") as f:
         w = csv.DictWriter(f, COLUMNS)

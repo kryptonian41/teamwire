@@ -109,6 +109,16 @@ class Mine(unittest.TestCase):
         r = self.run_mine()[0]
         self.assertEqual((r["lead_input"], r["lead_transcripts"]), ("10", "2"))
 
+    def test_teams_that_share_a_lead_session_in_overlapping_windows_are_marked(self):
+        def team(dirname, name, t0, t1, lead="lead-1"):
+            self.add_team(dirname, name=name, lead=lead, events=[("team.created", t0, None, "t", {}), ("team.closed", t1, None, None, {})])
+        team("a-1", "a", "2026-10-20T10:00:00.000Z", "2026-10-20T12:00:00.000Z")
+        team("b-1", "b", "2026-10-20T11:00:00.000Z", "2026-10-20T13:00:00.000Z")
+        team("c-1", "c", "2026-10-20T12:30:00.000Z", "2026-10-20T14:00:00.000Z")  # overlaps b only
+        team("d-1", "d", "2026-10-20T10:30:00.000Z", "2026-10-20T11:30:00.000Z", lead="other-lead")  # other session
+        by = {r["archive"]: r["lead_shared_with"] for r in self.run_mine()}
+        self.assertEqual(by, {"a-1": "b-1", "b-1": "a-1;c-1", "c-1": "b-1", "d-1": ""})
+
     def test_unpriced_model_is_named_and_leaves_usd_empty(self):
         self.add_team("demo-2026-10-20", events=[("result.delivering", T0, "a", None, {"session": "s", "usage": {"claude-x-1": {"input": 1}}})])
         r = self.run_mine()[0]
