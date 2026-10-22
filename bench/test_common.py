@@ -30,6 +30,13 @@ class Transcript(unittest.TestCase):
         t = common.merge_models(common.collect([p]))["claude-opus-5-5"]
         self.assertEqual((t["input"], t["output"], t["cache_read"]), (2, 4, 6))
 
+    def test_last_line_of_a_message_wins(self):
+        # a subagent file writes a placeholder output count on early lines and the real one on the last
+        p = self.write("a.jsonl", line("m1", output_tokens=5), line("m1", output_tokens=5), line("m1", output_tokens=608),
+                       line("m2", output_tokens=7))
+        t = common.merge_models(common.collect([p]))["claude-opus-5-5"]
+        self.assertEqual(t["output"], 615)
+
     def test_message_in_parent_and_subagent_counts_once(self):
         a = self.write("a.jsonl", line("m1"))
         b = self.write("b.jsonl", line("m1"), line("m2"))
@@ -94,6 +101,7 @@ class Prices(unittest.TestCase):
     def test_alias_matches_only_when_listed(self):
         pr = common.load_prices()
         self.assertEqual(common.base_model(pr, "claude-opus-5-5[1m]"), "claude-opus-5-5")
+        self.assertEqual(common.base_model(pr, "claude-haiku-4-5-20251001"), "claude-haiku-4-5")
         with self.assertRaises(common.PriceError):
             common.base_model(pr, "claude-opus-5-5-20260101")
 

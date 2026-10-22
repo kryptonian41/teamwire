@@ -114,22 +114,26 @@ def add(into, more):
 def collect(paths, start=None, end=None):
     """Sum tokens over transcript files, counting each message id once across all of them.
 
-    Returns {path: {model: {type: n}}}. A message goes to the first file that carries it.
+    The last line of an id wins: a streamed response ends with its final count, and subagent files
+    carry a placeholder `output_tokens` on the early lines of a message. The message is attributed
+    to the first file that carries it.
+    Returns {path: {model: {type: n}}}.
     start and end are ISO timestamps (inclusive); a message outside them is not counted,
     and a message without a timestamp is not counted when either bound is set.
     """
-    seen = set()
-    result = {}
+    final = {}  # key -> [first path, timestamp, by_model]
     for p in paths:
-        per = result.setdefault(p, {})
         for key, _model, ts, by_model, _cwd in assistant_records(p):
-            if key in seen:
-                continue
-            if (start or end) and (not ts or (start and ts < start) or (end and ts > end)):
-                continue
-            seen.add(key)
-            for m, toks in by_model.items():
-                add(per.setdefault(m, {}), toks)
+            if key in final:
+                final[key][1:] = [ts, by_model]
+            else:
+                final[key] = [p, ts, by_model]
+    result = {p: {} for p in paths}
+    for p, ts, by_model in final.values():
+        if (start or end) and (not ts or (start and ts < start) or (end and ts > end)):
+            continue
+        for m, toks in by_model.items():
+            add(result[p].setdefault(m, {}), toks)
     return result
 
 
