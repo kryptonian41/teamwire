@@ -116,16 +116,41 @@ def package_name(repo, sha, crate):
 def hidden_binaries(paths):
     """Integration-test binaries (as cargo prints them) that hold hidden tests, or None for all of them.
 
-    A top-level tests/NAME.rs is one binary. A file in a sub-folder (support code, a multi-file binary)
-    may feed any binary, so every integration binary of the crate counts as hidden.
+    A top-level tests/NAME.rs and a tests/NAME/main.rs are each one binary. Any other file in a sub-folder
+    (support code) may feed any binary, so every integration binary of the crate counts as hidden.
     """
     out = set()
     for p in paths:
         rest = p.split("/tests/", 1)[1]
-        if "/" in rest:
+        if "/" in rest and not re.fullmatch(r"[^/]+/main\.rs", rest):
             return None
         out.add("tests/" + rest)
     return out
+
+
+def crate_binaries(clone, crate, wanted):
+    """The binaries to run for a crate: the wanted ones, or (wanted is None) every one in its tests/ folder."""
+    if wanted is not None:
+        return sorted(wanted)
+    root = os.path.join(clone, "crates", crate, "tests")
+    names = os.listdir(root) if os.path.isdir(root) else []
+    return sorted("tests/" + (n if n.endswith(".rs") else n + "/main.rs") for n in names
+                  if n.endswith(".rs") or os.path.exists(os.path.join(root, n, "main.rs")))
+
+
+def test_flag_name(binary):
+    """`cargo test --test` takes the binary's name: tests/NAME.rs and tests/NAME/main.rs are both NAME."""
+    return re.sub(r"\.rs$", "", binary.split("/")[1])
+
+
+def compile_errors(text):
+    """`error...` lines of cargo output, each with the `-->` location line that follows it."""
+    lines, found = ANSI.sub("", text).splitlines(), []
+    for i, line in enumerate(lines):
+        if re.match(r"error(\[\w+\])?:", line) and not re.match(r"error: (could not compile|test failed|aborting)", line):
+            where = lines[i + 1].strip() if i + 1 < len(lines) and lines[i + 1].lstrip().startswith("-->") else ""
+            found.append((line.strip() + " " + where).strip())
+    return found
 
 
 # ---------- parsers ----------
@@ -201,21 +226,25 @@ def run(args, cwd, out_file, timeout, env=None):
 def run_hidden(repo, commits, clone, spec, out, timeout):
     """Run every crate's tests (and bun for ui) in `clone`.
 
-    Returns (results of the hidden tests, problems), where a problem is a command that did not finish
-    (bun install failed, a timeout). A crate that does not build shows up as hidden files without tests.
+    Returns (results of the hidden tests, problems, compile errors per "crate::tests/binary"), where a problem
+    is a command that did not finish (bun install failed, a timeout). A binary that does not build shows up
+    as hidden files without tests, and its errors are listed.
     """
-    results, problems, last = {}, [], commits[-1]
+    results, problems, errors, last = {}, [], {}, commits[-1]
     for crate, paths in sorted(spec["crates"].items()):
         pkg = package_name(repo, last, crate)
-        code, text = run(["cargo", "test", "-p", pkg, "--locked", "--no-fail-fast"], clone,
-                         os.path.join(out, "raw-cargo-%s.txt" % pkg), timeout)
-        if code is None:
-            problems.append("cargo test -p %s timed out" % pkg)
-        wanted = hidden_binaries(paths)
-        for tid, status in parse_cargo(text, pkg).items():
-            binary = tid.split("::")[1]
-            if binary.startswith("tests/") and (wanted is None or binary in wanted):
-                results[tid] = status
+        # One cargo run per binary: a binary that does not compile must fail only its own tests.
+        for binary in crate_binaries(clone, crate, hidden_binaries(paths)):
+            name = test_flag_name(binary)
+            code, text = run(["cargo", "test", "-p", pkg, "--locked", "--test", name, "--no-fail-fast"], clone,
+                             os.path.join(out, "raw-cargo-%s-%s.txt" % (pkg, name)), timeout)
+            if code is None:
+                problems.append("cargo test -p %s --test %s timed out" % (pkg, name))
+            if code != 0 and compile_errors(text):
+                errors["%s::%s" % (pkg, binary)] = compile_errors(text)
+            for tid, status in parse_cargo(text, pkg).items():
+                if tid.split("::")[1] == binary:
+                    results[tid] = status
     if spec["ui_files"]:
         ui = os.path.join(clone, "ui")
         code, _ = run(["bun", "install", "--frozen-lockfile"], ui, os.path.join(out, "raw-bun-install.txt"), timeout)
@@ -236,7 +265,7 @@ def run_hidden(repo, commits, clone, spec, out, timeout):
                 problems.append("bun's JUnit report does not parse: %s" % e)
         else:
             problems.append("bun wrote no JUnit report")
-    return results, problems
+    return results, problems, errors
 
 
 def files_without_passing_tests(repo, commits, spec, results):
@@ -374,7 +403,7 @@ def cmd_reference(a):
             cherry_picked_clone(a.repo, commits, dest)
         else:
             checkout_clone(a.repo, commits[0], dest)
-        results, problems = run_hidden(a.repo, commits, dest, spec, out, a.timeout)
+        results, problems, errors = run_hidden(a.repo, commits, dest, spec, out, a.timeout)
     finally:
         if not a.keep:
             shutil.rmtree(base, ignore_errors=True)
@@ -385,7 +414,8 @@ def cmd_reference(a):
     expected = sorted(t for t, s in results.items() if passed(s))
     with open(os.path.join(out, "expected.json"), "w") as f:
         json.dump({**task["ids"], "hidden_files": [p for _, p in spec["files"]], "expected": expected,
-                   "not_passing_in_reference": sorted(t for t in results if t not in expected)}, f, indent=2)
+                   "not_passing_in_reference": sorted(t for t in results if t not in expected),
+                   "compile_errors": errors}, f, indent=2)
         f.write("\n")
     print("expected set: %d hidden tests pass in the reference clone (%d did not); written to %s" % (
         len(expected), len(results) - len(expected), os.path.join(out, "expected.json")))
@@ -420,12 +450,12 @@ def cmd_score(a):
         make_grading_copy(clone, parent, copy, ref, "" if ref else snapshot(clone, parent, ["--binary"]))
         gate_result = gate(copy, parent, out, a.timeout)
         copy_hidden(a.repo, spec, copy)
-        results, problems = run_hidden(a.repo, task["lookup"], copy, spec, out, a.timeout)
+        results, problems, errors = run_hidden(a.repo, task["lookup"], copy, spec, out, a.timeout)
     tests = score_tests(expected_info["expected"], results)
     warnings = (["the diff is empty: nothing to grade (is the result on another branch? use --ref)"] if not diff.strip() else []) + problems
     score = {"task": run_info["task"], "setup": run_info["setup"], "parent": parent, **task["ids"], "ref": a.ref,
              "hidden_passed": sum(1 for v in tests.values() if v == "pass"), "hidden_total": len(tests),
-             "tests": tests, "gate": gate_result, "outside_files": outside, "diff_lines": diff.count("\n"),
+             "tests": tests, "compile_errors": errors, "gate": gate_result, "outside_files": outside, "diff_lines": diff.count("\n"),
              "warnings": warnings}
     with open(os.path.join(out, "score.json"), "w") as f:
         json.dump(score, f, indent=2)

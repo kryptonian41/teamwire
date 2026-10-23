@@ -131,6 +131,18 @@ class Repo(unittest.TestCase):
         self.assertEqual(grade.hidden_binaries(["crates/a/tests/t.rs", "crates/a/tests/u.rs"]), {"tests/t.rs", "tests/u.rs"})
         self.assertIsNone(grade.hidden_binaries(["crates/a/tests/t.rs", "crates/a/tests/support/x.rs"]))
 
+    def test_hidden_binaries_take_a_main_rs_folder_as_one_binary(self):
+        self.assertEqual(grade.hidden_binaries(["crates/a/tests/t.rs", "crates/a/tests/big/main.rs"]), {"tests/t.rs", "tests/big/main.rs"})
+        self.assertEqual(grade.test_flag_name("tests/big/main.rs"), "big")
+        self.assertEqual(grade.test_flag_name("tests/t.rs"), "t")
+
+    def test_compile_errors_keep_error_lines_with_their_location(self):
+        text = ("warning: unused\n\x1b[1merror[E0432]: unresolved import\x1b[0m\n --> crates/a/tests/u.rs:3:5\n  |\n"
+                "error: cannot find macro `m`\n --> crates/a/tests/u.rs:9:1\nerror: could not compile `a` (test \"u\")\n"
+                "error: test failed, to rerun pass `--test u`\n")
+        self.assertEqual(grade.compile_errors(text), ["error[E0432]: unresolved import --> crates/a/tests/u.rs:3:5",
+                                                      "error: cannot find macro `m` --> crates/a/tests/u.rs:9:1"])
+
     def test_outside_files_count_every_kind_of_change_but_not_ignored_or_teamwire_files(self):
         r = self.repo
         g.commit(r, {"crates/a/src/lib.rs": "agent\n"})  # committed, and in the original commit
@@ -244,6 +256,16 @@ echo "test alpha ... ok"
 if grep -q GOOD crates/a/src/lib.rs; then echo "test beta ... ok"; else echo "test beta ... FAILED"; fi
 if [ -f d.txt ]; then echo "test gamma ... ok"; else echo "test gamma ... FAILED"; fi
 """
+# $6 is the binary named by --test; binary u does not compile while the file U_BROKEN exists
+FAKE_CARGO_TWO_BINARIES = """#!/bin/sh
+case "$6" in
+  t) echo "     Running tests/t.rs (target/debug/deps/t-1)"; echo "test t_one ... ok";;
+  u) if [ -f U_BROKEN ]; then
+       echo "error[E0432]: unresolved import"; echo " --> crates/a/tests/u.rs:3:5"; echo "error: could not compile"; exit 101
+     fi
+     echo "     Running tests/u.rs (target/debug/deps/u-1)"; echo "test u_one ... ok";;
+esac
+"""
 FAKE_GATE = """#!/bin/sh
 echo "gate 1/3 fmt: ok (0s)"
 echo "base=$TEAMWIRE_BASE"
@@ -313,6 +335,20 @@ class EndToEnd(unittest.TestCase):
         self.quiet(argv)
         with open(os.path.join(out, "score.json")) as f:
             return out, json.load(f)
+
+    def test_a_binary_that_does_not_compile_fails_only_its_own_tests(self):
+        self.fake_cargo(FAKE_CARGO_TWO_BINARIES)
+        c = g.commit(self.repo, {"crates/a/tests/t.rs": "t3\n", "crates/a/tests/u.rs": "u\n"})
+        path, exp = self.reference(c)
+        self.assertEqual(exp["expected"], ["pkg-a::tests/t.rs::t_one", "pkg-a::tests/u.rs::u_one"])
+        self.assertEqual(exp["compile_errors"], {})
+        self.assertTrue(os.path.exists(os.path.join(os.path.dirname(path), "raw-cargo-pkg-a-u.txt")))
+        base = self.make_run(c)
+        with open(os.path.join(base, "clone", "U_BROKEN"), "w") as f:
+            f.write("x\n")
+        _, sc = self.score(base, path, commits=[c])
+        self.assertEqual(sc["tests"], {"pkg-a::tests/t.rs::t_one": "pass", "pkg-a::tests/u.rs::u_one": "fail"})
+        self.assertEqual(sc["compile_errors"], {"pkg-a::tests/u.rs": ["error[E0432]: unresolved import --> crates/a/tests/u.rs:3:5"]})
 
     def test_reference_with_no_passing_hidden_test_is_an_error(self):
         self.fake_cargo("#!/bin/sh\necho nothing\n")
