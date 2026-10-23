@@ -343,6 +343,8 @@ def make_grading_copy(clone, parent, dest, ref, binary_diff):
         shutil.rmtree(os.path.join(dest, d), ignore_errors=True)
         if common.git(dest, "ls-tree", "--name-only", parent, d).strip():
             common.git(dest, "checkout", parent, "--", d)
+    # A gate from before TEAMWIRE_BASE existed compares against a local main only.
+    common.git(dest, "branch", "--force", "main", parent)
 
 
 # ---------- commands ----------
