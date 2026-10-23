@@ -71,6 +71,20 @@ def hidden_spec(repo, commits):
         for status, path in name_status(repo, sha):
             if common.is_test_only(path) and status != "D":
                 last[path] = sha
+    return spec_of(last)
+
+
+def range_status(repo, base, target):
+    out = common.git(repo, "diff", "--name-status", "--no-renames", base, target)
+    return [tuple(l.split("\t", 1)) for l in out.splitlines()]
+
+
+def hidden_spec_range(repo, base, target):
+    """The hidden tests of a range: test-only files added or changed between base and target, all read from target."""
+    return spec_of({p: target for s, p in range_status(repo, base, target) if common.is_test_only(p) and s != "D"})
+
+
+def spec_of(last):
     files = sorted(((c, p) for p, c in last.items()), key=lambda cp: cp[1])
     crates, ui = {}, []
     for _, p in files:
@@ -304,6 +318,27 @@ def make_grading_copy(clone, parent, dest, ref, binary_diff):
 
 # ---------- commands ----------
 
+def checkout_clone(repo, target, dest):
+    """A clone checked out at the end commit: the tree a range-mode run is asked to reach."""
+    common.git(os.path.dirname(dest), "clone", "--quiet", "--local", "--no-checkout", repo, dest)
+    common.git(dest, "checkout", "--quiet", "--detach", target)
+
+
+def task_of(a):
+    """Resolve --commit or --base/--target into what both commands need."""
+    rev = lambda r: common.git(a.repo, "rev-parse", "--verify", r + "^{commit}").strip()
+    if a.commit:
+        commits = [rev(c) for c in a.commit]
+        return {"commits": commits, "lookup": commits, "spec": hidden_spec(a.repo, commits),
+                "changed": changed_by_commits(a.repo, commits), "ids": {"commits": commits}}
+    try:
+        base, target = clonemod.task_range(a.repo, a.base, a.target)
+    except clonemod.LeakError as e:
+        raise SystemExit("error: %s" % e)
+    return {"commits": [], "lookup": [target], "spec": hidden_spec_range(a.repo, base, target),
+            "changed": {p for _, p in range_status(a.repo, base, target)}, "ids": {"commits": [], "base": base, "target": target}}
+
+
 def cherry_picked_clone(repo, commits, dest):
     """A clone at the first commit's parent with the task commits cherry-picked in order: the tree the
     run's agent is asked to reach. (The reference is the grader's own; it need not be leak-free.)"""
@@ -321,17 +356,24 @@ def cherry_picked_clone(repo, commits, dest):
     return parent
 
 
+def short(ident):
+    return {k: ([c[:8] for c in v] if isinstance(v, list) else v and v[:8]) for k, v in ident.items() if v}
+
+
 def cmd_reference(a):
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
-    commits = [common.git(a.repo, "rev-parse", "--verify", c + "^{commit}").strip() for c in a.commit]
-    spec = hidden_spec(a.repo, commits)
+    task = task_of(a)
+    commits, spec = task["lookup"], task["spec"]
     if not spec["files"]:
-        raise SystemExit("error: the commits add or change no test-only file")
+        raise SystemExit("error: the task adds or changes no test-only file")
     base = tempfile.mkdtemp(prefix="bench-ref-")
     try:
         dest = os.path.join(os.path.realpath(base), "clone")
-        cherry_picked_clone(a.repo, commits, dest)
+        if a.commit:
+            cherry_picked_clone(a.repo, commits, dest)
+        else:
+            checkout_clone(a.repo, commits[0], dest)
         results, problems = run_hidden(a.repo, commits, dest, spec, out, a.timeout)
     finally:
         if not a.keep:
@@ -342,7 +384,7 @@ def cmd_reference(a):
             ["  " + p for p in problems] + ["  hidden file with no passing test: " + m for m in missing])))
     expected = sorted(t for t, s in results.items() if passed(s))
     with open(os.path.join(out, "expected.json"), "w") as f:
-        json.dump({"commits": commits, "hidden_files": [p for _, p in spec["files"]], "expected": expected,
+        json.dump({**task["ids"], "hidden_files": [p for _, p in spec["files"]], "expected": expected,
                    "not_passing_in_reference": sorted(t for t in results if t not in expected)}, f, indent=2)
         f.write("\n")
     print("expected set: %d hidden tests pass in the reference clone (%d did not); written to %s" % (
@@ -355,18 +397,21 @@ def cmd_score(a):
     os.makedirs(out, exist_ok=True)
     with open(os.path.join(a.run_dir, "run.json")) as f:
         run_info = json.load(f)
-    commits = [common.git(a.repo, "rev-parse", "--verify", c + "^{commit}").strip() for c in a.commit]
+    task = task_of(a)
+    commits, spec = task["commits"], task["spec"]
     with open(a.expected) as f:
         expected_info = json.load(f)
-    if expected_info["commits"] != commits or run_info.get("commits") != commits:
-        raise SystemExit("error: the task commits differ: --commit %s, expected.json %s, run.json %s" % (
-            [c[:8] for c in commits], [c[:8] for c in expected_info["commits"]], [c[:8] for c in run_info.get("commits") or []]))
+    # Both files must name the same task: the same commits, and in range mode the same start and end.
+    key = lambda info: {k: info.get(k) or [] if k == "commits" else info.get(k) for k in ("commits", "base", "target")}
+    want = {"commits": [], "base": None, "target": None, **task["ids"]}
+    if key(expected_info) != want or key(run_info) != want:
+        raise SystemExit("error: the task differs: given %s, expected.json %s, run.json %s" % (
+            short(want), short(key(expected_info)), short(key(run_info))))
     clone, parent = run_info["clone"], run_info["parent"]
     ref = None if a.ref == "HEAD" else common.git(clone, "rev-parse", "--verify", a.ref + "^{commit}").strip()
-    spec = hidden_spec(a.repo, commits)
     # The run's clone is only read. The outside-files list and the diff come from it untouched;
     # the gate and the tests run in a throwaway copy that gets the hidden tests.
-    outside = outside_files(clone, parent, changed_by_commits(a.repo, commits), ref)
+    outside = outside_files(clone, parent, task["changed"], ref)
     diff = snapshot(clone, parent, [], ref)
     with open(os.path.join(out, "diff.patch"), "w") as f:
         f.write(diff)
@@ -375,10 +420,10 @@ def cmd_score(a):
         make_grading_copy(clone, parent, copy, ref, "" if ref else snapshot(clone, parent, ["--binary"]))
         gate_result = gate(copy, parent, out, a.timeout)
         copy_hidden(a.repo, spec, copy)
-        results, problems = run_hidden(a.repo, commits, copy, spec, out, a.timeout)
+        results, problems = run_hidden(a.repo, task["lookup"], copy, spec, out, a.timeout)
     tests = score_tests(expected_info["expected"], results)
     warnings = (["the diff is empty: nothing to grade (is the result on another branch? use --ref)"] if not diff.strip() else []) + problems
-    score = {"task": run_info["task"], "setup": run_info["setup"], "parent": parent, "commits": commits, "ref": a.ref,
+    score = {"task": run_info["task"], "setup": run_info["setup"], "parent": parent, **task["ids"], "ref": a.ref,
              "hidden_passed": sum(1 for v in tests.values() if v == "pass"), "hidden_total": len(tests),
              "tests": tests, "gate": gate_result, "outside_files": outside, "diff_lines": diff.count("\n"),
              "warnings": warnings}
@@ -441,7 +486,9 @@ def main(argv=None):
     for name in ("reference", "score"):
         p = sub.add_parser(name)
         p.add_argument("--repo", default=os.path.dirname(here), help="source repository (read only)")
-        p.add_argument("--commit", action="append", required=True, help="the original task commit; repeat for a task of several, oldest first")
+        p.add_argument("--commit", action="append", help="the original task commit; repeat for a task of several, oldest first")
+        p.add_argument("--base", help="range mode: the start commit (use with --target, not --commit)")
+        p.add_argument("--target", help="range mode: the end commit; the reference is a checkout of it")
         p.add_argument("--out", required=True, help="folder for results and raw output")
         p.add_argument("--timeout", type=int, default=3600, help="seconds allowed per command")
         if name == "reference":
@@ -458,6 +505,8 @@ def main(argv=None):
     p.add_argument("--out", default=os.path.join(here, "results", "blind"))
     p.add_argument("--key-out", required=True, help="where to write key.json; keep it outside --out, where the grader reads")
     a = ap.parse_args(argv)
+    if a.cmd in ("reference", "score") and (bool(a.commit) == bool(a.base or a.target) or bool(a.base) != bool(a.target)):
+        ap.error("give either --commit, or --base together with --target")
     return {"reference": cmd_reference, "score": cmd_score, "blind": cmd_blind}[a.cmd](a)
 
 

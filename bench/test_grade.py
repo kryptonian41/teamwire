@@ -155,6 +155,22 @@ class Repo(unittest.TestCase):
         self.assertIn("+changed", diff)
         self.assertNotIn("secret commit message", diff)
 
+    def test_hidden_spec_range_reads_added_and_modified_test_files_from_the_end_only(self):
+        g.commit(self.repo, {"crates/a/tests/mod.rs": "m0\n"})
+        start = g.git(self.repo, "rev-parse", "HEAD")
+        g.git(self.repo, "checkout", "-q", "-b", "side")
+        g.commit(self.repo, {"crates/a/tests/mod.rs": "m1\n", "ui/new.test.tsx": "u\n", "crates/a/src/lib.rs": "2\n"},
+                 remove=["crates/a/tests/old.rs"])
+        g.git(self.repo, "checkout", "-q", "develop")
+        g.commit(self.repo, {"crates/b/tests/b.rs": "b\n", "docs/x.md": "d\n"})
+        g.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge", "side")
+        end = g.git(self.repo, "rev-parse", "HEAD")
+        spec = grade.hidden_spec_range(self.repo, start, end)
+        self.assertEqual(spec["files"], [(end, "crates/a/tests/mod.rs"), (end, "crates/b/tests/b.rs"), (end, "ui/new.test.tsx")])
+        self.assertEqual(spec["ui_files"], ["new.test.tsx"])  # old.rs was deleted in the range, so it is not hidden
+        self.assertEqual({p for _, p in grade.range_status(self.repo, start, end)},
+                         {"crates/a/tests/mod.rs", "crates/a/tests/old.rs", "ui/new.test.tsx", "crates/a/src/lib.rs", "crates/b/tests/b.rs", "docs/x.md"})
+
 
 class Blind(unittest.TestCase):
     def make_run(self, base, name, task, setup, diff):
@@ -381,6 +397,79 @@ class EndToEnd(unittest.TestCase):
         path2, _ = self.reference(other)
         with self.assertRaises(SystemExit):
             self.score(base, path2, commits=[other])  # run.json was made for self.commit
+
+    def range_setup(self):
+        """start = self.parent; the end is a merge, so cherry-picking its commits would not rebuild its tree."""
+        g.git(self.repo, "checkout", "-q", "-b", "side", self.parent)
+        g.commit(self.repo, {"d.txt": "from the side branch\n"})
+        g.git(self.repo, "checkout", "-q", "develop")
+        g.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge", "side")
+        self.end = g.git(self.repo, "rev-parse", "HEAD")
+        g.commit(self.repo, {"after.txt": "past the end\n"})
+
+    def range_reference(self):
+        out = os.path.join(self.d.name, "rref")
+        self.quiet(["reference", "--repo", self.repo, "--out", out, "--base", self.parent, "--target", self.end])
+        with open(os.path.join(out, "expected.json")) as f:
+            return os.path.join(out, "expected.json"), json.load(f)
+
+    def range_run(self):
+        import clone as clonemod
+        root = os.path.join(self.d.name, "rruns")
+        with contextlib.redirect_stdout(io.StringIO()):
+            clonemod.main(["--repo", self.repo, "--task", "t1", "--setup", "solo", "--root", root, "--base", self.parent, "--target", self.end])
+        (name,) = os.listdir(root)
+        return os.path.join(root, name)
+
+    def range_score(self, run, expected, *extra):
+        self.n += 1
+        out = os.path.join(self.d.name, "rscore%d" % self.n)
+        self.quiet(["score", "--repo", self.repo, "--run-dir", run, "--expected", expected, "--out", out,
+                    "--base", self.parent, "--target", self.end] + list(extra))
+        with open(os.path.join(out, "score.json")) as f:
+            return json.load(f)
+
+    def test_range_reference_checks_out_the_end_including_a_merge(self):
+        self.range_setup()
+        _, exp = self.range_reference()
+        # gamma passes only where d.txt exists, and d.txt arrives by the merge
+        self.assertEqual(exp["expected"], ["pkg-a::tests/t.rs::alpha", "pkg-a::tests/t.rs::beta", "pkg-a::tests/t.rs::gamma"])
+        self.assertEqual((exp["base"], exp["target"], exp["commits"]), (self.parent, self.end, []))
+        self.assertEqual(exp["hidden_files"], ["crates/a/tests/t.rs"])
+
+    def test_range_score_compares_with_the_start_and_refuses_another_task(self):
+        self.range_setup()
+        path, _ = self.range_reference()
+        run = self.range_run()
+        clone_dir = os.path.join(run, "clone")
+        self.assertEqual(g.git(clone_dir, "rev-parse", "HEAD"), self.parent)
+        null = self.range_score(run, path)
+        self.assertEqual((null["parent"], null["base"], null["target"]), (self.parent, self.parent, self.end))
+        self.assertEqual(null["tests"], {"pkg-a::tests/t.rs::alpha": "pass", "pkg-a::tests/t.rs::beta": "fail", "pkg-a::tests/t.rs::gamma": "fail"})
+        self.assertEqual(null["outside_files"], [])
+        for p, text in {"crates/a/src/lib.rs": "GOOD\n", "d.txt": "d\n", "junk.txt": "j\n"}.items():
+            with open(os.path.join(clone_dir, p), "w") as f:
+                f.write(text)
+        sc = self.range_score(run, path)
+        self.assertEqual(sc["hidden_passed"], 3)
+        self.assertEqual(sc["outside_files"], ["junk.txt"])  # lib.rs and d.txt changed between start and end
+        for argv in (["--base", self.parent, "--target", self.commit], ["--base", self.end, "--target", self.end], ["--commit", self.commit]):
+            with self.assertRaises(SystemExit) as cm:
+                self.quiet(["score", "--repo", self.repo, "--run-dir", run, "--expected", path, "--out", os.path.join(self.d.name, "x")] + argv)
+            self.assertTrue("differ" in str(cm.exception) or "ancestor" in str(cm.exception), str(cm.exception))
+
+    def test_range_gate_gets_the_start_as_its_base(self):
+        self.range_setup()
+        path, _ = self.range_reference()
+        self.range_score(self.range_run(), path)
+        with open(os.path.join(self.d.name, "rscore1", "raw-gate.txt")) as f:
+            self.assertIn("base=" + self.parent, f.read())
+
+    def test_range_flags_exclude_commit_flags(self):
+        for argv in (["--base", self.parent, "--target", self.commit, "--commit", self.commit], ["--base", self.parent], []):
+            with self.assertRaises(SystemExit):
+                with contextlib.redirect_stderr(io.StringIO()):
+                    self.quiet(["reference", "--repo", self.repo, "--out", os.path.join(self.d.name, "o")] + argv)
 
 
 if __name__ == "__main__":

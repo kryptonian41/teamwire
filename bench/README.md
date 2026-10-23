@@ -30,6 +30,15 @@ The scripts in the order the lead uses them:
    python3 bench/clone.py --commit <sha> [--commit <sha> ...] --task <task id> --setup <setup name> --root <runs folder>
    ```
 
+   **Range mode** for a task given as a start and an end commit (merges allowed). The
+   clone ends at the start commit itself; the tool refuses when the start is not an
+   ancestor of the end. `run.json` holds `base`, `target` and `parent` (= base).
+   Use `--base/--target` or `--commit`, never both.
+
+   ```bash
+   python3 bench/clone.py --base <start> --target <end> --task <task id> --setup <setup name> --root <runs folder>
+   ```
+
 4. **Grade.** First once per task: the reference applies the task commits to the
    first one's parent with `git cherry-pick`, in the order given, and runs the
    hidden tests there. It fails, naming the file, when a hidden file adds no
@@ -47,6 +56,17 @@ The scripts in the order the lead uses them:
 
    ```bash
    python3 bench/grade.py score --commit <sha> [--commit <sha> ...] --run-dir <runs folder>/bn<random> \
+     --expected bench/results/<task>/reference/expected.json --out bench/results/<task>/<setup> [--ref <branch>]
+   ```
+
+   Range mode: `reference` checks out the end commit (no cherry-picks). The hidden files
+   are the test-only files added or changed between start and end; a file deleted in
+   the range is not hidden. `score` compares with the start commit, and refuses when
+   `expected.json` or `run.json` name another start or end.
+
+   ```bash
+   python3 bench/grade.py reference --base <start> --target <end> --out bench/results/<task>/reference
+   python3 bench/grade.py score --base <start> --target <end> --run-dir <runs folder>/bn<random> \
      --expected bench/results/<task>/reference/expected.json --out bench/results/<task>/<setup> [--ref <branch>]
    ```
 
