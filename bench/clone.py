@@ -100,16 +100,30 @@ def task_parent(repo, commits):
     return commits, parent
 
 
-def write_run_files(base, clone, task, setup, parent, commits):
+def task_range(repo, base, target):
+    """(base, target) as full shas. The clone ends at `base` itself; refuses when `base` is not an ancestor of `target`."""
+    base, target = [common.git(repo, "rev-parse", "--verify", r + "^{commit}").strip() for r in (base, target)]
+    try:
+        if base == target:
+            raise RuntimeError
+        common.git(repo, "merge-base", "--is-ancestor", base, target)
+    except RuntimeError:
+        raise LeakError("start %s is not an ancestor of end %s" % (base[:12], target[:12]))
+    return base, target
+
+
+def write_run_files(base, clone, task, setup, parent, commits, target=None):
     settings = os.path.join(base, "settings.json")
     with open(settings, "w") as f:
         json.dump({"enabledPlugins": {"claude-mem@thedotmack": False}}, f, indent=2)
         f.write("\n")
     run = os.path.join(base, "run.json")
     with open(run, "w") as f:
-        json.dump({"task": task, "setup": setup, "parent": parent, "commits": commits, "clone": clone,
-                   "started_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")},
-                  f, indent=2)
+        info = {"task": task, "setup": setup, "parent": parent, "commits": commits, "clone": clone,
+                "started_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+        if target:  # range mode: the clone ends at the start commit, so parent is the start
+            info.update(base=parent, target=target)
+        json.dump(info, f, indent=2)
         f.write("\n")
     return settings, run
 
@@ -118,16 +132,23 @@ def main(argv=None):
     here = os.path.dirname(os.path.abspath(__file__))
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--repo", default=os.path.dirname(here), help="source repository (read only)")
-    ap.add_argument("--commit", action="append", required=True,
+    ap.add_argument("--commit", action="append",
                     help="a task commit; repeat for a task of several, oldest first. The clone ends at the first one's parent")
+    ap.add_argument("--base", help="range mode: the start commit; the clone ends at it (use with --target, not --commit)")
+    ap.add_argument("--target", help="range mode: the end commit, which the clone must not hold")
     ap.add_argument("--task", required=True, help="task id, for run.json")
     ap.add_argument("--setup", required=True, help="setup name, for run.json")
     ap.add_argument("--root", required=True,
                     help="folder that holds all runs; each run gets a new random sub-folder named bn<random>")
     a = ap.parse_args(argv)
+    if bool(a.commit) == bool(a.base or a.target) or bool(a.base) != bool(a.target):
+        ap.error("give either --commit, or --base together with --target")
 
     try:
-        commits, parent = task_parent(a.repo, a.commit)
+        if a.commit:
+            (commits, parent), target = task_parent(a.repo, a.commit), None
+        else:
+            (parent, target), commits = task_range(a.repo, a.base, a.target), []
         os.makedirs(a.root, exist_ok=True)
         # A random name: an agent that lists the runs folder learns nothing about the task or setup.
         base = tempfile.mkdtemp(prefix="bn", dir=a.root)
@@ -138,7 +159,7 @@ def main(argv=None):
             shutil.rmtree(base, ignore_errors=True)
         print("clone failed: %s" % e, file=sys.stderr)
         return 1
-    settings, run = write_run_files(os.path.realpath(base), clone, a.task, a.setup, parent, commits)
+    settings, run = write_run_files(os.path.realpath(base), clone, a.task, a.setup, parent, commits, target)
     print("clone:    %s (branch bench at %s)\nsettings: %s\nrun.json: %s" % (clone, parent[:12], settings, run))
     return 0
 

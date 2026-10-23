@@ -96,5 +96,50 @@ class Clone(unittest.TestCase):
             self.assertEqual(clone.main(["--repo", self.repo, "--commit", "0" * 40, "--task", "t", "--setup", "s", "--root", os.path.join(self.d.name, "r")]), 1)
 
 
+class Range(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.TemporaryDirectory()
+        self.addCleanup(self.d.cleanup)
+        self.repo = g.init(os.path.join(self.d.name, "src"))
+        self.base = g.commit(self.repo, {"a.txt": "1\n"})
+        g.git(self.repo, "checkout", "-q", "-b", "side")
+        g.commit(self.repo, {"side.txt": "s\n"})
+        g.git(self.repo, "checkout", "-q", "develop")
+        g.commit(self.repo, {"main.txt": "m\n"})
+        g.git(self.repo, "merge", "-q", "--no-ff", "-m", "merge", "side")
+        self.target = g.git(self.repo, "rev-parse", "HEAD")
+        self.after = g.commit(self.repo, {"later.txt": "l\n"})
+        self.root = os.path.join(self.d.name, "runs")
+
+    def run_main(self, *args):
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            code = clone.main(["--repo", self.repo, "--task", "t", "--setup", "s", "--root", self.root] + list(args))
+        return code, err.getvalue()
+
+    def test_clone_ends_at_the_start_and_run_json_records_the_range(self):
+        self.assertEqual(self.run_main("--base", self.base, "--target", self.target)[0], 0)
+        (name,) = os.listdir(self.root)
+        with open(os.path.join(self.root, name, "run.json")) as f:
+            run = json.load(f)
+        self.assertEqual((run["base"], run["target"], run["parent"]), (self.base, self.target, self.base))
+        self.assertEqual(g.git(run["clone"], "rev-list", "--all").split(), [self.base])
+        self.assertEqual(g.git(run["clone"], "rev-parse", "HEAD"), self.base)
+        for later in (self.target, self.after):
+            with self.assertRaises(RuntimeError):
+                g.git(run["clone"], "cat-file", "-e", later)
+
+    def test_refuses_a_start_that_is_not_an_ancestor_of_the_end(self):
+        for base, target in ((self.after, self.target), (self.target, self.target)):
+            code, err = self.run_main("--base", base, "--target", target)
+            self.assertEqual(code, 1)
+            self.assertIn("not an ancestor", err)
+        self.assertFalse(os.path.exists(self.root))
+
+    def test_range_and_commit_modes_exclude_each_other(self):
+        for args in (["--base", self.base, "--target", self.target, "--commit", self.target], ["--base", self.base], []):
+            with self.assertRaises(SystemExit):
+                self.run_main(*args)
+
+
 if __name__ == "__main__":
     unittest.main()
