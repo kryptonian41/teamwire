@@ -147,7 +147,7 @@ def compile_errors(text):
     """`error...` lines of cargo output, each with the `-->` location line that follows it."""
     lines, found = ANSI.sub("", text).splitlines(), []
     for i, line in enumerate(lines):
-        if re.match(r"error(\[\w+\])?:", line) and not re.match(r"error: (could not compile|test failed|aborting)", line):
+        if re.match(r"error(\[\w+\])?:", line) and not re.match(r"error: (could not compile|test failed|aborting|\d+ targets? failed)", line):
             where = lines[i + 1].strip() if i + 1 < len(lines) and lines[i + 1].lstrip().startswith("-->") else ""
             found.append((line.strip() + " " + where).strip())
     return found

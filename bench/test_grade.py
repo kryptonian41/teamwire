@@ -139,7 +139,7 @@ class Repo(unittest.TestCase):
     def test_compile_errors_keep_error_lines_with_their_location(self):
         text = ("warning: unused\n\x1b[1merror[E0432]: unresolved import\x1b[0m\n --> crates/a/tests/u.rs:3:5\n  |\n"
                 "error: cannot find macro `m`\n --> crates/a/tests/u.rs:9:1\nerror: could not compile `a` (test \"u\")\n"
-                "error: test failed, to rerun pass `--test u`\n")
+                "error: test failed, to rerun pass `--test u`\nerror: 1 target failed:\n")
         self.assertEqual(grade.compile_errors(text), ["error[E0432]: unresolved import --> crates/a/tests/u.rs:3:5",
                                                       "error: cannot find macro `m` --> crates/a/tests/u.rs:9:1"])
 
