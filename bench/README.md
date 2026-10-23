@@ -106,7 +106,10 @@ is not in the table (or its alias list) stops the script with the id named.
 - A cache write without the 5m/1h split is priced at the 1h rate and shown as
   `cache_creation_unsplit`.
 - The grade is the set of hidden tests that pass in the reference clone. A test
-  missing from a run's output, or in a crate that did not compile, fails.
+  missing from a run's output, or in a binary that did not compile, fails.
+  Each hidden integration-test binary runs as its own `cargo test --test <name>`
+  (`raw-cargo-<crate>-<name>.txt`), so one that does not compile fails only its own
+  tests. Its `error` lines go to `compile_errors` in `score.json` and `expected.json`.
 - `grade.py score` takes the outside-files list and the diff from the run's clone
   untouched, then copies it; the hidden tests go into the copy only. Running it
   twice gives the same `diff.patch`.
