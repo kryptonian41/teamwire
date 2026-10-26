@@ -206,7 +206,7 @@ fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Resu
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
         codex: wiring.codex_setup(),
-        pi_agent_dir: wiring.pi_agent_dir.clone(),
+        pi_agent_dir: wiring.pi.agent_dir.clone(),
         running_a_build: lead_entry
             .as_ref()
             .is_ok_and(|e| lead_setup_check::is_build_output(std::path::Path::new(&e.command))),

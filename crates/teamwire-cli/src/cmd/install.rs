@@ -20,6 +20,8 @@ use crate::{Global, InstallArgs, USAGE, UninstallArgs};
 /// the program each one runs.
 const CLAUDE: &str = "claude-code";
 const CODEX: &str = "codex";
+/// A harness for members only, so `install` has nothing to set up for it.
+const PI: &str = "pi";
 
 const NO_HOME: &str = "no state directory: set --home, TEAMWIRE_HOME or HOME";
 
@@ -79,6 +81,17 @@ pub(crate) fn found(wiring: &Wiring) -> Vec<&'static str> {
     .filter(|(_, program)| version_of(wiring, program).is_some())
     .map(|(id, _)| id)
     .collect()
+}
+
+/// Every harness whose program answers `--version`: the lead harnesses of
+/// `found`, and the member-only pi. Launch refuses a member whose harness
+/// is not among them.
+pub(crate) fn on_path(wiring: &Wiring) -> Vec<&'static str> {
+    let mut all = found(wiring);
+    if version_of(wiring, &wiring.pi.pi_bin).is_some() {
+        all.push(PI);
+    }
+    all
 }
 
 /// The harnesses a selector line picks from the numbered list `found`: an

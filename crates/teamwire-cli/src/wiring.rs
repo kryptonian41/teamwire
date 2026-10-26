@@ -46,8 +46,9 @@ pub(crate) struct Wiring {
     pub(crate) claude: ClaudeConfig,
     /// Where Codex keeps its files, for the same commands.
     pub(crate) codex: CodexConfig,
-    /// pi's directory, which doctor reads herdr's pi integration from.
-    pub(crate) pi_agent_dir: PathBuf,
+    /// Where pi keeps its files and how to start it: launch checks the
+    /// program, doctor reads herdr's pi integration from the directory.
+    pub(crate) pi: PiConfig,
 }
 
 impl Wiring {
@@ -118,7 +119,6 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     let claude = claude_config(env);
     let codex = codex_config(env);
     let pi = pi_config(env);
-    let pi_agent_dir = pi.agent_dir.clone();
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
@@ -129,7 +129,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         codex.clone(),
     )))?;
     // pi runs members only, so it is registered but never picked as the lead.
-    registry.add_harness(Arc::new(Pi::new(Arc::clone(&platform), pi)))?;
+    registry.add_harness(Arc::new(Pi::new(Arc::clone(&platform), pi.clone())))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
     registry.add_host(Arc::new(NoHost))?;
@@ -142,7 +142,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_host,
         claude,
         codex,
-        pi_agent_dir,
+        pi,
     })
 }
 

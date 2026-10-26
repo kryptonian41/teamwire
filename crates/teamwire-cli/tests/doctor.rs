@@ -57,7 +57,7 @@ mod wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
         pub(crate) codex: teamwire_harness_codex::CodexConfig,
-        pub(crate) pi_agent_dir: std::path::PathBuf,
+        pub(crate) pi: teamwire_harness_pi::PiConfig,
         pub(crate) registry: teamwire_core::Registry,
         pub(crate) clock: teamwire_fakes::FakeClock,
     }
