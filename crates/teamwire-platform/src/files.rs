@@ -66,9 +66,15 @@ fn set_mode(temp: &File, target: &Path) -> std::io::Result<()> {
 /// Bytes a normal user can still write on the file system holding `path`.
 pub(crate) fn free_bytes(path: &Path) -> Result<u64, PlatformError> {
     let stat = statvfs(path).map_err(|errno| errno_error("reading free space of", path, errno))?;
-    let blocks = u64::from(stat.blocks_available());
+    let blocks = widen(stat.blocks_available());
     let unit: u64 = stat.fragment_size();
     Ok(blocks.saturating_mul(unit))
+}
+
+/// `fsblkcnt_t` is `u32` on macOS and `u64` on Linux. A plain `u64::from` is
+/// a useless conversion to clippy on Linux; a generic one is not.
+fn widen(n: impl Into<u64>) -> u64 {
+    n.into()
 }
 
 /// True when `path` is on a network file system, where `SQLite` locking cannot
