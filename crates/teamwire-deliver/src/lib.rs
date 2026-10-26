@@ -27,7 +27,9 @@ pub use lines::{
     CommsCopy, agent_text, line_holds_whole, message_line, message_line_to, result_line,
 };
 pub use locate::{locate, locate_session};
-pub use pending::{PENDING_STALE, attempt_in_flight, attempt_started, is_pending_stale};
+pub use pending::{
+    PENDING_STALE, attempt_in_flight, attempt_started, is_pending_stale, stops_since_attempt,
+};
 pub use unread::unread_since;
 
 /// What happened to one typed line.

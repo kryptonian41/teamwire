@@ -9,6 +9,7 @@ use teamwire_core::{
 };
 use teamwire_deliver::{
     CommsCopy, DeliveryOutcome, attempt_in_flight, deliver_line, message_line_to,
+    stops_since_attempt,
 };
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
@@ -208,6 +209,18 @@ pub(crate) fn bump_again(
     }
 }
 
+/// The most tries one command adds because the recipient's turn ended
+/// during its attempt (ADR 0028). A recipient that stops during each try was
+/// held for one more turn each time, and its next stop names the message.
+const MAX_STOP_RETRIES: usize = 3;
+
+/// What the outcome transaction did: recorded the row, or found that the
+/// recipient stopped since the last look and left it for another try.
+enum Written {
+    Recorded(Option<DeliveryRecord>),
+    TryAgain(usize),
+}
+
 /// Delivers `message` to one recipient, outside any transaction, and records
 /// the outcome in a short transaction of its own. A known failure of a
 /// reprompt gives the member's earlier generation back; an unconfirmed
@@ -254,34 +267,61 @@ pub(crate) fn deliver_one(
             )));
         }
     };
-    let outcome = deliver_line(ctx, &party, &line);
-    let (state, route, error) = forward_only(before, outcome);
-    let now = ctx.clock.now();
-    let update = DeliveryUpdate {
-        state,
-        route,
-        error,
-        attempts,
-    };
-    let record = ctx.store.write(|tx| {
-        let reader = tx.reader();
-        let current = reader.delivery(&message.ulid, recipient)?;
-        // The recipient may have read it, or another command handed it off,
-        // while this one was typing. Those states are final here. So is
-        // `unconfirmed` against a clean failure: the other command may have
-        // typed the line, and the store refuses that move (INV-5, REP-3).
-        if let Some(c) = &current
-            && (matches!(
-                c.delivery.state,
-                DeliveryState::Acked | DeliveryState::HandedOff
-            ) || (c.delivery.state == DeliveryState::Unconfirmed
-                && update.state == DeliveryState::Undelivered))
-        {
-            return Ok(current);
+    let mut stops_seen = 0;
+    let mut stop_retries = 0;
+    let record = loop {
+        let outcome = deliver_line(ctx, &party, &line);
+        let (state, route, error) = forward_only(before, outcome);
+        let now = ctx.clock.now();
+        let update = DeliveryUpdate {
+            state,
+            route,
+            error,
+            attempts,
+        };
+        let written = ctx.store.write(|tx| {
+            let reader = tx.reader();
+            let current = reader.delivery(&message.ulid, recipient)?;
+            // The recipient may have read it, or another command handed it
+            // off, while this one was typing. Those states are final here. So
+            // is `unconfirmed` against a clean failure: the other command may
+            // have typed the line, and the store refuses that move (INV-5,
+            // REP-3).
+            if let Some(c) = &current
+                && (matches!(
+                    c.delivery.state,
+                    DeliveryState::Acked | DeliveryState::HandedOff
+                ) || (c.delivery.state == DeliveryState::Unconfirmed
+                    && update.state == DeliveryState::Undelivered))
+            {
+                return Ok(Written::Recorded(current));
+            }
+            // The recipient's turn ended while this row was `pending`, so its
+            // hook left the message to this command, and no later stop would
+            // name it once it is `undelivered` (ADR 0028). The check and the
+            // write are one transaction, as the hook's list and mark are.
+            if update.state == DeliveryState::Undelivered && stop_retries < MAX_STOP_RETRIES {
+                let stops = stops_since_attempt(&reader, message, recipient).unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "could not read whether the recipient stopped");
+                    0
+                });
+                if stops > stops_seen {
+                    return Ok(Written::TryAgain(stops));
+                }
+            }
+            tx.set_delivery_state(now, &message.ulid, recipient, &update)?;
+            reader
+                .delivery(&message.ulid, recipient)
+                .map(Written::Recorded)
+        })?;
+        match written {
+            Written::Recorded(record) => break record,
+            Written::TryAgain(stops) => {
+                stops_seen = stops;
+                stop_retries += 1;
+            }
         }
-        tx.set_delivery_state(now, &message.ulid, recipient, &update)?;
-        reader.delivery(&message.ulid, recipient)
-    })?;
+    };
     let Some(record) = record else {
         return Err(SendError::Internal(format!(
             "the delivery of {} to {recipient} vanished",
