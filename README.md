@@ -116,7 +116,7 @@ database, so a person can read them.
 
 | Part | Supported |
 | --- | --- |
-| Agent harness | Claude Code and Codex CLI. A Codex lead cannot run AFK mode. |
+| Agent harness | Claude Code and Codex CLI. pi runs members only. A Codex lead cannot run AFK mode. |
 | Terminal host | [herdr](https://herdr.dev) and tmux. In tmux, teamwire finds the lead through the process tree and asks Claude Code whether a member is working. |
 | Operating system | macOS. Linux works without the sleep hold that keeps the machine awake during a run. |
 
@@ -125,7 +125,7 @@ database, so a person can read them.
 - Rust 1.94.1. The `rust-toolchain.toml` file pins it, so `rustup` installs it
   for you.
 - git
-- Claude Code, with `claude` on `PATH`. Codex CLI is optional: install it to use `codex` as a harness.
+- Claude Code, with `claude` on `PATH`. Codex CLI is optional: install it to use `codex` as a harness. pi is optional too, for members only; under herdr it needs `herdr integration install pi`.
 - herdr or tmux. The lead session must run in a herdr pane or a tmux window
   of its own. With herdr, its session hook must be in your Claude Code
   settings.
@@ -304,7 +304,7 @@ own. [ui/AGENTS.md](ui/AGENTS.md) has the dashboard's rules and commands.
 | --- | --- | --- |
 | `TEAMWIRE_HOME` | `~/.teamwire` | Where every team's state lives. `--home <DIR>` overrides it on any command. |
 | `host` in the spec | detected | The terminal host. teamwire picks herdr when `HERDR_ENV=1`, and tmux when `TMUX` is set. |
-| `harness` in the spec | the lead's harness | The agent program each member runs (`claude-code` or `codex`). A member can name its own `harness`. |
+| `harness` in the spec | the lead's harness | The agent program each member runs (`claude-code`, `codex`, or `pi` for a member). A member can name its own `harness`. |
 | `plugins` in the spec | the user's own switches | Turns Claude Code plugins on or off for members. |
 
 teamwire writes nothing under `~/.claude/` itself. Only `teamwire install`

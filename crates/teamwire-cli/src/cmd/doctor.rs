@@ -217,6 +217,8 @@ pub(crate) struct Inputs<'a> {
     pub(crate) claude: ClaudeConfig,
     /// The Codex adapter, whose plugin is checked when `codex` is on PATH.
     pub(crate) codex: CodexSetup,
+    /// pi's directory, where herdr's pi integration lives.
+    pub(crate) pi_agent_dir: PathBuf,
     /// The MCP entry `teamwire install` would register from this binary, or
     /// why it cannot be worked out.
     pub(crate) lead_entry: Result<McpEntry, String>,
@@ -470,6 +472,25 @@ fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
     }
 }
 
+/// herdr learns a pi session from its own pi extension, and delivery to a pi
+/// member under herdr needs that. Checked only when `pi` is on PATH.
+fn herdr_pi_check(inputs: &Inputs<'_>) -> Option<Check> {
+    on_path(inputs.path_var.as_ref(), "pi")?;
+    let file = inputs.pi_agent_dir.join("extensions/herdr-agent-state.ts");
+    let name = "herdr pi integration";
+    Some(if file.is_file() {
+        Check::pass(name, format!("found at {}", file.display()))
+    } else {
+        Check::warn(
+            name,
+            format!(
+                "{} is missing, so herdr cannot find a pi member's session; run `herdr integration install pi`",
+                file.display()
+            ),
+        )
+    })
+}
+
 /// `git check-ignore` exits 0 for an ignored path, 1 for a path that is not
 /// ignored, and 128 outside a repository.
 fn worktrees_check(inputs: &Inputs<'_>) -> Check {
@@ -651,6 +672,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     checks.extend(database_checks(inputs));
     if inputs.host == Host::Herdr {
         checks.push(herdr_hook_check(inputs));
+        checks.extend(herdr_pi_check(inputs));
     }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
@@ -693,6 +715,7 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
         codex: wiring.codex_setup(),
+        pi_agent_dir: wiring.pi_agent_dir.clone(),
         running_a_build: lead_entry
             .as_ref()
             .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),

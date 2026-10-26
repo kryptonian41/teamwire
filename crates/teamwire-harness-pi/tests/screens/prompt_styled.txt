@@ -1,0 +1,40 @@
+
+ [38;2;228;138;122m[48;2;79;142;179m▀[49m▀█[39m  [2mv1.4.0[0m
+ [38;2;79;142;179m█▀[39m [38;2;234;182;93m█[39m [2mescape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more[0m
+ [2mPress ctrl+o to show full startup help and loaded resources.[0m
+
+ [2mPi can explain its own features and look up its docs. Ask it how to use or extend Pi.[0m
+
+[38;5;3m[Skills][39m
+[2m  ask-matt, auditing-pull-requests, choosing-a-scheduler, claude-handoff, cmux, cmux-browser, cmux-custom-sidebar,
+cmux-customization, cmux-keyboard-shortcuts, cmux-markdown, cmux-settings, cmux-workspace, code-review, codebase-design,
+copy-conversation, daily-standup, diagnosing-bugs, domain-modeling, explainer-video, find-skills, gh-stack, graphify,
+grill-me, grill-with-docs, grilling, grilling-a-scheduled-job, handoff, herdr, implement, improve-codebase-architecture,
+linear-hygiene, obsidian-vault, prototype, research, resolving-merge-conflicts, restacking-gh-stacks,
+reverse-engineer-anything, setup-matt-pocock-skills, show-me, sync-worktrees, tdd, teach, to-spec, to-tickets, triage,
+wayfinder, writing-great-skills[0m
+
+[38;5;3m[Extensions][39m
+[2m  src[0m
+
+
+ [38;5;3mWarning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf
+[39m [38;5;3mand restart tmux.[39m
+
+
+
+
+
+
+
+
+
+
+
+
+
+[38;5;6m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[7m[39m [0m
+[38;5;6m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+[2m[39m/private/tmp/twpi.lbhS (main)[0m
+[2m0.0%/1.0M (auto)                                                                (claude-bridge) claude-opus-5-5 • medium

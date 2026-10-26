@@ -20,7 +20,7 @@ mod screen;
 mod session;
 mod startup;
 
-pub use startup::StartupPoll;
+pub use teamwire_core::screen::StartupPoll;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

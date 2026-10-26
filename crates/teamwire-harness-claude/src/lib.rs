@@ -26,7 +26,7 @@ pub use lead_setup::{
     ApplyError, Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow,
     SkillState, edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
 };
-pub use trust::StartupPoll;
+pub use teamwire_core::screen::StartupPoll;
 
 use std::fmt;
 use std::path::{Path, PathBuf};

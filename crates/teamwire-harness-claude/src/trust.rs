@@ -7,75 +7,18 @@
 
 use std::time::Duration;
 
+use teamwire_core::screen::{STARTUP_HOST_TIMEOUT, StartupPoll, has_any, squash};
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, Host, HostErrorCode, Key, Place, ScreenState, StartupOutcome,
-    TrustPolicy,
+    HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
 };
 
-use crate::screen::{
-    ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, has_any, last_pointer_text, squash,
-};
+use crate::screen::{ESCALATION_MARKERS, PLAIN_TRUST_MARKERS, classify, last_pointer_text};
 
 /// The option that trusts the folder.
 const ACCEPT_OPTION: &str = "Yes, I trust this folder";
 
-/// How many screen lines to read for the dialog: more than any terminal is
-/// tall, so a tall dialog is read whole. Its escalation lines can sit above the
-/// last 40 lines, and a marker that is missed lets the dialog be answered
-/// (INV-25).
-const TAIL_LINES: u16 = 1000;
-const HOST_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// How long `answer_startup` waits: `steps` reads, `step` apart. A count of
-/// sleeps bounds the wait because the clock is not readable here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartupPoll {
-    pub step: Duration,
-    pub steps: u32,
-}
-
-impl Default for StartupPoll {
-    /// About 30 s in half-second steps.
-    fn default() -> Self {
-        Self {
-            step: Duration::from_millis(500),
-            steps: 60,
-        }
-    }
-}
-
-/// The steps a read that ran out of `HOST_TIMEOUT` uses up: the steps that time
-/// covers. At most a sixth of the loop, so a loop always allows six such reads
-/// whatever `step` is.
-fn timed_out_steps(poll: StartupPoll) -> u32 {
-    let covered = HOST_TIMEOUT.as_millis() / poll.step.as_millis().max(1);
-    u32::try_from(covered)
-        .unwrap_or(u32::MAX)
-        .clamp(1, (poll.steps / 6).max(1))
-}
-
-/// The screen, or `None` for "no screen this time": a read that ran out of
-/// its time (a slow start) or that herdr refused because the agent is working.
-/// The loops read again on their next step. A timed-out read also takes the
-/// rest of the steps its 5 s covered out of `left`, so a loop still ends
-/// after about `poll.steps * poll.step` plus one read. A busy read returns at
-/// once and costs nothing more. Any other host error ends the step.
-fn read(
-    host: &dyn Host,
-    place: &Place,
-    poll: StartupPoll,
-    left: &mut u32,
-) -> Result<Option<String>, HarnessError> {
-    match host.read_tail(place, TAIL_LINES, HOST_TIMEOUT) {
-        Ok(screen) => Ok(Some(screen)),
-        Err(e) if e.code == HostErrorCode::Timeout => {
-            *left = left.saturating_sub(timed_out_steps(poll) - 1);
-            Ok(None)
-        }
-        Err(e) if e.code == HostErrorCode::Busy => Ok(None),
-        Err(e) => Err(e.into()),
-    }
-}
+/// The timeout of each key teamwire sends to a starting member.
+const HOST_TIMEOUT: Duration = STARTUP_HOST_TIMEOUT;
 
 /// Watches the member's screen until it shows the input prompt, the plain
 /// trust dialog (answered when `policy` allows) or an escalated dialog
@@ -90,7 +33,7 @@ pub(crate) fn answer_startup(
     let mut left = poll.steps;
     while left > 0 {
         left -= 1;
-        let Some(raw) = read(host, place, poll, &mut left)? else {
+        let Some(raw) = poll.read(host, place, &mut left)? else {
             std::thread::sleep(poll.step);
             continue;
         };
@@ -160,7 +103,7 @@ fn accept(
     let mut left = poll.steps;
     while left > 0 {
         left -= 1;
-        let Some(screen) = read(host, place, poll, &mut left)? else {
+        let Some(screen) = poll.read(host, place, &mut left)? else {
             std::thread::sleep(poll.step);
             continue;
         };
@@ -197,7 +140,7 @@ fn confirm(
     let mut left = poll.steps;
     while left > 0 {
         left -= 1;
-        if let Some(screen) = read(host, place, poll, &mut left)? {
+        if let Some(screen) = poll.read(host, place, &mut left)? {
             // Enter is already sent here, so an escalated dialog seen now was
             // accepted and Claude Code has saved trust for the folder. That is
             // not `RefusedEscalated`, whose message asks the lead to answer a

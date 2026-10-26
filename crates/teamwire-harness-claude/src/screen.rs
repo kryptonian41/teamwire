@@ -2,6 +2,7 @@
 //! dialog? The answer decides whether a host may type into the session, so
 //! `InputPrompt` needs positive evidence and nothing else is trusted.
 
+use teamwire_core::screen::{has_any, squash, visible};
 use teamwire_core::{OneLine, ScreenState};
 
 /// Text of the plain folder-trust dialog.
@@ -43,16 +44,6 @@ const BUSY_MARKERS: [&str; 1] = ["esc to interrupt"];
 /// How many non-empty lines at the end of the screen can belong to the
 /// input box and its footer.
 const BOX_LINES: usize = 8;
-
-/// The text with each run of whitespace made one space, so a phrase that the
-/// terminal wrapped onto two lines still matches.
-pub(crate) fn squash(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-pub(crate) fn has_any(squashed: &str, markers: &[&str]) -> bool {
-    markers.iter().any(|m| squashed.contains(m))
-}
 
 /// A line with its box-drawing border and outer spaces removed.
 fn inner(line: &str) -> &str {
@@ -256,76 +247,4 @@ pub(crate) fn classify(tail: &str) -> ScreenState {
     } else {
         ScreenState::Unknown
     }
-}
-
-/// The text of `tail` with the terminal's escape codes taken out, so a
-/// screen read with its styles parses as a plain one. With `keep_dim` false,
-/// text drawn dim (SGR 2) is dropped too. A plain screen comes back as it was.
-pub(crate) fn visible(tail: &str, keep_dim: bool) -> String {
-    let mut out = String::with_capacity(tail.len());
-    let mut dim = false;
-    let mut chars = tail.chars();
-    while let Some(c) = chars.next() {
-        if c != '\u{1b}' {
-            if keep_dim || !dim || c == '\n' {
-                out.push(c);
-            }
-            continue;
-        }
-        match chars.next() {
-            // CSI: parameter and intermediate bytes, then one final byte.
-            Some('[') => {
-                let mut params = String::new();
-                for c in chars.by_ref() {
-                    if ('\u{40}'..='\u{7e}').contains(&c) {
-                        if c == 'm' {
-                            dim = sgr_dim(&params, dim);
-                        }
-                        break;
-                    }
-                    params.push(c);
-                }
-            }
-            // OSC, such as a hyperlink: up to BEL, or ESC and one more byte.
-            Some(']') => {
-                while let Some(c) = chars.next() {
-                    if c == '\u{7}' {
-                        break;
-                    }
-                    if c == '\u{1b}' {
-                        chars.next();
-                        break;
-                    }
-                }
-            }
-            // A two-byte escape.
-            _ => {}
-        }
-    }
-    out
-}
-
-/// Whether text is dim after an SGR sequence with `params`, given `dim`
-/// before it.
-fn sgr_dim(params: &str, mut dim: bool) -> bool {
-    let mut codes = params.split(';');
-    while let Some(code) = codes.next() {
-        // A colon sub-parameter belongs to its code: `4:3` is code 4.
-        match code.split(':').next().unwrap_or_default() {
-            "" | "0" | "22" => dim = false,
-            "2" => dim = true,
-            // An extended colour, `5;n` or `2;r;g;b`, whose `2` is not dim.
-            "38" | "48" | "58" if !code.contains(':') => match codes.next() {
-                Some("5") => {
-                    codes.next();
-                }
-                Some("2") => {
-                    codes.nth(2);
-                }
-                _ => {}
-            },
-            _ => {}
-        }
-    }
-    dim
 }

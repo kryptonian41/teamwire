@@ -23,7 +23,7 @@ const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The kinds herdr detects that this adapter passes through; any other
 /// program name starts `claude`.
-const KINDS: [&str; 4] = ["claude", "codex", "gemini", "opencode"];
+const KINDS: [&str; 5] = ["claude", "codex", "gemini", "opencode", "pi"];
 
 /// The team part of `tw_<team>_<role>`. A team name has no underscore.
 fn team_of(name: &str) -> &str {
@@ -255,6 +255,18 @@ mod tests {
             stderr: br#"{"error":{"code":"agent_pane_busy","message":"busy"}}"#.to_vec(),
             timed_out: false,
         }
+    }
+
+    #[test]
+    fn a_known_program_is_its_own_kind_and_any_other_starts_claude() {
+        let argv = |words: &[&str]| words.iter().map(|w| (*w).to_owned()).collect::<Vec<_>>();
+        let pi = argv(&["/opt/pi/bin/pi", "--session-id", "s"]);
+        let (kind, rest) = kind_and_args(&pi);
+        assert_eq!(kind, "pi");
+        assert_eq!(Some(rest), pi.get(1..));
+        assert_eq!(kind_and_args(&argv(&["codex", "-C", "/w"])).0, "codex");
+        assert_eq!(kind_and_args(&argv(&["pix"])).0, "claude");
+        assert_eq!(kind_and_args(&argv(&["--flag"])).0, "claude");
     }
 
     #[test]

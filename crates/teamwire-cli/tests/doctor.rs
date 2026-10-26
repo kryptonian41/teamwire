@@ -57,6 +57,7 @@ mod wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
         pub(crate) codex: teamwire_harness_codex::CodexConfig,
+        pub(crate) pi_agent_dir: std::path::PathBuf,
         pub(crate) registry: teamwire_core::Registry,
         pub(crate) clock: teamwire_fakes::FakeClock,
     }
@@ -269,6 +270,7 @@ impl Bed {
         }
         diagnose(&Inputs {
             codex: self.codex_setup(),
+            pi_agent_dir: self.home.path().join("pi-agent"),
             host: self.host,
             home: self
                 .run_home
@@ -628,6 +630,20 @@ fn a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about(
 }
 
 #[test]
+fn herdrs_pi_integration_is_checked_only_when_pi_is_on_path() {
+    let bed = Bed::healthy();
+    assert!(!names(&bed.checks()).contains(&"herdr pi integration"));
+    std::fs::write(bed.bin.path().join("pi"), "#!/bin/sh\n").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "herdr pi integration"), Level::Warn);
+    assert!(detail_of(&checks, "herdr pi integration").contains("herdr integration install pi"));
+    let ext = bed.home.path().join("pi-agent/extensions");
+    std::fs::create_dir_all(&ext).unwrap();
+    std::fs::write(ext.join("herdr-agent-state.ts"), "").unwrap();
+    assert_eq!(level_of(&bed.checks(), "herdr pi integration"), Level::Pass);
+}
+
+#[test]
 fn a_settings_file_without_the_herdr_hook_fails() {
     let bed = Bed::healthy();
     std::fs::write(bed.claude.path().join("settings.json"), "{}").unwrap();
@@ -810,6 +826,7 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
         codex: bed.codex_setup(),
+        pi_agent_dir: bed.home.path().join("pi-agent"),
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),

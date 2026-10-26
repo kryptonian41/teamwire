@@ -446,6 +446,7 @@ mod tests {
             claude_config_dir: None,
             codex_test_home: None,
             codex_home: None,
+            pi_agent_dir: None,
             lead_harness: None,
             claude_session: None,
             codex_thread: None,
