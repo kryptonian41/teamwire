@@ -25,6 +25,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `delivery.acked`, `delivery.reminded` | the recipient reads; a hook reminds | `seconds` since `message.sent` |
 | `delivery.resent` | an explicit resend, or a send resumed by its key, starts a new attempt | `attempt`, `previous_state` |
 | `delivery.reentered` | tmux delivery pressed Enter a second time because the pasted line was still in the input box | `to` (`lead` or the role), `place` (the recipient's place id, such as `%4@/private/tmp/tmux-501/default`); the `role` column is the member's role, empty for the lead |
+| `delivery.recipient_stopped` | a member's turn ended while a sender still held its delivery `pending`; the sender reads it before it records `undelivered` (ADR 0028) | `to` (the role); the `role` column is the member's role, the subject the message |
 | `result.delivering`, `.delivered`, `.undelivered`, `.unconfirmed` | a result's delivery steps | `route`, `code`, `seconds` since `member.completed` |
 | `watch.started`, `watch.line`, `watch.stopped` | the watch starts, prints, exits | `pid`, `host` (started); `events` (list of event names in the line); `reason`, `polls` (stopped) |
 | `verify.recorded`, `verify.waived` | a verify record; a waiver | `verdict`, `flags`, `exit`, `seconds`, `head_sha` (recorded) |

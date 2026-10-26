@@ -200,6 +200,8 @@ export function describe(row: EventRow, resultN: number | null = null): { label:
     }
     case "delivery.reentered":
       return { label: m && to && `${m} re-entered for ${to}`, details: str(d, "place") };
+    case "delivery.recipient_stopped":
+      return { label: m && to && `${to} stopped while ${m} was being delivered`, details: null };
     case "result.delivering":
       return { label: who && `${who}'s ${result} being delivered`, details: secs(d) };
     case "result.delivered":

@@ -85,3 +85,27 @@ pub fn attempt_in_flight(
     }
     Ok(started.is_some_and(|t| now.saturating_since(t) <= PENDING_STALE))
 }
+
+/// How many times the recipient's turn ended while the latest attempt at
+/// `message` for it was in flight (`delivery.recipient_stopped` since the
+/// message was sent or last resent). Each such stop left the message to the
+/// sender, so a sender that would record `undelivered` tries again instead
+/// (ADR 0028). Events are read in commit order, not by their clock times.
+pub fn stops_since_attempt(
+    tx: &ReadTx<'_>,
+    message: &Message,
+    recipient: &Recipient,
+) -> Result<usize, StoreError> {
+    let mut stops = 0;
+    for e in tx.events_about(&message.ulid)?.all_or_corrupt()? {
+        if !is_for(&e, recipient) {
+            continue;
+        }
+        if e.kind == EventType::DeliveryResent {
+            stops = 0;
+        } else if e.kind == EventType::DeliveryRecipientStopped {
+            stops += 1;
+        }
+    }
+    Ok(stops)
+}

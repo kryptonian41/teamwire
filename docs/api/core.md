@@ -168,7 +168,7 @@ team.created team.closing team.closed team.lead_adopted
 member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff
 member.completed member.completion_refused member.held
 message.sent message.refused
-delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
+delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered delivery.recipient_stopped
 result.delivering result.delivered result.undelivered result.unconfirmed
 watch.started watch.line watch.stopped
 verify.recorded verify.waived
@@ -559,7 +559,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 7: `crates/teamwire-store/src/schema/v1.sql` to `v7.sql`,
+The schema is version 8: `crates/teamwire-store/src/schema/v1.sql` to `v8.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -568,7 +568,7 @@ adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
 row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
-(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. The tables and columns are those in
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028). The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

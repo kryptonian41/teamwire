@@ -226,6 +226,26 @@ impl Tx<'_> {
         Ok(attempt)
     }
 
+    /// The recipient's turn ended while its delivery of `message` was still
+    /// `pending`, so the turn-end hook left the message to the sender. The
+    /// sender reads this before it records `undelivered` (ADR 0028): the
+    /// recipient may be idle now, and no later stop would name the message.
+    pub fn record_recipient_stopped(
+        &self,
+        at: Timestamp,
+        message: &Ulid,
+        recipient: &Recipient,
+    ) -> Result<(), StoreError> {
+        self.record_event(
+            at,
+            EventType::DeliveryRecipientStopped,
+            recipient_role(recipient),
+            Some(message),
+            &json!({ "to": recipient.as_str() }),
+        )?;
+        Ok(())
+    }
+
     /// A hook reminded the recipient of an unread message: sets
     /// `reminded_at` and writes `delivery.reminded`.
     pub fn mark_reminded(
