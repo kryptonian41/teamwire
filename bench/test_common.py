@@ -107,7 +107,7 @@ class Prices(unittest.TestCase):
 
     def test_table_has_source_and_date(self):
         pr = common.load_prices()
-        self.assertTrue(pr["source"] and pr["read_on"] == "2026-10-22")
+        self.assertTrue(pr["source"] and pr["read_on"] == "2026-10-26")
 
 
 if __name__ == "__main__":

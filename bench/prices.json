@@ -1,6 +1,6 @@
 {
-  "source": "List prices from the claude-api skill's model table (cached 2026-10-06) and its caching notes. Writes are 1.25x input (5m) and 2x input (1h).",
-  "read_on": "2026-10-22",
+  "source": "Anthropic list prices from https://platform.claude.com/docs/en/about-claude/pricing (Sonnet 5.5 cache read corrected from the claude-api skill's cached table). Writes are 1.25x input (5m) and 2x input (1h).",
+  "read_on": "2026-10-26",
   "unit": "USD per million tokens",
   "aliases": {
     "claude-fable-5-1[1m]": "claude-fable-5-1",
@@ -62,7 +62,7 @@
     "claude-sonnet-5-5": {
       "input": 2.0,
       "output": 10.0,
-      "cache_read": 0.2,
+      "cache_read": 0.1,
       "cache_write_5m": 2.5,
       "cache_write_1h": 4.0
     },
