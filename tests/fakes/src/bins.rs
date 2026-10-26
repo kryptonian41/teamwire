@@ -1,18 +1,20 @@
 //! Finding and installing the fake binaries, finding the real `teamwire`
 //! binary for tests that run it from outside `teamwire-cli`, and building a
-//! `PATH` on which the real `herdr` and `claude` cannot be found.
+//! `PATH` on which the real hosts and harnesses cannot be found.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// The directories a test's `PATH` keeps after the fake binaries: enough for
-/// `sh`, `git`, `cat` and `sleep`. One that holds a real `herdr` or `claude`
-/// is replaced by a shadow of it (`shadow`).
+/// `sh`, `git`, `cat` and `sleep`. One that holds a real program of
+/// `REAL_BINS` is replaced by a shadow of it (`shadow`).
 const SYSTEM_DIRS: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 
-/// The real programs a test must never reach by name.
-const REAL_BINS: [&str; 2] = ["herdr", "claude"];
+/// The real programs a test must never reach by name: the hosts, which
+/// type into the user's panes, and the harnesses, which start real sessions.
+/// A Linux package puts `tmux` and `herdr` in /usr/bin; macOS has none there.
+const REAL_BINS: [&str; 4] = ["herdr", "claude", "tmux", "codex"];
 
 /// The directory that holds the built `fake-herdr` and `fake-claude`.
 #[derive(Debug, Clone)]
@@ -300,16 +302,16 @@ impl FakeBinDir {
     }
 
     /// The value for `PATH`: the fake directory first, then system
-    /// directories that hold no real `herdr` or `claude`.
+    /// directories that hold no program of `REAL_BINS`.
     pub fn path(&self) -> &OsString {
         &self.path
     }
 }
 
 /// Makes `into` a directory with a link to every entry of `system` except the
-/// real `herdr` and `claude`. A Linux package installs `herdr` into /usr/bin,
-/// beside the `sh` and `git` the tests need, so that directory cannot go on
-/// the test `PATH` as it is.
+/// programs of `REAL_BINS`. A Linux package installs `herdr` and `tmux` into
+/// /usr/bin, beside the `sh` and `git` the tests need, so that directory
+/// cannot go on the test `PATH` as it is.
 fn shadow(system: &Path, into: &Path) -> std::io::Result<PathBuf> {
     std::fs::create_dir_all(into)?;
     for entry in std::fs::read_dir(system)? {

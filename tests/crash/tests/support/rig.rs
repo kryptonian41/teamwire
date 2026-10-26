@@ -46,7 +46,7 @@ pub fn token_of(role: &str) -> String {
 /// library, and the product hashes tokens with plain SHA-256.
 pub fn sha256(text: &str) -> [u8; 32] {
     use std::io::Write as _;
-    let mut child = Command::new("/usr/bin/shasum")
+    let mut child = Command::new("shasum")
         .args(["-a", "256"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -705,7 +705,7 @@ pub fn assert_closed_for_good(rig: &Rig) {
 
 /// True when every file of the archive hashes to its `SHA256SUMS` line.
 pub fn archive_verifies(dir: &Path) -> bool {
-    Command::new("/usr/bin/shasum")
+    Command::new("shasum")
         .args(["-a", "256", "-c", "SHA256SUMS"])
         .current_dir(dir)
         .stdout(Stdio::null())
