@@ -1,4 +1,4 @@
-# ADR 0028: pi is a harness, for members only
+# ADR 0029: pi is a harness, for members only
 
 Status: accepted, 2026-10-25.
 

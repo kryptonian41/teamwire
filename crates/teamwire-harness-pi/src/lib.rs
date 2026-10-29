@@ -1,5 +1,5 @@
 //! The `Harness` trait for pi (`@earendil-works/pi-coding-agent`, ADR
-//! 0028), for members only: launch argv, the extension that runs teamwire's
+//! 0029), for members only: launch argv, the extension that runs teamwire's
 //! hooks inside pi, the member's token file, the TUI screen, and the files
 //! that give liveness, state and context fill.
 //!
