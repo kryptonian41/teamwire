@@ -1,7 +1,8 @@
 //! What a handoff needs from close: the busy and uncommitted-work checks of
 //! a single removal, and the close of the member's place with its wait for
-//! the place's processes to end. The CLI runs these before launch opens the
-//! new session, because the host refuses a second live agent of one name.
+//! the place's processes to end. Launch's `hand_off` runs these, passed in by
+//! the CLI, before it opens the new session, because the host refuses a
+//! second live agent of one name.
 //!
 //! Nothing is removed: the row, worktree, branch and per-run files stay, so
 //! a handoff needs no verify record and does not wait for the closer.
@@ -9,7 +10,7 @@
 use teamwire_core::{Member, TeamName};
 use teamwire_store::Ctx;
 
-use crate::facts::{Busy, busy_state, dirty_paths};
+use crate::facts::{busy_state, busy_text, uncommitted_text};
 use crate::member_close;
 
 /// Why the member's place must not close for a handoff now: a running turn,
@@ -17,35 +18,14 @@ use crate::member_close;
 /// Empty when it may. A handoff never stops a turn, so nothing overrides
 /// these. A session that has already ended reads as idle.
 pub fn handoff_refusals(ctx: &Ctx<'_>, member: &Member) -> Vec<String> {
-    let role = &member.role;
-    let mut out = Vec::new();
-    match busy_state(ctx, member) {
-        Busy::Idle => {}
-        Busy::Working => out.push(format!(
-            "{role} is busy: its current turn is lost if its place closes. Wait for the turn \
-             to end, then run handoff again"
-        )),
-        Busy::Blocked => out.push(format!(
-            "{role} is showing a dialog and waits for an answer. Answer it, then run handoff \
-             again"
-        )),
-        Busy::Unknown(why) => out.push(format!(
-            "cannot tell whether {role} is busy ({why}); refusing rather than guess"
-        )),
-    }
-    match dirty_paths(ctx, member) {
-        Ok(paths) if paths.is_empty() => {}
-        Ok(paths) => out.push(format!(
-            "{role} has {} uncommitted path(s) in {}. The member commits its work before a \
-             handoff",
-            paths.len(),
-            member.cwd.display()
-        )),
-        Err(e) => out.push(format!(
-            "cannot tell whether {role} has uncommitted work ({e}); refusing rather than guess"
-        )),
-    }
-    out
+    let busy = busy_text(
+        &member.role,
+        busy_state(ctx, member),
+        "Wait for the turn to end, then run handoff again",
+        "Answer it, then run handoff again",
+    );
+    let dirty = uncommitted_text(ctx, member, "The member commits its work before a handoff");
+    busy.into_iter().chain(dirty).collect()
 }
 
 /// Closes the member's place through its own host and waits for the

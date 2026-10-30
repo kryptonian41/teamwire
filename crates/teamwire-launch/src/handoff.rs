@@ -1,6 +1,6 @@
 //! Handoff, the launch half: a fresh session for a started member in the
-//! same seat. The CLI runs `open_handoff` after close has taken the old place
-//! down, because the host refuses a second live agent of one name. The row,
+//! same seat. `hand_off` runs `open_handoff` after close has taken the old
+//! place down, because the host refuses a second live agent of one name. The row,
 //! worktree, branch, token, per-run files, brief and report stay; the
 //! session, the place and the generation change, in one store write made
 //! after the trust step.
@@ -42,13 +42,18 @@ pub struct HandoffPlan<'r> {
     ready: Ready<'r>,
 }
 
-/// Why `plan_handoff` stopped. Nothing was touched either way.
+/// Why a handoff stopped. `plan_handoff` returns only the first two, which
+/// touch nothing.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum HandoffError {
     #[error("{0}")]
     Refused(String),
     #[error("the store could not be read: {0}")]
     Store(String),
+    /// The old place's close began, and no new session took over. The text
+    /// says how to get the member back.
+    #[error("{0}")]
+    Partial(String),
 }
 
 impl std::fmt::Debug for HandoffPlan<'_> {
