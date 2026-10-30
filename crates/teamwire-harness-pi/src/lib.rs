@@ -35,6 +35,8 @@ use teamwire_core::{
     StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
+use crate::lead_extension::LEAD_SESSION_VAR;
+
 /// Where pi keeps its files, and how to start it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PiConfig {
@@ -126,20 +128,23 @@ impl Harness for Pi {
         self.caller_session(&|name| std::env::var(name).ok())
     }
 
-    /// The lead's MCP server is a child of pi and gets no session variable,
-    /// so the session the parent process runs comes first. A command run
-    /// through pi's bash tool has `PI_SESSION_ID`. Either is a lead only
-    /// when the lead's extension wrote its state file.
+    /// pi gives the lead's MCP server no session variable, so the lead
+    /// extension names the session in the server's environment. That counts
+    /// only when the session's pi process is the server's parent, which costs
+    /// one `ps`, paid by MCP calls alone. A command run through pi's bash tool
+    /// has `PI_SESSION_ID`. Either is a lead only when the lead's extension
+    /// wrote its state file.
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         let platform = self.platform.as_ref();
         let dir = self.config.sessions_dir();
-        let parent = platform.parent_of(Pid::new(std::process::id()));
-        parent
-            .and_then(|(pid, _)| session::lead_by_pid(platform, &dir, pid))
-            .or_else(|| {
-                let id = SessionId::parse(get("PI_SESSION_ID")?.trim()).ok()?;
-                session::lead_by_id(platform, &dir, &id)
-            })
+        if let Some(named) = get(LEAD_SESSION_VAR) {
+            let id = SessionId::parse(named.trim()).ok()?;
+            let (session, pid) = session::lead_by_id(platform, &dir, &id)?;
+            let (parent, _) = platform.parent_of(Pid::new(std::process::id()))?;
+            return (parent == pid).then_some(session);
+        }
+        let id = SessionId::parse(get("PI_SESSION_ID")?.trim()).ok()?;
+        session::lead_by_id(platform, &dir, &id).map(|(session, _)| session)
     }
 
     /// pi opens a session by id from the folder it ran in, which reopen

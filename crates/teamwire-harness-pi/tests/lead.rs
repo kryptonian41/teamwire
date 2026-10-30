@@ -128,6 +128,20 @@ fn no_env(_: &str) -> Option<String> {
     None
 }
 
+/// The environment of the lead's MCP server, which the lead extension
+/// registers with the session's id. `inherited` is a `PI_SESSION_ID` that
+/// the pi process may itself have inherited.
+fn server_env(
+    id: &'static str,
+    inherited: Option<&'static str>,
+) -> impl Fn(&str) -> Option<String> {
+    move |name| match name {
+        "TEAMWIRE_PI_LEAD_SESSION" => Some(id.to_owned()),
+        "PI_SESSION_ID" => inherited.map(str::to_owned),
+        _ => None,
+    }
+}
+
 #[test]
 fn a_shell_command_of_the_lead_names_its_session_through_pi_session_id() {
     let rig = Rig::new();
@@ -137,26 +151,42 @@ fn a_shell_command_of_the_lead_names_its_session_through_pi_session_id() {
 }
 
 #[test]
-fn the_lead_mcp_server_finds_the_session_its_parent_pi_runs() {
+fn the_lead_mcp_server_proves_the_session_its_parent_pi_runs() {
     let rig = Rig::new();
     rig.run(PI_PID);
     rig.under_pi();
-    // `/new` ended the first session and started the second in the same pi.
-    rig.lead_state(OTHER, PI_PID, "ended", "tui", &rig.session_file(OTHER));
     rig.lead_state(LEAD, PI_PID, "idle", "tui", &rig.session_file(LEAD));
-    assert_eq!(rig.pi().caller_session(&no_env), Some(interactive(LEAD)));
+    // A `PI_SESSION_ID` that pi itself inherited does not decide.
+    assert_eq!(
+        rig.pi().caller_session(&server_env(LEAD, Some(OTHER))),
+        Some(interactive(LEAD))
+    );
 }
 
 #[test]
-fn the_parent_wins_over_an_inherited_session_variable() {
+fn a_server_whose_parent_is_not_the_recorded_pi_proves_nothing() {
+    let rig = Rig::new();
+    rig.run(PI_PID);
+    rig.lead_state(LEAD, PI_PID, "idle", "tui", &rig.session_file(LEAD));
+    // No parent known, then a parent that is not the recorded pi.
+    assert_eq!(rig.pi().caller_session(&server_env(LEAD, None)), None);
+    rig.platform
+        .set_parent(Pid::new(std::process::id()), Pid::new(PI_PID + 1), "pi");
+    assert_eq!(rig.pi().caller_session(&server_env(LEAD, None)), None);
+    // The server's session ended after a `/new`: the server is refused.
+    rig.under_pi();
+    rig.lead_state(LEAD, PI_PID, "ended", "tui", &rig.session_file(LEAD));
+    assert_eq!(rig.pi().caller_session(&server_env(LEAD, None)), None);
+}
+
+#[test]
+fn a_shell_command_needs_no_parent_lookup() {
     let rig = Rig::new();
     rig.run(PI_PID);
     rig.under_pi();
     rig.lead_state(LEAD, PI_PID, "idle", "tui", &rig.session_file(LEAD));
-    assert_eq!(
-        rig.pi().caller_session(&env(OTHER)),
-        Some(interactive(LEAD))
-    );
+    assert_eq!(rig.pi().caller_session(&env(LEAD)), Some(interactive(LEAD)));
+    assert_eq!(rig.platform.log().count_named("parent_of"), 0);
 }
 
 #[test]
@@ -187,6 +217,7 @@ fn a_member_an_ended_session_or_a_dead_pi_proves_no_lead() {
     rig.member_state(LEAD, PI_PID);
     assert_eq!(pi.caller_session(&env(LEAD)), None);
     rig.under_pi();
+    assert_eq!(pi.caller_session(&server_env(LEAD, None)), None);
     assert_eq!(pi.caller_session(&no_env), None);
     // The lead's session ended.
     rig.lead_state(LEAD, PI_PID, "ended", "tui", &rig.session_file(LEAD));
@@ -195,7 +226,7 @@ fn a_member_an_ended_session_or_a_dead_pi_proves_no_lead() {
     rig.lead_state(LEAD, PI_PID, "idle", "tui", &rig.session_file(LEAD));
     rig.platform.set_alive(Pid::new(PI_PID), false);
     assert_eq!(pi.caller_session(&env(LEAD)), None);
-    assert_eq!(pi.caller_session(&no_env), None);
+    assert_eq!(pi.caller_session(&server_env(LEAD, None)), None);
 }
 
 #[test]

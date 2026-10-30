@@ -148,35 +148,15 @@ fn lead_session(id: SessionId, r: &Recorded, platform: &dyn Platform) -> Option<
     Some(CallerSession { id, kind })
 }
 
-/// The lead session `session`, when the lead's extension runs it.
+/// The lead session `session`, when the lead's extension runs it, and the
+/// pi process that runs it.
 pub(crate) fn lead_by_id(
     platform: &dyn Platform,
     sessions_dir: &Path,
     session: &SessionId,
-) -> Option<CallerSession> {
-    lead_session(session.clone(), &recorded(sessions_dir, session)?, platform)
-}
-
-/// The lead session that the pi process `pid` runs now. A `/new` or
-/// `/resume` ends one state file and starts another, so the live one is the
-/// one not `ended`.
-pub(crate) fn lead_by_pid(
-    platform: &dyn Platform,
-    sessions_dir: &Path,
-    pid: Pid,
-) -> Option<CallerSession> {
-    std::fs::read_dir(sessions_dir)
-        .ok()?
-        .filter_map(Result::ok)
-        .find_map(|entry| {
-            let name = entry.file_name();
-            let id = name.to_str()?.strip_suffix(STATE_SUFFIX)?;
-            let r = read_recorded(&entry.path())?;
-            if r.process.pid != pid {
-                return None;
-            }
-            lead_session(SessionId::parse(id).ok()?, &r, platform)
-        })
+) -> Option<(CallerSession, Pid)> {
+    let r = recorded(sessions_dir, session)?;
+    lead_session(session.clone(), &r, platform).map(|s| (s, r.process.pid))
 }
 
 /// The pi process that runs `session`, when it still does: the recorded pid,

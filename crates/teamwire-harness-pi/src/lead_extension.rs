@@ -16,6 +16,9 @@ use crate::extension::{CONFIG_SLOT, IMPORTS, SHARED, STATE_SUFFIX, home_args};
 
 /// The tool that starts a watch.
 pub(crate) const WATCH_TOOL: &str = "teamwire_watch";
+/// The variable that names the lead's session to its MCP server. pi gives
+/// a server no session variable and no `_meta` (ADR 0030 point 4).
+pub(crate) const LEAD_SESSION_VAR: &str = "TEAMWIRE_PI_LEAD_SESSION";
 /// The `customType` of a watch line in the session.
 const WATCH_MESSAGE: &str = "teamwire.watch";
 /// How long the tool waits for a watch to fail at once, such as a second
@@ -43,6 +46,7 @@ pub(crate) fn render(v: &LeadValues<'_>) -> String {
         "watchTool": WATCH_TOOL,
         "watchMessage": WATCH_MESSAGE,
         "watchStartMs": WATCH_START_MS,
+        "leadSessionVar": LEAD_SESSION_VAR,
     });
     [HEAD, IMPORTS, LEAD_IMPORTS, SHARED, LEAD_MAIN]
         .concat()
@@ -71,16 +75,31 @@ const WATCH_IN_BASH =
 export default function (pi: ExtensionAPI) {
   // Whether this session is a lead's: decided when each session starts.
   let lead = false;
-  let registered = false;
+  // The session the MCP server was registered for, and whether the watch
+  // tool is registered.
+  let serverFor: string | undefined;
+  let toolRegistered = false;
+  // False from `session_shutdown` on. pi then marks this runtime stale, and
+  // `sendMessage` throws.
+  let live = true;
   // The watches this process runs, by team, and the ones it is stopping.
   const watches = new Map<string, any>();
   const stopping = new Set<any>();
 
-  const say = (text: string) =>
-    pi.sendMessage(
-      { customType: TW.watchMessage, content: text, display: true },
-      { triggerTurn: true, deliverAs: "followUp" },
-    );
+  // A line can still be in a watch's pipe when pi replaces this runtime on
+  // /new, /fork, /resume or /reload. A throw from a stream listener is
+  // uncaught, and pi's terminal UI exits on one, so this never throws.
+  const say = (text: string) => {
+    if (!live) return;
+    try {
+      pi.sendMessage(
+        { customType: TW.watchMessage, content: text, display: true },
+        { triggerTurn: true, deliverAs: "followUp" },
+      );
+    } catch {
+      // The runtime went stale: the line has nobody to reach.
+    }
+  };
 
   // Starts `teamwire watch <team>`. Resolves to undefined once it runs, or
   // to what went wrong when it ends within `watchStartMs`.
@@ -129,8 +148,8 @@ export default function (pi: ExtensionAPI) {
       });
       child.on("close", (code: number | null, signal: string | null) => {
         forget();
-        if (pending.trim()) say(pending.trim());
         if (failed || stopping.delete(child)) return;
+        if (pending.trim()) say(pending.trim());
         const why = err.trim().split("\n").pop() || `exit ${code ?? signal}`;
         if (!settled) {
           done(code === 0 ? undefined : why);
@@ -141,14 +160,20 @@ export default function (pi: ExtensionAPI) {
     });
   }
 
-  function registerLead() {
-    if (registered) return;
-    registered = true;
-    pi.registerMcpServer("teamwire", {
-      command: TW.bin,
-      args: [...TW.homeArgs, "mcp", "--lead"],
-      exposure: "direct",
-    });
+  // The server learns its session from this registration, so a new session
+  // registers it again, which replaces the earlier one.
+  function registerLead(session: string) {
+    if (serverFor !== session) {
+      serverFor = session;
+      pi.registerMcpServer("teamwire", {
+        command: TW.bin,
+        args: [...TW.homeArgs, "mcp", "--lead"],
+        env: { [TW.leadSessionVar]: session },
+        exposure: "direct",
+      });
+    }
+    if (toolRegistered) return;
+    toolRegistered = true;
     pi.registerTool({
       name: TW.watchTool,
       label: "teamwire watch",
@@ -185,22 +210,24 @@ export default function (pi: ExtensionAPI) {
   }
 
   trackState(pi, () => lead, (ctx) => {
+    live = true;
     lead = !inMember();
     stateExtra = {
       lead: true,
       mode: ctx.mode,
       session_file: ctx.sessionManager.getSessionFile() ?? null,
-      cwd: ctx.cwd,
     };
-    if (lead) registerLead();
+    if (lead) registerLead(ctx.sessionManager.getSessionId());
   });
   holdOnSettle(pi, () => lead, [...TW.homeArgs, "hook", "lead-stop", "--harness", "pi"]);
 
   // A quit, a reload or a switch to another session ends this session's
   // watches; the lead starts them again from the session it then runs.
   pi.on("session_shutdown", () => {
+    live = false;
     for (const child of watches.values()) {
       stopping.add(child);
+      child.stdout.destroy();
       child.kill("SIGTERM");
     }
     watches.clear();
@@ -260,6 +287,7 @@ mod tests {
         assert_eq!(c["stateDir"], "/pi/sessions/teamwire");
         assert_eq!(c["stateSuffix"], STATE_SUFFIX);
         assert_eq!(c["watchTool"], WATCH_TOOL);
+        assert_eq!(c["leadSessionVar"], LEAD_SESSION_VAR);
         assert!(!text.contains(CONFIG_SLOT));
     }
 

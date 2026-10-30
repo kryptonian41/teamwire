@@ -82,10 +82,12 @@ API and a fake `teamwire`. No model turn ran.
    extension does nothing in that session. Otherwise:
    - it registers the MCP server `teamwire` as `<bin> [--home H] mcp --lead`
      with `exposure: "direct"`, so the skill's `mcp__teamwire__team_*` tools
-     are declared to the model;
+     are declared to the model. The server's environment names the session
+     in `TEAMWIRE_PI_LEAD_SESSION`, and a new session registers the server
+     again, which replaces it;
    - it writes the state file of ADR 0029 point 4,
      `<agent_dir>/sessions/teamwire/<id>.teamwire.json`, adding `"lead":
-     true`, `mode`, `session_file` and `cwd`;
+     true`, `mode` and `session_file`;
    - when a run completes it runs `<bin> [--home H] hook lead-stop --harness
      pi` with the member hook's input, and a `block` reply holds the lead
      once, as for a member;
@@ -93,15 +95,25 @@ API and a fake `teamwire`. No model turn ran.
    - it refuses a bash call that runs `teamwire watch <team>` without
      `--once`, with a reason that names the tool.
 
-4. **How a pi lead proves itself.** `caller_session` first asks the
-   platform for its own parent process. When a lead state file names that
-   pid, is not `ended`, and the process runs with the recorded start time,
-   that file's session is the caller's. This is how the lead's MCP server,
-   a child of pi, finds the session, and a `/new` that ends one file and
-   starts another moves it with no restart. Otherwise `PI_SESSION_ID` names
-   the session, which counts only when its state file is a lead's and its
-   process runs. The kind is `Interactive` only for `mode: "tui"`.
-   `current_session` reads the process environment the same way.
+   pi replaces the extension's runtime on `/new`, `/fork`, `/resume` and
+   `/reload`, after which `pi.sendMessage` throws. A throw from a watch's
+   stream listener is uncaught, and pi's terminal UI exits on one. So the
+   extension stops passing watch lines on at `session_shutdown`, drops the
+   watch's unread output, and never lets `sendMessage` throw.
+
+4. **How a pi lead proves itself.** A session counts only when its state
+   file is a lead's, is not `ended`, and names a pi process that runs with
+   the recorded start time. The kind is `Interactive` only for `mode:
+   "tui"`. `caller_session` takes the session from one of two places:
+   - `TEAMWIRE_PI_LEAD_SESSION`, which only the lead's MCP server has. The
+     session counts only when its pi process is the server's parent, which
+     the platform reads with one `ps`.
+   - `PI_SESSION_ID` otherwise, which every command of pi's bash tool has.
+     No `ps` runs.
+   Either way teamwire reads one state file. The server's variable comes
+   first, because pi itself may have inherited a `PI_SESSION_ID` from a
+   shell it was started in. `current_session` reads the process
+   environment the same way.
 
 5. **The watch runs inside the extension.** The tool `teamwire_watch`
    `{team}` starts `<bin> [--home H] watch <team>` as a child of pi. Each
@@ -148,7 +160,11 @@ API and a fake `teamwire`. No model turn ran.
   finished. `TEAM-CLOSED` reached the idle lead as a watch message and
   started a turn. A second team, whose member had no task, showed
   `mcp__teamwire__team_status` answering the lead through the MCP server,
-  which proved the lead by its parent process.
+  which proved the lead by its parent process. The server then found the
+  session by reading every state file; it now reads the one its variable
+  names. A `pi --mode rpc` run of the changed package showed the server
+  getting the session's id, and a new server with the new id after
+  `new_session`, each a child of the pi process.
 - Facts still unchecked:
   1. A `sendMessage` with `triggerTurn` starts a turn in the terminal UI
      while the person has text in the input box, without taking that text.

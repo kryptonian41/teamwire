@@ -82,7 +82,8 @@ pub(crate) fn version_of(wiring: &Wiring, program: &str) -> Option<String> {
     )
 }
 
-/// The harnesses whose program runs, in selector order.
+/// The harnesses whose program runs, in selector order. Launch refuses a
+/// member whose harness is not among them.
 pub(crate) fn found(wiring: &Wiring) -> Vec<&'static str> {
     [
         (CLAUDE, &wiring.claude.claude_bin),
@@ -93,12 +94,6 @@ pub(crate) fn found(wiring: &Wiring) -> Vec<&'static str> {
     .filter(|(_, program)| version_of(wiring, program).is_some())
     .map(|(id, _)| id)
     .collect()
-}
-
-/// Every harness whose program answers `--version`. Launch refuses a member
-/// whose harness is not among them.
-pub(crate) fn on_path(wiring: &Wiring) -> Vec<&'static str> {
-    found(wiring)
 }
 
 /// The harnesses a selector line picks from the numbered list `found`: an
