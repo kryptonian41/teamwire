@@ -4,8 +4,8 @@
 
 use std::time::Duration;
 
-use teamwire_core::{Pid, ReleaseOutcome, TeamName, TeamState};
-use teamwire_store::{Ctx, Party, Store, StoreError, TeamRow};
+use teamwire_core::{Pid, ReleaseOutcome, TeamName};
+use teamwire_store::{Ctx, Party, TeamRow};
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -82,33 +82,22 @@ fn another_team_records(
     this: &TeamName,
     hold: Pid,
 ) -> Result<Option<TeamName>, String> {
-    let names = teamwire_store::team_names(ctx.home)
+    let teams = teamwire_store::open_teams(ctx.home, None)
         .map_err(|e| format!("the teams could not be listed ({e})"))?;
-    for name in names {
+    for (name, read) in teams {
         if &name == this {
             continue;
         }
-        let store = match Store::open_read_only(ctx.home, &name) {
-            Ok(store) => store,
-            // A directory with no database is not a team that needs a hold.
-            Err(StoreError::NoDatabase { .. }) => continue,
+        // A team whose database went away after the scan is left out by
+        // `open_teams`: it is not a team that needs a hold.
+        let team = match read {
+            Ok(Some(team)) => team.row,
+            Ok(None) => return Err(format!("team {name} could not be read (no team row)")),
             Err(e) => return Err(format!("team {name} could not be read ({e})")),
         };
-        let team = read_team(&store).map_err(|e| format!("team {name} could not be read ({e})"))?;
-        if team.state == TeamState::Open && team.sleep_hold.is_some_and(|h| h.pid == hold) {
+        if team.sleep_hold.is_some_and(|h| h.pid == hold) {
             return Ok(Some(name));
         }
     }
     Ok(None)
-}
-
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
-fn read_team(store: &Store) -> Result<TeamRow, String> {
-    store
-        .read(|tx| tx.team())
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "no team row".to_owned())
 }

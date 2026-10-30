@@ -611,12 +611,23 @@ pub enum StoreError { Busy, Full { path: PathBuf }, SchemaNewer { db: u32, binar
 impl StoreError { pub fn code(&self) -> &'static str; }  // busy, full, schema_newer, schema_older, not_teamwire, corrupt, constraint, no_database, io
 
 pub fn token_hash(token: &str) -> [u8; 32];
-pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit; msg, report, launch and the CLI hook use these two
+pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit
+// ReadTx::token_matches(role, token) -> Result<Option<bool>, StoreError>: None when role has no
+// member that is not removed, or no stored hash; else whether the hashes are the same (same_hash).
+// It is the one token check: msg's prove, report's done and the CLI's session-start hook use it.
+
+pub struct OpenTeam { pub store: Store, pub row: TeamRow }   // the store opened read-only
+pub type TeamRead = Result<Option<OpenTeam>, StoreError>;     // Ok(None): a database with no team row
+pub fn open_teams(home: &Path, lead: Option<&SessionId>) -> Result<Vec<(TeamName, TeamRead)>, StoreError>;
 ```
 
 A command treats `NoDatabase` as "no such team", not as a broken store.
 `team_names(home)` lists every team that has a database, sorted by name; it
 is the one scan of `<home>/teams` every command uses.
+`open_teams(home, lead)` builds on it: the open teams, with `lead` only those
+that session leads, each with its store and row or the error that reading it
+gave. A team whose database went away after the scan is left out. The AFK
+start, the Stop hook's checks and both sleep-hold checks (launch, close) use it.
 
 `Tx` offers one typed method per operation the services need, for example
 `insert_message`, `insert_received` (another team's message under its own

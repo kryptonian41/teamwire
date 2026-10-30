@@ -1,8 +1,8 @@
 //! Proving who is calling (ADR 0008): a member by its token, the lead by its
 //! harness session.
 
-use teamwire_core::{Actor, MemberState, Refusal, Role, SessionKind};
-use teamwire_store::{Ctx, Party, same_hash, token_hash};
+use teamwire_core::{Actor, Refusal, Role, SessionKind};
+use teamwire_store::{Ctx, Party};
 
 use crate::send::read_team;
 
@@ -39,24 +39,15 @@ fn prove_member(ctx: &Ctx<'_>, env: &CallerEnv, token: &str) -> Result<Actor, Re
     }
     let found = ctx
         .store
-        .read(|tx| {
-            Ok((
-                tx.team()?.map(|t| t.name),
-                tx.member(&role)?,
-                tx.member_token_hash(&role)?,
-            ))
-        })
+        .read(|tx| Ok((tx.team()?.map(|t| t.name), tx.token_matches(&role, token)?)))
         .map_err(|e| {
             tracing::warn!(error = %e, "the store could not be read to prove a sender");
             Refusal::Identity
         })?;
-    let (Some(team), Some(member), Some(stored)) = found else {
+    let (Some(team), Some(true)) = found else {
         return Err(Refusal::Identity);
     };
-    if env.team.as_deref() != Some(team.as_str()) || member.state == MemberState::Removed {
-        return Err(Refusal::Identity);
-    }
-    if same_hash(&token_hash(token), &stored) {
+    if env.team.as_deref() == Some(team.as_str()) {
         Ok(Actor::Member(role))
     } else {
         Err(Refusal::Identity)

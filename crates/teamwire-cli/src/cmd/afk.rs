@@ -6,11 +6,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use teamwire_core::{Clock, Config, SessionId, TeamName, TeamState, Timestamp};
+use teamwire_core::{Clock, Config, SessionId, TeamName, Timestamp};
 use teamwire_launch::{
     LeadPlan, SpecError, ValidateEnv, check_title, ensure_hold, lead_process, new_team_lead,
 };
-use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, team_names};
+use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, open_teams};
 
 use crate::cmd::doctor::{self, Level};
 use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
@@ -213,21 +213,16 @@ fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Resu
 
 /// The name of an open AFK team that `session` leads, if any. A team that
 /// cannot be read is skipped, as the Stop hook skips it.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 fn open_afk_team_of(home: &std::path::Path, session: &SessionId) -> Option<TeamName> {
-    team_names(home).ok()?.into_iter().find(|name| {
-        Store::open_read_only(home, name)
-            .ok()
-            .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
-            .is_some_and(|row| {
-                row.state == TeamState::Open
-                    && row.afk_budget_ends_at.is_some()
-                    && row.lead_session.as_ref() == Some(session)
-            })
-    })
+    open_teams(home, Some(session))
+        .ok()?
+        .into_iter()
+        .find_map(|(name, read)| {
+            read.ok()
+                .flatten()
+                .is_some_and(|t| t.row.afk_budget_ends_at.is_some())
+                .then_some(name)
+        })
 }
 
 struct New<'a> {

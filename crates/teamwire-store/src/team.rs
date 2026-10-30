@@ -12,6 +12,7 @@ use teamwire_core::{
 };
 
 use crate::error::StoreError;
+use crate::store::{Store, team_names};
 use crate::tx::{ReadTx, Tx, bad, col, exactly_one, listing, one, parsed, parsed_opt, ts, ts_opt};
 
 /// What launch records when it creates the team.
@@ -312,6 +313,53 @@ impl ReadTx<'_> {
             .prepare(&format!("SELECT {TEAM_COLS} FROM team WHERE id = 1"))?;
         one(listing("team", &mut stmt, [], team_from_row)?)
     }
+}
+
+/// One team that [`open_teams`] found open: its store, opened read-only,
+/// and its `team` row.
+#[derive(Debug)]
+pub struct OpenTeam {
+    pub store: Store,
+    pub row: TeamRow,
+}
+
+/// What [`open_teams`] read of one team: `Ok(None)` is a database with no
+/// `team` row, `Err` one that could not be opened or read.
+pub type TeamRead = Result<Option<OpenTeam>, StoreError>;
+
+/// The open teams under `home`, sorted by name; with `lead`, only those whose
+/// lead session is `lead`. A team that is not open, is led by another
+/// session, or lost its database after the scan is left out. Any other team
+/// is listed with what its read gave, so each caller decides what a team it
+/// cannot read means. Listing `<home>/teams` fails as `team_names` does.
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+pub fn open_teams(
+    home: &Path,
+    lead: Option<&SessionId>,
+) -> Result<Vec<(TeamName, TeamRead)>, StoreError> {
+    let mut found = Vec::new();
+    for name in team_names(home)? {
+        let read = match Store::open_read_only(home, &name) {
+            Err(StoreError::NoDatabase { .. }) => continue,
+            Err(e) => Err(e),
+            Ok(store) => match store.read(|tx| tx.team()) {
+                Ok(Some(row))
+                    if row.state != TeamState::Open
+                        || lead.is_some_and(|s| row.lead_session.as_ref() != Some(s)) =>
+                {
+                    continue;
+                }
+                Ok(Some(row)) => Ok(Some(OpenTeam { store, row })),
+                Ok(None) => Ok(None),
+                Err(e) => Err(e),
+            },
+        };
+        found.push((name, read));
+    }
+    Ok(found)
 }
 
 #[cfg(test)]
