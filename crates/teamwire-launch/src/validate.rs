@@ -88,6 +88,7 @@ pub fn validate(
         );
     }
     if existing.is_none() {
+        lead_setup_present(harness, &mut errors);
         lead_must_be_locatable(env, &lead, &mut errors);
     }
     team_title(spec, existing.as_ref(), &mut errors);
@@ -127,6 +128,14 @@ pub fn validate(
         members,
         teamwire_bin: env.teamwire_bin.clone(),
     })
+}
+
+/// A lead whose harness says the lead setup it needs is not loaded would
+/// receive nothing, so a new team is refused (ADR 0030).
+fn lead_setup_present(harness: &dyn teamwire_core::Harness, errors: &mut Vec<SpecError>) {
+    if let Some(why) = harness.lead_setup_missing() {
+        errors.push(SpecError::new(None, None, "lead_setup_missing", why));
+    }
 }
 
 /// A lead whose harness cannot read `teamwire watch` is reached only by
@@ -309,6 +318,7 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     }
     let lead = lead_plan(env, None, Some((session.id, session.kind)))?;
     let mut errors = Vec::new();
+    lead_setup_present(harness, &mut errors);
     lead_must_be_locatable(env, &lead, &mut errors);
     errors.into_iter().next().map_or(Ok(lead), Err)
 }

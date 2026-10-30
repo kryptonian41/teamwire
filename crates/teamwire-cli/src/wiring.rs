@@ -29,6 +29,12 @@ pub(crate) use teamwire_harness_codex::lead_setup::{
     Change as CodexChange, LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
 };
 
+// The pi lead-setup items, re-exported for the same reason.
+pub(crate) use teamwire_harness_pi::Pi as PiSetup;
+pub(crate) use teamwire_harness_pi::lead_setup::{
+    Change as PiChange, LeadCommand as PiCommand, PackageStatus as PiPackageStatus,
+};
+
 /// The harness whose hook commands this binary serves.
 pub(crate) fn claude_harness_id() -> HarnessId {
     HarnessId::from_static(ClaudeCode::ID)
@@ -47,7 +53,8 @@ pub(crate) struct Wiring {
     /// Where Codex keeps its files, for the same commands.
     pub(crate) codex: CodexConfig,
     /// Where pi keeps its files and how to start it: launch checks the
-    /// program, doctor reads herdr's pi integration from the directory.
+    /// program, doctor reads herdr's pi integration from the directory,
+    /// and install adds the lead package.
     pub(crate) pi: PiConfig,
 }
 
@@ -55,6 +62,11 @@ impl Wiring {
     /// The Codex adapter that adds and removes the lead plugin.
     pub(crate) fn codex_setup(&self) -> CodexSetup {
         CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
+    }
+
+    /// The pi adapter that adds and removes the lead package.
+    pub(crate) fn pi_setup(&self) -> PiSetup {
+        PiSetup::new(Arc::clone(&self.platform), self.pi.clone())
     }
 
     /// The Claude Code adapter that reads and writes the lead setup.
@@ -88,6 +100,8 @@ pub(crate) struct WiringEnv {
     pub(crate) claude_session: Option<String>,
     /// `CODEX_THREAD_ID`: set inside a Codex session.
     pub(crate) codex_thread: Option<String>,
+    /// `PI_CODING_AGENT`: `true` in pi and in every process pi starts.
+    pub(crate) pi_marker: Option<String>,
 }
 
 impl WiringEnv {
@@ -110,6 +124,7 @@ impl WiringEnv {
             lead_harness: std::env::var("TEAMWIRE_LEAD_HARNESS").ok(),
             claude_session: std::env::var("CLAUDE_CODE_SESSION_ID").ok(),
             codex_thread: std::env::var("CODEX_THREAD_ID").ok(),
+            pi_marker: std::env::var("PI_CODING_AGENT").ok(),
         }
     }
 }
@@ -128,7 +143,6 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         Arc::clone(&platform),
         codex.clone(),
     )))?;
-    // pi runs members only, so it is registered but never picked as the lead.
     registry.add_harness(Arc::new(Pi::new(Arc::clone(&platform), pi.clone())))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
@@ -149,15 +163,20 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
 /// `TEAMWIRE_LEAD_HARNESS` when it names a harness of this binary, else the
 /// harness whose session the command runs in: `claude-code` when
 /// `CLAUDE_CODE_SESSION_ID` is set, `codex` when `CODEX_THREAD_ID` is set,
-/// and `claude-code` otherwise. An id this binary lacks is ignored, so a typo
-/// cannot leave the lead without an adapter.
+/// `pi` when `PI_CODING_AGENT` is `true`, and `claude-code` otherwise. pi's
+/// marker comes last because every process pi starts inherits it, so a
+/// Claude or Codex session started from a pi shell is still itself. An id
+/// this binary lacks is ignored, so a typo cannot leave the lead without an
+/// adapter.
 fn lead_harness(env: &WiringEnv) -> HarnessId {
     let set = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.is_empty());
     let id = match env.lead_harness.as_deref() {
         Some(CodexCli::ID) => CodexCli::ID,
         Some(ClaudeCode::ID) => ClaudeCode::ID,
+        Some(Pi::ID) => Pi::ID,
         _ if set(&env.claude_session) => ClaudeCode::ID,
         _ if set(&env.codex_thread) => CodexCli::ID,
+        _ if env.pi_marker.as_deref() == Some("true") => Pi::ID,
         _ => ClaudeCode::ID,
     };
     HarnessId::from_static(id)
@@ -242,7 +261,18 @@ mod tests {
             lead_harness: None,
             claude_session: None,
             codex_thread: None,
+            pi_marker: None,
         }
+    }
+
+    fn lead_in_pi(var: Option<&str>, claude: Option<&str>) -> String {
+        let e = WiringEnv {
+            lead_harness: var.map(str::to_owned),
+            claude_session: claude.map(str::to_owned),
+            pi_marker: Some("true".to_owned()),
+            ..env(None)
+        };
+        wire(&e).unwrap().lead_harness.as_str().to_owned()
     }
 
     fn lead_with(var: Option<&str>, claude: Option<&str>, codex: Option<&str>) -> String {
@@ -265,10 +295,23 @@ mod tests {
             lead_with(Some("claude-code"), None, Some("t1")),
             "claude-code"
         );
-        // An empty or unknown value does not decide, and pi never leads.
+        // An empty or unknown value does not decide.
         assert_eq!(lead_with(Some("nope"), None, Some("t1")), "codex");
-        assert_eq!(lead_with(Some("pi"), None, None), "claude-code");
+        assert_eq!(lead_with(Some("pi"), None, None), "pi");
         assert_eq!(lead_with(None, Some(""), Some("t1")), "codex");
+    }
+
+    #[test]
+    fn pis_marker_picks_pi_after_every_other_session() {
+        assert_eq!(lead_in_pi(None, None), "pi");
+        // A Claude session started from a pi shell carries both.
+        assert_eq!(lead_in_pi(None, Some("s1")), "claude-code");
+        assert_eq!(lead_in_pi(Some("codex"), None), "codex");
+        let e = WiringEnv {
+            pi_marker: Some("false".to_owned()),
+            ..env(None)
+        };
+        assert_eq!(wire(&e).unwrap().lead_harness.as_str(), "claude-code");
     }
 
     #[test]

@@ -271,6 +271,10 @@ pub trait Harness: Send + Sync {
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
+    /// Why the caller's session cannot lead a new team, when the harness can
+    /// tell its lead setup is not loaded there (pi without the lead package,
+    /// ADR 0030). Launch refuses with `lead_setup_missing`. Default `None`.
+    fn lead_setup_missing(&self) -> Option<String>;
     /// The folder a session runs in, read without writing: the live session
     /// first, then the session's own record. `None` when neither names it.
     /// Default `Ok(None)`.

@@ -52,6 +52,10 @@ mod wiring {
     pub(crate) use teamwire_harness_codex::lead_setup::{
         LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
     };
+    pub(crate) use teamwire_harness_pi::Pi as PiSetup;
+    pub(crate) use teamwire_harness_pi::lead_setup::{
+        LeadCommand as PiCommand, PackageStatus as PiPackageStatus,
+    };
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
@@ -65,6 +69,10 @@ mod wiring {
     impl Wiring {
         pub(crate) fn codex_setup(&self) -> CodexSetup {
             CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
+        }
+
+        pub(crate) fn pi_setup(&self) -> PiSetup {
+            PiSetup::new(Arc::clone(&self.platform), self.pi.clone())
         }
     }
 }
@@ -187,6 +195,18 @@ impl Bed {
         )
     }
 
+    /// The pi adapter, on a platform of its own: the pi check reads files
+    /// and runs nothing.
+    fn pi_setup(&self) -> teamwire_harness_pi::Pi {
+        teamwire_harness_pi::Pi::new(
+            Arc::new(FakePlatform::new()),
+            teamwire_harness_pi::PiConfig {
+                agent_dir: self.home.path().join("pi-agent"),
+                pi_bin: "pi".to_owned(),
+            },
+        )
+    }
+
     fn claude_config(&self) -> ClaudeConfig {
         ClaudeConfig {
             claude_dir: self.claude.path().to_path_buf(),
@@ -270,7 +290,7 @@ impl Bed {
         }
         diagnose(&Inputs {
             codex: self.codex_setup(),
-            pi_agent_dir: self.home.path().join("pi-agent"),
+            pi: self.pi_setup(),
             host: self.host,
             home: self
                 .run_home
@@ -826,7 +846,7 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
         codex: bed.codex_setup(),
-        pi_agent_dir: bed.home.path().join("pi-agent"),
+        pi: bed.pi_setup(),
         lead_entry: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
@@ -1230,4 +1250,46 @@ fn a_stale_codex_plugin_is_a_warning_that_names_the_fix() {
     bed.codex_platform.queue_run(Ok(answer(&bed.codex_list)));
     let checks = bed.checks_as(true);
     assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
+}
+
+#[test]
+fn pi_on_path_has_its_lead_package_checked() {
+    use teamwire_harness_pi::lead_setup::{Change, LeadCommand, package_dir};
+    let bed = Bed::healthy();
+    assert!(!names(&bed.checks()).contains(&"pi lead package"));
+    std::fs::write(bed.bin.path().join("pi"), "#!/bin/sh\n").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "pi lead package"), Level::Pass);
+    let detail = detail_of(&checks, "pi lead package");
+    assert!(detail.contains("teamwire install --harness pi"), "{detail}");
+
+    // Install as `teamwire install` would, from this test binary's entry.
+    let entry = bed.lead_entry();
+    let want = LeadCommand {
+        bin: PathBuf::from(&entry.command),
+        home: Some(bed.home.path().to_path_buf()),
+    };
+    let pi = bed.pi_setup();
+    let changes = pi
+        .plan_install(&want, teamwire_harness_claude::SKILL_TEXT, bed.home.path())
+        .unwrap();
+    let writes: Vec<_> = changes
+        .into_iter()
+        .filter(|c| matches!(c, Change::WritePackage { .. }))
+        .collect();
+    pi.apply_lead_setup(&writes).unwrap();
+    let dir = package_dir(bed.home.path());
+    std::fs::create_dir_all(bed.home.path().join("pi-agent")).unwrap();
+    std::fs::write(
+        bed.home.path().join("pi-agent/settings.json"),
+        serde_json::json!({ "packages": [dir.display().to_string()] }).to_string(),
+    )
+    .unwrap();
+    assert_eq!(detail_of(&bed.checks(), "pi lead package"), "installed");
+
+    // A file another binary wrote is a warning that names the fix.
+    std::fs::write(dir.join("extensions/teamwire-lead.ts"), "// old").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "pi lead package"), Level::Warn);
+    assert!(detail_of(&checks, "pi lead package").contains("teamwire install --harness pi"));
 }

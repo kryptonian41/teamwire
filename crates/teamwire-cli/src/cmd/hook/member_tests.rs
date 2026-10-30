@@ -48,6 +48,7 @@ fn bed(session: Option<&str>) -> Bed {
         lead_harness: None,
         claude_session: None,
         codex_thread: None,
+        pi_marker: None,
     })
     .unwrap();
     wiring.registry = Registry::new();

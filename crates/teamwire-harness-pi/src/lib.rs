@@ -1,21 +1,23 @@
-//! The `Harness` trait for pi (`@earendil-works/pi-coding-agent`, ADR
-//! 0029), for members only: launch argv, the extension that runs teamwire's
-//! hooks inside pi, the member's token file, the TUI screen, and the files
-//! that give liveness, state and context fill.
+//! The `Harness` trait for pi (`@earendil-works/pi-coding-agent`; ADR 0029
+//! for members, ADR 0030 for the lead): launch argv, the extensions that run
+//! teamwire's hooks inside pi, the member's token file, the TUI screen, the
+//! files that give liveness, state and context fill, and the lead package.
 //!
-//! Never: write under pi's directory from teamwire's own process (only the
-//! member's extension, inside pi, writes a state file per session there);
-//! change pi's settings; put a token in an argv; let a member load its
-//! folder's own `.pi` resources (`--no-approve`).
+//! Never: write under pi's directory from teamwire's own process (only
+//! teamwire's extensions, inside pi, write state files there); change pi's
+//! settings other than by `pi install` and `pi remove`; put a token in an
+//! argv; let a member load its folder's own `.pi` resources (`--no-approve`).
 //!
 //! Invariants: every pi path comes from `PiConfig`, so tests point them at a
-//! temporary directory; a member's identity reaches its shell tools, hooks
-//! and MCP server through its extension, which names the 0600 token file,
-//! never the token itself.
+//! temporary directory; a member's identity reaches it through its
+//! extension, which names the 0600 token file, never the token; a lead is
+//! proven only by a state file the lead's extension wrote for a live pi.
 
 mod extension;
 mod hook;
 mod launch;
+mod lead_extension;
+pub mod lead_setup;
 mod screen;
 mod session;
 mod startup;
@@ -104,8 +106,9 @@ impl Harness for Pi {
             choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
-            // pi has no tool that wakes the model on each line a command prints.
-            reads_watch_lines: false,
+            // The lead's extension runs the watch and hands each line to the
+            // model as a message (ADR 0030).
+            reads_watch_lines: true,
         }
     }
 
@@ -119,9 +122,43 @@ impl Harness for Pi {
         launch::build(&self.config.pi_bin, &self.config.sessions_dir(), &m)
     }
 
-    /// A pi session never leads a team, so it never proves itself as a lead.
     fn current_session(&self) -> Option<CallerSession> {
-        None
+        self.caller_session(&|name| std::env::var(name).ok())
+    }
+
+    /// The lead's MCP server is a child of pi and gets no session variable,
+    /// so the session the parent process runs comes first. A command run
+    /// through pi's bash tool has `PI_SESSION_ID`. Either is a lead only
+    /// when the lead's extension wrote its state file.
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        let platform = self.platform.as_ref();
+        let dir = self.config.sessions_dir();
+        let parent = platform.parent_of(Pid::new(std::process::id()));
+        parent
+            .and_then(|(pid, _)| session::lead_by_pid(platform, &dir, pid))
+            .or_else(|| {
+                let id = SessionId::parse(get("PI_SESSION_ID")?.trim()).ok()?;
+                session::lead_by_id(platform, &dir, &id)
+            })
+    }
+
+    /// pi opens a session by id from the folder it ran in, which reopen
+    /// changes to first.
+    fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Ok(vec![
+            self.config.pi_bin.clone(),
+            "--session-id".to_owned(),
+            s.as_str().to_owned(),
+        ])
+    }
+
+    fn lead_setup_missing(&self) -> Option<String> {
+        self.current_session().is_none().then(|| {
+            "teamwire cannot find a pi lead session here. Run this from the bash tool of a pi \
+             session that loaded teamwire's lead package; to add the package, run \
+             `teamwire install --harness pi` and start pi again"
+                .to_owned()
+        })
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {

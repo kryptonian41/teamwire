@@ -65,6 +65,7 @@ struct State {
     detects_pending: bool,
     pushed: Vec<(SessionId, String)>,
     cwds: HashMap<SessionId, PathBuf>,
+    setup_missing: Option<String>,
 }
 
 /// An in-process `Harness`.
@@ -112,6 +113,7 @@ impl FakeHarness {
                 detects_pending: true,
                 pushed: Vec::new(),
                 cwds: HashMap::new(),
+                setup_missing: None,
             }),
         }
     }
@@ -154,6 +156,12 @@ impl FakeHarness {
             id,
             kind: SessionKind::Background,
         }));
+    }
+
+    /// What `lead_setup_missing` reports; `None`, the default, says the lead
+    /// setup is loaded.
+    pub fn set_lead_setup_missing(&self, why: Option<&str>) {
+        lock(&self.state).setup_missing = why.map(str::to_owned);
     }
 
     /// Whether `line_pending` can tell (the default) or, like a harness that
@@ -291,6 +299,10 @@ impl Harness for FakeHarness {
     fn current_session(&self) -> Option<CallerSession> {
         self.log.record("current_session", CallKind::Read, "");
         lock(&self.state).caller.clone()
+    }
+
+    fn lead_setup_missing(&self) -> Option<String> {
+        lock(&self.state).setup_missing.clone()
     }
 
     fn processes_for_session(

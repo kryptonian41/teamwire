@@ -13,6 +13,7 @@ and its MCP entry in `~/.claude.json`.
 | `skills/teamwire/reference.md` | The lead's lookup tables: watch lines, flags, model advice. `SKILL.md` links to it. | `teamwire install` puts it beside `SKILL.md` in the plugin. |
 | `skills/afk/SKILL.md` | The procedure for an unattended AFK run. | `teamwire install` puts it in the Claude Code plugin. Claude Code names it `teamwire:afk`. Codex has no AFK skill. |
 | `skills/codex-lead.md` | The changes a Codex lead makes when it reads `SKILL.md`. | `teamwire install --harness codex` appends it to the Codex plugin's `SKILL.md`. |
+| `skills/pi-lead.md` | The changes a pi lead makes when it reads `SKILL.md`. | `teamwire install --harness pi` puts it into the pi package's `SKILL.md`. |
 | `mcp/lead.json` | Registers `teamwire mcp --lead`, the MCP server the lead uses. | `teamwire install` carries this server in the teamwire plugin. Claude Code names its tools `mcp__plugin_teamwire_teamwire__<tool>`. A `teamwire` entry in a project's `.mcp.json` starts a second server beside the plugin's, so do not merge this file into one; `teamwire doctor` warns when it finds such an entry. |
 
 The setup steps, and how to undo them, are in `docs/ARCHITECTURE.md`, section
