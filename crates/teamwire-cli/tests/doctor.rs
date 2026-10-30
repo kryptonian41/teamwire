@@ -33,8 +33,9 @@ mod schema_1;
 
 /// The command file is compiled here with the crate-level items it names
 /// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`,
-/// `cmd::install::wanted_command`) and the real `cmd::lead_setup_check`, so
-/// the checks run against a fake platform.
+/// `cmd::install::wanted_command`) and the real `cmd::lead_setup_check`,
+/// `cmd::host_pick` and `cmd::doctor_teams`, so the checks run against a
+/// fake platform.
 #[derive(Debug)]
 pub(crate) struct Global {
     pub(crate) home: Option<PathBuf>,
@@ -59,8 +60,14 @@ mod wiring {
 #[path = "../src/cmd/lead_setup_check.rs"]
 mod lead_setup_check;
 
+#[path = "../src/cmd/host_pick.rs"]
+mod host_pick;
+
+#[path = "../src/cmd/doctor_teams.rs"]
+mod doctor_teams;
+
 mod cmd {
-    pub(crate) use crate::lead_setup_check;
+    pub(crate) use crate::{doctor, doctor_teams, host_pick, lead_setup_check};
 
     pub(crate) mod install {
         use teamwire_core::LeadCommand;
