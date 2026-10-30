@@ -38,7 +38,7 @@ pub fn validate(
         .registry
         .harness(&env.lead_harness)
         .map_err(|e| vec![SpecError::new(None, None, "unknown_harness", e.to_string())])?;
-    let session = harness.current_session();
+    let session = harness.caller_session(&|name| std::env::var(name).ok());
     if session
         .as_ref()
         .is_some_and(|s| s.kind == SessionKind::Background)
@@ -297,7 +297,7 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
         .registry
         .harness(&env.lead_harness)
         .map_err(|e| SpecError::new(None, None, "unknown_harness", e.to_string()))?;
-    let Some(session) = harness.current_session() else {
+    let Some(session) = harness.caller_session(&|name| std::env::var(name).ok()) else {
         return Err(SpecError::new(
             None,
             None,

@@ -134,7 +134,7 @@ fn check_input_ready(
         return Err(blocked("the harness"));
     }
     if host.capabilities().guards_dialogs {
-        if harness.reads_input_box() {
+        if harness.capabilities().reads_input_box {
             return check_box_empty(harness, host, place, budget);
         }
         return Ok(());
@@ -145,7 +145,7 @@ fn check_input_ready(
         let timeout = budget.call()?;
         // A harness that reads the input box tells dim placeholder text from
         // typed text by its style codes.
-        let tail = if harness.reads_input_box() {
+        let tail = if harness.capabilities().reads_input_box {
             host.read_tail_styled(place, TAIL_LINES, timeout)
         } else {
             host.read_tail(place, TAIL_LINES, timeout)

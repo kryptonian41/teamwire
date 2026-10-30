@@ -111,6 +111,9 @@ impl Harness for Pi {
             // The lead's extension runs the watch and hands each line to the
             // model as a message (ADR 0030).
             reads_watch_lines: true,
+            reads_input_box: true,
+            // AFK-2 still refuses a pi lead (ADR 0030 point 8).
+            runs_afk: false,
         }
     }
 
@@ -122,10 +125,6 @@ impl Harness for Pi {
         let mut m = m.clone();
         m.session_id = s.clone();
         launch::build(&self.config.pi_bin, &self.config.sessions_dir(), &m)
-    }
-
-    fn current_session(&self) -> Option<CallerSession> {
-        self.caller_session(&|name| std::env::var(name).ok())
     }
 
     /// pi gives the lead's MCP server no session variable, so the lead
@@ -162,12 +161,14 @@ impl Harness for Pi {
     }
 
     fn lead_setup_missing(&self) -> Option<String> {
-        self.current_session().is_none().then(|| {
-            "teamwire cannot find a pi lead session here. Run this from the bash tool of a pi \
+        self.caller_session(&|name| std::env::var(name).ok())
+            .is_none()
+            .then(|| {
+                "teamwire cannot find a pi lead session here. Run this from the bash tool of a pi \
              session that loaded teamwire's lead package; to add the package, run \
              `teamwire install --harness pi` and start pi again"
-                .to_owned()
-        })
+                    .to_owned()
+            })
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
@@ -208,10 +209,6 @@ impl Harness for Pi {
 
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
         screen::line_pending(tail, line)
-    }
-
-    fn reads_input_box(&self) -> bool {
-        true
     }
 
     fn box_holds_text(&self, tail: &str) -> bool {

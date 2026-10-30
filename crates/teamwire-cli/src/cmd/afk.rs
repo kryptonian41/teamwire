@@ -15,7 +15,7 @@ use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, team_names}
 use crate::cmd::doctor::{self, Level};
 use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
 use crate::recorded::Recorded;
-use crate::wiring::{Wiring, claude_harness_id};
+use crate::wiring::Wiring;
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
 
 const COMMAND: &str = "afk start";
@@ -41,8 +41,13 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     if let Some(code) = refuse_member(COMMAND) {
         return code;
     }
-    // AFK-2: only a Claude Code lead, whose pane the run can be proven to reach.
-    if wiring.lead_harness != claude_harness_id() {
+    // AFK-2: only a lead whose harness runs AFK, whose pane the run can be
+    // proven to reach.
+    let runs_afk = wiring
+        .registry
+        .harness(&wiring.lead_harness)
+        .is_ok_and(|h| h.capabilities().runs_afk);
+    if !runs_afk {
         return refuse(
             "unsupported_lead_harness",
             "an AFK run starts only from a Claude Code lead",

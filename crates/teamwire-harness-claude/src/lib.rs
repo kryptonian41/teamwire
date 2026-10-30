@@ -86,7 +86,6 @@ impl ClaudeCode {
     /// environment: `CLAUDE_CODE_SESSION_ID`, and the kind from the session
     /// file of `CLAUDE_PID` (`bg` is a background session), else from
     /// `CLAUDE_CODE_SESSION_KIND` or `CLAUDE_CODE_SESSION_ATTENDED=0`.
-    /// `current_session` calls this with the real environment.
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
     }
@@ -114,6 +113,8 @@ impl Harness for ClaudeCode {
             can_push: false,
             session_env_via_config: true,
             reads_watch_lines: true,
+            reads_input_box: true,
+            runs_afk: true,
         }
     }
 
@@ -123,10 +124,6 @@ impl Harness for ClaudeCode {
 
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
         launch::build(&self.config.claude_bin, m, &launch::SessionArg::Resume(s))
-    }
-
-    fn current_session(&self) -> Option<CallerSession> {
-        self.session_from_env(|name| std::env::var(name).ok())
     }
 
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
@@ -187,10 +184,6 @@ impl Harness for ClaudeCode {
 
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
         screen::line_pending(tail, line)
-    }
-
-    fn reads_input_box(&self) -> bool {
-        true
     }
 
     fn box_holds_text(&self, tail: &str) -> bool {

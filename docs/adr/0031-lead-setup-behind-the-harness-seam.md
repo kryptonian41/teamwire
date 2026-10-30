@@ -2,7 +2,9 @@
 
 Status: accepted, 2026-10-30. Supersedes the `Harness` row of ADR 0004's
 trait table for the lead setup: a harness now also knows how to install,
-remove and check its lead's setup. Points 1 to 10 of ADR 0004 still hold,
+remove and check its lead's setup. Adds two rows to ADR 0004 point 5's
+capability record, and replaces ADR 0023 point 8's `current_session`
+default with a required `caller_session`. Points 1 to 10 of ADR 0004 still hold,
 and point 9 now covers a fourth suite. ADR 0023 point 9 still holds: the CLI
 passes the shared skill text in.
 
@@ -84,6 +86,18 @@ CLI files.
    named; a second plan skips the files already written; uninstall deletes
    them. `FakeHarness::with_lead_setup` lets a test give the fake harness a
    lead setup.
+
+8. **A narrower `Harness`.** Three methods that said one fact each, or the
+   same thing twice, go:
+   - `current_session()` is gone. Every adapter implemented it as
+     `caller_session` over the process environment, so `caller_session(get)`
+     is now required and a caller passes `|name| std::env::var(name).ok()`.
+   - `reads_input_box()` becomes the capability `HarnessCaps::reads_input_box`
+     (Claude Code and pi yes, Codex no), as ADR 0004 point 5 asks of a fact
+     the core picks routes from.
+   - `afk start` refused every lead but `claude-code` by comparing ids. The
+     capability `HarnessCaps::runs_afk` (Claude Code only) says it instead.
+     The refusal text is unchanged.
 
 ## Consequences
 

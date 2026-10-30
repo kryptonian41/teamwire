@@ -84,7 +84,10 @@ fn caller_is_lead(ctx: &Ctx<'_>) -> bool {
     let Ok(harness) = ctx.registry.harness(&team.lead_harness) else {
         return false;
     };
-    match (harness.current_session(), team.lead_session) {
+    match (
+        harness.caller_session(&|name| std::env::var(name).ok()),
+        team.lead_session,
+    ) {
         (Some(caller), Some(lead)) => caller.id == lead,
         _ => false,
     }

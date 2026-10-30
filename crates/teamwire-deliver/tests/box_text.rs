@@ -33,16 +33,16 @@ impl Harness for BoxReader {
         self.0.id()
     }
     fn capabilities(&self) -> HarnessCaps {
-        self.0.capabilities()
+        HarnessCaps {
+            reads_input_box: true,
+            ..self.0.capabilities()
+        }
     }
     fn launch_spec(&self, m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
         self.0.launch_spec(m)
     }
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
         self.0.resume_spec(m, s)
-    }
-    fn current_session(&self) -> Option<CallerSession> {
-        self.0.current_session()
     }
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         self.0.caller_session(get)
@@ -67,9 +67,6 @@ impl Harness for BoxReader {
     }
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
         self.0.line_pending(tail, line)
-    }
-    fn reads_input_box(&self) -> bool {
-        true
     }
     fn box_holds_text(&self, tail: &str) -> bool {
         tail.lines()

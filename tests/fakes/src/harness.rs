@@ -85,7 +85,7 @@ pub struct FakeHarness {
 impl FakeHarness {
     pub const ID: &'static str = "fake";
 
-    /// Every capability on except `can_push`.
+    /// Every capability on except `can_push` and `reads_input_box`.
     pub fn caps() -> HarnessCaps {
         HarnessCaps {
             turn_end_hook: true,
@@ -95,6 +95,8 @@ impl FakeHarness {
             can_push: false,
             session_env_via_config: true,
             reads_watch_lines: true,
+            reads_input_box: false,
+            runs_afk: true,
         }
     }
 
@@ -149,8 +151,8 @@ impl FakeHarness {
         }
     }
 
-    /// The session `current_session` reports. `None` means the caller has
-    /// no session id in its environment.
+    /// The session `caller_session` reports, whatever its lookup says.
+    /// `None` means the caller has no session id in its environment.
     pub fn set_caller(&self, caller: Option<CallerSession>) {
         lock(&self.state).caller = caller;
     }
@@ -311,8 +313,8 @@ impl Harness for FakeHarness {
         Ok(lock(&self.state).cwds.get(s).cloned())
     }
 
-    fn current_session(&self) -> Option<CallerSession> {
-        self.log.record("current_session", CallKind::Read, "");
+    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.log.record("caller_session", CallKind::Read, "");
         lock(&self.state).caller.clone()
     }
 

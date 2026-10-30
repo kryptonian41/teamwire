@@ -263,10 +263,10 @@ pub trait Harness: Send + Sync {
     /// configuration (shown by `status --role`, run by `reopen`). Build the
     /// `MemberLaunch` of a member that already ran with `MemberLaunch::for_resume`.
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
-    /// The caller's own session, read from its environment.
-    fn current_session(&self) -> Option<CallerSession>;   // id + kind (interactive | background)
-    // The same through a lookup; MCP_META_<key> answers a field of an MCP request's _meta
-    // (ADR 0023). The default reads the process environment.
+    /// The caller's own session (id + kind, interactive | background), read
+    /// through `get`: the process environment for a command
+    /// (`|name| std::env::var(name).ok()`). The lead's MCP server also answers
+    /// MCP_META_<key> with a field of the request's _meta (ADR 0023).
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
@@ -301,11 +301,6 @@ pub trait Harness: Send + Sync {
     /// Whether a line just submitted still sits unsent in the input box.
     /// Default false, so a harness that cannot tell gets no second Enter.
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool;
-    /// Whether `box_holds_text` can tell anything. Delivery on a host that
-    /// guards dialogs reads the screen only when this is true. Default false.
-    /// Delivery gives such a harness screens from `Host::read_tail_styled`,
-    /// in `screen_state` and `box_holds_text` both.
-    fn reads_input_box(&self) -> bool;
     /// Whether the input box shown by `tail` holds text. Delivery waits while
     /// it does, on every host. Default false.
     fn box_holds_text(&self, tail: &str) -> bool;
@@ -326,7 +321,13 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// Environment for the session can be set in a per-run
                          /// config file (Claude Code `settings.json` `env`).
                          pub session_env_via_config: bool,
-                         pub reads_watch_lines: bool }   // lead can read `teamwire watch` lines (ADR 0023)
+                         pub reads_watch_lines: bool,    // lead can read `teamwire watch` lines (ADR 0023)
+                         /// `box_holds_text` can tell anything: delivery on a host that
+                         /// guards dialogs reads the screen only then, and gives such a
+                         /// harness screens from `Host::read_tail_styled` (ADR 0031)
+                         pub reads_input_box: bool,
+                         /// A lead on this harness can start an AFK run (AFK-2, ADR 0031)
+                         pub runs_afk: bool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      // read only when it is a regular file of at most 64 MiB,
