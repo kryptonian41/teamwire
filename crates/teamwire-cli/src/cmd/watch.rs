@@ -8,12 +8,10 @@ use std::time::Duration;
 use teamwire_core::{Config, OneLine, Pid, TeamName};
 use teamwire_deliver::{DeliveryOutcome, WATCH_LEASE_STALE, deliver_line, deliver_line_within};
 use teamwire_otel::{OtlpConfig, StopCutoff};
-use teamwire_store::{Ctx, Party, Store, StoreError};
+use teamwire_store::{Ctx, Party, Store};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::shared::{
-    REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line,
-};
+use crate::cmd::shared::{Opening, REFUSED, STORE, fail, refuse_member, say_line, with_ctx_using};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, WatchArgs};
@@ -140,57 +138,51 @@ pub(crate) fn run(args: &WatchArgs, global: &Global, wiring: &Wiring) -> ExitCod
             USAGE,
         );
     }
-    let home = match home_or_refuse("watch", global) {
-        Ok(home) => home,
-        Err(code) => return code,
+    let opening = Opening {
+        command: "watch",
+        config: Config {
+            poll_s: *interval,
+            ..Config::default()
+        },
+        ..Opening::default()
     };
-    let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => Recorded::new(store, &wiring.clock, "watch"),
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
-            return fail("watch", &message, REFUSED);
-        }
-        Err(e) => return fail("watch", &e.to_string(), STORE),
-    };
-    let config = Config {
-        poll_s: *interval,
-        ..Config::default()
-    };
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
+    with_ctx_using(global, wiring, &team, "watch", opening, |ctx| {
+        watch(ctx, &team, wiring, *once, *deliver)
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// Takes the lease, polls until the team ends, and lets the lease go.
+fn watch(
+    ctx: &mut Ctx<'_>,
+    team: &TeamName,
+    wiring: &Wiring,
+    once: bool,
+    deliver: bool,
+) -> ExitCode {
+    let (home, config) = (ctx.home, ctx.config);
     let mut memory = WatchMemory::for_team(team.as_str());
-    match teamwire_watch::start(
-        &mut ctx,
-        &mut memory,
-        Pid::new(std::process::id()),
-        &host_name(),
-    ) {
+    match teamwire_watch::start(ctx, &mut memory, Pid::new(std::process::id()), &host_name()) {
         Ok(()) => {}
         Err(e @ WatchError::Held { .. }) => return fail("watch", &e.to_string(), REFUSED),
         Err(WatchError::Store(e)) => return fail("watch", &e.to_string(), STORE),
     }
 
     let stop = AtomicBool::new(false);
-    let exporter = if *once {
+    let exporter = if once {
         None
     } else {
-        otlp_settings(&home, &|key| std::env::var(key).ok())
+        otlp_settings(home, &|key| std::env::var(key).ok())
     };
     let code = std::thread::scope(|scope| {
         if let Some(target) = &exporter {
-            scope.spawn(|| export_loop(&home, &team, wiring, &config, target, &stop));
+            scope.spawn(|| export_loop(home, team, wiring, config, target, &stop));
         }
-        let code = poll_loop(&mut ctx, &mut memory, *once, *deliver);
+        let code = poll_loop(ctx, &mut memory, once, deliver);
         stop.store(true, Ordering::Relaxed);
         code
     });
-    if let Err(e) = teamwire_watch::stop(&mut ctx, &mut memory) {
+    if let Err(e) = teamwire_watch::stop(ctx, &mut memory) {
         tracing::warn!(error = %e, "could not release the watch lease");
     }
     code
@@ -232,6 +224,8 @@ fn poll_loop(ctx: &mut Ctx<'_>, memory: &mut WatchMemory, once: bool, deliver: b
 
 #[cfg(test)]
 mod tests {
+    use teamwire_store::StoreError;
+
     use super::*;
 
     #[test]

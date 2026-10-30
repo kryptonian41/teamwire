@@ -2,12 +2,12 @@
 
 use std::process::ExitCode;
 
-use teamwire_core::{Config, Role, TeamName};
+use teamwire_core::{Role, TeamName};
+use teamwire_msg::CallerEnv;
 use teamwire_report::{DoneError, DoneReport};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_store::Ctx;
 
-use crate::cmd::shared::{REFUSED, STORE, caller_env, fail, home_or_refuse, no_database_text, say};
-use crate::recorded::Recorded;
+use crate::cmd::shared::{Opening, REFUSED, STORE, caller_env, fail, say, with_ctx_using};
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};
 
@@ -29,37 +29,34 @@ pub(crate) fn run(args: &DoneArgs, global: &Global, wiring: &Wiring) -> ExitCode
             REFUSED,
         );
     };
-    let home = match home_or_refuse("done", global) {
-        Ok(home) => home,
-        Err(code) => return code,
+    let opening = Opening {
+        command: "done",
+        refusal_prefix: "refused.identity: ",
+        ..Opening::default()
     };
-    let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => Recorded::new(store, &wiring.clock, "done"),
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
-            return fail("done", &format!("refused.identity: {message}"), REFUSED);
-        }
-        Err(e) => return fail("done", &e.to_string(), STORE),
-    };
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
+    with_ctx_using(global, wiring, &team, "done", opening, |ctx| {
+        record(ctx, &caller, &role, status, summary)
+    })
+    .unwrap_or_else(|code| code)
+}
+
+fn record(
+    ctx: &mut Ctx<'_>,
+    caller: &CallerEnv,
+    role: &Role,
+    status: &str,
+    summary: &str,
+) -> ExitCode {
     // The proof the message tools use, so a wrong token is logged as
     // `message.refused` here as it is for MCP `team_done`.
-    if teamwire_msg::prove_actor_logged(&mut ctx, &caller).is_err() {
+    if teamwire_msg::prove_actor_logged(ctx, caller).is_err() {
         return fail(
             "done",
             "refused.identity: the token does not belong to this member",
             REFUSED,
         );
     }
-    match teamwire_report::done_with_status(&mut ctx, &role, status, summary) {
+    match teamwire_report::done_with_status(ctx, role, status, summary) {
         Ok(DoneReport::Stored {
             completion,
             n,

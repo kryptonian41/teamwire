@@ -105,16 +105,56 @@ pub(crate) fn with_ctx<T>(
     op: &'static str,
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
-    let home = home_or_refuse("", global)?;
-    let mut store = match Store::open_existing(&home, team) {
+    with_ctx_using(global, wiring, team, op, Opening::default(), f)
+}
+
+/// How `with_ctx_using` opens the store and words its refusals. The
+/// default is `with_ctx`'s.
+#[derive(Default)]
+pub(crate) struct Opening<'a> {
+    /// The command a refusal names (`teamwire close: ...`); empty names none.
+    pub(crate) command: &'a str,
+    /// Open the database read-only, so the command cannot change anything.
+    pub(crate) read_only: bool,
+    /// Put before the refusal for a team with no database.
+    pub(crate) refusal_prefix: &'a str,
+    /// The settings the `Ctx` carries.
+    pub(crate) config: Config,
+}
+
+/// `with_ctx`, opened and worded as `opening` says.
+pub(crate) fn with_ctx_using<T>(
+    global: &Global,
+    wiring: &Wiring,
+    team: &TeamName,
+    op: &'static str,
+    opening: Opening<'_>,
+    f: impl FnOnce(&mut Ctx<'_>) -> T,
+) -> Result<T, ExitCode> {
+    let Opening {
+        command,
+        read_only,
+        refusal_prefix,
+        config,
+    } = opening;
+    let home = home_or_refuse(command, global)?;
+    let opened = if read_only {
+        Store::open_read_only(&home, team)
+    } else {
+        Store::open_existing(&home, team)
+    };
+    let mut store = match opened {
         Ok(store) => Recorded::new(store, &wiring.clock, op),
         Err(StoreError::NoDatabase { path }) => {
             let message = no_database_text(team, &path);
-            return Err(fail("", &message, REFUSED));
+            return Err(fail(
+                command,
+                &format!("{refusal_prefix}{message}"),
+                REFUSED,
+            ));
         }
-        Err(e) => return Err(fail("", &e.to_string(), STORE)),
+        Err(e) => return Err(fail(command, &e.to_string(), STORE)),
     };
-    let config = Config::default();
     let mut ctx = Ctx {
         home: &home,
         store: &mut store,
@@ -137,20 +177,15 @@ pub(crate) fn with_read_ctx<T>(
     f: impl FnOnce(&mut Ctx<'_>) -> T,
 ) -> Result<T, ExitCode> {
     let home = home_or_refuse("", global)?;
-    if !home
-        .join("teams")
-        .join(team.as_str())
-        .join("team.db")
-        .is_file()
-    {
-        return Err(fail(
-            "",
-            &format!("no database for team {team} under {}", home.display()),
-            REFUSED,
-        ));
-    }
     let mut store = match Store::open_read_only(&home, team) {
         Ok(store) => store,
+        Err(StoreError::NoDatabase { .. }) => {
+            return Err(fail(
+                "",
+                &format!("no database for team {team} under {}", home.display()),
+                REFUSED,
+            ));
+        }
         Err(e) => return Err(fail("", &e.to_string(), STORE)),
     };
     let config = Config::default();

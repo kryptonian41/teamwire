@@ -3,13 +3,11 @@
 use std::process::ExitCode;
 
 use teamwire_close::{CloseOpts, ClosePlan, CloseReport, CloseStep, CloseTarget, StepOutcome};
-use teamwire_core::{Config, Role, TeamName};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_core::{Role, TeamName};
 
 use crate::cmd::shared::{
-    PARTIAL, REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line, warn,
+    Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say_line, warn, with_ctx_using,
 };
-use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{CloseArgs, Global, USAGE};
 
@@ -44,47 +42,30 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
     if !*dry_run && let Some(code) = refuse_member("close") {
         return code;
     }
-    let home = match home_or_refuse("close", global) {
-        Ok(home) => home,
-        Err(code) => return code,
-    };
     // A dry run opens the database read-only, so it cannot change anything.
-    let opened = if *dry_run {
-        Store::open_read_only(&home, &team)
-    } else {
-        Store::open_existing(&home, &team)
+    let opening = Opening {
+        command: "close",
+        read_only: *dry_run,
+        ..Opening::default()
     };
-    let mut store = match opened {
-        Ok(store) => Recorded::new(store, &wiring.clock, "close"),
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
-            return fail("close", &message, REFUSED);
+    with_ctx_using(global, wiring, &team, "close", opening, |ctx| {
+        // A row that does not parse is a broken store (exit 6), not a rule
+        // that refused, so it is read here before the close library turns it
+        // into one.
+        if let Err(e) = ctx.store.read(|tx| {
+            tx.team()?;
+            tx.members()?.all_or_corrupt()
+        }) {
+            return fail("close", &format!("the team cannot be read: {e}"), STORE);
         }
-        Err(e) => return fail("close", &e.to_string(), STORE),
-    };
-    // A row that does not parse is a broken store (exit 6), not a rule that
-    // refused, so it is read here before the close library turns it into one.
-    if let Err(e) = store.read(|tx| {
-        tx.team()?;
-        tx.members()?.all_or_corrupt()
-    }) {
-        return fail("close", &format!("the team cannot be read: {e}"), STORE);
-    }
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
-    if *dry_run {
-        let plan = teamwire_close::plan_close_with(&ctx, target, &opts);
-        return show_plan(&plan);
-    }
-    let report = teamwire_close::close(&mut ctx, target.clone(), opts);
-    show_report(&report, &target, &team)
+        if *dry_run {
+            let plan = teamwire_close::plan_close_with(ctx, target, &opts);
+            return show_plan(&plan);
+        }
+        let report = teamwire_close::close(ctx, target.clone(), opts);
+        show_report(&report, &target, &team)
+    })
+    .unwrap_or_else(|code| code)
 }
 
 /// The steps of a whole-team close that take something away. A failed one may
