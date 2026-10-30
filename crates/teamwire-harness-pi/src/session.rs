@@ -11,14 +11,18 @@
 //! The extension also writes `<sessions_dir>/<id>.teamwire.json` from the
 //! moment pi starts: `{"pid", "started_at_ms", "state"}`, where `state` is
 //! `idle`, `working`, `blocked` (an extension's dialog waits) or `ended` (pi
-//! quit or moved to another session).
+//! quit or moved to another session). The lead's extension writes the same
+//! file for the lead's session, with `"lead": true`, pi's `mode` (`tui` for
+//! the terminal UI) and `session_file`, because a lead's session file lives
+//! in pi's own folder for its cwd, not in `<sessions_dir>`.
 
 use std::io::{BufRead, BufReader, Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use teamwire_core::{
-    Fill, Liveness, Pid, PlaceState, Platform, SessionId, Timestamp, platform::ProcessRef,
+    CallerSession, Fill, Liveness, Pid, PlaceState, Platform, SessionId, SessionKind, Timestamp,
+    platform::ProcessRef,
 };
 
 use crate::extension::{FILL_ENTRY, STATE_SUFFIX};
@@ -33,23 +37,30 @@ fn is_plain(id: &SessionId) -> bool {
     !s.contains(['/', '\\']) && !s.starts_with('.')
 }
 
-/// The file of `session`, if pi has written one. Names start with the time,
-/// so the last in order is the newest.
+/// The file of `session`, if pi has written one: a member's in
+/// `sessions_dir`, where names start with the time, so the last in order is
+/// the newest; else the one a lead's state file names.
 pub(crate) fn session_file(sessions_dir: &Path, session: &SessionId) -> Option<PathBuf> {
     if !is_plain(session) {
         return None;
     }
     let suffix = format!("_{}.jsonl", session.as_str());
-    let entries = std::fs::read_dir(sessions_dir).ok()?;
-    entries
-        .filter_map(Result::ok)
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(&suffix))
-        })
-        .max()
+    let member = std::fs::read_dir(sessions_dir).ok().and_then(|entries| {
+        entries
+            .filter_map(Result::ok)
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(&suffix))
+            })
+            .max()
+    });
+    member.or_else(|| {
+        recorded(sessions_dir, session)?
+            .session_file
+            .filter(|f| f.is_file())
+    })
 }
 
 fn lines(file: &Path) -> impl Iterator<Item = String> {
@@ -82,13 +93,21 @@ struct Recorded {
     process: ProcessRef,
     /// `None` once pi no longer runs the session.
     state: Option<PlaceState>,
+    /// Set only by the lead's extension.
+    lead: bool,
+    /// pi's mode; `tui` is the terminal UI.
+    mode: Option<String>,
+    session_file: Option<PathBuf>,
 }
 
 fn recorded(sessions_dir: &Path, session: &SessionId) -> Option<Recorded> {
     if !is_plain(session) {
         return None;
     }
-    let file = sessions_dir.join(format!("{}{STATE_SUFFIX}", session.as_str()));
+    read_recorded(&sessions_dir.join(format!("{}{STATE_SUFFIX}", session.as_str())))
+}
+
+fn read_recorded(file: &Path) -> Option<Recorded> {
     let doc: Value = serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()?;
     let pid = u32::try_from(doc.get("pid")?.as_u64()?).ok()?;
     let started = doc
@@ -102,13 +121,42 @@ fn recorded(sessions_dir: &Path, session: &SessionId) -> Option<Recorded> {
         Some("blocked") => Some(PlaceState::Blocked),
         _ => Some(PlaceState::Unknown),
     };
+    let text = |key: &str| doc.get(key).and_then(Value::as_str).map(str::to_owned);
     Some(Recorded {
         process: ProcessRef {
             pid: Pid::new(pid),
             started,
         },
         state,
+        lead: doc.get("lead").and_then(Value::as_bool) == Some(true),
+        mode: text("mode"),
+        session_file: text("session_file").map(PathBuf::from),
     })
+}
+
+/// A lead's session from its state file, while the recorded pi process
+/// still runs it. Only pi's terminal UI is an interactive session.
+fn lead_session(id: SessionId, r: &Recorded, platform: &dyn Platform) -> Option<CallerSession> {
+    if !r.lead || r.state.is_none() || !platform.process_alive(r.process) {
+        return None;
+    }
+    let kind = if r.mode.as_deref() == Some("tui") {
+        SessionKind::Interactive
+    } else {
+        SessionKind::Background
+    };
+    Some(CallerSession { id, kind })
+}
+
+/// The lead session `session`, when the lead's extension runs it, and the
+/// pi process that runs it.
+pub(crate) fn lead_by_id(
+    platform: &dyn Platform,
+    sessions_dir: &Path,
+    session: &SessionId,
+) -> Option<(CallerSession, Pid)> {
+    let r = recorded(sessions_dir, session)?;
+    lead_session(session.clone(), &r, platform).map(|s| (s, r.process.pid))
 }
 
 /// The pi process that runs `session`, when it still does: the recorded pid,
@@ -136,6 +184,7 @@ pub(crate) fn liveness(
         Some(Recorded {
             process,
             state: Some(state),
+            ..
         }) if platform.process_alive(process) => Liveness::Alive(state),
         Some(_) => Liveness::Dead,
         None => Liveness::Unknown,

@@ -361,7 +361,7 @@ pub(crate) struct InstallArgs {
     #[arg(long)]
     pub(crate) force: bool,
     /// The harnesses to install the lead setup for, comma-separated
-    /// (`claude-code`, `codex`). Without it, a terminal shows a selector of
+    /// (`claude-code`, `codex`, `pi`). Without it, a terminal shows a selector of
     /// the harnesses found on PATH, and anything else installs `claude-code`.
     #[arg(long, value_delimiter = ',', value_name = "ID")]
     pub(crate) harness: Vec<String>,

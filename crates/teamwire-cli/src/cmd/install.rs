@@ -1,8 +1,9 @@
 //! `teamwire install` and `teamwire uninstall`: register or remove the
 //! teamwire plugin in Claude Code, and remove the skill and MCP entry that
-//! ADR 0012 wrote (ADR 0018); add or remove the plugin in Codex (ADR 0023).
-//! The only commands that change either harness's configuration, and only
-//! through `claude plugin`, `claude mcp remove` and `codex plugin`.
+//! ADR 0012 wrote (ADR 0018); add or remove the plugin in Codex (ADR 0023);
+//! add or remove the lead package in pi (ADR 0030). The only commands that
+//! change a harness's configuration, and only through `claude plugin`,
+//! `claude mcp remove`, `codex plugin`, `pi install` and `pi remove`.
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -13,14 +14,15 @@ use teamwire_core::Command;
 
 use crate::cmd::lead_setup_check::is_build_output;
 use crate::cmd::send::{PARTIAL, REFUSED, fail, say_line, state_home};
-use crate::wiring::{Change, CodexChange, CodexCommand, McpEntry, SKILL_TEXT, Wiring};
+use crate::wiring::{
+    Change, CodexChange, CodexCommand, McpEntry, PiChange, PiCommand, SKILL_TEXT, Wiring,
+};
 use crate::{Global, InstallArgs, USAGE, UninstallArgs};
 
 /// The harness ids `install` knows, in the order a selector lists them, with
 /// the program each one runs.
 const CLAUDE: &str = "claude-code";
 const CODEX: &str = "codex";
-/// A harness for members only, so `install` has nothing to set up for it.
 const PI: &str = "pi";
 
 const NO_HOME: &str = "no state directory: set --home, TEAMWIRE_HOME or HOME";
@@ -51,6 +53,15 @@ pub(crate) fn codex_command(
     }
 }
 
+/// The command the pi package runs: the same binary and `--home` as the
+/// Claude entry.
+pub(crate) fn pi_command(want: &McpEntry, home: &Path, user_home: Option<&Path>) -> PiCommand {
+    PiCommand {
+        bin: PathBuf::from(&want.command),
+        home: home_flag(home, user_home).map(Path::to_path_buf),
+    }
+}
+
 /// The first line `<program> --version` prints, when the program runs.
 pub(crate) fn version_of(wiring: &Wiring, program: &str) -> Option<String> {
     let out = wiring
@@ -71,27 +82,18 @@ pub(crate) fn version_of(wiring: &Wiring, program: &str) -> Option<String> {
     )
 }
 
-/// The harnesses whose program runs, in selector order.
+/// The harnesses whose program runs, in selector order. Launch refuses a
+/// member whose harness is not among them.
 pub(crate) fn found(wiring: &Wiring) -> Vec<&'static str> {
     [
         (CLAUDE, &wiring.claude.claude_bin),
         (CODEX, &wiring.codex.codex_bin),
+        (PI, &wiring.pi.pi_bin),
     ]
     .into_iter()
     .filter(|(_, program)| version_of(wiring, program).is_some())
     .map(|(id, _)| id)
     .collect()
-}
-
-/// Every harness whose program answers `--version`: the lead harnesses of
-/// `found`, and the member-only pi. Launch refuses a member whose harness
-/// is not among them.
-pub(crate) fn on_path(wiring: &Wiring) -> Vec<&'static str> {
-    let mut all = found(wiring);
-    if version_of(wiring, &wiring.pi.pi_bin).is_some() {
-        all.push(PI);
-    }
-    all
 }
 
 /// The harnesses a selector line picks from the numbered list `found`: an
@@ -148,7 +150,7 @@ fn choose(args: &InstallArgs, wiring: &Wiring) -> Result<Vec<&'static str>, (Str
         let found = found(wiring);
         if found.is_empty() {
             return Err((
-                "neither `claude` nor `codex` is on PATH".to_owned(),
+                "none of `claude`, `codex` and `pi` is on PATH".to_owned(),
                 REFUSED,
             ));
         }
@@ -156,12 +158,12 @@ fn choose(args: &InstallArgs, wiring: &Wiring) -> Result<Vec<&'static str>, (Str
     }
     let mut chosen = Vec::new();
     for name in &args.harness {
-        let id = [CLAUDE, CODEX]
+        let id = [CLAUDE, CODEX, PI]
             .into_iter()
             .find(|id| id == name)
             .ok_or_else(|| {
                 (
-                    format!("unknown harness `{name}`; choose claude-code or codex"),
+                    format!("unknown harness `{name}`; choose claude-code, codex or pi"),
                     USAGE,
                 )
             })?;
@@ -194,6 +196,7 @@ pub(crate) fn wanted_entry(global: &Global) -> Result<McpEntry, String> {
 enum Plan {
     Claude(Vec<Change>),
     Codex(Vec<CodexChange>),
+    Pi(Vec<PiChange>),
 }
 
 impl Plan {
@@ -201,6 +204,7 @@ impl Plan {
         match self {
             Self::Claude(c) => c.iter().map(ToString::to_string).collect(),
             Self::Codex(c) => c.iter().map(ToString::to_string).collect(),
+            Self::Pi(c) => c.iter().map(ToString::to_string).collect(),
         }
     }
 }
@@ -240,6 +244,13 @@ pub(crate) fn run(args: &InstallArgs, global: &Global, wiring: &Wiring) -> ExitC
                 .plan_install(&cmd, SKILL_TEXT, &home, args.force)
                 .map(Plan::Codex)
                 .map_err(|e| e.to_string())
+        } else if id == PI {
+            let cmd = pi_command(&want, &home, user_home.as_deref());
+            wiring
+                .pi_setup()
+                .plan_install(&cmd, SKILL_TEXT, &home)
+                .map(Plan::Pi)
+                .map_err(|e| e.to_string())
         } else {
             wiring
                 .lead_setup()
@@ -274,7 +285,13 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiri
         match wiring.codex_setup().plan_uninstall(&home, args.force) {
             Ok(changes) => plans.push(Plan::Codex(changes)),
             // An old or broken `codex` must not keep the Claude setup in place.
-            Err(e) => skipped("uninstall", &e.to_string()),
+            Err(e) => skipped("uninstall", "Codex", &e.to_string()),
+        }
+    }
+    if version_of(wiring, &wiring.pi.pi_bin).is_some() {
+        match wiring.pi_setup().plan_uninstall(&home) {
+            Ok(changes) => plans.push(Plan::Pi(changes)),
+            Err(e) => skipped("uninstall", "pi", &e.to_string()),
         }
     }
     if plans.iter().all(|p| p.lines().is_empty()) {
@@ -288,8 +305,8 @@ pub(crate) fn run_uninstall(args: &UninstallArgs, global: &Global, wiring: &Wiri
     clippy::print_stderr,
     reason = "the skipped part is told on stderr, beside the other part's output"
 )]
-fn skipped(command: &str, why: &str) {
-    eprintln!("teamwire {command}: skipped the Codex part: {why}");
+fn skipped(command: &str, part: &str, why: &str) {
+    eprintln!("teamwire {command}: skipped the {part} part: {why}");
 }
 
 /// Prints the plan for a dry run; otherwise makes the changes and prints
@@ -310,6 +327,10 @@ fn finish(command: &str, wiring: &Wiring, plans: &[Plan], dry_run: bool) -> Exit
                 .map_err(|e| failure(&e, &e.done)),
             Plan::Codex(changes) => wiring
                 .codex_setup()
+                .apply_lead_setup(changes)
+                .map_err(|e| failure(&e, &e.done)),
+            Plan::Pi(changes) => wiring
+                .pi_setup()
                 .apply_lead_setup(changes)
                 .map_err(|e| failure(&e, &e.done)),
         };
@@ -339,6 +360,12 @@ fn finish(command: &str, wiring: &Wiring, plans: &[Plan], dry_run: bool) -> Exit
         .any(|p| matches!(p, Plan::Codex(c) if c.iter().any(CodexChange::needs_hook_review)))
     {
         say_line("Codex will ask you to review the plugin's hook once after this change");
+    }
+    if plans
+        .iter()
+        .any(|p| matches!(p, Plan::Pi(c) if !c.is_empty()))
+    {
+        say_line("pi loads packages at start: new pi sessions see the change, open ones do not");
     }
     ExitCode::SUCCESS
 }

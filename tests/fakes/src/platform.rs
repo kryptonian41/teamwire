@@ -124,6 +124,8 @@ struct State {
     /// that cannot read start times does.
     started: HashMap<Pid, Timestamp>,
     envs: HashMap<(Pid, String), String>,
+    /// Each pid's parent and program name, as `parent_of` reports them.
+    parents: HashMap<Pid, (Pid, String)>,
     env_fault: Option<PlatformError>,
     run_queue: VecDeque<Result<RunOutput, PlatformError>>,
     runs: Vec<(Command, Duration)>,
@@ -163,6 +165,7 @@ impl FakePlatform {
                 alive: HashSet::new(),
                 started: HashMap::new(),
                 envs: HashMap::new(),
+                parents: HashMap::new(),
                 env_fault: None,
                 run_queue: VecDeque::new(),
                 runs: Vec::new(),
@@ -220,6 +223,13 @@ impl FakePlatform {
         lock(&self.state)
             .envs
             .insert((pid, var.to_owned()), value.to_owned());
+    }
+
+    /// Makes `parent_of(pid)` report `parent`, a program named `name`.
+    pub fn set_parent(&self, pid: Pid, parent: Pid, name: &str) {
+        lock(&self.state)
+            .parents
+            .insert(pid, (parent, name.to_owned()));
     }
 
     /// Every later `env_of` fails with `err` until cleared with `None`.
@@ -381,6 +391,12 @@ impl Platform for FakePlatform {
             .get(&pid)
             .copied()
             .filter(|_| state.alive.contains(&pid))
+    }
+
+    fn parent_of(&self, pid: Pid) -> Option<(Pid, String)> {
+        self.log
+            .record("parent_of", CallKind::Read, pid.to_string());
+        lock(&self.state).parents.get(&pid).cloned()
     }
 
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {

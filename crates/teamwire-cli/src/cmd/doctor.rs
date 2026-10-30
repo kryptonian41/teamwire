@@ -20,7 +20,7 @@ use crate::Global;
 use crate::cmd::install::wanted_entry;
 use crate::cmd::lead_setup_check::{self, Outcome};
 use crate::cmd::send::{PARTIAL, home_or_refuse, say};
-use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, Wiring};
+use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, PiSetup, Wiring};
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
@@ -217,8 +217,9 @@ pub(crate) struct Inputs<'a> {
     pub(crate) claude: ClaudeConfig,
     /// The Codex adapter, whose plugin is checked when `codex` is on PATH.
     pub(crate) codex: CodexSetup,
-    /// pi's directory, where herdr's pi integration lives.
-    pub(crate) pi_agent_dir: PathBuf,
+    /// The pi adapter: its directory holds herdr's pi integration, and its
+    /// lead package is checked when `pi` is on PATH.
+    pub(crate) pi: PiSetup,
     /// The MCP entry `teamwire install` would register from this binary, or
     /// why it cannot be worked out.
     pub(crate) lead_entry: Result<McpEntry, String>,
@@ -476,7 +477,11 @@ fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
 /// member under herdr needs that. Checked only when `pi` is on PATH.
 fn herdr_pi_check(inputs: &Inputs<'_>) -> Option<Check> {
     on_path(inputs.path_var.as_ref(), "pi")?;
-    let file = inputs.pi_agent_dir.join("extensions/herdr-agent-state.ts");
+    let file = inputs
+        .pi
+        .config()
+        .agent_dir
+        .join("extensions/herdr-agent-state.ts");
     let name = "herdr pi integration";
     Some(if file.is_file() {
         Check::pass(name, format!("found at {}", file.display()))
@@ -654,6 +659,7 @@ fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         running_a_build: inputs.running_a_build,
         dir: &inputs.repo,
         codex: on_path(inputs.path_var.as_ref(), "codex").map(|_| &inputs.codex),
+        pi: on_path(inputs.path_var.as_ref(), "pi").map(|_| &inputs.pi),
         home: &inputs.home,
     };
     lead_setup_check::run(&lead)
@@ -715,7 +721,7 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
         codex: wiring.codex_setup(),
-        pi_agent_dir: wiring.pi.agent_dir.clone(),
+        pi: wiring.pi_setup(),
         running_a_build: lead_entry
             .as_ref()
             .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),

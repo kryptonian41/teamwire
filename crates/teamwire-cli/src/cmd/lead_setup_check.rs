@@ -1,14 +1,16 @@
 //! The lead setup checks of `teamwire doctor` (ADR 0018): the teamwire plugin,
 //! compared with what this binary would install, any skill or MCP entry left
-//! from ADR 0012, and any `teamwire` entry in a scope that adds a second
-//! server. Reads only. Kept apart from `doctor.rs` and free of its types, so
+//! from ADR 0012, any `teamwire` entry in a scope that adds a second server,
+//! and the Codex plugin and pi package when those harnesses are on PATH.
+//! Reads only. Kept apart from `doctor.rs` and free of its types, so
 //! the doctor tests compile this file as it is.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::wiring::{
-    ClaudeConfig, CodexCommand, CodexPluginStatus, CodexSetup, McpEntry, McpState, SKILL_TEXT,
-    SkillState, edited_skill, mcp_state, shadowing_entries, skill_state,
+    ClaudeConfig, CodexCommand, CodexPluginStatus, CodexSetup, McpEntry, McpState, PiCommand,
+    PiPackageStatus, PiSetup, SKILL_TEXT, SkillState, edited_skill, mcp_state, shadowing_entries,
+    skill_state,
 };
 
 /// One check's verdict and its detail.
@@ -33,7 +35,10 @@ pub(crate) struct LeadInputs<'a> {
     /// The Codex adapter, when `codex` is on PATH; without it Codex has no
     /// check.
     pub(crate) codex: Option<&'a CodexSetup>,
-    /// The state directory, which holds the Codex plugin's files.
+    /// The pi adapter, when `pi` is on PATH; without it pi has no check.
+    pub(crate) pi: Option<&'a PiSetup>,
+    /// The state directory, which holds the Codex plugin's and the pi
+    /// package's files.
     pub(crate) home: &'a Path,
 }
 
@@ -129,17 +134,19 @@ fn shadow_check(inputs: &LeadInputs<'_>, want: &McpEntry) -> Outcome {
     }
 }
 
-/// The command the Codex plugin runs, from the entry install would register:
-/// the same binary, and `--home` when the entry names one.
-fn codex_command(want: &McpEntry) -> CodexCommand {
+/// The binary and `--home` of the entry install would register, which the
+/// Codex plugin and the pi package run too.
+fn bin_and_home(want: &McpEntry) -> (PathBuf, Option<PathBuf>) {
     let home = match want.args.as_slice() {
         [flag, home, ..] if flag == "--home" => Some(Path::new(home).to_path_buf()),
         _ => None,
     };
-    CodexCommand {
-        bin: Path::new(&want.command).to_path_buf(),
-        home,
-    }
+    (Path::new(&want.command).to_path_buf(), home)
+}
+
+fn codex_command(want: &McpEntry) -> CodexCommand {
+    let (bin, home) = bin_and_home(want);
+    CodexCommand { bin, home }
 }
 
 /// A missing plugin is fine: Codex is optional. A stale one is a warning.
@@ -163,6 +170,28 @@ fn codex_check(inputs: &LeadInputs<'_>, codex: &CodexSetup, want: &McpEntry) -> 
     }
 }
 
+/// A missing package is fine: pi is optional. A stale one is a warning.
+fn pi_check(inputs: &LeadInputs<'_>, pi: &PiSetup, want: &McpEntry) -> Outcome {
+    const ADD: &str = "run `teamwire install --harness pi`";
+    let (bin, home) = bin_and_home(want);
+    let status = pi.package_status(
+        &PiCommand { bin, home },
+        SKILL_TEXT,
+        inputs.home,
+        !inputs.running_a_build,
+    );
+    match status {
+        Err(e) => Outcome::Warn(e.to_string()),
+        Ok(PiPackageStatus::Missing) => {
+            Outcome::Pass(format!("not installed; to lead from pi, {ADD}"))
+        }
+        Ok(PiPackageStatus::Stale(problems)) => {
+            Outcome::Warn(format!("{}; {ADD}", problems.join("; ")))
+        }
+        Ok(PiPackageStatus::Current) => Outcome::Pass("installed".to_owned()),
+    }
+}
+
 /// Each check's name and outcome. The leftover check does not need the
 /// entry, so it runs even when the entry cannot be worked out.
 pub(crate) fn run(inputs: &LeadInputs<'_>) -> Vec<(&'static str, Outcome)> {
@@ -174,6 +203,9 @@ pub(crate) fn run(inputs: &LeadInputs<'_>) -> Vec<(&'static str, Outcome)> {
             checks.push(("lead MCP server scope", shadow_check(inputs, want)));
             if let Some(codex) = inputs.codex {
                 checks.push(("codex plugin", codex_check(inputs, codex, want)));
+            }
+            if let Some(pi) = inputs.pi {
+                checks.push(("pi lead package", pi_check(inputs, pi, want)));
             }
         }
         Err(e) => {

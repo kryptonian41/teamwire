@@ -42,6 +42,13 @@ pub trait Harness: Send + Sync {
     fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Err(HarnessError::unsupported())
     }
+    /// Why the caller's session cannot lead a new team, when the harness can
+    /// tell that the lead setup it needs is not loaded there. A pi lead reads
+    /// the watch through teamwire's lead extension, so without it no result
+    /// would reach the lead. The default is `None`.
+    fn lead_setup_missing(&self) -> Option<String> {
+        None
+    }
     /// The folder a session runs in, read without writing: the live session
     /// first, then the session's own record. `None` when neither names it.
     /// A resume only finds a session from that folder.

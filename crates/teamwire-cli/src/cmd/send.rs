@@ -450,6 +450,7 @@ mod tests {
             lead_harness: None,
             claude_session: None,
             codex_thread: None,
+            pi_marker: None,
         })
         .unwrap();
         let out = with_ctx(&global, &wiring, &team(), "ack", |ctx| {

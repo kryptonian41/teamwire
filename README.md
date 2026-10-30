@@ -116,7 +116,7 @@ database, so a person can read them.
 
 | Part | Supported |
 | --- | --- |
-| Agent harness | Claude Code and Codex CLI. pi runs members only. A Codex lead cannot run AFK mode. |
+| Agent harness | Claude Code, Codex CLI and pi, each for members and for the lead. A Codex or pi lead cannot run AFK mode. |
 | Terminal host | [herdr](https://herdr.dev) and tmux. In tmux, teamwire finds the lead through the process tree and asks Claude Code whether a member is working. |
 | Operating system | macOS. Linux works without the sleep hold that keeps the machine awake during a run. |
 
@@ -125,7 +125,7 @@ database, so a person can read them.
 - Rust 1.94.1. The `rust-toolchain.toml` file pins it, so `rustup` installs it
   for you.
 - git
-- Claude Code, with `claude` on `PATH`. Codex CLI is optional: install it to use `codex` as a harness. pi is optional too, for members only; under herdr it needs `herdr integration install pi`.
+- Claude Code, with `claude` on `PATH`. Codex CLI is optional: install it to use `codex` as a harness. pi is optional too; under herdr it needs `herdr integration install pi`.
 - herdr or tmux. The lead session must run in a herdr pane or a tmux window
   of its own. With herdr, its session hook must be in your Claude Code
   settings.
@@ -160,7 +160,10 @@ and the lead's Stop hook. Start a new Claude Code session afterwards, because
 an open session does not load a new plugin. Run `teamwire install` again
 after every `cargo install`. `teamwire uninstall` removes the plugin.
 `teamwire install --harness codex` installs the Codex plugin from
-`$TEAMWIRE_HOME/codex-plugin/`.
+`$TEAMWIRE_HOME/codex-plugin/`. `teamwire install --harness pi` writes a pi
+package to `$TEAMWIRE_HOME/pi-package/` and adds it with `pi install`. In a
+pi lead, the watch runs through the package's `teamwire_watch` tool, and each
+watch line reaches the lead as a message.
 
 Before you rely on teamwire, run the live checks in
 [docs/test-strategy.md](docs/test-strategy.md), section 6. They prove that

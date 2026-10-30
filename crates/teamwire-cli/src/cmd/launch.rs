@@ -84,7 +84,7 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         }
     };
     // Only the plan's own members: `--add` does not recheck the ones already running.
-    let found = crate::cmd::install::on_path(wiring);
+    let found = crate::cmd::install::found(wiring);
     let missing: Vec<_> = plan
         .members
         .iter()
