@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{Event, EventType, Message, Recipient, Timestamp};
+use teamwire_core::{Event, EventType, Message, Recipient, Role, Timestamp};
 use teamwire_store::{ReadTx, StoreError};
 
 use crate::line_holds_whole;
@@ -26,11 +26,15 @@ pub struct AttemptHistory {
     /// The start of an attempt with no outcome recorded after it.
     open_since: Option<Timestamp>,
     stops: usize,
-    unread_since: Option<Timestamp>,
+    /// The typed line held the whole body (ADR 0021).
+    whole: bool,
+    /// The recipient whose completions can end "unread" (ADR 0022).
+    member: Option<Role>,
 }
 
 impl AttemptHistory {
     /// Reads the events about `message` once, keeping those for `recipient`.
+    /// Reads nothing else: only `unread_since` looks at completions.
     pub fn read(
         tx: &ReadTx<'_>,
         message: &Message,
@@ -38,24 +42,22 @@ impl AttemptHistory {
     ) -> Result<Self, StoreError> {
         let events = tx.events_about(&message.ulid)?.all_or_corrupt()?;
         let mut history = Self::fold(message.created_at, recipient, &events);
-        let whole = line_holds_whole(&message.body);
-        let completed = match recipient {
-            Recipient::Member(role) if !whole => {
-                tx.latest_completion(role)?.map(|c| c.completion.created_at)
-            }
-            Recipient::Member(_) | Recipient::Lead | Recipient::Other(_) => None,
+        history.whole = line_holds_whole(&message.body);
+        history.member = match recipient {
+            Recipient::Member(role) => Some(role.clone()),
+            Recipient::Lead | Recipient::Other(_) => None,
         };
-        history.unread_since = unread_since(history.started, whole, completed);
         Ok(history)
     }
 
-    /// Events are in commit order. `unread_since` is left `None` for `read`.
+    /// Events are in commit order. `whole` and `member` are left for `read`.
     fn fold(created_at: Timestamp, recipient: &Recipient, events: &[Event]) -> Self {
         let mut history = Self {
             started: created_at,
             open_since: Some(created_at),
             stops: 0,
-            unread_since: None,
+            whole: false,
+            member: None,
         };
         for e in events.iter().filter(|e| is_for(e, recipient)) {
             if e.kind == EventType::DeliveryResent {
@@ -113,9 +115,16 @@ impl AttemptHistory {
     /// whole body (ADR 0021), or the member recorded a completion after the
     /// attempt began (ADR 0022). A member's own hooks keep their own rule
     /// (ADR 0021), because a hold before stopping is how a member is asked
-    /// to read the full text at all.
-    pub fn unread_since(&self) -> Option<Timestamp> {
-        self.unread_since
+    /// to read the full text at all. Reads the member's latest completion
+    /// from `tx`, so callers that ask only the other questions never do.
+    pub fn unread_since(&self, tx: &ReadTx<'_>) -> Result<Option<Timestamp>, StoreError> {
+        let completed = match &self.member {
+            Some(role) if !self.whole => {
+                tx.latest_completion(role)?.map(|c| c.completion.created_at)
+            }
+            Some(_) | None => None,
+        };
+        Ok(unread_since(self.started, self.whole, completed))
     }
 }
 

@@ -166,7 +166,8 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since() else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         let age = now.saturating_since(since);

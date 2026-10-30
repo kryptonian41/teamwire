@@ -151,7 +151,8 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since() else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         found.push(Unread {
