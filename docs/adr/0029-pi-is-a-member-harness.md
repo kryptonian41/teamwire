@@ -149,6 +149,14 @@ model turn ran, so pi never called them itself.
    extension, `~/.pi/agent/extensions/herdr-agent-state.ts`, which
    `herdr integration install pi` adds. Doctor warns when `pi` is on PATH
    under herdr and that file is missing. teamwire does not install it.
+   That extension reports the session file's path, not its id:
+   `agent_session` is `{"agent": "pi", "kind": "path", "value":
+   ".../<time>_<id>.jsonl"}`, before the file exists too. The herdr adapter
+   reads the id from that file name, because the locator compares herdr's
+   answer with the recorded id. Only a pi report by path is read this way;
+   every other report is passed on as herdr gives it. tmux names no session
+   for a pane, so the locator matches the pane's processes there instead,
+   and needs no such step.
 
 9. **Not built.** A pi lead. OpenTelemetry settings for pi members
    (`otel_env` is empty). A compaction backstop like LCH-29's: pi compacts
@@ -167,13 +175,18 @@ model turn ran, so pi never called them itself.
   resumes it.
 - A pi that is killed (`kill -9`) leaves its last state in the file. The
   pid check then reports the session dead.
-- Facts most likely to be wrong, to check first in a live team:
-  1. herdr's pi integration reports the pi session id as `agent_session`.
-     Without that, every delivery to a pi member under herdr fails
-     `host_no_session`.
-  2. A `custom_message` entry with `continue: true` from
-     `agent_before_settle` reaches the model as the next turn's input.
-  3. pi's context reading (`ContextUsage.tokens`) counts what Claude's
+- Live runs on 2026-10-29 (herdr 0.9.5) and 2026-10-30 (tmux), each with
+  one pi member started normally and one with `"dispatch": false`, showed
+  that launch, a member's finding, the turn-end result, the context
+  reading, a message to a member before its first turn, and (on tmux) close
+  all work. The herdr run found the path report of point 8, which failed
+  every message to a pi member with `host_other_session` until the adapter
+  read the id from the path.
+- Facts still unchecked:
+  1. A `custom_message` entry with `continue: true` from
+     `agent_before_settle` reaches the model as the next turn's input. No
+     live run held a member.
+  2. pi's context reading (`ContextUsage.tokens`) counts what Claude's
      figure counts closely enough for the handoff point.
-  4. `agent_settled` fires after every run, including an aborted one, so a
+  3. `agent_settled` fires after every run, including an aborted one, so a
      member never stays `working` after its run ends.
