@@ -2,7 +2,7 @@
 //! its hold note. Each message id is reminded at most once (ADR 0003 point 8).
 
 use teamwire_core::{DeliveryState, Recipient, Role, Ulid};
-use teamwire_deliver::{is_pending_stale, line_holds_whole};
+use teamwire_deliver::{AttemptHistory, line_holds_whole};
 use teamwire_store::{Ctx, StoreError};
 
 use crate::note::unread_note;
@@ -51,7 +51,9 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
                 // hook, which also delivers the member's own result: the
                 // message is treated as not stale and left out.
                 if d.delivery.state == DeliveryState::Pending
-                    && !is_pending_stale(tx, &message, &recipient, now).unwrap_or_else(|e| {
+                    && !AttemptHistory::read(tx, &message, &recipient)
+                        .map(|a| a.is_stale(now))
+                        .unwrap_or_else(|e| {
                         tracing::warn!(error = %e, "could not tell whether a pending message is stale");
                         false
                     })
@@ -91,7 +93,7 @@ pub(crate) fn mark_stopped(ctx: &mut Ctx<'_>, me: &Role) {
             // A stale row is a crashed sender's; `unread` names it instead.
             // One whose age cannot be read is marked: a needless mark costs
             // the sender one more try, a missing one loses the message.
-            if !is_pending_stale(&reader, &message, &recipient, now).unwrap_or(false) {
+            if !AttemptHistory::read(&reader, &message, &recipient).is_ok_and(|a| a.is_stale(now)) {
                 tx.record_recipient_stopped(now, &message.ulid, &recipient)?;
             }
         }

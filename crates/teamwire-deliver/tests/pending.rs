@@ -9,7 +9,7 @@
 use teamwire_core::{
     Actor, HarnessId, HostId, LeadRoute, Message, MessageType, Recipient, Role, TeamName, Timestamp,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started, is_pending_stale, stops_since_attempt};
+use teamwire_deliver::{AttemptHistory, PENDING_STALE};
 use teamwire_fakes::TestHome;
 use teamwire_store::{NewMessage, NewTeam, Store};
 
@@ -62,8 +62,8 @@ fn a_resend_to_another_team_restarts_only_that_rows_clock() {
     let (lead, remote) = store
         .read(|tx| {
             Ok((
-                attempt_started(tx, &message, &Recipient::Lead)?,
-                attempt_started(tx, &message, &other)?,
+                AttemptHistory::read(tx, &message, &Recipient::Lead)?.started(),
+                AttemptHistory::read(tx, &message, &other)?.started(),
             ))
         })
         .unwrap();
@@ -74,8 +74,8 @@ fn a_resend_to_another_team_restarts_only_that_rows_clock() {
     let (lead_stale, remote_stale) = store
         .read(|tx| {
             Ok((
-                is_pending_stale(tx, &message, &Recipient::Lead, now)?,
-                is_pending_stale(tx, &message, &other, now)?,
+                AttemptHistory::read(tx, &message, &Recipient::Lead)?.is_stale(now),
+                AttemptHistory::read(tx, &message, &other)?.is_stale(now),
             ))
         })
         .unwrap();
@@ -96,7 +96,7 @@ fn a_stop_of_the_recipient_during_the_attempt_is_counted_and_a_resend_starts_aga
     let message = one_message(&mut store, &team, vec![inv.clone(), a.clone()]);
     let stops = |store: &Store, to: &Recipient| {
         store
-            .read(|tx| stops_since_attempt(tx, &message, to))
+            .read(|tx| Ok(AttemptHistory::read(tx, &message, to)?.stops()))
             .unwrap()
     };
     assert_eq!(stops(&store, &inv), 0);
