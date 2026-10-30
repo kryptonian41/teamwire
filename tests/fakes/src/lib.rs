@@ -1,5 +1,5 @@
 //! Test doubles for every adapter trait (`FakeHost`, `FakeHarness`,
-//! `FakePlatform`, `FakeClock`), the fake `herdr` and `claude` binaries with
+//! `FakeLeadSetup`, `FakePlatform`, `FakeClock`), the fake `herdr` and `claude` binaries with
 //! the fixtures that run them, and the contract suites every adapter must
 //! pass. `README.md` in this directory is the guide.
 //!
@@ -19,6 +19,7 @@ mod fsutil;
 mod harness;
 pub mod herdr_bin;
 mod host;
+mod lead_setup;
 mod meeting;
 mod owner;
 mod platform;
@@ -34,6 +35,7 @@ pub use harness::{
     TRUST_MARKERS, TRUST_OPTION_TEXT,
 };
 pub use host::{FakeHost, Fault, SpawnedWith};
+pub use lead_setup::FakeLeadSetup;
 pub use platform::{FakePlatform, FakeSleepHold, HoldEvent};
 pub use tmux_config::NoTmuxConfig;
 

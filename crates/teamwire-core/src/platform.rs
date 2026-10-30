@@ -71,6 +71,16 @@ pub trait Platform: Send + Sync {
     /// Run in a new process group; on timeout kill the group; exit 124.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError>;
+    /// Creates the directory `path` and every missing parent. The default
+    /// refuses, for a platform that writes no files.
+    fn create_dir_all(&self, _path: &Path) -> Result<(), PlatformError> {
+        Err(PlatformError::unsupported())
+    }
+    /// Deletes the directory `path` and everything in it; a symlink at
+    /// `path` loses only the link. The default refuses, as above.
+    fn remove_dir_all(&self, _path: &Path) -> Result<(), PlatformError> {
+        Err(PlatformError::unsupported())
+    }
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;

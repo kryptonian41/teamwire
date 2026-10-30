@@ -27,6 +27,8 @@ impl Harness for NamedHarness {
             can_push: false,
             session_env_via_config: false,
             reads_watch_lines: true,
+            reads_input_box: false,
+            runs_afk: false,
         }
     }
     fn launch_spec(&self, _m: &MemberLaunch) -> Result<LaunchSpec, HarnessError> {
@@ -35,7 +37,7 @@ impl Harness for NamedHarness {
     fn resume_spec(&self, _m: &MemberLaunch, _s: &SessionId) -> Result<LaunchSpec, HarnessError> {
         Err(HarnessError::unsupported())
     }
-    fn current_session(&self) -> Option<CallerSession> {
+    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         None
     }
     fn processes_for_session(

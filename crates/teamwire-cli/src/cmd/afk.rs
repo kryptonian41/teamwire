@@ -12,12 +12,10 @@ use teamwire_launch::{
 };
 use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, team_names};
 
-use crate::cmd::doctor::{self, Host, Level};
-use crate::cmd::install::wanted_entry;
-use crate::cmd::lead_setup_check;
+use crate::cmd::doctor::{self, Level};
 use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
 use crate::recorded::Recorded;
-use crate::wiring::{Wiring, claude_harness_id};
+use crate::wiring::Wiring;
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
 
 const COMMAND: &str = "afk start";
@@ -43,8 +41,13 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     if let Some(code) = refuse_member(COMMAND) {
         return code;
     }
-    // AFK-2: only a Claude Code lead, whose pane the run can be proven to reach.
-    if wiring.lead_harness != claude_harness_id() {
+    // AFK-2: only a lead whose harness runs AFK, whose pane the run can be
+    // proven to reach.
+    let runs_afk = wiring
+        .registry
+        .harness(&wiring.lead_harness)
+        .is_ok_and(|h| h.capabilities().runs_afk);
+    if !runs_afk {
         return refuse(
             "unsupported_lead_harness",
             "an AFK run starts only from a Claude Code lead",
@@ -186,37 +189,7 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
 /// Runs doctor's checks. A `warn` is printed; a `FAIL` refuses.
 #[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
 fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Result<(), ExitCode> {
-    let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let lead_entry = wanted_entry(global);
-    let pick = doctor::pick_host(
-        std::env::var("HERDR_ENV").ok().as_deref(),
-        std::env::var("TMUX").ok().as_deref(),
-        &|pid| wiring.platform.parent_of(pid),
-    );
-    let inputs = doctor::Inputs {
-        host: match pick.id {
-            "herdr" => Host::Herdr,
-            "tmux" => Host::Tmux,
-            _ => Host::None,
-        },
-        home: home.to_path_buf(),
-        platform: wiring.platform.as_ref(),
-        registry: &wiring.registry,
-        clock: &wiring.clock,
-        path_var: std::env::var_os("PATH"),
-        claude: wiring.claude.clone(),
-        codex: wiring.codex_setup(),
-        pi: wiring.pi_setup(),
-        running_a_build: lead_entry
-            .as_ref()
-            .is_ok_and(|e| lead_setup_check::is_build_output(std::path::Path::new(&e.command))),
-        lead_entry,
-        repo,
-        env_names: std::env::vars_os()
-            .filter(|(_, v)| !v.is_empty())
-            .filter_map(|(k, _)| k.into_string().ok())
-            .collect(),
-    };
+    let (inputs, _) = doctor::inputs(home.to_path_buf(), global, wiring);
     let checks = doctor::diagnose(&inputs);
     let only = |level| {
         let picked: Vec<_> = checks

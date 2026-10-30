@@ -18,11 +18,13 @@ mod cmd {
     pub(crate) mod afk;
     pub(crate) mod close;
     pub(crate) mod doctor;
+    pub(crate) mod doctor_teams;
     pub(crate) mod done;
     pub(crate) mod events;
     pub(crate) mod export;
     pub(crate) mod handoff;
     pub(crate) mod hook;
+    pub(crate) mod host_pick;
     pub(crate) mod inbox;
     pub(crate) mod install;
     pub(crate) mod launch;
