@@ -40,6 +40,7 @@ mod cmd {
     pub(crate) mod reopen;
     pub(crate) mod resend;
     pub(crate) mod send;
+    pub(crate) mod shared;
     pub(crate) mod status;
     pub(crate) mod teams;
     pub(crate) mod verify;

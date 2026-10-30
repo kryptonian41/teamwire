@@ -12,7 +12,7 @@ use std::time::Duration;
 use teamwire_core::{Command, LeadCommand, LeadPlan, LeadSetup, LeadTarget};
 
 use crate::cmd::lead_setup_check::is_build_output;
-use crate::cmd::send::{PARTIAL, REFUSED, fail, say_line, state_home};
+use crate::cmd::shared::{PARTIAL, REFUSED, fail, say_line, state_home};
 use crate::wiring::{SKILL_TEXT, Wiring};
 use crate::{Global, InstallArgs, USAGE, UninstallArgs};
 

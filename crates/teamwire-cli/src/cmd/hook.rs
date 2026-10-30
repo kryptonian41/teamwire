@@ -14,7 +14,7 @@ use teamwire_core::{
 use teamwire_msg::CallerEnv;
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::{caller_env, carries_member_identity, state_home, warn};
+use crate::cmd::shared::{caller_env, carries_member_identity, state_home, warn};
 use crate::recorded::Recorded;
 use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};

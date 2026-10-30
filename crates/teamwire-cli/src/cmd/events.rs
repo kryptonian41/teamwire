@@ -9,7 +9,7 @@ use serde_json::Value;
 use teamwire_core::TeamName;
 use teamwire_store::{Store, StoreError, database_path};
 
-use crate::cmd::send::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
+use crate::cmd::shared::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
 use crate::{EventsArgs, Global, USAGE};
 
 #[derive(Serialize)]

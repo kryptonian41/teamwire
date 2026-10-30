@@ -9,7 +9,7 @@ use std::process::ExitCode;
 
 use serde_json::Value;
 
-use crate::cmd::send::{fail, say};
+use crate::cmd::shared::{fail, say};
 use crate::wiring::Wiring;
 use crate::{Global, PresetArgs, USAGE};
 

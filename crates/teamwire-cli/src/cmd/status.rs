@@ -7,7 +7,7 @@ use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
 use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::{ContextView, StatusView, UndeliveredResult, WatchState};
 
-use crate::cmd::send::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
+use crate::cmd::shared::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 

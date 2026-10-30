@@ -11,7 +11,7 @@ use teamwire_otel::{OtlpConfig, StopCutoff};
 use teamwire_store::{Ctx, Party, Store, StoreError};
 use teamwire_watch::{WatchEnd, WatchError, WatchMemory};
 
-use crate::cmd::send::{
+use crate::cmd::shared::{
     REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say_line,
 };
 use crate::recorded::Recorded;

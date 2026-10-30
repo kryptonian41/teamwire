@@ -17,7 +17,7 @@ use crate::cmd::doctor_teams::database_checks;
 pub(crate) use crate::cmd::host_pick::{Host, HostPick, pick_host};
 use crate::cmd::install::wanted_command;
 use crate::cmd::lead_setup_check::{self, HarnessInputs, on_path, version_check};
-use crate::cmd::send::{PARTIAL, home_or_refuse, say};
+use crate::cmd::shared::{PARTIAL, home_or_refuse, say};
 use crate::wiring::{ClaudeConfig, PiConfig, SKILL_TEXT, Wiring};
 
 /// Launch refuses to start below this much free space (LCH-2).

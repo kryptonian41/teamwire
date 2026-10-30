@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde_json::Value;
 use teamwire_core::{Command, Platform};
 
-use crate::cmd::send::{fail, say_line};
+use crate::cmd::shared::{fail, say_line};
 use crate::wiring::Wiring;
 use crate::{Global, PrWatchArgs, USAGE};
 use required::Required;

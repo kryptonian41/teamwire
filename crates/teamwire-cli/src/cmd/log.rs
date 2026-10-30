@@ -6,7 +6,8 @@ use serde_json::json;
 use teamwire_core::{Actor, TeamName};
 use teamwire_msg::{LogFilter, LogRow, SendError, log_party, prove_actor};
 
-use crate::cmd::send::{caller_env, carries_member_identity, error_code, fail, say, with_read_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{caller_env, carries_member_identity, fail, say, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, LogArgs, USAGE};
 

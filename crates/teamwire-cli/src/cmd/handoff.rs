@@ -13,7 +13,7 @@ use teamwire_core::{Role, TeamName};
 use teamwire_launch::{HandoffError, PlaceCloser, Said, hand_off};
 use teamwire_store::Ctx;
 
-use crate::cmd::send::{
+use crate::cmd::shared::{
     PARTIAL, REFUSED, STORE, fail, refuse_member, say, say_line, warn, with_ctx, with_read_ctx,
 };
 use crate::wiring::Wiring;

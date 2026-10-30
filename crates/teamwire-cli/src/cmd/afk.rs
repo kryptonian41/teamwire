@@ -13,7 +13,7 @@ use teamwire_launch::{
 use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, open_teams};
 
 use crate::cmd::doctor::{self, Level};
-use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
+use crate::cmd::shared::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};

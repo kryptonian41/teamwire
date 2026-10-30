@@ -6,7 +6,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_report::{DoneError, DoneReport};
 use teamwire_store::{Ctx, Store, StoreError};
 
-use crate::cmd::send::{REFUSED, STORE, caller_env, fail, home_or_refuse, no_database_text, say};
+use crate::cmd::shared::{REFUSED, STORE, caller_env, fail, home_or_refuse, no_database_text, say};
 use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{DoneArgs, Global};

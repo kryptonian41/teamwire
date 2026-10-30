@@ -6,7 +6,8 @@ use serde_json::json;
 use teamwire_core::{Actor, Refusal, TeamName};
 use teamwire_msg::{InboxItem, SendError, inbox, prove_actor_logged};
 
-use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{caller_env, fail, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, InboxArgs, USAGE};
 

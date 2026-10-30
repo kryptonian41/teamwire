@@ -5,9 +5,8 @@ use std::process::ExitCode;
 use teamwire_core::{DisplayId, Recipient, TeamName};
 use teamwire_msg::{SendError, prove_actor_logged, resend};
 
-use crate::cmd::send::{
-    caller_env, error_code, exit_of, fail, member_token, print_report, with_ctx,
-};
+use crate::cmd::send::{error_code, exit_of, print_report};
+use crate::cmd::shared::{caller_env, fail, member_token, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, ResendArgs, USAGE};
 

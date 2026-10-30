@@ -7,7 +7,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_store::{Ctx, Store, StoreError};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
-use crate::cmd::send::{
+use crate::cmd::shared::{
     PARTIAL, REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say,
 };
 use crate::recorded::Recorded;
