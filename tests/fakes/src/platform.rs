@@ -237,7 +237,8 @@ impl FakePlatform {
         lock(&self.state).env_fault = err;
     }
 
-    /// Every later `write_atomic` fails with `err` until cleared.
+    /// Every later `write_atomic`, `create_dir_all` and `remove_dir_all`
+    /// fails with `err` until cleared.
     pub fn fail_writes(&self, err: Option<PlatformError>) {
         lock(&self.state).write_fault = err;
     }
@@ -464,6 +465,30 @@ impl Platform for FakePlatform {
                 Err(io_to_platform(&e))
             }
         }
+    }
+
+    fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "create_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::create_dir_all(path).map_err(|e| io_to_platform(&e))
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "remove_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::remove_dir_all(path).map_err(|e| io_to_platform(&e))
     }
 
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {

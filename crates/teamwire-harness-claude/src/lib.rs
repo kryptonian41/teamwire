@@ -23,8 +23,8 @@ mod session;
 mod trust;
 
 pub use lead_setup::{
-    ApplyError, Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow,
-    SkillState, edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
+    Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow, SkillState,
+    edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
 };
 pub use teamwire_core::screen::StartupPoll;
 
@@ -34,9 +34,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
+    LeadSetup, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role,
+    ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -131,6 +131,10 @@ impl Harness for ClaudeCode {
 
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         self.session_from_env(get)
+    }
+
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        Some(self)
     }
 
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {

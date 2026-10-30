@@ -149,6 +149,10 @@ impl Harness for Pi {
 
     /// pi opens a session by id from the folder it ran in, which reopen
     /// changes to first.
+    fn lead_setup(&self) -> Option<&dyn teamwire_core::LeadSetup> {
+        Some(self)
+    }
+
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Ok(vec![
             self.config.pi_bin.clone(),

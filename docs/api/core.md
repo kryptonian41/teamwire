@@ -271,6 +271,9 @@ pub trait Harness: Send + Sync {
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
+    /// The lead setup `install`, `uninstall` and `doctor` reach this harness's
+    /// lead through (ADR 0031). Default `None`, for a harness that cannot lead.
+    fn lead_setup(&self) -> Option<&dyn LeadSetup>;
     /// Why the caller's session cannot lead a new team, when the harness can
     /// tell its lead setup is not loaded there (pi without the lead package,
     /// ADR 0030). Launch refuses with `lead_setup_missing`. Default `None`.
@@ -354,6 +357,11 @@ pub trait Platform: Send + Sync {
     /// holds a pipe open 2 s after the child ends, what was read is returned.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError>;
+    /// Create a directory and its missing parents; delete a directory and all
+    /// in it (a symlink loses only the link). Both default to `Unsupported`,
+    /// for a platform that writes no files; the lead setup's `apply` uses them.
+    fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
+    fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
@@ -375,6 +383,69 @@ pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;         // wall clock, stored
     fn monotonic(&self) -> Instant;     // timeouts inside a process
 }
+```
+
+The lead setup (`teamwire_core::lead_setup`, ADR 0031). Each adapter keeps its
+own mechanism and its own typed change list; the CLI sees only `LeadChange`,
+which it prints, and passes back to the same harness's `apply`.
+
+```rust
+pub const LEAD_SETUP_TIMEOUT: Duration = Duration::from_secs(30);  // one command of the harness's program
+
+/// `<bin> [--home DIR]`; each adapter renders its own entry from it.
+pub struct LeadCommand { pub bin: PathBuf, pub home: Option<PathBuf> }
+impl LeadCommand {
+    pub fn home_text(&self) -> Option<String>;   // the home rebuilt from its components: `/x/` and `/x` agree
+    pub fn words(&self) -> Vec<String>;          // bin, then `--home DIR` when given
+}
+pub struct LeadTarget<'a> { pub command: &'a LeadCommand,
+                            pub home: &'a Path,           // the state directory
+                            pub shared_skill: &'a str,    // passed in by the CLI (ADR 0023 point 9)
+                            pub compare_files: bool }     // false for a cargo build under target/
+pub enum LeadStatus { Missing, Stale(Vec<String>), Current }
+pub enum LeadStep { WriteFiles { dir: PathBuf, files: Vec<(PathBuf, String)> },  // through the platform
+                    RemoveDir(PathBuf), Run(Command),
+                    Own(PathBuf) }                       // the adapter's own step (Claude's ADR 0012 skill removal)
+pub struct LeadChange { /* text, step */ }
+impl LeadChange { pub fn new(text: impl Into<String>, step: LeadStep) -> Self;
+                  pub fn step(&self) -> &LeadStep; }
+impl Display for LeadChange { /* the text, after "would" or "did" */ }
+pub struct LeadPlan { pub changes: Vec<LeadChange>, pub note: Option<&'static str> }  // note: printed after apply
+pub enum LeadSetupError { Read { path: PathBuf, detail: String }, Refused(String) }
+impl LeadSetupError { pub fn needs_force(what: &str, verb: &str) -> Self; }  // "<what>; pass --force to <verb> it"
+pub struct ApplyError<C = LeadChange> { pub done: Vec<C>, pub failed: C, pub detail: String }  // "<failed> failed: <detail>"
+pub enum CheckOutcome { Pass(String), Warn(String), Fail(String) }
+pub type DoctorCheck = (&'static str, CheckOutcome);
+pub type Probe<'a> = &'a dyn Fn(&[&str]) -> Result<String, String>;  // runs the program through doctor's platform
+
+pub trait LeadSetup: Send + Sync {
+    fn program(&self) -> &str;            // looked for on PATH by install, uninstall, launch and doctor
+    fn label(&self) -> &'static str;      // "Claude Code", "Codex", "pi"
+    /// Doctor fails without its program; install without a terminal or
+    /// --harness installs it; uninstall always plans it and stops at its
+    /// refusal. Every other harness is optional. Default false.
+    fn default_lead(&self) -> bool;
+    fn status(&self, target: &LeadTarget<'_>) -> Result<LeadStatus, LeadSetupError>;   // reads only
+    fn plan_install(&self, target: &LeadTarget<'_>, force: bool) -> Result<LeadPlan, LeadSetupError>;
+    fn plan_uninstall(&self, home: &Path, force: bool) -> Result<LeadPlan, LeadSetupError>;
+    /// Makes changes this harness planned, in order; stops at the first failure.
+    fn apply(&self, changes: &[LeadChange]) -> Result<(), Box<ApplyError>>;
+    /// `target` is Err when the command cannot be worked out; `dir` is doctor's folder.
+    fn doctor_checks(&self, target: Result<&LeadTarget<'_>, &str>, dir: &Path) -> Vec<DoctorCheck>;
+    /// Checks of the program beyond its version. Default none.
+    fn program_checks(&self, probe: Probe<'_>) -> Vec<DoctorCheck>;
+}
+
+/// The check of an optional harness: missing passes and names
+/// `teamwire install --harness <id>`, stale and unreadable warn.
+pub fn optional_check(status: Result<LeadStatus, LeadSetupError>, harness_id: &str, label: &str) -> CheckOutcome;
+/// The one apply loop: makes each change with `one`, stops at the first failure.
+pub fn apply_in_order<C: Clone>(changes: &[C], one: impl FnMut(&C) -> Result<(), String>)
+    -> Result<(), Box<ApplyError<C>>>;
+/// Makes a shared step through the platform; refuses `Own`.
+pub fn make_step(platform: &dyn Platform, step: &LeadStep) -> Result<(), String>;
+/// Runs the harness's program under LEAD_SETUP_TIMEOUT: stdout, or what went wrong.
+pub fn run_program(platform: &dyn Platform, cmd: &Command) -> Result<String, String>;
 ```
 
 `OneLine` is a string that has been through `sanitize::one_line(text, max)`:
@@ -399,6 +470,10 @@ impl Registry {
     pub fn add_host(&mut self, h: Arc<dyn Host>) -> Result<(), RegistryError>;
     pub fn harness(&self, id: &HarnessId) -> Result<&dyn Harness, RegistryError>;
     pub fn host(&self, id: &HostId) -> Result<&dyn Host, RegistryError>;
+    pub fn harness_ids(&self) -> Vec<&str>;   // sorted
+    pub fn host_ids(&self) -> Vec<&str>;      // sorted
+    /// Every harness with a lead setup, sorted by id (ADR 0031).
+    pub fn lead_setups(&self) -> Vec<(&str, &dyn LeadSetup)>;
 }
 
 pub enum RegistryError { Duplicate(String), UnknownHarness(HarnessId), UnknownHost(HostId) }

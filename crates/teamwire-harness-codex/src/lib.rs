@@ -117,6 +117,10 @@ impl Harness for CodexCli {
         session::caller_session(&self.config.codex_home, get)
     }
 
+    fn lead_setup(&self) -> Option<&dyn teamwire_core::LeadSetup> {
+        Some(self)
+    }
+
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Ok(vec![
             self.config.codex_bin.clone(),

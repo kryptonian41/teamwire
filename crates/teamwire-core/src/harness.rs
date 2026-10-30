@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
+use crate::lead_setup::LeadSetup;
 use crate::member::{Member, MemberKind};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
@@ -41,6 +42,12 @@ pub trait Harness: Send + Sync {
     /// default is `Unsupported`.
     fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Err(HarnessError::unsupported())
+    }
+    /// The lead setup `teamwire install`, `uninstall` and `doctor` reach
+    /// this harness's lead through (ADR 0031). `None`, the default, for a
+    /// harness that cannot lead.
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        None
     }
     /// Why the caller's session cannot lead a new team, when the harness can
     /// tell that the lead setup it needs is not loaded there. A pi lead reads

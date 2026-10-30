@@ -10,24 +10,18 @@
 mod plugin;
 mod state;
 
-pub use plugin::LeadCommand;
+pub use teamwire_core::{LeadCommand, LeadSetupError, LeadStatus};
 
 use std::fmt;
 use std::path::{Path, PathBuf};
+
+use teamwire_core::lead_setup::{DoctorCheck, apply_in_order, make_step, optional_check};
+use teamwire_core::{ApplyError, LeadChange, LeadPlan, LeadSetup, LeadStep, LeadTarget};
 
 use plugin::{MARKETPLACE, PLUGIN_ID, PluginFiles, plugin_dir};
 use state::MarketplaceState;
 
 use crate::CodexCli;
-
-#[derive(Debug, thiserror::Error)]
-pub enum LeadSetupError {
-    #[error("cannot read {}: {detail}", path.display())]
-    Read { path: PathBuf, detail: String },
-    /// A check failed before anything was written.
-    #[error("{0}")]
-    Refused(String),
-}
 
 /// One change install or uninstall makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +50,24 @@ impl Change {
     pub fn needs_hook_review(&self) -> bool {
         matches!(self, Self::AddPlugin)
     }
+
+    /// What making the change does.
+    fn step(&self, cli: &CodexCli) -> LeadStep {
+        let plugin = |args: &[&str]| LeadStep::Run(cli.plugin_command(args));
+        match self {
+            Self::WritePlugin { dir, files } => LeadStep::WriteFiles {
+                dir: dir.clone(),
+                files: files.clone(),
+            },
+            Self::RemovePluginFiles(dir) => LeadStep::RemoveDir(dir.clone()),
+            Self::AddMarketplace(dir) => {
+                plugin(&["marketplace", "add", &dir.display().to_string()])
+            }
+            Self::RemoveMarketplace => plugin(&["marketplace", "remove", MARKETPLACE]),
+            Self::AddPlugin => plugin(&["add", PLUGIN_ID]),
+            Self::RemovePlugin => plugin(&["remove", PLUGIN_ID]),
+        }
+    }
 }
 
 impl fmt::Display for Change {
@@ -79,32 +91,8 @@ impl fmt::Display for Change {
     }
 }
 
-/// A change that failed after the checks passed.
-#[derive(Debug, thiserror::Error)]
-#[error("{failed} failed: {detail}")]
-pub struct ApplyError {
-    /// The changes made before the failure, in order.
-    pub done: Vec<Change>,
-    pub failed: Change,
-    pub detail: String,
-}
-
-/// What Codex has of the plugin, compared with what this binary would install.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PluginStatus {
-    /// The plugin is not installed.
-    Missing,
-    /// Installed, but another version, disabled, or from another source.
-    Stale(Vec<String>),
-    Current,
-}
-
 const FOREIGN_MARKETPLACE: &str =
     "a Codex marketplace named `teamwire` is registered from another source";
-
-fn refused(what: &str, verb: &str) -> LeadSetupError {
-    LeadSetupError::Refused(format!("{what}; pass --force to {verb} it"))
-}
 
 impl CodexCli {
     /// What Codex has of the plugin. `compare_files` is false for a cargo
@@ -116,13 +104,13 @@ impl CodexCli {
         shared_skill: &str,
         home: &Path,
         compare_files: bool,
-    ) -> Result<PluginStatus, LeadSetupError> {
+    ) -> Result<LeadStatus, LeadSetupError> {
         let dir = plugin_dir(home);
         let files =
             PluginFiles::render(&dir, want, shared_skill).map_err(LeadSetupError::Refused)?;
         let state = self.plugin_state(&dir)?;
         let Some(installed) = state.installed else {
-            return Ok(PluginStatus::Missing);
+            return Ok(LeadStatus::Missing);
         };
         let mut problems = Vec::new();
         if compare_files && installed.version.as_deref() != Some(files.version.as_str()) {
@@ -139,9 +127,9 @@ impl CodexCli {
             problems.push(FOREIGN_MARKETPLACE.to_owned());
         }
         Ok(if problems.is_empty() {
-            PluginStatus::Current
+            LeadStatus::Current
         } else {
-            PluginStatus::Stale(problems)
+            LeadStatus::Stale(problems)
         })
     }
 
@@ -161,7 +149,7 @@ impl CodexCli {
         let state = self.plugin_state(&dir)?;
         let replace = match state.marketplace {
             MarketplaceState::Foreign if !force => {
-                return Err(refused(FOREIGN_MARKETPLACE, "replace"));
+                return Err(LeadSetupError::needs_force(FOREIGN_MARKETPLACE, "replace"));
             }
             MarketplaceState::Foreign => true,
             MarketplaceState::Missing | MarketplaceState::Ours => false,
@@ -206,7 +194,7 @@ impl CodexCli {
         match state.marketplace {
             MarketplaceState::Missing => {}
             MarketplaceState::Foreign if !force => {
-                return Err(refused(FOREIGN_MARKETPLACE, "remove"));
+                return Err(LeadSetupError::needs_force(FOREIGN_MARKETPLACE, "remove"));
             }
             MarketplaceState::Ours | MarketplaceState::Foreign => {
                 changes.push(Change::RemoveMarketplace);
@@ -220,34 +208,10 @@ impl CodexCli {
     }
 
     /// Makes `changes` in order, stopping at the first failure.
-    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError>> {
-        let mut done = Vec::new();
-        for change in changes {
-            if let Err(detail) = self.apply_one(change) {
-                return Err(Box::new(ApplyError {
-                    done,
-                    failed: change.clone(),
-                    detail,
-                }));
-            }
-            done.push(change.clone());
-        }
-        Ok(())
-    }
-
-    fn apply_one(&self, change: &Change) -> Result<(), String> {
-        let plugin = |args: &[&str]| self.run_codex(&self.plugin_command(args)).map(drop);
-        match change {
-            Change::WritePlugin { dir, files } => self.write_plugin(dir, files),
-            Change::RemovePluginFiles(dir) => std::fs::remove_dir_all(dir)
-                .map_err(|e| format!("cannot remove {}: {e}", dir.display())),
-            Change::AddMarketplace(dir) => {
-                plugin(&["marketplace", "add", &dir.display().to_string()])
-            }
-            Change::RemoveMarketplace => plugin(&["marketplace", "remove", MARKETPLACE]),
-            Change::AddPlugin => plugin(&["add", PLUGIN_ID]),
-            Change::RemovePlugin => plugin(&["remove", PLUGIN_ID]),
-        }
+    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError<Change>>> {
+        apply_in_order(changes, |c| {
+            make_step(self.platform.as_ref(), &c.step(self))
+        })
     }
 
     /// Runs `codex plugin --help` when a change needs `codex`, so a `codex`
@@ -265,19 +229,79 @@ impl CodexCli {
                 ))
             })
     }
+}
 
-    fn write_plugin(&self, dir: &Path, files: &[(PathBuf, String)]) -> Result<(), String> {
-        for (rel, text) in files {
-            let path = dir.join(rel);
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir)
-                    .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-            }
-            self.platform
-                .write_atomic(&path, text.as_bytes())
-                .map_err(|e| e.to_string())?;
+impl LeadSetup for CodexCli {
+    fn program(&self) -> &str {
+        &self.config.codex_bin
+    }
+
+    fn label(&self) -> &'static str {
+        "Codex"
+    }
+
+    fn status(&self, target: &LeadTarget<'_>) -> Result<LeadStatus, LeadSetupError> {
+        self.plugin_status(
+            target.command,
+            target.shared_skill,
+            target.home,
+            target.compare_files,
+        )
+    }
+
+    fn plan_install(
+        &self,
+        target: &LeadTarget<'_>,
+        force: bool,
+    ) -> Result<LeadPlan, LeadSetupError> {
+        let changes = Self::plan_install(
+            self,
+            target.command,
+            target.shared_skill,
+            target.home,
+            force,
+        )?;
+        Ok(self.plan(&changes))
+    }
+
+    fn plan_uninstall(&self, home: &Path, force: bool) -> Result<LeadPlan, LeadSetupError> {
+        let changes = Self::plan_uninstall(self, home, force)?;
+        Ok(self.plan(&changes))
+    }
+
+    fn apply(&self, changes: &[LeadChange]) -> Result<(), Box<ApplyError>> {
+        apply_in_order(changes, |c| make_step(self.platform.as_ref(), c.step()))
+    }
+
+    /// A missing plugin is fine: Codex is optional. A stale one warns.
+    fn doctor_checks(
+        &self,
+        target: Result<&LeadTarget<'_>, &str>,
+        _dir: &Path,
+    ) -> Vec<DoctorCheck> {
+        let Ok(target) = target else {
+            return Vec::new();
+        };
+        vec![(
+            "codex plugin",
+            optional_check(self.status(target), Self::ID, self.label()),
+        )]
+    }
+}
+
+impl CodexCli {
+    fn plan(&self, changes: &[Change]) -> LeadPlan {
+        let note = changes
+            .iter()
+            .any(Change::needs_hook_review)
+            .then_some("Codex will ask you to review the plugin's hook once after this change");
+        LeadPlan {
+            changes: changes
+                .iter()
+                .map(|c| LeadChange::new(c.to_string(), c.step(self)))
+                .collect(),
+            note,
         }
-        Ok(())
     }
 }
 

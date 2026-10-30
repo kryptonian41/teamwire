@@ -12,15 +12,16 @@ use std::time::Duration;
 
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, Command, Config, Pid, Platform, Registry, ReportState, TeamName, TeamState,
+    CheckOutcome, Clock, Command, Config, LeadCommand, LeadTarget, Pid, Platform, Registry,
+    ReportState, TeamName, TeamState,
 };
 use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
 
 use crate::Global;
-use crate::cmd::install::wanted_entry;
-use crate::cmd::lead_setup_check::{self, Outcome};
+use crate::cmd::install::wanted_command;
+use crate::cmd::lead_setup_check::{self, HarnessInputs, on_path, version_check};
 use crate::cmd::send::{PARTIAL, home_or_refuse, say};
-use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, PiSetup, Wiring};
+use crate::wiring::{ClaudeConfig, PiConfig, SKILL_TEXT, Wiring};
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
@@ -29,20 +30,6 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Each probe of a harness or host binary waits this long, then warns.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The flags teamwire passes when it starts a member
-/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help does not
-/// list one may not support it; the launch itself is the real test.
-const CLAUDE_FLAGS: [&str; 8] = [
-    "--session-id",
-    "--resume",
-    "--permission-mode",
-    "--append-system-prompt-file",
-    "--settings",
-    "--mcp-config",
-    "--model",
-    "--effort",
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Level {
@@ -79,6 +66,14 @@ impl Check {
         Self::new(Level::Fail, name, detail)
     }
 
+    fn of(name: impl Into<String>, outcome: CheckOutcome) -> Self {
+        match outcome {
+            CheckOutcome::Pass(detail) => Self::pass(name, detail),
+            CheckOutcome::Warn(detail) => Self::warn(name, detail),
+            CheckOutcome::Fail(detail) => Self::fail(name, detail),
+        }
+    }
+
     fn line(&self) -> String {
         let tag = match self.level {
             Level::Pass => "ok  ",
@@ -108,7 +103,7 @@ impl Host {
         }
     }
 
-    fn from_id(id: &str) -> Self {
+    pub(crate) fn from_id(id: &str) -> Self {
         match id {
             "herdr" => Self::Herdr,
             "tmux" => Self::Tmux,
@@ -208,21 +203,19 @@ pub(crate) struct Inputs<'a> {
     pub(crate) host: Host,
     pub(crate) home: PathBuf,
     pub(crate) platform: &'a dyn Platform,
-    /// The adapters and the clock `status` reads members with.
+    /// The adapters and the clock `status` reads members with. Each
+    /// harness's program and lead setup are checked through it too.
     pub(crate) registry: &'a Registry,
     pub(crate) clock: &'a dyn Clock,
     /// `$PATH`, where the harness and host binaries are looked for.
     pub(crate) path_var: Option<OsString>,
-    /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
+    /// Where Claude Code keeps `settings.json`, which holds herdr's hook.
     pub(crate) claude: ClaudeConfig,
-    /// The Codex adapter, whose plugin is checked when `codex` is on PATH.
-    pub(crate) codex: CodexSetup,
-    /// The pi adapter: its directory holds herdr's pi integration, and its
-    /// lead package is checked when `pi` is on PATH.
-    pub(crate) pi: PiSetup,
-    /// The MCP entry `teamwire install` would register from this binary, or
-    /// why it cannot be worked out.
-    pub(crate) lead_entry: Result<McpEntry, String>,
+    /// Where pi keeps its files, which hold herdr's pi integration.
+    pub(crate) pi: PiConfig,
+    /// The command `teamwire install` would give each lead setup from this
+    /// binary, or why it cannot be worked out.
+    pub(crate) lead_command: Result<LeadCommand, String>,
     /// True when this binary is a cargo build under `target/`.
     pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
@@ -476,12 +469,8 @@ fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
 /// herdr learns a pi session from its own pi extension, and delivery to a pi
 /// member under herdr needs that. Checked only when `pi` is on PATH.
 fn herdr_pi_check(inputs: &Inputs<'_>) -> Option<Check> {
-    on_path(inputs.path_var.as_ref(), "pi")?;
-    let file = inputs
-        .pi
-        .config()
-        .agent_dir
-        .join("extensions/herdr-agent-state.ts");
+    on_path(inputs.path_var.as_ref(), &inputs.pi.pi_bin)?;
+    let file = inputs.pi.agent_dir.join("extensions/herdr-agent-state.ts");
     let name = "herdr pi integration";
     Some(if file.is_file() {
         Check::pass(name, format!("found at {}", file.display()))
@@ -515,11 +504,6 @@ fn worktrees_check(inputs: &Inputs<'_>) -> Check {
     }
 }
 
-fn on_path(path_var: Option<&OsString>, program: &str) -> Option<PathBuf> {
-    let dirs = std::env::split_paths(path_var?);
-    dirs.map(|d| d.join(program)).find(|p| p.is_file())
-}
-
 /// Runs `program args` and returns its output, or why it gave none. A probe
 /// that fails or times out is a warning for the caller, never a hang.
 fn probe(inputs: &Inputs<'_>, program: &Path, args: &[&str]) -> Result<String, String> {
@@ -540,87 +524,66 @@ fn probe(inputs: &Inputs<'_>, program: &Path, args: &[&str]) -> Result<String, S
     Ok(text)
 }
 
-/// The first line of a `--version` answer, which is the version itself.
-fn version_check(inputs: &Inputs<'_>, program: &str, path: &Path, flag: &str) -> Check {
-    let name = format!("{program} version");
-    match probe(inputs, path, &[flag]) {
-        Ok(text) => Check::pass(name, text.lines().next().unwrap_or("").trim().to_owned()),
-        Err(e) => Check::warn(name, format!("`{program} {flag}` failed: {e}")),
-    }
+/// The harness checks of `lead_setup_check`, which loop over the registry.
+fn harness_checks(
+    inputs: &Inputs<'_>,
+    checks: impl FnOnce(&HarnessInputs<'_>) -> Vec<(String, CheckOutcome)>,
+) -> Vec<Check> {
+    let probe = |path: &Path, args: &[&str]| probe(inputs, path, args);
+    let target = match &inputs.lead_command {
+        Ok(command) => Ok(LeadTarget {
+            command,
+            home: &inputs.home,
+            shared_skill: SKILL_TEXT,
+            compare_files: !inputs.running_a_build,
+        }),
+        Err(e) => Err(e.clone()),
+    };
+    checks(&HarnessInputs {
+        registry: inputs.registry,
+        path_var: inputs.path_var.as_ref(),
+        probe: &probe,
+        target,
+        dir: &inputs.repo,
+    })
+    .into_iter()
+    .map(|(name, outcome)| Check::of(name, outcome))
+    .collect()
 }
 
-/// Claude Code writes a flag as `--name-suffix` or, in a description, as
-/// `--name[-suffix]` (2.1.301 does this for `--append-system-prompt-file`).
-fn lists_flag(help: &str, flag: &str) -> bool {
-    help.contains(flag)
-        || flag
-            .rsplit_once('-')
-            .is_some_and(|(base, suffix)| help.contains(&format!("{base}[-{suffix}]")))
-}
-
-fn claude_flag_check(inputs: &Inputs<'_>, path: &Path) -> Check {
-    let name = "claude flags";
-    match probe(inputs, path, &["--help"]) {
-        Ok(help) => {
-            let missing: Vec<&str> = CLAUDE_FLAGS
-                .into_iter()
-                .filter(|f| !lists_flag(&help, f))
-                .collect();
-            if missing.is_empty() {
-                Check::pass(name, "the help text lists every flag teamwire passes")
-            } else {
-                Check::warn(
-                    name,
-                    format!(
-                        "`claude --help` does not list {}; teamwire passes them when it \
-                         starts a member, so this claude may be too old or too new",
-                        missing.join(", ")
-                    ),
-                )
-            }
-        }
-        Err(e) => Check::warn(name, format!("`claude --help` failed: {e}")),
-    }
-}
-
+/// The default lead harness's program, then the host's, then every other
+/// harness's that is on PATH.
 fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let mut checks = Vec::new();
+    let mut checks = harness_checks(inputs, |h| lead_setup_check::program_checks(h, true));
     let host_program = match inputs.host {
         Host::Herdr => Some("herdr"),
         Host::Tmux => Some("tmux"),
         Host::None => None,
     };
-    let wanted = std::iter::once(("claude", "harness")).chain(host_program.map(|h| (h, "host")));
-    for (program, role) in wanted {
+    if let Some(program) = host_program {
         let name = format!("{program} on PATH");
         match on_path(inputs.path_var.as_ref(), program) {
             Some(path) => {
                 checks.push(Check::pass(
                     name,
-                    format!("{role} binary at {}", path.display()),
+                    format!("host binary at {}", path.display()),
                 ));
-                if program == "claude" {
-                    checks.push(version_check(inputs, program, &path, "--version"));
-                    checks.push(claude_flag_check(inputs, &path));
-                } else {
-                    let flag = if program == "tmux" { "-V" } else { "--version" };
-                    checks.push(version_check(inputs, program, &path, flag));
-                }
+                let flag = if program == "tmux" { "-V" } else { "--version" };
+                let probe = |path: &Path, args: &[&str]| probe(inputs, path, args);
+                let (name, outcome) = version_check(&probe, program, &path, flag);
+                checks.push(Check::of(name, outcome));
             }
             None => checks.push(Check::fail(
                 name,
-                format!("the {role} binary `{program}` is not on PATH"),
+                format!("the host binary `{program}` is not on PATH"),
             )),
         }
     }
-    // Codex is optional: without it on PATH, doctor says nothing about it.
-    if let Some(path) = on_path(inputs.path_var.as_ref(), "codex") {
-        checks.push(Check::pass(
-            "codex on PATH",
-            format!("harness binary at {}", path.display()),
-        ));
-        checks.push(version_check(inputs, "codex", &path, "--version"));
-    }
+    // Every other harness is optional: without its program on PATH, doctor
+    // says nothing about it.
+    checks.extend(harness_checks(inputs, |h| {
+        lead_setup_check::program_checks(h, false)
+    }));
     if inputs.host == Host::None {
         checks.push(Check::pass(
             "host",
@@ -651,27 +614,6 @@ fn credential_check(inputs: &Inputs<'_>) -> Check {
     )
 }
 
-/// The lead setup's checks, from `lead_setup_check`.
-fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let lead = lead_setup_check::LeadInputs {
-        claude: &inputs.claude,
-        entry: &inputs.lead_entry,
-        running_a_build: inputs.running_a_build,
-        dir: &inputs.repo,
-        codex: on_path(inputs.path_var.as_ref(), "codex").map(|_| &inputs.codex),
-        pi: on_path(inputs.path_var.as_ref(), "pi").map(|_| &inputs.pi),
-        home: &inputs.home,
-    };
-    lead_setup_check::run(&lead)
-        .into_iter()
-        .map(|(name, outcome)| match outcome {
-            Outcome::Pass(detail) => Check::pass(name, detail),
-            Outcome::Warn(detail) => Check::warn(name, detail),
-            Outcome::Fail(detail) => Check::fail(name, detail),
-        })
-        .collect()
-}
-
 /// Every check, in the order `doctor` prints them.
 pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = disk_checks(inputs);
@@ -683,7 +625,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
     checks.push(credential_check(inputs));
-    checks.extend(lead_setup_checks(inputs));
+    checks.extend(harness_checks(inputs, lead_setup_check::lead_checks));
     checks
 }
 
@@ -700,13 +642,13 @@ pub(crate) fn render(checks: &[Check]) -> String {
     checks.iter().map(|c| c.line() + "\n").collect()
 }
 
-pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
-    let home = match home_or_refuse("doctor", global) {
-        Ok(home) => home,
-        Err(code) => return code,
-    };
-    let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let lead_entry = wanted_entry(global);
+/// The checks' inputs for this process, and the host pick they rest on.
+pub(crate) fn inputs<'w>(
+    home: PathBuf,
+    global: &Global,
+    wiring: &'w Wiring,
+) -> (Inputs<'w>, HostPick) {
+    let lead_command = wanted_command(global);
     let pick = pick_host(
         std::env::var("HERDR_ENV").ok().as_deref(),
         std::env::var("TMUX").ok().as_deref(),
@@ -720,18 +662,26 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         clock: &wiring.clock,
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
-        codex: wiring.codex_setup(),
-        pi: wiring.pi_setup(),
-        running_a_build: lead_entry
+        pi: wiring.pi.clone(),
+        running_a_build: lead_command
             .as_ref()
-            .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
-        lead_entry,
-        repo,
+            .is_ok_and(|c| lead_setup_check::is_build_output(&c.bin)),
+        lead_command,
+        repo: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         env_names: std::env::vars_os()
             .filter(|(_, v)| !v.is_empty())
             .filter_map(|(k, _)| k.into_string().ok())
             .collect(),
     };
+    (inputs, pick)
+}
+
+pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
+    let home = match home_or_refuse("doctor", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
+    let (inputs, pick) = inputs(home, global, wiring);
     let mut checks = diagnose(&inputs);
     // With no host, `binary_checks` already says so.
     if inputs.host != Host::None {
