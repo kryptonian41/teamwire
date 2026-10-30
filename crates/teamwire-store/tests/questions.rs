@@ -5,17 +5,13 @@
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
 )]
-#![expect(
-    clippy::indexing_slicing,
-    reason = "a test that indexes past the end panics and fails, which is the intended outcome"
-)]
 
 use teamwire_core::{
     HarnessId, HostId, LeadRoute, MemberKind, Mode, Role, SessionId, SessionKind, TeamName,
     Timestamp,
 };
 use teamwire_fakes::TestHome;
-use teamwire_store::{CloseEnd, NewMember, NewTeam, Store, open_teams, token_hash};
+use teamwire_store::{CloseEnd, NewMember, NewTeam, Store, StoreError, open_teams, token_hash};
 
 fn at(n: i64) -> Timestamp {
     Timestamp::from_unix_millis(1_790_000_000_000 + n).unwrap()
@@ -75,9 +71,19 @@ fn open_teams_lists_the_open_teams_a_session_leads_and_reports_a_rowless_one() {
 
     let led = open_teams(home.path(), Some(&session("s1"))).unwrap();
     assert_eq!(names(&led), ["empty", "mine"]);
-    assert!(matches!(led[0].1, Ok(None)), "a store with no team row");
-    let mine = led[1].1.as_ref().unwrap().as_ref().unwrap();
-    assert_eq!(mine.row.name.as_str(), "mine");
+    let read = |i: usize| led.get(i).map(|(_, read)| read).unwrap();
+    assert!(matches!(read(0), Ok(None)), "a store with no team row");
+    assert_eq!(
+        read(1)
+            .as_ref()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .row
+            .name
+            .as_str(),
+        "mine"
+    );
 
     let every = open_teams(home.path(), None).unwrap();
     assert_eq!(names(&every), ["empty", "mine", "nolead", "theirs"]);
@@ -88,16 +94,19 @@ fn open_teams_reports_a_store_that_cannot_be_read_and_lists_none_without_teams()
     let home = TestHome::new().unwrap();
     assert!(open_teams(home.path(), None).unwrap().is_empty());
     drop(team(&home, "mine", Some("s1"), true));
-    let broken = home.path().join("teams/broken");
-    std::fs::create_dir_all(&broken).unwrap();
-    #[expect(
-        clippy::disallowed_methods,
-        reason = "the test writes text where a team's database belongs, on purpose"
-    )]
-    std::fs::write(broken.join("team.db"), b"not a database at all, just text").unwrap();
+    // Another program's database: a read-only open refuses it.
+    let mut broken = team(&home, "broken", None, false);
+    broken
+        .write(|tx| Ok(tx.connection().execute_batch("PRAGMA application_id = 7")?))
+        .unwrap();
+    drop(broken);
     let found = open_teams(home.path(), Some(&session("s1"))).unwrap();
     assert_eq!(names(&found), ["broken", "mine"]);
-    assert!(found[0].1.is_err(), "{:?}", found[0].1);
+    let read = found.first().map(|(_, read)| read);
+    assert!(
+        matches!(read, Some(Err(StoreError::NotTeamwire))),
+        "{read:?}"
+    );
 }
 
 fn member(name: &str) -> NewMember {
