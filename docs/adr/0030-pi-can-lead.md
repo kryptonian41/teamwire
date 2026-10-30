@@ -139,12 +139,22 @@ API and a fake `teamwire`. No model turn ran.
   but its code runs at each session start.
 - A lead's watch lines no longer depend on typing into its pane. Results
   still reach the lead by typing when the host can type (ADR 0007).
+- A live run on 2026-10-30 (pi 1.4.0 in the terminal UI on a private tmux
+  server, the `claude-bridge` provider, one pi member) passed end to end.
+  The lead read the package's skill, launched through bash, and started
+  the watch with `teamwire_watch`. The member's result reached the lead by
+  typing (`result.delivered`, route `host_typing`), so the locator found the
+  pi lead's pane from its state file. `verify` passed and `close`
+  finished. `TEAM-CLOSED` reached the idle lead as a watch message and
+  started a turn. A second team, whose member had no task, showed
+  `mcp__teamwire__team_status` answering the lead through the MCP server,
+  which proved the lead by its parent process.
 - Facts still unchecked:
-  1. In a live terminal session, `exposure: "direct"` makes the
-     `mcp__teamwire__team_*` tools callable on the first turn.
-  2. A `sendMessage` with `triggerTurn` starts a turn in the terminal UI
+  1. A `sendMessage` with `triggerTurn` starts a turn in the terminal UI
      while the person has text in the input box, without taking that text.
-  3. A watch line queued with `deliverAs: "followUp"` during a run reaches
+  2. A watch line queued with `deliverAs: "followUp"` during a run reaches
      the model when that run ends.
+  3. A lead-stop `block` reply holds a pi lead for one more turn. No live
+     run had working members with no watch at the end of a lead's run.
   4. The parent of the lead's MCP server is the pi process itself in an
      npm install of pi, as it is in the managed install.
