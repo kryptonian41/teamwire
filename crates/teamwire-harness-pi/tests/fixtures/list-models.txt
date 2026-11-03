@@ -1,0 +1,11 @@
+provider        model                                             context  max-out  thinking  images
+amazon-bedrock  amazon.nova-2-lite-v1:0                           1M       65.5K    yes       yes   
+amazon-bedrock  amazon.nova-lite-v1:0                             300K     10K      no        yes   
+amazon-bedrock  amazon.nova-micro-v1:0                            128K     10K      no        no    
+amazon-bedrock  deepseek.v3.2                                     163.8K   81.9K    yes       no    
+amazon-bedrock  jp.amazon.nova-2-lite-v1:0                        1M       65.5K    yes       yes   
+claude-bridge   claude-haiku-4-5                                  200K     64K      yes       yes   
+claude-bridge   claude-opus-5-5                                   1M       128K     yes       yes   
+claude-bridge   claude-sonnet-4-6                                 200K     128K     yes       yes   
+amazon-bedrock  global.moonshotai.kimi-k3                         1.0M     128K     yes       yes   
+amazon-bedrock  us.moonshotai.kimi-k3                             1.0M     128K     yes       yes   

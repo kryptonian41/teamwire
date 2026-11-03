@@ -60,6 +60,7 @@ impl Rig {
             PiConfig {
                 agent_dir: self.agent_dir.clone(),
                 pi_bin: "pi".into(),
+                exclude_providers: Vec::new(),
             },
         )
     }

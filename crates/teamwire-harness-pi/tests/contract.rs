@@ -38,6 +38,7 @@ fn pi_passes_the_harness_contract() {
         PiConfig {
             agent_dir: dir.path().join("agent"),
             pi_bin: "pi".into(),
+            exclude_providers: Vec::new(),
         },
     );
     let team = TeamName::parse("demo").unwrap();
