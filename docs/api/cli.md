@@ -620,8 +620,10 @@ find none, because GitHub has no check runs for a few seconds after a push.
 
 ### `teamwire preset [NAME]`
 
-Without a name, lists the six team shapes. With one, prints its spec skeleton
-and its rules as text.
+Without a name, lists the five team shapes and the two steps added to a team.
+The `plan-review` step goes before the implementers, and the `closer` step
+goes after them. With a name, prints the preset's spec skeleton and its rules
+as text.
 
 ### `teamwire models [--harness ID] [--for CLASS] [--json]`
 
