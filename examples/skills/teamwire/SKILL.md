@@ -1,6 +1,6 @@
 ---
 name: teamwire
-description: "The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
+description: "The default way to launch and lead a team of coding agents — implementers, reviewers, a plan reviewer, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
 ---
 
 # Agent teams with teamwire
@@ -69,9 +69,10 @@ long-running harness cost $200 against $9 for a solo run. Every number in this
 file is sourced in `docs/research/2026-10-18-lead-field-reports.md` in the
 teamwire repository.
 
-`teamwire preset` lists five team shapes and the `closer`, a final step added
-to a team. `teamwire preset <name>` prints one preset's rules and a spec to
-fill in.
+`teamwire preset` lists the five team shapes and the two steps added to a
+team. The `plan-review` step goes before the implementers, and the `closer`
+step goes after them. `teamwire preset <name>` prints one preset's rules and
+a spec to fill in.
 
 | Shape | Use when |
 | --- | --- |
@@ -145,6 +146,41 @@ brings in new work. Fix what it finds first.
    "fixing the process that generates the code instead of hand-fixing the
    code", and Stripe works the same way.
 
+**Have a fresh member read the plan.** The session that wrote the plan
+shares its blind spots, so the planning check above misses what the plan
+leaves unsaid. A plan reviewer is a member that never saw the planning
+conversation. It reads only the written plan, and every place it has to guess
+is a place an implementer would guess too. Two implementers guess
+differently, so the review is cheaper than the rework.
+
+- **When.** Start one when a wrong plan would waste more than one
+  implementer's work. Skip it for a team with one small, clear task.
+- **Order.** Write the plan, the team spec and every brief to files. Run the
+  planning check. Then launch a team with the plan reviewer alone, from
+  `teamwire preset plan-review`. Fix the briefs from its report. Then add the
+  implementers with `teamwire launch --add`. Launch has no rule that orders
+  the two steps, so the order is yours to keep.
+- **Its task.** Give the path of the plan, of the team spec and of every
+  brief, and nothing else. Name no expected finding, because a reader that
+  has been told what to find is no longer fresh.
+- **Its report.** For each brief, a paraphrase of what the brief asks for.
+  Then findings, ranked by harm, each with the brief's file and line. First
+  compare each paraphrase with what you meant. A paraphrase that differs
+  means the brief says something else. Then put each finding in one of four
+  groups:
+  - **fix**: the finding holds, so edit the brief;
+  - **contest**: the finding is wrong, and a file the reviewer could read
+    shows it, such as a file and symbol or a line of the plan;
+  - **ask the user**: the finding is wrong, but the evidence is outside every
+    file the reviewer could read, such as something the user said;
+  - **decline**: the finding is a nit, so record it.
+
+  "This was intentional" is not evidence. Add context to a brief when a
+  member needs it, not to satisfy the reviewer.
+- **Once per plan.** Fix the briefs once from the report, then add the
+  implementers. Never review the same plan twice, for the reason the
+  `implement-then-review` row gives for a diff.
+
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
 one numbered entry per member: kind, task, blockers, owned files and wave.
@@ -181,15 +217,16 @@ needs `mode`, as the last column shows.
 | --- | --- | --- | --- |
 | `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
+| `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for. Then it reports ranked findings, each with the brief's file and line, of seven kinds: a design choice the brief leaves open, a file no member owns, two briefs that contradict each other, a claim about the code that is wrong, a "Done when" item nobody can check, a check that misses a gate CI runs, and a team shape that does not fit the work. Give it the paths of the plan, the spec and every brief, and start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. | `pane` (launch refuses `worktree`) |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
 | `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
-investigator. Launch refuses an implementer in `pane` mode. Every member is
-told that the brief is the agreed plan, to list any choice the brief does not
-cover under **Decisions I made**, and to record a question the brief marks
-open without answering it. Implementers and investigators talk only through
-`teamwire send`. Reviewers and closers send nothing.
+investigator. Launch refuses an implementer in `pane` mode and a plan
+reviewer in `worktree` mode. Every member is told that the brief is the
+agreed plan, to list any choice the brief does not cover under **Decisions I
+made**, and to record a question the brief marks open without answering it. Implementers and investigators talk only through
+`teamwire send`. Reviewers, plan reviewers and closers send nothing.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -205,7 +242,7 @@ class, and a task that was put in the wrong class shows up there.
 | `root_cause` | Finding why something fails, before any fix. | Find why one test fails only in CI. |
 | `concurrency_data_loss` | Reasoning about ordering, races, crashes or data loss. | Show that a crash between two writes cannot lose a message. |
 | `read_only_survey` | Reading code and data to map how something works. Writes nothing. | Map every caller of a queue and what each one assumes. |
-| `judgement` | Judging other agents' work: a review or the closer's checks. | Review an implementer's finished diff. |
+| `judgement` | Judging other agents' work: a review, a plan review or the closer's checks. | Review an implementer's finished diff. |
 
 When a task fits two classes, pick the harder one. A class set too low costs a
 retry on a weaker model. A class set too high costs only tokens.
@@ -252,7 +289,7 @@ Members load every user plugin, skill, hook and output style. Only the spec's
 harness. Claude Code and Codex members read it, and pi members ignore it.
 The plugins named in this section are Claude Code plugins, so this advice
 applies to Claude Code members. Implementers keep the user's plugins. Give
-every Claude Code reviewer, closer and investigator this map:
+every Claude Code reviewer, plan reviewer, closer and investigator this map:
 
 ```json
 "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
@@ -260,7 +297,8 @@ every Claude Code reviewer, closer and investigator this map:
 
 Claude-mem records member sessions. A read-only member that keeps it reads the
 other members' findings back through injected memory, so the reviews stop
-being independent.
+being independent. A plan reviewer that keeps it reads other sessions'
+findings on earlier plans, and is no longer fresh.
 
 Turn `mattpocock-skills` on for an investigator that hunts a bug, and name
 `diagnosing-bugs` phases 1 to 3 (no fix) in its brief. Tell it to build the
@@ -510,7 +548,7 @@ missing. A member's "tests pass" is a claim, not evidence.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers and closers send nothing, and only their own lead may message them,
+Reviewers, plan reviewers and closers send nothing, and only their own lead may message them,
 so their look at the work stays fresh. teamwire enforces every rule here.
 
 ```bash
@@ -621,7 +659,7 @@ Remove a member once it can no longer be useful, with
 | --- | --- |
 | investigator | Once the closer's findings on it are resolved. With no closer, once the members that may ask it questions have finished. |
 | implementer | Once `teamwire verify <team> --role <role>` passes and the closer's findings on it are resolved. |
-| reviewer, closer | Once you have read its report and acted on it. |
+| reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
