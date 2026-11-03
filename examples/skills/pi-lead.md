@@ -24,11 +24,13 @@ hold for every section below.
   `teamwire lead --adopt <team>`, then call `teamwire_watch` again.
 - **This skill** is `teamwire`, and you load it with `/skill:teamwire`.
 - **Members and models.** Under a pi lead, a member with no `harness` runs
-  on pi. A member that keeps a Claude model (`sonnet`, `opus`, as the
-  presets and the model table below name them) needs `"harness":
-  "claude-code"`. A pi member takes a pi model pattern in `model`, or none
-  to run on pi's default. The `sonnet` and `opus` advice below is for
-  Claude members.
+  on pi. Its `model` is one of the ids or patterns `teamwire models` lists
+  for pi, and it names its provider, as `provider/id`. pi lists a provider
+  whenever it finds any credential for it, such as an `AWS_PROFILE` for
+  Amazon Bedrock, even when the account cannot call that provider. Leave
+  such a provider out with `TEAMWIRE_PI_EXCLUDE_PROVIDERS` in the
+  environment, or with `TEAMWIRE_PI_EXCLUDE_PROVIDERS = "amazon-bedrock"` in
+  `$TEAMWIRE_HOME/config.toml`.
 - **No AFK runs.** An unattended AFK run (`/teamwire:afk`,
   `teamwire afk start`) needs a Claude Code lead. pi has no `afk` skill, so
   a request for one is a run you tell the user to start from Claude Code.

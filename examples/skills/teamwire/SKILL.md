@@ -83,13 +83,8 @@ fill in.
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
 | `closer` | The last step from about four members up. One agent verifies the team's claims and writes one report. |
 
-**Route `model` and `effort` per member** with the role table's values. The
-model is the largest cost lever in a run. Plan on `opus` yourself. The effort
-levels are teamwire's defaults, and no measured source backs them. The
-reasoning behind them: extra thinking buys little in an implementer's routine
-edits, and a lot in a reviewer's or closer's judgement of other agents' work.
-Raise one member to `max` only for a task that is hard to reason about, such
-as a race or a data-loss path, because slower turns use up its `deadline_s`.
+The model and effort of each member are the largest cost lever in a run.
+"Choose each member's model" below says how to pick them.
 
 ## Plan the work, then check the plan
 
@@ -179,18 +174,14 @@ over, so results reach it and not the old session.
 
 Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets it. Every member
-needs `mode`. Launch sets no model or effort by kind, and a member without
-them runs on its harness's defaults, so set the last three columns. A member
-without `harness` runs on the lead's harness; `"harness": "codex"`,
-`"harness": "pi"` or `"harness": "claude-code"` picks one. A pi member's
-`model` is a pi model pattern, such as `anthropic/claude-sonnet-4-5`.
+needs `mode`, as the last column shows.
 
-| Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
-| --- | --- | --- | --- | --- | --- |
-| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) | `sonnet` | `medium` |
-| `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` | `opus` | `xhigh` |
-| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` | `high` |
-| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
+| Kind | Does | May not | Set `mode` |
+| --- | --- | --- | --- |
+| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) |
+| `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
+| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
+| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode. Every member is
@@ -199,11 +190,66 @@ cover under **Decisions I made**, and to record a question the brief marks
 open without answering it. Implementers and investigators talk only through
 `teamwire send`. Reviewers and closers send nothing.
 
+A member's `kind` sets its role. Its `task_class` says how hard its task is
+to reason about. The two are separate: a review of a one-line rename and a
+review of a lock-ordering change share a kind and differ in class. Launch
+records each member's class, so the outcomes of past teams can be read per
+class, and a task that was put in the wrong class shows up there.
+
+| `task_class` | The task | Example |
+| --- | --- | --- |
+| `mechanical_edit` | A change a script could nearly make: a rename across files, a moved function, a dependency bump with call-site edits. | Rename one function in every crate that calls it. |
+| `contained_feature` | One feature or fix inside one module, with its test. | Add a `--json` flag to one command. |
+| `cross_cutting` | A change to a shared interface and every caller of it. | Add a parameter to a trait method and update every implementation. |
+| `root_cause` | Finding why something fails, before any fix. | Find why one test fails only in CI. |
+| `concurrency_data_loss` | Reasoning about ordering, races, crashes or data loss. | Show that a crash between two writes cannot lose a message. |
+| `read_only_survey` | Reading code and data to map how something works. Writes nothing. | Map every caller of a queue and what each one assumes. |
+| `judgement` | Judging other agents' work: a review or the closer's checks. | Review an implementer's finished diff. |
+
+When a task fits two classes, pick the harder one. A class set too low costs a
+retry on a weaker model. A class set too high costs only tokens.
+
+## Choose each member's model
+
+No table in teamwire names the right model for a kind or a class, because
+models change faster than any table. You pick each member's model, in this
+order:
+
+1. **Keep your harness.** A member runs on your harness unless the user asks
+   for another, so leave `harness` out. Set `"harness": "claude-code"`,
+   `"codex"` or `"pi"` only when the user names that harness. Picking a
+   harness and picking a model are separate decisions, so never change a
+   member's harness to reach a model.
+2. **See what the harness reaches.** Run `teamwire models`. It lists the
+   models and effort levels your harness can reach on this machine, and says
+   where the list came from. `teamwire models --harness <id>` lists another
+   harness. A `builtin` list comes from the harness's docs, so a model on it
+   may still be out of reach for this account. A pi model can fail even on a
+   `listed` list, as "Setting up a machine" in `reference.md` explains.
+3. **Set each member's `task_class`** from the table under "Roles".
+4. **Read the evidence for each class.** Run
+   `teamwire models --for <class>` once per class in the plan. It adds the
+   public evidence for that class, with each source and its date, and the
+   outcomes of the user's own past teams for that class. It ranks the
+   evidence and never names one best model.
+5. **Pick `model` and `effort` yourself**, and give the reason in one line of
+   the plan per member. Use an id or an alias exactly as `teamwire models`
+   prints it. A pi member's `model` names its provider, as `provider/id`.
+   Use an effort level from the same list, because launch refuses any other.
+
+Extra thinking buys little in routine edits and a lot in judging other
+agents' work or in reasoning about a race. A higher effort also makes slower
+turns, which use up a member's `deadline_s`. No measured source backs that
+reasoning yet, so check it against what `teamwire models --for` shows.
+
 ## Skills and plugins in members
 
 Members load every user plugin, skill, hook and output style. Only the spec's
-`plugins` map turns one off. Implementers keep the user's plugins. Give every
-reviewer, closer and investigator this map, as the presets do:
+`plugins` map turns one off. The map holds plugin ids of the member's own
+harness. Claude Code and Codex members read it, and pi members ignore it.
+The plugins named in this section are Claude Code plugins, so this advice
+applies to Claude Code members. Implementers keep the user's plugins. Give
+every Claude Code reviewer, closer and investigator this map:
 
 ```json
 "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
@@ -269,12 +315,13 @@ Add `.worktrees/` to `.gitignore` before any `git add -A`, or you commit every
 member's checkout. Launch refuses a worktree member until git ignores it, and
 `teamwire doctor` checks it.
 
-`plugins` maps a plugin id (`name@marketplace`) to true or false, on the team
-and per member, and the member's value wins per key. Launch writes the merged
-map as `enabledPlugins` into the member's per-run settings, always with
-`teamwire@teamwire` set to false, so no member loads the lead's plugin. A
-plugin the map does not name keeps the user's switch. A team-level map covers
-only its own spec file, so repeat it in every `--add` spec.
+`plugins` maps a plugin id of the member's harness (`name@marketplace` in
+Claude Code) to true or false, on the team and per member, and the member's
+value wins per key. Launch writes the merged map into the member's per-run
+settings (`enabledPlugins` in Claude Code), always with `teamwire@teamwire`
+set to false, so no member loads the lead's plugin. A plugin the map does not
+name keeps the user's switch. A team-level map covers only its own spec file,
+so repeat it in every `--add` spec.
 
 **Every coding member needs `setup`.** A fresh worktree has no dependencies
 and no environment files, so a member without `setup` burns its budget on a
@@ -781,10 +828,10 @@ becomes one tree that passes the full gate.
    this round is done.
 
 Give mechanical work over the reports, such as a table or a digest, to a
-fresh subagent on `sonnet` with only the file paths, never to a fork of
-yourself. Avoid an always-on coordinator between you and the members, because
-it decides with less context than you have and then acts on it. The closer
-runs once, at the end, and only reports.
+fresh subagent on a cheaper model than yours, with only the file paths. Never
+give it to a fork of yourself. Avoid an always-on coordinator between you and
+the members, because it decides with less context than you have and then acts
+on it. The closer runs once, at the end, and only reports.
 
 ## Closing a team down
 
