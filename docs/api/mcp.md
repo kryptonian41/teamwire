@@ -200,9 +200,9 @@ session ids.
   member is working, quiet or done is the `state` of `team_status`.
 - `accepts_from_members` lists the types this member accepts from another
   member, of its own team or another. Every member also accepts its own
-  lead's `note` and `reprompt`, which the list leaves out. A reviewer or
-  closer has an empty list, because it accepts messages only from its own
-  lead.
+  lead's `note` and `reprompt`, which the list leaves out. A reviewer, plan
+  reviewer or closer has an empty list, because it accepts messages only
+  from its own lead.
 
 ## `team_log`
 

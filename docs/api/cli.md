@@ -107,8 +107,8 @@ Before it starts members, launch prints one stderr line for each member whose
 model or effort is below the AFK table, and never refuses for it:
 `warning: AFK run: member <role> (<kind>) runs on <model|the default model>
 at <effort|the default effort>, below the AFK table (<model> at <effort>)`.
-The table is `implementer` and `investigator` on `opus` at `high`, `reviewer`
-and `closer` on `opus` at `xhigh`. Models order `haiku < sonnet < opus` and
+The table is `implementer` and `investigator` on `opus` at `high`, `reviewer`,
+`plan_reviewer` and `closer` on `opus` at `xhigh`. Models order `haiku < sonnet < opus` and
 efforts `low < medium < high < xhigh < max`. A model name outside that list
 gets no warning.
 

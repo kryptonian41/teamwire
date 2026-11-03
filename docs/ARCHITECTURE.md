@@ -369,7 +369,7 @@ the database itself. This section says what is enforced.
 | The lead's MCP server skips the member-environment check | The session id check already refuses a member | ADR 0018 |
 | A member moves the base ref and shifts the diff that verify reads | Nothing: this is outside the threat model of a confused agent | ADR 0009 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
-| A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
+| A reviewer's independence is lost | Reviewers, plan reviewers and closers receive only from the lead | MSG-3 |
 
 ## Installing teamwire
 

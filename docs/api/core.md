@@ -46,9 +46,9 @@ pub struct Remote { /* team, role (None for the lead) */ }
 ## 2. Members
 
 ```rust
-pub enum MemberKind { Implementer, Reviewer, Investigator, Closer }
+pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer }
 impl MemberKind {
-    pub fn is_quiet(self) -> bool;                       // reviewers and closers (MSG-3)
+    pub fn is_quiet(self) -> bool;                       // reviewers, plan reviewers and closers (MSG-3)
     pub fn may_send(self, kind: MessageType) -> bool;    // a member never sends reprompt or note; a quiet kind sends nothing
 }
 pub enum Mode { Worktree, Pane }

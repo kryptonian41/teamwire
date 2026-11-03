@@ -15,6 +15,9 @@ string_enum! {
         Reviewer => "reviewer",
         Investigator => "investigator",
         Closer => "closer",
+        /// Reads the lead's plan and briefs before any implementer starts
+        /// (ADR 0034).
+        PlanReviewer => "plan_reviewer",
     }
 }
 
@@ -35,10 +38,10 @@ string_enum! {
 }
 
 impl MemberKind {
-    /// Reviewers and closers report in their report file; the lead acts on
-    /// the report (MSG-3).
+    /// Reviewers, plan reviewers and closers report in their report file;
+    /// the lead acts on the report (MSG-3).
     pub fn is_quiet(self) -> bool {
-        matches!(self, Self::Reviewer | Self::Closer)
+        matches!(self, Self::Reviewer | Self::Closer | Self::PlanReviewer)
     }
 
     /// Whether a member of this kind may send a message of this type. Only the
@@ -104,7 +107,10 @@ mod tests {
             }
             assert_eq!(
                 kind.is_quiet(),
-                matches!(kind, MemberKind::Reviewer | MemberKind::Closer)
+                matches!(
+                    kind,
+                    MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer
+                )
             );
         }
     }

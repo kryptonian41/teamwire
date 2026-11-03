@@ -17,7 +17,7 @@ export const PlaceState = z.enum(["idle", "working", "blocked", "gone", "unknown
 export const ReportState = z.enum(["pending", "delivering", "delivered", "undelivered", "unconfirmed"]);
 export const DeliveryState = z.enum(["pending", "handed_off", "unconfirmed", "undelivered", "acked"]);
 export const MessageType = z.enum(["notice", "finding", "question", "answer", "reprompt", "note"]);
-export const MemberKind = z.enum(["implementer", "reviewer", "investigator", "closer"]);
+export const MemberKind = z.enum(["implementer", "reviewer", "investigator", "closer", "plan_reviewer"]);
 export const Lifecycle = z.enum(["creating", "started", "failed", "removed"]);
 
 /** Team and role names: `^[a-z][a-z0-9_]*$`, never a hyphen. */
