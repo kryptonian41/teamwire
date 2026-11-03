@@ -131,6 +131,23 @@ impl Tmux {
         })
     }
 
+    /// The last `lines` screen lines of `place`, with `extra` capture flags.
+    fn capture(
+        &self,
+        place: &Place,
+        lines: u16,
+        extra: &[&str],
+        timeout: Duration,
+    ) -> Result<String, HostError> {
+        let pane = Self::pane(place)?;
+        let from = format!("-{lines}");
+        let mut args = vec!["capture-pane", "-p", "-J"];
+        args.extend_from_slice(extra);
+        args.extend(["-t", pane.id, "-S", &from]);
+        let text = self.run_at(&pane, &args, timeout)?;
+        Ok(last_lines(&text, usize::from(lines)))
+    }
+
     /// `(place id, member name, program has exited)` for every pane this
     /// adapter started.
     fn marked_panes(&self, timeout: Duration) -> Result<Vec<(String, String, bool)>, HostError> {
@@ -477,14 +494,17 @@ impl Host for Tmux {
     }
 
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError> {
-        let pane = Self::pane(place)?;
-        let from = format!("-{lines}");
-        let text = self.run_at(
-            &pane,
-            &["capture-pane", "-p", "-J", "-t", pane.id, "-S", &from],
-            timeout,
-        )?;
-        Ok(last_lines(&text, usize::from(lines)))
+        self.capture(place, lines, &[], timeout)
+    }
+
+    fn read_tail_styled(
+        &self,
+        place: &Place,
+        lines: u16,
+        timeout: Duration,
+    ) -> Result<String, HostError> {
+        // `-e` keeps the SGR codes, so dim placeholder text can be told apart.
+        self.capture(place, lines, &["-e"], timeout)
     }
 
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError> {

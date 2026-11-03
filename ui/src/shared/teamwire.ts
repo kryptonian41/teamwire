@@ -239,7 +239,7 @@ export const EventType = z.enum([
   "member.removed", "member.reprompted", "member.completed", "member.completion_refused", "member.held",
   "message.sent", "message.refused",
   "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
-  "delivery.reminded", "delivery.resent", "delivery.reentered",
+  "delivery.reminded", "delivery.resent", "delivery.reentered", "delivery.recipient_stopped",
   "result.delivering", "result.delivered", "result.undelivered", "result.unconfirmed",
   "watch.started", "watch.line", "watch.stopped",
   "verify.recorded", "verify.waived",

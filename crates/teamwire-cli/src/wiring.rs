@@ -10,23 +10,18 @@ use teamwire_core::{HarnessId, HostId, NoHost, Pid, Platform, Registry, Registry
 use crate::cmd::doctor::pick_host;
 use teamwire_harness_claude::ClaudeCode;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
+use teamwire_harness_pi::Pi;
 use teamwire_host_herdr::Herdr;
 use teamwire_host_tmux::Tmux;
 use teamwire_platform::SystemClock;
 
-// The Claude Code lead-setup items that `install`, `doctor` and the hook
-// name. They are re-exported here so no other file names an adapter crate.
-pub(crate) use teamwire_harness_claude::ClaudeCode as LeadSetup;
-pub(crate) use teamwire_harness_claude::{
-    Change, ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill, mcp_state,
-    shadowing_entries, skill_state,
-};
-
-// The Codex lead-setup items, re-exported for the same reason.
-pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
-pub(crate) use teamwire_harness_codex::lead_setup::{
-    Change as CodexChange, LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
-};
+// What `install` and `doctor` name of the Claude Code and pi adapters: the
+// shared skill every lead setup is given (ADR 0023 point 9), and the folders
+// doctor reads herdr's integrations from. Re-exported here so no other file
+// names an adapter crate; each lead setup itself is reached through the
+// `Registry` (ADR 0031).
+pub(crate) use teamwire_harness_claude::{ClaudeConfig, SKILL_TEXT};
+pub(crate) use teamwire_harness_pi::PiConfig;
 
 /// The harness whose hook commands this binary serves.
 pub(crate) fn claude_harness_id() -> HarnessId {
@@ -40,23 +35,12 @@ pub(crate) struct Wiring {
     pub(crate) clock: SystemClock,
     pub(crate) lead_harness: HarnessId,
     pub(crate) lead_host: HostId,
-    /// Where Claude Code keeps its files, for the commands that read or
-    /// write the lead setup.
+    /// Where Claude Code keeps its files: doctor reads herdr's session hook
+    /// from its `settings.json`.
     pub(crate) claude: ClaudeConfig,
-    /// Where Codex keeps its files, for the same commands.
-    pub(crate) codex: CodexConfig,
-}
-
-impl Wiring {
-    /// The Codex adapter that adds and removes the lead plugin.
-    pub(crate) fn codex_setup(&self) -> CodexSetup {
-        CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
-    }
-
-    /// The Claude Code adapter that reads and writes the lead setup.
-    pub(crate) fn lead_setup(&self) -> LeadSetup {
-        LeadSetup::new(Arc::clone(&self.platform), self.claude.clone())
-    }
+    /// Where pi keeps its files and how to start it: doctor reads herdr's
+    /// pi integration from the directory.
+    pub(crate) pi: PiConfig,
 }
 
 /// The environment facts wiring reads, gathered in one place so tests can
@@ -76,12 +60,16 @@ pub(crate) struct WiringEnv {
     pub(crate) codex_test_home: Option<PathBuf>,
     /// `CODEX_HOME`: Codex's own setting for the same thing.
     pub(crate) codex_home: Option<PathBuf>,
+    /// `PI_CODING_AGENT_DIR`: pi's own setting for the same thing.
+    pub(crate) pi_agent_dir: Option<PathBuf>,
     /// `TEAMWIRE_LEAD_HARNESS`: the lead's harness id, when the user names it.
     pub(crate) lead_harness: Option<String>,
     /// `CLAUDE_CODE_SESSION_ID`: set inside a Claude Code session.
     pub(crate) claude_session: Option<String>,
     /// `CODEX_THREAD_ID`: set inside a Codex session.
     pub(crate) codex_thread: Option<String>,
+    /// `PI_CODING_AGENT`: `true` in pi and in every process pi starts.
+    pub(crate) pi_marker: Option<String>,
 }
 
 impl WiringEnv {
@@ -98,9 +86,13 @@ impl WiringEnv {
             codex_home: std::env::var_os("CODEX_HOME")
                 .filter(|v| !v.is_empty())
                 .map(PathBuf::from),
+            pi_agent_dir: std::env::var_os("PI_CODING_AGENT_DIR")
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from),
             lead_harness: std::env::var("TEAMWIRE_LEAD_HARNESS").ok(),
             claude_session: std::env::var("CLAUDE_CODE_SESSION_ID").ok(),
             codex_thread: std::env::var("CODEX_THREAD_ID").ok(),
+            pi_marker: std::env::var("PI_CODING_AGENT").ok(),
         }
     }
 }
@@ -109,15 +101,14 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     let platform = teamwire_platform::native();
     let claude = claude_config(env);
     let codex = codex_config(env);
+    let pi = pi_config(env);
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
         claude.clone(),
     )))?;
-    registry.add_harness(Arc::new(CodexCli::new(
-        Arc::clone(&platform),
-        codex.clone(),
-    )))?;
+    registry.add_harness(Arc::new(CodexCli::new(Arc::clone(&platform), codex)))?;
+    registry.add_harness(Arc::new(Pi::new(Arc::clone(&platform), pi.clone())))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
     registry.add_host(Arc::new(NoHost))?;
@@ -129,22 +120,27 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_harness: lead_harness(env),
         lead_host,
         claude,
-        codex,
+        pi,
     })
 }
 
 /// `TEAMWIRE_LEAD_HARNESS` when it names a harness of this binary, else the
 /// harness whose session the command runs in: `claude-code` when
 /// `CLAUDE_CODE_SESSION_ID` is set, `codex` when `CODEX_THREAD_ID` is set,
-/// and `claude-code` otherwise. An id this binary lacks is ignored, so a typo
-/// cannot leave the lead without an adapter.
+/// `pi` when `PI_CODING_AGENT` is `true`, and `claude-code` otherwise. pi's
+/// marker comes last because every process pi starts inherits it, so a
+/// Claude or Codex session started from a pi shell is still itself. An id
+/// this binary lacks is ignored, so a typo cannot leave the lead without an
+/// adapter.
 fn lead_harness(env: &WiringEnv) -> HarnessId {
     let set = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.is_empty());
     let id = match env.lead_harness.as_deref() {
         Some(CodexCli::ID) => CodexCli::ID,
         Some(ClaudeCode::ID) => ClaudeCode::ID,
+        Some(Pi::ID) => Pi::ID,
         _ if set(&env.claude_session) => ClaudeCode::ID,
         _ if set(&env.codex_thread) => CodexCli::ID,
+        _ if env.pi_marker.as_deref() == Some("true") => Pi::ID,
         _ => ClaudeCode::ID,
     };
     HarnessId::from_static(id)
@@ -163,6 +159,19 @@ fn codex_config(env: &WiringEnv) -> CodexConfig {
     CodexConfig {
         codex_home,
         codex_bin: "codex".to_owned(),
+    }
+}
+
+/// `PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
+fn pi_config(env: &WiringEnv) -> PiConfig {
+    let agent_dir = match (&env.pi_agent_dir, &env.user_home) {
+        (Some(dir), _) => dir.clone(),
+        (None, Some(home)) => home.join(".pi").join("agent"),
+        (None, None) => PathBuf::from(".pi/agent"),
+    };
+    PiConfig {
+        agent_dir,
+        pi_bin: "pi".to_owned(),
     }
 }
 
@@ -212,10 +221,22 @@ mod tests {
             claude_config_dir: None,
             codex_test_home: None,
             codex_home: None,
+            pi_agent_dir: None,
             lead_harness: None,
             claude_session: None,
             codex_thread: None,
+            pi_marker: None,
         }
+    }
+
+    fn lead_in_pi(var: Option<&str>, claude: Option<&str>) -> String {
+        let e = WiringEnv {
+            lead_harness: var.map(str::to_owned),
+            claude_session: claude.map(str::to_owned),
+            pi_marker: Some("true".to_owned()),
+            ..env(None)
+        };
+        wire(&e).unwrap().lead_harness.as_str().to_owned()
     }
 
     fn lead_with(var: Option<&str>, claude: Option<&str>, codex: Option<&str>) -> String {
@@ -240,7 +261,21 @@ mod tests {
         );
         // An empty or unknown value does not decide.
         assert_eq!(lead_with(Some("nope"), None, Some("t1")), "codex");
+        assert_eq!(lead_with(Some("pi"), None, None), "pi");
         assert_eq!(lead_with(None, Some(""), Some("t1")), "codex");
+    }
+
+    #[test]
+    fn pis_marker_picks_pi_after_every_other_session() {
+        assert_eq!(lead_in_pi(None, None), "pi");
+        // A Claude session started from a pi shell carries both.
+        assert_eq!(lead_in_pi(None, Some("s1")), "claude-code");
+        assert_eq!(lead_in_pi(Some("codex"), None), "codex");
+        let e = WiringEnv {
+            pi_marker: Some("false".to_owned()),
+            ..env(None)
+        };
+        assert_eq!(wire(&e).unwrap().lead_harness.as_str(), "claude-code");
     }
 
     #[test]
@@ -317,10 +352,25 @@ mod tests {
     #[test]
     fn registry_holds_every_adapter_of_this_binary() {
         let wiring = wire(&env(None)).unwrap();
-        assert_eq!(wiring.registry.harness_ids(), ["claude-code", "codex"]);
+        assert_eq!(
+            wiring.registry.harness_ids(),
+            ["claude-code", "codex", "pi"]
+        );
         assert_eq!(wiring.registry.host_ids(), ["herdr", "none", "tmux"]);
         assert!(wiring.registry.harness(&wiring.lead_harness).is_ok());
         assert!(wiring.registry.host(&wiring.lead_host).is_ok());
+    }
+
+    #[test]
+    fn pis_directory_is_pis_own_setting_then_the_default() {
+        let mut e = env(None);
+        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/home/u/.pi/agent"));
+        assert_eq!(
+            pi_config(&e).sessions_dir(),
+            PathBuf::from("/home/u/.pi/agent/sessions/teamwire")
+        );
+        e.pi_agent_dir = Some(PathBuf::from("/pi"));
+        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/pi"));
     }
 
     #[test]

@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
+use crate::lead_setup::LeadSetup;
 use crate::member::{Member, MemberKind};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
@@ -26,21 +27,30 @@ pub trait Harness: Send + Sync {
     /// argv to resume an existing member session with the same per-run
     /// configuration (shown by `status --role`, never run by teamwire).
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
-    /// The caller's own session, read from its environment.
-    fn current_session(&self) -> Option<CallerSession>;
-    /// The caller's session, read through `get` instead of the process
-    /// environment. `get` also answers `MCP_META_<key>` with a string field of
-    /// the MCP request's `_meta`, for a harness that names the session only
-    /// there (Codex, ADR 0023). The default ignores `get` and reads the
-    /// process environment.
-    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
-        self.current_session()
-    }
+    /// The caller's own session, read through `get`: the process
+    /// environment for a command (`|name| std::env::var(name).ok()`). The
+    /// lead's MCP server also answers `MCP_META_<key>` with a string field of
+    /// the request's `_meta`, for a harness that names the session only there
+    /// (Codex, ADR 0023).
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The
     /// default is `Unsupported`.
     fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Err(HarnessError::unsupported())
+    }
+    /// The lead setup `teamwire install`, `uninstall` and `doctor` reach
+    /// this harness's lead through (ADR 0031). `None`, the default, for a
+    /// harness that cannot lead.
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        None
+    }
+    /// Why the caller's session cannot lead a new team, when the harness can
+    /// tell that the lead setup it needs is not loaded there. A pi lead reads
+    /// the watch through teamwire's lead extension, so without it no result
+    /// would reach the lead. The default is `None`.
+    fn lead_setup_missing(&self) -> Option<String> {
+        None
     }
     /// The folder a session runs in, read without writing: the live session
     /// first, then the session's own record. `None` when neither names it.
@@ -65,12 +75,6 @@ pub trait Harness: Send + Sync {
     /// never gets a second Enter, which can only delay a line, never send it
     /// twice.
     fn line_pending(&self, _tail: &str, _line: &OneLine) -> bool {
-        false
-    }
-    /// Whether `box_holds_text` can tell anything. Delivery on a host that
-    /// guards dialogs reads the screen only when it can, so a harness that
-    /// cannot costs no extra read. Default `false`.
-    fn reads_input_box(&self) -> bool {
         false
     }
     /// Whether the input box shown by `tail` already holds text, such as a
@@ -173,6 +177,15 @@ pub struct HarnessCaps {
     /// `teamwire watch --deliver`, which types the lines into its pane, so
     /// launch refuses such a lead when it cannot be located (ADR 0023).
     pub reads_watch_lines: bool,
+    /// `Harness::box_holds_text` can tell anything. Delivery on a host that
+    /// guards dialogs reads the screen only when it can, so a harness that
+    /// cannot costs no extra read. Delivery gives a harness that reads the
+    /// box its screens from `Host::read_tail_styled`, in `screen_state` and
+    /// `box_holds_text` both, so they must parse style codes.
+    pub reads_input_box: bool,
+    /// A lead on this harness can start an AFK run: its skill carries the
+    /// AFK flow, and its pane can be proven to reach the lead (AFK-2).
+    pub runs_afk: bool,
 }
 
 /// A turn-end hook's input, in neutral form.

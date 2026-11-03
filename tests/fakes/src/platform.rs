@@ -124,6 +124,8 @@ struct State {
     /// that cannot read start times does.
     started: HashMap<Pid, Timestamp>,
     envs: HashMap<(Pid, String), String>,
+    /// Each pid's parent and program name, as `parent_of` reports them.
+    parents: HashMap<Pid, (Pid, String)>,
     env_fault: Option<PlatformError>,
     run_queue: VecDeque<Result<RunOutput, PlatformError>>,
     runs: Vec<(Command, Duration)>,
@@ -163,6 +165,7 @@ impl FakePlatform {
                 alive: HashSet::new(),
                 started: HashMap::new(),
                 envs: HashMap::new(),
+                parents: HashMap::new(),
                 env_fault: None,
                 run_queue: VecDeque::new(),
                 runs: Vec::new(),
@@ -222,12 +225,20 @@ impl FakePlatform {
             .insert((pid, var.to_owned()), value.to_owned());
     }
 
+    /// Makes `parent_of(pid)` report `parent`, a program named `name`.
+    pub fn set_parent(&self, pid: Pid, parent: Pid, name: &str) {
+        lock(&self.state)
+            .parents
+            .insert(pid, (parent, name.to_owned()));
+    }
+
     /// Every later `env_of` fails with `err` until cleared with `None`.
     pub fn fail_env_reads(&self, err: Option<PlatformError>) {
         lock(&self.state).env_fault = err;
     }
 
-    /// Every later `write_atomic` fails with `err` until cleared.
+    /// Every later `write_atomic`, `create_dir_all` and `remove_dir_all`
+    /// fails with `err` until cleared.
     pub fn fail_writes(&self, err: Option<PlatformError>) {
         lock(&self.state).write_fault = err;
     }
@@ -383,6 +394,12 @@ impl Platform for FakePlatform {
             .filter(|_| state.alive.contains(&pid))
     }
 
+    fn parent_of(&self, pid: Pid) -> Option<(Pid, String)> {
+        self.log
+            .record("parent_of", CallKind::Read, pid.to_string());
+        lock(&self.state).parents.get(&pid).cloned()
+    }
+
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
         self.log
             .record("env_of", CallKind::Read, format!("{pid} {var}"));
@@ -448,6 +465,30 @@ impl Platform for FakePlatform {
                 Err(io_to_platform(&e))
             }
         }
+    }
+
+    fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "create_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::create_dir_all(path).map_err(|e| io_to_platform(&e))
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "remove_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::remove_dir_all(path).map_err(|e| io_to_platform(&e))
     }
 
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {

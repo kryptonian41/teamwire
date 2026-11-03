@@ -1494,6 +1494,7 @@ dependencies = [
  "teamwire-fakes",
  "teamwire-harness-claude",
  "teamwire-harness-codex",
+ "teamwire-harness-pi",
  "teamwire-host-herdr",
  "teamwire-host-tmux",
  "teamwire-launch",
@@ -1628,6 +1629,16 @@ dependencies = [
  "time",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "teamwire-harness-pi"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "teamwire-core",
+ "teamwire-fakes",
+ "tempfile",
 ]
 
 [[package]]

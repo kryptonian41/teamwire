@@ -181,8 +181,9 @@ Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets it. Every member
 needs `mode`. Launch sets no model or effort by kind, and a member without
 them runs on its harness's defaults, so set the last three columns. A member
-without `harness` runs on the lead's harness; `"harness": "codex"` or
-`"harness": "claude-code"` picks one.
+without `harness` runs on the lead's harness; `"harness": "codex"`,
+`"harness": "pi"` or `"harness": "claude-code"` picks one. A pi member's
+`model` is a pi model pattern, such as `anthropic/claude-sonnet-4-5`.
 
 | Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
 | --- | --- | --- | --- | --- | --- |

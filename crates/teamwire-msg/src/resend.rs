@@ -5,7 +5,7 @@
 use teamwire_core::{
     Actor, DeliveryState, DisplayId, Message, Recipient, Refusal, TeamState, Timestamp,
 };
-use teamwire_deliver::is_pending_stale;
+use teamwire_deliver::AttemptHistory;
 use teamwire_store::{Ctx, DeliveryRecord};
 
 use crate::attempt::{bump_again, claim_attempt, deliver_one, earlier_bump, skipped};
@@ -137,7 +137,8 @@ fn resendable(
         DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
         DeliveryState::Pending => ctx
             .store
-            .read(|tx| is_pending_stale(tx, message, &row.delivery.recipient, now))?,
+            .read(|tx| AttemptHistory::read(tx, message, &row.delivery.recipient))?
+            .is_stale(now),
         DeliveryState::HandedOff | DeliveryState::Acked => false,
     })
 }

@@ -137,6 +137,11 @@ fn every_talking_kind_gets_the_finding_and_notice_rules_and_a_quiet_one_neither(
             text.contains("- finding:") && text.contains("- notice:"),
             "{kind}"
         );
+        // The limits teamwire-msg enforces, so a member writes to them.
+        assert!(
+            text.contains("notice holds at most 600") && text.contains("answer at most 800"),
+            "{kind}"
+        );
     }
     for kind in [MemberKind::Reviewer, MemberKind::Closer] {
         let text = render(kind, None, &[]);

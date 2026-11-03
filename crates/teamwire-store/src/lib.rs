@@ -44,13 +44,13 @@ pub use reopen::RunOptions;
 pub use store::{
     APPLICATION_ID, BUSY_TIMEOUT_MS, Store, WRITER_VERSION, database_path, team_names,
 };
-pub use team::{CloseEnd, NewTeam, TeamRow};
+pub use team::{CloseEnd, NewTeam, OpenTeam, TeamRead, TeamRow, open_teams};
 pub use tx::{BadRow, Listing, ReadTx, Tx, same_hash, sha256, token_hash};
 pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 7;
+pub const SCHEMA_VERSION: u32 = 8;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -78,6 +78,10 @@ pub const SCHEMA_V6_SQL: &str = include_str!("schema/v6.sql");
 /// The step from schema version 6 to 7: the `events` table rebuilt with the
 /// `member.handoff` type in its CHECK list. Every row is kept.
 pub const SCHEMA_V7_SQL: &str = include_str!("schema/v7.sql");
+
+/// The step from schema version 7 to 8: the `events` table rebuilt with the
+/// `delivery.recipient_stopped` type in its CHECK list. Every row is kept.
+pub const SCHEMA_V8_SQL: &str = include_str!("schema/v8.sql");
 
 #[cfg(test)]
 mod tests {

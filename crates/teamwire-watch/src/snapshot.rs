@@ -8,7 +8,7 @@ use teamwire_core::{
     Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
     Ulid,
 };
-use teamwire_deliver::unread_since;
+use teamwire_deliver::AttemptHistory;
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
@@ -151,7 +151,8 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = unread_since(tx, &message, &d.recipient)? else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         found.push(Unread {

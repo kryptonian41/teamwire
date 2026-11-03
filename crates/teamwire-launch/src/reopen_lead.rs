@@ -36,7 +36,7 @@ pub(crate) fn reopen_lead<'r>(
     };
     // The caller is the lead: it runs, whatever the session registry says.
     if harness
-        .current_session()
+        .caller_session(&|name| std::env::var(name).ok())
         .is_some_and(|caller| caller.id == *session)
     {
         return ReopenOutcome::skipped("already open (this session)");

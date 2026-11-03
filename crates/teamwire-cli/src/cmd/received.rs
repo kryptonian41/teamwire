@@ -5,7 +5,7 @@ use std::process::ExitCode;
 use teamwire_core::{Role, TeamName};
 use teamwire_report::{Received, mark_received};
 
-use crate::cmd::send::{REFUSED, STORE, fail, refuse_member, say, with_ctx};
+use crate::cmd::shared::{REFUSED, STORE, fail, refuse_member, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, ReceivedArgs, USAGE};
 

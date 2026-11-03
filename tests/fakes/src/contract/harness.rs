@@ -122,7 +122,7 @@ pub fn harness_contract(setup: &HarnessSetup<'_>) {
     );
 
     // Whatever the environment says, reading the caller's session must not panic.
-    let _caller = h.current_session();
+    let _caller = h.caller_session(&|_| None);
 
     if !caps.can_push {
         let line = one_line("hello", 20);

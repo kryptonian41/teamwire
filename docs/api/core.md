@@ -168,7 +168,7 @@ team.created team.closing team.closed team.lead_adopted
 member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff
 member.completed member.completion_refused member.held
 message.sent message.refused
-delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered
+delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered delivery.recipient_stopped
 result.delivering result.delivered result.undelivered result.unconfirmed
 watch.started watch.line watch.stopped
 verify.recorded verify.waived
@@ -220,6 +220,9 @@ pub trait Host: Send + Sync {
     /// Who occupies `place`: a session id if the host knows it, else process ids.
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError>;
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
+    /// `read_tail` with the SGR style codes kept (herdr `--format ansi`, tmux
+    /// `capture-pane -e`). Default: the plain tail.
+    fn read_tail_styled(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError>;
     /// Close `place` only if the agent in it is `expected`. A place that holds
     /// another agent, or none, is left alone and reported `NotFound`: a place
@@ -260,14 +263,21 @@ pub trait Harness: Send + Sync {
     /// configuration (shown by `status --role`, run by `reopen`). Build the
     /// `MemberLaunch` of a member that already ran with `MemberLaunch::for_resume`.
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
-    /// The caller's own session, read from its environment.
-    fn current_session(&self) -> Option<CallerSession>;   // id + kind (interactive | background)
-    // The same through a lookup; MCP_META_<key> answers a field of an MCP request's _meta
-    // (ADR 0023). The default reads the process environment.
+    /// The caller's own session (id + kind, interactive | background), read
+    /// through `get`: the process environment for a command
+    /// (`|name| std::env::var(name).ok()`). The lead's MCP server also answers
+    /// MCP_META_<key> with a field of the request's _meta (ADR 0023).
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
+    /// The lead setup `install`, `uninstall` and `doctor` reach this harness's
+    /// lead through (ADR 0031). Default `None`, for a harness that cannot lead.
+    fn lead_setup(&self) -> Option<&dyn LeadSetup>;
+    /// Why the caller's session cannot lead a new team, when the harness can
+    /// tell its lead setup is not loaded there (pi without the lead package,
+    /// ADR 0030). Launch refuses with `lead_setup_missing`. Default `None`.
+    fn lead_setup_missing(&self) -> Option<String>;
     /// The folder a session runs in, read without writing: the live session
     /// first, then the session's own record. `None` when neither names it.
     /// Default `Ok(None)`.
@@ -284,16 +294,13 @@ pub trait Harness: Send + Sync {
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
-    /// box, showing a dialog, or unknown. A box holding text (other than
-    /// Claude's one `Try "..."` placeholder) is `Unknown`, so delivery waits
-    /// and then refuses with `not_at_input_prompt`.
+    /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
+    /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
+    /// dim (a placeholder or a prompt suggestion) does not count.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether a line just submitted still sits unsent in the input box.
     /// Default false, so a harness that cannot tell gets no second Enter.
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool;
-    /// Whether `box_holds_text` can tell anything. Delivery on a host that
-    /// guards dialogs reads the screen only when this is true. Default false.
-    fn reads_input_box(&self) -> bool;
     /// Whether the input box shown by `tail` holds text. Delivery waits while
     /// it does, on every host. Default false.
     fn box_holds_text(&self, tail: &str) -> bool;
@@ -314,7 +321,13 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// Environment for the session can be set in a per-run
                          /// config file (Claude Code `settings.json` `env`).
                          pub session_env_via_config: bool,
-                         pub reads_watch_lines: bool }   // lead can read `teamwire watch` lines (ADR 0023)
+                         pub reads_watch_lines: bool,    // lead can read `teamwire watch` lines (ADR 0023)
+                         /// `box_holds_text` can tell anything: delivery on a host that
+                         /// guards dialogs reads the screen only then, and gives such a
+                         /// harness screens from `Host::read_tail_styled` (ADR 0031)
+                         pub reads_input_box: bool,
+                         /// A lead on this harness can start an AFK run (AFK-2, ADR 0031)
+                         pub runs_afk: bool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      // read only when it is a regular file of at most 64 MiB,
@@ -345,6 +358,11 @@ pub trait Platform: Send + Sync {
     /// holds a pipe open 2 s after the child ends, what was read is returned.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError>;
+    /// Create a directory and its missing parents; delete a directory and all
+    /// in it (a symlink loses only the link). Both default to `Unsupported`,
+    /// for a platform that writes no files; the lead setup's `apply` uses them.
+    fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
+    fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
@@ -366,6 +384,69 @@ pub trait Clock: Send + Sync {
     fn now(&self) -> Timestamp;         // wall clock, stored
     fn monotonic(&self) -> Instant;     // timeouts inside a process
 }
+```
+
+The lead setup (`teamwire_core::lead_setup`, ADR 0031). Each adapter keeps its
+own mechanism and its own typed change list; the CLI sees only `LeadChange`,
+which it prints, and passes back to the same harness's `apply`.
+
+```rust
+pub const LEAD_SETUP_TIMEOUT: Duration = Duration::from_secs(30);  // one command of the harness's program
+
+/// `<bin> [--home DIR]`; each adapter renders its own entry from it.
+pub struct LeadCommand { pub bin: PathBuf, pub home: Option<PathBuf> }
+impl LeadCommand {
+    pub fn home_text(&self) -> Option<String>;   // the home rebuilt from its components: `/x/` and `/x` agree
+    pub fn words(&self) -> Vec<String>;          // bin, then `--home DIR` when given
+}
+pub struct LeadTarget<'a> { pub command: &'a LeadCommand,
+                            pub home: &'a Path,           // the state directory
+                            pub shared_skill: &'a str,    // passed in by the CLI (ADR 0023 point 9)
+                            pub compare_files: bool }     // false for a cargo build under target/
+pub enum LeadStatus { Missing, Stale(Vec<String>), Current }
+pub enum LeadStep { WriteFiles { dir: PathBuf, files: Vec<(PathBuf, String)> },  // through the platform
+                    RemoveDir(PathBuf), Run(Command),
+                    Own(PathBuf) }                       // the adapter's own step (Claude's ADR 0012 skill removal)
+pub struct LeadChange { /* text, step */ }
+impl LeadChange { pub fn new(text: impl Into<String>, step: LeadStep) -> Self;
+                  pub fn step(&self) -> &LeadStep; }
+impl Display for LeadChange { /* the text, after "would" or "did" */ }
+pub struct LeadPlan { pub changes: Vec<LeadChange>, pub note: Option<&'static str> }  // note: printed after apply
+pub enum LeadSetupError { Read { path: PathBuf, detail: String }, Refused(String) }
+impl LeadSetupError { pub fn needs_force(what: &str, verb: &str) -> Self; }  // "<what>; pass --force to <verb> it"
+pub struct ApplyError<C = LeadChange> { pub done: Vec<C>, pub failed: C, pub detail: String }  // "<failed> failed: <detail>"
+pub enum CheckOutcome { Pass(String), Warn(String), Fail(String) }
+pub type DoctorCheck = (&'static str, CheckOutcome);
+pub type Probe<'a> = &'a dyn Fn(&[&str]) -> Result<String, String>;  // runs the program through doctor's platform
+
+pub trait LeadSetup: Send + Sync {
+    fn program(&self) -> &str;            // looked for on PATH by install, uninstall, launch and doctor
+    fn label(&self) -> &'static str;      // "Claude Code", "Codex", "pi"
+    /// Doctor fails without its program; install without a terminal or
+    /// --harness installs it; uninstall always plans it and stops at its
+    /// refusal. Every other harness is optional. Default false.
+    fn default_lead(&self) -> bool;
+    fn status(&self, target: &LeadTarget<'_>) -> Result<LeadStatus, LeadSetupError>;   // reads only
+    fn plan_install(&self, target: &LeadTarget<'_>, force: bool) -> Result<LeadPlan, LeadSetupError>;
+    fn plan_uninstall(&self, home: &Path, force: bool) -> Result<LeadPlan, LeadSetupError>;
+    /// Makes changes this harness planned, in order; stops at the first failure.
+    fn apply(&self, changes: &[LeadChange]) -> Result<(), Box<ApplyError>>;
+    /// `target` is Err when the command cannot be worked out; `dir` is doctor's folder.
+    fn doctor_checks(&self, target: Result<&LeadTarget<'_>, &str>, dir: &Path) -> Vec<DoctorCheck>;
+    /// Checks of the program beyond its version. Default none.
+    fn program_checks(&self, probe: Probe<'_>) -> Vec<DoctorCheck>;
+}
+
+/// The check of an optional harness: missing passes and names
+/// `teamwire install --harness <id>`, stale and unreadable warn.
+pub fn optional_check(status: Result<LeadStatus, LeadSetupError>, harness_id: &str, label: &str) -> CheckOutcome;
+/// The one apply loop: makes each change with `one`, stops at the first failure.
+pub fn apply_in_order<C: Clone>(changes: &[C], one: impl FnMut(&C) -> Result<(), String>)
+    -> Result<(), Box<ApplyError<C>>>;
+/// Makes a shared step through the platform; refuses `Own`.
+pub fn make_step(platform: &dyn Platform, step: &LeadStep) -> Result<(), String>;
+/// Runs the harness's program under LEAD_SETUP_TIMEOUT: stdout, or what went wrong.
+pub fn run_program(platform: &dyn Platform, cmd: &Command) -> Result<String, String>;
 ```
 
 `OneLine` is a string that has been through `sanitize::one_line(text, max)`:
@@ -390,6 +471,10 @@ impl Registry {
     pub fn add_host(&mut self, h: Arc<dyn Host>) -> Result<(), RegistryError>;
     pub fn harness(&self, id: &HarnessId) -> Result<&dyn Harness, RegistryError>;
     pub fn host(&self, id: &HostId) -> Result<&dyn Host, RegistryError>;
+    pub fn harness_ids(&self) -> Vec<&str>;   // sorted
+    pub fn host_ids(&self) -> Vec<&str>;      // sorted
+    /// Every harness with a lead setup, sorted by id (ADR 0031).
+    pub fn lead_setups(&self) -> Vec<(&str, &dyn LeadSetup)>;
 }
 
 pub enum RegistryError { Duplicate(String), UnknownHarness(HarnessId), UnknownHost(HostId) }
@@ -526,12 +611,23 @@ pub enum StoreError { Busy, Full { path: PathBuf }, SchemaNewer { db: u32, binar
 impl StoreError { pub fn code(&self) -> &'static str; }  // busy, full, schema_newer, schema_older, not_teamwire, corrupt, constraint, no_database, io
 
 pub fn token_hash(token: &str) -> [u8; 32];
-pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit; msg, report, launch and the CLI hook use these two
+pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit
+// ReadTx::token_matches(role, token) -> Result<Option<bool>, StoreError>: None when role has no
+// member that is not removed, or no stored hash; else whether the hashes are the same (same_hash).
+// It is the one token check: msg's prove, report's done and the CLI's session-start hook use it.
+
+pub struct OpenTeam { pub store: Store, pub row: TeamRow }   // the store opened read-only
+pub type TeamRead = Result<Option<OpenTeam>, StoreError>;     // Ok(None): a database with no team row
+pub fn open_teams(home: &Path, lead: Option<&SessionId>) -> Result<Vec<(TeamName, TeamRead)>, StoreError>;
 ```
 
 A command treats `NoDatabase` as "no such team", not as a broken store.
 `team_names(home)` lists every team that has a database, sorted by name; it
 is the one scan of `<home>/teams` every command uses.
+`open_teams(home, lead)` builds on it: the open teams, with `lead` only those
+that session leads, each with its store and row or the error that reading it
+gave. A team whose database went away after the scan is left out. The AFK
+start, the Stop hook's checks and both sleep-hold checks (launch, close) use it.
 
 `Tx` offers one typed method per operation the services need, for example
 `insert_message`, `insert_received` (another team's message under its own
@@ -554,7 +650,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 7: `crates/teamwire-store/src/schema/v1.sql` to `v7.sql`,
+The schema is version 8: `crates/teamwire-store/src/schema/v1.sql` to `v8.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -563,7 +659,7 @@ adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
 row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
-(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. The tables and columns are those in
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028). The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

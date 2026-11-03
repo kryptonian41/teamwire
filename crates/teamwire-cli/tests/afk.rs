@@ -108,11 +108,6 @@ impl Bed {
         self.lead = Some(child);
     }
 
-    /// Takes the session file away, so the lead's process cannot be found.
-    fn forget_lead_process(&self) {
-        std::fs::remove_dir_all(self.claude.path().join("sessions")).unwrap();
-    }
-
     fn task(&self) -> PathBuf {
         self.work.path().join("task.md")
     }
@@ -440,7 +435,8 @@ fn a_start_without_a_host_is_refused_before_anything_is_made() {
 #[test]
 fn a_start_that_cannot_find_the_leads_process_is_refused_before_anything_is_made() {
     let bed = Bed::new(true);
-    bed.forget_lead_process();
+    // Takes the session file away, so the lead's process cannot be found.
+    std::fs::remove_dir_all(bed.claude.path().join("sessions")).unwrap();
     refused(&bed.start_run("run", &[]), "no_lead_process");
     assert!(bed.nothing_made("run"));
 }

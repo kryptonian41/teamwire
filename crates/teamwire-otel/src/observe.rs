@@ -153,6 +153,7 @@ pub(crate) fn observe(h: &History, event: &Event, team: &str) -> Vec<Observation
         | EventType::DeliveryReminded
         | EventType::DeliveryResent
         | EventType::DeliveryReentered
+        | EventType::DeliveryRecipientStopped
         | EventType::WatchStarted
         | EventType::WatchStopped
         | EventType::VerifyWaived
@@ -465,6 +466,7 @@ fn member_state(kind: EventType) -> Option<&'static str> {
         | EventType::DeliveryReminded
         | EventType::DeliveryResent
         | EventType::DeliveryReentered
+        | EventType::DeliveryRecipientStopped
         | EventType::ResultDelivering
         | EventType::ResultDelivered
         | EventType::ResultUndelivered

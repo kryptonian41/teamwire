@@ -474,6 +474,22 @@ async fn the_member_only_tools_say_so_in_their_descriptions() {
 }
 
 #[tokio::test]
+async fn the_send_tool_states_the_message_limits() {
+    let rig = Rig::new();
+    let lead = rig.client(McpCaller::Lead).await;
+    let listing = lead.list_tools(None).await.unwrap();
+    let send = listing
+        .tools
+        .iter()
+        .find(|t| t.name == "team_send")
+        .unwrap();
+    let text = send.input_schema["properties"]["text"]["description"]
+        .as_str()
+        .unwrap();
+    assert!(text.contains("600") && text.contains("800"), "{text}");
+}
+
+#[tokio::test]
 async fn a_team_with_no_database_names_the_archive_but_stays_an_identity_refusal() {
     let rig = Rig::new();
     let lead = rig.client(McpCaller::Lead).await;

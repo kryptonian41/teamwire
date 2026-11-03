@@ -1,15 +1,20 @@
 //! Finding and installing the fake binaries, finding the real `teamwire`
 //! binary for tests that run it from outside `teamwire-cli`, and building a
-//! `PATH` on which the real `herdr` and `claude` cannot be found.
+//! `PATH` on which the real hosts and harnesses cannot be found.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 /// The directories a test's `PATH` keeps after the fake binaries: enough for
-/// `sh`, `git`, `cat` and `sleep`, and nowhere the real `herdr` or `claude`
-/// lives.
+/// `sh`, `git`, `cat` and `sleep`. One that holds a real program of
+/// `REAL_BINS` is replaced by a shadow of it (`shadow`).
 const SYSTEM_DIRS: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
+
+/// The real programs a test must never reach by name: the hosts, which
+/// type into the user's panes, and the harnesses, which start real sessions.
+/// A Linux package puts `tmux` and `herdr` in /usr/bin; macOS has none there.
+const REAL_BINS: [&str; 4] = ["herdr", "claude", "tmux", "codex"];
 
 /// The directory that holds the built `fake-herdr` and `fake-claude`.
 #[derive(Debug, Clone)]
@@ -261,9 +266,24 @@ pub struct FakeBinDir {
 
 impl FakeBinDir {
     fn new(dir: PathBuf) -> std::io::Result<Self> {
-        let system: Vec<PathBuf> = SYSTEM_DIRS.iter().map(PathBuf::from).collect();
+        let mut system: Vec<PathBuf> = Vec::new();
+        let mut seen: Vec<PathBuf> = Vec::new();
+        for (i, d) in SYSTEM_DIRS.iter().map(Path::new).enumerate() {
+            // On a merged-/usr system such as Arch, /bin, /sbin and /usr/sbin
+            // all lead to /usr/bin, and one shadow of it is enough.
+            let real = d.canonicalize().unwrap_or_else(|_| d.to_path_buf());
+            if seen.contains(&real) {
+                continue;
+            }
+            seen.push(real);
+            if REAL_BINS.iter().any(|b| d.join(b).exists()) {
+                system.push(shadow(d, &dir.join(format!(".system{i}")))?);
+            } else {
+                system.push(d.to_path_buf());
+            }
+        }
         for d in &system {
-            for real in ["herdr", "claude"] {
+            for real in REAL_BINS {
                 if d.join(real).exists() {
                     return Err(std::io::Error::other(format!(
                         "the real {real} is on the test PATH in {}",
@@ -282,10 +302,29 @@ impl FakeBinDir {
     }
 
     /// The value for `PATH`: the fake directory first, then system
-    /// directories that hold no real `herdr` or `claude`.
+    /// directories that hold no program of `REAL_BINS`.
     pub fn path(&self) -> &OsString {
         &self.path
     }
+}
+
+/// Makes `into` a directory with a link to every entry of `system` except the
+/// programs of `REAL_BINS`. A Linux package installs `herdr` and `tmux` into
+/// /usr/bin, beside the `sh` and `git` the tests need, so that directory
+/// cannot go on the test `PATH` as it is.
+fn shadow(system: &Path, into: &Path) -> std::io::Result<PathBuf> {
+    std::fs::create_dir_all(into)?;
+    for entry in std::fs::read_dir(system)? {
+        let name = entry?.file_name();
+        if REAL_BINS.iter().any(|b| name == *b) {
+            continue;
+        }
+        let link = into.join(&name);
+        if link.symlink_metadata().is_err() {
+            std::os::unix::fs::symlink(system.join(&name), &link)?;
+        }
+    }
+    Ok(into.to_path_buf())
 }
 
 #[cfg(test)]

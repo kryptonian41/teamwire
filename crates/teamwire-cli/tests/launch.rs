@@ -378,6 +378,44 @@ fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_creat
 }
 
 #[test]
+fn a_pi_member_launches_when_pi_is_on_path() {
+    let rig = Rig::new();
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "scout", "title": "pi work", "mode": "pane", "cwd": rig.work.path(),
+         "task": "look around", "harness": "pi"}]});
+    let file = rig.spec_file(&spec);
+    let args = ["--dry-run", "--spec", file.to_str().unwrap()];
+    let out = rig.launch(&args, None, false);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("refused: member scout: harness pi is not on PATH"),
+        "{}",
+        text(&out.stderr)
+    );
+
+    let stubs = rig.work.path().join("stubs");
+    std::fs::create_dir_all(&stubs).unwrap();
+    let pi = stubs.join("pi");
+    write_file(&pi, "#!/bin/sh\necho 1.4.0\n");
+    std::fs::set_permissions(&pi, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let fakes = rig
+        .herdr
+        .env()
+        .into_iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v)
+        .unwrap();
+    let path = format!("{}:{fakes}", stubs.display());
+    let out = rig.launch_with(&args, None, false, &[("PATH", path.as_str())]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("would launch"),
+        "{}",
+        text(&out.stdout)
+    );
+}
+
+#[test]
 fn the_unverifiable_implementer_warning_names_what_is_missing() {
     let rig = Rig::new();
     let repo = rig.repo();

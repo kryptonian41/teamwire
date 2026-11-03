@@ -12,9 +12,9 @@ use teamwire_core::{
     Config, Harness, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply,
 };
 use teamwire_msg::CallerEnv;
-use teamwire_store::{Ctx, Store, same_hash, token_hash};
+use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::{caller_env, carries_member_identity, state_home, warn};
+use crate::cmd::shared::{caller_env, carries_member_identity, state_home, warn};
 use crate::recorded::Recorded;
 use crate::wiring::{Wiring, claude_harness_id};
 use crate::{Global, HookArgs, HookCommand, HookTarget};
@@ -120,10 +120,17 @@ fn member_hook_in(
     )?;
     let mut store = Recorded::new(opened, &wiring.clock, kind.op());
     let found = said(
-        store.read(|tx| Ok((tx.member(role)?, tx.member_token_hash(role)?))),
+        // The token is checked even when absent, so every hook reads the
+        // same rows and a damaged one fails each the same way.
+        store.read(|tx| {
+            Ok((
+                tx.member(role)?,
+                tx.token_matches(role, token.unwrap_or_default())?,
+            ))
+        }),
         "the member could not be read",
     )?;
-    let (Some(member), stored_hash) = found else {
+    let (Some(member), token_matches) = found else {
         return quit(&format!("team {team} has no member {role}"));
     };
     if member.state == MemberState::Removed {
@@ -148,11 +155,10 @@ fn member_hook_in(
 
     if kind == MemberHook::SessionStart {
         // Only the member's own token may name its session (ADR 0023 point 5).
-        let (Some(stored), Some(token)) = (stored_hash, token) else {
-            return quit("no member token to prove the session with");
-        };
-        if !same_hash(&token_hash(token), &stored) {
-            return quit("the token does not belong to this member");
+        match (token, token_matches) {
+            (Some(_), Some(true)) => {}
+            (Some(_), Some(false)) => return quit("the token does not belong to this member"),
+            _ => return quit("no member token to prove the session with"),
         }
         said(
             store.write(|tx| tx.set_member_session(role, &turn.session)),

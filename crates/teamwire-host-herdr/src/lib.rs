@@ -94,6 +94,31 @@ impl Herdr {
         cli::call_text(self.platform.as_ref(), &args, timeout)
     }
 
+    /// `format` is herdr's `text`, or `ansi` to keep the style codes.
+    fn read_screen(
+        &self,
+        place: &Place,
+        lines: u16,
+        format: &str,
+        timeout: Duration,
+    ) -> Result<String, HostError> {
+        let lines = lines.to_string();
+        self.call_text(
+            &[
+                "agent",
+                "read",
+                &place.id,
+                "--source",
+                "recent-unwrapped",
+                "--lines",
+                &lines,
+                "--format",
+                format,
+            ],
+            timeout,
+        )
+    }
+
     fn agent(&self, place: &Place, timeout: Duration) -> Result<shapes::AgentInfo, HostError> {
         shapes::agent_info(self.call(&["agent", "get", &place.id], timeout)?)
     }
@@ -171,19 +196,16 @@ impl Host for Herdr {
     }
 
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError> {
-        let lines = lines.to_string();
-        self.call_text(
-            &[
-                "agent",
-                "read",
-                &place.id,
-                "--source",
-                "recent-unwrapped",
-                "--lines",
-                &lines,
-            ],
-            timeout,
-        )
+        self.read_screen(place, lines, "text", timeout)
+    }
+
+    fn read_tail_styled(
+        &self,
+        place: &Place,
+        lines: u16,
+        timeout: Duration,
+    ) -> Result<String, HostError> {
+        self.read_screen(place, lines, "ansi", timeout)
     }
 
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError> {

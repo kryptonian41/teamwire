@@ -564,3 +564,25 @@ fn a_bare_pane_id_goes_to_the_server_the_client_value_names() {
         "list records the server too"
     );
 }
+
+#[test]
+fn the_styled_tail_keeps_dim_text_marked_and_the_plain_tail_does_not() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    let req = request(
+        "tw_t_dim",
+        dir.path(),
+        &[
+            "sh",
+            "-c",
+            "printf 'typed \\033[2mhint\\033[0m\\n'; sleep 30",
+        ],
+    );
+    let place = tmux.spawn(&req, SPAWN).unwrap();
+    assert!(screen_shows(&tmux, &place, "typed hint"));
+    let styled = tmux.read_tail_styled(&place, 20, T).unwrap();
+    assert!(styled.contains("\u{1b}[2mhint"), "{styled:?}");
+    let plain = tmux.read_tail(&place, 20, T).unwrap();
+    assert!(!plain.contains('\u{1b}'), "{plain:?}");
+}

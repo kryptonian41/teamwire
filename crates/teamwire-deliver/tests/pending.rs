@@ -7,9 +7,9 @@
 )]
 
 use teamwire_core::{
-    Actor, HarnessId, HostId, LeadRoute, MessageType, Recipient, TeamName, Timestamp,
+    Actor, HarnessId, HostId, LeadRoute, Message, MessageType, Recipient, Role, TeamName, Timestamp,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started, is_pending_stale};
+use teamwire_deliver::{AttemptHistory, PENDING_STALE};
 use teamwire_fakes::TestHome;
 use teamwire_store::{NewMessage, NewTeam, Store};
 
@@ -17,13 +17,9 @@ fn at(secs: i64) -> Timestamp {
     Timestamp::from_unix_millis(1_790_000_000_000 + secs * 1000).unwrap()
 }
 
-#[test]
-fn a_resend_to_another_team_restarts_only_that_rows_clock() {
-    let home = TestHome::new().unwrap();
-    let team = TeamName::parse("alpha").unwrap();
-    let mut store = Store::open(home.path(), &team).unwrap();
-    let other = Recipient::parse("db@beta").unwrap();
-    let message = store
+/// A team with one message from the lead to `recipients`, sent at `at(1)`.
+fn one_message(store: &mut Store, team: &TeamName, recipients: Vec<Recipient>) -> Message {
+    store
         .write(|tx| {
             tx.create_team(
                 at(0),
@@ -45,20 +41,29 @@ fn a_resend_to_another_team_restarts_only_that_rows_clock() {
                     commit: None,
                     body: "x".to_owned(),
                     client_key: None,
-                    recipients: vec![Recipient::Lead, other.clone()],
+                    recipients,
                 },
             )
         })
         .unwrap()
-        .message;
+        .message
+}
+
+#[test]
+fn a_resend_to_another_team_restarts_only_that_rows_clock() {
+    let home = TestHome::new().unwrap();
+    let team = TeamName::parse("alpha").unwrap();
+    let mut store = Store::open(home.path(), &team).unwrap();
+    let other = Recipient::parse("db@beta").unwrap();
+    let message = one_message(&mut store, &team, vec![Recipient::Lead, other.clone()]);
     store
         .write(|tx| tx.begin_resend(at(100), &message.ulid, &other))
         .unwrap();
     let (lead, remote) = store
         .read(|tx| {
             Ok((
-                attempt_started(tx, &message, &Recipient::Lead)?,
-                attempt_started(tx, &message, &other)?,
+                AttemptHistory::read(tx, &message, &Recipient::Lead)?.started(),
+                AttemptHistory::read(tx, &message, &other)?.started(),
             ))
         })
         .unwrap();
@@ -69,11 +74,50 @@ fn a_resend_to_another_team_restarts_only_that_rows_clock() {
     let (lead_stale, remote_stale) = store
         .read(|tx| {
             Ok((
-                is_pending_stale(tx, &message, &Recipient::Lead, now)?,
-                is_pending_stale(tx, &message, &other, now)?,
+                AttemptHistory::read(tx, &message, &Recipient::Lead)?.is_stale(now),
+                AttemptHistory::read(tx, &message, &other)?.is_stale(now),
             ))
         })
         .unwrap();
     assert!(lead_stale);
     assert!(!remote_stale);
+}
+
+fn member(role: &str) -> Recipient {
+    Recipient::Member(Role::parse(role).unwrap())
+}
+
+#[test]
+fn a_stop_of_the_recipient_during_the_attempt_is_counted_and_a_resend_starts_again() {
+    let home = TestHome::new().unwrap();
+    let team = TeamName::parse("alpha").unwrap();
+    let mut store = Store::open(home.path(), &team).unwrap();
+    let (inv, a) = (member("inv"), member("a"));
+    let message = one_message(&mut store, &team, vec![inv.clone(), a.clone()]);
+    let stops = |store: &Store, to: &Recipient| {
+        store
+            .read(|tx| Ok(AttemptHistory::read(tx, &message, to)?.stops()))
+            .unwrap()
+    };
+    assert_eq!(stops(&store, &inv), 0);
+
+    store
+        .write(|tx| tx.record_recipient_stopped(at(2), &message.ulid, &inv))
+        .unwrap();
+    assert_eq!(stops(&store, &inv), 1);
+    // The other recipient's row has its own attempt and its own stops.
+    assert_eq!(stops(&store, &a), 0);
+
+    store
+        .write(|tx| tx.begin_resend(at(3), &message.ulid, &inv))
+        .unwrap();
+    assert_eq!(
+        stops(&store, &inv),
+        0,
+        "a stop before the resend is of the earlier attempt"
+    );
+    store
+        .write(|tx| tx.record_recipient_stopped(at(4), &message.ulid, &inv))
+        .unwrap();
+    assert_eq!(stops(&store, &inv), 1);
 }

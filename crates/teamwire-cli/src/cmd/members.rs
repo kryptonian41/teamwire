@@ -6,7 +6,8 @@ use serde_json::json;
 use teamwire_core::TeamName;
 use teamwire_msg::{RosterEntry, roster};
 
-use crate::cmd::send::{error_code, fail, say, with_read_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{fail, say, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, MembersArgs, USAGE};
 

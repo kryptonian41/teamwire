@@ -16,7 +16,7 @@ use crate::final_message;
 use crate::lead_stop::watch_command;
 use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
-use crate::reminder::unread;
+use crate::reminder::{mark_stopped, unread};
 use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
 
 /// The cap on a result line that ends with the no-watch note: the 1000
@@ -101,6 +101,7 @@ fn run(
     else {
         return Ok(TurnEndReply::Continue);
     };
+    mark_stopped(ctx, me);
     let latest = ctx
         .store
         .read(|tx| tx.latest_completion(me))?

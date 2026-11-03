@@ -88,6 +88,7 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
         | EventType::DeliveryReminded
         | EventType::DeliveryResent
         | EventType::DeliveryReentered
+        | EventType::DeliveryRecipientStopped
         | EventType::ResultDelivering
         | EventType::ResultUnconfirmed
         | EventType::WatchStarted

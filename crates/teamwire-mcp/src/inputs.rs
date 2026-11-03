@@ -19,6 +19,8 @@ pub(crate) struct SendInput {
     /// to its own team only. A lead sends no notice.
     #[serde(rename = "type")]
     pub(crate) kind: String,
+    /// The message: at most 600 characters for a notice, 800 for a finding,
+    /// question or answer. Longer detail belongs in your report file.
     pub(crate) text: String,
     /// Required for a notice: the commit the notice is about.
     pub(crate) commit: Option<String>,

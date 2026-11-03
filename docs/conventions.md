@@ -44,6 +44,7 @@ teamwire/
 │   ├── teamwire-host-tmux/
 │   ├── teamwire-harness-claude/
 │   ├── teamwire-harness-codex/
+│   ├── teamwire-harness-pi/
 │   ├── teamwire-deliver/
 │   ├── teamwire-msg/
 │   ├── teamwire-report/
@@ -310,7 +311,7 @@ A crate may depend only on crates in lower layers. `cargo xtask tidy` reads
 | --- | --- | --- |
 | 0 | `teamwire-core` | external crates only |
 | 1 | `teamwire-store`, `teamwire-platform` | 0 |
-| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude`, `teamwire-harness-codex` | 0, `teamwire-platform` |
+| 2 | `teamwire-host-herdr`, `teamwire-host-tmux`, `teamwire-harness-claude`, `teamwire-harness-codex`, `teamwire-harness-pi` | 0, `teamwire-platform` |
 | 3 | `teamwire-deliver`, `teamwire-verify` | 0, 1 |
 | 4 | `teamwire-msg`, `teamwire-report`, `teamwire-launch`, `teamwire-watch`, `teamwire-otel`, `teamwire-close` | 0, 1, 3. No layer-4 crate depends on another; `teamwire-close` reads what launch recorded from the store |
 | 5 | `teamwire-mcp` | 0, 1, 3, 4 |

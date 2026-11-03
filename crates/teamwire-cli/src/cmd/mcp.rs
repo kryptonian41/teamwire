@@ -6,7 +6,7 @@ use std::sync::Arc;
 use teamwire_core::{Config, Role, TeamName};
 use teamwire_mcp::{McpCaller, ServerEnv, serve_stdio};
 
-use crate::cmd::send::{REFUSED, caller_env, fail, home_or_refuse, member_token};
+use crate::cmd::shared::{REFUSED, caller_env, fail, home_or_refuse, member_token};
 use crate::wiring::{Wiring, WiringEnv, wire};
 use crate::{Global, McpArgs, USAGE};
 

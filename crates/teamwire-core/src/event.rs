@@ -46,6 +46,7 @@ string_enum! {
         DeliveryReminded => "delivery.reminded",
         DeliveryResent => "delivery.resent",
         DeliveryReentered => "delivery.reentered",
+        DeliveryRecipientStopped => "delivery.recipient_stopped",
         ResultDelivering => "result.delivering",
         ResultDelivered => "result.delivered",
         ResultUndelivered => "result.undelivered",

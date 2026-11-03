@@ -66,8 +66,8 @@ impl Harness for Stub {
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError> {
         self.inner.resume_spec(m, s)
     }
-    fn current_session(&self) -> Option<CallerSession> {
-        self.inner.current_session()
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.inner.caller_session(get)
     }
     fn processes_for_session(&self, s: &SessionId, t: Duration) -> Result<Vec<Pid>, HarnessError> {
         self.inner.processes_for_session(s, t)

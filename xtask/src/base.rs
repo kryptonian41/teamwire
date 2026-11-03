@@ -51,9 +51,23 @@ pub(crate) fn check_base(root: &Path, base: &str, found: &mut Findings) -> Resul
     {
         found.notes.push(format!("PROTECTED-CHANGED {path}"));
     }
+    // `weakened` reads the `+++ b/<path>` headers, and a user's git config
+    // (diff.mnemonicprefix, diff.noprefix, diff.external, color.diff) can
+    // change what `git diff` prints there.
     let diff = git(
         root,
-        &["diff", "-U0", "--no-renames", &merge_base, "--", "*.rs"],
+        &[
+            "diff",
+            "-U0",
+            "--no-renames",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            &merge_base,
+            "--",
+            "*.rs",
+        ],
     )?;
     found.notes.extend(weakened(&diff));
     Ok(())

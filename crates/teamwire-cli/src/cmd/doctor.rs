@@ -10,17 +10,15 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use teamwire_core::platform::ProcessRef;
-use teamwire_core::{
-    Clock, Command, Config, Pid, Platform, Registry, ReportState, TeamName, TeamState,
-};
-use teamwire_store::{Ctx, SCHEMA_VERSION, Store};
+use teamwire_core::{CheckOutcome, Clock, Command, LeadCommand, LeadTarget, Platform, Registry};
 
 use crate::Global;
-use crate::cmd::install::wanted_entry;
-use crate::cmd::lead_setup_check::{self, Outcome};
-use crate::cmd::send::{PARTIAL, home_or_refuse, say};
-use crate::wiring::{ClaudeConfig, CodexSetup, McpEntry, Wiring};
+use crate::cmd::doctor_teams::database_checks;
+pub(crate) use crate::cmd::host_pick::{Host, HostPick, pick_host};
+use crate::cmd::install::wanted_command;
+use crate::cmd::lead_setup_check::{self, HarnessInputs, on_path, version_check};
+use crate::cmd::shared::{PARTIAL, home_or_refuse, say};
+use crate::wiring::{ClaudeConfig, PiConfig, SKILL_TEXT, Wiring};
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
@@ -29,20 +27,6 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Each probe of a harness or host binary waits this long, then warns.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// The flags teamwire passes when it starts a member
-/// (`teamwire-harness-claude/src/launch.rs`). A `claude` whose help does not
-/// list one may not support it; the launch itself is the real test.
-const CLAUDE_FLAGS: [&str; 8] = [
-    "--session-id",
-    "--resume",
-    "--permission-mode",
-    "--append-system-prompt-file",
-    "--settings",
-    "--mcp-config",
-    "--model",
-    "--effort",
-];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Level {
@@ -67,16 +51,24 @@ impl Check {
         }
     }
 
-    fn pass(name: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub(crate) fn pass(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Self::new(Level::Pass, name, detail)
     }
 
-    fn warn(name: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub(crate) fn warn(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Self::new(Level::Warn, name, detail)
     }
 
-    fn fail(name: impl Into<String>, detail: impl Into<String>) -> Self {
+    pub(crate) fn fail(name: impl Into<String>, detail: impl Into<String>) -> Self {
         Self::new(Level::Fail, name, detail)
+    }
+
+    fn of(name: impl Into<String>, outcome: CheckOutcome) -> Self {
+        match outcome {
+            CheckOutcome::Pass(detail) => Self::pass(name, detail),
+            CheckOutcome::Warn(detail) => Self::warn(name, detail),
+            CheckOutcome::Fail(detail) => Self::fail(name, detail),
+        }
     }
 
     fn line(&self) -> String {
@@ -87,110 +79,6 @@ impl Check {
         };
         format!("{tag} {}: {}", self.name, self.detail)
     }
-}
-
-/// The host teamwire starts members in: herdr inside a herdr pane
-/// (`HERDR_ENV=1`), else tmux inside a tmux session (`TMUX` set), else none.
-/// Only the tools of the host in use are required.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Host {
-    Herdr,
-    Tmux,
-    None,
-}
-
-impl Host {
-    fn id(self) -> &'static str {
-        match self {
-            Self::Herdr => "herdr",
-            Self::Tmux => "tmux",
-            Self::None => "none",
-        }
-    }
-
-    fn from_id(id: &str) -> Self {
-        match id {
-            "herdr" => Self::Herdr,
-            "tmux" => Self::Tmux,
-            _ => Self::None,
-        }
-    }
-
-    pub(crate) fn detect(herdr_env: Option<&str>, tmux: Option<&str>) -> Self {
-        if herdr_env == Some("1") {
-            Self::Herdr
-        } else if tmux.is_some_and(|t| !t.is_empty()) {
-            Self::Tmux
-        } else {
-            Self::None
-        }
-    }
-}
-
-/// The most parents `nearest_host` looks at. A loop in the chain stops here.
-const MAX_PARENT_STEPS: usize = 64;
-
-/// The first of `start` and its parents, nearest first, whose program is
-/// `tmux` or `herdr`. `parent_of` gives a pid's parent and its own program
-/// name; a failed lookup ends the walk.
-fn nearest_host(
-    start: Pid,
-    parent_of: &dyn Fn(Pid) -> Option<(Pid, String)>,
-) -> Option<&'static str> {
-    let mut pid = start;
-    for _ in 0..MAX_PARENT_STEPS {
-        let (parent, name) = parent_of(pid)?;
-        // Linux names the tmux server "tmux: server".
-        match name
-            .split_whitespace()
-            .next()
-            .map(|n| n.trim_end_matches(':'))
-        {
-            Some("tmux") => return Some("tmux"),
-            Some("herdr") => return Some("herdr"),
-            _ => {}
-        }
-        pid = parent;
-    }
-    None
-}
-
-/// The lead's host and the reason for the pick, for `doctor`.
-pub(crate) struct HostPick {
-    pub(crate) id: &'static str,
-    pub(crate) why: String,
-}
-
-/// `herdr` inside a herdr pane (`HERDR_ENV=1`), else `tmux` inside a tmux
-/// client (`TMUX` set), otherwise `none`. A tmux server started from a herdr
-/// pane copies `HERDR_ENV` into its windows, and herdr started inside tmux
-/// carries `TMUX`, so when both are set the nearest `tmux` or `herdr`
-/// among this process's parents decides; with none found, herdr wins.
-pub(crate) fn pick_host(
-    herdr_env: Option<&str>,
-    tmux: Option<&str>,
-    parent_of: &dyn Fn(Pid) -> Option<(Pid, String)>,
-) -> HostPick {
-    // The rule when the parents cannot tell: herdr first.
-    let first = Host::detect(herdr_env, tmux).id();
-    let both = herdr_env == Some("1") && tmux.is_some_and(|t| !t.is_empty());
-    let (id, why) = match (both, first) {
-        (false, "herdr") => (first, "HERDR_ENV is 1".to_owned()),
-        (false, "tmux") => (first, "TMUX is set".to_owned()),
-        (false, _) => (first, "neither HERDR_ENV nor TMUX is set".to_owned()),
-        (true, _) => match nearest_host(Pid::new(std::process::id()), parent_of) {
-            Some(id) => (
-                id,
-                format!("both HERDR_ENV and TMUX are set; the nearest parent is {id}"),
-            ),
-            None => (
-                first,
-                "both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first"
-                    .to_owned(),
-            ),
-        },
-    };
-    HostPick { id, why }
 }
 
 /// Each of these overrides the stored Claude login for every member and
@@ -208,18 +96,19 @@ pub(crate) struct Inputs<'a> {
     pub(crate) host: Host,
     pub(crate) home: PathBuf,
     pub(crate) platform: &'a dyn Platform,
-    /// The adapters and the clock `status` reads members with.
+    /// The adapters and the clock `status` reads members with. Each
+    /// harness's program and lead setup are checked through it too.
     pub(crate) registry: &'a Registry,
     pub(crate) clock: &'a dyn Clock,
     /// `$PATH`, where the harness and host binaries are looked for.
     pub(crate) path_var: Option<OsString>,
-    /// Where Claude Code keeps `settings.json`, the skills and `.claude.json`.
+    /// Where Claude Code keeps `settings.json`, which holds herdr's hook.
     pub(crate) claude: ClaudeConfig,
-    /// The Codex adapter, whose plugin is checked when `codex` is on PATH.
-    pub(crate) codex: CodexSetup,
-    /// The MCP entry `teamwire install` would register from this binary, or
-    /// why it cannot be worked out.
-    pub(crate) lead_entry: Result<McpEntry, String>,
+    /// Where pi keeps its files, which hold herdr's pi integration.
+    pub(crate) pi: PiConfig,
+    /// The command `teamwire install` would give each lead setup from this
+    /// binary, or why it cannot be worked out.
+    pub(crate) lead_command: Result<LeadCommand, String>,
     /// True when this binary is a cargo build under `target/`.
     pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
@@ -272,185 +161,6 @@ fn disk_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     vec![free, network]
 }
 
-/// The database checks of one team: opens, `quick_check`, the close lock and
-/// the watch lease.
-fn team_checks(inputs: &Inputs<'_>, team: &TeamName) -> Vec<Check> {
-    let name = |what: &str| format!("team {team} {what}");
-    let mut store = match Store::open_read_only(&inputs.home, team) {
-        Ok(store) => store,
-        Err(e) => return vec![Check::fail(name("database"), e.to_string())],
-    };
-    let mut checks = Vec::new();
-    match store.schema_version() {
-        Ok(v) if v == SCHEMA_VERSION => {
-            checks.push(Check::pass(name("schema"), format!("version {v}")));
-        }
-        // A read-only open refuses a newer schema, so this is an older one.
-        // Reads work on it, and the next command that writes migrates it.
-        Ok(v) => checks.push(Check::pass(
-            name("schema"),
-            format!("version {v}; the next write migrates it to {SCHEMA_VERSION}"),
-        )),
-        Err(e) => checks.push(Check::fail(name("schema"), e.to_string())),
-    }
-    match store.quick_check() {
-        Ok(text) if text == "ok" => checks.push(Check::pass(name("quick_check"), "ok")),
-        Ok(text) => checks.push(Check::fail(
-            name("quick_check"),
-            format!("the database has problems: {text}"),
-        )),
-        Err(e) => checks.push(Check::fail(name("quick_check"), e.to_string())),
-    }
-    let rows = store.read(|tx| Ok((tx.team()?, tx.watch_lease()?)));
-    match rows {
-        Ok((team_row, lease)) => {
-            if team_row
-                .as_ref()
-                .is_some_and(|r| r.state == TeamState::Open)
-            {
-                checks.push(older_members_check(inputs, &mut store, team));
-            }
-            // The pid with its recorded start time: a pid that a later
-            // process reused is gone, as `close --clear-stale-lock` judges it.
-            if let Some(row) = team_row
-                && row.state == TeamState::Closing
-                && let Some(pid) = row.closing_pid
-                && !inputs.platform.process_alive(ProcessRef {
-                    pid,
-                    started: row.closing_started,
-                })
-            {
-                checks.push(Check::fail(
-                    name("close lock"),
-                    format!(
-                        "held by pid {pid}, which is gone; run \
-                         `teamwire close {team} --clear-stale-lock`"
-                    ),
-                ));
-            }
-            checks.push(counters_check(&mut store, team));
-            if let Some(lease) = lease
-                && teamwire_deliver::watch_lease_is_dead(
-                    &lease,
-                    inputs.platform,
-                    inputs.clock.now(),
-                )
-            {
-                // The same rule as `status`: a live pid with an old heartbeat
-                // is a pid the system gave to another process.
-                let why = if inputs.platform.pid_alive(lease.pid) {
-                    "is alive but has not beaten for over 600 s"
-                } else {
-                    "is gone"
-                };
-                checks.push(Check::warn(
-                    name("watch lease"),
-                    format!(
-                        "held by pid {}, which {why}; the next `teamwire watch {team}` takes it over",
-                        lease.pid
-                    ),
-                ));
-            }
-        }
-        Err(e) => checks.push(Check::fail(name("rows"), e.to_string())),
-    }
-    checks
-}
-
-/// A message counter below the largest value in use makes every later send
-/// collide. Doctor only prints the repair, so the user decides to run it.
-fn counters_check(store: &mut Store, team: &TeamName) -> Check {
-    let name = format!("team {team} counters");
-    let found = store.read(|tx| Ok((tx.counter_floors()?, tx.counters()?.all_or_corrupt()?)));
-    let (floors, counters) = match found {
-        Ok(found) => found,
-        Err(e) => return Check::fail(name, e.to_string()),
-    };
-    let damaged: Vec<String> = floors
-        .iter()
-        .filter_map(|(counter, used)| {
-            let stored = counters.iter().find(|(n, _)| n == counter).map(|c| c.1);
-            (stored.unwrap_or(0) < *used).then(|| {
-                let now = stored.map_or_else(|| "missing".to_owned(), |v| v.to_string());
-                // An upsert, because a missing row is also damage and an
-                // UPDATE of it would change nothing.
-                format!(
-                    "counter {counter} is {now} but {used} is in use; repair with: \
-                     INSERT INTO counters (name, value) VALUES ('{counter}', {used}) \
-                     ON CONFLICT (name) DO UPDATE SET value = excluded.value;"
-                )
-            })
-        })
-        .collect();
-    if damaged.is_empty() {
-        return Check::pass(name, "every message counter is at or above its largest id");
-    }
-    Check::fail(name, damaged.join(" "))
-}
-
-/// The members `status` marks as started by another build of teamwire. The
-/// check reuses the status view, so doctor and `status` cannot disagree.
-fn older_members_check(inputs: &Inputs<'_>, store: &mut Store, team: &TeamName) -> Check {
-    let name = format!("team {team} older members");
-    let config = Config::default();
-    let ctx = Ctx {
-        home: &inputs.home,
-        store,
-        registry: inputs.registry,
-        platform: inputs.platform,
-        clock: inputs.clock,
-        config: &config,
-    };
-    let view = teamwire_watch::status_with(&ctx, None);
-    if !view.errors.is_empty() {
-        return Check::warn(
-            name,
-            format!("could not read the members: {}", view.errors.join("; ")),
-        );
-    }
-    let older: Vec<String> = view
-        .members
-        .iter()
-        // A member whose result is settled has finished, so relaunching it
-        // changes nothing (the rule of the lead's Stop hook). A result still
-        // pending or delivering is what the watch's UNREPORTED line is about,
-        // so that member stays listed.
-        .filter(|m| {
-            m.older_build
-                && m.result
-                    .is_none_or(|r| matches!(r, ReportState::Pending | ReportState::Delivering))
-        })
-        .map(|m| format!("{} ({})", m.role, m.started_by.as_deref().unwrap_or("?")))
-        .collect();
-    if older.is_empty() {
-        return Check::pass(name, "no member was started by another build");
-    }
-    Check::warn(
-        name,
-        format!(
-            "{} started by a build other than {}; relaunch the member, or ignore if its \
-             wiring did not change. A member started before builds recorded their \
-             commit shows as 0.0.0",
-            older.join(", "),
-            teamwire_store::WRITER_VERSION
-        ),
-    )
-}
-
-fn database_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let teams = match teamwire_store::team_names(&inputs.home) {
-        Ok(teams) => teams,
-        Err(e) => return vec![Check::fail("databases", e.to_string())],
-    };
-    if teams.is_empty() {
-        return vec![Check::pass(
-            "databases",
-            format!("no teams under {}", inputs.home.display()),
-        )];
-    }
-    teams.iter().flat_map(|t| team_checks(inputs, t)).collect()
-}
-
 /// The hook herdr manages reports a session's state to herdr. It is a
 /// command in Claude Code's `settings.json` that names herdr.
 fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
@@ -470,6 +180,25 @@ fn herdr_hook_check(inputs: &Inputs<'_>) -> Check {
     }
 }
 
+/// herdr learns a pi session from its own pi extension, and delivery to a pi
+/// member under herdr needs that. Checked only when `pi` is on PATH.
+fn herdr_pi_check(inputs: &Inputs<'_>) -> Option<Check> {
+    on_path(inputs.path_var.as_ref(), &inputs.pi.pi_bin)?;
+    let file = inputs.pi.agent_dir.join("extensions/herdr-agent-state.ts");
+    let name = "herdr pi integration";
+    Some(if file.is_file() {
+        Check::pass(name, format!("found at {}", file.display()))
+    } else {
+        Check::warn(
+            name,
+            format!(
+                "{} is missing, so herdr cannot find a pi member's session; run `herdr integration install pi`",
+                file.display()
+            ),
+        )
+    })
+}
+
 /// `git check-ignore` exits 0 for an ignored path, 1 for a path that is not
 /// ignored, and 128 outside a repository.
 fn worktrees_check(inputs: &Inputs<'_>) -> Check {
@@ -487,11 +216,6 @@ fn worktrees_check(inputs: &Inputs<'_>) -> Check {
         Ok(_) => Check::pass(".worktrees ignored", "not inside a git repository"),
         Err(e) => Check::warn(".worktrees ignored", format!("could not run git: {e}")),
     }
-}
-
-fn on_path(path_var: Option<&OsString>, program: &str) -> Option<PathBuf> {
-    let dirs = std::env::split_paths(path_var?);
-    dirs.map(|d| d.join(program)).find(|p| p.is_file())
 }
 
 /// Runs `program args` and returns its output, or why it gave none. A probe
@@ -514,87 +238,66 @@ fn probe(inputs: &Inputs<'_>, program: &Path, args: &[&str]) -> Result<String, S
     Ok(text)
 }
 
-/// The first line of a `--version` answer, which is the version itself.
-fn version_check(inputs: &Inputs<'_>, program: &str, path: &Path, flag: &str) -> Check {
-    let name = format!("{program} version");
-    match probe(inputs, path, &[flag]) {
-        Ok(text) => Check::pass(name, text.lines().next().unwrap_or("").trim().to_owned()),
-        Err(e) => Check::warn(name, format!("`{program} {flag}` failed: {e}")),
-    }
+/// The harness checks of `lead_setup_check`, which loop over the registry.
+fn harness_checks(
+    inputs: &Inputs<'_>,
+    checks: impl FnOnce(&HarnessInputs<'_>) -> Vec<(String, CheckOutcome)>,
+) -> Vec<Check> {
+    let probe = |path: &Path, args: &[&str]| probe(inputs, path, args);
+    let target = match &inputs.lead_command {
+        Ok(command) => Ok(LeadTarget {
+            command,
+            home: &inputs.home,
+            shared_skill: SKILL_TEXT,
+            compare_files: !inputs.running_a_build,
+        }),
+        Err(e) => Err(e.clone()),
+    };
+    checks(&HarnessInputs {
+        registry: inputs.registry,
+        path_var: inputs.path_var.as_ref(),
+        probe: &probe,
+        target,
+        dir: &inputs.repo,
+    })
+    .into_iter()
+    .map(|(name, outcome)| Check::of(name, outcome))
+    .collect()
 }
 
-/// Claude Code writes a flag as `--name-suffix` or, in a description, as
-/// `--name[-suffix]` (2.1.301 does this for `--append-system-prompt-file`).
-fn lists_flag(help: &str, flag: &str) -> bool {
-    help.contains(flag)
-        || flag
-            .rsplit_once('-')
-            .is_some_and(|(base, suffix)| help.contains(&format!("{base}[-{suffix}]")))
-}
-
-fn claude_flag_check(inputs: &Inputs<'_>, path: &Path) -> Check {
-    let name = "claude flags";
-    match probe(inputs, path, &["--help"]) {
-        Ok(help) => {
-            let missing: Vec<&str> = CLAUDE_FLAGS
-                .into_iter()
-                .filter(|f| !lists_flag(&help, f))
-                .collect();
-            if missing.is_empty() {
-                Check::pass(name, "the help text lists every flag teamwire passes")
-            } else {
-                Check::warn(
-                    name,
-                    format!(
-                        "`claude --help` does not list {}; teamwire passes them when it \
-                         starts a member, so this claude may be too old or too new",
-                        missing.join(", ")
-                    ),
-                )
-            }
-        }
-        Err(e) => Check::warn(name, format!("`claude --help` failed: {e}")),
-    }
-}
-
+/// The default lead harness's program, then the host's, then every other
+/// harness's that is on PATH.
 fn binary_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let mut checks = Vec::new();
+    let mut checks = harness_checks(inputs, |h| lead_setup_check::program_checks(h, true));
     let host_program = match inputs.host {
         Host::Herdr => Some("herdr"),
         Host::Tmux => Some("tmux"),
         Host::None => None,
     };
-    let wanted = std::iter::once(("claude", "harness")).chain(host_program.map(|h| (h, "host")));
-    for (program, role) in wanted {
+    if let Some(program) = host_program {
         let name = format!("{program} on PATH");
         match on_path(inputs.path_var.as_ref(), program) {
             Some(path) => {
                 checks.push(Check::pass(
                     name,
-                    format!("{role} binary at {}", path.display()),
+                    format!("host binary at {}", path.display()),
                 ));
-                if program == "claude" {
-                    checks.push(version_check(inputs, program, &path, "--version"));
-                    checks.push(claude_flag_check(inputs, &path));
-                } else {
-                    let flag = if program == "tmux" { "-V" } else { "--version" };
-                    checks.push(version_check(inputs, program, &path, flag));
-                }
+                let flag = if program == "tmux" { "-V" } else { "--version" };
+                let probe = |path: &Path, args: &[&str]| probe(inputs, path, args);
+                let (name, outcome) = version_check(&probe, program, &path, flag);
+                checks.push(Check::of(name, outcome));
             }
             None => checks.push(Check::fail(
                 name,
-                format!("the {role} binary `{program}` is not on PATH"),
+                format!("the host binary `{program}` is not on PATH"),
             )),
         }
     }
-    // Codex is optional: without it on PATH, doctor says nothing about it.
-    if let Some(path) = on_path(inputs.path_var.as_ref(), "codex") {
-        checks.push(Check::pass(
-            "codex on PATH",
-            format!("harness binary at {}", path.display()),
-        ));
-        checks.push(version_check(inputs, "codex", &path, "--version"));
-    }
+    // Every other harness is optional: without its program on PATH, doctor
+    // says nothing about it.
+    checks.extend(harness_checks(inputs, |h| {
+        lead_setup_check::program_checks(h, false)
+    }));
     if inputs.host == Host::None {
         checks.push(Check::pass(
             "host",
@@ -625,37 +328,18 @@ fn credential_check(inputs: &Inputs<'_>) -> Check {
     )
 }
 
-/// The lead setup's checks, from `lead_setup_check`.
-fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let lead = lead_setup_check::LeadInputs {
-        claude: &inputs.claude,
-        entry: &inputs.lead_entry,
-        running_a_build: inputs.running_a_build,
-        dir: &inputs.repo,
-        codex: on_path(inputs.path_var.as_ref(), "codex").map(|_| &inputs.codex),
-        home: &inputs.home,
-    };
-    lead_setup_check::run(&lead)
-        .into_iter()
-        .map(|(name, outcome)| match outcome {
-            Outcome::Pass(detail) => Check::pass(name, detail),
-            Outcome::Warn(detail) => Check::warn(name, detail),
-            Outcome::Fail(detail) => Check::fail(name, detail),
-        })
-        .collect()
-}
-
 /// Every check, in the order `doctor` prints them.
 pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = disk_checks(inputs);
     checks.extend(database_checks(inputs));
     if inputs.host == Host::Herdr {
         checks.push(herdr_hook_check(inputs));
+        checks.extend(herdr_pi_check(inputs));
     }
     checks.push(worktrees_check(inputs));
     checks.extend(binary_checks(inputs));
     checks.push(credential_check(inputs));
-    checks.extend(lead_setup_checks(inputs));
+    checks.extend(harness_checks(inputs, lead_setup_check::lead_checks));
     checks
 }
 
@@ -672,13 +356,13 @@ pub(crate) fn render(checks: &[Check]) -> String {
     checks.iter().map(|c| c.line() + "\n").collect()
 }
 
-pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
-    let home = match home_or_refuse("doctor", global) {
-        Ok(home) => home,
-        Err(code) => return code,
-    };
-    let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let lead_entry = wanted_entry(global);
+/// The checks' inputs for this process, and the host pick they rest on.
+pub(crate) fn inputs<'w>(
+    home: PathBuf,
+    global: &Global,
+    wiring: &'w Wiring,
+) -> (Inputs<'w>, HostPick) {
+    let lead_command = wanted_command(global);
     let pick = pick_host(
         std::env::var("HERDR_ENV").ok().as_deref(),
         std::env::var("TMUX").ok().as_deref(),
@@ -692,17 +376,26 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
         clock: &wiring.clock,
         path_var: std::env::var_os("PATH"),
         claude: wiring.claude.clone(),
-        codex: wiring.codex_setup(),
-        running_a_build: lead_entry
+        pi: wiring.pi.clone(),
+        running_a_build: lead_command
             .as_ref()
-            .is_ok_and(|e| lead_setup_check::is_build_output(Path::new(&e.command))),
-        lead_entry,
-        repo,
+            .is_ok_and(|c| lead_setup_check::is_build_output(&c.bin)),
+        lead_command,
+        repo: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
         env_names: std::env::vars_os()
             .filter(|(_, v)| !v.is_empty())
             .filter_map(|(k, _)| k.into_string().ok())
             .collect(),
     };
+    (inputs, pick)
+}
+
+pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
+    let home = match home_or_refuse("doctor", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
+    let (inputs, pick) = inputs(home, global, wiring);
     let mut checks = diagnose(&inputs);
     // With no host, `binary_checks` already says so.
     if inputs.host != Host::None {
@@ -718,6 +411,8 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cmd::host_pick::{MAX_PARENT_STEPS, nearest_host};
+    use teamwire_core::Pid;
 
     /// A parent chain from a list of (pid, program), each the parent of the one before.
     fn chain(programs: &'static [&'static str]) -> impl Fn(Pid) -> Option<(Pid, String)> + 'static {

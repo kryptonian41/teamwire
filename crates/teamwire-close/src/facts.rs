@@ -80,18 +80,28 @@ fn harness_busy(harness: &dyn Harness, member: &Member) -> Busy {
 /// or a state nobody can read is then accepted, and the removal says which.
 pub(crate) fn busy_refusal(ctx: &Ctx<'_>, member: &Member, stop_allowed: bool) -> Option<String> {
     let role = &member.role;
-    match busy_state(ctx, member) {
+    let busy = busy_state(ctx, member);
+    if stop_allowed {
+        return None;
+    }
+    busy_text(
+        role,
+        busy,
+        &format!("Wait for it, or remove it alone with --role {role} --stop"),
+        &format!("Answer it, or remove it alone with --role {role} --stop"),
+    )
+}
+
+/// Why a member that is `busy` must not lose its place, ending with what to
+/// do instead: `working` after a running turn, `blocked` after a dialog.
+pub(crate) fn busy_text(role: &Role, busy: Busy, working: &str, blocked: &str) -> Option<String> {
+    match busy {
         Busy::Idle => None,
-        Busy::Working if stop_allowed => None,
-        Busy::Blocked if stop_allowed => None,
-        Busy::Unknown(_) if stop_allowed => None,
         Busy::Working => Some(format!(
-            "{role} is busy: its current turn is lost if its place closes. Wait for it, or \
-             remove it alone with --role {role} --stop"
+            "{role} is busy: its current turn is lost if its place closes. {working}"
         )),
         Busy::Blocked => Some(format!(
-            "{role} is showing a dialog and waits for an answer. Answer it, or remove it \
-             alone with --role {role} --stop"
+            "{role} is showing a dialog and waits for an answer. {blocked}"
         )),
         Busy::Unknown(why) => Some(format!(
             "cannot tell whether {role} is busy ({why}); refusing rather than guess"
@@ -332,11 +342,21 @@ pub(crate) fn stranded_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String>
 /// Why this member's checkout must not be removed now: it has uncommitted
 /// work, its detached commits can get no rescue branch, or git cannot say.
 pub(crate) fn dirty_refusal(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
+    uncommitted_text(
+        ctx,
+        member,
+        "Commit or copy that work out first; teamwire never forces a removal",
+    )
+    .or_else(|| rescue_refusal(ctx, member))
+}
+
+/// Why this member's checkout holds work a closed place could lose, ending
+/// with `advice`: it has uncommitted paths, or git cannot say.
+pub(crate) fn uncommitted_text(ctx: &Ctx<'_>, member: &Member, advice: &str) -> Option<String> {
     match dirty_paths(ctx, member) {
-        Ok(paths) if paths.is_empty() => rescue_refusal(ctx, member),
+        Ok(paths) if paths.is_empty() => None,
         Ok(paths) => Some(format!(
-            "{} has {} uncommitted path(s) in {}. Commit or copy that work out first; \
-             teamwire never forces a removal",
+            "{} has {} uncommitted path(s) in {}. {advice}",
             member.role,
             paths.len(),
             member.cwd.display()

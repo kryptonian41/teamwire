@@ -47,23 +47,24 @@ and no host (ADP-1).
 
 | Crate | What it does |
 | --- | --- |
-| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `Host`, `Platform` and `Clock` traits, the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
+| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `LeadSetup`, `Host`, `Platform` and `Clock` traits, the lead setup's shared apply loop (ADR 0031), the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
 | `teamwire-store` | Opens a team's SQLite database with the required settings, runs migrations, and offers typed transactions for every table. The only code that writes state. |
-| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, and the sleep hold (`caffeinate` on macOS). |
+| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, and the sleep hold (`caffeinate` on macOS). |
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
 | `teamwire-harness-codex` | The `Harness` trait for the Codex CLI: launch and resume argv from `-c` overrides, the member's token file, Stop, PostToolUse and SessionStart hook input, the TUI screen, rollout files and thread locks, and the Codex lead plugin (ADR 0023). |
-| `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. |
+| `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
+| `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. Reads one message's events into the state of its latest attempt to a recipient (`AttemptHistory`: started, stale, in flight, stops, unread). |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
 | `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |
-| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. |
+| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. It runs the order of `teamwire handoff` in `hand_off` (ADR 0032), with close's checks and place close passed in by the CLI. |
 | `teamwire-verify` | Runs checks, diffs from the start commit, applies the per-language rules, writes verify records and waivers. |
 | `teamwire-close` | Whole-team close and single-member removal, in the fixed order, with the archive. |
 | `teamwire-watch` | The watch loop and the status view. Both derive each member's state the same way, except that status reads an idle `"dispatch": false` member quiet at once (WAT-3) and measures ages in wall time, because only a running watch measures sleeps. |
 | `teamwire-otel` | Local metrics queries and the OpenTelemetry export. |
 | `teamwire-mcp` | The stdio MCP server (`rmcp`), a thin front for `msg`, `report` and `watch`. |
-| `teamwire-cli` | The `teamwire` binary: argument parsing, wiring concrete adapters, exit codes. It also runs `teamwire handoff` (ADR 0027): `teamwire-launch` and `teamwire-close` may not depend on each other, so the order of check, place close, open and record lives in `cmd/handoff.rs`. |
+| `teamwire-cli` | The `teamwire` binary: argument parsing, wiring concrete adapters, exit codes. For `teamwire handoff` (ADR 0027, ADR 0032), `teamwire-launch` and `teamwire-close` may not depend on each other, so `cmd/handoff.rs` passes close's checks and place close to launch's `hand_off`. |
 | `tests/fakes` (`teamwire-fakes`) | The fake host, harness and platform, the fake `herdr` and `claude` binaries, and the contract-test suites every adapter must pass. |
 
 How they run (ADR 0001):
@@ -289,7 +290,8 @@ teamwire's own diagnostic logs go to stderr through `tracing`, filtered by
 Three traits keep the core free of product names (ADR 0004):
 
 - **Harness**: the agent program. Claude Code and Codex CLI ship (ids
-  `claude-code`, `codex`, ADR 0023).
+  `claude-code`, `codex`, ADR 0023) and pi (id `pi`, ADR 0029 for members,
+  ADR 0030 for the lead).
 - **Host**: where the program runs. herdr and tmux ship (ADR 0019). No host at all is a valid configuration. The lead's host
   is herdr when `HERDR_ENV=1`, else tmux when `TMUX` is set. When both are
   set, teamwire walks its own parent processes (own pid first, at most 64
@@ -297,11 +299,11 @@ Three traits keep the core free of product names (ADR 0004):
   neither found, herdr wins.
 - **Platform**: the operating system. macOS and Linux.
 
-Adapters are identified by string ids (`claude-code`, `codex`, `herdr`,
+Adapters are identified by string ids (`claude-code`, `codex`, `pi`, `herdr`,
 `tmux`, `none`) and looked up in a registry that the CLI fills; the core has no list
 of products. The harness and host belong to each member and to the lead, so a
 Claude Code lead can lead a member on another harness that has an adapter, such
-as Codex (ADR 0004, ADP-12).
+as Codex or pi (ADR 0004, ADP-12).
 
 The core chooses routes from each adapter's capability record, never from
 its name:
@@ -407,7 +409,7 @@ default shown, and nothing in the build plan waits on an answer.
 | 5 | Should planning rules (implementer without check, overlapping owns, more than five open branches) refuse a launch or only warn? | Warn, with an override flag | speclife Q7 |
 | 6 | Who should notice when the lead session itself dies? | Nobody in v1; `status` shows lead liveness | speclife Q8 |
 | 7 | Keep the stricter verify verdict (`FLAGGED` blocks member removal until waived)? | Yes | speclife Q1, ADR 0009 |
-| 8 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | Codex CLI yes (ADR 0023); Gemini CLI and opencode no | harness Q6 |
+| 8 | Should v1 also ship adapters for Codex CLI, Gemini CLI or opencode? | Codex CLI yes (ADR 0023); pi yes (ADR 0029, ADR 0030); Gemini CLI and opencode no | harness Q6 |
 | 9 | Is Linux (without a sleep hold) a supported platform for v1, or macOS only? | macOS fully; Linux without the sleep hold | rust Q7 |
 | 10 | May the build install `cargo-nextest`, `cargo-deny` and `cargo-mutants`? They add per-test timeouts, a licence and advisory audit, and mutation scores | `cargo-nextest`: installed 2026-10-10, and the gate runs its tests with it from 2026-10-20 (`docs/conventions.md` §2). `cargo-deny` and `cargo-mutants`: not installed, so the gate has no licence audit (`docs/conventions.md` §2) | repopract Q1, R10, R14, R20 |
 | 11 | Should this repository commit its own `.claude/settings.json` with edit-time hooks (format on edit, a guard on protected files) for agents working in it? | No; the gate and `xtask tidy` enforce the same rules after the fact | repopract Q2 |

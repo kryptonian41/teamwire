@@ -8,7 +8,7 @@ use teamwire_core::{
     DeliveryState, Liveness, Member, MemberState, Recipient, ReportState, Role, SessionId,
     Timestamp, one_line,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started, unread_since, watch_lease_is_dead};
+use teamwire_deliver::{AttemptHistory, watch_lease_is_dead};
 use teamwire_store::{
     CompletionRecord, Ctx, Party, ReadTx, StoreError, WRITER_VERSION, database_path,
 };
@@ -145,10 +145,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let age = now.saturating_since(attempt_started(tx, &message, &d.recipient)?);
-        if d.state == DeliveryState::Pending && age <= PENDING_STALE {
+        let attempt = AttemptHistory::read(tx, &message, &d.recipient)?;
+        if d.state == DeliveryState::Pending && !attempt.is_stale(now) {
             continue;
         }
+        let age = now.saturating_since(attempt.started());
         view.stuck_deliveries.push(StuckDelivery {
             display_id: message.display_id,
             to: d.recipient,
@@ -165,7 +166,8 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = unread_since(tx, &message, &d.recipient)? else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         let age = now.saturating_since(since);

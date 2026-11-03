@@ -9,7 +9,7 @@ use teamwire_launch::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reop
 use teamwire_store::Ctx;
 use teamwire_watch::UndeliveredResult;
 
-use crate::cmd::send::{
+use crate::cmd::shared::{
     PARTIAL, REFUSED, STORE, fail, refuse_member, say, warn, with_ctx, with_read_ctx,
 };
 use crate::cmd::status::results_block;
@@ -84,7 +84,10 @@ fn caller_is_lead(ctx: &Ctx<'_>) -> bool {
     let Ok(harness) = ctx.registry.harness(&team.lead_harness) else {
         return false;
     };
-    match (harness.current_session(), team.lead_session) {
+    match (
+        harness.caller_session(&|name| std::env::var(name).ok()),
+        team.lead_session,
+    ) {
         (Some(caller), Some(lead)) => caller.id == lead,
         _ => false,
     }

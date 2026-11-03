@@ -3,14 +3,12 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use teamwire_core::{Config, Role, TeamName};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_core::{Role, TeamName};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
-use crate::cmd::send::{
-    PARTIAL, REFUSED, STORE, fail, home_or_refuse, no_database_text, refuse_member, say,
+use crate::cmd::shared::{
+    Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say, with_ctx_using,
 };
-use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
 
@@ -38,51 +36,37 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
     {
         return code;
     }
-    let home = match home_or_refuse("verify", global) {
-        Ok(home) => home,
-        Err(code) => return code,
+    let opening = Opening {
+        command: "verify",
+        ..Opening::default()
     };
-    let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => Recorded::new(store, &wiring.clock, "verify"),
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
-            return fail("verify", &message, REFUSED);
+    with_ctx_using(global, wiring, &team, "verify", opening, |ctx| {
+        if let (Some(flag), Some(reason), Some(role)) = (waive, reason, &role) {
+            return match teamwire_verify::waive(ctx, role, &FlagId::new(flag), reason) {
+                Ok(()) => {
+                    say(&format!("waived {flag} for {role} at its current HEAD\n"));
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail("verify", &e.to_string(), error_code(&e)),
+            };
         }
-        Err(e) => return fail("verify", &e.to_string(), STORE),
-    };
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
-    if let (Some(flag), Some(reason), Some(role)) = (waive, reason, &role) {
-        return match teamwire_verify::waive(&mut ctx, role, &FlagId::new(flag), reason) {
-            Ok(()) => {
-                say(&format!("waived {flag} for {role} at its current HEAD\n"));
-                ExitCode::SUCCESS
+        let opts = VerifyOpts {
+            deep: *deep,
+            repair_files: *repair_files,
+        };
+        match teamwire_verify::run(ctx, role.as_ref(), opts) {
+            Ok(report) => {
+                say(&render(&report, ctx.home, role.is_some()));
+                if report.is_clean(role.is_some()) {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::from(PARTIAL)
+                }
             }
             Err(e) => fail("verify", &e.to_string(), error_code(&e)),
-        };
-    }
-    let opts = VerifyOpts {
-        deep: *deep,
-        repair_files: *repair_files,
-    };
-    match teamwire_verify::run(&mut ctx, role.as_ref(), opts) {
-        Ok(report) => {
-            say(&render(&report, &home, role.is_some()));
-            if report.is_clean(role.is_some()) {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(PARTIAL)
-            }
         }
-        Err(e) => fail("verify", &e.to_string(), error_code(&e)),
-    }
+    })
+    .unwrap_or_else(|code| code)
 }
 
 fn error_code(e: &VerifyError) -> u8 {
