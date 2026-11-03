@@ -178,8 +178,9 @@ differently, so the review is cheaper than the rework.
   "This was intentional" is not evidence. Add context to a brief when a
   member needs it, not to satisfy the reviewer.
 - **Once per plan.** Fix the briefs once from the report, then add the
-  implementers. Never review the same plan twice, for the reason the
-  `implement-then-review` row gives for a diff.
+  implementers. Never review the same plan twice. A reviewer asked again
+  finds something new each time, and the fixes grow without end. The
+  `implement-then-review` row has the same rule for a diff.
 
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
@@ -225,8 +226,9 @@ Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode and a plan
 reviewer in `worktree` mode. Every member is told that the brief is the
 agreed plan, to list any choice the brief does not cover under **Decisions I
-made**, and to record a question the brief marks open without answering it. Implementers and investigators talk only through
-`teamwire send`. Reviewers, plan reviewers and closers send nothing.
+made**, and to record a question the brief marks open without answering it.
+Implementers and investigators talk only through `teamwire send`. Reviewers,
+plan reviewers and closers send nothing.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -548,8 +550,9 @@ missing. A member's "tests pass" is a claim, not evidence.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers, plan reviewers and closers send nothing, and only their own lead may message them,
-so their look at the work stays fresh. teamwire enforces every rule here.
+Reviewers, plan reviewers and closers send nothing, and only their own lead
+may message them, so their look at the work stays fresh. teamwire enforces
+every rule here.
 
 ```bash
 teamwire send <team> --to <role[,role]|lead> --type <type> --text "..."   # or --file PATH
