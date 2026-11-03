@@ -6,7 +6,7 @@
     "The reviewer reads the committed diff and writes findings. It must NOT edit code. A reviewer that starts rewriting has stopped reviewing.",
     "Send the findings that carry a concrete failure back to the implementer with `teamwire send <team> --to impl --type reprompt --file <findings>`. Allow at most two fix rounds. If the second still leaves real findings, the task was underspecified, so fix the spec yourself instead of running a third round.",
     "Write each brief with three sections: 'Done when' (acceptance criteria you can check), 'Out of scope', and 'When to do nothing' (the preconditions under which the member changes nothing and reports why). State the end state, not the steps.",
-    "Reviewer on opus at xhigh effort, implementer on sonnet at medium effort. Judgement is worth more than speed on the review side.",
+    "The reviewer's task class is `judgement` and the implementer's is `contained_feature`. Judgement is worth more than speed on the review side, so the reviewer gets the stronger model and the higher effort of the two. Run `teamwire models --for judgement` and `teamwire models --for contained_feature` before you pick each member's model.",
     "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "Act only on findings that carry a concrete failure. A reviewer asked to find gaps will usually report some even when the work is sound, and chasing every one leads to over-engineering."
   ],
@@ -19,11 +19,10 @@
       "title": "Build: CHANGEME",
       "kind": "implementer",
       "mode": "worktree",
+      "task_class": "contained_feature",
       "repo": "/abs/path/repo",
       "branch": "myteam/impl",
       "base": "main",
-      "model": "sonnet",
-      "effort": "medium",
       "deadline_s": 3600,
       "check": "CHANGEME targeted test command",
       "owns": [
@@ -37,14 +36,8 @@
       "title": "Review: CHANGEME",
       "kind": "reviewer",
       "mode": "pane",
+      "task_class": "judgement",
       "cwd": "/abs/path/repo",
-      "model": "opus",
-      "effort": "xhigh",
-      "plugins": {
-        "ponytail@ponytail": false,
-        "mattpocock-skills@claude-plugins-official": false,
-        "claude-mem@thedotmack": false
-      },
       "deadline_s": 1200,
       "task": "Review the diff on branch myteam/impl against main. Read it with `git diff main...myteam/impl`. Report correctness, security and data-loss bugs, each with file:line and a concrete failure scenario. Look for stubbed, empty or hard-coded code that makes a check pass. Findings only, no fixes. Do NOT edit any file in the repository. If the diff is sound, say so plainly rather than inventing findings."
     }

@@ -5,7 +5,7 @@
     "Use mode pane, not worktree. A member that writes nothing needs no isolation and leaves no branch to clean up.",
     "Demand file:line evidence for every claim. Opinions from a member you cannot cross-examine are worth little.",
     "Set short deadlines. A survey still running after 15 minutes has gone wrong.",
-    "sonnet at high effort is enough. This is reading, not designing. Raise one member to max only for a race or data-loss question."
+    "The work is reading, not designing, so its task class is `read_only_survey`. Run `teamwire models --for read_only_survey` and pick a model that reads well at a modest cost. A member whose question is a race or a data-loss path gets the class `concurrency_data_loss` instead, and the stronger model and higher effort that class needs."
   ],
   "team": "myteam",
   "title": "Survey: CHANGEME",
@@ -15,14 +15,8 @@
       "title": "Map CHANGEME",
       "kind": "investigator",
       "mode": "pane",
+      "task_class": "read_only_survey",
       "cwd": "/abs/path/repo",
-      "model": "sonnet",
-      "effort": "high",
-      "plugins": {
-        "ponytail@ponytail": false,
-        "mattpocock-skills@claude-plugins-official": false,
-        "claude-mem@thedotmack": false
-      },
       "deadline_s": 900,
       "task": "Investigate <question> in <area>. Do NOT modify any file in the repository. Give file:line evidence for every claim. Say plainly when something is NOT the cause, because ruling things out is as useful as finding the cause. End with the three findings most worth acting on."
     }
