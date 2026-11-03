@@ -650,7 +650,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 8: `crates/teamwire-store/src/schema/v1.sql` to `v8.sql`,
+The schema is version 9: `crates/teamwire-store/src/schema/v1.sql` to `v9.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -659,7 +659,13 @@ adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
 row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
-(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028). The tables and columns are those in
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028).
+Version 9 rebuilds `members` with `plan_reviewer` in its `kind` CHECK list
+(ADR 0034) and keeps every row. It creates `members_new`, copies the rows,
+drops `members` and renames `members_new`, so the foreign keys of
+`completions`, `verify_records` and `waivers` still name `members`. Every
+migration runs with foreign key checks off and fails, rolling back, when
+`PRAGMA foreign_key_check` finds a broken key before the commit. The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 
