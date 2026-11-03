@@ -104,10 +104,14 @@ impl ModelCatalog {
     /// The rows a spec's `model` names, as the harness resolves it. The
     /// value may end in pi's `:<thinking>` suffix, so the part before the
     /// last `:` is tried when the whole value names nothing. A row matches
-    /// by its id or an alias, bare or as `provider/id`, ignoring case. On a
-    /// list whose rows carry a provider, a pattern also matches every row
-    /// whose `normalise_model` name holds the pattern's, because pi's own
-    /// search finds `opus` in every Opus row of every provider.
+    /// by its id or an alias, bare or as `provider/id`, ignoring case.
+    ///
+    /// On a list whose rows carry a provider, one model has a spelling per
+    /// provider, so more rows match. A value that is some row's id also
+    /// names every row with the same `normalise_model` name. Any other
+    /// value names every row whose `normalise_model` name holds the
+    /// value's, because pi's own search finds `opus` in every Opus row of
+    /// every provider. A `provider/` prefix keeps the match to that provider.
     pub fn matching(&self, model: &str) -> Vec<&ModelInfo> {
         let mut names = vec![model];
         if let Some((before, _)) = model.rsplit_once(':') {
@@ -116,9 +120,10 @@ impl ModelCatalog {
         names
             .into_iter()
             .map(|name| {
+                let exact = self.models.iter().any(|row| names_exactly(row, name));
                 self.models
                     .iter()
-                    .filter(|row| pattern_names(row, name))
+                    .filter(|row| pattern_names(row, name, exact))
                     .collect::<Vec<_>>()
             })
             .find(|rows| !rows.is_empty())
@@ -141,25 +146,41 @@ fn names_of(row: &ModelInfo) -> impl Iterator<Item = &String> {
     std::iter::once(&row.id).chain(&row.aliases)
 }
 
-/// True when the pattern `name` names `row` (see `ModelCatalog::matching`).
-fn pattern_names(row: &ModelInfo, name: &str) -> bool {
+/// True when `name` is the row's id or an alias, bare or as `provider/id`.
+fn names_exactly(row: &ModelInfo, name: &str) -> bool {
     let exact = |n: &str| names_of(row).any(|x| x.eq_ignore_ascii_case(n));
+    exact(name)
+        || row.provider.as_deref().is_some_and(|p| {
+            name.split_once('/')
+                .is_some_and(|(prefix, rest)| prefix.eq_ignore_ascii_case(p) && exact(rest))
+        })
+}
+
+/// True when the pattern `name` names `row` (see `ModelCatalog::matching`).
+/// `equal` says `name` is some row's id, so only the same normalised name
+/// counts, not one that merely holds it: Bedrock's `anthropic.claude-v2:0`
+/// normalises to `claude`, which every Claude row holds.
+fn pattern_names(row: &ModelInfo, name: &str, equal: bool) -> bool {
+    if names_exactly(row, name) {
+        return true;
+    }
     let Some(provider) = row.provider.as_deref() else {
-        return exact(name);
+        return false;
     };
     let rest = match name.split_once('/') {
         Some((prefix, rest)) if prefix.eq_ignore_ascii_case(provider) => rest,
         // A `/` that does not follow this row's provider is part of an id,
         // as in OpenRouter's `anthropic/claude-x`, or another provider's
         // prefix: only the whole id names the row.
-        Some(_) => return exact(name),
+        Some(_) => return false,
         None => name,
     };
-    if exact(rest) {
-        return true;
-    }
     let key = normalise_model(rest);
-    !key.is_empty() && names_of(row).any(|n| normalise_model(n).contains(&key))
+    !key.is_empty()
+        && names_of(row).any(|n| {
+            let n = normalise_model(n);
+            if equal { n == key } else { n.contains(&key) }
+        })
 }
 
 /// The name two spellings of one model are compared by. A vendor, a
@@ -419,6 +440,19 @@ mod tests {
             ["amazon-bedrock/deepseek.v3.2"]
         );
         assert!(named(&catalog, "gpt-9").is_empty());
+    }
+
+    #[test]
+    fn an_exact_id_adds_only_rows_of_the_same_model() {
+        let mut catalog = pi_rows();
+        catalog
+            .models
+            .push(row(Some("amazon-bedrock"), "anthropic.claude-v2:0", &[]));
+        assert_eq!(normalise_model("anthropic.claude-v2:0"), "claude");
+        assert_eq!(
+            named(&catalog, "anthropic.claude-v2:0"),
+            ["amazon-bedrock/anthropic.claude-v2:0"]
+        );
     }
 
     #[test]
