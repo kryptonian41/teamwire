@@ -21,6 +21,7 @@ pub mod host;
 pub mod lead_setup;
 pub mod member;
 pub mod message;
+pub mod models;
 pub mod names;
 pub mod platform;
 pub mod registry;
@@ -52,6 +53,9 @@ pub use member::{Member, MemberKind, MemberState, Mode};
 pub use message::{
     Delivery, DeliveryError, DeliveryErrorCode, DeliveryState, Message, MessageType, Refusal,
     Route, SendRequest,
+};
+pub use models::{
+    CatalogSource, Evidence, EvidenceEntry, EvidenceKind, ModelCatalog, ModelInfo, TaskClass,
 };
 pub use names::{
     Address, DisplayId, HarnessId, HostId, NameError, Pid, Place, Role, SessionId, TeamName, Ulid,

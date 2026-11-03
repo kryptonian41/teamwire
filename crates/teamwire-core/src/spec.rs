@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::member::{MemberKind, Mode};
+use crate::models::TaskClass;
 use crate::names::{HarnessId, HostId, Role, TeamName};
 
 fn yes() -> bool {
@@ -56,6 +57,11 @@ pub struct MemberSpec {
     pub model: Option<String>,
     #[serde(default)]
     pub effort: Option<String>,
+    /// How hard the task is to reason about, as the lead judges it. Launch
+    /// records it on the member's `member.creating` event so outcomes can be
+    /// read per class.
+    #[serde(default)]
+    pub task_class: Option<TaskClass>,
     #[serde(default)]
     pub check: Option<String>,
     #[serde(default)]
