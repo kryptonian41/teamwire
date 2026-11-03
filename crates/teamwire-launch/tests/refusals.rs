@@ -90,7 +90,7 @@ fn plan_reviewer_in_worktree_mode_refused_with_the_other_refusals() {
         codes(&errors),
         ["plan_reviewer_needs_pane", "home_directory"]
     );
-    let refusal = &errors[0];
+    let refusal = errors.first().unwrap();
     assert_eq!(refusal.field.as_deref(), Some("mode"));
     assert!(
         refusal
@@ -114,7 +114,10 @@ fn plan_reviewer_in_pane_mode_validates() {
         .validate(&team_spec("demo", &[reviewer]), false)
         .unwrap();
     assert_eq!(plan.members.len(), 1);
-    assert_eq!(plan.members[0].kind, MemberKind::PlanReviewer);
+    assert_eq!(
+        plan.members.first().map(|m| m.kind),
+        Some(MemberKind::PlanReviewer)
+    );
 }
 
 #[test]
