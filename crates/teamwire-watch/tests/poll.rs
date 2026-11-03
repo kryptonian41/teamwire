@@ -6,7 +6,9 @@ pub mod fixture;
 use std::time::Duration;
 
 use fixture::{Bed, count, counts, names};
-use teamwire_core::{CompletionStatus, DeliveryErrorCode, DeliveryState, LeadRoute, ReportState};
+use teamwire_core::{
+    CompletionStatus, DeliveryErrorCode, DeliveryState, LeadRoute, Platform as _, ReportState,
+};
 use teamwire_fakes::CallKind;
 use teamwire_watch::WatchEnd;
 
@@ -24,12 +26,23 @@ fn result_file(bed: &Bed, name: &str) -> std::path::PathBuf {
         .join(format!("{name}.md"))
 }
 
+/// Writes the member's result file, as `done` does right after it stores a
+/// result the watch reports, and as the hook does before it delivers one.
+fn write_result(bed: &Bed, name: &str) -> Result<(), String> {
+    let file = result_file(bed, name);
+    if let Some(dir) = file.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    bed.platform
+        .write_atomic(&file, b"the result")
+        .map_err(|e| e.to_string())
+}
+
 /// Ends a completion's delivery as the hook does: it writes the result file
 /// first and records the file's hash with the outcome.
 #[expect(
-    clippy::disallowed_methods,
     clippy::unwrap_used,
-    reason = "the test stands in for the hook that wrote a result file, outside the platform; a failure fails the test"
+    reason = "the test stands in for the hook; a failure fails the test"
 )]
 fn finish_with_file(
     bed: &mut Bed,
@@ -38,9 +51,7 @@ fn finish_with_file(
     state: ReportState,
     code: Option<DeliveryErrorCode>,
 ) {
-    let file = result_file(bed, name);
-    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
-    std::fs::write(&file, "the result").unwrap();
+    write_result(bed, name).unwrap();
     let now = teamwire_core::Clock::now(&bed.clock);
     let outcome = teamwire_store::ResultOutcome {
         state,
@@ -671,6 +682,7 @@ fn watch_route_prints_completed_once() {
     bed.working("web");
     bed.poll();
     let id = bed.complete("api", CompletionStatus::Done);
+    write_result(&bed, "api").unwrap();
     let line = bed.tick().unwrap();
     assert!(
         line.contains("COMPLETED api (done) api finished Result: "),
@@ -694,8 +706,49 @@ fn a_harness_without_a_turn_end_hook_reports_through_the_watch() {
     bed.working("web");
     bed.poll();
     bed.complete("api", CompletionStatus::Done);
+    write_result(&bed, "api").unwrap();
     assert!(bed.tick().unwrap().contains("COMPLETED api (done)"));
     assert!(bed.ticks(4).is_empty());
+}
+
+/// `done` stores a result the watch reports, then writes its result file. A
+/// poll between the two waits for the file, so the line names the file and
+/// not the member's report (REP-9).
+#[test]
+fn a_watch_route_result_waits_one_poll_for_its_result_file() {
+    let mut bed = Bed::with_route(LeadRoute::Watch);
+    bed.add("api");
+    bed.add("web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.complete("api", CompletionStatus::Done);
+    assert_eq!(bed.tick(), None, "reported before its result file");
+    write_result(&bed, "api").unwrap();
+    let line = bed.tick().unwrap();
+    assert!(
+        line.contains("COMPLETED api (done) api finished Result: "),
+        "{line}"
+    );
+    assert!(line.contains("/outbox/api.md"), "{line}");
+}
+
+/// A `done` that died between storing the result and writing its file still
+/// reaches the lead, one poll later, pointed at the member's own report.
+#[test]
+fn a_watch_route_result_whose_file_never_comes_points_at_the_report() {
+    let mut bed = Bed::with_route(LeadRoute::Watch);
+    bed.add("api");
+    bed.add("web");
+    bed.working("api");
+    bed.working("web");
+    bed.poll();
+    bed.complete("api", CompletionStatus::Done);
+    assert_eq!(bed.tick(), None, "reported before its result file");
+    let line = bed.tick().unwrap();
+    assert!(line.contains("COMPLETED api (done)"), "{line}");
+    assert!(line.contains("/reports/api.md"), "{line}");
+    assert!(bed.ticks(4).is_empty(), "printed once");
 }
 
 #[test]
@@ -752,6 +805,7 @@ fn agent_text_cannot_forge_an_event() {
             .map(|_| ())
         })
         .unwrap();
+    write_result(&bed, "api").unwrap();
     let line = bed.tick().unwrap();
     assert!(!line.contains('\n') && !line.contains('\u{1b}'), "{line:?}");
     assert_eq!(
@@ -786,6 +840,7 @@ fn agent_text_cannot_forge_an_event_with_the_separator() {
             .map(|_| ())
         })
         .unwrap();
+    write_result(&bed, "api").unwrap();
     let line = bed.tick().unwrap();
     assert_eq!(names(&line), ["COMPLETED"], "{line}");
 }
