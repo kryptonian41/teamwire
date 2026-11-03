@@ -1,9 +1,9 @@
-//! `teamwire preset`: the six team shapes.
+//! `teamwire preset`: the five team shapes and the two steps added to a team.
 //!
-//! The shapes are the files of `examples/presets/`, compiled into the binary
+//! The presets are the files of `examples/presets/`, compiled into the binary
 //! so the command works wherever it is installed. Each file is a team spec
 //! that `launch` accepts once its placeholders are filled in. Keys that start
-//! with an underscore carry the shape's rules; `launch` ignores them.
+//! with an underscore carry the preset's rules; `launch` ignores them.
 
 use std::process::ExitCode;
 
@@ -13,9 +13,10 @@ use crate::cmd::shared::{fail, say};
 use crate::wiring::Wiring;
 use crate::{Global, PresetArgs, USAGE};
 
-/// The shapes in the order `preset` lists them: the ones to reach for first
-/// come first.
-const PRESETS: [(&str, &str); 6] = [
+/// The presets in the order `preset` lists them: the ones to reach for first
+/// come first. The `plan-review` step goes before the implementers and the
+/// `closer` step after them.
+const PRESETS: [(&str, &str); 7] = [
     (
         "survey",
         include_str!("../../../../examples/presets/survey.json"),
@@ -35,6 +36,10 @@ const PRESETS: [(&str, &str); 6] = [
     (
         "contract-split",
         include_str!("../../../../examples/presets/contract-split.json"),
+    ),
+    (
+        "plan-review",
+        include_str!("../../../../examples/presets/plan-review.json"),
     ),
     (
         "closer",

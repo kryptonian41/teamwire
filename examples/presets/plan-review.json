@@ -1,0 +1,27 @@
+{
+  "_shape": "FIRST STEP, not a team shape. One fresh agent that reads the plan and every brief before any implementer starts.",
+  "_why_this_works": "The session that wrote a plan shares the plan's blind spots, so its own planning check misses what the plan leaves unsaid. A member that never saw the planning conversation has only the written plan. Each place it has to guess is a place an implementer would guess too, and two implementers guess differently. Finding that before the implementers start costs one read. Finding it after costs their work.",
+  "_when_to_skip": "A team with one small, clear task. A wrong plan for it wastes at most one implementer's work, which is cheaper than a review.",
+  "_rules": [
+    "Start a plan reviewer when a wrong plan would waste more than one implementer's work. Skip it for a team with one small, clear task.",
+    "Write the plan, the team spec and every brief to files, and run the planning check from the teamwire skill. Then launch this spec alone. Fix the briefs from its report. Only then add the implementers with `teamwire launch --add`. Launch has no rule that orders the two steps, so the order is yours to keep.",
+    "Its task gives the path of the plan, of the team spec and of every brief, and nothing else. Name no expected finding and no known weak spot, because a reader that has been told what to find is no longer fresh. It sends no messages, and only you message it, for the same reason.",
+    "Read its report in this order. First compare each paraphrase with what you meant. A paraphrase that differs means the brief says something else, so fix the brief. Then put each finding in one of four groups. FIX: the finding holds, so edit the brief. CONTEST: the finding is wrong, and a file the reviewer could read shows it, such as a file and symbol or a line of the plan. ASK THE USER: the finding is wrong, but the evidence is outside every file the reviewer could read, such as something the user said. DECLINE: the finding is a nit, so record it. 'This was intentional' is not evidence. Add context to a brief when a member needs it, not to satisfy the reviewer.",
+    "Review each plan once. Fix the briefs once from the report, then add the implementers. Never run a second plan review on the same plan: a reviewer asked again finds something new each time, and the fixes grow without end.",
+    "Its task class is `judgement`: it judges the plan, and a weaker model or a lower effort costs more than it saves here. Run `teamwire models --for judgement` and pick among the models this harness reaches, at one of the highest effort levels `teamwire models` lists. Its mode is `pane`, because it writes nothing, and launch refuses it in any other mode."
+  ],
+  "team": "myteam",
+  "title": "Plan review for CHANGEME",
+  "children": [
+    {
+      "role": "planreview",
+      "title": "Review the CHANGEME plan",
+      "kind": "plan_reviewer",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo",
+      "deadline_s": 1200,
+      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings."
+    }
+  ]
+}
