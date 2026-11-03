@@ -85,8 +85,12 @@ fn parse(table: &str) -> Result<Vec<ModelInfo>, HarnessError> {
                 id: cell(model)?.to_owned(),
                 aliases: Vec::new(),
                 provider: Some(cell(provider)?.to_owned()),
-                context_tokens: tokens(cell(context)?)
-                    .ok_or_else(|| bad(format!("`pi --list-models` context is odd: {line}")))?,
+                context_tokens: match cell(context)? {
+                    "-" => None,
+                    text => Some(tokens(text).ok_or_else(|| {
+                        bad(format!("`pi --list-models` context is odd: {line}"))
+                    })?),
+                },
                 thinking: match cell(thinking)? {
                     "yes" => true,
                     "no" => false,
@@ -97,12 +101,8 @@ fn parse(table: &str) -> Result<Vec<ModelInfo>, HarnessError> {
         .collect()
 }
 
-/// `1M`, `1.0M`, `200K` or `163.8K` as a token count. The outer `None` is a
-/// value that is not a count; `Some(None)` is a `-`, for no figure.
-fn tokens(text: &str) -> Option<Option<u64>> {
-    if text == "-" {
-        return Some(None);
-    }
+/// `1M`, `1.0M`, `200K` or `163.8K` as a token count.
+fn tokens(text: &str) -> Option<u64> {
     let (number, unit) = match text.char_indices().last()? {
         (i, 'K') => (&text[..i], 1_000),
         (i, 'M') => (&text[..i], 1_000_000),
@@ -115,7 +115,7 @@ fn tokens(text: &str) -> Option<Option<u64>> {
         f => f.parse::<u64>().ok()?.checked_mul(unit)? / 10u64.checked_pow(digits)?,
     };
     let whole_part = whole.parse::<u64>().ok()?.checked_mul(unit)?;
-    whole_part.checked_add(fraction_part).map(Some)
+    whole_part.checked_add(fraction_part)
 }
 
 #[cfg(test)]
@@ -124,13 +124,12 @@ mod tests {
 
     #[test]
     fn counts_read_the_unit_and_the_decimal() {
-        assert_eq!(tokens("1M"), Some(Some(1_000_000)));
-        assert_eq!(tokens("1.0M"), Some(Some(1_000_000)));
-        assert_eq!(tokens("200K"), Some(Some(200_000)));
-        assert_eq!(tokens("163.8K"), Some(Some(163_800)));
-        assert_eq!(tokens("122.9K"), Some(Some(122_900)));
-        assert_eq!(tokens("4096"), Some(Some(4096)));
-        assert_eq!(tokens("-"), Some(None));
+        assert_eq!(tokens("1M"), Some(1_000_000));
+        assert_eq!(tokens("1.0M"), Some(1_000_000));
+        assert_eq!(tokens("200K"), Some(200_000));
+        assert_eq!(tokens("163.8K"), Some(163_800));
+        assert_eq!(tokens("122.9K"), Some(122_900));
+        assert_eq!(tokens("4096"), Some(4096));
         assert_eq!(tokens("lots"), None);
         assert_eq!(tokens("K"), None);
     }

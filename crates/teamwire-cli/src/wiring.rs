@@ -423,6 +423,12 @@ mod tests {
         assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/pi"));
     }
 
+    fn write(path: &Path, text: &str) {
+        teamwire_platform::native()
+            .write_atomic(path, text.as_bytes())
+            .unwrap();
+    }
+
     fn excluded(
         env: &[(&str, &str)],
         config: Option<&str>,
@@ -430,7 +436,7 @@ mod tests {
     ) -> Vec<String> {
         let home = tempfile::tempdir().unwrap();
         if let Some(config) = config {
-            std::fs::write(home.path().join("config.toml"), config).unwrap();
+            write(&home.path().join("config.toml"), config);
         }
         pi_exclude_providers(user_home, &|key| {
             env.iter()
@@ -492,11 +498,10 @@ mod tests {
         let user = tempfile::tempdir().unwrap();
         let state = user.path().join(".teamwire");
         std::fs::create_dir_all(&state).unwrap();
-        std::fs::write(
-            state.join("config.toml"),
+        write(
+            &state.join("config.toml"),
             "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"p\"",
-        )
-        .unwrap();
+        );
         assert_eq!(pi_exclude_providers(Some(user.path()), &|_| None), ["p"]);
         assert!(pi_exclude_providers(None, &|_| None).is_empty());
     }

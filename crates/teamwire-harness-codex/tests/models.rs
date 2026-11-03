@@ -4,11 +4,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{CatalogSource, Harness};
+use teamwire_core::{CatalogSource, Harness, HarnessError, ModelCatalog};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
 
-fn catalog() -> teamwire_core::ModelCatalog {
+fn catalog() -> Result<ModelCatalog, HarnessError> {
     CodexCli::new(
         Arc::new(FakePlatform::new()),
         CodexConfig {
@@ -17,19 +17,18 @@ fn catalog() -> teamwire_core::ModelCatalog {
         },
     )
     .models(Duration::from_secs(1))
-    .unwrap()
 }
 
 #[test]
 fn the_list_is_fixed_and_says_so() {
-    let catalog = catalog();
+    let catalog = catalog().unwrap();
     assert_eq!(catalog.source, CatalogSource::Builtin);
     assert!(!catalog.models.is_empty());
 }
 
 #[test]
 fn every_listed_name_resolves_through_find() {
-    let catalog = catalog();
+    let catalog = catalog().unwrap();
     for model in &catalog.models {
         for name in std::iter::once(&model.id).chain(&model.aliases) {
             assert_eq!(catalog.find(name).map(|m| &m.id), Some(&model.id), "{name}");
@@ -42,7 +41,7 @@ fn every_listed_name_resolves_through_find() {
 #[test]
 fn the_efforts_are_the_values_of_the_reasoning_effort_setting() {
     assert_eq!(
-        catalog().efforts,
+        catalog().unwrap().efforts,
         ["low", "medium", "high", "xhigh", "max", "ultra"]
     );
 }

@@ -5,7 +5,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CatalogSource, Harness, HarnessErrorCode, PlatformError, PlatformErrorCode, RunOutput,
+    CatalogSource, Harness, HarnessError, HarnessErrorCode, ModelCatalog, PlatformError,
+    PlatformErrorCode, RunOutput,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_pi::{Pi, PiConfig};
@@ -25,32 +26,33 @@ fn pi(platform: &Arc<FakePlatform>, exclude: &[&str]) -> Pi {
     )
 }
 
-fn output(code: i32, stdout: &str, timed_out: bool) -> Result<RunOutput, PlatformError> {
-    Ok(RunOutput {
+fn output(code: i32, stdout: &str, timed_out: bool) -> RunOutput {
+    RunOutput {
         exit_code: code,
         stdout: stdout.as_bytes().to_vec(),
         stderr: Vec::new(),
         timed_out,
-    })
+    }
 }
 
-fn listed(exclude: &[&str]) -> teamwire_core::ModelCatalog {
+fn listed(exclude: &[&str]) -> Result<ModelCatalog, HarnessError> {
     let platform = Arc::new(FakePlatform::new());
-    platform.queue_run(output(0, TABLE, false));
-    pi(&platform, exclude).models(WAIT).unwrap()
+    platform.queue_run(Ok(output(0, TABLE, false)));
+    pi(&platform, exclude).models(WAIT)
 }
 
 #[test]
 fn the_table_is_parsed_one_model_per_row() {
     let platform = Arc::new(FakePlatform::new());
-    platform.queue_run(output(0, TABLE, false));
+    platform.queue_run(Ok(output(0, TABLE, false)));
     let catalog = pi(&platform, &[]).models(WAIT).unwrap();
 
     let runs = platform.runs();
     assert_eq!(runs.len(), 1);
-    assert_eq!(runs[0].0.program, "pi");
-    assert_eq!(runs[0].0.args, ["--list-models"]);
-    assert_eq!(runs[0].1, WAIT);
+    let (command, timeout) = runs.first().unwrap();
+    assert_eq!(command.program, "pi");
+    assert_eq!(command.args, ["--list-models"]);
+    assert_eq!(*timeout, WAIT);
 
     assert_eq!(catalog.source, CatalogSource::Listed);
     assert_eq!(
@@ -64,7 +66,7 @@ fn the_table_is_parsed_one_model_per_row() {
             .models
             .iter()
             .find(|m| m.provider.as_deref() == Some(provider) && m.id == id)
-            .unwrap_or_else(|| panic!("no row {provider}/{id}"))
+            .expect("the fixture holds the row")
     };
     // An `M` context.
     let opus = row("claude-bridge", "claude-opus-5-5");
@@ -93,15 +95,15 @@ fn the_table_is_parsed_one_model_per_row() {
 
 #[test]
 fn an_excluded_provider_loses_its_rows_and_the_others_stay() {
-    let all = listed(&[]);
-    let kept = listed(&["amazon-bedrock"]);
+    let all = listed(&[]).unwrap();
+    let kept = listed(&["amazon-bedrock"]).unwrap();
     assert!(!kept.models.is_empty());
     assert!(
         kept.models
             .iter()
             .all(|m| m.provider.as_deref() == Some("claude-bridge"))
     );
-    let bridge = |c: &teamwire_core::ModelCatalog| {
+    let bridge = |c: &ModelCatalog| {
         c.models
             .iter()
             .filter(|m| m.provider.as_deref() == Some("claude-bridge"))
@@ -115,7 +117,7 @@ fn an_excluded_provider_loses_its_rows_and_the_others_stay() {
 
 #[test]
 fn a_provider_pi_does_not_list_changes_nothing() {
-    assert_eq!(listed(&["no-such-provider"]), listed(&[]));
+    assert_eq!(listed(&["no-such-provider"]).unwrap(), listed(&[]).unwrap());
 }
 
 #[test]
@@ -132,14 +134,14 @@ fn a_failed_run_is_an_error_and_never_an_empty_list() {
     assert!(err.detail.contains("pi: no config"), "{err}");
 
     // A table on stdout does not rescue a non-zero exit.
-    platform.queue_run(output(2, TABLE, false));
+    platform.queue_run(Ok(output(2, TABLE, false)));
     assert!(pi(&platform, &[]).models(WAIT).is_err());
 }
 
 #[test]
 fn a_timeout_is_an_error_of_its_own() {
     let platform = Arc::new(FakePlatform::new());
-    platform.queue_run(output(RunOutput::TIMEOUT_EXIT, "", true));
+    platform.queue_run(Ok(output(RunOutput::TIMEOUT_EXIT, "", true)));
     let err = pi(&platform, &[]).models(WAIT).unwrap_err();
     assert_eq!(err.code, HarnessErrorCode::Timeout);
 }
@@ -166,7 +168,7 @@ fn output_that_is_not_the_table_is_an_error() {
         "provider model context thinking\nclaude-bridge claude-opus-5-5 1M maybe",
     ] {
         let platform = Arc::new(FakePlatform::new());
-        platform.queue_run(output(0, text, false));
+        platform.queue_run(Ok(output(0, text, false)));
         let err = pi(&platform, &[]).models(WAIT).unwrap_err();
         assert_eq!(err.code, HarnessErrorCode::BadInput, "{text:?}");
     }
@@ -175,10 +177,10 @@ fn output_that_is_not_the_table_is_an_error() {
 #[test]
 fn a_header_with_no_rows_is_an_empty_list() {
     let platform = Arc::new(FakePlatform::new());
-    platform.queue_run(output(
+    platform.queue_run(Ok(output(
         0,
         "provider  model  context  max-out  thinking  images\n",
         false,
-    ));
+    )));
     assert!(pi(&platform, &[]).models(WAIT).unwrap().models.is_empty());
 }
