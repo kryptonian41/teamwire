@@ -19,7 +19,8 @@ use teamwire_core::{
 use teamwire_fakes::{FakeHarness, TestHome};
 use teamwire_otel::{OutcomeReport, OutcomeRow, VerifyCounts};
 
-use view::{View, gather, normalise};
+use teamwire_core::models::normalise_model;
+use view::{View, gather};
 
 fn model(provider: Option<&str>, id: &str, aliases: &[&str], context: Option<u64>) -> ModelInfo {
     ModelInfo {
@@ -155,13 +156,14 @@ fn a_name_loses_its_case_provider_region_date_and_version() {
         ("global.anthropic.claude-sonnet-4-5", "claude-sonnet-4-5"),
         ("anthropic.claude-opus-4-6-v1", "claude-opus-4-6"),
         ("amazon.nova-2-lite-v1:0", "nova-2-lite"),
+        ("deepseek.v3.2", "deepseek-v3.2"),
         ("amazon-bedrock/amazon.nova-premier-v1:0", "nova-premier"),
         ("claude-bridge/claude-opus-5-5", "claude-opus-5-5"),
         ("claude-sonnet-4-5@20250929", "claude-sonnet-4-5"),
         ("gpt-4o-2024-08-06", "gpt-4o"),
         ("claude-opus-4-20250514", "claude-opus-4"),
     ] {
-        assert_eq!(normalise(name), want, "{name}");
+        assert_eq!(normalise_model(name), want, "{name}");
     }
 }
 
@@ -177,9 +179,54 @@ fn a_models_own_dots_and_version_stay() {
         "kimi-k2.5",
         "o3",
     ] {
-        assert_eq!(normalise(name), name);
+        assert_eq!(normalise_model(name), name);
     }
-    assert_ne!(normalise("gpt-5.2"), normalise("gpt-5"));
+    assert_ne!(normalise_model("gpt-5.2"), normalise_model("gpt-5"));
+}
+
+#[test]
+fn bedrocks_dotted_deepseek_reaches_the_hyphenated_evidence_name() {
+    let pi = ModelCatalog {
+        models: vec![
+            model(Some("amazon-bedrock"), "deepseek.v3.2", &[], Some(163_800)),
+            model(Some("amazon-bedrock"), "deepseek.r1-v1:0", &[], None),
+        ],
+        ..catalog()
+    };
+    let evidence = Evidence {
+        as_of: "2026-11-03".to_owned(),
+        entries: vec![
+            entry(TaskClass::ContainedFeature, "deepseek-v3.2", "Board A", 1),
+            entry(
+                TaskClass::ContainedFeature,
+                "deepseek-v3.2-exp",
+                "Board A",
+                2,
+            ),
+        ],
+    };
+    let view = gather(
+        &fake(Ok(pi)),
+        Some(TaskClass::ContainedFeature),
+        &evidence,
+        &report,
+    )
+    .unwrap();
+    let ev = &view.class.as_ref().unwrap().evidence;
+    let reached: Vec<(&str, Vec<String>)> = ev
+        .reachable
+        .iter()
+        .map(|r| (r.entry.model.as_str(), r.spec_values.clone()))
+        .collect();
+    assert_eq!(
+        reached,
+        [(
+            "deepseek-v3.2",
+            vec!["amazon-bedrock/deepseek.v3.2".to_owned()]
+        )]
+    );
+    let unreached: Vec<&str> = ev.unreachable.iter().map(|e| e.model.as_str()).collect();
+    assert_eq!(unreached, ["deepseek-v3.2-exp"]);
 }
 
 // ---- the model list ----
