@@ -16,8 +16,8 @@ use teamwire_core::{HarnessId, HostId, MemberKind, Mode, Role, TeamName, Timesta
 use teamwire_fakes::TestHome;
 use teamwire_store::{
     APPLICATION_ID, NewMember, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL,
-    SCHEMA_V5_SQL, SCHEMA_V6_SQL, SCHEMA_V7_SQL, SCHEMA_V8_SQL, SCHEMA_VERSION, Store, Waiver,
-    database_path,
+    SCHEMA_V5_SQL, SCHEMA_V6_SQL, SCHEMA_V7_SQL, SCHEMA_V8_SQL, SCHEMA_VERSION, Store, StoreError,
+    Waiver, database_path,
 };
 
 fn team() -> TeamName {
@@ -297,4 +297,140 @@ fn a_step_that_fails_midway_leaves_the_version_8_database_whole() {
         .unwrap();
     assert_eq!(version, 8);
     assert_eq!(leftovers(&path), 0);
+}
+
+/// An open that finds the database already at version 9 runs no step, so
+/// it never turns foreign key checks off. Its writes must be checked too.
+#[test]
+fn a_store_opened_on_a_version_9_database_enforces_foreign_keys() {
+    let home = TestHome::new().unwrap();
+    version_8_database(&home);
+    drop(Store::open(home.path(), &team()).unwrap());
+
+    let mut store = Store::open(home.path(), &team()).unwrap();
+    assert_eq!(store.schema_version().unwrap(), 9);
+    let waiver = Waiver {
+        role: Role::parse("ghost").unwrap(),
+        flag_id: "outside-owns:x".to_owned(),
+        head_sha: "abc".to_owned(),
+        reason: "none".to_owned(),
+        created_at: at(),
+    };
+    let stored = store.write(|tx| tx.insert_waiver(at(), &waiver));
+    assert!(
+        matches!(stored, Err(StoreError::Constraint(_))),
+        "{stored:?}"
+    );
+}
+
+/// The store writes with foreign key checks on, so a completion for a role
+/// with no member means the file was damaged. The step runs with the checks
+/// off, so only the key check before its commit can refuse such a file.
+#[test]
+fn a_completion_that_names_no_member_fails_the_open_and_keeps_version_8() {
+    let home = TestHome::new().unwrap();
+    let path = version_8_database(&home);
+    // The bundled SQLite starts every connection with the checks on.
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             INSERT INTO completions (ulid, role, generation, n, status, summary,
+                 final_source, report_state, created_at)
+             VALUES ('01J9ZQ000000000000000CMP02', 'ghost', 1, 1, 'done', 'gone',
+                 'none', 'pending', '2026-10-01T00:50:00.000Z');",
+        )
+        .unwrap();
+    assert_eq!(rows(&path, "completions", "ulid").len(), 2);
+    let before = snapshot(&path);
+
+    let refused = Store::open(home.path(), &team()).unwrap_err();
+    assert!(
+        matches!(&refused, StoreError::Corrupt(text) if text.contains("completions")),
+        "{refused:?}"
+    );
+
+    assert_eq!(snapshot(&path), before);
+    let version: u32 = Connection::open(&path)
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 8);
+    assert_eq!(leftovers(&path), 0);
+}
+
+/// The rebuilt table has the old table's columns, each with its type,
+/// NOT NULL, default and place in the primary key, and stays STRICT.
+#[test]
+fn every_column_of_members_is_the_same_after_the_step() {
+    let home = TestHome::new().unwrap();
+    let path = version_8_database(&home);
+    let columns = rows(&path, "pragma_table_xinfo('members')", "cid");
+    assert_eq!(columns.len(), 23);
+    let table = rows(&path, "pragma_table_list('members')", "name");
+    assert_eq!(table.len(), 1);
+
+    drop(Store::open(home.path(), &team()).unwrap());
+
+    assert_eq!(rows(&path, "pragma_table_xinfo('members')", "cid"), columns);
+    assert_eq!(rows(&path, "pragma_table_list('members')", "name"), table);
+}
+
+/// A member row that every CHECK of `members` takes.
+const GOOD_MEMBER: [(&str, &str); 13] = [
+    ("role", "'checked'"),
+    ("title", "'Check it'"),
+    ("kind", "'plan_reviewer'"),
+    ("mode", "'pane'"),
+    ("harness", "'pi'"),
+    ("host", "'herdr'"),
+    ("token_sha256", "zeroblob(32)"),
+    ("cwd", "'/r'"),
+    ("owns", "'[\"src/\"]'"),
+    ("deadline_s", "60"),
+    ("state", "'started'"),
+    ("generation", "1"),
+    ("gen_started_at", "'2026-10-01T00:00:07.000Z'"),
+];
+
+/// Inserts `GOOD_MEMBER` with `column` set to the SQL value `value`.
+fn insert_member_with(conn: &Connection, column: &str, value: &str) -> rusqlite::Result<()> {
+    let names: Vec<&str> = GOOD_MEMBER.iter().map(|(c, _)| *c).collect();
+    let values: Vec<&str> = GOOD_MEMBER
+        .iter()
+        .map(|(c, v)| if *c == column { value } else { *v })
+        .collect();
+    conn.execute_batch(&format!(
+        "INSERT INTO members ({}) VALUES ({})",
+        names.join(", "),
+        values.join(", ")
+    ))
+}
+
+#[test]
+fn every_other_check_of_members_still_refuses_a_row_that_breaks_it() {
+    let home = TestHome::new().unwrap();
+    let path = version_8_database(&home);
+    drop(Store::open(home.path(), &team()).unwrap());
+    let conn = Connection::open(&path).unwrap();
+
+    for (column, bad) in [
+        ("mode", "'not_a_mode'"),
+        ("state", "'not_a_state'"),
+        ("token_sha256", "zeroblob(31)"),
+        ("owns", "'[\"src/\"'"),
+        ("deadline_s", "0"),
+        ("generation", "0"),
+    ] {
+        let refused = insert_member_with(&conn, column, bad)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            refused.contains("CHECK constraint failed") && refused.contains(column),
+            "{column}: {refused}"
+        );
+    }
+    // The same row with no broken value is stored, so each refusal above
+    // came from the one value that broke its CHECK.
+    insert_member_with(&conn, "", "").unwrap();
 }

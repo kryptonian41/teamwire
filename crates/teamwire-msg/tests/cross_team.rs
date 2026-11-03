@@ -298,6 +298,60 @@ fn another_team_is_refused_when_it_cannot_take_the_message() {
     assert!(messages(&t.beta).is_empty());
 }
 
+/// A plan reviewer hears only its own lead, as a reviewer does, and talks
+/// to no other team.
+#[test]
+fn a_plan_reviewer_and_another_team_never_reach_each_other() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Implementer);
+    rig.add_member("aplan", MemberKind::PlanReviewer);
+    rig.add_team(
+        "beta",
+        "lead-2",
+        &[
+            ("db", MemberKind::Implementer),
+            ("plan", MemberKind::PlanReviewer),
+        ],
+    );
+    let beta = rig.store_of("beta");
+    let cases: [(&str, &str, MessageType, Refusal); 4] = [
+        (
+            "api",
+            "plan@beta",
+            MessageType::Finding,
+            Refusal::RecipientNotAllowed,
+        ),
+        (
+            "api",
+            "plan@beta",
+            MessageType::Question,
+            Refusal::RecipientNotAllowed,
+        ),
+        (
+            "lead",
+            "plan@beta",
+            MessageType::Finding,
+            Refusal::RecipientNotAllowed,
+        ),
+        (
+            "aplan",
+            "db@beta",
+            MessageType::Finding,
+            Refusal::TypeNotAllowed,
+        ),
+    ];
+    for (from, target, kind, refusal) in cases {
+        let req = rig.request(from, &[target], kind, "x");
+        assert_eq!(
+            refused(send(&mut rig.ctx(), req)),
+            Some(refusal),
+            "{from} -> {target} {kind}"
+        );
+    }
+    assert!(messages(&rig.store).is_empty());
+    assert!(messages(&beta).is_empty());
+}
+
 #[test]
 fn a_closed_team_takes_nothing() {
     let mut t = two_teams();

@@ -214,6 +214,76 @@ fn a_question_goes_to_any_talking_agent_and_never_to_a_quiet_one() {
     }
 }
 
+/// The team rig with a plan reviewer, `plan`, beside the reviewer.
+fn plan_rig() -> (Rig, teamwire_core::Place) {
+    let mut rig = team_rig();
+    let plan = rig.add_member("plan", MemberKind::PlanReviewer);
+    (rig, plan)
+}
+
+#[test]
+fn a_plan_reviewer_sends_nothing_of_any_type() {
+    let (mut rig, _) = plan_rig();
+    // A real question asked of the plan reviewer, so its answer fails on
+    // the sender's kind and not on a missing question.
+    let ask = rig.request("lead", &["plan"], MessageType::Question, "which brief?");
+    send(&mut rig.ctx(), ask).unwrap();
+    for kind in MessageType::ALL.iter().copied() {
+        let mut req = rig.request("plan", &["lead"], kind, "x");
+        req.commit = Some(FULL_SHA.to_owned());
+        req.re = (kind == MessageType::Answer).then(|| id("m001"));
+        assert_eq!(
+            refused(send(&mut rig.ctx(), req)),
+            Some(Refusal::TypeNotAllowed),
+            "{kind}"
+        );
+    }
+    // Only the lead's question is stored, and no git command ran.
+    let stored = rig
+        .store
+        .read(|tx| {
+            tx.messages(&teamwire_store::MessageFilter::default())?
+                .all_or_corrupt()
+        })
+        .unwrap();
+    let senders: Vec<&str> = stored.iter().map(|m| m.sender.as_str()).collect();
+    assert_eq!(senders, ["lead"]);
+    assert!(rig.platform.runs().is_empty());
+}
+
+#[test]
+fn members_may_not_message_a_plan_reviewer() {
+    let (mut rig, _) = plan_rig();
+    for from in ["api", "scout"] {
+        for kind in [
+            MessageType::Notice,
+            MessageType::Finding,
+            MessageType::Question,
+        ] {
+            let mut req = rig.request(from, &["plan"], kind, "x");
+            req.commit = Some(FULL_SHA.to_owned());
+            assert_eq!(
+                refused(send(&mut rig.ctx(), req)),
+                Some(Refusal::RecipientNotAllowed),
+                "{from} {kind}"
+            );
+        }
+    }
+    assert!(nothing_stored(&rig));
+    assert!(rig.platform.runs().is_empty());
+}
+
+#[test]
+fn the_leads_note_and_reprompt_reach_a_plan_reviewer() {
+    let (mut rig, plan) = plan_rig();
+    for kind in [MessageType::Note, MessageType::Reprompt] {
+        let req = rig.request("lead", &["plan"], kind, &format!("a {kind} for the plan"));
+        let report = send(&mut rig.ctx(), req).unwrap();
+        assert_eq!(only(&report).state, RecipientState::HandedOff, "{kind}");
+    }
+    assert_eq!(rig.host.submitted(&plan).len(), 2);
+}
+
 #[test]
 fn only_the_lead_sends_a_reprompt_or_a_note() {
     let mut rig = team_rig();
