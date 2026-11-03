@@ -20,7 +20,14 @@ pub(super) fn run(claude_dir: &Path, argv: &[String]) -> ExitCode {
     let entries = std::fs::read_dir(claude_dir.join("sessions"))
         .into_iter()
         .flatten();
-    for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+    // Only `<pid>.json` files are sessions. fake-claude writes each one
+    // through a hidden `.<name>.<pid>.tmp` beside it, which already holds the
+    // whole document before the rename, so listing it would show that
+    // session twice.
+    let sessions = entries
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "json"));
+    for path in sessions {
         let Some(doc) = fsutil::read_text(&path)
             .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
         else {

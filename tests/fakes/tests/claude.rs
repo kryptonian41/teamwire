@@ -694,6 +694,23 @@ fn agents_json_lists_both_row_shapes_and_starts_no_session() {
     );
 }
 
+/// fake-claude writes each session file through a hidden temp file that
+/// already holds the whole document, so a listing taken mid-write must still
+/// show each session once.
+#[test]
+fn agents_json_skips_a_session_file_still_being_written() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let doc = json!({"pid": 4242, "sessionId": "bg-1", "cwd": "/tmp", "startedAt": 1,
+                     "kind": "bg", "name": "background job", "status": "blocked"});
+    env.add_session_file(4242, &doc).unwrap();
+    env.write_file("claude/sessions/.4242.json.77.tmp", &doc.to_string())
+        .unwrap();
+    let out = env.run_claude(&["agents", "--json"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let rows: Vec<Value> = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+}
+
 #[test]
 fn the_agent_gets_its_panes_herdr_variables() {
     let mut env = FakeHerdrEnv::new().unwrap();

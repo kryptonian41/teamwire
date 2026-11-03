@@ -347,9 +347,11 @@ names a directory, so it can never write into the real `~/.claude`.
   Claude Code).
 - `fake-claude agents --json` (also reached as `claude agents --json` through
   the installed `claude` link) prints a JSON array of the session files in
-  `<dir>/sessions` and starts no session. An interactive row carries its state
-  under `status`, a background row (`"kind": "bg"` in its file) under `state`;
-  add a background row with `FakeHerdrEnv::add_session_file`.
+  `<dir>/sessions` and starts no session. It reads only `<pid>.json` files,
+  never the hidden temporary file of a session file being written. An
+  interactive row carries its state under `status`, a background row
+  (`"kind": "bg"` in its file) under `state`; add a background row with
+  `FakeHerdrEnv::add_session_file`.
 - `claude --version` prints one line and starts no session. `claude --help`
   lists the flags teamwire passes to start a member; `FAKE_CLAUDE_HELP_WITHOUT=--effort`
   leaves one out. `herdr --version` prints one line.
