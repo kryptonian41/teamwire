@@ -356,6 +356,29 @@ fn archive(home: &TestHome, store: &Store, name: &str) {
 }
 
 #[test]
+fn minutes_run_to_the_first_completion_not_a_later_one() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    member(
+        &mut s,
+        "api",
+        "claude-code",
+        &json!("root_cause"),
+        &json!({}),
+    );
+    // Started at second 1, done at minute 10, then reprompted and done again
+    // at minute 60.
+    completed(&mut s, 601, "api");
+    reprompt(&mut s, 700, "api", false);
+    completed(&mut s, 3601, "api");
+    let report = outcome_report(home.path());
+    assert_eq!(
+        row(&report, "root_cause", "unset").minutes_median,
+        Some(10.0)
+    );
+}
+
+#[test]
 fn the_median_of_an_even_count_is_the_mean_of_the_middle_two() {
     assert_eq!(median(vec![]), None);
     assert_eq!(median(vec![3.0, 1.0, 2.0]), Some(2.0));
