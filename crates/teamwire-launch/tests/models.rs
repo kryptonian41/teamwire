@@ -248,7 +248,7 @@ fn a_bare_opus_on_the_real_pi_list_warns_naming_the_providers() {
         let warning = warnings.first().unwrap();
         assert!(
             warning.starts_with("role a:")
-                && warning.contains(&format!("{providers} offer a match"))
+                && warning.contains(&format!("offer a match are {providers};"))
                 && warning.contains("picks the provider itself")
                 && warning.contains("TEAMWIRE_PI_EXCLUDE_PROVIDERS")
                 && warning.contains("write provider/id")

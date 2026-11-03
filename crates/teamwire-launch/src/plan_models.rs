@@ -121,7 +121,7 @@ fn check_model(
         warnings.push(format!(
             "role {role}: model {model:?} names no provider, so harness {harness} picks the \
              provider itself, and it may pick one that TEAMWIRE_PI_EXCLUDE_PROVIDERS leaves out \
-             of teamwire's list. Of the listed providers, {} offer a match; write provider/id, \
+             of teamwire's list. The listed providers that offer a match are {}; write provider/id, \
              as `teamwire models --harness {harness}` prints it",
             offered.into_iter().collect::<Vec<_>>().join(", ")
         ));
