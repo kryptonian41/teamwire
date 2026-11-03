@@ -4,12 +4,14 @@
 //! harness lists no model from. A model name the list cannot match only
 //! warns, because a fixed list can lag the vendor and pi's patterns are
 //! fuzzy. A harness that gives no list skips both checks with a warning, so
-//! a slow or broken harness program never blocks a launch.
+//! a slow or broken harness program never blocks a launch. Which rows a
+//! `model` names is core's `ModelCatalog::matching`, so launch and
+//! `teamwire models` read names by one rule.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use teamwire_core::{HarnessId, ModelCatalog, ModelInfo, Registry};
+use teamwire_core::{HarnessId, ModelCatalog, Registry};
 
 use crate::{PlannedMember, SpecError};
 
@@ -91,9 +93,9 @@ fn check_effort(m: &PlannedMember, catalog: &ModelCatalog, errors: &mut Vec<Spec
     ));
 }
 
-/// Warns about a model the list cannot match, or one that more than one
-/// provider offers, and refuses a `provider/` prefix the list has no model
-/// from.
+/// Warns about a model the list cannot match, and about one that names no
+/// provider on a list that has providers, and refuses a `provider/` prefix
+/// the list has no model from.
 fn check_model(
     m: &PlannedMember,
     catalog: &ModelCatalog,
@@ -105,30 +107,29 @@ fn check_model(
     };
     let role = m.spec.role.as_str();
     let harness = &m.harness;
-    let rows = matching(catalog, model);
-    if let Some(row) = rows.first() {
-        let offered: BTreeSet<&str> = rows.iter().filter_map(|r| r.provider.as_deref()).collect();
-        if offered.len() > 1 {
-            let named: Vec<&str> = offered.into_iter().collect();
-            warnings.push(format!(
-                "role {role}: harness {harness} offers model {model:?} through more than one \
-                 provider ({}), so the harness picks the provider itself; write provider/id, \
-                 such as {}/{}",
-                named.join(", "),
-                named.first().copied().unwrap_or_default(),
-                row.id
-            ));
+    let providers = catalog.providers();
+    let prefix = model.split_once('/').map(|(prefix, _)| prefix);
+    let named = prefix.is_some_and(|p| providers.iter().any(|q| q.eq_ignore_ascii_case(p)));
+    let rows = catalog.matching(model);
+    if !rows.is_empty() {
+        if providers.is_empty() || named {
+            return;
         }
+        // pi resolves a bare pattern to whichever provider it prefers, even
+        // one teamwire's list leaves out, and a call there can fail.
+        let offered: BTreeSet<&str> = rows.iter().filter_map(|r| r.provider.as_deref()).collect();
+        warnings.push(format!(
+            "role {role}: model {model:?} names no provider, so harness {harness} picks the \
+             provider itself, and it may pick one that TEAMWIRE_PI_EXCLUDE_PROVIDERS leaves out \
+             of teamwire's list. Of the listed providers, {} offer a match; write provider/id, \
+             as `teamwire models --harness {harness}` prints it",
+            offered.into_iter().collect::<Vec<_>>().join(", ")
+        ));
         return;
     }
-    let providers: BTreeSet<&str> = catalog
-        .models
-        .iter()
-        .filter_map(|r| r.provider.as_deref())
-        .collect();
-    if let Some((prefix, _)) = model.split_once('/')
+    if let Some(prefix) = prefix
         && !providers.is_empty()
-        && !providers.iter().any(|p| p.eq_ignore_ascii_case(prefix))
+        && !named
     {
         errors.push(SpecError::new(
             Some(role),
@@ -138,7 +139,7 @@ fn check_model(
                 "role {role}: harness {harness} lists no model from provider {prefix} for model \
                  {model:?}. A provider the user excluded, or one without a credential on this \
                  machine, is not listed. The listed providers are {}",
-                providers.into_iter().collect::<Vec<_>>().join(", ")
+                providers.join(", ")
             ),
         ));
         return;
@@ -149,42 +150,9 @@ fn check_model(
     ));
 }
 
-/// The rows `model` names. pi takes a `:<thinking>` suffix, so the part
-/// before the last `:` is tried when the whole name matches nothing.
-fn matching<'c>(catalog: &'c ModelCatalog, model: &str) -> Vec<&'c ModelInfo> {
-    let mut names = vec![model];
-    if let Some((before, _)) = model.rsplit_once(':') {
-        names.push(before);
-    }
-    names
-        .into_iter()
-        .map(|name| {
-            catalog
-                .models
-                .iter()
-                .filter(|row| names_row(row, name))
-                .collect::<Vec<_>>()
-        })
-        .find(|rows| !rows.is_empty())
-        .unwrap_or_default()
-}
-
-/// True when `name` is the row's id or an alias, either bare or as
-/// `provider/id`.
-fn names_row(row: &ModelInfo, name: &str) -> bool {
-    let bare = |n: &str| {
-        row.id.eq_ignore_ascii_case(n) || row.aliases.iter().any(|a| a.eq_ignore_ascii_case(n))
-    };
-    bare(name)
-        || row.provider.as_deref().is_some_and(|p| {
-            name.split_once('/')
-                .is_some_and(|(prefix, rest)| prefix.eq_ignore_ascii_case(p) && bare(rest))
-        })
-}
-
 #[cfg(test)]
 mod tests {
-    use teamwire_core::CatalogSource;
+    use teamwire_core::{CatalogSource, ModelInfo};
 
     use super::*;
 
@@ -199,7 +167,8 @@ mod tests {
     }
 
     fn ids(catalog: &ModelCatalog, model: &str) -> Vec<String> {
-        matching(catalog, model)
+        catalog
+            .matching(model)
             .iter()
             .map(|r| format!("{}/{}", r.provider.as_deref().unwrap_or("-"), r.id))
             .collect()
