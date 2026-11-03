@@ -215,6 +215,62 @@ fn dry_run_prints_the_plan_and_touches_nothing() {
 }
 
 #[test]
+fn dry_run_shows_each_members_harness_model_effort_and_task_class() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["children"][0]["model"] = json!("sonnet");
+    spec["children"][0]["effort"] = json!("high");
+    spec["children"][0]["task_class"] = json!("root_cause");
+    spec["children"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"role": "b", "title": "Beta", "mode": "pane",
+                     "cwd": rig.work.path(), "task": "look around"}));
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let shown = text(&out.stdout);
+    assert!(
+        shown.contains("on harness claude-code with sonnet at high, task class root_cause"),
+        "{shown}"
+    );
+    assert!(
+        shown.contains(
+            "on harness claude-code with the default model at the default effort, task class none"
+        ),
+        "{shown}"
+    );
+    let err = text(&out.stderr);
+    assert!(
+        err.contains(
+            "warning: member b has no task_class; outcomes for it cannot be read per class"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("member a has no task_class"), "{err}");
+}
+
+#[test]
+fn an_unknown_task_class_is_refused_and_nothing_is_created() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["children"][0]["task_class"] = json!("tricky");
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);
+    assert_eq!(out.status.code(), Some(1));
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("refused [a]: task_class_unknown") && err.contains("mechanical_edit"),
+        "{err}"
+    );
+    assert!(rig.home_is_empty());
+}
+
+#[test]
 fn an_unknown_key_is_warned_about_and_the_launch_goes_ahead() {
     let rig = Rig::new();
     let mut spec = pane_spec("demo", rig.work.path());
