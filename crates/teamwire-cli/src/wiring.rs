@@ -98,10 +98,20 @@ impl WiringEnv {
 }
 
 pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
+    wire_with_home(env, None)
+}
+
+/// `wire` for a command run with the global `--home` flag. The flag wins
+/// over `TEAMWIRE_HOME` wherever wiring reads the state directory, as it
+/// does for every command.
+pub(crate) fn wire_with_home(
+    env: &WiringEnv,
+    home_flag: Option<&Path>,
+) -> Result<Wiring, RegistryError> {
     let platform = teamwire_platform::native();
     let claude = claude_config(env);
     let codex = codex_config(env);
-    let pi = pi_config(env);
+    let pi = pi_config(env, home_flag);
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
@@ -163,8 +173,8 @@ fn codex_config(env: &WiringEnv) -> CodexConfig {
 }
 
 /// `PI_CODING_AGENT_DIR`, else `~/.pi/agent`. The providers to leave out
-/// come from `pi_exclude_providers`.
-fn pi_config(env: &WiringEnv) -> PiConfig {
+/// come from `pi_exclude_providers`, which reads `home_flag`'s config file.
+fn pi_config(env: &WiringEnv, home_flag: Option<&Path>) -> PiConfig {
     let agent_dir = match (&env.pi_agent_dir, &env.user_home) {
         (Some(dir), _) => dir.clone(),
         (None, Some(home)) => home.join(".pi").join("agent"),
@@ -173,7 +183,7 @@ fn pi_config(env: &WiringEnv) -> PiConfig {
     PiConfig {
         agent_dir,
         pi_bin: "pi".to_owned(),
-        exclude_providers: pi_exclude_providers(env.user_home.as_deref(), &|key| {
+        exclude_providers: pi_exclude_providers(home_flag, env.user_home.as_deref(), &|key| {
             std::env::var(key).ok()
         }),
     }
@@ -186,15 +196,21 @@ const PI_EXCLUDE_KEY: &str = "TEAMWIRE_PI_EXCLUDE_PROVIDERS";
 /// a `KEY = "value"` line in `$TEAMWIRE_HOME/config.toml`, the way the OTLP
 /// settings are read. `env` looks up one variable and an empty value counts
 /// as unset. The value is a comma-separated list; spaces around a name and
-/// empty names are dropped. `TEAMWIRE_HOME` is `~/.teamwire` by default.
+/// empty names are dropped. The state directory is `home_flag` (`--home`),
+/// else `TEAMWIRE_HOME`, else `~/.teamwire`, the order every command uses.
 fn pi_exclude_providers(
+    home_flag: Option<&Path>,
     user_home: Option<&Path>,
     env: &dyn Fn(&str) -> Option<String>,
 ) -> Vec<String> {
     let value = env(PI_EXCLUDE_KEY).filter(|v| !v.is_empty()).or_else(|| {
-        let home = env("TEAMWIRE_HOME")
-            .filter(|v| !v.is_empty())
-            .map(PathBuf::from)
+        let home = home_flag
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                env("TEAMWIRE_HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+            })
             .or_else(|| user_home.map(|h| h.join(".teamwire")))?;
         let file = std::fs::read_to_string(home.join("config.toml")).ok()?;
         file_setting(&file, PI_EXCLUDE_KEY)
@@ -414,13 +430,16 @@ mod tests {
     #[test]
     fn pis_directory_is_pis_own_setting_then_the_default() {
         let mut e = env(None);
-        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/home/u/.pi/agent"));
         assert_eq!(
-            pi_config(&e).sessions_dir(),
+            pi_config(&e, None).agent_dir,
+            PathBuf::from("/home/u/.pi/agent")
+        );
+        assert_eq!(
+            pi_config(&e, None).sessions_dir(),
             PathBuf::from("/home/u/.pi/agent/sessions/teamwire")
         );
         e.pi_agent_dir = Some(PathBuf::from("/pi"));
-        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/pi"));
+        assert_eq!(pi_config(&e, None).agent_dir, PathBuf::from("/pi"));
     }
 
     fn write(path: &Path, text: &str) {
@@ -438,7 +457,7 @@ mod tests {
         if let Some(config) = config {
             write(&home.path().join("config.toml"), config);
         }
-        pi_exclude_providers(user_home, &|key| {
+        pi_exclude_providers(None, user_home, &|key| {
             env.iter()
                 .find(|(k, _)| *k == key)
                 .map(|(_, v)| (*v).to_owned())
@@ -502,8 +521,41 @@ mod tests {
             &state.join("config.toml"),
             "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"p\"",
         );
-        assert_eq!(pi_exclude_providers(Some(user.path()), &|_| None), ["p"]);
-        assert!(pi_exclude_providers(None, &|_| None).is_empty());
+        assert_eq!(
+            pi_exclude_providers(None, Some(user.path()), &|_| None),
+            ["p"]
+        );
+        assert!(pi_exclude_providers(None, None, &|_| None).is_empty());
+    }
+
+    #[test]
+    fn the_home_flag_wins_over_teamwire_home_for_the_file() {
+        let flag = tempfile::tempdir().unwrap();
+        write(
+            &flag.path().join("config.toml"),
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"from-flag\"",
+        );
+        let other = tempfile::tempdir().unwrap();
+        write(
+            &other.path().join("config.toml"),
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"from-variable\"",
+        );
+        let variable = other.path().display().to_string();
+        let home_set = |key: &str| (key == "TEAMWIRE_HOME").then(|| variable.clone());
+        assert_eq!(
+            pi_exclude_providers(Some(flag.path()), None, &home_set),
+            ["from-flag"]
+        );
+        assert_eq!(
+            pi_exclude_providers(None, None, &home_set),
+            ["from-variable"]
+        );
+        // The environment's list still wins over the flag's file.
+        let listed = |key: &str| (key == PI_EXCLUDE_KEY).then(|| "env".to_owned());
+        assert_eq!(
+            pi_exclude_providers(Some(flag.path()), None, &listed),
+            ["env"]
+        );
     }
 
     #[test]
