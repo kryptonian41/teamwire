@@ -1,0 +1,3 @@
+exit Some(0)
+--- stdout
+{"hookSpecificOutput":{"additionalContext":"[teamwire:zero] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-n82t1t/teams/zero/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close zero` once /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-n82t1t/teams/zero/afk/REPORT.md exists. If a command you started will wake you, stop again.","hookEventName":"Stop"}}--- stderr

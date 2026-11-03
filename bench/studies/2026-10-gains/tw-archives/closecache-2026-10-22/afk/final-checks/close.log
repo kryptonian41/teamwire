@@ -1,0 +1,168 @@
+    Finished `test` profile [unoptimized] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/teamwire_close-44d98a436be6896c)
+
+running 1 test
+test archive::tests::every_state_of_the_second_backup_verifies ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+     Running tests/afk_report.rs (target/debug/deps/afk_report-60cf60f3926cb4fe)
+
+running 8 tests
+test an_ordinary_team_closes_with_no_report ... ok
+test removing_one_member_of_an_afk_team_needs_no_report ... ok
+test a_removed_member_still_needs_the_report ... ok
+test a_report_heading_may_leave_out_the_comma ... ok
+test an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so ... ok
+test an_afk_team_that_never_had_a_member_closes_with_no_report ... ok
+test a_report_with_all_eight_headings_lets_an_afk_team_close ... ok
+test a_report_missing_any_one_heading_is_refused_and_names_it ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/archive.rs (target/debug/deps/archive-84b35a28f8638222)
+
+running 6 tests
+test a_close_removes_what_a_killed_close_left_in_deleting_unless_its_pid_is_alive ... ok
+test a_close_leaves_no_team_directory_and_nothing_in_deleting ... ok
+test a_file_that_changes_after_it_was_archived_is_not_deleted ... ok
+test an_archive_path_that_exists_is_never_written_into ... ok
+test a_copy_that_stops_part_way_leaves_no_archive_and_the_rerun_leaves_one ... ok
+test archive_hash_mismatch_stops_close ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.29s
+
+     Running tests/close.rs (target/debug/deps/close-5f18e70114a6d7f3)
+
+running 36 tests
+test a_removed_member_is_not_asked_about ... ok
+test an_unreadable_agent_listing_refuses_for_an_unplaced_member ... ok
+test a_dialog_waiting_for_an_answer_refuses_too ... ok
+test a_lock_taken_by_another_close_after_the_check_is_reported_not_cleared ... ok
+test a_place_the_host_no_longer_knows_is_not_busy ... ok
+test a_close_lock_whose_pid_was_reused_is_stale ... ok
+test a_reused_place_id_is_not_closed_by_a_whole_team_close ... ok
+test a_close_records_its_own_start_time_with_the_lock ... ok
+test closes_member_left_creating ... ok
+test live_agent_without_a_recorded_place_refuses_and_keeps_the_state ... ok
+test no_live_agent_for_an_unplaced_member_lets_close_finish ... ok
+test a_hold_the_team_did_not_start_or_another_team_needs_is_left_running ... ok
+test stale_close_lock_cleared_and_rerun ... ok
+test the_dry_run_header_counts_what_it_checked ... ok
+test git_that_cannot_say_refuses_rather_than_guess ... ok
+test a_branch_the_user_deleted_is_not_reported_kept ... ok
+test unknown_busy_state_refuses ... ok
+test a_detached_head_that_no_rescue_name_fits_refuses_and_keeps_the_worktree ... ok
+test busy_member_refuses ... ok
+test a_private_file_stays_private_in_the_archive ... ok
+test a_crash_between_the_hold_and_the_delete_leaves_no_running_hold_and_a_rerun_continues ... ok
+test a_full_close_runs_the_fixed_order_and_archives_everything ... ok
+test dirty_worktree_refuses ... ok
+test a_place_that_will_not_close_stops_the_close_and_a_rerun_finishes_it ... ok
+test hold_released_before_state_deleted ... ok
+test keep_state_leaves_the_directory_marked_closed_and_a_rerun_can_finish_it ... ok
+test the_dry_run_names_the_rescue_branch_and_creates_none ... ok
+test untracked_subtask_md_counts_as_dirty ... ok
+test a_detached_head_another_ref_holds_gets_no_rescue_branch ... ok
+test the_unpushed_note_names_the_branch_head_is_on ... ok
+test a_rescue_branch_already_at_the_commit_is_reused ... ok
+test the_archive_goes_where_asked_and_never_over_an_existing_path ... ok
+test commits_on_a_detached_head_get_a_rescue_branch_and_the_close_finishes ... ok
+test a_rescue_name_taken_at_another_commit_moves_on_to_dash_two ... ok
+test while_a_close_runs_the_state_reads_closing_and_a_second_close_and_a_removal_are_refused ... ok
+test busy_recheck_before_each_destructive_step ... ok
+
+test result: ok. 36 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.55s
+
+     Running tests/closer_cache.rs (target/debug/deps/closer_cache-6d892d17b3cfa739)
+
+running 8 tests
+test the_plan_names_the_closer_cache_only_when_it_exists ... ok
+test a_linked_cache_folder_loses_only_the_closed_teams_cache ... ok
+test a_cache_whose_team_state_is_gone_goes_with_the_next_team_close ... ok
+test a_closer_cache_link_to_nothing_is_removed_too ... ok
+test a_team_close_deletes_the_closer_cache_and_no_other_team_cache ... ok
+test a_closer_cache_that_is_a_link_loses_the_link_only ... ok
+test a_linked_closer_folder_loses_only_the_closed_teams_cache ... ok
+test keep_state_keeps_the_closer_cache_until_the_state_goes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/detached_order.rs (target/debug/deps/detached_order-b998c47d0d6fe3c6)
+
+running 6 tests
+test the_dry_run_names_each_detached_member_whose_place_closes_first ... ok
+test a_detached_members_place_is_closed_in_remove_worktrees_before_its_worktree_goes ... ok
+test the_worktree_is_still_there_when_the_place_closes_and_goes_once_its_processes_end ... ok
+test every_commit_the_agent_makes_during_remove_worktrees_is_kept_on_a_ref ... ok
+test a_member_on_a_branch_keeps_its_place_until_close_places ... ok
+test a_process_that_outlives_the_closed_place_keeps_the_worktree_until_it_ends ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.09s
+
+     Running tests/empty_store.rs (target/debug/deps/empty_store-f175b7ff1579e8a5)
+
+running 5 tests
+test an_unnamed_team_is_not_guessed_from_an_empty_store ... ok
+test a_member_row_without_a_team_row_is_refused_and_kept ... ok
+test a_message_row_without_a_team_row_is_refused_and_kept ... ok
+test a_store_nothing_was_written_to_is_closed_by_deleting_its_directory ... ok
+test an_event_row_alone_does_not_stop_the_deletion ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/exclude_lock.rs (target/debug/deps/exclude_lock-c73de3209405daae)
+
+running 4 tests
+test a_lock_whose_holder_closed_its_file_is_taken_at_once ... ok
+test a_lock_held_by_a_killed_process_is_taken_at_once ... ok
+test the_lock_file_stays_after_the_close_and_no_lock_folder_or_pid_file_is_made ... ok
+test a_held_lock_holds_the_take_back_until_it_is_released_and_every_other_line_stays ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+     Running tests/ignored_files.rs (target/debug/deps/ignored_files-918a17a5d78ef7df)
+
+running 8 tests
+test a_worktree_with_no_ignored_files_gets_no_warning ... ok
+test the_briefs_own_copy_is_not_named ... ok
+test more_than_ten_ignored_files_are_counted_after_the_tenth ... ok
+test build_folders_are_not_named_but_everything_else_is ... ok
+test the_team_that_closes_last_takes_back_task_md_another_team_added ... ok
+test close_takes_back_launchs_lines_unless_another_worktree_needs_them ... ok
+test task_md_stays_while_another_teams_worktree_needs_it ... ok
+test the_plan_and_the_report_name_the_ignored_files_the_removal_deletes ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests/remove.rs (target/debug/deps/remove-677cf1ba4e8c60f2)
+
+running 25 tests
+test a_closer_that_never_started_or_was_reprompted_is_judged_by_its_current_generation ... ok
+test busy_member_needs_stop_and_stop_says_so ... ok
+test a_reused_place_id_is_not_closed_by_a_removal_with_stop ... ok
+test an_unknown_state_refuses_without_stop_and_is_stopped_anyway_with_it ... ok
+test a_removal_stops_when_a_close_takes_the_lock_after_the_plan ... ok
+test a_host_with_no_state_asks_the_harness_instead ... ok
+test mark_removed_checks_the_lock_inside_its_own_write ... ok
+test before_closer_report_refused ... ok
+test removing_needs_a_member_and_an_open_team ... ok
+test the_dry_run_of_a_pane_member_removal_names_no_worktree ... ok
+test a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop ... ok
+test stop_never_overrides_uncommitted_work ... ok
+test a_member_that_never_started_needs_no_verify_and_a_pane_member_no_worktree ... ok
+test the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_nothing ... ok
+test a_removal_that_git_refuses_stops_with_the_row_kept ... ok
+test a_verified_implementer_is_removed_and_its_row_and_branch_stay ... ok
+test flagged_implementer_removal_refused ... ok
+test unverified_implementer_refused ... ok
+test verify_record_for_old_head_refused ... ok
+test a_failed_check_and_a_missing_check_are_not_a_pass_either ... ok
+test a_removed_members_deleted_branch_is_not_reported_kept ... ok
+test removing_a_member_takes_back_its_exclude_lines_that_no_teammate_needs ... ok
+test removing_a_member_on_a_detached_head_keeps_its_commits_on_a_rescue_branch ... ok
+test a_commit_made_after_the_rescue_branch_stops_the_removal_and_keeps_the_worktree ... ok
+test a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.87s
+

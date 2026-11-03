@@ -1,0 +1,205 @@
+diff --git a/crates/teamwire-cli/src/args.rs b/crates/teamwire-cli/src/args.rs
+index 65041b0..1b09f01 100644
+--- a/crates/teamwire-cli/src/args.rs
++++ b/crates/teamwire-cli/src/args.rs
+@@ -35,6 +35,8 @@ pub(crate) struct Global {
+ pub(crate) enum Command {
+     /// Validate a team spec, then start its members.
+     Launch(LaunchArgs),
++    /// Start a run the user will not be present for (lead).
++    Afk(AfkArgs),
+     /// Resume the lead and the members of a team whose sessions are gone.
+     Reopen(ReopenArgs),
+     /// Print one line when something needs the lead, until the team completes.
+@@ -102,6 +104,34 @@ pub(crate) struct LaunchArgs {
+     pub(crate) spec: Option<PathBuf>,
+ }
+ 
++#[derive(Args)]
++pub(crate) struct AfkArgs {
++    #[command(subcommand)]
++    pub(crate) command: AfkCommand,
++}
++
++#[derive(Subcommand)]
++pub(crate) enum AfkCommand {
++    /// Create the run's team, copy the task into it and take the sleep hold (lead).
++    Start(AfkStartArgs),
++}
++
++#[derive(Args)]
++pub(crate) struct AfkStartArgs {
++    /// The run's team name.
++    #[arg(long, value_name = "NAME")]
++    pub(crate) team: String,
++    /// The team's title, at most 28 characters.
++    #[arg(long, value_name = "TITLE")]
++    pub(crate) title: String,
++    /// The task file; the run keeps a byte-for-byte copy as afk/task.md.
++    #[arg(long, value_name = "FILE")]
++    pub(crate) task: PathBuf,
++    /// How long the run may start new implementers, such as 8h or 90m.
++    #[arg(long, value_name = "DURATION", default_value = "8h")]
++    pub(crate) budget: String,
++}
++
+ #[derive(Args)]
+ pub(crate) struct ReopenArgs {
+     pub(crate) team: String,
+diff --git a/crates/teamwire-cli/src/cmd/afk.rs b/crates/teamwire-cli/src/cmd/afk.rs
+new file mode 100644
+index 0000000..7f3cf48
+--- /dev/null
++++ b/crates/teamwire-cli/src/cmd/afk.rs
+@@ -0,0 +1,30 @@
++//! `teamwire afk start`: creates an AFK run's team, copies the task into it
++//! and takes the sleep hold (`docs/design/2026-10-19-afk-mode.md` 5.2).
++
++use std::process::ExitCode;
++
++use crate::wiring::Wiring;
++use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
++
++/// Refused by a rule; nothing changed (docs/api/cli.md).
++const REFUSED: u8 = 1;
++
++/// The arguments are the agreed command line; the body refuses until the
++/// command is built.
++#[expect(
++    clippy::print_stderr,
++    reason = "the binary reports a refusal on stderr"
++)]
++pub(crate) fn run(args: &AfkArgs, _global: &Global, _wiring: &Wiring) -> ExitCode {
++    let AfkCommand::Start(AfkStartArgs {
++        team,
++        title,
++        task,
++        budget,
++    }) = &args.command;
++    eprintln!(
++        "teamwire afk start: not built yet (team {team}, title {title:?}, task {}, budget {budget})",
++        task.display()
++    );
++    ExitCode::from(REFUSED)
++}
+diff --git a/crates/teamwire-cli/src/main.rs b/crates/teamwire-cli/src/main.rs
+index 68a1179..abf5736 100644
+--- a/crates/teamwire-cli/src/main.rs
++++ b/crates/teamwire-cli/src/main.rs
+@@ -14,6 +14,7 @@ use clap::Parser;
+ 
+ mod cmd {
+     pub(crate) mod ack;
++    pub(crate) mod afk;
+     pub(crate) mod close;
+     pub(crate) mod doctor;
+     pub(crate) mod done;
+@@ -47,10 +48,11 @@ mod wiring;
+ const USAGE: u8 = 3;
+ 
+ pub(crate) use args::{
+-    AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
+-    HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
+-    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
+-    SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
++    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs,
++    Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs,
++    LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
++    ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs,
++    VerifyArgs, WatchArgs,
+ };
+ 
+ fn main() -> ExitCode {
+@@ -67,6 +69,7 @@ fn main() -> ExitCode {
+     let global = &cli.global;
+     match &cli.command {
+         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
++        Command::Afk(a) => cmd::afk::run(a, global, &wiring),
+         Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
+         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
+         Command::Status(a) => cmd::status::run(a, global, &wiring),
+diff --git a/crates/teamwire-launch/src/member.rs b/crates/teamwire-launch/src/member.rs
+index 5498b6f..30eb028 100644
+--- a/crates/teamwire-launch/src/member.rs
++++ b/crates/teamwire-launch/src/member.rs
+@@ -9,8 +9,8 @@ use std::time::Duration;
+ use serde_json::{Value, json};
+ use sha2::{Digest, Sha256};
+ use teamwire_core::{
+-    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
+-    Ulid, one_line,
++    IdentityChannel, MemberLaunch, MemberState, Registry, SessionId, StartupOutcome, TeamName,
++    TeamState, TrustPolicy, Ulid, one_line,
+ };
+ use teamwire_store::{Ctx, NewMember, NewTeam};
+ 
+@@ -21,7 +21,8 @@ use crate::member_steps::{
+ };
+ use crate::worktree;
+ use crate::{
+-    LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
++    LaunchOutcome, LaunchReport, LeadPlan, MemberOutcome, PlannedMember, ValidPlan, hold,
++    watch_command,
+ };
+ 
+ const HOST_TIMEOUT: Duration = Duration::from_secs(30);
+@@ -91,32 +92,39 @@ fn new_launch_id(ctx: &Ctx<'_>) -> String {
+ 
+ fn create_team(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
+     let at = ctx.clock.now();
+-    let team = NewTeam {
+-        name: plan.spec.team.clone(),
+-        title: crate::plan::clean(&plan.spec.title),
+-        lead_harness: plan.lead.harness.clone(),
+-        lead_host: plan.lead.host.clone(),
+-        lead_route: plan.lead.route,
+-        lead_session: plan.lead.session.clone(),
+-    };
+-    // The folder lets `reopen` resume the lead from where it runs. A lead
+-    // with no session, or one the harness cannot place, leaves it out.
+-    let cwd = plan
+-        .lead
+-        .session
++    let team = new_team(&plan.spec.team, &plan.spec.title, &plan.lead);
++    let cwd = lead_cwd(ctx.registry, &plan.lead);
++    let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
++    ctx.store
++        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
++        .map_err(|e| e.to_string())
++}
++
++/// The team row's fields that come from the spec and the lead.
++pub(crate) fn new_team(name: &TeamName, title: &str, lead: &LeadPlan) -> NewTeam {
++    NewTeam {
++        name: name.clone(),
++        title: crate::plan::clean(title),
++        lead_harness: lead.harness.clone(),
++        lead_host: lead.host.clone(),
++        lead_route: lead.route,
++        lead_session: lead.session.clone(),
++    }
++}
++
++/// The folder lets `reopen` resume the lead from where it runs. A lead
++/// with no session, or one the harness cannot place, has none.
++pub(crate) fn lead_cwd(registry: &Registry, lead: &LeadPlan) -> Option<String> {
++    lead.session
+         .as_ref()
+         .and_then(|(session, _)| {
+-            ctx.registry
+-                .harness(&plan.lead.harness)
++            registry
++                .harness(&lead.harness)
+                 .ok()?
+                 .session_cwd(session)
+                 .ok()?
+         })
+-        .map(|p| p.display().to_string());
+-    let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
+-    ctx.store
+-        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
+-        .map_err(|e| e.to_string())
++        .map(|p| p.display().to_string())
+ }
+ 
+ fn launch_member(

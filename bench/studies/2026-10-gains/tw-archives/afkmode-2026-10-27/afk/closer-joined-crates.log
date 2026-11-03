@@ -1,0 +1,1489 @@
+   Compiling teamwire-cli v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.74s
+     Running unittests src/main.rs (target/debug/deps/teamwire-8480820d3f0b3d96)
+
+running 41 tests
+test cmd::install::tests::a_binary_under_target_is_a_build ... ok
+test cmd::doctor::tests::one_variable_decides_without_looking_at_parents ... ok
+test cmd::doctor::tests::a_loop_in_the_parents_stops_after_64_steps ... ok
+test cmd::doctor::tests::with_both_variables_the_nearest_parent_decides ... ok
+test cmd::hook::tests::work_inside_the_budget_returns_its_value ... ok
+test cmd::send::tests::a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background ... ok
+test cmd::metrics::tests::durations_take_a_unit ... ok
+test cmd::close::tests::a_stop_after_finish_says_the_team_is_closed ... ok
+test cmd::send::tests::a_pending_recipient_is_explained ... ok
+test cmd::send::tests::a_pending_recipient_exits_6 ... ok
+test cmd::watch::tests::the_short_grace_applies_only_once_the_watch_is_stopping ... ok
+test cmd::send::tests::an_unreadable_lease_is_not_reported_as_no_watch ... ok
+test cmd::install::tests::home_is_named_only_when_it_is_not_the_default ... ok
+test cmd::version::tests::names_the_binary_and_the_schema_it_writes ... ok
+test cmd::install::tests::a_selector_line_keeps_all_or_picks_numbers ... ok
+test tests::only_hook_invocations_are_hooks ... ok
+test cmd::watch::tests::a_watch_export_keeps_the_configured_timeout ... ok
+test wiring::tests::claude_config_dir_is_followed_and_the_test_override_wins_over_it ... ok
+test wiring::tests::claude_dir_override_holds_both_paths ... ok
+test wiring::tests::herdr_env_one_picks_herdr_for_the_lead ... ok
+test wiring::tests::herdr_wins_over_tmux_and_an_empty_tmux_is_not_tmux ... ok
+test tests::metrics_export_is_the_subcommand_not_a_team ... ok
+test tests::send_splits_recipients_on_commas ... ok
+test wiring::tests::registry_holds_every_adapter_of_this_binary ... ok
+test wiring::tests::the_lead_harness_follows_the_variable_then_the_session ... ok
+test wiring::tests::the_tmux_adapter_asks_the_server_the_tmux_variable_names ... ok
+test wiring::tests::tmux_set_and_herdr_not_picks_tmux_for_the_lead ... ok
+test tests::clap_definitions_are_consistent ... ok
+test tests::wrong_combinations_are_usage_errors ... ok
+test tests::every_documented_command_parses ... ok
+test cmd::hook::tests::work_that_outlasts_the_budget_is_given_up_on ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_with_an_unknown_harness_says_nothing ... ok
+test cmd::hook::member_tests::a_wrong_or_missing_token_records_nothing ... ok
+test cmd::hook::member_tests::a_lead_harness_that_cannot_be_found_gets_the_monitor_wording ... ok
+test cmd::hook::member_tests::a_harness_without_an_in_turn_hook_gets_no_post_tool_reply ... ok
+test cmd::hook::member_tests::the_right_token_records_the_session ... ok
+test cmd::hook::member_tests::a_removed_member_is_ignored ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_parses_and_holds_with_the_named_harness ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines ... ok
+test cmd::hook::member_tests::a_turn_end_asks_the_harness_the_member_row_names ... ok
+test cmd::hook::member_tests::a_second_call_replaces_the_first_session ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/afk.rs (target/debug/deps/afk-6857d159482930d5)
+
+running 6 tests
+test afk_start_outside_a_lead_session_is_refused ... ok
+test afk_start_refuses_a_missing_or_empty_task_file ... ok
+test afk_start_refuses_a_bad_name_title_or_budget_and_creates_nothing ... ok
+test afk_start_refuses_when_a_doctor_check_fails ... ok
+test afk_start_that_cannot_copy_the_task_exits_two_and_names_the_team ... ok
+test afk_start_prints_the_run_and_exits_zero ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+
+     Running tests/close.rs (target/debug/deps/close-13fa012b5d38d5cd)
+
+running 15 tests
+test a_store_with_no_team_row_is_deleted_and_the_dry_run_changes_nothing ... ok
+test close_of_an_afk_team_without_a_report_prints_the_refusal_code ... ok
+test usage_and_missing_state_have_their_own_exit_codes ... ok
+test a_member_cannot_watch_or_add_members ... ok
+test clear_stale_lock_clears_a_dead_owner_and_only_that ... ok
+test keep_state_leaves_the_directory_and_archive_to_names_the_parent ... ok
+test dry_run_prints_the_plan_and_changes_nothing ... ok
+test a_step_that_fails_is_exit_two_with_the_state_intact_and_a_rerun_finishes ... ok
+test a_busy_member_is_exit_one_and_nothing_changes ... ok
+test stop_is_the_only_way_to_remove_a_busy_member ... ok
+test a_member_cannot_remove_a_peer ... ok
+test uncommitted_work_is_exit_one ... ok
+test a_full_close_exits_zero_archives_and_names_the_branches_and_unpushed_work ... ok
+test removing_a_member_needs_a_verify_record_unless_told_otherwise ... ok
+test a_member_whose_start_failed_leaves_no_branch_in_status_or_close ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.91s
+
+     Running tests/doctor.rs (target/debug/deps/doctor-1fcfb138b09f96ee)
+
+running 44 tests
+test a_full_disk_fails ... ok
+test a_missing_plugin_fails_and_names_install_as_the_fix ... ok
+test a_platform_that_cannot_answer_is_a_warning_not_a_pass ... ok
+test a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about ... ok
+test a_probe_that_times_out_or_fails_is_a_warning ... ok
+test a_plugin_that_differs_in_more_than_its_home_still_fails_in_another_home ... ok
+test a_plugin_installed_for_another_home_warns_naming_both_and_gives_no_install_advice ... ok
+test a_credential_variable_warns_by_name_and_a_clean_environment_passes ... ok
+test a_build_under_target_accepts_any_plugin_files_but_still_needs_the_plugin_on ... ok
+test a_claude_help_without_a_launch_flag_warns_and_names_it ... ok
+test a_plugin_for_another_binary_or_a_disabled_one_fails ... ok
+test doctor::tests::a_loop_in_the_parents_stops_after_64_steps ... ok
+test doctor::tests::one_variable_decides_without_looking_at_parents ... ok
+test doctor::tests::with_both_variables_the_nearest_parent_decides ... ok
+test a_repo_that_does_not_ignore_worktrees_fails ... ok
+test a_project_entry_that_hides_the_user_one_is_a_warning ... ok
+test a_settings_file_without_the_herdr_hook_fails ... ok
+test a_stale_codex_plugin_is_a_warning_that_names_the_fix ... ok
+test a_tmux_setup_without_tmux_on_path_fails ... ok
+test a_tmux_only_setup_passes_without_herdr_or_its_hook ... ok
+test an_edited_old_skill_or_a_foreign_entry_needs_force ... ok
+test the_host_in_use_comes_from_the_environment ... ok
+test codex_on_path_is_reported_with_its_version_and_a_missing_plugin_is_ok ... ok
+test a_database_of_another_schema_version_fails ... ok
+test a_healthy_setup_passes_every_check_and_exits_zero ... ok
+test launch_checks_fail_on_host_none_and_keep_the_plugin_check ... ok
+test network_fs_warned ... ok
+test launch_checks_on_a_healthy_herdr_setup_pass_and_include_the_herdr_hook ... ok
+test outside_a_repository_the_ignore_check_passes ... ok
+test a_member_from_another_build_that_has_finished_is_not_counted ... ok
+test a_close_lock_held_by_a_dead_process_is_reported_with_the_fix ... ok
+test a_database_at_an_older_schema_passes_and_says_it_will_be_migrated ... ok
+test the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out ... ok
+test a_close_lock_whose_pid_was_reused_is_reported ... ok
+test a_message_counter_below_an_id_in_use_fails_and_prints_the_repair ... ok
+test the_skill_and_entry_from_the_old_install_fail_and_name_install_as_the_fix ... ok
+test doctor_reports_quick_check_failure ... ok
+test doctor_changes_nothing ... ok
+test the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines ... ok
+test with_no_host_doctor_says_so_and_requires_neither_host_tool ... ok
+test an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix ... ok
+test without_codex_on_path_doctor_says_nothing_about_codex ... ok
+test members_of_this_build_pass_the_older_members_check ... ok
+test the_binary_exits_zero_when_all_pass_and_two_when_one_fails ... ok
+
+test result: ok. 44 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.33s
+
+     Running tests/doctor_probes.rs (target/debug/deps/doctor_probes-83969d9be3845b6e)
+
+running 4 tests
+test a_credential_variable_is_named_and_its_value_is_never_printed ... ok
+test a_claude_without_a_launch_flag_is_warned_with_the_flag_named ... ok
+test versions_and_flags_come_from_the_binaries_on_path ... ok
+test the_host_line_says_which_host_and_why ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/done.rs (target/debug/deps/done-b91157e10140731d)
+
+running 4 tests
+test a_member_records_its_completion ... ok
+test a_closed_team_refuses_and_stores_nothing ... ok
+test invalid_status_refused ... ok
+test a_wrong_token_or_a_missing_identity_is_refused ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/export.rs (target/debug/deps/export-ae5813fbb522e084)
+
+running 3 tests
+test export_writes_the_start_time_beside_each_recorded_pid ... ok
+test export_covers_every_table ... ok
+test a_member_s_export_leaves_out_the_lead_session ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/hook.rs (target/debug/deps/hook-ffc37b07fff0c37c)
+
+running 8 tests
+test a_missing_database_exits_zero_and_creates_nothing ... ok
+test a_different_session_in_the_place_is_not_the_member ... ok
+test a_subagent_stop_is_ignored ... ok
+test a_running_background_task_does_not_stop_the_hook ... ok
+test stop_holds_once_with_the_claude_reply_shape ... ok
+test non_member_returns_immediately ... ok
+test post_tool_reminds_once_per_unread_message ... ok
+test garbage_stdin_exits_zero ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/hook_codex.rs (target/debug/deps/hook_codex-648bd0e7025aab59)
+
+running 3 tests
+test a_wrong_token_exits_zero_and_records_nothing ... ok
+test the_token_from_the_environment_records_the_session ... ok
+test the_token_from_the_token_file_records_the_session ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/inbox.rs (target/debug/deps/inbox-d6f7b7c9e3ada1c7)
+
+running 9 tests
+test a_missing_team_is_a_usage_error ... ok
+test a_body_cannot_forge_a_message_header ... ok
+test inbox_json_carries_the_hash_flag_and_the_note ... ok
+test hash_mismatch_reported ... ok
+test ack_marks_read_without_printing_and_says_what_it_did ... ok
+test inbox_prints_the_full_text_once_and_marks_it_read ... ok
+test log_filters_by_the_lead_and_by_an_agent_of_another_team ... ok
+test a_caller_without_a_valid_token_reads_nothing ... ok
+test the_peer_note_appears_only_when_a_peer_wrote ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/install.rs (target/debug/deps/install-3cc1e75f58d7719e)
+
+running 18 tests
+test a_build_under_target_is_refused_and_nothing_is_written ... ok
+test without_a_terminal_or_a_flag_install_keeps_to_claude_code ... ok
+test a_dry_run_prints_the_changes_and_makes_none ... ok
+test the_help_of_install_and_uninstall_names_the_plugin ... ok
+test install_covers_both_harnesses_when_both_are_named ... ok
+test install_registers_the_plugin_and_a_second_run_changes_nothing ... ok
+test a_failed_codex_install_exits_two_and_a_rerun_finishes ... ok
+test an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it ... ok
+test install_removes_the_old_skill_and_entry_after_the_plugin_is_in ... ok
+test a_failed_install_exits_two_says_what_is_left_and_a_rerun_finishes ... ok
+test a_failure_that_changed_nothing_exits_one_not_two ... ok
+test an_old_codex_does_not_block_the_claude_uninstall ... ok
+test a_new_binary_refreshes_the_copy_claude_keeps ... ok
+test a_codex_dry_run_prints_the_changes_and_makes_none ... ok
+test install_adds_the_codex_plugin_and_a_second_run_changes_nothing ... ok
+test an_edited_old_skill_or_a_foreign_entry_is_refused_and_nothing_is_changed ... ok
+test uninstall_removes_the_plugin_the_marketplace_and_the_files_and_then_has_nothing_to_do ... ok
+test uninstall_removes_the_codex_setup_it_finds_and_ignores_it_without_codex ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.07s
+
+     Running tests/launch.rs (target/debug/deps/launch-f9c7d5e25db2858d)
+
+running 10 tests
+test bad_json_is_a_refusal_and_creates_nothing ... ok
+test a_hyphen_in_the_team_name_is_refused_with_exit_1 ... ok
+test a_member_on_host_none_is_refused_and_nothing_is_created ... ok
+test several_refusals_are_printed_together ... ok
+test a_member_whose_harness_program_is_missing_is_refused_before_anything_is_created ... ok
+test a_relative_home_reaches_members_as_an_absolute_path ... ok
+test dry_run_prints_the_plan_and_touches_nothing ... ok
+test the_unverifiable_implementer_warning_names_what_is_missing ... ok
+test the_empty_launch_line_names_the_spec_file_the_user_passed ... ok
+test a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.40s
+
+     Running tests/launch_codex.rs (target/debug/deps/launch_codex-75ae4a843ba3f370)
+
+running 1 test
+test a_codex_member_starts_under_herdr ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests/lead_hook.rs (target/debug/deps/lead_hook-0f7bf30b83b8486e)
+
+running 10 tests
+test another_session_is_not_held ... ok
+test holds_the_stop_once_and_names_the_team ... ok
+test a_subagent_stop_is_not_held ... ok
+test the_afk_note_and_the_watch_note_come_in_one_reply ... ok
+test a_continuation_is_not_held_again ... ok
+test a_running_watch_is_not_reported_missing ... ok
+test a_member_session_returns_at_once ... ok
+test an_afk_team_holds_the_stop_once_with_the_afk_note ... ok
+test bad_input_and_a_missing_home_exit_zero_with_no_output ... ok
+test locked_stores_let_the_stop_through_at_the_bound ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.59s
+
+     Running tests/metrics.rs (target/debug/deps/metrics-353e4be23e1e8256)
+
+running 18 tests
+test export_of_an_unknown_team_is_refused ... ok
+test export_skips_a_damaged_row_names_it_and_still_exits_zero ... ok
+test export_is_off_without_an_endpoint ... ok
+test json_output_is_the_view ... ok
+test since_leaves_out_older_events ... ok
+test headers_from_the_environment_never_go_to_an_endpoint_from_the_file ... ok
+test the_endpoint_can_come_from_the_config_file ... ok
+test an_unknown_team_is_refused_and_a_bad_duration_is_a_usage_error ... ok
+test a_collector_that_refuses_does_not_change_the_exit_code_or_the_mark ... ok
+test export_writes_every_record_as_json_lines_with_cloudevents_names ... ok
+test metrics_for_a_team_prints_one_line_per_value ... ok
+test without_a_team_every_team_and_archive_is_read ... ok
+test export_sends_new_events_once_and_moves_the_mark ... ok
+test a_delivery_reentered_event_is_exported_and_does_not_stop_the_metrics_export ... ok
+test a_closed_team_is_read_from_its_archive_by_the_name_in_its_team_row ... ok
+test metrics_status_and_export_read_a_schema_1_team_and_archive_and_change_neither ... ok
+test a_team_closed_for_real_is_read_from_the_archive_close_wrote ... ok
+test export_without_once_keeps_running_after_its_first_pass ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.72s
+
+     Running tests/pr_watch.rs (target/debug/deps/pr_watch-1b46929330263b22)
+
+running 30 tests
+test a_merged_pull_request_is_done_without_checks ... ok
+test a_missing_required_check_beside_a_clean_merge_state_is_named_but_not_counted ... ok
+test a_conflict_on_the_first_look_is_said_at_once ... ok
+test a_check_reported_with_another_case_or_a_prefix_counts_as_reported ... ok
+test all_checks_passing_prints_one_done_line_and_exits_zero ... ok
+test interval_zero_is_a_usage_error ... ok
+test a_pull_request_that_does_not_exist_is_said_once_and_ends_the_watch_failed ... ok
+test every_required_check_present_leaves_the_done_line_and_exit_code_alone ... ok
+test a_state_that_is_still_blocked_after_the_second_read_is_reported_as_before ... ok
+test a_required_check_that_never_reported_is_named_and_fails_the_run ... ok
+test a_blocked_state_at_done_is_read_again_and_the_fresh_one_is_used ... ok
+test a_404_from_the_rules_endpoint_means_no_rules ... ok
+test a_repository_with_only_rules_names_what_its_rules_require_from_every_page ... ok
+test a_rules_endpoint_error_that_is_not_a_404_makes_the_set_unknown ... ok
+test the_default_interval_is_forty_five_seconds ... ok
+test when_neither_endpoint_answers_the_done_line_says_the_required_set_is_unknown ... ok
+test a_call_that_prints_no_json_is_skipped_and_tried_again ... ok
+test a_failure_before_merge_still_exits_1 ... ok
+test another_gh_failure_keeps_polling ... ok
+test several_pull_requests_share_one_line_per_poll_and_a_done_one_is_not_asked_again ... ok
+test skipped_checks_are_counted_and_pending_ones_keep_the_watch_going ... ok
+test a_failure_is_said_once_and_the_run_exits_one ... ok
+test no_checks_is_done ... ok
+test gh_saying_no_checks_were_reported_is_done_not_polled_for_ever ... ok
+test no_checks_on_three_polls_in_a_row_is_done ... ok
+test a_blocked_or_draft_pull_request_is_said_once_and_the_done_line_names_the_state ... ok
+test the_required_set_is_read_once_per_pull_request_for_the_whole_watch ... ok
+test a_change_of_mergeability_is_said_but_the_first_clean_verdict_is_not ... ok
+test no_checks_on_the_first_polls_is_not_done_before_ci_starts ... ok
+test an_outage_of_gh_is_said_once_per_run_of_three_failed_polls ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.14s
+
+     Running tests/preset.rs (target/debug/deps/preset-bc38a2edb22fa3f6)
+
+running 11 tests
+test the_afk_skill_lists_the_eight_report_headings ... ok
+test the_main_skill_points_at_the_afk_skill ... ok
+test every_non_implementer_member_switches_both_plugins_off ... ok
+test no_preset_holds_a_machine_specific_path ... ok
+test lead_json_registers_the_lead_mcp_server_with_arguments_the_binary_accepts ... ok
+test without_a_name_the_six_shapes_are_listed ... ok
+test the_afk_skill_names_only_commands_and_tools_that_exist ... ok
+test an_unknown_shape_is_a_usage_error_that_names_the_shapes ... ok
+test the_skill_names_only_commands_and_tools_that_exist ... ok
+test a_named_shape_prints_its_rules_and_a_spec_skeleton_that_parses ... ok
+test every_preset_is_a_valid_spec ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+     Running tests/reads.rs (target/debug/deps/reads-6f2453a0dcae7d4c)
+
+running 3 tests
+test every_command_refuses_without_a_home ... ok
+test log_of_a_team_with_no_database_is_refused_and_creates_nothing ... ok
+test log_and_members_never_migrate_an_older_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/reopen.rs (target/debug/deps/reopen-f7d0c1032a529998)
+
+running 8 tests
+test results_the_lead_never_received_are_listed_with_their_paths ... ok
+test an_unknown_team_is_refused_with_exit_1 ... ok
+test a_dry_run_leaves_an_older_database_byte_for_byte ... ok
+test a_refused_session_makes_the_exit_2 ... ok
+test a_dry_run_opens_nothing_and_writes_nothing ... ok
+test a_caller_that_is_not_the_lead_is_told_how_to_adopt ... ok
+test a_caller_that_is_the_lead_is_skipped_by_session_id ... ok
+test the_lead_and_the_dead_member_come_back_and_exit_is_0 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests/send.rs (target/debug/deps/send-728da63940351689)
+
+running 15 tests
+test id_and_key_printed_before_host_call ... ok
+test a_refusal_exits_1_names_its_code_and_stores_nothing ... ok
+test a_caller_that_cannot_prove_who_it_is_is_refused ... ok
+test usage_errors_exit_3_and_store_nothing ... ok
+test members_lists_the_roster_without_secrets ... ok
+test lead_adopt_records_the_new_session_and_prints_both ... ok
+test an_undelivered_recipient_exits_4_with_the_reason_on_stderr ... ok
+test a_member_with_only_a_token_file_can_send ... ok
+test the_text_can_come_from_a_file ... ok
+test a_finding_to_a_live_member_is_handed_off_with_exit_0 ... ok
+test the_lead_sends_without_naming_itself ... ok
+test a_member_session_without_its_token_cannot_read_the_whole_log ... ok
+test the_lead_reprompts_and_is_told_whether_a_watch_runs ... ok
+test a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it ... ok
+test log_shows_states_and_a_member_sees_only_its_own_messages ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s
+
+     Running tests/status.rs (target/debug/deps/status-7d154fce4260e391)
+
+running 14 tests
+test no_teams_says_so ... ok
+test an_unknown_team_is_refused ... ok
+test a_directory_without_a_database_is_skipped_in_the_listing ... ok
+test json_is_the_view ... ok
+test a_team_shows_members_messages_and_stuck_deliveries ... ok
+test role_reports_why_a_resume_command_is_missing ... ok
+test role_needs_a_team_and_a_member ... ok
+test without_a_team_every_team_is_listed ... ok
+test a_watch_whose_heartbeat_is_old_is_stale_in_text_and_json ... ok
+test an_unreadable_database_exits_6 ... ok
+test a_member_caller_never_sees_the_lead_session ... ok
+test received_clears_a_result_from_status_and_a_second_run_changes_nothing ... ok
+test status_of_an_afk_team_prints_the_afk_line_and_json_object ... ok
+test role_shows_the_model_and_effort_the_member_was_launched_with ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.35s
+
+     Running tests/teams.rs (target/debug/deps/teams-83d57e31ee2c1d6b)
+
+running 4 tests
+test a_send_to_a_quiet_member_or_an_unknown_team_is_refused ... ok
+test teams_lists_every_team_with_how_to_address_it ... ok
+test teams_marks_an_afk_team_and_its_json_gives_the_budget_end ... ok
+test a_member_sends_to_another_team_and_the_copy_is_stored_there ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/tmux_wiring.rs (target/debug/deps/tmux_wiring-a2fe7d45cb9d4346)
+
+running 3 tests
+test tmux_set_without_herdr_makes_tmux_the_leads_host ... ok
+test no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane ... ok
+test a_pane_at_its_input_prompt_receives_the_line_and_an_enter ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.78s
+
+     Running tests/token_file.rs (target/debug/deps/token_file-b24a349297945eb3)
+
+running 2 tests
+test done_reads_the_token_file ... ok
+test a_member_server_reads_the_token_file ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/verify.rs (target/debug/deps/verify-c5ce9634b184132e)
+
+running 7 tests
+test an_unknown_role_and_an_unknown_team_are_refused ... ok
+test deep_prints_the_integrity_result ... ok
+test exit_zero_and_clean_only_when_every_member_passes ... ok
+test a_failing_check_exits_two_and_names_the_log ... ok
+test a_member_session_cannot_waive_a_flag_but_can_run_verify ... ok
+test repair_files_writes_a_missing_copy_and_the_run_is_clean ... ok
+test a_flagged_pass_exits_two_until_the_flag_is_waived_for_that_head ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.19s
+
+     Running tests/version.rs (target/debug/deps/version-c090a5493d01996d)
+
+running 1 test
+test the_flag_prints_the_writer_version_with_the_commit ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/watch.rs (target/debug/deps/watch-bc4a6d5650fb53fb)
+
+running 12 tests
+test an_unknown_team_is_refused ... ok
+test a_closed_team_ends_the_watch_with_one_team_closed_line ... ok
+test a_store_from_a_newer_binary_exits_six ... ok
+test a_second_watch_is_refused_and_names_the_first ... ok
+test once_prints_one_line_and_exits_zero ... ok
+test a_finished_team_ends_the_watch_without_once ... ok
+test a_dead_watchs_lease_is_taken_over ... ok
+test a_bad_team_name_or_interval_is_a_usage_error ... ok
+test a_line_that_cannot_be_delivered_is_still_printed ... ok
+test without_deliver_nothing_is_typed ... ok
+test an_export_endpoint_does_not_change_the_output ... ok
+test deliver_types_each_printed_line_into_the_leads_pane ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_close-1b086e1e495e6a2d)
+
+running 3 tests
+test afk_report::tests::a_line_that_is_not_a_heading_has_no_text ... ok
+test afk_report::tests::a_heading_loses_its_number_and_bold ... ok
+test archive::tests::every_state_of_the_second_backup_verifies ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/afk_report.rs (target/debug/deps/afk_report-b35f57754dc7f9f9)
+
+running 8 tests
+test close_says_an_unreadable_afk_report_is_unreadable_not_missing ... ok
+test close_refuses_an_afk_report_that_lacks_a_heading_and_names_it ... ok
+test an_afk_team_whose_only_member_was_removed_still_needs_a_report ... ok
+test an_afk_team_that_never_had_a_member_closes_without_a_report ... ok
+test close_refuses_an_afk_team_without_its_report ... ok
+test removing_one_member_of_an_afk_team_needs_no_report ... ok
+test close_of_an_afk_team_with_a_full_report_archives_the_afk_files ... ok
+test an_ordinary_team_closes_without_a_report ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/archive.rs (target/debug/deps/archive-c754a39c0c4e90c2)
+
+running 6 tests
+test a_file_that_changes_after_it_was_archived_is_not_deleted ... ok
+test a_close_leaves_no_team_directory_and_nothing_in_deleting ... ok
+test an_archive_path_that_exists_is_never_written_into ... ok
+test a_close_removes_what_a_killed_close_left_in_deleting_unless_its_pid_is_alive ... ok
+test a_copy_that_stops_part_way_leaves_no_archive_and_the_rerun_leaves_one ... ok
+test archive_hash_mismatch_stops_close ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.48s
+
+     Running tests/close.rs (target/debug/deps/close-9a3982b3112aafab)
+
+running 28 tests
+test a_place_the_host_no_longer_knows_is_not_busy ... ok
+test a_close_lock_whose_pid_was_reused_is_stale ... ok
+test an_unreadable_agent_listing_refuses_for_an_unplaced_member ... ok
+test a_dialog_waiting_for_an_answer_refuses_too ... ok
+test a_removed_member_is_not_asked_about ... ok
+test a_lock_taken_by_another_close_after_the_check_is_reported_not_cleared ... ok
+test live_agent_without_a_recorded_place_refuses_and_keeps_the_state ... ok
+test closes_member_left_creating ... ok
+test a_close_records_its_own_start_time_with_the_lock ... ok
+test the_dry_run_header_counts_what_it_checked ... ok
+test unknown_busy_state_refuses ... ok
+test no_live_agent_for_an_unplaced_member_lets_close_finish ... ok
+test stale_close_lock_cleared_and_rerun ... ok
+test a_hold_the_team_did_not_start_or_another_team_needs_is_left_running ... ok
+test git_that_cannot_say_refuses_rather_than_guess ... ok
+test busy_member_refuses ... ok
+test a_branch_the_user_deleted_is_not_reported_kept ... ok
+test dirty_worktree_refuses ... ok
+test hold_released_before_state_deleted ... ok
+test a_crash_between_the_hold_and_the_delete_leaves_no_running_hold_and_a_rerun_continues ... ok
+test a_full_close_runs_the_fixed_order_and_archives_everything ... ok
+test a_private_file_stays_private_in_the_archive ... ok
+test reprompt_and_add_refused_during_close ... ok
+test untracked_subtask_md_counts_as_dirty ... ok
+test a_place_that_will_not_close_stops_the_close_and_a_rerun_finishes_it ... ok
+test keep_state_leaves_the_directory_marked_closed_and_a_rerun_can_finish_it ... ok
+test the_archive_goes_where_asked_and_never_over_an_existing_path ... ok
+test busy_recheck_before_each_destructive_step ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.89s
+
+     Running tests/empty_store.rs (target/debug/deps/empty_store-5feaeb2063525c24)
+
+running 5 tests
+test a_message_row_without_a_team_row_is_refused_and_kept ... ok
+test an_unnamed_team_is_not_guessed_from_an_empty_store ... ok
+test an_event_row_alone_does_not_stop_the_deletion ... ok
+test a_store_nothing_was_written_to_is_closed_by_deleting_its_directory ... ok
+test a_member_row_without_a_team_row_is_refused_and_kept ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/ignored_files.rs (target/debug/deps/ignored_files-bc68e50f4fd13beb)
+
+running 5 tests
+test the_briefs_own_copy_is_not_named ... ok
+test more_than_ten_ignored_files_are_counted_after_the_tenth ... ok
+test a_worktree_with_no_ignored_files_gets_no_warning ... ok
+test build_folders_are_not_named_but_everything_else_is ... ok
+test the_plan_and_the_report_name_the_ignored_files_the_removal_deletes ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests/remove.rs (target/debug/deps/remove-68325eb8fe5e6e5b)
+
+running 20 tests
+test removing_needs_a_member_and_an_open_team ... ok
+test the_dry_run_of_a_pane_member_removal_names_no_worktree ... ok
+test a_host_with_no_state_asks_the_harness_instead ... ok
+test busy_member_needs_stop_and_stop_says_so ... ok
+test an_unknown_state_refuses_without_stop_and_is_stopped_anyway_with_it ... ok
+test mark_removed_checks_the_lock_inside_its_own_write ... ok
+test a_closer_that_never_started_or_was_reprompted_is_judged_by_its_current_generation ... ok
+test a_removal_stops_when_a_close_takes_the_lock_after_the_plan ... ok
+test before_closer_report_refused ... ok
+test a_member_that_turns_busy_before_its_place_closes_is_not_closed_without_stop ... ok
+test stop_never_overrides_uncommitted_work ... ok
+test the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_nothing ... ok
+test a_member_that_never_started_needs_no_verify_and_a_pane_member_no_worktree ... ok
+test a_removed_members_deleted_branch_is_not_reported_kept ... ok
+test unverified_implementer_refused ... ok
+test a_removal_that_git_refuses_stops_with_the_row_kept ... ok
+test flagged_implementer_removal_refused ... ok
+test a_verified_implementer_is_removed_and_its_row_and_branch_stay ... ok
+test verify_record_for_old_head_refused ... ok
+test a_failed_check_and_a_missing_check_are_not_a_pass_either ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_harness_claude-e47f3f7206e1998a)
+
+running 28 tests
+test launch::tests::shell_word_quotes_only_what_needs_it ... ok
+test launch::tests::header_values_escape_the_list_separators ... ok
+test lead_setup::mcp::tests::home_args_are_what_comes_before_mcp_lead ... ok
+test lead_setup::mcp::tests::claude_config_dir_is_set_only_for_the_layout_that_needs_it ... ok
+test launch::tests::empty_existing_attributes_add_no_leading_comma ... ok
+test lead_setup::mcp::tests::a_trailing_slash_in_home_gives_the_same_entry ... ok
+test launch::tests::existing_resource_attributes_come_first ... ok
+test lead_setup::mcp::tests::the_lead_entry_names_home_only_when_given ... ok
+test lead_setup::mcp::tests::the_wanted_entry_is_current ... ok
+test lead_setup::plugin::tests::commands_name_the_plugin_and_user_scope ... ok
+test lead_setup::mcp::tests::a_teamwire_lead_entry_on_path_or_another_home_is_outdated ... ok
+test lead_setup::mcp::tests::a_foreign_entry_is_described_without_its_secrets ... ok
+test lead_setup::mcp::tests::anything_else_named_teamwire_is_foreign ... ok
+test lead_setup::skill::tests::a_stamped_copy_is_current_and_unstamps_to_the_original ... ok
+test lead_setup::skill::tests::an_edit_after_install_or_a_hand_written_skill_is_edited ... ok
+test lead_setup::skill::tests::an_unedited_copy_of_another_version_is_outdated ... ok
+test lead_setup::skill::tests::our_text_without_a_stamp_is_outdated_so_install_stamps_it ... ok
+test lead_setup::skill::tests::the_afk_skill_can_be_stamped_and_has_no_metadata_of_its_own ... ok
+test lead_setup::plugin::tests::a_home_that_is_not_the_default_reaches_the_server_and_the_hook ... ok
+test lead_setup::plugin::tests::the_seven_files_name_the_binary_and_the_hook ... ok
+test lead_setup::skill::tests::the_shipped_skill_can_be_stamped_and_has_no_metadata_of_its_own ... ok
+test lead_setup::tests::a_real_folder_loses_the_file_and_itself ... ok
+test lead_setup::plugin::tests::the_reference_file_is_the_compiled_in_text_and_changes_the_version ... ok
+test lead_setup::tests::a_symlinked_file_in_a_real_folder_loses_only_the_link ... ok
+test lead_setup::shadow::tests::local_and_project_entries_that_differ_are_reported_and_an_identical_one_is_not ... ok
+test lead_setup::tests::a_symlinked_folder_loses_only_the_link ... ok
+test lead_setup::plugin::tests::the_version_changes_with_the_binary_and_not_with_the_directory ... ok
+test lead_setup::plugin::tests::written_and_loaded_copies_are_compared_by_text ... ok
+
+test result: ok. 28 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/contract.rs (target/debug/deps/contract-cd35004b3ae3acee)
+
+running 1 test
+test claude_code_passes_the_harness_contract ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests/launch_spec.rs (target/debug/deps/launch_spec-07d606c8ebc4be2a)
+
+running 23 tests
+test otel_env_matches_what_launch_puts_in_settings ... ok
+test a_member_without_a_token_is_refused ... ok
+test files_are_settings_and_mcp_under_member_dir_and_private ... ok
+test model_and_effort_are_left_out_when_unset ... ok
+test contract_passed_as_file ... ok
+test argv_is_the_base_argv_plus_teamwire_additions ... ok
+test mcp_json_derives_the_home_when_identity_lacks_it ... ok
+test a_member_never_loads_the_lead_plugin_whatever_the_spec_says ... ok
+test plugins_become_enabled_plugins_in_settings_beside_the_lead_plugin_switched_off ... ok
+test mcp_json_starts_the_teamwire_server_with_the_token_in_its_env_not_argv ... ok
+test no_plugins_leaves_only_the_lead_plugin_switched_off ... ok
+test hook_command_quotes_a_binary_path_with_a_space ... ok
+test debug_of_the_spec_hides_the_token ... ok
+test settings_env_fills_team_role_and_home_when_identity_lacks_them ... ok
+test post_tool_hook_names_team_and_role ... ok
+test settings_env_has_no_otlp_variable_when_export_is_off ... ok
+test settings_env_has_otlp_endpoint_when_export_is_on ... ok
+test resume_spec_resumes_the_given_session_with_the_same_files ... ok
+test settings_env_has_otlp_headers_when_export_is_on ... ok
+test settings_env_keeps_the_launchers_resource_attributes ... ok
+test settings_env_has_team_role_home_and_token ... ok
+test stop_hook_names_team_and_role_and_has_a_60_second_timeout ... ok
+test settings_env_resource_attributes_name_team_and_role ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lead_setup.rs (target/debug/deps/lead_setup-000ab129b3f37aff)
+
+running 19 tests
+test a_home_that_is_not_the_default_reaches_the_server_and_the_hook ... ok
+test a_missing_claude_is_refused_before_the_files_are_written ... ok
+test a_foreign_old_entry_is_refused_without_its_secrets_unless_forced ... ok
+test an_edited_old_skill_is_refused_before_anything_is_written_unless_forced ... ok
+test uninstall_also_removes_the_old_setup_and_keeps_the_users_other_files ... ok
+test uninstall_with_nothing_installed_plans_nothing_and_refuses_what_is_not_ours ... ok
+test claude_files_that_are_not_json_are_an_error_not_an_empty_config ... ok
+test a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin ... ok
+test a_failure_partway_names_what_was_done_and_what_failed ... ok
+test the_old_skill_and_entry_are_removed_after_the_plugin_is_in_place ... ok
+test install_writes_the_afk_skill_as_a_second_stamped_skill ... ok
+test a_disabled_plugin_is_enabled ... ok
+test a_current_setup_plans_nothing_and_does_not_start_claude ... ok
+test uninstall_removes_the_plugin_the_marketplace_and_the_files ... ok
+test files_that_are_current_but_not_loaded_by_claude_still_update_the_plugin ... ok
+test a_marketplace_from_another_source_is_refused_unless_forced ... ok
+test plugin_problems_name_what_is_missing_stale_or_off ... ok
+test a_new_binary_rewrites_the_files_and_updates_the_marketplace_and_the_plugin ... ok
+test a_plugin_without_the_afk_skill_or_with_an_edited_one_is_a_problem ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+     Running tests/routes.rs (target/debug/deps/routes-507990e78b6444cd)
+
+running 1 test
+test default_route_is_host_typing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/screen.rs (target/debug/deps/screen-40ae78878c667ddb)
+
+running 21 tests
+test a_line_that_only_the_transcript_echoes_is_not_pending ... ok
+test a_line_in_the_input_box_is_pending ... ok
+test a_permission_prompt_is_a_dialog ... ok
+test a_bare_pointer_as_the_last_line_is_a_prompt ... ok
+test a_busy_box_is_not_a_prompt ... ok
+test a_numbered_option_list_near_the_end_is_a_dialog_without_any_marker_text ... ok
+test a_dialog_scrolled_far_above_a_live_prompt_is_a_prompt ... ok
+test a_numbered_list_in_the_last_reply_above_an_idle_box_is_a_prompt ... ok
+test a_pointer_line_without_a_ruled_box_or_footer_is_unknown ... ok
+test a_permission_dialog_over_the_input_box_and_footer_is_a_dialog ... ok
+test a_working_screen_with_no_prompt_is_unknown ... ok
+test a_box_holding_only_a_paste_marker_is_pending ... ok
+test marker_text_inside_a_reply_is_a_prompt ... ok
+test a_dialog_over_a_ruled_box_is_a_dialog ... ok
+test only_the_first_forty_characters_are_matched ... ok
+test text_that_only_mentions_a_paste_marker_is_not_pending ... ok
+test each_dialog_marker_near_a_prompt_gives_dialog ... ok
+test the_real_input_box_with_its_footer_is_a_prompt ... ok
+test the_trust_dialog_is_a_dialog_although_its_pointer_looks_like_a_prompt ... ok
+test an_idle_box_is_a_prompt_whatever_the_footer_says ... ok
+test typed_text_in_the_box_keeps_it_a_prompt ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/session_cwd.rs (target/debug/deps/session_cwd-06819c986821ad9d)
+
+running 3 tests
+test the_lead_resumes_with_a_plain_resume ... ok
+test the_transcript_names_the_folder_when_no_live_file_does ... ok
+test the_live_session_file_names_the_folder ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/sessions.rs (target/debug/deps/sessions-4a4de15964818996)
+
+running 21 tests
+test current_session_without_an_id_is_none ... ok
+test current_session_treats_bg_as_background ... ok
+test current_session_without_a_kind_is_interactive ... ok
+test current_session_reads_id_and_interactive_kind ... ok
+test a_row_for_a_finished_job_or_a_gone_process_is_not_alive ... ok
+test a_background_row_keeps_its_state_under_state ... ok
+test a_listing_row_whose_pid_was_reused_is_not_alive ... ok
+test a_caller_timeout_shorter_than_five_seconds_is_kept ... ok
+test processes_fall_back_to_the_listing_and_report_its_failure ... ok
+test an_interactive_row_keeps_its_state_under_status ... ok
+test the_listing_runs_claude_agents_json_under_a_five_second_bound ... ok
+test a_session_file_whose_process_is_gone_is_not_alive ... ok
+test a_file_for_another_session_does_not_make_this_one_alive ... ok
+test a_session_file_whose_pid_was_reused_is_not_alive ... ok
+test a_bad_file_does_not_hide_a_good_one ... ok
+test processes_come_from_live_files_only ... ok
+test a_session_file_of_its_own_process_is_alive ... ok
+test a_live_session_file_gives_the_state_its_status_names ... ok
+test a_failed_listing_is_unknown_never_dead ... ok
+test caller_kind_comes_from_session_file ... ok
+test fake_claude_listing_gives_both_row_shapes ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/trust.rs (target/debug/deps/trust-2d6bb997a09b33e2)
+
+running 21 tests
+test an_input_prompt_means_no_dialog ... ok
+test a_host_failure_is_reported_as_a_host_error ... ok
+test escalated_dialog_is_refused_even_when_the_policy_refuses ... ok
+test an_escalation_marker_wrapped_across_lines_still_refuses ... ok
+test an_escalation_marker_far_above_the_last_forty_lines_still_refuses ... ok
+test escalated_trust_refused ... ok
+test the_refuse_policy_answers_nothing_on_a_plain_dialog ... ok
+test the_answer_is_down_then_enter_and_never_a_digit ... ok
+test a_screen_with_neither_prompt_nor_dialog_times_out_and_types_nothing ... ok
+test each_escalation_marker_alone_refuses ... ok
+test a_late_redraw_does_not_get_an_enter_on_no_exit ... ok
+test any_other_read_error_ends_the_step_at_once ... ok
+test a_dropped_down_is_sent_again_before_any_enter ... ok
+test each_plain_marker_alone_types_nothing_because_no_selection_is_shown ... ok
+test reads_that_keep_timing_out_end_in_a_timeout_when_the_steps_run_out ... ok
+test a_dialog_that_never_moves_gets_no_enter_and_times_out ... ok
+test a_read_that_times_out_or_finds_the_agent_busy_is_read_again ... ok
+test a_read_that_times_out_uses_up_the_steps_its_time_covers ... ok
+test fake_claude_without_a_dialog_is_no_dialog ... ok
+test fake_claude_escalated_dialog_is_left_alone ... ok
+test fake_claude_plain_dialog_is_answered_and_the_prompt_appears ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests/turn_end.rs (target/debug/deps/turn_end-f099b54ddffd39d9)
+
+running 11 tests
+test the_hold_reply_is_stop_additional_context_with_the_note ... ok
+test the_last_message_and_transcript_are_optional ... ok
+test junk_is_bad_input ... ok
+test an_agent_id_marks_a_subagent_stop ... ok
+test a_blank_last_message_is_none ... ok
+test a_real_stop_input_is_parsed ... ok
+test stop_hook_active_is_carried ... ok
+test a_null_or_empty_agent_id_is_not_a_subagent ... ok
+test input_without_a_usable_session_id_is_bad_input ... ok
+test a_stop_with_background_tasks_is_a_real_stop ... ok
+test fake_claude_honours_the_hold_reply_and_the_adapter_parses_its_inputs ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.69s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_launch-8bbeebe19d001b91)
+
+running 21 tests
+test contract::tests::a_reviewer_checks_the_diff_against_the_brief_and_quotes_the_line ... ok
+test contract::tests::names_and_paths_are_filled_and_no_placeholder_is_left ... ok
+test contract::tests::closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail ... ok
+test contract::tests::a_binary_path_with_a_space_or_a_quote_is_shell_quoted ... ok
+test contract::tests::a_reviewer_or_closer_writes_its_question_in_the_report_file ... ok
+test member_steps::tests::escalated_message_names_the_main_checkout_and_add ... ok
+test contract::tests::every_recorded_rule_is_in_the_implementer_contract ... ok
+test contract::tests::reviewer_and_closer_send_and_receive_no_messages ... ok
+test member_steps::tests::every_reason_code_is_a_short_lowercase_name ... ok
+test member::tests::member_value_wins_and_other_keys_are_kept ... ok
+test contract::tests::scope_block_lists_owns_and_check_and_is_absent_without_them ... ok
+test contract::tests::every_talking_kind_gets_the_finding_and_notice_rules_and_a_quiet_one_neither ... ok
+test member_steps::tests::the_spawn_limit_is_the_one_the_watch_reads ... ok
+test contract::tests::a_talking_member_learns_how_to_reach_other_teams_and_that_they_never_instruct ... ok
+test contract::tests::shared_rules_are_in_every_kind ... ok
+test contract::tests::contract_names_the_launching_binary ... ok
+test contract::tests::text_names_only_teamwire_commands ... ok
+test contract::tests::each_contract_names_only_message_types_its_kind_may_send ... ok
+test spec::tests::broken_json_is_one_error ... ok
+test spec::tests::hyphenated_team_and_role_are_reported_together ... ok
+test spec::tests::underscore_keys_are_ignored ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/afk_budget.rs (target/debug/deps/afk_budget-4436277c9999f5fc)
+
+running 6 tests
+test an_ordinary_team_gets_no_model_warning ... ok
+test members_below_the_afk_table_get_one_warning_each ... ok
+test past_the_budget_an_implementer_is_refused_and_a_reviewer_starts ... ok
+test a_refused_implementer_is_not_counted_as_requested ... ok
+test a_team_without_a_budget_is_unaffected ... ok
+test before_the_budget_ends_an_implementer_starts ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.36s
+
+     Running tests/afk_start.rs (target/debug/deps/afk_start-96408ee859b6eaef)
+
+running 8 tests
+test afk_start_with_no_lead_process_refuses_and_creates_nothing ... ok
+test afk_start_refuses_no_session_a_background_session_and_bad_arguments_in_order ... ok
+test afk_start_refuses_a_taken_team_name ... ok
+test afk_start_on_a_platform_without_a_hold_creates_the_team_and_warns ... ok
+test afk_start_records_the_current_directory_when_the_harness_cannot_place_the_lead ... ok
+test afk_start_refuses_a_session_that_already_leads_an_open_afk_team ... ok
+test afk_start_creates_the_team_copies_the_task_and_takes_the_hold ... ok
+test add_to_an_afk_team_with_no_members_starts_the_member ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/contract_worktree_rule.rs (target/debug/deps/contract_worktree_rule-c598d69abb788a4c)
+
+running 1 test
+test every_kind_is_told_not_to_administer_worktrees ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/dispatch.rs (target/debug/deps/dispatch-ffc9ca08c23cafd5)
+
+running 4 tests
+test a_timeout_on_dispatch_is_not_resent_either ... ok
+test stalled_dispatch_not_resent ... ok
+test dispatch_false_starts_the_member_idle ... ok
+test the_first_message_points_at_the_brief_and_is_one_line ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/identity.rs (target/debug/deps/identity-1e20475e08bf1a27)
+
+running 4 tests
+test harness_config_is_chosen_first_then_host_environment ... ok
+test no_identity_channel_refused ... ok
+test host_environment_channel_puts_identity_in_the_spawn_request_only ... ok
+test identity_written_to_settings_env_mode_0600_outside_worktree ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+     Running tests/lead_locate.rs (target/debug/deps/lead_locate-9b4f0fa51360f4b7)
+
+running 4 tests
+test a_lead_that_reads_watch_lines_is_not_checked ... ok
+test a_lead_that_cannot_be_found_is_refused_before_anything_is_made ... ok
+test a_lead_found_in_its_pane_passes ... ok
+test the_watch_command_follows_what_the_leads_harness_reads ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/names.rs (target/debug/deps/names-079fc95c7304215f)
+
+running 3 tests
+test an_unreadable_agent_list_warns_and_the_host_still_guards_the_name ... ok
+test name_already_live_in_host_refused ... ok
+test a_name_taken_answer_from_the_host_at_spawn_refuses_only_that_member ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/records.rs (target/debug/deps/records-c44f6dd1c99058b1)
+
+running 2 tests
+test the_team_records_the_folder_of_the_lead_session ... ok
+test a_started_member_records_its_model_and_effort ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/refusals.rs (target/debug/deps/refusals-0fb19700ac068915)
+
+running 18 tests
+test background_lead_refused_before_anything ... ok
+test add_to_a_team_without_a_database_refused ... ok
+test host_none_cannot_start_a_member ... ok
+test unknown_harness_refused ... ok
+test title_over_28_characters_refused ... ok
+test good_plugin_ids_pass ... ok
+test bad_plugin_id_refused_naming_the_key ... ok
+test low_disk_refused ... ok
+test add_to_a_closed_team_refused ... ok
+test add_spec_without_title_uses_team_title ... ok
+test removed_role_never_reused ... ok
+test failed_before_started_may_be_relaunched_but_started_then_failed_may_not ... ok
+test a_spawn_timeout_that_started_the_agent_says_so_loudly ... ok
+test a_not_ready_host_is_asked_once_and_a_taken_name_refuses_the_member ... ok
+test several_problems_are_reported_together ... ok
+test branch_git_refuses_is_a_spec_error ... ok
+test add_refused_when_close_lock_taken_after_validate ... ok
+test hanging_agent_start_fails_one_member_only ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.57s
+
+     Running tests/reopen.rs (target/debug/deps/reopen-80746ed1b872745d)
+
+running 25 tests
+test a_member_an_older_build_started_is_warned_about ... ok
+test a_lead_on_host_none_is_refused_with_the_manual_command ... ok
+test a_caller_that_is_the_lead_is_skipped_whatever_the_registry_says ... ok
+test a_lead_with_no_folder_found_is_refused_with_the_manual_command ... ok
+test a_member_whose_trust_step_fails_has_its_new_tab_closed_and_its_place_kept ... ok
+test a_dead_member_is_reopened_with_its_resume_argv_in_its_folder ... ok
+test a_dry_run_spawns_nothing_and_writes_nothing ... ok
+test a_closing_or_closed_team_is_refused ... ok
+test a_failure_to_close_the_old_tab_is_a_warning_and_the_reopen_stands ... ok
+test a_hold_that_cannot_be_taken_is_a_warning_not_a_failure ... ok
+test a_lead_whose_trust_step_fails_has_its_new_tab_closed ... ok
+test a_lead_whose_folder_is_the_home_directory_is_refused_and_nothing_is_spawned ... ok
+test a_member_launched_without_a_model_is_not_warned_about ... ok
+test a_member_without_its_files_or_folder_is_refused_with_the_reason ... ok
+test after_the_lead_is_up_the_sleep_hold_is_taken ... ok
+test a_running_or_background_lead_is_skipped ... ok
+test an_old_tab_that_holds_another_session_is_left_open_with_a_warning ... ok
+test a_host_that_fails_to_spawn_fails_that_member_only ... ok
+test a_member_whose_session_runs_or_is_unknown_is_skipped ... ok
+test the_harness_fills_in_a_folder_an_older_team_never_recorded ... ok
+test the_lead_comes_back_first_in_its_folder_under_its_own_name ... ok
+test removed_and_failed_members_are_skipped ... ok
+test the_old_tab_is_closed_after_the_new_one_started ... ok
+test role_picks_one_member_and_leaves_the_lead_alone ... ok
+test after_the_first_tab_is_up_the_others_open_at_the_same_time ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.54s
+
+     Running tests/resume_context.rs (target/debug/deps/resume_context-29bcf51b67b88ba0)
+
+running 2 tests
+test a_resume_names_the_running_binary_and_the_recorded_plugins ... ok
+test a_member_started_without_recorded_plugins_resumes_with_none ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/session.rs (target/debug/deps/session-4051a6b447d72dec)
+
+running 3 tests
+test the_contract_is_on_disk_before_the_harness_builds_its_launch ... ok
+test a_session_the_hook_recorded_is_kept ... ok
+test the_hosts_session_is_recorded_when_none_is ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/setup.rs (target/debug/deps/setup-ea3a1cfc75539257)
+
+running 13 tests
+test a_pane_member_does_not_get_the_team_setup ... ok
+test a_file_name_with_a_newline_is_named_and_never_written ... ok
+test setup_that_writes_nothing_changes_no_exclude_file ... ok
+test a_deleted_branch_is_cleared_from_the_member_row ... ok
+test a_file_written_later_in_a_setup_made_directory_stays_visible ... ok
+test setup_gets_the_directory_as_first_argument_and_the_team_variables ... ok
+test a_modified_tracked_file_is_named_in_full ... ok
+test a_member_that_fails_after_setup_takes_its_exclude_lines_back ... ok
+test files_setup_created_are_ignored_and_named ... ok
+test failed_setup_that_wrote_a_file_reports_leftover_worktree ... ok
+test failed_setup_undoes_and_role_reusable ... ok
+test a_second_member_adds_no_duplicate_lines_and_old_lines_stay ... ok
+test the_exclude_note_agrees_in_number ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.18s
+
+     Running tests/sleephold.rs (target/debug/deps/sleephold-8c316cb2a67ace4d)
+
+running 7 tests
+test no_lead_process_found_says_so_loudly_and_records_no_hold ... ok
+test hold_targets_harness_pid ... ok
+test a_hold_the_user_started_is_reused_and_not_owned ... ok
+test a_platform_without_a_hold_says_so ... ok
+test a_failed_hold_start_is_a_warning_not_a_failure ... ok
+test adding_to_a_team_keeps_its_own_hold_and_starts_no_second ... ok
+test a_hold_another_open_team_owns_is_reused_as_owned ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.19s
+
+     Running tests/worktree.rs (target/debug/deps/worktree-89d7e6e3db125add)
+
+running 8 tests
+test a_pane_only_team_does_not_need_worktrees_ignored ... ok
+test tracked_task_md_is_refused ... ok
+test a_worktree_member_is_refused_when_worktrees_is_not_ignored ... ok
+test events_carry_the_launch_id_the_requested_count_steps_and_session ... ok
+test non_utf8_exclude_is_kept ... ok
+test worktree_made_with_git_and_base_sha_recorded ... ok
+test task_md_written_and_excluded_from_git ... ok
+test a_new_branch_starts_at_the_named_base_and_an_existing_branch_is_reused ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.68s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_mcp-d037b61331c9b7d0)
+
+running 4 tests
+test failure::tests::a_rate_limit_is_the_only_refusal_worth_retrying ... ok
+test tests::debug_hides_the_token ... ok
+test failure::tests::done_errors_without_a_documented_code_map_as_the_report_says ... ok
+test failure::tests::store_errors_carry_their_documented_codes ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/meta.rs (target/debug/deps/meta-d75e1629cab866af)
+
+running 2 tests
+test the_lead_is_proven_through_its_meta ... ok
+test a_member_server_ignores_meta ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/teams.rs (target/debug/deps/teams-0195e079ad1eb977)
+
+running 3 tests
+test the_lead_may_not_instruct_another_teams_member ... ok
+test a_member_lists_every_team_and_reads_another_teams_roster ... ok
+test a_member_sends_to_an_agent_of_another_team ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/tools.rs (target/debug/deps/tools-f4ae3cd0adfb8e71)
+
+running 26 tests
+test a_read_tool_on_an_older_database_fails_and_leaves_the_file_alone ... ok
+test a_team_with_no_database_names_the_archive_but_stays_an_identity_refusal ... ok
+test done_records_a_completion_and_refuses_an_unknown_status ... ok
+test a_lead_with_the_recorded_session_reads_the_team_it_names ... ok
+test a_missing_argument_is_invalid ... ok
+test a_lead_server_with_no_session_id_says_so ... ok
+test a_lead_call_without_the_recorded_session_is_refused ... ok
+test a_member_cannot_name_another_team ... ok
+test log_accepts_the_lead_and_another_teams_agent_as_the_role ... ok
+test resend_retries_a_message_that_did_not_reach_its_recipient ... ok
+test ack_sorts_ids_into_acked_already_and_unknown ... ok
+test a_member_may_not_send_a_note_or_an_unknown_type ... ok
+test send_refuses_an_empty_text_and_stores_only_the_refusal ... ok
+test log_shows_a_member_only_its_own_messages_and_refuses_a_bad_role ... ok
+test resend_refuses_a_message_that_has_nothing_to_retry ... ok
+test log_reads_an_address_that_names_the_own_team_as_the_local_one ... ok
+test inbox_returns_unread_messages_once_and_marks_them_read ... ok
+test the_lead_has_no_inbox ... ok
+test a_wrong_token_is_refused_for_every_tool_and_stores_only_refusals ... ok
+test send_stores_the_message_and_reports_each_recipient ... ok
+test the_lead_sends_a_note_to_the_team_it_names ... ok
+test the_server_names_itself_teamwire ... ok
+test the_member_only_tools_say_so_in_their_descriptions ... ok
+test tool_list_is_the_nine_tools_of_the_doc ... ok
+test status_members_and_log_read_the_team ... ok
+test the_inbox_note_is_left_out_when_only_the_lead_wrote ... ok
+
+test result: ok. 26 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_msg-58c3522484e721e7)
+
+running 5 tests
+test tests::refusal_prints_its_mcp_code ... ok
+test tests::caller_env_debug_hides_the_token ... ok
+test token::tests::a_missing_or_empty_file_is_no_token ... ok
+test token::tests::the_file_is_read_and_its_newline_dropped ... ok
+test token::tests::the_variable_wins_over_the_file ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adopt_cwd.rs (target/debug/deps/adopt_cwd-e9b13ae9e03a3cb5)
+
+running 1 test
+test adopting_records_the_new_leads_folder ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cross_team.rs (target/debug/deps/cross_team-fc47816ab0b39cf6)
+
+running 12 tests
+test a_team_that_closed_after_the_send_was_stored_leaves_it_undelivered ... ok
+test a_resend_after_the_line_arrived_only_records_it ... ok
+test a_closed_team_takes_nothing ... ok
+test a_name_that_points_back_at_the_own_team_is_the_local_name ... ok
+test a_member_reaches_a_member_of_another_team ... ok
+test another_team_is_refused_when_it_cannot_take_the_message ... ok
+test a_resend_writes_the_missing_copy_and_types_it_once ... ok
+test each_team_logs_its_own_copy_and_only_beta_may_resend_it_there ... ok
+test an_unreachable_member_is_reached_by_a_later_resend ... ok
+test a_member_answers_a_question_from_another_team ... ok
+test a_question_to_another_teams_lead_is_answered_back_across_teams ... ok
+test the_burst_limit_counts_messages_to_another_team ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+
+     Running tests/identity.rs (target/debug/deps/identity-e5721ce4c4e4b927)
+
+running 13 tests
+test a_member_cannot_speak_as_another_member_or_the_lead ... ok
+test an_unknown_type_is_refused_and_logged_by_the_library ... ok
+test a_lead_whose_harness_reads_a_hint_is_proven_through_it ... ok
+test a_token_for_another_team_or_a_removed_member_is_refused ... ok
+test adopt_reads_the_session_through_a_hint ... ok
+test a_refused_identity_is_logged_and_stores_no_message ... ok
+test lead_without_session_refused ... ok
+test a_member_with_its_token_is_proven ... ok
+test a_library_level_identity_refusal_writes_the_event_with_code_and_reason ... ok
+test wrong_token_refused ... ok
+test the_lead_is_proven_by_its_session ... ok
+test the_lead_claim_needs_from_lead_and_no_member_identity ... ok
+test a_member_session_without_its_token_cannot_adopt ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/inbox.rs (target/debug/deps/inbox-80daa342e23ac49b)
+
+running 10 tests
+test a_log_row_carries_a_sanitised_excerpt_and_each_recipients_state ... ok
+test unacked_stays_handed_off_no_retry ... ok
+test an_answer_shows_the_question_it_answers ... ok
+test inbox_all_shows_read_messages_and_marks_nothing ... ok
+test ack_reports_acked_already_and_unknown ... ok
+test a_damaged_question_does_not_stop_the_inbox_of_its_answer ... ok
+test hash_mismatch_reported ... ok
+test log_shows_what_the_viewer_may_see ... ok
+test a_damaged_message_does_not_stop_ack_of_the_others ... ok
+test inbox_returns_unread_messages_oldest_first_and_marks_them_read ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/nohost.rs (target/debug/deps/nohost-ee27179c4ff509de)
+
+running 2 tests
+test question_to_no_host_lead_undelivered ... ok
+test no_host_member_reads_through_inbox ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/reprompt.rs (target/debug/deps/reprompt-85b164e04448fef8)
+
+running 12 tests
+test watch_running_reports_a_live_lease_holder_only ... ok
+test a_member_that_never_started_cannot_be_reprompted ... ok
+test a_reprompt_is_refused_while_the_team_closes ... ok
+test a_reprompt_line_is_marked_as_the_leads ... ok
+test a_resent_pending_reprompt_that_fails_gives_the_generation_back ... ok
+test a_delivered_reprompt_starts_the_next_generation ... ok
+test a_resumed_pending_reprompt_that_fails_gives_the_generation_back ... ok
+test unconfirmed_reprompt_keeps_generation ... ok
+test only_the_failed_member_of_several_gives_its_generation_back ... ok
+test a_reprompt_known_to_have_failed_gives_the_generation_back ... ok
+test a_resend_of_a_failed_reprompt_starts_the_generation_again ... ok
+test resuming_a_failed_reprompt_starts_the_generation_again ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/resend.rs (target/debug/deps/resend-2fb34b95cad6cfbf)
+
+running 11 tests
+test a_pending_row_is_resendable_only_after_sixty_seconds ... ok
+test a_reached_message_has_nothing_to_resend ... ok
+test a_pending_row_whose_attempt_just_started_is_not_resendable ... ok
+test an_unconfirmed_delivery_is_resent_only_by_an_explicit_resend ... ok
+test a_clean_failure_of_a_resend_keeps_an_unconfirmed_delivery_unconfirmed ... ok
+test a_resend_to_a_removed_recipient_is_undelivered_with_its_reason ... ok
+test only_sender_or_lead_may_resend ... ok
+test repeat_check_ignores_undelivered_copy ... ok
+test resend_retries_failed_recipients_only ... ok
+test resend_is_refused_while_the_team_is_closing ... ok
+test a_resend_may_name_recipients_and_skips_the_burst_limit ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+
+     Running tests/roster.rs (target/debug/deps/roster-8ba8d8037f10f1fb)
+
+running 2 tests
+test the_json_names_the_lifecycle_and_not_a_live_state ... ok
+test each_kind_lists_what_it_accepts_from_members ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests/send.rs (target/debug/deps/send-43d248b7a1045edf)
+
+running 29 tests
+test a_commit_that_looks_like_a_git_option_never_reaches_git ... ok
+test an_empty_text_is_refused ... ok
+test a_refusal_is_logged_with_its_code_and_stores_nothing_else ... ok
+test a_closing_team_takes_no_messages ... ok
+test crlf_and_bom_do_not_count_toward_the_limit ... ok
+test a_comms_write_failure_does_not_lose_the_message_or_stop_delivery ... ok
+test a_question_to_the_lead_tells_the_lead_how_to_answer_and_where_the_text_is ... ok
+test no_write_lock_held_during_host_call ... ok
+test a_stalled_prompt_is_unconfirmed_and_typed_once ... ok
+test a_failed_record_for_one_recipient_still_delivers_to_the_rest ... ok
+test an_answer_needs_a_real_question ... ok
+test a_send_is_stored_typed_and_recorded ... ok
+test members_may_not_message_a_closer_or_reviewer_but_the_lead_may ... ok
+test an_answer_answers_a_question_asked_of_the_answerer_and_goes_to_the_asker ... ok
+test a_question_goes_to_any_talking_agent_and_never_to_a_quiet_one ... ok
+test an_identical_text_to_the_same_recipient_is_a_repeat_for_ten_minutes ... ok
+test every_talking_kind_sends_every_kind_of_information ... ok
+test notice_naming_a_commit_that_is_missing_or_not_on_the_branch_is_refused ... ok
+test notice_without_a_commit_is_refused ... ok
+test only_the_lead_sends_a_reprompt_or_a_note ... ok
+test notice_with_a_real_commit_is_delivered_and_stores_the_full_hash ... ok
+test recipients_must_be_other_current_members ... ok
+test reviewers_and_closers_send_nothing ... ok
+test replaced_recipient_is_not_delivered ... ok
+test the_comms_copy_holds_the_exact_body ... ok
+test the_key_is_reported_before_any_host_call ... ok
+test resume_with_key_delivers_pending_and_undelivered_only ... ok
+test burst_refused_and_logged ... ok
+test size_limits_follow_the_type ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.47s
+
+     Running tests/states.rs (target/debug/deps/states-af62c7dfd557bbbd)
+
+running 1 test
+test delivery_states_only_move_forward ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_report-f147cbda3777b433)
+
+running 8 tests
+test turn_end::tests::a_budget_too_large_for_the_clock_is_no_deadline ... ok
+test turn_end::tests::a_lead_harness_that_cannot_be_found_gets_the_monitor_wording ... ok
+test turn_end::tests::the_hook_name_follows_the_harness ... ok
+test usage::tests::a_repeated_message_id_counts_once_and_models_stay_apart ... ok
+test usage::tests::a_missing_file_or_one_without_usage_gives_none ... ok
+test usage::tests::a_subagent_file_that_would_pass_the_cap_is_skipped_and_the_main_file_counts ... ok
+test usage::tests::a_subagent_file_that_is_unreadable_or_not_a_file_is_skipped_and_the_rest_count ... ok
+test usage::tests::subagent_transcripts_add_to_the_sum_and_a_repeated_id_counts_once ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/done.rs (target/debug/deps/done-6698b6bb180c5512)
+
+running 8 tests
+test a_token_of_another_team_or_a_removed_member_is_refused ... ok
+test a_token_matches_only_its_own_members_hash ... ok
+test invalid_status_refused ... ok
+test summary_is_reduced_to_one_printable_line ... ok
+test unknown_or_removed_member_and_closed_team_are_refused ... ok
+test done_stores_a_pending_completion_and_numbers_it ... ok
+test a_refused_status_is_recorded_for_the_metrics ... ok
+test bad_summaries_are_refused_and_store_nothing ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+
+     Running tests/gate.rs (target/debug/deps/gate-2b9b92f97f10f9e2)
+
+running 19 tests
+test no_hook_harness_with_a_complete_report_is_stored_at_once ... ok
+test a_hooked_member_gets_its_result_file_from_the_stop_hook_not_from_done ... ok
+test a_harness_with_a_turn_end_hook_is_not_checked_by_done ... ok
+test a_hookless_harness_gets_its_result_file_from_done ... ok
+test missing_decisions_list_is_named ... ok
+test no_hook_harness_told_once ... ok
+test commit_without_progress_line_is_held ... ok
+test a_complete_report_is_delivered_at_the_first_stop ... ok
+test a_failing_report_check_is_recorded ... ok
+test a_progress_line_for_each_commit_is_enough ... ok
+test a_new_generation_is_told_again ... ok
+test no_hold_at_all_when_the_stop_was_already_held ... ok
+test hold_once_then_deliver ... ok
+test check_error_means_no_gaps ... ok
+test a_corrupt_event_beside_a_pending_delivery_does_not_stop_the_result ... ok
+test a_message_body_that_fails_its_hash_does_not_stop_the_result ... ok
+test gaps_and_unread_messages_share_one_note ... ok
+test the_hold_event_names_the_hook_of_the_members_harness ... ok
+test unread_messages_hold_once_and_do_not_use_up_the_report_hold ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.24s
+
+     Running tests/lead_stop.rs (target/debug/deps/lead_stop-e3a8e2ea0249b394)
+
+running 19 tests
+test a_lead_that_cannot_read_watch_lines_is_told_the_background_watch ... ok
+test the_note_names_the_team_and_the_command ... ok
+test a_dead_watch_on_a_working_team_still_gets_the_afk_note ... ok
+test a_working_team_with_no_watch_is_named ... ok
+test a_lease_nobody_refreshed_does_not_count ... ok
+test a_team_whose_members_all_completed_is_left_out ... ok
+test a_team_with_no_member_started_is_left_out ... ok
+test another_session_is_left_alone ... ok
+test a_working_member_without_a_watch_still_gets_the_afk_note ... ok
+test a_live_watch_with_every_member_finished_still_gets_the_afk_note ... ok
+test a_team_that_is_not_open_is_left_out ... ok
+test a_lease_whose_process_is_gone_does_not_count ... ok
+test a_reprompted_member_needs_a_watch_again ... ok
+test an_afk_team_with_nothing_to_wake_the_lead_gets_the_afk_note ... ok
+test past_the_budget_the_afk_note_says_budget_spent_after_the_team_tag ... ok
+test a_live_watch_lease_leaves_the_team_out ... ok
+test a_live_watch_on_a_working_team_means_no_afk_note ... ok
+test only_the_teams_that_need_a_watch_are_named ... ok
+test an_ordinary_or_closed_team_or_another_session_gets_no_afk_note ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/nohost.rs (target/debug/deps/nohost-2fddd494634a2f23)
+
+running 3 tests
+test watch_route_done_writes_the_result_file_at_once ... ok
+test final_message_is_recorded_after_the_watch_reported_the_result ... ok
+test no_host_lead_gets_results_through_watch ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/reminder.rs (target/debug/deps/reminder-f841337ef75a30ae)
+
+running 5 tests
+test a_message_the_typed_line_carried_whole_is_not_reminded ... ok
+test a_short_message_the_host_never_took_is_still_reminded ... ok
+test a_read_message_is_not_reminded ... ok
+test a_pending_delivery_older_than_a_minute_is_reminded_once ... ok
+test reminds_once_per_message_id ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/result_file.rs (target/debug/deps/result_file-5e5265eeba29c33f)
+
+running 6 tests
+test no_final_message_at_all_is_said_plainly ... ok
+test hook_message_wins_over_transcript ... ok
+test the_file_shows_the_facts_the_lead_needs ... ok
+test transcript_is_the_fallback_and_the_file_says_so ... ok
+test unmarked_file_rescued_and_linked ... ok
+test a_generated_file_is_replaced_not_rescued ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/turn_end.rs (target/debug/deps/turn_end-492762bccb1dfa8a)
+
+running 21 tests
+test a_subagent_stop_reports_nothing ... ok
+test delivers_the_result_and_writes_the_file_first ... ok
+test delivery_still_happens_when_the_transcript_is_missing ... ok
+test delivering_left_by_crash_delivered_once_more ... ok
+test a_stop_with_no_completion_reports_nothing ... ok
+test a_result_without_a_running_watch_says_so ... ok
+test a_transcript_that_is_a_named_pipe_is_never_opened ... ok
+test host_refusal_marks_undelivered_with_the_host_code ... ok
+test a_result_with_a_dead_watch_says_so ... ok
+test other_session_is_not_member ... ok
+test second_stop_reports_nothing ... ok
+test delivering_event_carries_the_sessions_token_usage ... ok
+test hanging_host_stays_within_budget ... ok
+test a_result_with_a_running_watch_carries_no_note ... ok
+test a_lead_that_cannot_read_watch_lines_is_told_the_background_watch ... ok
+test no_hold_when_hook_already_active ... ok
+test no_write_lock_held_during_lead_delivery ... ok
+test unreachable_lead_marks_undelivered ... ok
+test the_note_stays_on_the_longest_result_line ... ok
+test completion_after_reprompt_is_new_result ... ok
+test submit_timeout_is_unconfirmed_and_not_retried ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s
+
+     Running unittests src/lib.rs (target/debug/deps/teamwire_watch-b82fcf54d57910f8)
+
+running 1 test
+test afk::tests::only_a_d_number_and_white_space_at_the_line_start_counts ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/lease.rs (target/debug/deps/lease-c2b3df725f880871)
+
+running 5 tests
+test second_watch_refused ... ok
+test a_dead_pid_is_dead_at_once_whatever_the_heartbeat ... ok
+test a_live_pid_with_an_old_heartbeat_is_taken_over ... ok
+test a_dead_holder_is_taken_over ... ok
+test the_lease_is_released_and_the_old_watch_stops_when_taken_over ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/poll.rs (target/debug/deps/poll-f39cf1c28dcb82cd)
+
+running 55 tests
+test a_message_the_typed_line_carried_whole_is_never_unread ... ok
+test a_member_still_creating_inside_the_grace_is_not_stalled ... ok
+test a_message_the_member_finished_after_is_not_unread ... ok
+test a_report_from_before_the_message_leaves_it_unread ... ok
+test a_team_closed_after_team_complete_prints_no_team_closed ... ok
+test a_member_gone_for_two_polls_only_is_not_dead ... ok
+test a_question_between_the_lead_and_a_member_is_not_unanswered_news ... ok
+test a_slow_poll_is_not_taken_for_a_sleep ... ok
+test a_harness_without_a_turn_end_hook_reports_through_the_watch ... ok
+test a_member_creating_for_two_minutes_is_not_stalled ... ok
+test a_sleep_after_a_run_started_is_not_counted_against_its_deadline ... ok
+test a_hook_that_reports_between_polls_needs_no_declared ... ok
+test a_clean_team_is_complete_once_and_completions_are_silent ... ok
+test a_sleep_before_a_member_exists_does_not_delay_its_late_line ... ok
+test a_member_creating_for_760_seconds_is_not_stalled ... ok
+test a_member_creating_for_880_seconds_stalls_the_team ... ok
+test a_started_member_with_no_session_is_never_called_dead ... ok
+test a_member_stuck_in_creating_stalls_the_team ... ok
+test agent_text_cannot_forge_an_event ... ok
+test absent_polls_split_by_no_info_are_not_three_in_a_row ... ok
+test agent_text_cannot_forge_an_event_with_the_separator ... ok
+test an_undelivered_question_from_another_team_is_announced ... ok
+test added_member_is_watched ... ok
+test closed_team_ends_with_one_team_closed_line ... ok
+test an_old_idle_member_has_no_startup_excuse ... ok
+test an_undelivered_question_is_announced_once ... ok
+test host_done_flag_is_not_completion ... ok
+test first_poll_says_watching_and_healthy_polls_say_nothing ... ok
+test dead_member_settles_team_complete ... ok
+test declared_after_two_polls_of_a_result_the_hook_has_not_reported ... ok
+test failed_listing_is_not_death ... ok
+test blocked_rearms_after_dialog_closes ... ok
+test interrupted_delivery_announced_once ... ok
+test old_watch_exits_after_migration ... ok
+test removed_member_not_died ... ok
+test late_announced_once_over_thirty_polls ... ok
+test startup_grace_no_silent ... ok
+test overdue_and_idle_is_late_silent_and_stalled ... ok
+test silent_rearms_after_member_works ... ok
+test restarted_watch_neither_repeats_nor_skips_a_silent_episode ... ok
+test reprompt_rearms_member ... ok
+test team_complete_counts_only_done ... ok
+test three_events_one_line ... ok
+test sleep_gap_resets_counters ... ok
+test two_undelivered_same_second_two_lines ... ok
+test restarted_watch_does_not_repeat_team_stalled ... ok
+test unanswered_question_to_the_lead_is_announced_once ... ok
+test unconfirmed_question_announced_once ... ok
+test restarted_watch_does_not_repeat ... ok
+test two_overdue_and_working_raise_no_stall ... ok
+test unconfirmed_result_announced_once ... ok
+test undelivered_result_printed_once ... ok
+test watch_never_submits_or_sends_keys ... ok
+test watch_route_prints_completed_once ... ok
+test unread_delivery_is_announced_once_after_ten_minutes ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s
+
+     Running tests/property.rs (target/debug/deps/property-1769001eb0784b09)
+
+running 1 test
+test watch_lines_obey_the_invariants ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+     Running tests/status.rs (target/debug/deps/status-8dd889069e2af97e)
+
+running 18 tests
+test an_ordinary_team_has_no_afk_view ... ok
+test status_never_calls_a_writing_host_method ... ok
+test an_idle_member_that_was_never_prompted_is_quiet_at_once ... ok
+test an_afk_team_shows_its_budget_and_decision_count ... ok
+test a_spent_budget_shows_zero_seconds_left ... ok
+test a_member_started_by_another_version_is_flagged ... ok
+test outside_prompt_shown ... ok
+test a_message_the_typed_line_carried_whole_is_not_listed_as_unread ... ok
+test a_message_the_member_finished_after_is_not_listed_as_unread ... ok
+test member_states_follow_the_records_and_the_look ... ok
+test a_delivery_handed_off_and_not_read_is_listed_after_ten_minutes ... ok
+test a_question_is_listed_until_an_answer_points_at_it ... ok
+test status_shows_the_team_its_members_and_what_is_stuck ... ok
+test role_adds_the_resume_command ... ok
+test status_changes_no_file ... ok
+test only_the_newest_result_of_a_member_is_listed_as_not_received ... ok
+test a_result_the_lead_marked_received_is_not_listed ... ok
+test status_says_whether_a_watch_runs ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

@@ -1,0 +1,6 @@
+ui bun test: 0
+ui typecheck: 0
+cargo test -p teamwire-report: 0
+cargo test -p teamwire-msg: 0
+gate fast: 0
+1dd9b223c5c67c660e9a11f97edc604584d061ac

@@ -1,0 +1,10 @@
+{
+  "task": "afk",
+  "setup": "teamwire",
+  "parent": "fb1fd8f561a3b5ce0fc51ad30ebc80481f041cd3",
+  "commits": [],
+  "clone": "/private/tmp/claude-501/bnruns/bnei8xdqkf/clone",
+  "started_at": "2026-10-23T10:02:55Z",
+  "base": "fb1fd8f561a3b5ce0fc51ad30ebc80481f041cd3",
+  "target": "ceff260475a354be779ae5f0c96202197a7ba448"
+}

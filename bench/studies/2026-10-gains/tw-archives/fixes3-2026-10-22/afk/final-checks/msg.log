@@ -1,0 +1,180 @@
+   Compiling serde_core v1.0.229
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling ulid v3.0.0
+   Compiling teamwire-core v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-core)
+   Compiling teamwire-store v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-store)
+   Compiling teamwire-fakes v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/tests/fakes)
+   Compiling teamwire-deliver v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-deliver)
+   Compiling teamwire-msg v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-msg)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.28s
+     Running unittests src/lib.rs (target/debug/deps/teamwire_msg-4468fbec2af1466a)
+
+running 5 tests
+test tests::caller_env_debug_hides_the_token ... ok
+test tests::refusal_prints_its_mcp_code ... ok
+test token::tests::the_variable_wins_over_the_file ... ok
+test token::tests::a_missing_or_empty_file_is_no_token ... ok
+test token::tests::the_file_is_read_and_its_newline_dropped ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/adopt_cwd.rs (target/debug/deps/adopt_cwd-158d85b3a93e2985)
+
+running 1 test
+test adopting_records_the_new_leads_folder ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/cross_team.rs (target/debug/deps/cross_team-50a4232773e5bb31)
+
+running 17 tests
+test a_copy_handed_off_in_a_closing_team_is_recorded_handed_off ... ok
+test a_resend_writes_the_missing_copy_and_types_it_once ... ok
+test a_name_that_points_back_at_the_own_team_is_the_local_name ... ok
+test a_resend_after_the_line_arrived_only_records_it ... ok
+test a_team_that_closed_after_the_send_was_stored_leaves_it_undelivered ... ok
+test another_team_is_refused_when_it_cannot_take_the_message ... ok
+test a_member_reaches_a_member_of_another_team ... ok
+test a_copy_that_surely_never_arrived_stays_undelivered_when_its_team_closes ... ok
+test a_copy_read_in_a_closed_team_is_recorded_handed_off ... ok
+test a_closed_team_takes_nothing ... ok
+test an_unreachable_member_is_reached_by_a_later_resend ... ok
+test a_pending_copy_in_a_closing_team_is_recorded_unconfirmed ... ok
+test an_unconfirmed_copy_in_a_closing_team_stays_unconfirmed ... ok
+test a_question_to_another_teams_lead_is_answered_back_across_teams ... ok
+test a_member_answers_a_question_from_another_team ... ok
+test each_team_logs_its_own_copy_and_only_beta_may_resend_it_there ... ok
+test the_burst_limit_counts_messages_to_another_team ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s
+
+     Running tests/identity.rs (target/debug/deps/identity-ddd37a992e221565)
+
+running 13 tests
+test a_member_cannot_speak_as_another_member_or_the_lead ... ok
+test a_lead_whose_harness_reads_a_hint_is_proven_through_it ... ok
+test adopt_reads_the_session_through_a_hint ... ok
+test an_unknown_type_is_refused_and_logged_by_the_library ... ok
+test a_member_session_without_its_token_cannot_adopt ... ok
+test a_refused_identity_is_logged_and_stores_no_message ... ok
+test lead_without_session_refused ... ok
+test wrong_token_refused ... ok
+test the_lead_is_proven_by_its_session ... ok
+test the_lead_claim_needs_from_lead_and_no_member_identity ... ok
+test a_token_for_another_team_or_a_removed_member_is_refused ... ok
+test a_member_with_its_token_is_proven ... ok
+test a_library_level_identity_refusal_writes_the_event_with_code_and_reason ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/inbox.rs (target/debug/deps/inbox-5105a921b4bd3f1b)
+
+running 10 tests
+test unacked_stays_handed_off_no_retry ... ok
+test a_damaged_message_does_not_stop_ack_of_the_others ... ok
+test ack_reports_acked_already_and_unknown ... ok
+test log_shows_what_the_viewer_may_see ... ok
+test a_log_row_carries_a_sanitised_excerpt_and_each_recipients_state ... ok
+test a_damaged_question_does_not_stop_the_inbox_of_its_answer ... ok
+test hash_mismatch_reported ... ok
+test an_answer_shows_the_question_it_answers ... ok
+test inbox_all_shows_read_messages_and_marks_nothing ... ok
+test inbox_returns_unread_messages_oldest_first_and_marks_them_read ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/nohost.rs (target/debug/deps/nohost-c68821b25b9816cc)
+
+running 2 tests
+test question_to_no_host_lead_undelivered ... ok
+test no_host_member_reads_through_inbox ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/reprompt.rs (target/debug/deps/reprompt-9ff744c1fb2912cc)
+
+running 13 tests
+test watch_running_reports_a_live_lease_holder_only ... ok
+test a_delivered_reprompt_starts_the_next_generation ... ok
+test a_reprompt_known_to_have_failed_gives_the_generation_back ... ok
+test a_reprompt_line_is_marked_as_the_leads ... ok
+test only_the_failed_member_of_several_gives_its_generation_back ... ok
+test an_unrelated_damaged_event_does_not_stop_the_undo_of_a_resumed_reprompt ... ok
+test a_resumed_pending_reprompt_that_fails_gives_the_generation_back ... ok
+test unconfirmed_reprompt_keeps_generation ... ok
+test a_member_that_never_started_cannot_be_reprompted ... ok
+test a_reprompt_is_refused_while_the_team_closes ... ok
+test a_resent_pending_reprompt_that_fails_gives_the_generation_back ... ok
+test resuming_a_failed_reprompt_starts_the_generation_again ... ok
+test a_resend_of_a_failed_reprompt_starts_the_generation_again ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/resend.rs (target/debug/deps/resend-08d59176889682f6)
+
+running 11 tests
+test a_pending_row_is_resendable_only_after_sixty_seconds ... ok
+test a_pending_row_whose_attempt_just_started_is_not_resendable ... ok
+test a_reached_message_has_nothing_to_resend ... ok
+test an_unconfirmed_delivery_is_resent_only_by_an_explicit_resend ... ok
+test repeat_check_ignores_undelivered_copy ... ok
+test a_clean_failure_of_a_resend_keeps_an_unconfirmed_delivery_unconfirmed ... ok
+test resend_retries_failed_recipients_only ... ok
+test a_resend_to_a_removed_recipient_is_undelivered_with_its_reason ... ok
+test only_sender_or_lead_may_resend ... ok
+test resend_is_refused_while_the_team_is_closing ... ok
+test a_resend_may_name_recipients_and_skips_the_burst_limit ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+     Running tests/roster.rs (target/debug/deps/roster-7751f2042935da71)
+
+running 2 tests
+test the_json_names_the_lifecycle_and_not_a_live_state ... ok
+test each_kind_lists_what_it_accepts_from_members ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/send.rs (target/debug/deps/send-d5d5dffe472696b3)
+
+running 29 tests
+test an_empty_text_is_refused ... ok
+test a_failed_record_for_one_recipient_still_delivers_to_the_rest ... ok
+test members_may_not_message_a_closer_or_reviewer_but_the_lead_may ... ok
+test crlf_and_bom_do_not_count_toward_the_limit ... ok
+test a_closing_team_takes_no_messages ... ok
+test a_commit_that_looks_like_a_git_option_never_reaches_git ... ok
+test a_comms_write_failure_does_not_lose_the_message_or_stop_delivery ... ok
+test a_refusal_is_logged_with_its_code_and_stores_nothing_else ... ok
+test a_send_is_stored_typed_and_recorded ... ok
+test every_talking_kind_sends_every_kind_of_information ... ok
+test a_stalled_prompt_is_unconfirmed_and_typed_once ... ok
+test a_question_to_the_lead_tells_the_lead_how_to_answer_and_where_the_text_is ... ok
+test an_answer_answers_a_question_asked_of_the_answerer_and_goes_to_the_asker ... ok
+test an_answer_needs_a_real_question ... ok
+test a_question_goes_to_any_talking_agent_and_never_to_a_quiet_one ... ok
+test no_write_lock_held_during_host_call ... ok
+test notice_naming_a_commit_that_is_missing_or_not_on_the_branch_is_refused ... ok
+test notice_with_a_real_commit_is_delivered_and_stores_the_full_hash ... ok
+test an_identical_text_to_the_same_recipient_is_a_repeat_for_ten_minutes ... ok
+test notice_without_a_commit_is_refused ... ok
+test only_the_lead_sends_a_reprompt_or_a_note ... ok
+test recipients_must_be_other_current_members ... ok
+test replaced_recipient_is_not_delivered ... ok
+test reviewers_and_closers_send_nothing ... ok
+test burst_refused_and_logged ... ok
+test resume_with_key_delivers_pending_and_undelivered_only ... ok
+test the_key_is_reported_before_any_host_call ... ok
+test the_comms_copy_holds_the_exact_body ... ok
+test size_limits_follow_the_type ... ok
+
+test result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests/states.rs (target/debug/deps/states-3676a8506e7faff0)
+
+running 1 test
+test delivery_states_only_move_forward ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.56s
+

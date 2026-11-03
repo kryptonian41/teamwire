@@ -1,0 +1,79 @@
+   Compiling teamwire-store v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-store)
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-core)
+   Compiling teamwire-platform v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-platform)
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/tests/fakes)
+   Compiling teamwire-harness-codex v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-harness-codex)
+   Compiling teamwire-harness-claude v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-harness-claude)
+   Compiling teamwire-host-herdr v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-host-herdr)
+   Compiling teamwire-host-tmux v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-host-tmux)
+   Compiling teamwire-deliver v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-deliver)
+   Compiling teamwire-verify v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-verify)
+   Compiling teamwire-otel v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-otel)
+   Compiling teamwire-watch v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-watch)
+   Compiling teamwire-msg v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-msg)
+   Compiling teamwire-launch v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-launch)
+   Compiling teamwire-report v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-report)
+   Compiling teamwire-close v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-close)
+   Compiling teamwire-mcp v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-mcp)
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.63s
+     Running tests/afk.rs (/private/tmp/claude-501/bench-target/debug/deps/afk-309e79125c0f8ecb)
+
+running 11 tests
+test a_bad_budget_is_a_usage_error ... FAILED
+test outside_a_lead_session_it_is_refused ... ok
+test a_session_that_already_leads_an_open_afk_team_is_refused ... ok
+test a_missing_task_file_is_refused_before_anything_is_made ... ok
+test an_empty_or_long_title_is_refused ... ok
+test a_bad_or_taken_name_is_refused ... ok
+test a_failing_doctor_check_refuses_and_names_it ... FAILED
+test a_start_without_a_host_is_refused_before_anything_is_made ... FAILED
+test a_start_that_cannot_find_the_leads_process_is_refused_before_anything_is_made ... ok
+test the_budget_option_sets_the_end ... ok
+test a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task ... FAILED
+
+failures:
+
+---- a_bad_budget_is_a_usage_error stdout ----
+
+thread 'a_bad_budget_is_a_usage_error' (175386985) panicked at crates/teamwire-cli/tests/afk.rs:315:9:
+assertion `left == right` failed: 0h: refused: bad_budget: budget "0h" must be a positive number and a unit, such as 90m or 8h
+
+  left: Some(1)
+ right: Some(3)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_failing_doctor_check_refuses_and_names_it stdout ----
+
+thread 'a_failing_doctor_check_refuses_and_names_it' (175386987) panicked at crates/teamwire-cli/tests/afk.rs:325:5:
+refused: doctor_failed: claude on PATH: the harness binary `claude` is not on PATH
+
+
+---- a_start_without_a_host_is_refused_before_anything_is_made stdout ----
+
+thread 'a_start_without_a_host_is_refused_before_anything_is_made' (175386992) panicked at crates/teamwire-cli/tests/afk.rs:231:5:
+refused: doctor_failed: host: no herdr pane or tmux session: members cannot be started from here
+
+
+---- a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task stdout ----
+
+thread 'a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task' (175386990) panicked at crates/teamwire-cli/tests/afk.rs:338:5:
+team run created for an AFK run
+afk dir: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-2Kkyw8/teams/run/afk
+report: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-2Kkyw8/teams/run/afk/REPORT.md
+budget ends: 2026-10-26T16:57:23.436Z
+keep the lid open and the machine on power: a closed lid still sleeps a Mac
+
+
+
+failures:
+    a_bad_budget_is_a_usage_error
+    a_failing_doctor_check_refuses_and_names_it
+    a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task
+    a_start_without_a_host_is_refused_before_anything_is_made
+
+test result: FAILED. 7 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.51s
+
+error: test failed, to rerun pass `-p teamwire-cli --test afk`
+error: 1 target failed:
+    `-p teamwire-cli --test afk`

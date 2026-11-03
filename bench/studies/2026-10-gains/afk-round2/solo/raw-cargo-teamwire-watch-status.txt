@@ -1,0 +1,26 @@
+   Compiling teamwire-watch v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-watch)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+     Running tests/status.rs (/private/tmp/claude-501/bench-target/debug/deps/status-a440bbf12491187a)
+
+running 18 tests
+test past_the_budget_no_time_is_left ... ok
+test an_ordinary_team_has_no_afk_view ... ok
+test an_afk_team_with_no_members_shows_its_budget_and_decisions ... ok
+test an_idle_member_that_was_never_prompted_is_quiet_at_once ... ok
+test outside_prompt_shown ... ok
+test a_message_the_typed_line_carried_whole_is_not_listed_as_unread ... ok
+test a_delivery_handed_off_and_not_read_is_listed_after_ten_minutes ... ok
+test a_member_started_by_another_version_is_flagged ... ok
+test a_question_is_listed_until_an_answer_points_at_it ... ok
+test a_message_the_member_finished_after_is_not_listed_as_unread ... ok
+test member_states_follow_the_records_and_the_look ... ok
+test status_shows_the_team_its_members_and_what_is_stuck ... ok
+test status_never_calls_a_writing_host_method ... ok
+test a_result_the_lead_marked_received_is_not_listed ... ok
+test only_the_newest_result_of_a_member_is_listed_as_not_received ... ok
+test status_changes_no_file ... ok
+test role_adds_the_resume_command ... ok
+test status_says_whether_a_watch_runs ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

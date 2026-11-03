@@ -1,0 +1,11 @@
+exit Some(0)
+--- stdout
+[dry-run] check: 0 member(s) checked: all idle, no uncommitted work
+[dry-run] lock: take the close lock: launch, reprompt and removal wait
+[dry-run] archive: back up team.db, copy the other files, write SHA256SUMS, verify by content: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/archive/zero-2026-10-27
+[dry-run] remove_worktrees: no worktrees
+[dry-run] close_places: no places recorded
+[dry-run] release_hold: release the sleep hold (pid 66491) unless another open team still records it
+[dry-run] finish: mark the team closed (team.closed)
+[dry-run] delete_state: delete /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/teams/zero
+--- stderr

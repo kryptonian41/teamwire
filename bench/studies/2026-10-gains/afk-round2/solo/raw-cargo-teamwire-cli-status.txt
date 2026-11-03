@@ -1,0 +1,72 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running tests/status.rs (/private/tmp/claude-501/bench-target/debug/deps/status-80ee830a951dea2d)
+
+running 17 tests
+test no_teams_says_so ... ok
+test json_is_the_view ... ok
+test role_reports_why_a_resume_command_is_missing ... ok
+test an_afk_team_with_no_members_still_shows_its_line ... ok
+test role_needs_a_team_and_a_member ... ok
+test an_unknown_team_is_refused ... ok
+test a_directory_without_a_database_is_skipped_in_the_listing ... ok
+test an_afk_team_shows_its_line_after_the_header_and_an_afk_object ... FAILED
+test a_team_shows_members_messages_and_stuck_deliveries ... ok
+test a_spent_budget_reads_spent_with_zero_seconds_left ... FAILED
+test without_a_team_every_team_is_listed ... ok
+test an_ordinary_team_has_a_null_afk_and_no_afk_line ... ok
+test a_watch_whose_heartbeat_is_old_is_stale_in_text_and_json ... ok
+test an_unreadable_database_exits_6 ... ok
+test a_member_caller_never_sees_the_lead_session ... ok
+test received_clears_a_result_from_status_and_a_second_run_changes_nothing ... ok
+test role_shows_the_model_and_effort_the_member_was_launched_with ... ok
+
+failures:
+
+---- an_afk_team_shows_its_line_after_the_header_and_an_afk_object stdout ----
+
+thread 'an_afk_team_shows_its_line_after_the_header_and_an_afk_object' (176221178) panicked at crates/teamwire-cli/tests/status.rs:352:5:
+team alpha "Alpha" open
+lead: session none (unknown)
+afk: budget ends 2999-01-01T00:00:00.000Z (8521982h30m left), 2 decision(s) in afk/decisions.md
+watch: none
+members:
+  api          done(done)                 gen 1  669h29m of 30m  result delivered  branch work  the api
+  web          late                       gen 1  669h29m of 30m  result -  branch work  the web
+last messages:
+  m001 2026-09-28T12:00:00.000Z question web -> lead: which branch?
+deliveries that need attention:
+  m001 -> lead undelivered for 669h29m
+questions without an answer:
+  m001 from web to lead for 669h29m
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_spent_budget_reads_spent_with_zero_seconds_left stdout ----
+
+thread 'a_spent_budget_reads_spent_with_zero_seconds_left' (176221175) panicked at crates/teamwire-cli/tests/status.rs:375:5:
+team alpha "Alpha" open
+lead: session none (unknown)
+afk: budget spent at 2020-01-01T00:00:00.000Z, 2 decision(s) in afk/decisions.md
+watch: none
+members:
+  api          done(done)                 gen 1  669h29m of 30m  result delivered  branch work  the api
+  web          late                       gen 1  669h29m of 30m  result -  branch work  the web
+last messages:
+  m001 2026-09-28T12:00:00.000Z question web -> lead: which branch?
+deliveries that need attention:
+  m001 -> lead undelivered for 669h29m
+questions without an answer:
+  m001 from web to lead for 669h29m
+
+
+
+failures:
+    a_spent_budget_reads_spent_with_zero_seconds_left
+    an_afk_team_shows_its_line_after_the_header_and_an_afk_object
+
+test result: FAILED. 15 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.53s
+
+error: test failed, to rerun pass `-p teamwire-cli --test status`
+error: 1 target failed:
+    `-p teamwire-cli --test status`

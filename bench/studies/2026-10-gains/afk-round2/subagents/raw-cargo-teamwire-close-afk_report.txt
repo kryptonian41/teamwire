@@ -1,0 +1,41 @@
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-core)
+   Compiling teamwire-store v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-store)
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/tests/fakes)
+   Compiling teamwire-deliver v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-deliver)
+   Compiling teamwire-verify v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-verify)
+   Compiling teamwire-close v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-close)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.34s
+     Running tests/afk_report.rs (/private/tmp/claude-501/bench-target/debug/deps/afk_report-19fd44cd7cd1d629)
+
+running 7 tests
+test an_ordinary_team_closes_with_no_report ... ok
+test an_afk_team_that_never_had_a_member_closes_with_no_report ... FAILED
+test removing_one_member_of_an_afk_team_needs_no_report ... ok
+test a_removed_member_still_needs_the_report ... ok
+test an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so ... ok
+test a_report_missing_any_one_heading_is_refused_and_names_it ... FAILED
+test a_report_with_all_eight_headings_lets_an_afk_team_close ... ok
+
+failures:
+
+---- an_afk_team_that_never_had_a_member_closes_with_no_report stdout ----
+
+thread 'an_afk_team_that_never_had_a_member_closes_with_no_report' (177111007) panicked at crates/teamwire-close/tests/afk_report.rs:120:5:
+assertion failed: refusals(&mut rig).is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_report_missing_any_one_heading_is_refused_and_names_it stdout ----
+
+thread 'a_report_missing_any_one_heading_is_refused_and_names_it' (177111005) panicked at crates/teamwire-close/tests/afk_report.rs:86:9:
+What you asked: ["afk_report_incomplete: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-dInlk2/teams/alpha/afk/REPORT.md lacks the heading(s): What you asked"]
+
+
+failures:
+    a_report_missing_any_one_heading_is_refused_and_names_it
+    an_afk_team_that_never_had_a_member_closes_with_no_report
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+error: test failed, to rerun pass `-p teamwire-close --test afk_report`
+error: 1 target failed:
+    `-p teamwire-close --test afk_report`

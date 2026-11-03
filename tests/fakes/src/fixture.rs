@@ -327,8 +327,18 @@ impl FakeHerdrEnv {
     /// The session files `fake-claude` processes have written and not yet
     /// removed.
     pub fn session_files(&self) -> Vec<PathBuf> {
+        // `fake-claude` writes each file through a hidden `.<name>.<pid>.tmp`
+        // in the same folder; a caller that saw one would read a half-written file.
+        let shown = |p: &PathBuf| {
+            p.file_name()
+                .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
+        };
         std::fs::read_dir(self.claude_dir().join("sessions"))
-            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .map(|d| {
+                d.filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(shown)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }

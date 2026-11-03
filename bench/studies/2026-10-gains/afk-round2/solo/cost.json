@@ -1,0 +1,39 @@
+{
+  "files": [
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnkde8rvxe-clone/ed60e835-2902-45c9-ae99-b64e8c9e309c.jsonl",
+      "usd": 6.3853448,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 204,
+            "output": 71261,
+            "cache_read": 15320064,
+            "cache_write_5m": 0,
+            "cache_write_1h": 236912,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 6.3853448
+        }
+      }
+    }
+  ],
+  "by_model": {
+    "claude-opus-5-5": {
+      "tokens": {
+        "input": 204,
+        "output": 71261,
+        "cache_read": 15320064,
+        "cache_write_5m": 0,
+        "cache_write_1h": 236912,
+        "cache_creation_unsplit": 0
+      },
+      "usd": 6.3853448
+    }
+  },
+  "total_usd": 6.3853448,
+  "clone": "/private/tmp/claude-501/bnruns/bnkde8rvxe/clone",
+  "prices_read_on": "2026-10-22",
+  "claude_total_cost_usd": 6.385344800000002,
+  "difference_usd": -1.7763568394002505e-15
+}

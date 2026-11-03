@@ -1,0 +1,172 @@
+diff --git a/crates/teamwire-msg/src/remote.rs b/crates/teamwire-msg/src/remote.rs
+index cbfff2c..9daed68 100644
+--- a/crates/teamwire-msg/src/remote.rs
++++ b/crates/teamwire-msg/src/remote.rs
+@@ -66,7 +66,10 @@ pub(crate) fn deliver_to_team(
+         Ok(None) => {
+             return tries
+                 .iter()
+-                .map(|t| mirror(ctx, message, t, gone(team)))
++                .map(|t| {
++                    let outcome = held_there(&there, team, message, t)?;
++                    mirror(ctx, message, t, outcome)
++                })
+                 .collect();
+         }
+         Err(e) => return tries.iter().map(|_| Err(e.clone())).collect(),
+@@ -171,6 +174,50 @@ fn outcome_of(record: &DeliveryRecord) -> Outcome {
+     }
+ }
+ 
++/// What a team that is closing or closed already holds for one recipient,
++/// from an earlier attempt. Nothing can be typed there now. A row that
++/// arrived keeps that outcome; one that may have arrived is unconfirmed; and
++/// a missing copy, or a row that surely never arrived, is `gone`.
++fn held_there(
++    there: &Ctx<'_>,
++    team: &TeamName,
++    message: &Message,
++    t: &Try<'_>,
++) -> Result<Outcome, SendError> {
++    let local = remote_of(&t.row.delivery.recipient)
++        .map(Remote::local)
++        .ok_or_else(|| SendError::Internal("a local row reached the remote path".to_owned()))?;
++    let row = there.store.read(|tx| tx.delivery(&message.ulid, &local))?;
++    Ok(match row {
++        Some(r)
++            if matches!(
++                r.delivery.state,
++                DeliveryState::HandedOff | DeliveryState::Acked
++            ) =>
++        {
++            outcome_of(&r)
++        }
++        Some(r)
++            if matches!(
++                r.delivery.state,
++                DeliveryState::Pending | DeliveryState::Unconfirmed
++            ) =>
++        {
++            Outcome {
++                state: DeliveryState::Unconfirmed,
++                route: r.delivery.route,
++                error: Some(DeliveryError::new(
++                    DeliveryErrorCode::TeamClosed,
++                    format!(
++                        "team {team} is closing or closed; an earlier attempt may have reached it"
++                    ),
++                )),
++            }
++        }
++        Some(_) | None => gone(team),
++    })
++}
++
+ fn gone(team: &TeamName) -> Outcome {
+     Outcome {
+         state: DeliveryState::Undelivered,
+diff --git a/crates/teamwire-msg/tests/cross_team.rs b/crates/teamwire-msg/tests/cross_team.rs
+index 7a65225..eb73c7a 100644
+--- a/crates/teamwire-msg/tests/cross_team.rs
++++ b/crates/teamwire-msg/tests/cross_team.rs
+@@ -527,3 +527,100 @@ fn each_team_logs_its_own_copy_and_only_beta_may_resend_it_there() {
+     .unwrap();
+     assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
+ }
++
++/// Beta holds its own copy of m001 from an earlier attempt, with db's row
++/// left in `state` (pending, handed off or read).
++fn copy_in_beta(t: &mut Two, ulid: Ulid, body: &str, state: DeliveryState) {
++    let at = t.rig.now();
++    t.beta
++        .write(|tx| {
++            tx.insert_received(
++                at,
++                &ReceivedMessage {
++                    ulid,
++                    sender: Remote::member_of(&TeamName::parse("alpha").unwrap(), &role("api")),
++                    kind: MessageType::Finding,
++                    re: None,
++                    commit: None,
++                    body: body.to_owned(),
++                    recipients: vec![Recipient::Member(role("db"))],
++                },
++            )?;
++            match state {
++                DeliveryState::Pending => Ok(()),
++                DeliveryState::Acked => tx.ack_delivery(at, &ulid, &to("db")).map(|_| ()),
++                other @ (DeliveryState::HandedOff
++                | DeliveryState::Unconfirmed
++                | DeliveryState::Undelivered) => tx.set_delivery_state(
++                    at,
++                    &ulid,
++                    &to("db"),
++                    &teamwire_store::DeliveryUpdate {
++                        state: other,
++                        route: Some(teamwire_core::Route::HostTyping),
++                        error: None,
++                        attempts: 1,
++                    },
++                ),
++            }
++        })
++        .unwrap();
++}
++
++fn close_beta(t: &mut Two, finish: bool) {
++    let pid = teamwire_core::Pid::new(4242);
++    let at = t.rig.now();
++    t.beta.write(|tx| tx.begin_close(at, pid)).unwrap();
++    if finish {
++        t.beta
++            .write(|tx| tx.finish_close(at, &teamwire_store::CloseEnd::Completed))
++            .unwrap();
++    }
++}
++
++fn probe(
++    state: DeliveryState,
++    finish: bool,
++) -> (teamwire_msg::RecipientReport, DeliveryState, usize) {
++    let mut t = two_teams();
++    let ulid = stored_in_alpha_only(&mut t, "held there");
++    copy_in_beta(&mut t, ulid, "held there", state);
++    close_beta(&mut t, finish);
++    t.rig.clock.advance(Duration::from_secs(61));
++    let actor = Actor::Member(role("api"));
++    let report = resend(&mut t.rig.ctx(), &actor, &id("m001"), None).unwrap();
++    let here = state_in(&t.rig.store, &ulid, "db@beta");
++    (report.deliveries[0].clone(), here, t.typed("db").len())
++}
++
++#[test]
++fn probe_closing_team_handed_off_copy() {
++    let (r, here, typed) = probe(DeliveryState::HandedOff, false);
++    assert_eq!(
++        (r.state, r.reason, here, typed),
++        (RecipientState::HandedOff, None, DeliveryState::HandedOff, 0)
++    );
++}
++
++#[test]
++fn probe_closed_team_read_copy() {
++    let (r, here, typed) = probe(DeliveryState::Acked, true);
++    assert_eq!(
++        (r.state, r.reason, here, typed),
++        (RecipientState::HandedOff, None, DeliveryState::HandedOff, 0)
++    );
++}
++
++#[test]
++fn probe_closing_team_pending_copy() {
++    let (r, here, typed) = probe(DeliveryState::Pending, false);
++    assert_eq!(
++        (r.state, r.reason, here, typed),
++        (
++            RecipientState::Unconfirmed,
++            Some(DeliveryErrorCode::TeamClosed),
++            DeliveryState::Unconfirmed,
++            0
++        )
++    );
++}

@@ -1,0 +1,23 @@
+    Finished `test` profile [unoptimized] target(s) in 0.14s
+     Running tests/close.rs (target/debug/deps/close-bc4f35069d3bdc66)
+
+running 16 tests
+test a_store_with_no_team_row_is_deleted_and_the_dry_run_changes_nothing ... ok
+test a_member_cannot_watch_or_add_members ... ok
+test a_close_that_meets_a_damaged_row_leaves_one_store_error_row ... ok
+test a_member_row_that_does_not_parse_is_exit_six_with_and_without_dry_run ... ok
+test usage_and_missing_state_have_their_own_exit_codes ... ok
+test clear_stale_lock_clears_a_dead_owner_and_only_that ... ok
+test keep_state_leaves_the_directory_and_archive_to_names_the_parent ... ok
+test a_step_that_fails_is_exit_two_with_the_state_intact_and_a_rerun_finishes ... ok
+test stop_is_the_only_way_to_remove_a_busy_member ... ok
+test dry_run_prints_the_plan_and_changes_nothing ... ok
+test a_busy_member_is_exit_one_and_nothing_changes ... ok
+test a_member_cannot_remove_a_peer ... ok
+test uncommitted_work_is_exit_one ... ok
+test a_full_close_exits_zero_archives_and_names_the_branches_and_unpushed_work ... ok
+test removing_a_member_needs_a_verify_record_unless_told_otherwise ... ok
+test a_member_whose_start_failed_leaves_no_branch_in_status_or_close ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.84s
+

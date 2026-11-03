@@ -1,0 +1,43 @@
+   Compiling uuid v1.26.1
+   Compiling ulid v3.0.0
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-core)
+   Compiling teamwire-store v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-store)
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/tests/fakes)
+   Compiling teamwire-deliver v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-deliver)
+   Compiling teamwire-launch v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-launch)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+     Running tests/afk.rs (/private/tmp/claude-501/bench-target/debug/deps/afk-dadd0401ac4bc9fc)
+
+running 6 tests
+test an_ordinary_team_gets_no_afk_warning ... ok
+test a_member_below_the_afk_table_gets_one_warning_each ... FAILED
+test members_join_an_afk_team_that_has_none ... ok
+test past_the_budget_an_implementer_is_refused_and_every_other_kind_starts ... FAILED
+test an_ordinary_team_has_no_budget ... ok
+test before_the_budget_ends_an_implementer_starts ... ok
+
+failures:
+
+---- a_member_below_the_afk_table_gets_one_warning_each stdout ----
+
+thread 'a_member_below_the_afk_table_gets_one_warning_each' (176227364) panicked at crates/teamwire-launch/tests/afk.rs:168:5:
+assertion `left == right` failed: []
+  left: 0
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- past_the_budget_an_implementer_is_refused_and_every_other_kind_starts stdout ----
+
+thread 'past_the_budget_an_implementer_is_refused_and_every_other_kind_starts' (176227369) panicked at crates/teamwire-launch/tests/afk.rs:58:64:
+called `Result::unwrap()` on an `Err` value: [SpecError { role: Some("api"), field: Some("kind"), code: "afk_budget_spent", message: "the AFK budget was spent at 2026-09-28T13:00:00.000Z; no new implementer may start. Finish what is running, verify it, and have the reporter list the rest as not done" }]
+
+
+failures:
+    a_member_below_the_afk_table_gets_one_warning_each
+    past_the_budget_an_implementer_is_refused_and_every_other_kind_starts
+
+test result: FAILED. 4 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+error: test failed, to rerun pass `-p teamwire-launch --test afk`
+error: 1 target failed:
+    `-p teamwire-launch --test afk`

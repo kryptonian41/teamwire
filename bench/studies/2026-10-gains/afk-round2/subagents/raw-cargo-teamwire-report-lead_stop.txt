@@ -1,0 +1,43 @@
+   Compiling teamwire-report v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-report)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.67s
+     Running tests/lead_stop.rs (/private/tmp/claude-501/bench-target/debug/deps/lead_stop-c7a9714afb59c447)
+
+running 20 tests
+test a_lead_that_cannot_read_watch_lines_is_told_the_background_watch ... ok
+test a_team_that_is_not_open_is_left_out ... ok
+test the_note_names_the_team_and_the_command ... ok
+test a_lease_whose_process_is_gone_does_not_count ... ok
+test a_team_with_no_member_started_is_left_out ... ok
+test a_reprompted_member_needs_a_watch_again ... ok
+test past_the_budget_the_note_says_so_and_asks_for_the_report ... FAILED
+test an_afk_team_with_nothing_to_wake_the_lead_gets_the_note ... ok
+test an_afk_team_with_a_working_member_and_no_watch_gets_the_note ... ok
+test a_lease_nobody_refreshed_does_not_count ... ok
+test another_session_is_left_alone ... ok
+test a_working_team_with_no_watch_is_named ... ok
+test another_session_or_a_closed_team_gets_no_afk_note ... ok
+test a_working_member_and_a_live_watch_will_wake_the_lead ... ok
+test a_team_whose_members_all_completed_is_left_out ... ok
+test a_live_watch_with_no_working_member_wakes_nobody ... ok
+test a_live_watch_lease_leaves_the_team_out ... ok
+test an_ordinary_team_gets_no_afk_note ... ok
+test another_team_of_the_session_that_is_working_and_watched_wakes_the_lead ... ok
+test only_the_teams_that_need_a_watch_are_named ... ok
+
+failures:
+
+---- past_the_budget_the_note_says_so_and_asks_for_the_report stdout ----
+
+thread 'past_the_budget_the_note_says_so_and_asks_for_the_report' (177115027) panicked at crates/teamwire-report/tests/lead_stop.rs:357:5:
+[teamwire:alpha] budget spent at 2026-09-28T13:00:00.000Z: AFK run: nobody will answer you. Finish what is running, launch no new implementer, and add the reporter to write /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-o2CDdq/teams/alpha/afk/REPORT.md. If you were about to ask the user, decide it yourself and add it to /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-o2CDdq/teams/alpha/afk/decisions.md. Run `teamwire close alpha` once the report exists. If a command you started will wake you, stop again.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    past_the_budget_the_note_says_so_and_asks_for_the_report
+
+test result: FAILED. 19 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+    `-p teamwire-report --test lead_stop`

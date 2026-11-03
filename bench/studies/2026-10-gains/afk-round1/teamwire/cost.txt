@@ -1,0 +1,21 @@
+16 transcript files, prices read on 2026-10-22
+  claude-opus-5-5      input=1512 output=429499 cache_read=100776285 cache_write_5m=410037 cache_write_1h=1504516  $42.8376
+  claude-sonnet-5-5    input=550 output=166966 cache_read=39883950 cache_write_1h=1220269  $14.5286
+  $  3.0855  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-endings/5f5ce0f2-b2fa-44f0-b708-613feff9b483.jsonl
+  $  4.3254  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-skill/7c6c5d2d-5038-4375-b750-598db86336a3.jsonl
+  $  4.8537  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-start/ad649770-d129-4bc1-9284-c32ffe4a82be.jsonl
+  $  2.2639  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-stophold/0dd0809f-9bc1-49c5-bbd8-1dc7bd12d4ac.jsonl
+  $  2.7838  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/56587970-fd14-43b8-a324-d88823a14af6.jsonl
+  $  2.6349  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/775aff8d-fba3-4a6b-a72a-49c0c7e180fd.jsonl
+  $  2.9473  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/82940aae-8621-412a-ae42-4c194a001418.jsonl
+  $  1.9125  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/9e0e567f-434a-4955-be06-a9098e69128b.jsonl
+  $  1.2309  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/a912052d-bf53-48b4-b0f5-5f5d3c94cae0.jsonl
+  $  7.1505  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3.jsonl
+  $  9.9540  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/c508a262-3376-4dd3-b4c6-37bb4657d032.jsonl
+  $  4.2946  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/da8b3353-9081-4949-a4e4-fa33e5b509ab.jsonl
+  $  4.3626  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687.jsonl
+  $  2.0863  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-a4f6c3747695bd76c.jsonl
+  $  1.5859  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-a61fdb4091241cd35.jsonl
+  $  1.8943  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-adb7d932066b6e9b0.jsonl
+total: $57.3662
+written to /Users/apoorvagarwal/Projects/teamwire/.worktrees/benchlead/bench/results/cost-clone.json

@@ -1,0 +1,13 @@
+bun install v1.3.11 (af24e281)
+
++ @types/bun@1.4.3
++ @types/react@19.3.0
++ @types/react-dom@19.3.0
++ typescript@7.0.2
++ react@19.3.0
++ react-dom@19.3.0
++ zod@4.6.7
+
+14 packages installed [22.00ms]
+
+[exit 0]

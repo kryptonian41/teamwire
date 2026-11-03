@@ -1,0 +1,18 @@
+{
+  "team": "closecache",
+  "plugins": {"claude-mem@thedotmack": false},
+  "children": [
+    {
+      "role": "reporter",
+      "title": "Write the AFK report",
+      "kind": "investigator",
+      "mode": "pane",
+      "cwd": "/private/tmp/claude-501/bnruns/bngcwrebut/clone",
+      "model": "opus",
+      "effort": "high",
+      "plugins": {"claude-mem@thedotmack": false, "mattpocock-skills@claude-plugins-official": false, "ponytail@ponytail": false},
+      "deadline_s": 2700,
+      "task_file": "/private/tmp/claude-501/bnruns/bngcwrebut/twhome/teams/closecache/afk/briefs/reporter.md"
+    }
+  ]
+}

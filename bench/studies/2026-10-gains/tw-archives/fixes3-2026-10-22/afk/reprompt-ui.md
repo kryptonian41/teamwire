@@ -1,0 +1,3 @@
+The closer's findings on your branch are in /private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/reports/closer.md, findings F1, F2, F3 and F5 (owner: ui). Check each one against the code. Fix what holds, and answer the rest with evidence in your report.
+For F1, the lead decided option (a): see entry D-L4 in /private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/afk/decisions.md. Count only unread deliveries whose recipient is in this team (no `@` in `to`), with a test that a cross-team row alone gives no reason, and a one-line comment that says why.
+Stay inside your owns. Commit each fix with a progress line in your report, run your check and `TEAMWIRE_BASE=e78c32be scripts/gate.sh fast`, then finish with `teamwire done`.
