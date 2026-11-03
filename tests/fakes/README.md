@@ -381,7 +381,12 @@ names a directory, so it can never write into the real `~/.claude`.
   process group of its own, and the agent ends that group.
 - `FakeHerdrEnv`'s `Drop` and `pane close` end an agent and the shell step it
   is running, except when the pane's `status.json` says `exited`: the pid may
-  belong to another process by then.
+  belong to another process by then. They find the step's group in the pane's
+  `step.pgid`, and a step's command starts only after the agent has written
+  that file: the shell first waits for a go-ahead line on its standard input.
+  An agent ended before it sent the go-ahead closes the pipe, and its shell
+  exits without running the command. So an agent ended at any moment leaves
+  no step running.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 
