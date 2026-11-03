@@ -126,62 +126,10 @@ pub(crate) fn spec_value(model: &ModelInfo) -> String {
     }
 }
 
-/// The name an evidence model and a harness's model are compared by. The
-/// evidence names a model as its vendor does, and a harness may add a
-/// provider before it and a release date or version after it. So the name
-/// is lowercased, loses a `provider/` part, loses leading dotted words such
-/// as `us.` and `anthropic.`, and loses trailing parts such as `-20251101`,
-/// `@20251101`, `-2025-11-01`, `-v1:0` and `-v1`.
-pub(crate) fn normalise(name: &str) -> String {
-    let lower = name.trim().to_ascii_lowercase();
-    let mut rest = lower.rsplit('/').next().unwrap_or_default();
-    // A leading word is a provider or region only when it is letters and
-    // digits alone: a model's own dot, as in `gpt-5.2`, follows a hyphen.
-    while let Some((head, tail)) = rest.split_once('.') {
-        let word = !head.is_empty()
-            && head.bytes().all(|b| b.is_ascii_alphanumeric())
-            && head.bytes().any(|b| b.is_ascii_alphabetic());
-        if !word || tail.is_empty() {
-            break;
-        }
-        rest = tail;
-    }
-    while let Some(shorter) = strip_version(rest).or_else(|| strip_date(rest)) {
-        rest = shorter;
-    }
-    rest.to_owned()
-}
-
-/// `rest` without a trailing Bedrock version: `-v1:0`, or `-v1` after a
-/// model that already ends in a number, as in `claude-opus-4-6-v1`. A bare
-/// `-v4` after a word is the model's own version, as in `deepseek-v4`.
-fn strip_version(rest: &str) -> Option<&str> {
-    let (model, version) = rest.rsplit_once("-v")?;
-    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-    let stripped = match version.split_once(':') {
-        Some((major, minor)) => digits(major) && digits(minor),
-        None => digits(version) && model.ends_with(|c: char| c.is_ascii_digit()),
-    };
-    (stripped && !model.is_empty()).then_some(model)
-}
-
-/// `rest` without a trailing date: `-20251101`, `@20251101` or `-2025-11-01`.
-fn strip_date(rest: &str) -> Option<&str> {
-    ["-dddddddd", "@dddddddd", "-dddd-dd-dd"]
-        .iter()
-        .find_map(|shape| {
-            let cut = rest.len().checked_sub(shape.len())?;
-            let (model, tail) = (rest.get(..cut)?, rest.get(cut..)?);
-            let fits = tail.bytes().zip(shape.bytes()).all(|(c, s)| match s {
-                b'd' => c.is_ascii_digit(),
-                _ => c == s,
-            });
-            (fits && !model.is_empty()).then_some(model)
-        })
-}
-
 /// `class`'s entries, reachable ones first, each half grouped by source in
-/// the order the file first names each source, then by rank.
+/// the order the file first names each source, then by rank. An entry is
+/// reachable when the harness lists the same model under any spelling
+/// (`ModelCatalog::same_model`).
 pub(crate) fn class_evidence(
     evidence: &Evidence,
     class: TaskClass,
@@ -203,12 +151,10 @@ pub(crate) fn class_evidence(
     let mut reachable = Vec::new();
     let mut unreachable = Vec::new();
     for entry in entries {
-        let key = normalise(&entry.model);
         let mut spec_values: Vec<String> = Vec::new();
-        for m in &catalog.models {
-            let names = std::iter::once(&m.id).chain(&m.aliases);
+        for m in catalog.same_model(&entry.model) {
             let value = spec_value(m);
-            if names.into_iter().any(|n| normalise(n) == key) && !spec_values.contains(&value) {
+            if !spec_values.contains(&value) {
                 spec_values.push(value);
             }
         }

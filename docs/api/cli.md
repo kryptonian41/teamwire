@@ -653,10 +653,12 @@ into one score or names one best model:
   ones it does not. Each half is grouped by source, in rank order, and each
   entry shows its model, effort, kind, claim, source date and URL. A
   reachable entry also names the spec values that reach it. An evidence
-  model matches a harness model when the two names agree after both are
-  lowercased and lose a `provider/` part, leading words such as `us.` and
-  `anthropic.`, and a trailing date or version such as `-20251101` or
-  `-v1:0`.
+  model matches a harness model when the two names agree under
+  `normalise_model` in `teamwire-core`. Both names are lowercased and lose a
+  `provider/` part, leading words such as `us.` and `anthropic.`, and a
+  trailing date or version such as `-20251101` or `-v1:0`. A leading word
+  followed by a version keeps its place and joins with a hyphen, so
+  Bedrock's `deepseek.v3.2` matches `deepseek-v3.2`.
 - **Your past teams** from the outcome report (`docs/metrics.md` section 6):
   the rows of the class, then how many `unclassified` rows and members no
   class can claim. The section shows counts and medians, never
