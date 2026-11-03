@@ -97,13 +97,15 @@ impl WiringEnv {
     }
 }
 
+/// `wire_with_home` without a `--home` flag, for tests.
+#[cfg(test)]
 pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
     wire_with_home(env, None)
 }
 
-/// `wire` for a command run with the global `--home` flag. The flag wins
-/// over `TEAMWIRE_HOME` wherever wiring reads the state directory, as it
-/// does for every command.
+/// The adapters for one command. `home_flag` is the global `--home` flag,
+/// which wins over `TEAMWIRE_HOME` wherever wiring reads the state
+/// directory, as it does for every command.
 pub(crate) fn wire_with_home(
     env: &WiringEnv,
     home_flag: Option<&Path>,
