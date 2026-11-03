@@ -8,7 +8,7 @@ should treat `as_of` as the age of every claim in it.
 ## What the file holds
 
 `examples/models/evidence.json` has the `Evidence` shape from
-`crates/teamwire-core/src/models.rs`. It holds 180 entries from 28 named
+`crates/teamwire-core/src/models.rs`. It holds 222 entries from 28 named
 sources on 21 pages. `teamwire models --for <class>` shows these entries to a
 lead. The command never picks a model. The lead picks.
 
@@ -34,22 +34,49 @@ The file covers the models a lead reaches through Claude Code, Codex and pi:
   report (Opus 4.8, 4.7, 4.6, 4.5, 4.1, 4; Sonnet 4.6, 4.5, 4; Haiku 4.5).
 - OpenAI: GPT-6 Astra, GPT-6.1 Sol, GPT-6 Sol, GPT-6.1 Terra, GPT-6 Luna, the
   GPT-5.x models, and the Codex variants (`gpt-5.3-codex`, `gpt-5.2-codex`).
-- Open models on Amazon Bedrock: DeepSeek and Amazon Nova. The Bedrock
-  DeepSeek page lists DeepSeek V3.2, V3.1 and R1
-  (<https://docs.aws.amazon.com/bedrock/latest/userguide/model-cards-deepseek.html>).
-  The file also keeps DeepSeek V4 rows, because pi can reach DeepSeek through
-  other providers. Whether V4 is on Bedrock was not confirmed.
+- Open models that pi reaches through Amazon Bedrock. On 2026-11-03,
+  `pi --list-models` on this machine listed these under `amazon-bedrock`:
 
-The file leaves out Gemini, Muse, Kimi, GLM, Qwen, MiniMax, Grok and other
-models, even where a source ranks them above a covered model. A lead on these
-three harnesses cannot start a member on them. The claim text gives the
-number, so a reader can still compare across sources.
+  | Family | Ids on pi's list |
+  | --- | --- |
+  | DeepSeek | `deepseek.v3.2`, `deepseek.v3-v1:0` |
+  | Amazon Nova | `amazon.nova-2-lite-v1:0`, `amazon.nova-premier-v1:0`, Nova Pro, Lite and Micro (with regional prefixes such as `us.`) |
+  | Kimi | `global.moonshotai.kimi-k3`, `moonshotai.kimi-k2.5`, `moonshot.kimi-k2-thinking` |
+  | GLM | `global.zai.glm-5.3`, `zai.glm-5`, `zai.glm-4.7`, `zai.glm-4.7-flash` |
+  | MiniMax | `minimax.minimax-m2.5`, `minimax.minimax-m2.1`, `minimax.minimax-m2` |
+  | Qwen | `qwen.qwen3-32b-v1:0`, `qwen.qwen3-coder-480b-a35b-v1:0`, `qwen.qwen3-235b-a22b-2507-v1:0`, and four more Qwen3 models |
+  | Grok | `global.xai.grok-4.7`, `xai.grok-4.6`, `xai.grok-4.3` |
+
+  pi lists a provider when it finds any credential for it. On this machine
+  the AWS policy denies Bedrock, so these models are listed but every call to
+  them fails. On a machine where Bedrock works, a pi member can run on any of
+  them.
+
+For the Bedrock families, the file keeps a row only when the source measured
+the same model version that pi lists. So it keeps GLM-5.3, GLM-5, Kimi K3,
+Kimi K2.5, MiniMax M2.5, MiniMax M2.1, Qwen3 32B, Qwen3 Coder 480B, Grok 4.7
+and Grok 4.6 rows. It drops rows for versions pi does not list, such as GLM
+5.2, Kimi K2.7 Code, MiniMax M3, Qwen3.8 and the original Qwen3 235B A22B,
+which is not the 2507 checkpoint pi lists.
+
+DeepSeek is the one exception. pi's list here has no DeepSeek V4, yet the
+file keeps the V4 rows from CodeReviewBench and SWE Atlas Codebase QnA. Those
+two boards have no DeepSeek version that pi lists, and V4 is the nearest
+evidence for the family. Each V4 claim names V4, so a reader can see the
+mismatch.
+
+The file leaves out Gemini, Muse, Inkling and other models that none of the
+three harnesses lists on this machine, even where a source ranks them above a
+covered model. The ranks of the kept rows are renumbered, as the `rank` row
+above says.
 
 Model names follow each vendor's API id where the vendor publishes one, such
 as `claude-opus-5-5` and `gpt-6.1-sol`. The 4.5 Claude models use their short
 aliases (`claude-opus-4-5`). The two Claude 4 models from May 2025 keep their
-dated ids. Amazon's Nova 2 models are named `nova-2-pro` and `nova-2-lite`, as
-the Nova 2 report names them, because no Bedrock id for them was confirmed.
+dated ids. The open models use the vendor's short name, such as `glm-5.3`,
+`kimi-k2.5` and `qwen3-32b`. Nova 2 Lite and Nova 1 Premier use their
+Bedrock ids. Nova 2 Pro is named `nova-2-pro`, as the Nova 2 report names it,
+because pi's list has no Nova 2 Pro.
 
 ## Sources
 
@@ -76,7 +103,8 @@ The page says it was last updated 2025-11-20. Rows are dated 2025-05-24 to
 - Informs `contained_feature`. Each task is one self-contained job in a
   container, checked by tests.
 - Limits: each vendor ran in its own harness (Claude Code, Codex), so the
-  harness differs between vendors. The tasks are not all code changes. It
+  harness differs between vendors. GLM-5.3 ran in Claude Code, and Grok 4.7
+  and 4.6 ran in xAI's Grok Build harness. The tasks are not all code changes. It
   carries effort sweeps for Fable 5.1, Opus 5 and GPT-6 Astra, which makes it
   the best public source on effort. Haiku 5.5 and Opus 5.5 below max are not
   on it.
@@ -149,7 +177,7 @@ Modified 2026-09-11.
 - Informs `judgement`.
 - Limits: a small sample, with 95% intervals about 24 points wide. It has
   measured no Claude or GPT model yet, only open models. The file keeps the
-  three DeepSeek rows.
+  three DeepSeek rows and the Kimi K3 row.
 
 ### Papers
 
@@ -228,10 +256,16 @@ Undated.
 - Informs `contained_feature` (FrontierCode, Terminal-Bench),
   `cross_cutting` (CursorBench), `mechanical_edit` (the migration) and
   `judgement` (Deloitte).
-- Limits: run and chosen by the vendor. Competitor numbers are "as reported
-  by OpenAI" or Zapier. Each benchmark on each page is its own source in the
-  file, so ranks never mix two benchmarks. The Deloitte number is a customer's
-  report with no sample size, recorded as `user_report`.
+- Limits: run and chosen by the vendor. On Terminal-Bench, the competitor
+  numbers are "as reported by OpenAI". Each benchmark on each page is its own
+  source in the file, so ranks never mix two benchmarks. The Deloitte number
+  is a customer's report with no sample size, recorded as `user_report`.
+- Effort labels: each page's charts label every point with its effort (Low,
+  Med, High, Xhigh, Max) and its cost per task. For FrontierCode on the Opus
+  5.5 page, the file records all 25 points in the chart data, five efforts for
+  each of five models, and ranks them by score. Elsewhere the file sets the
+  effort a chart gives for each number it keeps, and leaves `effort` empty
+  for a number that appears in no chart.
 
 **Amazon Nova 2 technical report.**
 <https://cdn.amazon.science/c5/3d/84514a224666b5be6de4b43ef4aa/nova-2-0-technical-report2.pdf>,
@@ -247,8 +281,9 @@ Undated.
 `developers.openai.com/codex/models` path redirects there). Undated.
 - Says: Astra for the hardest work with "stronger judgment", 6.1 Sol for
   near-Astra work at lower cost, Luna for clear, repeatable, high-volume
-  tasks. Start Luna at High and Astra at Light (`low`), and raise effort for
-  work that needs more checking.
+  tasks. The guide says "Start with High for Luna or Light for Astra", and to
+  raise effort for work that needs more checking. Its Power presets include
+  one named Luna High.
 - Informs `mechanical_edit` and `judgement`.
 - Limits: guidance. Its effort advice for Low in the CLI is general. The file
   attaches it to 6.1 Sol, the model the guide recommends for Codex.
@@ -286,6 +321,13 @@ Undated.
   Opus 5 scored lower at `max` (51.82%) than at `xhigh` (53.94%). Sonnet 5.5
   scored lower at `max` than at `xhigh` on FrontierCode, because it started
   extra review rounds that went out of scope.
+- **On FrontierCode, lower effort scored higher for three models.** In the
+  chart data on the Opus 5.5 page, Opus 5 scored 53.38% at `medium` and
+  48.04% at `max`. Fable 5.1 scored 52.80% at `low` and 50.28% at `max`. Opus
+  5.5 scored 54.64% at `medium`, its default, and 54.43% at `max`, for $0.80
+  against $6.19 a task. Opus 5 at `medium` also beat GPT-6 Astra's best,
+  53.26% at `max`. FrontierCode penalises out-of-scope edits, so more effort
+  can lower the score.
 - **A cheaper model at the same effort can match a dearer one.** GPT-6.1 Sol
   at `max` matched GPT-6 Astra at `max` on Terminal-Bench (58.18%) for $634
   against $3,267.
@@ -306,7 +348,7 @@ The file keeps both sides of each disagreement.
 
 | Claim | One source | The other source |
 | --- | --- | --- |
-| Sonnet 5.5 on Terminal-Bench 4.0 | 70.6% in Anthropic's announcement, effort not stated | 61.82% ±2.94 at `max` on the public leaderboard |
+| Sonnet 5.5 on Terminal-Bench 4.0 | 70.6% at `max` in Anthropic's announcement | 61.82% ±2.94 at `max` on the public leaderboard |
 | Opus 5.5 on Terminal-Bench 4.0 | 66.4% at `xhigh` in Anthropic's announcements | 64.85% ±3.11 at `max` on the public leaderboard, within the two intervals |
 | Sonnet 4.5 on SWE-bench Verified | 77.2% in Amazon's Nova 2 report, and 82.0% with the provider's test-time scaling | 71.4% at `high` in the mini-SWE-agent view on swebench.com |
 | Haiku 4.5 on SWE-bench Verified | 73.3% in the Nova 2 report | 66.6% at `high` on swebench.com |
@@ -366,6 +408,18 @@ swebench.com view runs every model in one small scaffold, mini-SWE-agent.
 - **Amazon Nova.** Nova appears only in Amazon's own report on SWE-bench
   Verified. No public leaderboard covers Nova 2, and no source covers Nova on
   any class but `contained_feature`.
-- **DeepSeek on Bedrock.** Bedrock lists DeepSeek V3.2, V3.1 and R1. The
-  newest boards report DeepSeek V4, so the evidence for the version pi reaches
-  on Bedrock is older (SWE-bench Verified, SWE-Bench Pro v1, Aider, JudgeBench).
+- **DeepSeek on Bedrock.** Bedrock's docs list DeepSeek V3.2, V3.1 and R1, and
+  pi's list here has V3.2 and V3. The newest boards report DeepSeek V4, so the
+  evidence for the version pi reaches on Bedrock is older (SWE-bench Verified,
+  SWE-Bench Pro v1, Aider, JudgeBench).
+- **The other Bedrock open models.** Kimi K3 and GLM-5.3 appear on SWE-Bench
+  Pro V2. GLM-5.3 also appears on Terminal-Bench 4.0, and Kimi K3 on
+  CodeReviewBench. Kimi K2.5, GLM-5 and MiniMax M2.5
+  appear on SWE-bench Verified, SWE Atlas and, for the first two, JudgeBench.
+  Grok 4.7 and 4.6 appear only on Terminal-Bench 4.0, run in xAI's own Grok
+  Build harness, which none of the three harnesses is. Qwen3 32B appears only
+  on Aider and CONCUR, and Qwen3 Coder 480B only on SWE-Bench Pro v1.
+  swebench.com lists Kimi K2 Thinking and MiniMax M2, but in older
+  mini-SWE-agent versions, which the file leaves out so that every row of that
+  source used one harness. No kept row covers GLM-4.7, Grok 4.3 or the other
+  Qwen3 models pi lists.
