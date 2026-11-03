@@ -39,16 +39,40 @@ fn builtin() -> ModelCatalog {
     }
 }
 
-/// A list shaped like pi's: one model through two providers.
-fn listed() -> ModelCatalog {
+/// pi's list as pi 1.5.0 printed it on this project's machine: the rows of
+/// the pi adapter's recorded fixture, then the rows `pi --list-models opus`
+/// printed, recorded in `support/pi-list-models-opus.txt`. pi spells one
+/// model differently per provider: claude-bridge lists `claude-opus-5-5`,
+/// Amazon Bedrock lists `us.anthropic.claude-opus-5-5` and other forms.
+/// `bedrock: false` leaves Bedrock out, as `TEAMWIRE_PI_EXCLUDE_PROVIDERS`
+/// does.
+fn real_pi(bedrock: bool) -> ModelCatalog {
+    let tables = [
+        include_str!("../../teamwire-harness-pi/tests/fixtures/list-models.txt"),
+        include_str!("support/pi-list-models-opus.txt"),
+    ];
+    let mut models: Vec<ModelInfo> = Vec::new();
+    for line in tables.iter().flat_map(|t| t.lines().skip(1)) {
+        let cells: Vec<&str> = line.split_whitespace().collect();
+        let &[provider, id, _, _, thinking, ..] = cells.as_slice() else {
+            continue;
+        };
+        let known = models
+            .iter()
+            .any(|m| m.id == id && m.provider.as_deref() == Some(provider));
+        if known || (!bedrock && provider == "amazon-bedrock") {
+            continue;
+        }
+        let mut info = row(Some(provider), id, &[]);
+        info.thinking = thinking == "yes";
+        models.push(info);
+    }
     ModelCatalog {
         source: CatalogSource::Listed,
-        models: vec![
-            row(Some("claude-bridge"), "claude-opus-5-5", &[]),
-            row(Some("amazon-bedrock"), "claude-opus-5-5", &[]),
-            row(Some("claude-bridge"), "claude-sonnet-5-5", &[]),
-        ],
-        efforts: vec!["off".into(), "low".into(), "high".into()],
+        models,
+        efforts: ["off", "minimal", "low", "medium", "high", "xhigh", "max"]
+            .map(String::from)
+            .to_vec(),
     }
 }
 
@@ -150,7 +174,7 @@ fn a_pi_style_pattern_that_matches_gets_no_warning() {
 #[test]
 fn a_provider_prefix_the_list_lacks_is_refused() {
     let rig = Rig::new();
-    rig.harness.set_models(Ok(listed()));
+    rig.harness.set_models(Ok(real_pi(true)));
     let spec = team_spec(
         "demo",
         &[member(
@@ -171,7 +195,7 @@ fn a_provider_prefix_the_list_lacks_is_refused() {
 #[test]
 fn a_provider_prefix_the_list_has_launches_without_a_warning() {
     let rig = Rig::new();
-    rig.harness.set_models(Ok(listed()));
+    rig.harness.set_models(Ok(real_pi(true)));
     let warnings = warnings_of(
         &rig,
         &[member(
@@ -187,12 +211,17 @@ fn a_provider_prefix_the_list_has_launches_without_a_warning() {
 #[test]
 fn a_bare_model_two_providers_offer_warns_naming_them() {
     let rig = Rig::new();
-    rig.harness.set_models(Ok(listed()));
+    rig.harness.set_models(Ok(real_pi(true)));
     let warnings = warnings_of(
         &rig,
         &[
             member(&rig, "a", &json!({"model": "claude-opus-5-5"})),
-            member(&rig, "b", &json!({"model": "claude-sonnet-5-5"})),
+            // A value that names its provider gets no warning.
+            member(
+                &rig,
+                "b",
+                &json!({"model": "claude-bridge/claude-sonnet-4-6"}),
+            ),
         ],
     )
     .unwrap();
@@ -203,6 +232,51 @@ fn a_bare_model_two_providers_offer_warns_naming_them() {
             && warning.contains("amazon-bedrock, claude-bridge")
             && warning.contains("write provider/id"),
         "{warning}"
+    );
+}
+
+#[test]
+fn a_bare_opus_on_the_real_pi_list_warns_naming_the_providers() {
+    for (bedrock, providers) in [
+        (true, "amazon-bedrock, claude-bridge"),
+        (false, "claude-bridge"),
+    ] {
+        let rig = Rig::new();
+        rig.harness.set_models(Ok(real_pi(bedrock)));
+        let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"model": "opus"}))]).unwrap();
+        assert_eq!(warnings.len(), 1, "{bedrock}: {warnings:?}");
+        let warning = warnings.first().unwrap();
+        assert!(
+            warning.starts_with("role a:")
+                && warning.contains(&format!("{providers} offer a match"))
+                && warning.contains("picks the provider itself")
+                && warning.contains("TEAMWIRE_PI_EXCLUDE_PROVIDERS")
+                && warning.contains("write provider/id")
+                && !warning.contains("does not list"),
+            "{bedrock}: {warning}"
+        );
+    }
+}
+
+#[test]
+fn sonnet_and_opus_on_pi_are_found_and_a_name_pi_lacks_is_not() {
+    let rig = Rig::new();
+    rig.harness.set_models(Ok(real_pi(false)));
+    for model in ["sonnet", "opus", "sonnet:high", "claude-opus-5-5"] {
+        let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"model": model}))]).unwrap();
+        assert!(
+            warnings.iter().all(|w| !w.contains("does not list")),
+            "{model}: {warnings:?}"
+        );
+    }
+    let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"model": "gpt-9"}))]).unwrap();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings
+            .first()
+            .unwrap()
+            .contains("does not list model \"gpt-9\""),
+        "{warnings:?}"
     );
 }
 

@@ -87,6 +87,174 @@ impl ModelCatalog {
             .iter()
             .find(|m| m.id == name || m.aliases.iter().any(|a| a == name))
     }
+
+    /// Every provider the list names, sorted, each once. Empty for a
+    /// harness that reaches its models one way only.
+    pub fn providers(&self) -> Vec<&str> {
+        let mut providers: Vec<&str> = self
+            .models
+            .iter()
+            .filter_map(|m| m.provider.as_deref())
+            .collect();
+        providers.sort_unstable();
+        providers.dedup();
+        providers
+    }
+
+    /// The rows a spec's `model` names, as the harness resolves it. The
+    /// value may end in pi's `:<thinking>` suffix, so the part before the
+    /// last `:` is tried when the whole value names nothing. A row matches
+    /// by its id or an alias, bare or as `provider/id`, ignoring case.
+    ///
+    /// On a list whose rows carry a provider, one model has a spelling per
+    /// provider, so more rows match. A value that is some row's id also
+    /// names every row with the same `normalise_model` name. Any other
+    /// value names every row whose `normalise_model` name holds the
+    /// value's, because pi's own search finds `opus` in every Opus row of
+    /// every provider. A `provider/` prefix keeps the match to that provider.
+    pub fn matching(&self, model: &str) -> Vec<&ModelInfo> {
+        let mut names = vec![model];
+        if let Some((before, _)) = model.rsplit_once(':') {
+            names.push(before);
+        }
+        names
+            .into_iter()
+            .map(|name| {
+                let exact = self.models.iter().any(|row| names_exactly(row, name));
+                self.models
+                    .iter()
+                    .filter(|row| pattern_names(row, name, exact))
+                    .collect::<Vec<_>>()
+            })
+            .find(|rows| !rows.is_empty())
+            .unwrap_or_default()
+    }
+
+    /// The rows that are the model a vendor calls `name`, under any
+    /// harness's or provider's spelling: the rows whose id or alias has the
+    /// same `normalise_model` name.
+    pub fn same_model(&self, name: &str) -> Vec<&ModelInfo> {
+        let key = normalise_model(name);
+        self.models
+            .iter()
+            .filter(|row| names_of(row).any(|n| normalise_model(n) == key))
+            .collect()
+    }
+}
+
+fn names_of(row: &ModelInfo) -> impl Iterator<Item = &String> {
+    std::iter::once(&row.id).chain(&row.aliases)
+}
+
+/// True when `name` is the row's id or an alias, bare or as `provider/id`.
+fn names_exactly(row: &ModelInfo, name: &str) -> bool {
+    let exact = |n: &str| names_of(row).any(|x| x.eq_ignore_ascii_case(n));
+    exact(name)
+        || row.provider.as_deref().is_some_and(|p| {
+            name.split_once('/')
+                .is_some_and(|(prefix, rest)| prefix.eq_ignore_ascii_case(p) && exact(rest))
+        })
+}
+
+/// True when the pattern `name` names `row` (see `ModelCatalog::matching`).
+/// `equal` says `name` is some row's id, so only the same normalised name
+/// counts, not one that merely holds it: Bedrock's `anthropic.claude-v2:0`
+/// normalises to `claude`, which every Claude row holds.
+fn pattern_names(row: &ModelInfo, name: &str, equal: bool) -> bool {
+    if names_exactly(row, name) {
+        return true;
+    }
+    let Some(provider) = row.provider.as_deref() else {
+        return false;
+    };
+    let rest = match name.split_once('/') {
+        Some((prefix, rest)) if prefix.eq_ignore_ascii_case(provider) => rest,
+        // A `/` that does not follow this row's provider is part of an id,
+        // as in OpenRouter's `anthropic/claude-x`, or another provider's
+        // prefix: only the whole id names the row.
+        Some(_) => return false,
+        None => name,
+    };
+    let key = normalise_model(rest);
+    !key.is_empty()
+        && names_of(row).any(|n| {
+            let n = normalise_model(n);
+            if equal { n == key } else { n.contains(&key) }
+        })
+}
+
+/// The name two spellings of one model are compared by. A vendor, a
+/// harness and a provider spell one model differently: pi lists Opus 5.5 as
+/// `claude-opus-5-5` through claude-bridge and as
+/// `us.anthropic.claude-opus-5-5` through Amazon Bedrock. So the name is
+/// lowercased, loses a `provider/` part, loses leading dotted words such as
+/// `us.` and `anthropic.`, and loses trailing parts such as `-20251101`,
+/// `@20251101`, `-2025-11-01`, `-v1:0` and `-v1`. A dotted word followed
+/// by a version, as in Bedrock's `deepseek.v3.2`, is the model's own name,
+/// so that dot becomes a hyphen: `deepseek-v3.2`.
+pub fn normalise_model(name: &str) -> String {
+    let lower = name.trim().to_ascii_lowercase();
+    let mut rest = lower.rsplit('/').next().unwrap_or_default();
+    let mut joined = None;
+    // A leading word is a provider or region only when it is letters and
+    // digits alone: a model's own dot, as in `gpt-5.2`, follows a hyphen.
+    while let Some((head, tail)) = rest.split_once('.') {
+        let word = !head.is_empty()
+            && head.bytes().all(|b| b.is_ascii_alphanumeric())
+            && head.bytes().any(|b| b.is_ascii_alphabetic());
+        if !word || tail.is_empty() {
+            break;
+        }
+        if is_version(tail) {
+            joined = Some(format!("{head}-{tail}"));
+            break;
+        }
+        rest = tail;
+    }
+    let joined = joined.unwrap_or_else(|| rest.to_owned());
+    let mut cut = joined.as_str();
+    while let Some(shorter) = strip_version(cut).or_else(|| strip_date(cut)) {
+        cut = shorter;
+    }
+    cut.to_owned()
+}
+
+/// True when `tail` starts with a version, such as `v3` in `v3.2` or `r1`
+/// in `r1-v1:0`: at most one letter, then digits, up to a `.`, `-` or `:`.
+fn is_version(tail: &str) -> bool {
+    let first = tail.split(['.', '-', ':']).next().unwrap_or_default();
+    let digits = first
+        .strip_prefix(|c: char| c.is_ascii_alphabetic())
+        .unwrap_or(first);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// `rest` without a trailing Bedrock version: `-v1:0`, or `-v1` after a
+/// model that already ends in a number, as in `claude-opus-4-6-v1`. A bare
+/// `-v4` after a word is the model's own version, as in `deepseek-v4`.
+fn strip_version(rest: &str) -> Option<&str> {
+    let (model, version) = rest.rsplit_once("-v")?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let stripped = match version.split_once(':') {
+        Some((major, minor)) => digits(major) && digits(minor),
+        None => digits(version) && model.ends_with(|c: char| c.is_ascii_digit()),
+    };
+    (stripped && !model.is_empty()).then_some(model)
+}
+
+/// `rest` without a trailing date: `-20251101`, `@20251101` or `-2025-11-01`.
+fn strip_date(rest: &str) -> Option<&str> {
+    ["-dddddddd", "@dddddddd", "-dddd-dd-dd"]
+        .iter()
+        .find_map(|shape| {
+            let cut = rest.len().checked_sub(shape.len())?;
+            let (model, tail) = (rest.get(..cut)?, rest.get(cut..)?);
+            let fits = tail.bytes().zip(shape.bytes()).all(|(c, s)| match s {
+                b'd' => c.is_ascii_digit(),
+                _ => c == s,
+            });
+            (fits && !model.is_empty()).then_some(model)
+        })
 }
 
 /// The public evidence file: what published benchmarks and user reports say
@@ -138,33 +306,4 @@ string_enum! {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn task_class_round_trips_through_its_string() {
-        for class in TaskClass::ALL {
-            assert_eq!(TaskClass::parse(class.as_str()).ok(), Some(*class));
-        }
-    }
-
-    #[test]
-    fn find_matches_an_id_or_an_alias() {
-        let catalog = ModelCatalog {
-            source: CatalogSource::Builtin,
-            models: vec![ModelInfo {
-                id: "claude-sonnet-5-5".into(),
-                aliases: vec!["sonnet".into()],
-                provider: None,
-                context_tokens: None,
-                thinking: true,
-            }],
-            efforts: vec!["low".into()],
-        };
-        assert_eq!(
-            catalog.find("sonnet").map(|m| m.id.as_str()),
-            Some("claude-sonnet-5-5")
-        );
-        assert!(catalog.find("opus").is_none());
-    }
-}
+mod tests;
