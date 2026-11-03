@@ -49,7 +49,10 @@ The user made these decisions on 2026-11-04:
    one of: a design choice the brief leaves to the member, a file the work
    must change that no member owns, two briefs or a brief and the plan that
    contradict each other, a claim about the code that the code does not
-   bear out, or a "Done when" item that no command or file can check. It
+   bear out, a "Done when" item that no command or file can check, a
+   member's check that misses a gate the repository's CI runs, or a team
+   shape that does not fit the work. The last two come from the plan
+   reviewer row of the AFK skill, which the user approved earlier. It
    proposes no fixes, as a reviewer does not.
 5. **It runs in `pane` mode only.** It writes nothing, so launch refuses it
    in `worktree` mode with the refusal code `plan_reviewer_needs_pane`.

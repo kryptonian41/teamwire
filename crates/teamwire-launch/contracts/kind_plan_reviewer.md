@@ -22,7 +22,11 @@ commit.
   - a claim about the code that the code does not bear out: a file,
     function or type that does not exist or does not do what the brief
     says;
-  - a 'Done when' item that no command, file or behaviour can check.
+  - a 'Done when' item that no command, file or behaviour can check;
+  - a member's check that misses a gate the repository's CI runs, such
+    as a lint, a doc build or a type check;
+  - a team shape that does not fit the work, such as two members who
+    must see each other's decisions to do their parts.
 - Give findings only: no fixes and no rewritten brief. Rank them by
   harm, and put first a gap that would make two members build parts
   that do not fit. Say plainly when a brief is ready. Inventing
