@@ -20,6 +20,7 @@ fn pi_passes_the_lead_setup_contract() {
         PiConfig {
             agent_dir: agent_dir.path().to_path_buf(),
             pi_bin: "pi".to_owned(),
+            exclude_providers: Vec::new(),
         },
     );
     lead_setup_contract(&LeadSetupSetup {

@@ -68,6 +68,9 @@ pub(crate) enum Command {
     PrWatch(PrWatchArgs),
     /// List the team shapes, or print one.
     Preset(PresetArgs),
+    /// The models a harness reaches, and with `--for` the evidence for one
+    /// task class. Reads only.
+    Models(ModelsArgs),
     /// Record that you are done, blocked or failed (members).
     Done(DoneArgs),
     /// Print unread messages and mark them read (members).
@@ -401,6 +404,20 @@ pub(crate) struct UninstallArgs {
 #[derive(Args)]
 pub(crate) struct PresetArgs {
     pub(crate) name: Option<String>,
+}
+
+#[derive(Args)]
+pub(crate) struct ModelsArgs {
+    /// The harness whose models to list. Without it, the harness of the
+    /// session that runs the command, as `launch` picks the lead's.
+    #[arg(long, value_name = "ID")]
+    pub(crate) harness: Option<String>,
+    /// Also show the public evidence and the past teams' outcomes for this
+    /// task class.
+    #[arg(long = "for", value_name = "CLASS")]
+    pub(crate) class: Option<String>,
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Args)]

@@ -39,6 +39,20 @@ removes the plugin, its marketplace, `$TEAMWIRE_HOME/claude-plugin/` and any
 skill or MCP entry of an older install, and leaves team state in
 `$TEAMWIRE_HOME`.
 
+A pi member's `model` names its provider, as `provider/id` from
+`teamwire models`. pi lists a provider whenever it finds any credential for
+it, even when the account cannot call that provider. For example, an
+`AWS_PROFILE` in the environment makes pi list the Amazon Bedrock models,
+and every call to one fails when the account's policy denies Bedrock. A
+model pattern without a provider can resolve to such a provider. Leave the
+provider out of teamwire's list with `TEAMWIRE_PI_EXCLUDE_PROVIDERS`, a
+comma-separated list of pi provider names. teamwire reads it from the
+environment first, then from a line in `$TEAMWIRE_HOME/config.toml`:
+
+```toml
+TEAMWIRE_PI_EXCLUDE_PROVIDERS = "amazon-bedrock"
+```
+
 ## How it fits together
 
 ```

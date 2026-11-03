@@ -23,6 +23,7 @@ mod member;
 mod member_parts;
 mod member_steps;
 mod plan;
+mod plan_models;
 mod plan_rules;
 mod plan_worktree;
 mod reopen;

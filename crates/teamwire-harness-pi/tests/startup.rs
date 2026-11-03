@@ -20,6 +20,7 @@ fn pi(steps: u32) -> Pi {
         PiConfig {
             agent_dir: "/nowhere/pi".into(),
             pi_bin: "pi".into(),
+            exclude_providers: Vec::new(),
         },
     )
     .with_startup_poll(StartupPoll {

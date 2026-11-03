@@ -207,11 +207,10 @@ A minimal spec with one implementer looks like this:
       "title": "Build refund endpoint",
       "kind": "implementer",
       "mode": "worktree",
+      "task_class": "contained_feature",
       "repo": "/abs/path/to/repo",
       "branch": "refunds/api",
       "base": "main",
-      "model": "sonnet",
-      "effort": "medium",
       "check": "cargo test -p refunds --locked",
       "owns": ["crates/refunds/"],
       "task_file": "/abs/path/to/api-brief.md"
@@ -219,6 +218,11 @@ A minimal spec with one implementer looks like this:
   ]
 }
 ```
+
+The member runs on the lead's harness, because the spec names no `harness`.
+Its `task_class` says how hard its task is to reason about. To choose its
+model, add `model` and `effort` from what `teamwire models` lists for that
+harness. Without them, the member runs on its harness's defaults.
 
 ## Team shapes
 

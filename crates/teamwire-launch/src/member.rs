@@ -156,7 +156,14 @@ fn launch_member(
         marks: Vec::new(),
         last: ctx.clock.monotonic(),
     };
-    let extra = json!({ "launch": launch_id, "requested": requested, "dispatch": m.spec.dispatch });
+    // `task_class` is `null` when the spec sets none, so a reader of
+    // `member.creating` can tell an unclassed member from a missing key.
+    let extra = json!({
+        "launch": launch_id,
+        "requested": requested,
+        "dispatch": m.spec.dispatch,
+        "task_class": m.spec.task_class,
+    });
     let result = run_member(ctx, plan, dirs, m, &extra, &mut made, &mut steps, warnings);
     match result {
         Ok(()) => LaunchOutcome::Started,

@@ -18,6 +18,7 @@ mod hook;
 mod launch;
 mod lead_extension;
 pub mod lead_setup;
+mod models;
 mod screen;
 mod session;
 mod startup;
@@ -31,8 +32,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
+    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 use crate::lead_extension::LEAD_SESSION_VAR;
@@ -45,6 +46,11 @@ pub struct PiConfig {
     pub agent_dir: PathBuf,
     /// The `pi` program to start.
     pub pi_bin: String,
+    /// Providers whose models `models()` leaves out, by the name pi's list
+    /// gives them. pi lists a provider once it finds any credential for it,
+    /// even one the user's policy denies, so the user names those here
+    /// (`TEAMWIRE_PI_EXCLUDE_PROVIDERS`). A name pi does not list is ignored.
+    pub exclude_providers: Vec<String>,
 }
 
 impl PiConfig {
@@ -236,6 +242,15 @@ impl Harness for Pi {
             None => session::session_file(&self.config.sessions_dir(), s),
         };
         Ok(file.and_then(|f| session::context_fill(&f)))
+    }
+
+    fn models(&self, timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        models::list(
+            self.platform.as_ref(),
+            &self.config.pi_bin,
+            &self.config.exclude_providers,
+            timeout,
+        )
     }
 
     fn otel_env(

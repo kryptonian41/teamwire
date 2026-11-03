@@ -12,7 +12,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`, `refs`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` (null in an export taken from a member session) |
 | `team.refs_added` | `launch --add` names a ticket ref the team does not hold yet (records no metric) | `added` (the refs appended, in order) |
-| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
+| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `task_class` (creating: one of the seven classes of `TaskClass`, or null when the spec set none; also copied onto the same launch's `started`, `failed` and `refused` events); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
@@ -40,6 +40,12 @@ The `close.step` rows in an archived database end at `finish`: `archive_final` a
 Labels are low-cardinality only (ADR 0005). Message ids, session ids and
 paths never appear as labels.
 
+The `task_class` label is the class launch wrote on the member's latest
+`member.creating` event. A member with no class, or with a value that is not
+one of the seven classes, gets `unclassified`. Every team launched before
+task classes existed reads as `unclassified`. The label therefore has at most
+eight values.
+
 | Name | Type | Unit | Labels | Question it answers |
 | --- | --- | --- | --- | --- |
 | `teamwire.lead.wakeups` | counter | `{wakeup}` | `team`, `source` (`result`, `question`, `watch`) | How many full lead turns did this team cost? An earlier watch once burned 13.6M tokens on repeated lines. |
@@ -54,14 +60,14 @@ paths never appear as labels.
 | `teamwire.messages.acked` | counter | `{message}` | `team`, `type` | Do recipients read what they get? |
 | `teamwire.ack.duration` | histogram | `s` | `team`, `type` | How long before a message is read? |
 | `teamwire.messages.unread` | gauge | `{message}` | `team`, `recipient_kind` | How many handed-off messages were never read? |
-| `teamwire.completions` | counter | `{completion}` | `team`, `kind`, `status` | How many members finished done, blocked or failed? |
+| `teamwire.completions` | counter | `{completion}` | `team`, `kind`, `status`, `task_class` | How many members finished done, blocked or failed? |
 | `teamwire.completions.refused` | counter | `{completion}` | `team`, `reason` | How often is `done` called wrong? |
 | `teamwire.results` | counter | `{result}` | `team`, `route`, `outcome` | Do results reach the lead? |
 | `teamwire.result.duration` | histogram | `s` | `team`, `route` | How long from `done` to the lead's wake-up line? |
 | `teamwire.holds` | counter | `{hold}` | `team`, `reason` (`progress_lines`, `decisions`, `report_missing`, `unread`) | How often does the report check fire, and for what? |
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
-| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A team whose lead route is the watch (host `none`) records no tokens. |
+| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `task_class`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A team whose lead route is the watch (host `none`) records no tokens. |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
 | `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `failed`, `refused`; a refusal of the whole spec writes no event), `reason` (the event's `reason_code`: for `failed` a step name, `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; for `refused` `afk_budget_spent` or `team_closed`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started`, `member.failed` and `member.refused`. |
@@ -160,3 +166,49 @@ wave-1 contract:
   reprompt. The undone reprompt is neither counted as a reprompt nor taken as the start of a
   generation. A `team.closed` event carries
   `data.outcome`; only `completed` closes the team.
+
+## 6. The outcome report
+
+`outcome_report` in `teamwire-otel` reads the same databases as
+`teamwire metrics` with no team named. Those databases are every team under
+`$TEAMWIRE_HOME/teams/` and every whole archive under
+`$TEAMWIRE_HOME/archive/`. A team seen live and archived counts once, as in
+the metrics. `teamwire models --for <class>` shows the report beside the
+public evidence in `examples/models/evidence.json`, and never blends the two
+into one score.
+
+The report has one row per group of members that share a harness, a model,
+an effort, a task class and a kind. A member that never reached
+`member.started` is left out, because a failed launch did no work a model
+can be judged by. The report gives counts and medians, never percentages.
+
+| Field | Meaning |
+| --- | --- |
+| `harness` | the member row's harness |
+| `model`, `effort` | `data.model` and `data.effort` of the member's latest `member.started`; `unset` when none was recorded |
+| `task_class` | `data.task_class` of the member's latest `member.creating`; `unclassified` when it is absent, null or not one of the seven classes |
+| `kind` | the member's kind |
+| `members` | how many members are in the group |
+| `verify` | how many members ended on each verify verdict, from their last `verify.recorded`: `PASS`, `FLAGGED`, `FAIL`, and `none` for a member never verified |
+| `reprompts` | reprompts across the group's members; a reprompt that a later undo took back is not counted |
+| `tokens_median` | the median of each member's total tokens of all four types, counted as `teamwire.member.tokens` counts them; null when no member has a reading |
+| `minutes_median` | the median minutes from a member's first `member.started` to its first `member.completed`; null when no member completed |
+| `harder_than_class` | how many members look harder than their class, by the rule below |
+
+The report also gives `teams`, the number of teams read, and `errors`, the
+databases it could not read.
+
+**Harder than its class.** A classified member counts when any of these
+holds:
+
+- It had 2 or more reprompts that were not undone.
+- Its last verify verdict was `FAIL`.
+- Its total tokens were over 3 times the median of every member of its class
+  with a token reading. This check applies only when the class has at least
+  5 such members.
+
+An unclassified member never counts. The rule is a first guess, not a
+measured one. One function, `harder_than_class` in
+`crates/teamwire-otel/src/outcomes.rs`, holds it, so the rule changes in one
+place. A class whose members often count is a sign that the lead classes
+such tasks too low.

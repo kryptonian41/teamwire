@@ -91,7 +91,7 @@ use is also ignored, and launch prints one warning for each, then goes ahead:
 unknown key "x" is ignored` (`child <n>` stands in for a member with no
 role).
 
-`refs` is a list of the tickets the team works on (ADR 0033). Each ref is an
+`refs` is a list of the tickets the team works on (ADR 0034). Each ref is an
 object with a required `provider` and a required `id`, such as
 `{"provider": "linear", "id": "GKA-580"}`; teamwire assumes no provider. A
 provider is a lowercase name matching `^[a-z][a-z0-9_]{0,15}$` (`linear`,
@@ -638,6 +638,56 @@ find none, because GitHub has no check runs for a few seconds after a push.
 
 Without a name, lists the six team shapes. With one, prints its spec skeleton
 and its rules as text.
+
+### `teamwire models [--harness ID] [--for CLASS] [--json]`
+
+Lists the models one harness can start a member on (ADR 0033). Reads only,
+and any caller may run it. Without `--harness`, the command lists the lead's
+harness, picked the way `launch` picks it: `TEAMWIRE_LEAD_HARNESS`, else the
+harness whose session runs the command. An unknown harness is a usage error,
+exit 3, and the message lists the harnesses.
+
+The text starts with the harness id and the list's source. `listed` means
+the harness program printed the list, so it holds the models the program
+reaches on this machine. `builtin` means the adapter carries a fixed list
+from the harness's docs, so a model on it may still be out of reach for
+this account. Then come the effort levels, lowest first, and one line per
+model. Each line gives the value a spec's `model` takes (`provider/id` for a
+model reached through a named provider, as in pi), its aliases, its context
+window and whether it takes an effort level. When the harness cannot list
+its models, the command prints the harness's reason and exits 1. pi's list
+leaves out the providers named in `TEAMWIRE_PI_EXCLUDE_PROVIDERS`, read from
+the environment, else from `config.toml` in the state directory that
+`--home` or `TEAMWIRE_HOME` names.
+
+`--for CLASS` adds two sections for one task class, and never blends them
+into one score or names one best model:
+
+- **Public evidence** from `examples/models/evidence.json`, compiled into
+  the binary. The section starts with the file's `as_of` date. The entries
+  of the class come in two halves: the models this harness reaches, then the
+  ones it does not. Each half is grouped by source, in rank order, and each
+  entry shows its model, effort, kind, claim, source date and URL. A
+  reachable entry also names the spec values that reach it. An evidence
+  model matches a harness model when the two names agree under
+  `normalise_model` in `teamwire-core`. Both names are lowercased and lose a
+  `provider/` part, leading words such as `us.` and `anthropic.`, and a
+  trailing date or version such as `-20251101` or `-v1:0`. A leading word
+  followed by a version keeps its place and joins with a hyphen, so
+  Bedrock's `deepseek.v3.2` matches `deepseek-v3.2`.
+- **Your past teams** from the outcome report (`docs/metrics.md` section 6):
+  the rows of the class, then how many `unclassified` rows and members no
+  class can claim. The section shows counts and medians, never
+  percentages. A row with fewer than 5 members is marked as a small sample.
+  The token column is the median of each member's total tokens, cache
+  reads included, and cache reads make up most of each total.
+
+An unknown class is a usage error, exit 3, and the message lists the seven
+classes. `--json` prints one object with `harness` and `catalog` (the
+`ModelCatalog`). With `--for` it also holds `task_class`, `evidence`
+(`as_of`, `reachable` entries with their `spec_values`, `unreachable`
+entries) and `outcomes` (`teams`, `rows` with a `small_sample` flag each,
+`unclassified` with `rows` and `members`, and `errors`).
 
 ## Member commands
 

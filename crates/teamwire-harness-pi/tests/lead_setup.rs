@@ -52,6 +52,7 @@ impl Bed {
             PiConfig {
                 agent_dir: self.agent(),
                 pi_bin: "pi".into(),
+                exclude_providers: Vec::new(),
             },
         )
     }

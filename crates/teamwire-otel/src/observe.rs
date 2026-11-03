@@ -7,7 +7,7 @@ use serde_json::Value;
 use teamwire_core::{Event, EventType, Timestamp};
 
 use crate::defs::{self, Def};
-use crate::history::{History, flag, number, text};
+use crate::history::{History, UNCLASSIFIED, flag, number, text};
 
 /// One counted event, or one measured duration, at the event's own time.
 #[derive(Debug, Clone)]
@@ -175,6 +175,12 @@ fn kind_of<'a>(h: &'a History, e: &Event) -> &'a str {
         .map_or("unknown", |role| h.member_kind(role.as_str(), e.seq))
 }
 
+fn class_of(h: &History, e: &Event) -> &'static str {
+    e.role
+        .as_ref()
+        .map_or(UNCLASSIFIED, |role| h.task_class(role.as_str(), e.seq))
+}
+
 /// The `reason_code` of a failed or refused launch when it is a short code. The free
 /// `reason` text can hold a path, so it is never a label.
 fn reason_code(d: &Value) -> &str {
@@ -208,7 +214,11 @@ fn completed(h: &History, o: &mut Out<'_>) {
     let d = &o.event.data;
     let kind = kind_of(h, o.event);
     let status = text(d, "status").unwrap_or("unknown");
-    o.count(&defs::COMPLETIONS, &[("kind", kind), ("status", status)]);
+    let class = class_of(h, o.event);
+    o.count(
+        &defs::COMPLETIONS,
+        &[("kind", kind), ("status", status), ("task_class", class)],
+    );
     if let Some(start) = h.generation_start(o.event) {
         let seconds = o.event.time.saturating_since(start.time).as_secs_f64();
         o.measure(
@@ -237,6 +247,7 @@ fn tokens(h: &History, o: &mut Out<'_>) {
         .filter_map(|e| e.data.get("usage"))
         .last();
     let kind = kind_of(h, o.event);
+    let class = class_of(h, o.event);
     // The effort the member started with; a member started by an older build
     // recorded none.
     let effort = h
@@ -263,6 +274,7 @@ fn tokens(h: &History, o: &mut Out<'_>) {
                         ("kind", kind),
                         ("model", model),
                         ("effort", effort),
+                        ("task_class", class),
                         ("type", kind_of_token),
                     ],
                 );

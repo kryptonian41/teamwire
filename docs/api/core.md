@@ -186,7 +186,7 @@ so they need no schema change:
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
-| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0033). |
+| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0034). |
 | `team.created` | `afk_budget_ends_at` | When an AFK run's budget ends, written by `teamwire afk start`. Missing on an ordinary team. |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
@@ -516,7 +516,7 @@ pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<S
                       pub children: Vec<MemberSpec>,
                       pub context_handoff_tokens: Option<u64>,
                       pub plugins: BTreeMap<String, bool>,      // plugin id -> on/off, all members
-                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0033
+                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0034
 pub struct TicketRef { pub provider: String, pub id: String }   // both required; no default provider
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
@@ -667,7 +667,7 @@ row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `mem
 `{"provider", "id"}` objects in recorded order that is never NULL and defaults to `[]`, and rebuilds
 `events` with the `team.refs_added` type. `TeamRow.refs` is that array; `Tx::set_refs` sets it
 when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs not yet held and writes
-`team.refs_added`, or writes nothing when none is new (ADR 0033). It refuses with
+`team.refs_added`, or writes nothing when none is new (ADR 0034). It refuses with
 `StoreError::Constraint`, and appends nothing, when the team would hold more than `REFS_MAX` (20)
 refs, because two `--add` runs may each have passed `validate`'s check before either wrote. A
 read-only open of an older database reads `refs` as empty. The tables and columns are those in

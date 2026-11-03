@@ -19,11 +19,8 @@ hold for every section below.
   `TEAM-COMPLETE`.
 - **This skill** is `teamwire:teamwire`, and you invoke it with `$`.
 - **Members and models.** Under a Codex lead, a member with no `harness`
-  runs on Codex. A member that keeps a Claude model (`sonnet`, `opus`, as the
-  presets and the model table below name them) needs `"harness":
-  "claude-code"`. A Codex member takes a Codex model name in `model`, or none
-  to run on Codex's default. The `sonnet` and `opus` advice below is for
-  Claude members.
+  runs on Codex. Its `model` is one of the ids `teamwire models` lists for
+  Codex.
 
 - **No AFK runs.** An unattended AFK run (`/teamwire:afk`,
   `teamwire afk start`) needs a Claude Code lead. Codex has no `afk` skill,

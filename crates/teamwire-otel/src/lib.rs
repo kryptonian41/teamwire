@@ -1,5 +1,7 @@
 //! Local metrics computed from the event rows (`docs/metrics.md`) and the
 //! OpenTelemetry export (OTLP over HTTP): claim, send, commit (ADR 0005).
+//! The outcome report reads the same rows to show how past members did per
+//! harness, model, effort and task class (`docs/metrics.md` section 6).
 //!
 //! Never: put a message id, session id or path in a metric label; send a
 //! token or a secret header value anywhere but the endpoint's headers;
@@ -16,6 +18,7 @@ mod history;
 mod local;
 mod observe;
 mod otlp;
+mod outcomes;
 mod spans;
 
 use std::fmt;
@@ -120,6 +123,7 @@ pub fn metrics(ctx: &Ctx<'_>, q: MetricsQuery) -> MetricsView {
 
 pub use config::load_otlp_config;
 pub use export::{export_once, export_once_until};
+pub use outcomes::{OutcomeReport, OutcomeRow, VerifyCounts, outcome_report};
 
 #[cfg(test)]
 mod tests {

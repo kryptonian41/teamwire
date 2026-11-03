@@ -13,6 +13,7 @@ use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
 use crate::lead_setup::LeadSetup;
 use crate::member::{Member, MemberKind};
+use crate::models::ModelCatalog;
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
@@ -107,6 +108,13 @@ pub trait Harness: Send + Sync {
         _transcript: Option<&Path>,
     ) -> Result<Option<Fill>, HarnessError> {
         Ok(None)
+    }
+    /// The models this harness can start a member on, and the effort levels
+    /// it takes. A harness whose program lists its models asks the program,
+    /// within `timeout`, so the list holds only what this machine can reach;
+    /// any other carries a fixed list. The default is `Unsupported`.
+    fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        Err(HarnessError::unsupported())
     }
 }
 

@@ -1,4 +1,4 @@
-# ADR 0033: A team carries ticket refs
+# ADR 0034: A team carries ticket refs
 
 Status: accepted, 2026-10-19.
 

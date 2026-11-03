@@ -15,12 +15,7 @@ use crate::{MetricValue, MetricsQuery, MetricsView};
 /// What one database contributes.
 struct Analysis {
     team: String,
-    /// The team row's ULID: two copies of one team share it, whatever the
-    /// directory is called.
-    identity: String,
-    live: bool,
-    /// For an archive: when its `SHA256SUMS` was written, and where it is.
-    rank: Option<(std::time::SystemTime, PathBuf)>,
+    copy: CopyOf,
     observations: Vec<Observation>,
     derived: Derived,
 }
@@ -51,25 +46,47 @@ pub fn metrics_at(home: &Path, now: Timestamp, q: &MetricsQuery) -> MetricsView 
             Err(e) => errors.push(format!("{}: {e}", source.path.display())),
         }
     }
-    finish(one_copy_of_each_team(analyses), errors)
+    finish(one_copy_of_each_team(analyses, |a| &a.copy), errors)
+}
+
+/// Which copy of a team one database is.
+pub(crate) struct CopyOf {
+    /// The team row's ULID: two copies of one team share it, whatever the
+    /// directory is called.
+    identity: String,
+    live: bool,
+    /// For an archive: when its `SHA256SUMS` was written, and where it is.
+    rank: Option<(std::time::SystemTime, PathBuf)>,
+}
+
+impl CopyOf {
+    /// `identity` is the team row's ULID, `None` when the database has no
+    /// team row; such a database counts as a team of its own.
+    pub(crate) fn new(source: &Source, identity: Option<String>) -> Self {
+        Self {
+            identity: identity.unwrap_or_else(|| format!("unknown:{}", source.path.display())),
+            live: source.live,
+            rank: source.rank.map(|t| (t, source.path.clone())),
+        }
+    }
 }
 
 /// An archive is a full copy of a team's database, so a team seen live and
 /// archived, or archived twice after a failed close, would count its events
 /// two or three times. Each team (by its ULID) is kept once: the live copy
 /// if there is one, else the newest archive.
-fn one_copy_of_each_team(analyses: Vec<Analysis>) -> Vec<Analysis> {
-    let mut best: BTreeMap<String, Analysis> = BTreeMap::new();
-    for a in analyses {
-        let key = a.identity.clone();
-        let better = match best.get(&key) {
+pub(crate) fn one_copy_of_each_team<T>(items: Vec<T>, copy: impl Fn(&T) -> &CopyOf) -> Vec<T> {
+    let mut best: BTreeMap<String, T> = BTreeMap::new();
+    for item in items {
+        let new = copy(&item);
+        let better = match best.get(&new.identity).map(&copy) {
             None => true,
             Some(kept) if kept.live => false,
-            Some(_) if a.live => true,
-            Some(kept) => a.rank > kept.rank,
+            Some(_) if new.live => true,
+            Some(kept) => new.rank > kept.rank,
         };
         if better {
-            best.insert(key, a);
+            best.insert(new.identity.clone(), item);
         }
     }
     best.into_values().collect()
@@ -99,8 +116,8 @@ pub(crate) fn metrics_with(
     }
 }
 
-struct Source {
-    path: PathBuf,
+pub(crate) struct Source {
+    pub(crate) path: PathBuf,
     /// The name to use when the database has no team row.
     team: Option<String>,
     /// A running team, not an archive: only it has an export mark that means
@@ -110,7 +127,9 @@ struct Source {
     rank: Option<std::time::SystemTime>,
 }
 
-fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Source> {
+/// The databases `q` reads: the named team's own, else its newest archive;
+/// with no team named, every team under `teams/` and every whole archive.
+pub(crate) fn sources(home: &Path, q: &MetricsQuery, errors: &mut Vec<String>) -> Vec<Source> {
     if let Some(team) = &q.team {
         let path = database_path(home, team);
         if path.is_file() {
@@ -253,9 +272,7 @@ fn analyze(
         });
     }
     Ok(Analysis {
-        identity: identity.unwrap_or_else(|| format!("unknown:{}", source.path.display())),
-        live: source.live,
-        rank: source.rank.map(|t| (t, source.path.clone())),
+        copy: CopyOf::new(source, identity),
         team,
         observations,
         derived,

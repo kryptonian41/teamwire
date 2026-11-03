@@ -110,3 +110,27 @@ fn an_unset_handoff_threshold_is_recorded_as_null() {
     );
     assert!(started["context_handoff_tokens"].is_null());
 }
+
+#[test]
+fn member_creating_records_the_task_class_or_null() {
+    let rig = Rig::new();
+    let classed = with(
+        pane_member("a", "a", rig.work.path()),
+        "task_class",
+        json!("root_cause"),
+    );
+    let plain = pane_member("b", "b", rig.work.path());
+    let spec = team_spec("demo", &[classed, plain]);
+    let (_, store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
+    let creating = |role: &str| {
+        role_events(&store, role)
+            .into_iter()
+            .find(|(kind, _)| kind == "member.creating")
+            .unwrap()
+            .1
+    };
+    assert_eq!(creating("a")["task_class"], "root_cause");
+    let unset = creating("b");
+    assert!(unset.as_object().unwrap().contains_key("task_class"));
+    assert!(unset["task_class"].is_null());
+}

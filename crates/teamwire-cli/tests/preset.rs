@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::Value;
-use teamwire_core::{Config, Harness, HarnessId, HostId, Registry};
+use teamwire_core::{Config, Harness, HarnessId, HostId, Registry, TaskClass};
 use teamwire_fakes::{FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_launch::{ValidateEnv, parse_spec, validate};
 
@@ -486,30 +486,135 @@ fn the_skill_names_only_commands_and_tools_that_exist() {
     }
 }
 
-/// Only implementers keep the user's plugins; every other member of every
-/// shape switches all off. claude-mem is one of them: it records member
-/// sessions, and read-only members would otherwise read each other's findings
-/// back through injected memory.
+/// A preset names no model, effort or plugin, because those depend on the
+/// harness each member runs on, and the lead picks them from what
+/// `teamwire models` lists for that harness. Each member names the task
+/// class that fits its seat instead, so a run's outcome can be read per class.
 #[test]
-fn every_non_implementer_member_switches_all_plugins_off() {
+fn every_member_names_a_task_class_and_no_model() {
     for name in NAMES {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
         for member in file["children"].as_array().unwrap() {
-            if member["kind"] == "implementer" {
-                continue;
+            let role = &member["role"];
+            for key in ["model", "effort", "plugins"] {
+                assert!(member.get(key).is_none(), "{name}/{role} sets {key}");
             }
-            for plugin in [
-                "ponytail@ponytail",
-                "mattpocock-skills@claude-plugins-official",
-                "claude-mem@thedotmack",
-            ] {
-                assert_eq!(
-                    member["plugins"][plugin],
-                    Value::Bool(false),
-                    "{name}/{}: {plugin} is not switched off",
-                    member["role"]
-                );
-            }
+            let class = member["task_class"]
+                .as_str()
+                .unwrap_or_else(|| unreachable!("{name}/{role} sets no task_class"));
+            let class = TaskClass::parse(class).unwrap();
+            let fits = match member["kind"].as_str() {
+                Some("implementer") => TaskClass::ContainedFeature,
+                Some("reviewer" | "closer") => TaskClass::Judgement,
+                Some("investigator") => TaskClass::ReadOnlySurvey,
+                other => unreachable!("{name}/{role}: kind {other:?}"),
+            };
+            assert_eq!(class, fits, "{name}/{role}");
+        }
+        let text = preset_text(name).to_lowercase();
+        for vendor_name in ["sonnet", "opus", "haiku"] {
+            assert!(!text.contains(vendor_name), "{name} names {vendor_name}");
         }
     }
+}
+
+/// The printed skeleton shows a member's task class beside its seat, right
+/// after `mode`, rather than after the task text where it is easy to miss.
+#[test]
+fn the_skeleton_prints_the_task_class_right_after_the_mode() {
+    for name in NAMES {
+        let run = teamwire(&["preset", name]);
+        assert_eq!(run.code, 0, "{name}: {}", run.err);
+        let lines: Vec<&str> = run.out.lines().map(str::trim).collect();
+        let modes: Vec<usize> = lines
+            .iter()
+            .enumerate()
+            .filter(|(_, l)| l.starts_with("\"mode\": "))
+            .map(|(i, _)| i)
+            .collect();
+        assert!(!modes.is_empty(), "{name}: {}", run.out);
+        for i in modes {
+            assert!(
+                lines[i + 1].starts_with("\"task_class\": "),
+                "{name}: {} follows {}",
+                lines[i + 1],
+                lines[i]
+            );
+        }
+    }
+}
+
+/// The lead reads each preset's rules and notes (every key that starts with
+/// an underscore), and the pi or Codex note, beside the skill. Each item is
+/// the text and the place it came from.
+fn lead_notes() -> Vec<(String, String)> {
+    fn underscore_texts(map: &serde_json::Map<String, Value>) -> Vec<String> {
+        map.iter()
+            .filter(|(key, _)| key.starts_with('_'))
+            .flat_map(|(_, value)| match value {
+                Value::String(text) => vec![text.clone()],
+                Value::Array(items) => items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+                Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => Vec::new(),
+            })
+            .collect()
+    }
+    let mut notes = Vec::new();
+    for name in NAMES {
+        let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
+        let mut texts = underscore_texts(file.as_object().unwrap());
+        for member in file["children"].as_array().unwrap() {
+            texts.extend(underscore_texts(member.as_object().unwrap()));
+        }
+        notes.extend(texts.into_iter().map(|t| (name.to_owned(), t)));
+    }
+    for note in ["skills/pi-lead.md", "skills/codex-lead.md"] {
+        notes.push((note.to_owned(), example(note)));
+    }
+    notes
+}
+
+/// Every class a `--for <class>` in `text` names, leaving out a `<class>`
+/// placeholder.
+fn classes_named(text: &str) -> Vec<String> {
+    text.split("--for ")
+        .skip(1)
+        .filter(|rest| !rest.starts_with('<'))
+        .map(|rest| {
+            rest.chars()
+                .take_while(|c| c.is_ascii_lowercase() || *c == '_')
+                .collect()
+        })
+        .collect()
+}
+
+/// A rule that sends the lead to a command or a task class that does not
+/// exist ends in an error at the moment the lead follows it.
+#[test]
+fn preset_rules_and_harness_notes_name_only_commands_and_classes_that_exist() {
+    let commands = subcommands();
+    let notes = lead_notes();
+    let mut shown = 0;
+    let mut classes = 0;
+    for (place, text) in &notes {
+        for (word, line) in shown_commands(text) {
+            assert!(
+                commands.contains(&word),
+                "{place}: `teamwire {word}` is not a command: {line}"
+            );
+            shown += 1;
+        }
+        for class in classes_named(text) {
+            assert!(
+                TaskClass::parse(&class).is_ok(),
+                "{place}: `--for {class}` is not a task class"
+            );
+            classes += 1;
+        }
+    }
+    assert!(shown >= 10, "the notes show {shown} commands");
+    assert!(classes >= 4, "the notes name {classes} classes after --for");
 }

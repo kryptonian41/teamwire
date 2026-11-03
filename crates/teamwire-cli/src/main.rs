@@ -35,6 +35,7 @@ mod cmd {
     pub(crate) mod mcp;
     pub(crate) mod members;
     pub(crate) mod metrics;
+    pub(crate) mod models;
     pub(crate) mod pr_watch;
     pub(crate) mod preset;
     pub(crate) mod received;
@@ -59,8 +60,8 @@ pub(crate) use args::{
     AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs,
     EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs,
     InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand,
-    PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs,
-    UninstallArgs, VerifyArgs, WatchArgs,
+    ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs,
+    StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -70,7 +71,8 @@ fn main() -> ExitCode {
         Err(e) => return usage_error(&e, is_hook(&args)),
     };
     init_logging();
-    let wiring = match wiring::wire(&wiring::WiringEnv::from_process()) {
+    let env = wiring::WiringEnv::from_process();
+    let wiring = match wiring::wire_with_home(&env, cli.global.home.as_deref()) {
         Ok(wiring) => wiring,
         Err(e) => return internal_error(&e),
     };
@@ -92,6 +94,7 @@ fn main() -> ExitCode {
         Command::Lead(a) => cmd::lead::run(a, global, &wiring),
         Command::PrWatch(a) => cmd::pr_watch::run(a, global, &wiring),
         Command::Preset(a) => cmd::preset::run(a, global, &wiring),
+        Command::Models(a) => cmd::models::run(a, global, &wiring),
         Command::Done(a) => cmd::done::run(a, global, &wiring),
         Command::Inbox(a) => cmd::inbox::run(a, global, &wiring),
         Command::Ack(a) => cmd::ack::run(a, global, &wiring),
@@ -196,6 +199,8 @@ mod tests {
             "pr-watch -R o/r -i 30 123 124",
             "preset",
             "preset review",
+            "models",
+            "models --harness pi --for root_cause --json",
             "done --status done --summary finished",
             "inbox --all --json",
             "ack m001 m002",

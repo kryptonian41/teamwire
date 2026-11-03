@@ -17,6 +17,7 @@ fn pi() -> Pi {
         PiConfig {
             agent_dir: "/nowhere/pi".into(),
             pi_bin: "pi".into(),
+            exclude_providers: Vec::new(),
         },
     )
 }

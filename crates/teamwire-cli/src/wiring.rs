@@ -2,7 +2,7 @@
 //! every adapter this binary has and picks the lead's harness and host from
 //! the environment.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use teamwire_core::{HarnessId, HostId, NoHost, Pid, Platform, Registry, RegistryError};
@@ -97,11 +97,23 @@ impl WiringEnv {
     }
 }
 
+/// `wire_with_home` without a `--home` flag, for tests.
+#[cfg(test)]
 pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
+    wire_with_home(env, None)
+}
+
+/// The adapters for one command. `home_flag` is the global `--home` flag,
+/// which wins over `TEAMWIRE_HOME` wherever wiring reads the state
+/// directory, as it does for every command.
+pub(crate) fn wire_with_home(
+    env: &WiringEnv,
+    home_flag: Option<&Path>,
+) -> Result<Wiring, RegistryError> {
     let platform = teamwire_platform::native();
     let claude = claude_config(env);
     let codex = codex_config(env);
-    let pi = pi_config(env);
+    let pi = pi_config(env, home_flag);
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(ClaudeCode::new(
         Arc::clone(&platform),
@@ -162,8 +174,9 @@ fn codex_config(env: &WiringEnv) -> CodexConfig {
     }
 }
 
-/// `PI_CODING_AGENT_DIR`, else `~/.pi/agent`.
-fn pi_config(env: &WiringEnv) -> PiConfig {
+/// `PI_CODING_AGENT_DIR`, else `~/.pi/agent`. The providers to leave out
+/// come from `pi_exclude_providers`, which reads `home_flag`'s config file.
+fn pi_config(env: &WiringEnv, home_flag: Option<&Path>) -> PiConfig {
     let agent_dir = match (&env.pi_agent_dir, &env.user_home) {
         (Some(dir), _) => dir.clone(),
         (None, Some(home)) => home.join(".pi").join("agent"),
@@ -172,7 +185,62 @@ fn pi_config(env: &WiringEnv) -> PiConfig {
     PiConfig {
         agent_dir,
         pi_bin: "pi".to_owned(),
+        exclude_providers: pi_exclude_providers(home_flag, env.user_home.as_deref(), &|key| {
+            std::env::var(key).ok()
+        }),
     }
+}
+
+/// The key that names the pi providers teamwire leaves out of its model list.
+const PI_EXCLUDE_KEY: &str = "TEAMWIRE_PI_EXCLUDE_PROVIDERS";
+
+/// `TEAMWIRE_PI_EXCLUDE_PROVIDERS` in the environment, else the same key as
+/// a `KEY = "value"` line in `$TEAMWIRE_HOME/config.toml`, the way the OTLP
+/// settings are read. `env` looks up one variable and an empty value counts
+/// as unset. The value is a comma-separated list; spaces around a name and
+/// empty names are dropped. The state directory is `home_flag` (`--home`),
+/// else `TEAMWIRE_HOME`, else `~/.teamwire`, the order every command uses.
+fn pi_exclude_providers(
+    home_flag: Option<&Path>,
+    user_home: Option<&Path>,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> Vec<String> {
+    let value = env(PI_EXCLUDE_KEY).filter(|v| !v.is_empty()).or_else(|| {
+        let home = home_flag
+            .map(Path::to_path_buf)
+            .or_else(|| {
+                env("TEAMWIRE_HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(PathBuf::from)
+            })
+            .or_else(|| user_home.map(|h| h.join(".teamwire")))?;
+        let file = std::fs::read_to_string(home.join("config.toml")).ok()?;
+        file_setting(&file, PI_EXCLUDE_KEY)
+    });
+    value
+        .iter()
+        .flat_map(|list| list.split(','))
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The value of `KEY = value` on one line of `config.toml`, in double quotes,
+/// single quotes or bare. A `#` after a bare value starts a comment.
+fn file_setting(file: &str, key: &str) -> Option<String> {
+    file.lines().find_map(|line| {
+        let (k, v) = line.split_once('=')?;
+        if k.trim() != key {
+            return None;
+        }
+        let v = v.trim();
+        let value = match v.chars().next()? {
+            quote @ ('"' | '\'') => v.get(1..)?.split_once(quote)?.0,
+            _ => v.split_once(" #").map_or(v, |(bare, _)| bare).trim(),
+        };
+        (!value.is_empty()).then(|| value.to_owned())
+    })
 }
 
 /// The tmux adapter. Inside a tmux client it takes that client's server for
@@ -364,13 +432,132 @@ mod tests {
     #[test]
     fn pis_directory_is_pis_own_setting_then_the_default() {
         let mut e = env(None);
-        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/home/u/.pi/agent"));
         assert_eq!(
-            pi_config(&e).sessions_dir(),
+            pi_config(&e, None).agent_dir,
+            PathBuf::from("/home/u/.pi/agent")
+        );
+        assert_eq!(
+            pi_config(&e, None).sessions_dir(),
             PathBuf::from("/home/u/.pi/agent/sessions/teamwire")
         );
         e.pi_agent_dir = Some(PathBuf::from("/pi"));
-        assert_eq!(pi_config(&e).agent_dir, PathBuf::from("/pi"));
+        assert_eq!(pi_config(&e, None).agent_dir, PathBuf::from("/pi"));
+    }
+
+    fn write(path: &Path, text: &str) {
+        teamwire_platform::native()
+            .write_atomic(path, text.as_bytes())
+            .unwrap();
+    }
+
+    fn excluded(
+        env: &[(&str, &str)],
+        config: Option<&str>,
+        user_home: Option<&Path>,
+    ) -> Vec<String> {
+        let home = tempfile::tempdir().unwrap();
+        if let Some(config) = config {
+            write(&home.path().join("config.toml"), config);
+        }
+        pi_exclude_providers(None, user_home, &|key| {
+            env.iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| (*v).to_owned())
+                .or_else(|| {
+                    (key == "TEAMWIRE_HOME" && user_home.is_none())
+                        .then(|| home.path().display().to_string())
+                })
+        })
+    }
+
+    #[test]
+    fn excluded_providers_come_from_the_environment_split_on_commas() {
+        let list = [(
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS",
+            " amazon-bedrock, google ,,x",
+        )];
+        assert_eq!(
+            excluded(&list, None, None),
+            ["amazon-bedrock", "google", "x"]
+        );
+        assert!(excluded(&[], None, None).is_empty());
+        let empty = [("TEAMWIRE_PI_EXCLUDE_PROVIDERS", "")];
+        assert!(excluded(&empty, None, None).is_empty());
+    }
+
+    #[test]
+    fn the_environment_wins_over_the_file_and_the_file_fills_in_without_it() {
+        let file = "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"amazon-bedrock, azure\"\n";
+        let env = [("TEAMWIRE_PI_EXCLUDE_PROVIDERS", "google")];
+        assert_eq!(excluded(&env, Some(file), None), ["google"]);
+        assert_eq!(excluded(&[], Some(file), None), ["amazon-bedrock", "azure"]);
+        let empty = [("TEAMWIRE_PI_EXCLUDE_PROVIDERS", "")];
+        assert_eq!(
+            excluded(&empty, Some(file), None),
+            ["amazon-bedrock", "azure"]
+        );
+    }
+
+    #[test]
+    fn the_file_value_may_be_single_quoted_bare_or_followed_by_a_comment() {
+        let read = |line: &str| excluded(&[], Some(line), None);
+        assert_eq!(read("TEAMWIRE_PI_EXCLUDE_PROVIDERS = 'a,b'"), ["a", "b"]);
+        assert_eq!(
+            read("TEAMWIRE_PI_EXCLUDE_PROVIDERS = a,b # note"),
+            ["a", "b"]
+        );
+        assert_eq!(
+            read("OTHER = \"x\"\nTEAMWIRE_PI_EXCLUDE_PROVIDERS=\"c\""),
+            ["c"]
+        );
+        assert!(read("OTHER = \"x\"").is_empty());
+        assert!(read("TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"\"").is_empty());
+    }
+
+    #[test]
+    fn the_file_is_read_from_the_default_home_when_teamwire_home_is_unset() {
+        let user = tempfile::tempdir().unwrap();
+        let state = user.path().join(".teamwire");
+        std::fs::create_dir_all(&state).unwrap();
+        write(
+            &state.join("config.toml"),
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"p\"",
+        );
+        assert_eq!(
+            pi_exclude_providers(None, Some(user.path()), &|_| None),
+            ["p"]
+        );
+        assert!(pi_exclude_providers(None, None, &|_| None).is_empty());
+    }
+
+    #[test]
+    fn the_home_flag_wins_over_teamwire_home_for_the_file() {
+        let flag = tempfile::tempdir().unwrap();
+        write(
+            &flag.path().join("config.toml"),
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"from-flag\"",
+        );
+        let other = tempfile::tempdir().unwrap();
+        write(
+            &other.path().join("config.toml"),
+            "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"from-variable\"",
+        );
+        let variable = other.path().display().to_string();
+        let home_set = |key: &str| (key == "TEAMWIRE_HOME").then(|| variable.clone());
+        assert_eq!(
+            pi_exclude_providers(Some(flag.path()), None, &home_set),
+            ["from-flag"]
+        );
+        assert_eq!(
+            pi_exclude_providers(None, None, &home_set),
+            ["from-variable"]
+        );
+        // The environment's list still wins over the flag's file.
+        let listed = |key: &str| (key == PI_EXCLUDE_KEY).then(|| "env".to_owned());
+        assert_eq!(
+            pi_exclude_providers(Some(flag.path()), None, &listed),
+            ["env"]
+        );
     }
 
     #[test]

@@ -19,7 +19,7 @@ use crate::{LeadPlan, SpecError, ValidPlan, ValidateEnv};
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest title (LCH-23).
 pub(crate) const TITLE_MAX: usize = 28;
-/// The longest ticket ref, in characters (ADR 0033).
+/// The longest ticket ref, in characters (ADR 0034).
 const REF_MAX: usize = 64;
 
 /// What the store already holds about the team.
@@ -115,6 +115,7 @@ pub fn validate(
         .collect();
     disk_check(env, &members, &mut errors);
     crate::plan_rules::planning_warnings(&cx, &members, &mut warnings);
+    crate::plan_models::model_checks(env.registry, &members, &mut errors, &mut warnings);
     crate::afk::model_warnings(existing.as_ref(), &members, &mut warnings);
     if !errors.is_empty() {
         return Err(errors);
@@ -336,7 +337,7 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     errors.into_iter().next().map_or(Ok(lead), Err)
 }
 
-/// The longest provider name, in characters (ADR 0033).
+/// The longest provider name, in characters (ADR 0034).
 const PROVIDER_MAX: usize = 16;
 
 /// A provider name is `^[a-z][a-z0-9_]{0,15}$`. teamwire keeps no list of

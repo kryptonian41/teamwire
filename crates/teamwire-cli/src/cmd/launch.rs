@@ -185,6 +185,13 @@ fn print_plan(plan: &ValidPlan) {
             "  {} ({}, {}) {} via {}, identity by {}{again}",
             m.spec.role, m.kind, m.spec.mode, place, m.host, m.channel
         );
+        let model = m.spec.model.as_deref().unwrap_or("the default model");
+        let effort = m.spec.effort.as_deref().unwrap_or("the default effort");
+        let class = m.spec.task_class.map_or("none", |c| c.as_str());
+        println!(
+            "    on harness {} with {model} at {effort}, task class {class}",
+            m.harness
+        );
     }
     println!("nothing was created");
 }

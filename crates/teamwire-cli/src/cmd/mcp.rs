@@ -7,7 +7,7 @@ use teamwire_core::{Config, Role, TeamName};
 use teamwire_mcp::{McpCaller, ServerEnv, serve_stdio};
 
 use crate::cmd::shared::{REFUSED, caller_env, fail, home_or_refuse, member_token};
-use crate::wiring::{Wiring, WiringEnv, wire};
+use crate::wiring::{Wiring, WiringEnv, wire_with_home};
 use crate::{Global, McpArgs, USAGE};
 
 pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode {
@@ -47,7 +47,7 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
     };
     // The server keeps its parts on tasks of its own, so it needs parts it
     // owns rather than the borrowed ones of this command.
-    let owned = match wire(&WiringEnv::from_process()) {
+    let owned = match wire_with_home(&WiringEnv::from_process(), global.home.as_deref()) {
         Ok(owned) => owned,
         Err(e) => return fail("mcp", &e.to_string(), REFUSED),
     };

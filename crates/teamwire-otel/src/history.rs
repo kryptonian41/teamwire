@@ -4,7 +4,10 @@
 use std::collections::{HashMap, HashSet};
 
 use serde_json::Value;
-use teamwire_core::{Event, EventType};
+use teamwire_core::{Event, EventType, TaskClass};
+
+/// The task class of a member whose launch recorded none.
+pub(crate) const UNCLASSIFIED: &str = "unclassified";
 
 pub(crate) struct History {
     events: Vec<Event>,
@@ -90,6 +93,21 @@ impl History {
             .filter_map(|e| text(&e.data, "kind"))
             .last()
             .unwrap_or("unknown")
+    }
+
+    /// The task class launch recorded for `role` on its latest
+    /// `member.creating` as of `seq`, or `unclassified`. A team launched
+    /// before classes existed recorded none. A value that is not one of the
+    /// seven classes also reads as `unclassified`, so a label built from it
+    /// keeps its seven values.
+    pub(crate) fn task_class(&self, role: &str, seq: u64) -> &'static str {
+        self.of_role(role)
+            .take_while(|e| e.seq <= seq)
+            .filter(|e| e.kind == EventType::MemberCreating)
+            .last()
+            .and_then(|e| text(&e.data, "task_class"))
+            .and_then(|c| TaskClass::parse(c).ok())
+            .map_or(UNCLASSIFIED, TaskClass::as_str)
     }
 
     /// The event that began the run `end` closes: the latest

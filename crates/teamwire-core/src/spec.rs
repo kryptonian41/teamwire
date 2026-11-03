@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::member::{MemberKind, Mode};
+use crate::models::TaskClass;
 use crate::names::{HarnessId, HostId, Role, TeamName};
 
 fn yes() -> bool {
@@ -34,12 +35,12 @@ pub struct TeamSpec {
     /// `DEFAULT_HANDOFF_PCT` of the model's window. Launch refuses 0.
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
-    /// Tickets the team works on (ADR 0033).
+    /// Tickets the team works on (ADR 0034).
     #[serde(default)]
     pub refs: Vec<TicketRef>,
 }
 
-/// The most refs a team holds after any `--add` (ADR 0033). `validate` checks
+/// The most refs a team holds after any `--add` (ADR 0034). `validate` checks
 /// it for a dry run, and `Tx::add_refs` checks it again under the write lock.
 pub const REFS_MAX: usize = 20;
 
@@ -81,6 +82,11 @@ pub struct MemberSpec {
     pub model: Option<String>,
     #[serde(default)]
     pub effort: Option<String>,
+    /// How hard the task is to reason about, as the lead judges it. Launch
+    /// records it on the member's `member.creating` event so outcomes can be
+    /// read per class.
+    #[serde(default)]
+    pub task_class: Option<TaskClass>,
     #[serde(default)]
     pub check: Option<String>,
     #[serde(default)]

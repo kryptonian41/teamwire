@@ -1,5 +1,5 @@
 -- teamwire schema version 9: a team records the tickets it works on
--- (ADR 0033), and a new event type, `team.refs_added`, records refs that a
+-- (ADR 0034), and a new event type, `team.refs_added`, records refs that a
 -- later `launch --add` appended. The column holds a JSON array of
 -- `{"provider": ..., "id": ...}` objects in first-recorded order; a team
 -- launched without refs holds `[]`.
