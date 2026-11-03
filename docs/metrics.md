@@ -11,7 +11,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | --- | --- | --- |
 | `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` (null in an export taken from a member session) |
-| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode` (creating); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
+| `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `task_class` (creating: one of the seven classes of `TaskClass`, or null when the spec set none; also copied onto the same launch's `started`, `failed` and `refused` events); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
@@ -39,6 +39,12 @@ The `close.step` rows in an archived database end at `finish`: `archive_final` a
 Labels are low-cardinality only (ADR 0005). Message ids, session ids and
 paths never appear as labels.
 
+The `task_class` label is the class launch wrote on the member's latest
+`member.creating` event. A member with no class, or with a value that is not
+one of the seven classes, gets `unclassified`. Every team launched before
+task classes existed reads as `unclassified`. The label therefore has at most
+eight values.
+
 | Name | Type | Unit | Labels | Question it answers |
 | --- | --- | --- | --- | --- |
 | `teamwire.lead.wakeups` | counter | `{wakeup}` | `team`, `source` (`result`, `question`, `watch`) | How many full lead turns did this team cost? An earlier watch once burned 13.6M tokens on repeated lines. |
@@ -53,14 +59,14 @@ paths never appear as labels.
 | `teamwire.messages.acked` | counter | `{message}` | `team`, `type` | Do recipients read what they get? |
 | `teamwire.ack.duration` | histogram | `s` | `team`, `type` | How long before a message is read? |
 | `teamwire.messages.unread` | gauge | `{message}` | `team`, `recipient_kind` | How many handed-off messages were never read? |
-| `teamwire.completions` | counter | `{completion}` | `team`, `kind`, `status` | How many members finished done, blocked or failed? |
+| `teamwire.completions` | counter | `{completion}` | `team`, `kind`, `status`, `task_class` | How many members finished done, blocked or failed? |
 | `teamwire.completions.refused` | counter | `{completion}` | `team`, `reason` | How often is `done` called wrong? |
 | `teamwire.results` | counter | `{result}` | `team`, `route`, `outcome` | Do results reach the lead? |
 | `teamwire.result.duration` | histogram | `s` | `team`, `route` | How long from `done` to the lead's wake-up line? |
 | `teamwire.holds` | counter | `{hold}` | `team`, `reason` (`progress_lines`, `decisions`, `report_missing`, `unread`) | How often does the report check fire, and for what? |
 | `teamwire.member.run.duration` | histogram | `s` | `team`, `kind`, `status` | How long does a member generation take? |
 | `teamwire.member.reprompts` | counter | `{reprompt}` | `team`, `kind` | How much extra work goes to finished members? |
-| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A team whose lead route is the watch (host `none`) records no tokens. |
+| `teamwire.member.tokens` | counter | `{token}` | `team`, `role`, `kind`, `model`, `effort`, `task_class`, `type` (`input`, `output`, `cache_read`, `cache_creation`) | How many tokens does each member use? Read from `data.usage` on `result.delivering`, which holds the session's running totals. Each event counts what it adds to the previous one of the same `data.session`, so the sum is the newest totals. `effort` is the member's effort from its latest `member.started` event, or `unset` when none was recorded. Subagent transcripts, in `<session-id>/subagents/*.jsonl` beside the main transcript, are counted with it, once per `message.id`. A team whose lead route is the watch (host `none`) records no tokens. |
 | `teamwire.members.live` | gauge | `{member}` | `team`, `state` | How many members are running now? |
 | `teamwire.launch.members` | counter | `{member}` | `team`, `outcome` (`started`, `failed`, `refused`; a refusal of the whole spec writes no event), `reason` (the event's `reason_code`: for `failed` a step name, `registry`, `prepare`, `record`, `worktree`, `setup`, `harness`, `files`, `spawn`, `place`, `trust`, `started`; for `refused` `afk_budget_spent` or `team_closed`; else `other`; `none` when started) | Why do launches fail? |
 | `teamwire.launch.duration` | histogram | `s` | `team`, `step` (`worktree`, `setup`, `spawn`, `trust`, `dispatch`) | Which launch step is slow? Read from `data.steps` (milliseconds per step) on `member.started`, `member.failed` and `member.refused`. |

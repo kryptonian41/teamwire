@@ -434,7 +434,96 @@ fn a_member_run_is_timed_from_its_start_or_latest_reprompt() {
         value(&v, "teamwire.member.run.duration", &blocked),
         Some(30.0)
     );
-    assert_eq!(value(&v, "teamwire.completions", &done), Some(1.0));
+    let done_unclassified = [
+        ("team", "alpha"),
+        ("kind", "implementer"),
+        ("status", "done"),
+        ("task_class", "unclassified"),
+    ];
+    assert_eq!(
+        value(&v, "teamwire.completions", &done_unclassified),
+        Some(1.0)
+    );
+}
+
+#[test]
+fn completions_and_tokens_carry_the_task_class_launch_recorded() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    // `api` has a class, `web` recorded null, `db` a value that is no class.
+    for (secs, role, class) in [
+        (1, "api", json!("root_cause")),
+        (2, "web", Value::Null),
+        (3, "db", json!("made_up")),
+    ] {
+        ev(
+            &mut s,
+            secs,
+            EventType::MemberCreating,
+            Some(role),
+            None,
+            &json!({"kind": "implementer", "task_class": class}),
+        );
+    }
+    let usage = json!({"session": "s1", "usage": {"opus": {"input": 4, "output": 0, "cache_read": 0, "cache_creation": 0}}});
+    for (secs, role) in [(10, "api"), (11, "web"), (12, "db")] {
+        ev(
+            &mut s,
+            secs,
+            EventType::ResultDelivering,
+            Some(role),
+            Some(&ulid(secs)),
+            &usage,
+        );
+        ev(
+            &mut s,
+            secs + 10,
+            EventType::MemberCompleted,
+            Some(role),
+            Some(&ulid(secs + 10)),
+            &json!({"status": "done", "generation": 1, "n": 1}),
+        );
+    }
+    let v = view(&home, &query(Some("alpha")), 100);
+    let completed = |class: &str| {
+        value(
+            &v,
+            "teamwire.completions",
+            &[
+                ("team", "alpha"),
+                ("kind", "implementer"),
+                ("status", "done"),
+                ("task_class", class),
+            ],
+        )
+    };
+    assert_eq!(completed("root_cause"), Some(1.0));
+    assert_eq!(completed("unclassified"), Some(2.0));
+    let tokens = |role: &str| {
+        value(
+            &v,
+            "teamwire.member.tokens",
+            &[
+                ("team", "alpha"),
+                ("role", role),
+                ("kind", "implementer"),
+                ("model", "opus"),
+                ("effort", "unset"),
+                ("type", "input"),
+                (
+                    "task_class",
+                    if role == "api" {
+                        "root_cause"
+                    } else {
+                        "unclassified"
+                    },
+                ),
+            ],
+        )
+    };
+    assert_eq!(tokens("api"), Some(4.0));
+    assert_eq!(tokens("web"), Some(4.0));
+    assert_eq!(tokens("db"), Some(4.0));
 }
 
 #[test]
