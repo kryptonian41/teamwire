@@ -495,7 +495,7 @@ fn a_database_of_another_schema_version_fails() {
     let path = teamwire_store::database_path(bed.home.path(), &TeamName::parse("alpha").unwrap());
     // `PRAGMA user_version` is bytes 60..64 of the database header.
     let mut bytes = std::fs::read(&path).unwrap();
-    bytes[60..64].copy_from_slice(&9_u32.to_be_bytes());
+    bytes[60..64].copy_from_slice(&(teamwire_store::SCHEMA_VERSION + 1).to_be_bytes());
     std::fs::write(&path, bytes).unwrap();
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "team alpha database"), Level::Fail);

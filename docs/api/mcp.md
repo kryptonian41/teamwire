@@ -33,7 +33,7 @@ refused or failed call returns `isError: true` with:
 | --- | --- | --- |
 | `refused.identity` | Token or lead session does not match, or the team has no database. A closed team has none, because close deletes its state after archiving it; the message then says so, and is the same for every team. For the lead, the message also says when no harness session id reached the server at all | no |
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
-| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
+| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, plan reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
 | `refused.unknown_recipient` | No such member | no |
 | `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
 | `refused.recipient_team_closed` | The recipient's team is closing or closed | no |
