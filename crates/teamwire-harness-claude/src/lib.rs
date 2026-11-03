@@ -18,6 +18,7 @@ mod fill;
 mod hook;
 mod launch;
 mod lead_setup;
+mod models;
 mod screen;
 mod session;
 mod trust;
@@ -35,8 +36,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
-    LeadSetup, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role,
-    ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    LeadSetup, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform,
+    Role, ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -205,6 +206,10 @@ impl Harness for ClaudeCode {
         transcript: Option<&Path>,
     ) -> Result<Option<Fill>, HarnessError> {
         Ok(fill::context_fill(&self.config.claude_dir, s, transcript))
+    }
+
+    fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        Ok(models::catalog())
     }
 
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {

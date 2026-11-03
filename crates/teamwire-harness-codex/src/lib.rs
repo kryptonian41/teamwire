@@ -16,6 +16,7 @@
 mod hook;
 mod launch;
 pub mod lead_setup;
+mod models;
 mod screen;
 mod session;
 mod startup;
@@ -29,8 +30,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
+    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Codex keeps its files, and how to start it.
@@ -182,6 +183,10 @@ impl Harness for CodexCli {
         // Codex hooks hand over no rollout path, so the rollout is always
         // found from the session id.
         Ok(session::context_fill(&self.config.codex_home, s))
+    }
+
+    fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        Ok(models::catalog())
     }
 
     fn otel_env(

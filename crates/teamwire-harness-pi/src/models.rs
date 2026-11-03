@@ -55,7 +55,11 @@ pub(crate) fn list(
 fn parse(table: &str) -> Result<Vec<ModelInfo>, HarnessError> {
     let bad = |detail: String| HarnessError::new(HarnessErrorCode::BadInput, detail);
     let mut lines = table.lines().filter(|l| !l.trim().is_empty());
-    let header: Vec<&str> = lines.next().unwrap_or_default().split_whitespace().collect();
+    let header: Vec<&str> = lines
+        .next()
+        .unwrap_or_default()
+        .split_whitespace()
+        .collect();
     let column = |name: &str| {
         header
             .iter()

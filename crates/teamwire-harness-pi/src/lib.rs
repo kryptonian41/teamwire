@@ -32,8 +32,8 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
+    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 use crate::lead_extension::LEAD_SESSION_VAR;
