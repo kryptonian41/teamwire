@@ -3,27 +3,18 @@
 //! own file, so a `FakeHarness` can stand in for the harness; the binary is
 //! run for what only it decides (the harness picked, the exit codes, the
 //! `--home` flag reaching pi's settings).
-#![expect(
-    clippy::disallowed_methods,
-    reason = "the test starts the teamwire binary and writes a fake pi program"
-)]
-#![expect(
-    clippy::unwrap_used,
-    clippy::indexing_slicing,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
 
 #[path = "../src/cmd/models/view.rs"]
 mod view;
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
-use std::process::{Command, Output};
+use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::{
-    CatalogSource, Evidence, EvidenceEntry, EvidenceKind, HarnessError, HarnessErrorCode,
-    ModelCatalog, ModelInfo, TaskClass,
+    CatalogSource, Command, Evidence, EvidenceEntry, EvidenceKind, HarnessError, HarnessErrorCode,
+    ModelCatalog, ModelInfo, RunOutput, TaskClass,
 };
 use teamwire_fakes::{FakeHarness, TestHome};
 use teamwire_otel::{OutcomeReport, OutcomeRow, VerifyCounts};
@@ -142,8 +133,8 @@ fn fake(models: Result<ModelCatalog, HarnessError>) -> FakeHarness {
     harness
 }
 
-fn view_for(class: Option<TaskClass>) -> View {
-    gather(&fake(Ok(catalog())), class, &evidence(), &report).unwrap()
+fn view_for(class: Option<TaskClass>) -> Result<View, HarnessError> {
+    gather(&fake(Ok(catalog())), class, &evidence(), &report)
 }
 
 // ---- the matching rule ----
@@ -195,19 +186,15 @@ fn a_models_own_dots_and_version_stay() {
 
 #[test]
 fn the_plain_list_shows_the_harness_source_efforts_and_spec_values() {
-    let text = view::text(&view_for(None));
+    let text = view::text(&view_for(None).unwrap());
     let lines: Vec<&str> = text.lines().collect();
-    assert_eq!(lines[0], "harness: fake");
-    assert!(lines[1].starts_with("source: listed. "), "{text}");
-    assert_eq!(lines[2], "efforts: low, high");
-    assert!(lines[3].starts_with("models: 4."), "{text}");
-    let table = &lines[4..];
-    assert!(
-        table[0]
-            .split_whitespace()
-            .eq(["model", "aliases", "context", "thinking"])
-    );
-    let cells = |i: usize| table[i].split_whitespace().collect::<Vec<_>>();
+    let line = |i: usize| lines.get(i).copied().unwrap_or_default();
+    assert_eq!(line(0), "harness: fake");
+    assert!(line(1).starts_with("source: listed. "), "{text}");
+    assert_eq!(line(2), "efforts: low, high");
+    assert!(line(3).starts_with("models: 4."), "{text}");
+    let cells = |i: usize| line(i + 4).split_whitespace().collect::<Vec<_>>();
+    assert_eq!(cells(0), ["model", "aliases", "context", "thinking"]);
     assert_eq!(
         cells(1),
         ["claude-bridge/claude-opus-5-5", "-", "1M", "yes"]
@@ -226,7 +213,7 @@ fn the_plain_list_shows_the_harness_source_efforts_and_spec_values() {
         ["claude-bridge/claude-sonnet-5-5", "sonnet", "-", "yes"]
     );
     assert_eq!(cells(4), ["openai/gpt-6-luna", "-", "65.5K", "no"]);
-    assert_eq!(table.len(), 5, "no class sections without --for: {text}");
+    assert_eq!(lines.len(), 9, "no class sections without --for: {text}");
 }
 
 #[test]
@@ -274,7 +261,7 @@ fn the_outcome_report_is_read_only_for_a_class() {
 
 #[test]
 fn evidence_splits_into_reachable_then_unreachable_grouped_by_source_in_rank_order() {
-    let view = view_for(Some(TaskClass::RootCause));
+    let view = view_for(Some(TaskClass::RootCause)).unwrap();
     let ev = &view.class.as_ref().unwrap().evidence;
     assert_eq!(ev.as_of, "2026-11-02");
     let reached: Vec<(&str, &str, u32)> = ev
@@ -296,17 +283,15 @@ fn evidence_splits_into_reachable_then_unreachable_grouped_by_source_in_rank_ord
             ("Board B", "claude-sonnet-5-5-20260901", 2),
         ]
     );
+    let spec_values = |i: usize| ev.reachable.get(i).map(|r| r.spec_values.clone()).unwrap();
     assert_eq!(
-        ev.reachable[0].spec_values,
+        spec_values(0),
         [
             "claude-bridge/claude-opus-5-5",
             "amazon-bedrock/us.anthropic.claude-opus-5-5-20261001-v1:0"
         ]
     );
-    assert_eq!(
-        ev.reachable[2].spec_values,
-        ["claude-bridge/claude-sonnet-5-5"]
-    );
+    assert_eq!(spec_values(2), ["claude-bridge/claude-sonnet-5-5"]);
     let unreached: Vec<&str> = ev.unreachable.iter().map(|e| e.model.as_str()).collect();
     assert_eq!(unreached, ["gpt-9"], "another class's entries stay out");
 
@@ -338,7 +323,7 @@ fn evidence_splits_into_reachable_then_unreachable_grouped_by_source_in_rank_ord
 
 #[test]
 fn past_teams_show_the_class_rows_counts_and_the_unclassified_rows() {
-    let view = view_for(Some(TaskClass::RootCause));
+    let view = view_for(Some(TaskClass::RootCause)).unwrap();
     let outcomes = &view.class.as_ref().unwrap().outcomes;
     assert_eq!(outcomes.teams, 6);
     assert_eq!(outcomes.rows.len(), 2, "only root_cause rows");
@@ -377,7 +362,7 @@ fn past_teams_show_the_class_rows_counts_and_the_unclassified_rows() {
 
 #[test]
 fn a_group_of_fewer_than_five_is_marked_a_small_sample() {
-    let view = view_for(Some(TaskClass::RootCause));
+    let view = view_for(Some(TaskClass::RootCause)).unwrap();
     let outcomes = &view.class.as_ref().unwrap().outcomes;
     let marks: Vec<(u64, bool)> = outcomes
         .rows
@@ -401,7 +386,7 @@ fn a_group_of_fewer_than_five_is_marked_a_small_sample() {
 
 #[test]
 fn nothing_names_one_best_model() {
-    let text = view::text(&view_for(Some(TaskClass::RootCause))).to_lowercase();
+    let text = view::text(&view_for(Some(TaskClass::RootCause)).unwrap()).to_lowercase();
     for word in ["best", "recommend", "score:", "winner"] {
         assert!(!text.contains(word), "{word}: {text}");
     }
@@ -411,42 +396,42 @@ fn nothing_names_one_best_model() {
 
 #[test]
 fn the_json_holds_harness_catalog_and_with_a_class_evidence_and_outcomes() {
-    let plain = view::json(&view_for(None));
+    let plain = view::json(&view_for(None).unwrap());
     let keys: Vec<&String> = plain.as_object().unwrap().keys().collect();
     assert_eq!(keys, ["catalog", "harness"]);
-    assert_eq!(plain["harness"], "fake");
-    assert_eq!(plain["catalog"]["source"], "listed");
-    assert_eq!(plain["catalog"]["models"][2]["aliases"][0], "sonnet");
-    assert_eq!(plain["catalog"]["efforts"][1], "high");
+    assert_eq!(at(&plain, "/harness"), "fake");
+    assert_eq!(at(&plain, "/catalog/source"), "listed");
+    assert_eq!(at(&plain, "/catalog/models/2/aliases/0"), "sonnet");
+    assert_eq!(at(&plain, "/catalog/efforts/1"), "high");
 
-    let doc = view::json(&view_for(Some(TaskClass::RootCause)));
+    let doc = view::json(&view_for(Some(TaskClass::RootCause)).unwrap());
     let keys: Vec<&String> = doc.as_object().unwrap().keys().collect();
     assert_eq!(
         keys,
         ["catalog", "evidence", "harness", "outcomes", "task_class"]
     );
-    assert_eq!(doc["task_class"], "root_cause");
-    let ev = &doc["evidence"];
-    assert_eq!(ev["as_of"], "2026-11-02");
-    assert_eq!(ev["reachable"].as_array().unwrap().len(), 3);
-    assert_eq!(ev["reachable"][1]["model"], "Claude-Opus-5-5");
-    assert_eq!(ev["reachable"][1]["rank"], 1);
-    assert_eq!(ev["reachable"][1]["kind"], "benchmark");
+    assert_eq!(at(&doc, "/task_class"), "root_cause");
+    let ev = at(&doc, "/evidence");
+    assert_eq!(at(ev, "/as_of"), "2026-11-02");
+    assert_eq!(at(ev, "/reachable").as_array().unwrap().len(), 3);
+    assert_eq!(at(ev, "/reachable/1/model"), "Claude-Opus-5-5");
+    assert_eq!(at(ev, "/reachable/1/rank"), 1);
+    assert_eq!(at(ev, "/reachable/1/kind"), "benchmark");
     assert_eq!(
-        ev["reachable"][1]["spec_values"][0],
+        at(ev, "/reachable/1/spec_values/0"),
         "claude-bridge/claude-opus-5-5"
     );
-    assert_eq!(ev["unreachable"][0]["model"], "gpt-9");
-    assert!(ev["unreachable"][0].get("spec_values").is_none());
-    let out = &doc["outcomes"];
-    assert_eq!(out["teams"], 6);
-    assert_eq!(out["rows"][0]["members"], 3);
-    assert_eq!(out["rows"][0]["small_sample"], true);
-    assert_eq!(out["rows"][0]["verify"]["PASS"], 3);
-    assert_eq!(out["rows"][1]["small_sample"], false);
-    assert_eq!(out["unclassified"]["rows"], 2);
-    assert_eq!(out["unclassified"]["members"], 6);
-    assert_eq!(out["errors"][0], "/h/teams/x/team.db: locked");
+    assert_eq!(at(ev, "/unreachable/0/model"), "gpt-9");
+    assert!(at(ev, "/unreachable/0").get("spec_values").is_none());
+    let out = at(&doc, "/outcomes");
+    assert_eq!(at(out, "/teams"), 6);
+    assert_eq!(at(out, "/rows/0/members"), 3);
+    assert_eq!(at(out, "/rows/0/small_sample"), true);
+    assert_eq!(at(out, "/rows/0/verify/PASS"), 3);
+    assert_eq!(at(out, "/rows/1/small_sample"), false);
+    assert_eq!(at(out, "/unclassified/rows"), 2);
+    assert_eq!(at(out, "/unclassified/members"), 6);
+    assert_eq!(at(out, "/errors/0"), "/h/teams/x/team.db: locked");
 }
 
 // ---- the binary ----
@@ -454,29 +439,38 @@ fn the_json_holds_harness_catalog_and_with_a_class_evidence_and_outcomes() {
 /// The binary with a clean environment: no member variables, no session
 /// markers, a `PATH` that holds only `bin` and the system directories, so
 /// `pi` is the fake one or none.
-fn teamwire(home: &Path, bin: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
-    let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire"));
-    cmd.env_clear()
-        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
-        .env("HOME", home)
-        .env("TEAMWIRE_HOME", home)
-        .args(args);
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
-    cmd.output().unwrap()
+fn teamwire(home: &Path, bin: &Path, env: &[(&str, &str)], args: &[&str]) -> RunOutput {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire")).args(args.iter().copied());
+    cmd.env_clear = true;
+    cmd.env = [
+        ("PATH", format!("{}:/usr/bin:/bin", bin.display())),
+        ("HOME", home.display().to_string()),
+        ("TEAMWIRE_HOME", home.display().to_string()),
+    ]
+    .into_iter()
+    .chain(env.iter().map(|(k, v)| (*k, (*v).to_owned())))
+    .map(|(k, v)| (k.to_owned(), v))
+    .collect();
+    teamwire_platform::native()
+        .run(&cmd, Duration::from_secs(60))
+        .unwrap_or_else(|e| unreachable!("the binary did not start: {e}"))
 }
 
-fn out(o: &Output) -> String {
+/// The value at a JSON pointer, or null.
+fn at<'a>(doc: &'a Value, pointer: &str) -> &'a Value {
+    doc.pointer(pointer).unwrap_or(&Value::Null)
+}
+
+fn out(o: &RunOutput) -> String {
     String::from_utf8_lossy(&o.stdout).into_owned()
 }
 
-fn err(o: &Output) -> String {
+fn err(o: &RunOutput) -> String {
     String::from_utf8_lossy(&o.stderr).into_owned()
 }
 
 /// A `pi` that prints a model table with one Bedrock row and one bridge row.
-fn fake_pi(bin: &Path, exit: u8) {
+fn fake_pi(bin: &Path, exit: u8) -> std::io::Result<()> {
     let script = format!(
         "#!/bin/sh\n\
          [ \"$1\" = --list-models ] || exit 9\n\
@@ -486,8 +480,10 @@ fn fake_pi(bin: &Path, exit: u8) {
          exit {exit}\n"
     );
     let path = bin.join("pi");
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    teamwire_platform::native()
+        .write_atomic(&path, script.as_bytes())
+        .map_err(std::io::Error::other)?;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
 }
 
 #[test]
@@ -499,7 +495,7 @@ fn without_harness_the_command_lists_the_leads_harness() {
         &[("TEAMWIRE_LEAD_HARNESS", "codex")],
         &["models"],
     );
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.success(), "{}", err(&o));
     assert!(
         out(&o).starts_with("harness: codex\nsource: builtin. "),
         "{}",
@@ -524,7 +520,7 @@ fn harness_names_another_harness_and_an_unknown_one_is_a_usage_error() {
         &lead,
         &["models", "--harness", "claude-code"],
     );
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.success(), "{}", err(&o));
     assert!(out(&o).starts_with("harness: claude-code\n"), "{}", out(&o));
     assert!(out(&o).contains("\n  claude-opus-5-5 "), "{}", out(&o));
     let o = teamwire(
@@ -533,7 +529,7 @@ fn harness_names_another_harness_and_an_unknown_one_is_a_usage_error() {
         &lead,
         &["models", "--harness", "nope"],
     );
-    assert_eq!(o.status.code(), Some(3), "{}", err(&o));
+    assert_eq!(Some(o.exit_code), Some(3), "{}", err(&o));
     assert!(err(&o).contains("claude-code, codex, pi"), "{}", err(&o));
 }
 
@@ -546,7 +542,7 @@ fn an_unknown_class_is_refused_with_the_seven_classes() {
         &[],
         &["models", "--harness", "codex", "--for", "hard"],
     );
-    assert_eq!(o.status.code(), Some(3), "{}", err(&o));
+    assert_eq!(Some(o.exit_code), Some(3), "{}", err(&o));
     assert!(out(&o).is_empty());
     for class in TaskClass::ALL {
         assert!(err(&o).contains(class.as_str()), "{}", err(&o));
@@ -559,16 +555,16 @@ fn a_harness_that_cannot_list_its_models_fails_with_the_reason() {
     let bin = tempfile::tempdir().unwrap();
     // No pi on PATH at all.
     let o = teamwire(home.path(), bin.path(), &[], &["models", "--harness", "pi"]);
-    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    assert_eq!(Some(o.exit_code), Some(1), "{}", out(&o));
     assert!(
         err(&o).contains("harness pi could not list its models"),
         "{}",
         err(&o)
     );
     // A pi that fails.
-    fake_pi(bin.path(), 2);
+    fake_pi(bin.path(), 2).unwrap();
     let o = teamwire(home.path(), bin.path(), &[], &["models", "--harness", "pi"]);
-    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    assert_eq!(Some(o.exit_code), Some(1), "{}", out(&o));
     assert!(err(&o).contains("`pi --list-models` failed"), "{}", err(&o));
 }
 
@@ -576,41 +572,42 @@ fn a_harness_that_cannot_list_its_models_fails_with_the_reason() {
 fn for_a_class_the_binary_shows_the_compiled_evidence_and_empty_past_teams() {
     let home = TestHome::new().unwrap();
     let bin = tempfile::tempdir().unwrap();
-    fake_pi(bin.path(), 0);
+    fake_pi(bin.path(), 0).unwrap();
     let o = teamwire(
         home.path(),
         bin.path(),
         &[],
         &["models", "--harness", "pi", "--for", "root_cause", "--json"],
     );
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.success(), "{}", err(&o));
     let doc: Value = serde_json::from_str(&out(&o)).unwrap();
     let file: Evidence =
         serde_json::from_str(include_str!("../../../examples/models/evidence.json")).unwrap();
-    assert_eq!(doc["evidence"]["as_of"], file.as_of.as_str());
-    let shown = doc["evidence"]["reachable"].as_array().unwrap().len()
-        + doc["evidence"]["unreachable"].as_array().unwrap().len();
+    assert_eq!(at(&doc, "/evidence/as_of"), file.as_of.as_str());
+    let shown = at(&doc, "/evidence/reachable").as_array().unwrap().len()
+        + at(&doc, "/evidence/unreachable").as_array().unwrap().len();
     let in_file = file
         .entries
         .iter()
         .filter(|e| e.task_class == TaskClass::RootCause)
         .count();
     assert_eq!(shown, in_file);
-    assert_eq!(doc["outcomes"]["teams"], 0);
-    assert_eq!(doc["outcomes"]["rows"].as_array().unwrap().len(), 0);
+    assert_eq!(at(&doc, "/outcomes/teams"), 0);
+    assert_eq!(at(&doc, "/outcomes/rows").as_array().unwrap().len(), 0);
 }
 
 #[test]
 fn the_home_flag_decides_which_config_toml_excludes_pi_providers() {
     let home = TestHome::new().unwrap();
     let flagged = TestHome::new().unwrap();
-    std::fs::write(
-        flagged.path().join("config.toml"),
-        "TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"amazon-bedrock\"\n",
-    )
-    .unwrap();
+    teamwire_platform::native()
+        .write_atomic(
+            &flagged.path().join("config.toml"),
+            b"TEAMWIRE_PI_EXCLUDE_PROVIDERS = \"amazon-bedrock\"\n",
+        )
+        .unwrap();
     let bin = tempfile::tempdir().unwrap();
-    fake_pi(bin.path(), 0);
+    fake_pi(bin.path(), 0).unwrap();
     let flag = flagged.path().to_str().unwrap();
 
     // TEAMWIRE_HOME has no config.toml, so pi's whole list shows.
@@ -624,7 +621,7 @@ fn the_home_flag_decides_which_config_toml_excludes_pi_providers() {
         &[],
         &["--home", flag, "models", "--harness", "pi"],
     );
-    assert!(o.status.success(), "{}", err(&o));
+    assert!(o.success(), "{}", err(&o));
     assert!(!out(&o).contains("amazon-bedrock"), "{}", out(&o));
     assert!(
         out(&o).contains("claude-bridge/claude-opus-5-5"),
