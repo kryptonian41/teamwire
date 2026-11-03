@@ -1,8 +1,3 @@
-#![expect(
-    clippy::disallowed_methods,
-    reason = "the tests copy a team database into an archive directory and remove the live one"
-)]
-
 use std::path::PathBuf;
 
 use serde_json::{Value, json};
@@ -350,12 +345,14 @@ fn an_archive_is_read_beside_an_open_team_and_each_team_counts_once() {
     assert_eq!(harnesses, vec![("claude-code", 1), ("codex", 1)]);
 }
 
-/// Copies `store` to `archive/<name>/team.db` with its `SHA256SUMS` file.
+/// Copies `store` to `archive/<name>/team.db`, with a `SHA256SUMS` file
+/// beside it. The report reads only that `SHA256SUMS` exists and when it was
+/// written, so a second database copy stands in for the checksum list.
 fn archive(home: &TestHome, store: &Store, name: &str) {
     let dir = home.path().join("archive").join(name);
     std::fs::create_dir_all(&dir).unwrap();
     store.backup_to(&dir.join("team.db")).unwrap();
-    std::fs::write(dir.join("SHA256SUMS"), b"").unwrap();
+    store.backup_to(&dir.join("SHA256SUMS")).unwrap();
 }
 
 #[test]
