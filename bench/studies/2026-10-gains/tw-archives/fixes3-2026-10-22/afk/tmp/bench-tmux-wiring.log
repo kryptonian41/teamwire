@@ -1,0 +1,7 @@
+test no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane ... ok
+test a_pane_at_its_input_prompt_receives_the_line_and_an_enter ... ok
+test tmux_that_cannot_list_names_refuses_the_member ... ok
+test tmux_set_without_herdr_makes_tmux_the_leads_host ... ok
+test herdr_env_wins_over_tmux ... FAILED
+thread 'herdr_env_wins_over_tmux' (141956890) panicked at crates/teamwire-cli/tests/tmux_wiring.rs:377:5:
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.41s

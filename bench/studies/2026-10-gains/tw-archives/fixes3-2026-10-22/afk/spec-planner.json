@@ -1,0 +1,18 @@
+{
+  "team": "fixes3",
+  "plugins": {"claude-mem@thedotmack": false},
+  "children": [
+    {
+      "role": "planner",
+      "title": "Plan the three fixes",
+      "kind": "investigator",
+      "mode": "pane",
+      "cwd": "/private/tmp/claude-501/bnruns/bne68n09a4/clone",
+      "model": "opus",
+      "effort": "xhigh",
+      "deadline_s": 3600,
+      "plugins": {"claude-mem@thedotmack": false, "ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false},
+      "task_file": "/private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/afk/briefs/planner.md"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+exit Some(0)
+--- stdout
+team zero "Zero" open
+lead: session afk-lead-session (alive, unknown)
+watch: none
+afk: budget ends 2026-10-27T16:40:41.389Z (1h59m left), 0 decisions
+members:
+--- stderr

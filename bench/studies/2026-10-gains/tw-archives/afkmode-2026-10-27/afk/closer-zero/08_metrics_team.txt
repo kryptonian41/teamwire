@@ -1,0 +1,8 @@
+exit Some(0)
+--- stdout
+teamwire.export.lag 1 {event}
+teamwire.members.live{team=zero,state=creating} 0 {member}
+teamwire.members.live{team=zero,state=started} 0 {member}
+teamwire.messages.unread{team=zero,recipient_kind=lead} 0 {message}
+teamwire.messages.unread{team=zero,recipient_kind=member} 0 {message}
+--- stderr

@@ -1,0 +1,17 @@
+gate 1/3 fmt: ok (1s)
+gate 2/3 tidy: ok (2s)
+PROTECTED-CHANGED docs/adr/0025-afk-runs.md
+WEAKENED crates/teamwire-cli/src/cmd/afk.rs:27
+WEAKENED crates/teamwire-cli/src/cmd/afk.rs:185
+WEAKENED crates/teamwire-cli/tests/afk.rs:5
+WEAKENED crates/teamwire-cli/tests/afk.rs:9
+WEAKENED crates/teamwire-cli/tests/afk.rs:13
+WEAKENED crates/teamwire-close/tests/afk.rs:3
+WEAKENED crates/teamwire-launch/tests/afk.rs:4
+WEAKENED crates/teamwire-launch/tests/afk.rs:13
+WEAKENED crates/teamwire-report/tests/afk_hold.rs:3
+WEAKENED crates/teamwire-store/tests/afk.rs:3
+WEAKENED crates/teamwire-store/tests/afk.rs:7
+WEAKENED crates/teamwire-watch/tests/afk.rs:3
+WEAKENED crates/teamwire-watch/tests/afk.rs:8
+gate 3/3 clippy: ok (17s)

@@ -1,0 +1,10 @@
+4 transcript files, prices read on 2026-10-26
+  claude-opus-5-5      input=62 output=18606 cache_read=2457143 cache_write_1h=97343  $1.6425
+  claude-sonnet-5-5    input=284 output=96158 cache_read=14481248 cache_write_5m=385674  $3.3745
+  $  1.6425  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn08jhjsxv-clone/a73d11a6-4850-434f-a9dd-44fe1174c2b1.jsonl
+  $  1.2169  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn08jhjsxv-clone/a73d11a6-4850-434f-a9dd-44fe1174c2b1/subagents/agent-a49659ff1d264b5dc.jsonl
+  $  0.6372  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn08jhjsxv-clone/a73d11a6-4850-434f-a9dd-44fe1174c2b1/subagents/agent-a730962dd0721a0b7.jsonl
+  $  1.5204  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn08jhjsxv-clone/a73d11a6-4850-434f-a9dd-44fe1174c2b1/subagents/agent-af413babc55d35b37.jsonl
+total: $5.0170
+claude -p total_cost_usd: $5.0170, difference: $-0.0000
+written to /Users/apoorvagarwal/Projects/teamwire/.worktrees/benchlead/bench/results/cost-clone.json

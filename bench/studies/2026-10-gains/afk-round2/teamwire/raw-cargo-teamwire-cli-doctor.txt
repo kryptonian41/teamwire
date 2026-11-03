@@ -1,0 +1,51 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-4whuv_uk/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.54s
+     Running tests/doctor.rs (/private/tmp/claude-501/bench-target/debug/deps/doctor-e164c1723b2c3bcf)
+
+running 43 tests
+test a_platform_that_cannot_answer_is_a_warning_not_a_pass ... ok
+test a_plugin_installed_for_another_home_warns_naming_both_and_gives_no_install_advice ... ok
+test a_missing_plugin_fails_and_names_install_as_the_fix ... ok
+test a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about ... ok
+test a_claude_help_without_a_launch_flag_warns_and_names_it ... ok
+test a_full_disk_fails ... ok
+test a_missing_or_changed_afk_skill_fails_like_the_main_skill ... ok
+test a_credential_variable_warns_by_name_and_a_clean_environment_passes ... ok
+test a_plugin_for_another_binary_or_a_disabled_one_fails ... ok
+test a_plugin_that_differs_in_more_than_its_home_still_fails_in_another_home ... ok
+test a_build_under_target_accepts_any_plugin_files_but_still_needs_the_plugin_on ... ok
+test doctor::tests::a_loop_in_the_parents_stops_after_64_steps ... ok
+test doctor::tests::one_variable_decides_without_looking_at_parents ... ok
+test doctor::tests::with_both_variables_the_nearest_parent_decides ... ok
+test a_repo_that_does_not_ignore_worktrees_fails ... ok
+test a_probe_that_times_out_or_fails_is_a_warning ... ok
+test a_project_entry_that_hides_the_user_one_is_a_warning ... ok
+test a_settings_file_without_the_herdr_hook_fails ... ok
+test a_stale_codex_plugin_is_a_warning_that_names_the_fix ... ok
+test a_tmux_only_setup_passes_without_herdr_or_its_hook ... ok
+test the_host_in_use_comes_from_the_environment ... ok
+test a_tmux_setup_without_tmux_on_path_fails ... ok
+test an_edited_old_skill_or_a_foreign_entry_needs_force ... ok
+test codex_on_path_is_reported_with_its_version_and_a_missing_plugin_is_ok ... ok
+test a_healthy_setup_passes_every_check_and_exits_zero ... ok
+test a_database_of_another_schema_version_fails ... ok
+test outside_a_repository_the_ignore_check_passes ... ok
+test network_fs_warned ... ok
+test a_member_from_another_build_that_has_finished_is_not_counted ... ok
+test a_database_at_an_older_schema_passes_and_says_it_will_be_migrated ... ok
+test a_close_lock_whose_pid_was_reused_is_reported ... ok
+test the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out ... ok
+test the_skill_and_entry_from_the_old_install_fail_and_name_install_as_the_fix ... ok
+test a_close_lock_held_by_a_dead_process_is_reported_with_the_fix ... ok
+test the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines ... ok
+test with_no_host_doctor_says_so_and_requires_neither_host_tool ... ok
+test a_message_counter_below_an_id_in_use_fails_and_prints_the_repair ... ok
+test without_codex_on_path_doctor_says_nothing_about_codex ... ok
+test doctor_changes_nothing ... ok
+test an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix ... ok
+test doctor_reports_quick_check_failure ... ok
+test members_of_this_build_pass_the_older_members_check ... ok
+test the_binary_exits_zero_when_all_pass_and_two_when_one_fails ... ok
+
+test result: ok. 43 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s
+

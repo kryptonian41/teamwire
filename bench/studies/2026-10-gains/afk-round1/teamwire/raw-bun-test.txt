@@ -1,0 +1,40 @@
+bun test v1.3.11 (af24e281)
+
+src/shared/teamwire.test.ts:
+23 |     const parsed = StatusAll.parse([{ ...status[0]!, afk }]);
+24 |     expect(parsed[0]!.afk).toEqual(afk);
+25 |   });
+26 |   test("status accepts a null afk and an older output without the key", () => {
+27 |     expect(StatusAll.parse([{ ...status[0]!, afk: null }])[0]!.afk).toBeNull();
+28 |     expect(StatusAll.parse([status[0]!])[0]!.afk).toBeUndefined();
+                                                       ^
+error: expect(received).toBeUndefined()
+
+Received: {
+  budget_ends_at: "2026-10-13T18:00:00.000Z",
+  seconds_left: 9000,
+  spent: false,
+  decisions: 3,
+}
+
+      at <anonymous> (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/ui/src/shared/teamwire.test.ts:28:51)
+(fail) AFK output > status accepts a null afk and an older output without the key [0.34ms]
+32 |     const parse = (extra: object) => TeamsList.parse({ teams: [{ ...team, ...extra }] }).teams[0]!;
+33 |     expect(parse({ afk_budget_ends_at: "2026-10-20T08:00:00.000Z" }).afk_budget_ends_at).toBe(
+34 |       "2026-10-20T08:00:00.000Z",
+35 |     );
+36 |     expect(parse({ afk_budget_ends_at: null }).afk_budget_ends_at).toBeNull();
+37 |     expect(parse({}).afk_budget_ends_at).toBeUndefined();
+                                              ^
+error: expect(received).toBeUndefined()
+
+Received: "2026-10-13T18:00:00.000Z"
+
+      at <anonymous> (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/ui/src/shared/teamwire.test.ts:37:42)
+(fail) AFK output > teams accepts the budget end as a string, null, or no key [0.11ms]
+
+ 8 pass
+ 3 skip
+ 2 fail
+ 13 expect() calls
+Ran 13 tests across 1 file. [37.00ms]

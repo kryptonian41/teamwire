@@ -1,0 +1,238 @@
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling memchr v2.8.3
+   Compiling bitflags v2.13.2
+   Compiling once_cell v1.21.4
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.14
+   Compiling typenum v1.20.1
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling num-conv v0.2.2
+   Compiling time-core v0.1.9
+   Compiling serde_json v1.0.151
+   Compiling chacha20 v0.10.2
+   Compiling cc v1.5.1
+   Compiling thiserror v2.0.21
+   Compiling vcpkg v0.2.15
+   Compiling pkg-config v0.3.34
+   Compiling time-macros v0.2.32
+   Compiling itoa v1.0.18
+   Compiling powerfmt v0.2.0
+   Compiling deranged v0.5.8
+   Compiling getrandom v0.3.4
+   Compiling foldhash v0.2.0
+   Compiling rustix v1.1.5
+   Compiling hashbrown v0.17.1
+   Compiling const-oid v0.10.2
+   Compiling hybrid-array v0.4.15
+   Compiling tracing-core v0.1.36
+   Compiling pin-project-lite v0.2.17
+   Compiling regex-syntax v0.8.11
+   Compiling fallible-iterator v0.3.0
+   Compiling hashlink v0.12.2
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling teamwire-store v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-store)
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling smallvec v1.16.2
+   Compiling zerocopy v0.8.59
+   Compiling aho-corasick v1.1.5
+   Compiling winnow v1.0.4
+   Compiling fastrand v2.5.0
+   Compiling libsqlite3-sys v0.38.2
+   Compiling autocfg v1.5.1
+   Compiling hex v0.4.3
+   Compiling digest v0.11.3
+   Compiling num-traits v0.2.19
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling bstr v1.13.1
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling log v0.4.34
+   Compiling time v0.3.55
+   Compiling regex-automata v0.4.18
+   Compiling bit-vec v0.8.0
+   Compiling fnv v1.0.7
+   Compiling quick-error v1.2.3
+   Compiling unarray v0.1.4
+   Compiling bit-set v0.8.0
+   Compiling cpufeatures v0.3.1
+   Compiling errno v0.3.14
+   Compiling wait-timeout v0.2.1
+   Compiling sha2 v0.11.0
+   Compiling rand v0.10.3
+   Compiling rand_core v0.9.5
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling rand v0.9.5
+   Compiling rand_xorshift v0.4.0
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling tempfile v3.27.0
+   Compiling rusty-fork v0.3.1
+   Compiling globset v0.4.20
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling ppv-lite86 v0.2.21
+   Compiling rand_chacha v0.9.0
+   Compiling proptest v1.11.0
+   Compiling tracing-attributes v0.1.31
+   Compiling rusqlite v0.40.2
+   Compiling tracing v0.1.44
+   Compiling ulid v3.0.0
+   Compiling teamwire-core v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-core)
+   Compiling teamwire-fakes v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/tests/fakes)
+   Compiling teamwire-deliver v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-deliver)
+   Compiling teamwire-verify v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-verify)
+   Compiling teamwire-report v0.0.0 (/private/tmp/claude-501/bnruns/bne68n09a4/clone/.worktrees/afk-fixes3/crates/teamwire-report)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.21s
+     Running unittests src/lib.rs (target/debug/deps/teamwire_report-6c7bc25acb2c5c04)
+
+running 8 tests
+test turn_end::tests::a_budget_too_large_for_the_clock_is_no_deadline ... ok
+test turn_end::tests::a_lead_harness_that_cannot_be_found_gets_the_monitor_wording ... ok
+test turn_end::tests::the_hook_name_follows_the_harness ... ok
+test usage::tests::a_missing_file_or_one_without_usage_gives_none ... ok
+test usage::tests::a_repeated_message_id_counts_once_and_models_stay_apart ... ok
+test usage::tests::a_subagent_file_that_would_pass_the_cap_is_skipped_and_the_main_file_counts ... ok
+test usage::tests::subagent_transcripts_add_to_the_sum_and_a_repeated_id_counts_once ... ok
+test usage::tests::a_subagent_file_that_is_unreadable_or_not_a_file_is_skipped_and_the_rest_count ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/done.rs (target/debug/deps/done-95648450e441f4bb)
+
+running 8 tests
+test invalid_status_refused ... ok
+test a_token_of_another_team_or_a_removed_member_is_refused ... ok
+test summary_is_reduced_to_one_printable_line ... ok
+test unknown_or_removed_member_and_closed_team_are_refused ... ok
+test a_token_matches_only_its_own_members_hash ... ok
+test bad_summaries_are_refused_and_store_nothing ... ok
+test a_refused_status_is_recorded_for_the_metrics ... ok
+test done_stores_a_pending_completion_and_numbers_it ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running tests/gate.rs (target/debug/deps/gate-0c12e1e6d99f15a3)
+
+running 19 tests
+test a_harness_with_a_turn_end_hook_is_not_checked_by_done ... ok
+test missing_decisions_list_is_named ... ok
+test commit_without_progress_line_is_held ... ok
+test a_hooked_member_gets_its_result_file_from_the_stop_hook_not_from_done ... ok
+test no_hook_harness_with_a_complete_report_is_stored_at_once ... ok
+test check_error_means_no_gaps ... ok
+test gaps_and_unread_messages_share_one_note ... ok
+test a_failing_report_check_is_recorded ... ok
+test a_progress_line_for_each_commit_is_enough ... ok
+test a_new_generation_is_told_again ... ok
+test hold_once_then_deliver ... ok
+test a_message_body_that_fails_its_hash_does_not_stop_the_result ... ok
+test a_hookless_harness_gets_its_result_file_from_done ... ok
+test a_complete_report_is_delivered_at_the_first_stop ... ok
+test no_hold_at_all_when_the_stop_was_already_held ... ok
+test no_hook_harness_told_once ... ok
+test a_corrupt_event_beside_a_pending_delivery_does_not_stop_the_result ... ok
+test unread_messages_hold_once_and_do_not_use_up_the_report_hold ... ok
+test the_hold_event_names_the_hook_of_the_members_harness ... ok
+
+test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+     Running tests/lead_stop.rs (target/debug/deps/lead_stop-c7a9714afb59c447)
+
+running 21 tests
+test a_lead_that_cannot_read_watch_lines_is_told_the_background_watch ... ok
+test another_session_is_left_alone ... ok
+test a_live_watch_lease_leaves_the_team_out ... ok
+test the_note_names_the_team_and_the_command ... ok
+test a_team_that_is_not_open_is_left_out ... ok
+test a_working_team_with_no_watch_is_named ... ok
+test a_team_whose_members_all_completed_is_left_out ... ok
+test a_working_member_and_a_live_watch_will_wake_the_lead ... ok
+test a_lease_whose_process_is_gone_does_not_count ... ok
+test an_ordinary_team_gets_no_afk_note ... ok
+test an_afk_team_with_no_members_is_told_to_add_them_or_close_without_a_report ... ok
+test a_team_with_no_member_started_is_left_out ... ok
+test a_lease_nobody_refreshed_does_not_count ... ok
+test an_afk_team_with_nothing_to_wake_the_lead_gets_the_note ... ok
+test an_afk_team_with_a_working_member_and_no_watch_gets_the_note ... ok
+test a_live_watch_with_no_working_member_wakes_nobody ... ok
+test a_reprompted_member_needs_a_watch_again ... ok
+test another_session_or_a_closed_team_gets_no_afk_note ... ok
+test past_the_budget_the_note_says_so_and_asks_for_the_report ... ok
+test another_team_of_the_session_that_is_working_and_watched_wakes_the_lead ... ok
+test only_the_teams_that_need_a_watch_are_named ... ok
+
+test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+
+     Running tests/nohost.rs (target/debug/deps/nohost-e59458daeff8f3a1)
+
+running 3 tests
+test watch_route_done_writes_the_result_file_at_once ... ok
+test no_host_lead_gets_results_through_watch ... ok
+test final_message_is_recorded_after_the_watch_reported_the_result ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/reminder.rs (target/debug/deps/reminder-1ca8802d2292fd34)
+
+running 5 tests
+test a_read_message_is_not_reminded ... ok
+test a_message_the_typed_line_carried_whole_is_not_reminded ... ok
+test a_pending_delivery_older_than_a_minute_is_reminded_once ... ok
+test a_short_message_the_host_never_took_is_still_reminded ... ok
+test reminds_once_per_message_id ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/result_file.rs (target/debug/deps/result_file-6a70b75b72a0f854)
+
+running 9 tests
+test transcript_is_the_fallback_and_the_file_says_so ... ok
+test a_transcript_past_64_mib_gives_no_final_message ... ok
+test no_final_message_at_all_is_said_plainly ... ok
+test a_transcript_that_is_a_named_pipe_gives_no_final_message ... ok
+test the_file_shows_the_facts_the_lead_needs ... ok
+test hook_message_wins_over_transcript ... ok
+test unmarked_file_rescued_and_linked ... ok
+test a_generated_file_is_replaced_not_rescued ... ok
+test a_transcript_of_exactly_64_mib_is_read ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.16s
+
+     Running tests/turn_end.rs (target/debug/deps/turn_end-c49dd27f1dc4737f)
+
+running 22 tests
+test a_damaged_completion_leaves_one_store_error_row ... ok
+test delivery_still_happens_when_the_transcript_is_missing ... ok
+test a_stop_with_no_completion_reports_nothing ... ok
+test delivering_left_by_crash_delivered_once_more ... ok
+test a_subagent_stop_reports_nothing ... ok
+test no_write_lock_held_during_lead_delivery ... ok
+test other_session_is_not_member ... ok
+test no_hold_when_hook_already_active ... ok
+test delivers_the_result_and_writes_the_file_first ... ok
+test a_result_with_a_running_watch_carries_no_note ... ok
+test a_result_with_a_dead_watch_says_so ... ok
+test hanging_host_stays_within_budget ... ok
+test a_lead_that_cannot_read_watch_lines_is_told_the_background_watch ... ok
+test a_result_without_a_running_watch_says_so ... ok
+test host_refusal_marks_undelivered_with_the_host_code ... ok
+test delivering_event_carries_the_sessions_token_usage ... ok
+test second_stop_reports_nothing ... ok
+test a_transcript_that_is_a_named_pipe_is_never_opened ... ok
+test submit_timeout_is_unconfirmed_and_not_retried ... ok
+test completion_after_reprompt_is_new_result ... ok
+test the_note_stays_on_the_longest_result_line ... ok
+test unreachable_lead_marks_undelivered ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+

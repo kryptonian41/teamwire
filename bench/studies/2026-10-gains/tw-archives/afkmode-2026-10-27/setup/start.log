@@ -1,0 +1,215 @@
+warning: output filename collision at /private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/target/debug/examples/live_check
+  |
+  = note: the example target `live_check` in package `teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-host-herdr)` has the same output filename as the example target `live_check` in package `teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-harness-claude)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+warning: output filename collision at /private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/target/debug/examples/live_check.dSYM
+  |
+  = note: the example target `live_check` in package `teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-host-herdr)` has the same output filename as the example target `live_check` in package `teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-harness-claude)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+   Compiling proc-macro2 v1.0.107
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling memchr v2.8.3
+   Compiling serde_core v1.0.229
+   Compiling once_cell v1.21.4
+   Compiling itoa v1.0.18
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling bitflags v2.13.2
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling thiserror v2.0.21
+   Compiling num-conv v0.2.2
+   Compiling time-core v0.1.9
+   Compiling powerfmt v0.2.0
+   Compiling deranged v0.5.8
+   Compiling chacha20 v0.10.2
+   Compiling rustix v1.1.5
+   Compiling fastrand v2.5.0
+   Compiling pin-project-lite v0.2.17
+   Compiling tracing-core v0.1.36
+   Compiling time-macros v0.2.32
+   Compiling typenum v1.20.1
+   Compiling const-oid v0.10.2
+   Compiling hex v0.4.3
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.14
+   Compiling smallvec v1.16.2
+   Compiling foldhash v0.2.0
+   Compiling pkg-config v0.3.34
+   Compiling vcpkg v0.2.15
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling cc v1.5.1
+   Compiling fallible-iterator v0.3.0
+   Compiling hashbrown v0.17.1
+   Compiling teamwire-store v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-store)
+   Compiling regex-syntax v0.8.11
+   Compiling autocfg v1.5.1
+   Compiling getrandom v0.3.4
+   Compiling zerocopy v0.8.59
+   Compiling quick-error v1.2.3
+   Compiling bit-vec v0.8.0
+   Compiling fnv v1.0.7
+   Compiling unarray v0.1.4
+   Compiling num-traits v0.2.19
+   Compiling hybrid-array v0.4.15
+   Compiling cfg_aliases v0.2.2
+   Compiling log v0.4.34
+   Compiling bit-set v0.8.0
+   Compiling aho-corasick v1.1.5
+   Compiling bstr v1.13.1
+   Compiling hashlink v0.12.2
+   Compiling syn v3.0.6
+   Compiling syn v2.0.119
+   Compiling nix v0.31.3
+   Compiling objc2-core-foundation v0.3.2
+   Compiling winnow v1.0.4
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling errno v0.3.14
+   Compiling cpufeatures v0.3.1
+   Compiling rand v0.10.3
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling wait-timeout v0.2.1
+   Compiling toml_parser v1.1.3+spec-1.1.0
+   Compiling rand_core v0.9.5
+   Compiling time v0.3.55
+   Compiling uuid v1.26.1
+   Compiling rand_xorshift v0.4.0
+   Compiling futures-core v0.3.34
+   Compiling objc2-io-kit v0.3.2
+   Compiling bytes v1.12.1
+   Compiling futures-sink v0.3.34
+   Compiling futures-io v0.3.34
+   Compiling futures-task v0.3.34
+   Compiling slab v0.4.12
+   Compiling futures-channel v0.3.34
+   Compiling libsqlite3-sys v0.38.2
+   Compiling parking_lot_core v0.9.12
+   Compiling strsim v0.11.1
+   Compiling digest v0.11.3
+   Compiling base64 v0.23.1
+   Compiling sysinfo v0.38.4
+   Compiling scopeguard v1.2.0
+   Compiling sha2 v0.11.0
+   Compiling regex-automata v0.4.18
+   Compiling lock_api v0.4.14
+   Compiling anyhow v1.0.104
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling ident_case v1.0.1
+   Compiling parking_lot v0.12.5
+   Compiling ring v0.17.14
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling tempfile v3.27.0
+   Compiling signal-hook-registry v1.4.8
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.3
+   Compiling rusty-fork v0.3.1
+   Compiling ref-cast v1.0.27
+   Compiling zeroize v1.9.0
+   Compiling getrandom v0.2.17
+   Compiling rustls-pki-types v1.15.1
+   Compiling equivalent v1.0.2
+   Compiling crc32fast v1.5.2
+   Compiling either v1.18.0
+   Compiling untrusted v0.9.0
+   Compiling dyn-clone v1.0.20
+   Compiling rmcp v3.5.0
+   Compiling httparse v1.10.1
+   Compiling indexmap v2.14.2
+   Compiling itertools v0.14.0
+   Compiling percent-encoding v2.3.2
+   Compiling rustls v0.23.45
+   Compiling pastey v0.2.3
+   Compiling adler2 v2.0.1
+   Compiling simd-adler32 v0.3.10
+   Compiling http v1.5.0
+   Compiling subtle v2.6.1
+   Compiling darling_core v0.24.1
+   Compiling serde_derive_internals v0.30.0
+   Compiling miniz_oxide v0.9.1
+   Compiling webpki-roots v1.0.9
+   Compiling utf8parse v0.2.2
+   Compiling utf8-zero v0.8.1
+   Compiling anstyle-parse v1.0.0
+   Compiling colorchoice v1.0.5
+   Compiling anstyle v1.0.14
+   Compiling anstyle-query v1.1.5
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling lazy_static v1.5.0
+   Compiling heck v0.5.0
+   Compiling clap_lex v1.1.1
+   Compiling anstream v1.0.0
+   Compiling sharded-slab v0.1.7
+   Compiling tracing-log v0.2.0
+   Compiling thread_local v1.1.10
+   Compiling nu-ansi-term v0.50.3
+   Compiling flate2 v1.1.10
+   Compiling ppv-lite86 v0.2.21
+   Compiling ureq-proto v0.6.4
+   Compiling clap_builder v4.6.7
+   Compiling rand_chacha v0.9.0
+   Compiling rand v0.9.5
+   Compiling globset v0.4.20
+   Compiling matchers v0.2.0
+   Compiling serde_derive v1.0.229
+   Compiling thiserror-impl v2.0.21
+   Compiling futures-macro v0.3.34
+   Compiling tokio-macros v2.7.2
+   Compiling ref-cast-impl v1.0.27
+   Compiling tracing-attributes v0.1.31
+   Compiling schemars_derive v1.2.2
+   Compiling clap_derive v4.6.7
+   Compiling prost-derive v0.14.4
+   Compiling proptest v1.11.0
+   Compiling tokio v1.53.1
+   Compiling futures-util v0.3.34
+   Compiling tracing v0.1.44
+   Compiling opentelemetry v0.33.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling darling_macro v0.24.1
+   Compiling prost v0.14.4
+   Compiling clap v4.6.7
+   Compiling darling v0.24.1
+   Compiling rmcp-macros v3.5.0
+   Compiling rusqlite v0.40.2
+   Compiling ulid v3.0.0
+   Compiling chrono v0.4.45
+   Compiling xtask v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/xtask)
+   Compiling teamwire-core v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-core)
+   Compiling futures-executor v0.3.34
+   Compiling futures v0.3.34
+   Compiling opentelemetry_sdk v0.33.0
+   Compiling rustls-webpki v0.103.15
+   Compiling schemars v1.2.2
+   Compiling opentelemetry-proto v0.33.0
+   Compiling teamwire-fakes v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/tests/fakes)
+   Compiling teamwire-platform v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-platform)
+   Compiling tokio-util v0.7.19
+   Compiling tokio-stream v0.1.19
+   Compiling teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-harness-claude)
+   Compiling teamwire-harness-codex v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-harness-codex)
+   Compiling teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-host-herdr)
+   Compiling teamwire-host-tmux v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-host-tmux)
+   Compiling teamwire-deliver v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-deliver)
+   Compiling teamwire-verify v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-verify)
+   Compiling teamwire-msg v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-msg)
+   Compiling teamwire-launch v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-launch)
+   Compiling teamwire-watch v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-watch)
+   Compiling teamwire-e2e v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/tests/e2e)
+   Compiling teamwire-crash-tests v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/tests/crash)
+   Compiling teamwire-report v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-report)
+   Compiling teamwire-close v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-close)
+   Compiling ureq v3.4.2
+   Compiling teamwire-otel v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-otel)
+   Compiling teamwire-mcp v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-mcp)
+   Compiling teamwire-cli v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/clone/.worktrees/afkmode-start/crates/teamwire-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 24.07s
+
+[exit 0]

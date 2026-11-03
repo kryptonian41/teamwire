@@ -1,0 +1,17 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running tests/preset.rs (/private/tmp/claude-501/bench-target/debug/deps/preset-99ee3ab4f438cb31)
+
+running 9 tests
+test no_preset_holds_a_machine_specific_path ... ok
+test every_non_implementer_member_switches_both_plugins_off ... ok
+test lead_json_registers_the_lead_mcp_server_with_arguments_the_binary_accepts ... ok
+test the_afk_skill_names_only_commands_that_exist ... ok
+test the_skill_names_only_commands_and_tools_that_exist ... ok
+test an_unknown_shape_is_a_usage_error_that_names_the_shapes ... ok
+test without_a_name_the_six_shapes_are_listed ... ok
+test a_named_shape_prints_its_rules_and_a_spec_skeleton_that_parses ... ok
+test every_preset_is_a_valid_spec ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.68s
+

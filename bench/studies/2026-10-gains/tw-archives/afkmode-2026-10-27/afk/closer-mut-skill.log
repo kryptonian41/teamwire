@@ -1,0 +1,32 @@
+## K1 AFK file not rendered  1 file changed, 3 insertions(+), 2 deletions(-)
+-        let afk = skill::stamp(AFK_SKILL_TEXT)
++        let _afk = skill::stamp(AFK_SKILL_TEXT)
+-            (format!("{PLUGIN_DIR}/skills/afk/SKILL.md"), afk),
++            // closer: afk render removed
+test lead_setup::plugin::tests::the_seven_files_name_the_binary_and_the_hook ... FAILED
+test result: FAILED. 27 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p teamwire-harness-claude --lib`
+test a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin ... FAILED
+test install_writes_the_afk_skill_as_a_second_stamped_skill ... FAILED
+test a_plugin_without_the_afk_skill_or_with_an_edited_one_is_a_problem ... FAILED
+test result: FAILED. 16 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+error: test failed, to rerun pass `-p teamwire-harness-claude --test lead_setup`
+error: 2 targets failed:
+pointer: 13:For a run the user will not be present for, use `/teamwire:afk`.
+## K2 pointer line deleted  1 file changed, 1 deletion(-)
+test the_main_skill_points_at_the_afk_skill ... FAILED
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.96s
+error: test failed, to rerun pass `-p teamwire-cli --test preset`
+error: 1 target failed:
+## K3 heading Risks renamed  1 file changed, 1 insertion(+), 1 deletion(-)
+test the_afk_skill_lists_the_eight_report_headings ... FAILED
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+error: test failed, to rerun pass `-p teamwire-cli --test preset`
+error: 1 target failed:
+## K4 a command that does not exist  1 file changed, 1 insertion(+), 1 deletion(-)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.91s
+## K4b a top-level command that does not exist  1 file changed, 1 insertion(+), 1 deletion(-)
+test the_afk_skill_names_only_commands_and_tools_that_exist ... FAILED
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+error: test failed, to rerun pass `-p teamwire-cli --test preset`
+error: 1 target failed:

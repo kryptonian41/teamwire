@@ -1,0 +1,28 @@
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-core)
+   Compiling teamwire-platform v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-platform)
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/tests/fakes)
+   Compiling teamwire-harness-claude v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-harness-claude)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.66s
+     Running tests/lead_setup.rs (/private/tmp/claude-501/bench-target/debug/deps/lead_setup-431ed5fb08f21294)
+
+running 17 tests
+test a_missing_claude_is_refused_before_the_files_are_written ... ok
+test a_home_that_is_not_the_default_reaches_the_server_and_the_hook ... ok
+test uninstall_with_nothing_installed_plans_nothing_and_refuses_what_is_not_ours ... ok
+test a_foreign_old_entry_is_refused_without_its_secrets_unless_forced ... ok
+test an_edited_old_skill_is_refused_before_anything_is_written_unless_forced ... ok
+test uninstall_also_removes_the_old_setup_and_keeps_the_users_other_files ... ok
+test claude_files_that_are_not_json_are_an_error_not_an_empty_config ... ok
+test a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin ... ok
+test a_failure_partway_names_what_was_done_and_what_failed ... ok
+test uninstall_removes_the_plugin_the_marketplace_and_the_files ... ok
+test the_old_skill_and_entry_are_removed_after_the_plugin_is_in_place ... ok
+test a_current_setup_plans_nothing_and_does_not_start_claude ... ok
+test files_that_are_current_but_not_loaded_by_claude_still_update_the_plugin ... ok
+test a_disabled_plugin_is_enabled ... ok
+test a_marketplace_from_another_source_is_refused_unless_forced ... ok
+test plugin_problems_name_what_is_missing_stale_or_off ... ok
+test a_new_binary_rewrites_the_files_and_updates_the_marketplace_and_the_plugin ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+

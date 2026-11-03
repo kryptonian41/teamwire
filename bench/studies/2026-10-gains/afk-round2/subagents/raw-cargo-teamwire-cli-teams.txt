@@ -1,0 +1,32 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-psebrrut/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.28s
+     Running tests/teams.rs (/private/tmp/claude-501/bench-target/debug/deps/teams-ff0297e0b5eebb1c)
+
+running 4 tests
+test an_afk_team_is_marked_in_text_and_carries_its_budget_in_json ... FAILED
+test a_send_to_a_quiet_member_or_an_unknown_team_is_refused ... ok
+test teams_lists_every_team_with_how_to_address_it ... ok
+test a_member_sends_to_another_team_and_the_copy_is_stored_there ... ok
+
+failures:
+
+---- an_afk_team_is_marked_in_text_and_carries_its_budget_in_json stdout ----
+
+thread 'an_afk_team_is_marked_in_text_and_carries_its_budget_in_json' (177109176) panicked at crates/teamwire-cli/tests/teams.rs:185:5:
+alpha (open) Team alpha: address as lead@alpha or <role>@alpha
+  api implementer started gen 1 [typed] from members notice,finding,question,answer: the api
+beta (open afk) Team beta: address as lead@beta or <role>@beta
+  db implementer started gen 1 [typed] from members notice,finding,question,answer: the db
+  rev reviewer started gen 1 [typed] from members none (lead only): the rev
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    an_afk_team_is_marked_in_text_and_carries_its_budget_in_json
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+error: test failed, to rerun pass `-p teamwire-cli --test teams`
+error: 1 target failed:
+    `-p teamwire-cli --test teams`

@@ -1,0 +1,1 @@
+{"team":"afkmode","children":[{"role":"rev_stophold","title":"Review the stop hold","kind":"reviewer","mode":"pane","cwd":"/private/tmp/claude-501/bnruns/bnei8xdqkf/clone","model":"opus","effort":"xhigh","plugins":{"claude-mem@thedotmack":false},"deadline_s":2700,"task_file":"/private/tmp/claude-501/bnruns/bnei8xdqkf/twhome/teams/afkmode/afk/briefs/rev_stophold.md"}]}

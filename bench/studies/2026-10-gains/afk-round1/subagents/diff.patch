@@ -1,0 +1,3636 @@
+diff --git a/README.md b/README.md
+index e1f64d1..b3246e0 100644
+--- a/README.md
++++ b/README.md
+@@ -210,6 +210,16 @@ A minimal spec with one implementer looks like this:
+ }
+ ```
+ 
++## AFK runs
++
++To leave a task running while you are away, start Claude Code with
++`claude --permission-mode bypassPermissions` and type
++`/teamwire:afk <task>`. The lead opens one team with `teamwire afk start`
++(default budget 8 hours), decides every open question itself instead of
++asking you, and ends with a local branch and a report, `afk/REPORT.md`, in
++the team's archive. It never pushes. Keep the lid open and the machine on
++power. [ADR 0025](docs/adr/0025-afk-runs.md) has the design.
++
+ ## Team shapes
+ 
+ `teamwire preset <name>` prints the rules and a spec skeleton for each shape.
+diff --git a/crates/teamwire-cli/src/args.rs b/crates/teamwire-cli/src/args.rs
+index 65041b0..51e99c1 100644
+--- a/crates/teamwire-cli/src/args.rs
++++ b/crates/teamwire-cli/src/args.rs
+@@ -35,6 +35,8 @@ pub(crate) struct Global {
+ pub(crate) enum Command {
+     /// Validate a team spec, then start its members.
+     Launch(LaunchArgs),
++    /// AFK runs: one team that works on one task while the user is away.
++    Afk(AfkArgs),
+     /// Resume the lead and the members of a team whose sessions are gone.
+     Reopen(ReopenArgs),
+     /// Print one line when something needs the lead, until the team completes.
+@@ -102,6 +104,29 @@ pub(crate) struct LaunchArgs {
+     pub(crate) spec: Option<PathBuf>,
+ }
+ 
++#[derive(Args)]
++pub(crate) struct AfkArgs {
++    #[command(subcommand)]
++    pub(crate) action: AfkCommand,
++}
++
++#[derive(Subcommand)]
++pub(crate) enum AfkCommand {
++    /// Create the AFK team with no members, copy the task and take the sleep hold.
++    Start {
++        #[arg(long, value_name = "NAME")]
++        team: String,
++        #[arg(long, value_name = "TITLE")]
++        title: String,
++        /// The task, copied byte for byte to the team's afk/task.md.
++        #[arg(long, value_name = "FILE")]
++        task: PathBuf,
++        /// Wall-clock budget, such as 8h, 90m or 1h30m.
++        #[arg(long, value_name = "DURATION", default_value = "8h")]
++        budget: String,
++    },
++}
++
+ #[derive(Args)]
+ pub(crate) struct ReopenArgs {
+     pub(crate) team: String,
+diff --git a/crates/teamwire-cli/src/cmd/afk.rs b/crates/teamwire-cli/src/cmd/afk.rs
+new file mode 100644
+index 0000000..7a7aebe
+--- /dev/null
++++ b/crates/teamwire-cli/src/cmd/afk.rs
+@@ -0,0 +1,142 @@
++//! `teamwire afk start`: the AFK run's team, made before any member, so the
++//! sleep hold covers planning too (design 2026-10-19-afk-mode, 5.2).
++
++use std::path::PathBuf;
++use std::process::ExitCode;
++use std::time::Duration;
++
++use teamwire_core::Config;
++use teamwire_launch::{SpecError, ValidateEnv, afk_check, afk_start};
++
++use crate::cmd::doctor::{Level, inputs_here, launch_checks};
++use crate::cmd::metrics::parse_duration;
++use crate::cmd::send::refuse_member;
++use crate::wiring::Wiring;
++use crate::{AfkArgs, AfkCommand, Global};
++
++const REFUSED: u8 = 1;
++
++fn refuse(errors: &[SpecError]) -> ExitCode {
++    refuse_after(errors, true)
++}
++
++/// `nothing_made` is false once the team exists, so the user is not misled.
++#[expect(clippy::print_stderr, reason = "the binary reports refusals on stderr")]
++fn refuse_after(errors: &[SpecError], nothing_made: bool) -> ExitCode {
++    for e in errors {
++        eprintln!("refused: {}: {}", e.code, e.message);
++    }
++    if nothing_made {
++        eprintln!("nothing was created");
++    }
++    ExitCode::from(REFUSED)
++}
++
++fn one(code: &str, message: String) -> ExitCode {
++    refuse(&[SpecError {
++        role: None,
++        field: None,
++        code: code.to_owned(),
++        message,
++    }])
++}
++
++pub(crate) fn run(args: &AfkArgs, global: &Global, wiring: &Wiring) -> ExitCode {
++    match &args.action {
++        AfkCommand::Start {
++            team,
++            title,
++            task,
++            budget,
++        } => start(team, title, task, budget, global, wiring),
++    }
++}
++
++#[expect(
++    clippy::print_stdout,
++    clippy::print_stderr,
++    reason = "the binary reports on stdout and stderr"
++)]
++fn start(
++    team: &str,
++    title: &str,
++    task: &PathBuf,
++    budget: &str,
++    global: &Global,
++    wiring: &Wiring,
++) -> ExitCode {
++    if let Some(code) = refuse_member("afk start") {
++        return code;
++    }
++    let budget = match parse_duration(budget) {
++        Ok(d) if d > Duration::ZERO => d,
++        Ok(_) => {
++            return one(
++                "bad_budget",
++                "the budget must be longer than zero".to_owned(),
++            );
++        }
++        Err(e) => return one("bad_budget", e),
++    };
++    let (inputs, _) = match inputs_here("afk start", global, wiring) {
++        Ok(found) => found,
++        Err(code) => return code,
++    };
++    let config = Config::default();
++    let env = ValidateEnv {
++        home: &inputs.home,
++        registry: &wiring.registry,
++        platform: &*wiring.platform,
++        clock: &wiring.clock,
++        config: &config,
++        lead_harness: wiring.lead_harness.clone(),
++        lead_host: wiring.lead_host.clone(),
++        user_home: std::env::var_os("HOME").map(PathBuf::from),
++        teamwire_bin: std::env::current_exe().unwrap_or_else(|_| PathBuf::from("teamwire")),
++    };
++    let plan = match afk_check(&env, team, title) {
++        Ok(plan) => plan,
++        Err(errors) => return refuse(&errors),
++    };
++    // Read before anything is made, so a missing task file creates nothing.
++    let text = match std::fs::read(task) {
++        Ok(text) if !text.is_empty() => text,
++        Ok(_) => return one("bad_task", format!("{} is empty", task.display())),
++        Err(e) => return one("bad_task", format!("cannot read {}: {e}", task.display())),
++    };
++    let checks = launch_checks(&inputs);
++    let failed: Vec<SpecError> = checks
++        .iter()
++        .filter(|c| c.level == Level::Fail)
++        .map(|c| SpecError {
++            role: None,
++            field: None,
++            code: "doctor_failed".to_owned(),
++            message: format!("{}: {}", c.name, c.detail),
++        })
++        .collect();
++    if !failed.is_empty() {
++        return refuse(&failed);
++    }
++    for c in checks.iter().filter(|c| c.level == Level::Warn) {
++        eprintln!("warning: {}: {}", c.name, c.detail);
++    }
++    let started = match afk_start(&env, &plan, &text, budget) {
++        Ok(started) => started,
++        Err(errors) => {
++            let made = errors.iter().any(|e| e.code == "store_error");
++            return refuse_after(&errors, !made);
++        }
++    };
++    for w in &started.warnings {
++        eprintln!("warning: {w}");
++    }
++    println!("team {}: AFK run started with no members", plan.team);
++    println!("afk directory: {}", started.afk_dir.display());
++    println!("report: {}", started.report.display());
++    println!("budget ends at {}", started.budget_ends_at);
++    println!(
++        "keep the lid open and the machine on power: a closed lid still sleeps a Mac, even with the sleep hold"
++    );
++    ExitCode::SUCCESS
++}
+diff --git a/crates/teamwire-cli/src/cmd/doctor.rs b/crates/teamwire-cli/src/cmd/doctor.rs
+index bf6386a..5eb8f5e 100644
+--- a/crates/teamwire-cli/src/cmd/doctor.rs
++++ b/crates/teamwire-cli/src/cmd/doctor.rs
+@@ -633,6 +633,28 @@ fn lead_setup_checks(inputs: &Inputs<'_>) -> Vec<Check> {
+ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
+     let mut checks = disk_checks(inputs);
+     checks.extend(database_checks(inputs));
++    checks.extend(tool_checks(inputs));
++    checks
++}
++
++/// The checks a launch from here needs: disk, host, harness, plugin and
++/// `.worktrees/`. The per-team database checks are left out, because another
++/// team's broken database does not stop this launch. No host is a `FAIL`
++/// here, since a launch with no host cannot start a member.
++pub(crate) fn launch_checks(inputs: &Inputs<'_>) -> Vec<Check> {
++    let mut checks = disk_checks(inputs);
++    if inputs.host == Host::None {
++        checks.push(Check::fail(
++            "host",
++            "no herdr pane or tmux session: members cannot be started from here",
++        ));
++    }
++    checks.extend(tool_checks(inputs));
++    checks
++}
++
++fn tool_checks(inputs: &Inputs<'_>) -> Vec<Check> {
++    let mut checks = Vec::new();
+     if inputs.host == Host::Herdr {
+         checks.push(herdr_hook_check(inputs));
+     }
+@@ -661,11 +683,14 @@ fn say(text: &str) {
+     print!("{text}");
+ }
+ 
+-pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
+-    let home = match home_or_refuse("doctor", global) {
+-        Ok(home) => home,
+-        Err(code) => return code,
+-    };
++/// The inputs for a check run from this process: its environment, its
++/// working directory and `wiring`. `verb` names the command in a refusal.
++pub(crate) fn inputs_here<'a>(
++    verb: &str,
++    global: &Global,
++    wiring: &'a Wiring,
++) -> Result<(Inputs<'a>, HostPick), ExitCode> {
++    let home = home_or_refuse(verb, global)?;
+     let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+     let lead_entry = wanted_entry(global);
+     let pick = pick_host(
+@@ -692,6 +717,14 @@ pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
+             .filter_map(|(k, _)| k.into_string().ok())
+             .collect(),
+     };
++    Ok((inputs, pick))
++}
++
++pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
++    let (inputs, pick) = match inputs_here("doctor", global, wiring) {
++        Ok(found) => found,
++        Err(code) => return code,
++    };
+     let mut checks = diagnose(&inputs);
+     // With no host, `binary_checks` already says so.
+     if inputs.host != Host::None {
+diff --git a/crates/teamwire-cli/src/cmd/hook.rs b/crates/teamwire-cli/src/cmd/hook.rs
+index 50dbe75..8b62fa0 100644
+--- a/crates/teamwire-cli/src/cmd/hook.rs
++++ b/crates/teamwire-cli/src/cmd/hook.rs
+@@ -160,8 +160,8 @@ fn same_bytes(a: &[u8; 32], b: &[u8; 32]) -> bool {
+ }
+ 
+ /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
+-/// team that has working members and no running watch. It reads stores and
+-/// writes nothing.
++/// team that has working members and no running watch, and each AFK team
++/// when nothing will wake the lead. It reads stores and writes nothing.
+ fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
+     // A member never runs this hook; the plugin is also switched off for it.
+     if std::env::var_os("TEAMWIRE_TEAM").is_some() {
+@@ -188,6 +188,8 @@ fn lead_stop_in(
+         Some(id) => HarnessId::parse(id).ok()?,
+         None => claude_harness_id(),
+     };
++    // Only a Claude Code lead runs AFK teams; a Codex lead keeps the watch hold alone.
++    let afk = id == claude_harness_id();
+     let harness = wiring.registry.harness(&id).ok()?;
+     let turn = harness.parse_turn_end(&input).ok()?;
+     if turn.subagent || turn.hold_already_active {
+@@ -196,18 +198,25 @@ fn lead_stop_in(
+     let platform = wiring.platform.clone();
+     let clock = wiring.clock;
+     let at = home.to_path_buf();
+-    let teams = within(LEAD_STOP_BUDGET, move || {
+-        teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
++    let (teams, afk_notes) = within(LEAD_STOP_BUDGET, move || {
++        let teams = teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock);
++        let afk_notes = if afk {
++            teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock)
++        } else {
++            Vec::new()
++        };
++        (teams, afk_notes)
+     })?;
+-    if teams.is_empty() {
+-        return None;
+-    }
+     let note: Vec<String> = teams
+         .iter()
+         .map(|team| {
+             teamwire_report::watch_missing_note(team, lead_reads_watch_lines(home, team, wiring))
+         })
++        .chain(afk_notes)
+         .collect();
++    if note.is_empty() {
++        return None;
++    }
+     Some(harness.hold_reply(&note.join("\n")))
+ }
+ 
+diff --git a/crates/teamwire-cli/src/cmd/metrics.rs b/crates/teamwire-cli/src/cmd/metrics.rs
+index 318a4f6..c41f47d 100644
+--- a/crates/teamwire-cli/src/cmd/metrics.rs
++++ b/crates/teamwire-cli/src/cmd/metrics.rs
+@@ -71,20 +71,32 @@ fn show(
+     ExitCode::SUCCESS
+ }
+ 
+-/// `30s`, `15m`, `2h` or `1d`.
+-fn parse_duration(text: &str) -> Result<Duration, String> {
++/// `30s`, `15m`, `2h`, `1d`, or parts joined, such as `1h30m`.
++pub(crate) fn parse_duration(text: &str) -> Result<Duration, String> {
+     let bad = || format!("invalid duration {text:?}: write a number and a unit, such as 30m or 2h");
+-    let split = text.find(|c: char| !c.is_ascii_digit()).ok_or_else(bad)?;
+-    let (number, unit) = text.split_at(split);
+-    let n: u64 = number.parse().map_err(|_| bad())?;
+-    let seconds = match unit {
+-        "s" => 1,
+-        "m" => 60,
+-        "h" => 3600,
+-        "d" => 86_400,
+-        _ => return Err(bad()),
+-    };
+-    Ok(Duration::from_secs(n.saturating_mul(seconds)))
++    let mut rest = text;
++    let mut total: u64 = 0;
++    loop {
++        let split = rest.find(|c: char| !c.is_ascii_digit()).ok_or_else(bad)?;
++        let (number, tail) = rest.split_at(split);
++        let n: u64 = number.parse().map_err(|_| bad())?;
++        let unit_len = tail
++            .find(|c: char| c.is_ascii_digit())
++            .unwrap_or(tail.len());
++        let (unit, next) = tail.split_at(unit_len);
++        let seconds = match unit {
++            "s" => 1,
++            "m" => 60,
++            "h" => 3600,
++            "d" => 86_400,
++            _ => return Err(bad()),
++        };
++        total = total.saturating_add(n.saturating_mul(seconds));
++        if next.is_empty() {
++            return Ok(Duration::from_secs(total));
++        }
++        rest = next;
++    }
+ }
+ 
+ /// One line per value: `name{label=value,...} number unit`.
+diff --git a/crates/teamwire-cli/src/cmd/status.rs b/crates/teamwire-cli/src/cmd/status.rs
+index aefb3f1..92ae522 100644
+--- a/crates/teamwire-cli/src/cmd/status.rs
++++ b/crates/teamwire-cli/src/cmd/status.rs
+@@ -5,7 +5,7 @@ use std::process::ExitCode;
+ 
+ use teamwire_core::{Config, Liveness, Recipient, Role, TeamName};
+ use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
+-use teamwire_watch::{StatusView, UndeliveredResult, WatchState};
++use teamwire_watch::{AfkView, StatusView, UndeliveredResult, WatchState};
+ 
+ use crate::cmd::send::{carries_member_identity, home_or_refuse};
+ use crate::wiring::Wiring;
+@@ -91,6 +91,24 @@ pub(crate) fn results_block(results: &[UndeliveredResult]) -> Vec<String> {
+     out
+ }
+ 
++/// The AFK run's one line: when the budget ends and how much is left, or
++/// when it was spent, and how many decisions the log holds.
++fn afk_line(afk: &AfkView) -> String {
++    let decisions = match afk.decisions {
++        1 => "1 decision".to_owned(),
++        n => format!("{n} decisions"),
++    };
++    if afk.spent {
++        format!("afk: budget spent at {}, {decisions}", afk.budget_ends_at)
++    } else {
++        format!(
++            "afk: budget ends {}, {} left, {decisions}",
++            afk.budget_ends_at,
++            minutes(afk.seconds_left)
++        )
++    }
++}
++
+ fn render(view: &StatusView) -> String {
+     let mut out = Vec::new();
+     let name = view.team.as_ref().map_or("?", TeamName::as_str);
+@@ -121,6 +139,9 @@ fn render(view: &StatusView) -> String {
+             ),
+         },
+     );
++    if let Some(afk) = &view.afk {
++        out.push(afk_line(afk));
++    }
+     out.push("members:".to_owned());
+     for m in &view.members {
+         let result = m.result.map_or("-", |r| r.as_str());
+diff --git a/crates/teamwire-cli/src/cmd/teams.rs b/crates/teamwire-cli/src/cmd/teams.rs
+index 4cbb039..a435075 100644
+--- a/crates/teamwire-cli/src/cmd/teams.rs
++++ b/crates/teamwire-cli/src/cmd/teams.rs
+@@ -4,14 +4,38 @@
+ 
+ use std::process::ExitCode;
+ 
++use serde::Serialize;
+ use serde_json::json;
+-use teamwire_msg::{TeamEntry, describe};
++use teamwire_core::Timestamp;
++use teamwire_msg::{SendError, TeamEntry, describe};
+ 
+ use crate::cmd::members::render;
+ use crate::cmd::send::{STORE, fail, home_or_refuse, say, warn, with_read_ctx};
+ use crate::wiring::Wiring;
+ use crate::{Global, TeamsArgs};
+ 
++/// One team as `teams --json` lists it: the roster entry, and when the
++/// budget ends for an AFK run (`null` for any other team).
++#[derive(Serialize)]
++struct Listed {
++    #[serde(flatten)]
++    entry: TeamEntry,
++    afk_budget_ends_at: Option<Timestamp>,
++}
++
++#[expect(
++    clippy::redundant_closure_for_method_calls,
++    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
++)]
++fn listed(ctx: &teamwire_store::Ctx<'_>) -> Result<Listed, SendError> {
++    let entry = describe(ctx)?;
++    let row = ctx.store.read(|tx| tx.team())?;
++    Ok(Listed {
++        entry,
++        afk_budget_ends_at: row.and_then(|t| t.afk_budget_ends_at),
++    })
++}
++
+ pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCode {
+     let home = match home_or_refuse("teams", global) {
+         Ok(home) => home,
+@@ -21,10 +45,10 @@ pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCod
+         Ok(names) => names,
+         Err(e) => return fail("teams", &e.to_string(), STORE),
+     };
+-    let mut entries: Vec<TeamEntry> = Vec::new();
++    let mut entries: Vec<Listed> = Vec::new();
+     let mut code = ExitCode::SUCCESS;
+     for name in &names {
+-        match with_read_ctx(global, wiring, name, |ctx| describe(ctx)) {
++        match with_read_ctx(global, wiring, name, |ctx| listed(ctx)) {
+             Ok(Ok(entry)) => entries.push(entry),
+             Ok(Err(e)) => {
+                 warn(&format!("team {name} could not be read: {e}"));
+@@ -40,9 +64,18 @@ pub(crate) fn run(args: &TeamsArgs, global: &Global, wiring: &Wiring) -> ExitCod
+     if entries.is_empty() {
+         say("no teams\n");
+     }
+-    for entry in &entries {
++    for Listed {
++        entry,
++        afk_budget_ends_at,
++    } in &entries
++    {
++        let afk = if afk_budget_ends_at.is_some() {
++            " afk"
++        } else {
++            ""
++        };
+         say(&format!(
+-            "{} ({}) {}: address as lead@{} or <role>@{}\n",
++            "{} ({}){afk} {}: address as lead@{} or <role>@{}\n",
+             entry.name, entry.state, entry.title, entry.name, entry.name
+         ));
+         for member in &entry.members {
+diff --git a/crates/teamwire-cli/src/main.rs b/crates/teamwire-cli/src/main.rs
+index 68a1179..e621103 100644
+--- a/crates/teamwire-cli/src/main.rs
++++ b/crates/teamwire-cli/src/main.rs
+@@ -14,6 +14,7 @@ use clap::Parser;
+ 
+ mod cmd {
+     pub(crate) mod ack;
++    pub(crate) mod afk;
+     pub(crate) mod close;
+     pub(crate) mod doctor;
+     pub(crate) mod done;
+@@ -47,10 +48,10 @@ mod wiring;
+ const USAGE: u8 = 3;
+ 
+ pub(crate) use args::{
+-    AckArgs, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs, HookCommand,
+-    HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs,
+-    MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
+-    SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
++    AckArgs, AfkArgs, AfkCommand, Cli, CloseArgs, Command, DoneArgs, ExportArgs, Global, HookArgs,
++    HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs,
++    MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs,
++    ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+ };
+ 
+ fn main() -> ExitCode {
+@@ -67,6 +68,7 @@ fn main() -> ExitCode {
+     let global = &cli.global;
+     match &cli.command {
+         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
++        Command::Afk(a) => cmd::afk::run(a, global, &wiring),
+         Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
+         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
+         Command::Status(a) => cmd::status::run(a, global, &wiring),
+@@ -162,6 +164,7 @@ mod tests {
+         for line in [
+             "launch",
+             "launch --add --dry-run --spec s.json",
++            "afk start --team tw --title T --task t.md --budget 1h30m",
+             "watch tw --interval 5 --once",
+             "status",
+             "status tw --role api --json",
+diff --git a/crates/teamwire-cli/tests/afk.rs b/crates/teamwire-cli/tests/afk.rs
+new file mode 100644
+index 0000000..d2629a5
+--- /dev/null
++++ b/crates/teamwire-cli/tests/afk.rs
+@@ -0,0 +1,75 @@
++//! `teamwire afk start` through the real binary: the refusals that happen
++//! before anything is made. The success path, the hold and `--add` run on the
++//! in-process fakes in `crates/teamwire-launch/tests/afk.rs`, so no test here
++//! starts a real sleep hold.
++
++#![cfg(test)]
++use std::process::Output;
++
++use teamwire_fakes::{FakeHerdrEnv, TestHome};
++
++#[expect(
++    clippy::disallowed_methods,
++    reason = "these tests run the real teamwire binary"
++)]
++fn afk(home: &TestHome, session: Option<&str>, extra: &[&str]) -> Output {
++    let herdr = FakeHerdrEnv::new().unwrap();
++    let task = home.path().join("task-in.md");
++    std::fs::write(&task, "do it\n").unwrap();
++    let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
++    cmd.args(["afk", "start", "--team", "run", "--title", "AFK run"]);
++    if !extra.contains(&"--task") {
++        cmd.arg("--task").arg(&task);
++    }
++    cmd.args(extra)
++        .env_clear()
++        .envs(herdr.env())
++        .env("TEAMWIRE_HOME", home.path());
++    if let Some(s) = session {
++        cmd.env("CLAUDE_CODE_SESSION_ID", s);
++    }
++    cmd.output().unwrap()
++}
++
++/// The refusal code printed, and that no team directory was made.
++fn refused(out: &Output, home: &TestHome, code: &str) {
++    let err = String::from_utf8_lossy(&out.stderr);
++    assert_eq!(out.status.code(), Some(1), "{err}");
++    assert!(err.contains(&format!("refused: {code}:")), "{err}");
++    assert!(err.contains("nothing was created"), "{err}");
++    assert!(!home.path().join("teams").exists(), "{err}");
++}
++
++#[test]
++fn outside_a_lead_session_it_refuses() {
++    let home = TestHome::new().unwrap();
++    refused(&afk(&home, None, &[]), &home, "no_lead_session");
++}
++
++#[test]
++fn a_zero_or_garbage_budget_is_refused() {
++    let home = TestHome::new().unwrap();
++    for budget in ["0h", "soon", "8"] {
++        refused(
++            &afk(&home, Some("s1"), &["--budget", budget]),
++            &home,
++            "bad_budget",
++        );
++    }
++}
++
++#[test]
++fn a_failing_doctor_check_refuses_and_names_the_check() {
++    let home = TestHome::new().unwrap();
++    // No HERDR_ENV and no TMUX: no host, which a launch cannot work without.
++    let out = afk(&home, Some("s1"), &[]);
++    refused(&out, &home, "doctor_failed");
++    assert!(String::from_utf8_lossy(&out.stderr).contains("doctor_failed: host:"));
++}
++
++#[test]
++fn a_missing_task_file_is_refused() {
++    let home = TestHome::new().unwrap();
++    let out = afk(&home, Some("s1"), &["--task", "/nonexistent/task.md"]);
++    refused(&out, &home, "bad_task");
++}
+diff --git a/crates/teamwire-cli/tests/doctor.rs b/crates/teamwire-cli/tests/doctor.rs
+index 74f0b97..08da461 100644
+--- a/crates/teamwire-cli/tests/doctor.rs
++++ b/crates/teamwire-cli/tests/doctor.rs
+@@ -684,6 +684,26 @@ fn a_plugin_for_another_binary_or_a_disabled_one_fails() {
+     assert!(detail_of(&checks, "teamwire plugin").contains("run `teamwire install`"));
+ }
+ 
++#[test]
++fn a_missing_or_out_of_date_afk_skill_fails_the_plugin_check_like_the_main_skill() {
++    for skill in ["teamwire", "afk"] {
++        let bed = Bed::healthy();
++        let path = bed.plugin_root().join(format!("skills/{skill}/SKILL.md"));
++        std::fs::write(&path, "---\nname: x\n---\nan older text\n").unwrap();
++        let checks = bed.checks();
++        assert_eq!(failing(&checks), ["teamwire plugin"], "{skill}");
++        let detail = detail_of(&checks, "teamwire plugin");
++        assert!(detail.contains("another version"), "{skill}: {detail}");
++        assert!(
++            detail.contains("run `teamwire install`"),
++            "{skill}: {detail}"
++        );
++
++        std::fs::remove_file(&path).unwrap();
++        assert_eq!(failing(&bed.checks()), ["teamwire plugin"], "{skill}");
++    }
++}
++
+ #[test]
+ fn the_skill_and_entry_from_the_old_install_fail_and_name_install_as_the_fix() {
+     let bed = Bed::healthy();
+diff --git a/crates/teamwire-cli/tests/install.rs b/crates/teamwire-cli/tests/install.rs
+index 9bd14eb..467883e 100644
+--- a/crates/teamwire-cli/tests/install.rs
++++ b/crates/teamwire-cli/tests/install.rs
+@@ -250,6 +250,15 @@ fn install_registers_the_plugin_and_a_second_run_changes_nothing() {
+     );
+     let root = bed.installed_root().unwrap();
+     assert_eq!(mcp_command(&root), bed.binary("bin").display().to_string());
++    // Claude Code lists each `skills/<name>/SKILL.md` of the plugin as
++    // `/teamwire:<name>`.
++    for (dir, name) in [("teamwire", "teamwire"), ("afk", "afk")] {
++        let skill = std::fs::read_to_string(root.join(format!("skills/{dir}/SKILL.md"))).unwrap();
++        assert!(
++            skill.starts_with(&format!("---\nname: {name}\n")),
++            "{skill}"
++        );
++    }
+     let hooks = std::fs::read_to_string(root.join("hooks/hooks.json")).unwrap();
+     let home = bed.home.path().display().to_string();
+     assert!(
+diff --git a/crates/teamwire-cli/tests/lead_hook.rs b/crates/teamwire-cli/tests/lead_hook.rs
+index ddedb39..e26c39e 100644
+--- a/crates/teamwire-cli/tests/lead_hook.rs
++++ b/crates/teamwire-cli/tests/lead_hook.rs
+@@ -16,9 +16,14 @@ pub mod fixture;
+ 
+ use std::io::Write;
+ use std::process::{Command, Stdio};
++use std::time::Duration;
+ 
+ use fixture::{Fixture, MemberSetup};
+-use teamwire_core::{Clock, MemberKind, Mode, Pid, SessionId, SessionKind};
++use teamwire_core::{
++    Clock, HarnessId, HostId, LeadRoute, MemberKind, Mode, Pid, SessionId, SessionKind, TeamName,
++    Timestamp,
++};
++use teamwire_store::{NewTeam, Store};
+ 
+ struct Run {
+     code: i32,
+@@ -56,10 +61,14 @@ fn hook(fx: &Fixture, env: &[(&str, &str)], stdin: &str) -> Run {
+ }
+ 
+ fn hook_at(home: &std::path::Path, env: &[(&str, &str)], stdin: &str) -> Run {
++    hook_with(home, &["hook", "claude-lead-stop"], env, stdin)
++}
++
++fn hook_with(home: &std::path::Path, args: &[&str], env: &[(&str, &str)], stdin: &str) -> Run {
+     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire"));
+     cmd.arg("--home")
+         .arg(home)
+-        .args(["hook", "claude-lead-stop"])
++        .args(args)
+         .env_clear()
+         .env("PATH", "/usr/bin:/bin")
+         .stdin(Stdio::piped())
+@@ -218,3 +227,141 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
+     // process start and exit on a loaded machine.
+     assert!(waited < std::time::Duration::from_secs(8), "{waited:?}");
+ }
++
++/// An AFK team `name` led from `lead-1`, with no members, whose budget ends
++/// `ends_in` from now (the binary reads the real clock), or `ends_in` ago
++/// when `spent`.
++fn afk_team(home: &std::path::Path, name: &str, ends_in: Duration, spent: bool) -> Timestamp {
++    let now = teamwire_platform::SystemClock.now();
++    let ends = if spent {
++        Timestamp::from_unix_millis(now.unix_millis() - i64::try_from(ends_in.as_millis()).unwrap())
++            .unwrap()
++    } else {
++        now.checked_add(ends_in).unwrap()
++    };
++    let mut store = Store::open(home, &TeamName::parse(name).unwrap()).unwrap();
++    store
++        .write(|tx| {
++            tx.create_afk_team(
++                now,
++                &NewTeam {
++                    name: TeamName::parse(name).unwrap(),
++                    title: name.to_owned(),
++                    lead_harness: HarnessId::from_static("claude-code"),
++                    lead_host: HostId::from_static("herdr"),
++                    lead_route: LeadRoute::Sink,
++                    lead_session: Some((
++                        SessionId::parse("lead-1").unwrap(),
++                        SessionKind::Interactive,
++                    )),
++                },
++                ends,
++                &serde_json::Value::Null,
++            )
++            .map(|_| ())
++        })
++        .unwrap();
++    ends
++}
++
++fn afk_note(home: &std::path::Path, team: &str) -> String {
++    let dir = home.join("teams").join(team);
++    let dir = dir.display();
++    format!(
++        "[teamwire:{team}] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close {team}` once {dir}/afk/REPORT.md exists. If a command you started will wake you, stop again."
++    )
++}
++
++fn context(run: &Run) -> String {
++    let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
++    assert_eq!(reply["hookSpecificOutput"]["hookEventName"], "Stop");
++    reply["hookSpecificOutput"]["additionalContext"]
++        .as_str()
++        .unwrap()
++        .to_owned()
++}
++
++const HOURS_8: Duration = Duration::from_secs(8 * 3600);
++
++#[test]
++fn an_afk_team_with_nothing_to_wake_the_lead_holds_the_stop() {
++    let fx = Fixture::new();
++    afk_team(fx.home.path(), "beta", HOURS_8, false);
++    let run = hook(&fx, &[], &stop("lead-1", ""));
++    assert_eq!(run.code, 0);
++    assert_eq!(context(&run), afk_note(fx.home.path(), "beta"));
++}
++
++#[test]
++fn a_continued_stop_is_not_held_for_an_afk_team() {
++    let fx = Fixture::new();
++    afk_team(fx.home.path(), "beta", HOURS_8, false);
++    let run = hook(&fx, &[], &stop("lead-1", "").replace("false", "true"));
++    assert_eq!((run.code, run.out.as_str()), (0, ""));
++}
++
++#[test]
++fn the_watch_and_afk_notes_come_in_one_reply() {
++    let fx = team();
++    afk_team(fx.home.path(), "beta", HOURS_8, false);
++    let run = hook(&fx, &[], &stop("lead-1", ""));
++    assert_eq!(run.code, 0);
++    assert_eq!(
++        context(&run),
++        format!(
++            "[teamwire:alpha] no watch is running; start `teamwire watch alpha` with Monitor before you stop.\n{}",
++            afk_note(fx.home.path(), "beta")
++        )
++    );
++}
++
++#[test]
++fn a_running_watch_on_a_working_team_lets_the_afk_lead_stop() {
++    let mut fx = team();
++    afk_team(fx.home.path(), "beta", HOURS_8, false);
++    let at = teamwire_platform::SystemClock.now();
++    fx.store
++        .write(|tx| {
++            tx.take_watch_lease(at, Pid::new(std::process::id()), "host", |_| false)
++                .map(|_| ())
++        })
++        .unwrap();
++    let run = hook(&fx, &[], &stop("lead-1", ""));
++    assert_eq!((run.code, run.out.as_str()), (0, ""));
++}
++
++#[test]
++fn past_the_budget_the_afk_note_says_when_it_was_spent() {
++    let fx = Fixture::new();
++    let ends = afk_team(fx.home.path(), "beta", Duration::from_secs(60), true);
++    let run = hook(&fx, &[], &stop("lead-1", ""));
++    assert_eq!(run.code, 0);
++    let note = context(&run);
++    assert!(
++        note.starts_with(&format!(
++            "[teamwire:beta] budget spent at {ends}: AFK run: nobody will answer you"
++        )),
++        "{note}"
++    );
++}
++
++#[test]
++fn a_codex_lead_gets_no_afk_note() {
++    let fx = Fixture::new();
++    afk_team(fx.home.path(), "beta", HOURS_8, false);
++    let run = hook_with(
++        fx.home.path(),
++        &["hook", "lead-stop", "--harness", "codex"],
++        &[],
++        &stop("lead-1", ""),
++    );
++    assert_eq!((run.code, run.out.as_str()), (0, ""));
++    // The same command for a Claude Code lead holds, so the silence above is the gate.
++    let run = hook_with(
++        fx.home.path(),
++        &["hook", "lead-stop", "--harness", "claude-code"],
++        &[],
++        &stop("lead-1", ""),
++    );
++    assert_eq!(context(&run), afk_note(fx.home.path(), "beta"));
++}
+diff --git a/crates/teamwire-cli/tests/status.rs b/crates/teamwire-cli/tests/status.rs
+index f3368e1..e0a4ed0 100644
+--- a/crates/teamwire-cli/tests/status.rs
++++ b/crates/teamwire-cli/tests/status.rs
+@@ -53,6 +53,58 @@ fn team() -> Bed {
+     bed
+ }
+ 
++/// An AFK team with no member yet: the AFK line in text and the `afk`
++/// object in JSON. The binary runs on the real clock, and the fake clock
++/// that made the team starts in the past, so a one-hour budget is spent.
++#[test]
++fn an_afk_team_shows_its_budget_and_decisions() {
++    let hour = std::time::Duration::from_secs(3600);
++    let spent = Bed::afk(hour);
++    let dir = spent.home.path().join("teams").join("alpha").join("afk");
++    std::fs::create_dir_all(&dir).unwrap();
++    std::fs::write(dir.join("decisions.md"), "D1  x\nChose: y\nD2  z\n").unwrap();
++    let run = teamwire(&spent, &["status", "alpha"]);
++    assert_eq!(run.code, 0, "{}", run.err);
++    assert!(
++        run.out
++            .lines()
++            .any(|l| l.starts_with("afk: budget spent at ") && l.ends_with("Z, 2 decisions")),
++        "{}",
++        run.out
++    );
++    let run = teamwire(&spent, &["status", "alpha", "--json"]);
++    let view: serde_json::Value = serde_json::from_str(&run.out).unwrap();
++    assert_eq!(view["members"], serde_json::json!([]));
++    assert_eq!(view["afk"]["spent"], true);
++    assert_eq!(view["afk"]["seconds_left"], 0);
++    assert_eq!(view["afk"]["decisions"], 2);
++    assert!(view["afk"]["budget_ends_at"].is_string(), "{view}");
++
++    let running = Bed::afk(100 * 365 * 24 * hour);
++    let run = teamwire(&running, &["status", "alpha"]);
++    assert!(
++        run.out
++            .lines()
++            .any(|l| l.starts_with("afk: budget ends ") && l.ends_with(" left, 0 decisions")),
++        "{}",
++        run.out
++    );
++    let run = teamwire(&running, &["status", "alpha", "--json"]);
++    let view: serde_json::Value = serde_json::from_str(&run.out).unwrap();
++    assert_eq!(view["afk"]["spent"], false);
++    assert!(view["afk"]["seconds_left"].as_u64().unwrap() > 0, "{view}");
++}
++
++#[test]
++fn a_team_that_is_not_an_afk_run_has_no_afk_line_and_a_null_afk() {
++    let bed = team();
++    let run = teamwire(&bed, &["status", "alpha"]);
++    assert!(!run.out.contains("afk:"), "{}", run.out);
++    let run = teamwire(&bed, &["status", "alpha", "--json"]);
++    let view: serde_json::Value = serde_json::from_str(&run.out).unwrap();
++    assert_eq!(view["afk"], serde_json::Value::Null);
++}
++
+ /// The size of every file under the home, except `SQLite`'s shared-memory
+ /// index, which changes whenever any reader attaches.
+ fn sizes(bed: &Bed) -> BTreeMap<String, Vec<u8>> {
+diff --git a/crates/teamwire-cli/tests/teams.rs b/crates/teamwire-cli/tests/teams.rs
+index 95c8a5d..2505f84 100644
+--- a/crates/teamwire-cli/tests/teams.rs
++++ b/crates/teamwire-cli/tests/teams.rs
+@@ -131,6 +131,48 @@ fn text(bytes: &[u8]) -> String {
+     String::from_utf8_lossy(bytes).into_owned()
+ }
+ 
++#[test]
++fn an_afk_team_is_marked_and_carries_its_budget_end() {
++    let rig = Rig::new();
++    let team = TeamName::parse("gamma").unwrap();
++    let ends = Timestamp::from_unix_millis(1_790_028_800_000).unwrap();
++    let mut store = Store::open(rig.home.path(), &team).unwrap();
++    store
++        .write(|tx| {
++            tx.create_afk_team(
++                at(),
++                &NewTeam {
++                    name: team.clone(),
++                    title: "Team gamma".to_owned(),
++                    lead_harness: HarnessId::from_static("claude-code"),
++                    lead_host: HostId::from_static("herdr"),
++                    lead_route: LeadRoute::Sink,
++                    lead_session: None,
++                },
++                ends,
++                &Value::Null,
++            )?;
++            Ok(())
++        })
++        .unwrap();
++
++    let out = rig.run(&["teams"], None);
++    let stdout = text(&out.stdout);
++    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
++    assert!(
++        stdout.contains("gamma (open) afk Team gamma: address as"),
++        "{stdout}"
++    );
++    assert!(stdout.contains("alpha (open) Team alpha"), "{stdout}");
++
++    let out = rig.run(&["teams", "--json"], None);
++    let json: Value = serde_json::from_slice(&out.stdout).unwrap();
++    assert_eq!(json["teams"][0]["afk_budget_ends_at"], Value::Null);
++    assert_eq!(json["teams"][2]["name"], "gamma");
++    assert_eq!(json["teams"][2]["afk_budget_ends_at"], ends.to_string());
++    assert_eq!(json["teams"][2]["members"], serde_json::json!([]));
++}
++
+ #[test]
+ fn teams_lists_every_team_with_how_to_address_it() {
+     let rig = Rig::new();
+diff --git a/crates/teamwire-close/src/afk_report.rs b/crates/teamwire-close/src/afk_report.rs
+new file mode 100644
+index 0000000..0f209c9
+--- /dev/null
++++ b/crates/teamwire-close/src/afk_report.rs
+@@ -0,0 +1,139 @@
++//! The AFK report check: an AFK team closes only once its reporter has
++//! written `afk/REPORT.md` with every heading the AFK skill asks for, so a
++//! run never ends without the one thing the absent user reads.
++//!
++//! Never: write anything, or judge what is under a heading. Order is not
++//! checked: a report with every section in another order still tells the
++//! user everything, and refusing it would only cost another reporter turn.
++
++use std::path::Path;
++
++/// The headings of the AFK skill's "Report and close" section.
++pub const AFK_REPORT_HEADINGS: [&str; 8] = [
++    "What you asked",
++    "What I understood",
++    "The result",
++    "Verified",
++    "Decisions made for you",
++    "Not done, and why",
++    "Risks",
++    "Cost",
++];
++
++/// The refusal code close prints for a missing or short report.
++pub const AFK_REPORT_INCOMPLETE: &str = "afk_report_incomplete";
++
++/// Why close must refuse the AFK team whose directory is `team_dir`, or
++/// `None` when its report has every heading.
++pub(crate) fn refusal(team_dir: &Path) -> Option<String> {
++    let path = team_dir.join("afk").join("REPORT.md");
++    let text = match std::fs::read_to_string(&path) {
++        Ok(text) => text,
++        Err(e) => {
++            let why = if e.kind() == std::io::ErrorKind::NotFound {
++                "is missing".to_owned()
++            } else {
++                format!("cannot be read ({e})")
++            };
++            return Some(format!(
++                "{AFK_REPORT_INCOMPLETE}: {} {why}; the reporter must write it with the headings: {}",
++                path.display(),
++                AFK_REPORT_HEADINGS.join(", ")
++            ));
++        }
++    };
++    let missing = missing_headings(&text);
++    (!missing.is_empty()).then(|| {
++        format!(
++            "{AFK_REPORT_INCOMPLETE}: {} lacks the headings: {}",
++            path.display(),
++            missing.join(", ")
++        )
++    })
++}
++
++/// The required headings `text` has no heading line for, in the skill's order.
++pub(crate) fn missing_headings(text: &str) -> Vec<&'static str> {
++    let found: Vec<&str> = text.lines().filter_map(heading_text).collect();
++    AFK_REPORT_HEADINGS
++        .into_iter()
++        .filter(|want| !found.iter().any(|got| got.eq_ignore_ascii_case(want)))
++        .collect()
++}
++
++/// The text of a Markdown ATX heading line (`#` to `######`, then a space),
++/// without a leading `1.`, `**`/`*` emphasis or a trailing `:`.
++fn heading_text(line: &str) -> Option<&str> {
++    let line = line.trim_start();
++    let hashes = line.len() - line.trim_start_matches('#').len();
++    if !(1..=6).contains(&hashes) {
++        return None;
++    }
++    let rest = &line[hashes..];
++    if !rest.starts_with([' ', '\t']) {
++        return None;
++    }
++    let decoration = |c: char| c == '*' || c == ':' || c.is_whitespace();
++    let rest = rest.trim_matches(decoration);
++    let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
++    let rest = match rest[digits..].strip_prefix(['.', ')']) {
++        Some(after) if digits > 0 => after,
++        _ => rest,
++    };
++    Some(rest.trim_matches(decoration))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn a_heading_matches_with_number_emphasis_case_and_colon() {
++        for line in [
++            "## What you asked",
++            "# what you asked",
++            "### 1. What you asked",
++            "## **What you asked**",
++            "## 1. **What you asked**:",
++            "## **1. What you asked:**",
++            "  ##   What you asked  ",
++            "###### *What you asked*",
++        ] {
++            assert_eq!(
++                heading_text(line).map(str::to_ascii_lowercase).as_deref(),
++                Some("what you asked"),
++                "{line}"
++            );
++        }
++    }
++
++    #[test]
++    fn a_line_that_is_not_a_heading_does_not_count() {
++        for line in [
++            "What you asked",
++            "**What you asked**",
++            "1. **What you asked**: the task",
++            "##What you asked",
++            "####### What you asked",
++        ] {
++            assert_eq!(missing_headings(line).len(), 8, "{line}");
++        }
++        // A heading with more words is another heading.
++        assert!(missing_headings("## What you asked for").contains(&"What you asked"));
++    }
++
++    #[test]
++    fn missing_headings_are_named_in_the_skill_order() {
++        let text = "## The result\n## Cost\n## What you asked\n";
++        assert_eq!(
++            missing_headings(text),
++            vec![
++                "What I understood",
++                "Verified",
++                "Decisions made for you",
++                "Not done, and why",
++                "Risks"
++            ]
++        );
++    }
++}
+diff --git a/crates/teamwire-close/src/lib.rs b/crates/teamwire-close/src/lib.rs
+index e5ce6c8..ca99fa2 100644
+--- a/crates/teamwire-close/src/lib.rs
++++ b/crates/teamwire-close/src/lib.rs
+@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
+ use teamwire_core::{EventType, Role, TeamName};
+ use teamwire_store::Ctx;
+ 
++mod afk_report;
+ mod archive;
+ mod delete;
+ mod empty;
+@@ -26,6 +27,7 @@ mod plan;
+ mod remove;
+ mod team_close;
+ 
++pub use afk_report::{AFK_REPORT_HEADINGS, AFK_REPORT_INCOMPLETE};
+ pub use plan::plan_close_with;
+ 
+ /// The whole team, or one member.
+diff --git a/crates/teamwire-close/src/plan.rs b/crates/teamwire-close/src/plan.rs
+index 191fa3e..bede4ec 100644
+--- a/crates/teamwire-close/src/plan.rs
++++ b/crates/teamwire-close/src/plan.rs
+@@ -70,6 +70,10 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
+         return plan;
+     }
+     if team.state == TeamState::Open {
++        if team.afk_budget_ends_at.is_some() {
++            let dir = ctx.home.join("teams").join(team.name.as_str());
++            plan.refusals.extend(crate::afk_report::refusal(&dir));
++        }
+         plan.refusals
+             .extend(facts::member_refusals(ctx, &team.name, members));
+         let checked = live(members).count();
+diff --git a/crates/teamwire-close/tests/afk_report.rs b/crates/teamwire-close/tests/afk_report.rs
+new file mode 100644
+index 0000000..80db725
+--- /dev/null
++++ b/crates/teamwire-close/tests/afk_report.rs
+@@ -0,0 +1,129 @@
++//! Close of an AFK run's team waits for `afk/REPORT.md` with every heading
++//! of the AFK skill; a `--role` removal and a team that is not an AFK run do
++//! not.
++#![expect(
++    clippy::format_collect,
++    clippy::format_push_string,
++    reason = "a test builds a small report text; speed does not matter"
++)]
++
++#[path = "support/rig.rs"]
++pub mod rig;
++
++use rig::Rig;
++use teamwire_close::{
++    AFK_REPORT_HEADINGS, CloseOpts, CloseTarget, close, plan_close, plan_close_with,
++};
++use teamwire_core::{EventType, MemberKind, MemberState, Role, TeamState};
++
++const REPORT: &str = "afk/REPORT.md";
++
++fn full_report() -> String {
++    AFK_REPORT_HEADINGS
++        .iter()
++        .map(|h| format!("## {h}\n\nsomething\n\n"))
++        .collect()
++}
++
++fn incomplete(reasons: &[String]) -> Option<&String> {
++    reasons
++        .iter()
++        .find(|r| r.starts_with("afk_report_incomplete: "))
++}
++
++/// The refusal stops the close before the lock: the team is open, nothing
++/// is archived or deleted, and only `close.refused` is written.
++fn assert_nothing_changed(rig: &Rig) {
++    assert_eq!(rig.team().state, TeamState::Open);
++    assert!(rig.team_dir().join("team.db").is_file());
++    assert!(!rig.archive_root().exists());
++    assert!(rig.events(EventType::TeamClosing).is_empty());
++    assert_eq!(rig.events(EventType::CloseRefused).len(), 1);
++}
++
++#[test]
++fn an_afk_team_without_a_report_is_refused_and_nothing_changes() {
++    let mut rig = Rig::afk();
++    rig.add_pane_member("scout", MemberKind::Investigator);
++
++    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
++    let why = incomplete(&plan.refusals).expect("the plan refuses");
++    assert!(why.contains("REPORT.md is missing"), "{why}");
++
++    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
++    let why = incomplete(&report.refusals).expect("the close refuses");
++    assert!(why.contains("is missing"), "{why}");
++    assert!(
++        why.contains("What you asked") && why.contains("Cost"),
++        "{why}"
++    );
++    assert!(report.steps.is_empty() && report.stopped_at.is_none());
++    assert_nothing_changed(&rig);
++    assert_eq!(rig.member("scout").state, MemberState::Started);
++}
++
++#[test]
++fn a_report_missing_a_heading_is_refused_naming_it() {
++    let mut rig = Rig::afk();
++    let text = full_report().replace("## Risks\n", "Risks were none.\n");
++    rig.team_file(REPORT, &text);
++
++    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
++    let why = incomplete(&report.refusals).expect("the close refuses");
++    assert!(why.ends_with("lacks the headings: Risks"), "{why}");
++    assert_nothing_changed(&rig);
++}
++
++#[test]
++fn a_zero_member_afk_team_with_every_heading_closes() {
++    let mut rig = Rig::afk();
++    // Numbered, bold, another order and another case: still every heading.
++    let mut text = String::new();
++    for (i, h) in AFK_REPORT_HEADINGS.iter().rev().enumerate() {
++        text.push_str(&format!(
++            "### {}. **{}**:\n\nbody\n",
++            i + 1,
++            h.to_uppercase()
++        ));
++    }
++    rig.team_file(REPORT, &text);
++
++    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
++    assert!(plan.refusals.is_empty(), "{:?}", plan.refusals);
++    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
++    assert!(report.refusals.is_empty(), "{report:?}");
++    assert_eq!(report.stopped_at, None, "{report:?}");
++    // The report reaches the archive like any other file of the team.
++    let archive = report.archive.expect("an archive");
++    assert_eq!(std::fs::read_to_string(archive.join(REPORT)).unwrap(), text);
++    assert!(!rig.team_dir().exists());
++}
++
++#[test]
++fn a_team_that_is_not_an_afk_run_closes_without_a_report() {
++    let mut rig = Rig::without_repo();
++    rig.add_pane_member("scout", MemberKind::Investigator);
++    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
++    assert!(report.refusals.is_empty(), "{report:?}");
++    assert_eq!(report.stopped_at, None, "{report:?}");
++}
++
++#[test]
++fn a_role_removal_on_an_afk_team_needs_no_report() {
++    let mut rig = Rig::afk();
++    rig.add_pane_member("scout", MemberKind::Investigator);
++    let scout = Role::parse("scout").unwrap();
++    let plan = plan_close_with(
++        &rig.ctx(),
++        CloseTarget::Member(scout.clone()),
++        &CloseOpts::default(),
++    );
++    assert!(plan.refusals.is_empty(), "{:?}", plan.refusals);
++    let report = close(
++        &mut rig.ctx(),
++        CloseTarget::Member(scout),
++        CloseOpts::default(),
++    );
++    assert!(report.refusals.is_empty(), "{report:?}");
++    assert_eq!(rig.member("scout").state, MemberState::Removed);
++}
+diff --git a/crates/teamwire-close/tests/support/rig.rs b/crates/teamwire-close/tests/support/rig.rs
+index 861c33e..51ab50d 100644
+--- a/crates/teamwire-close/tests/support/rig.rs
++++ b/crates/teamwire-close/tests/support/rig.rs
+@@ -119,6 +119,12 @@ impl Rig {
+         Self::build(true, true)
+     }
+ 
++    /// An AFK run's team (`afk_budget_ends_at` set, an hour ahead), with no
++    /// repository, for tests that only use panes.
++    pub fn afk() -> Self {
++        Self::build_with(false, true, true)
++    }
++
+     /// A store `Store::open` made and nothing wrote to: no team row, no member.
+     pub fn without_team_row() -> Self {
+         Self::build(false, false)
+@@ -131,6 +137,10 @@ impl Rig {
+     }
+ 
+     fn build(with_repo: bool, with_team: bool) -> Self {
++        Self::build_with(with_repo, with_team, false)
++    }
++
++    fn build_with(with_repo: bool, with_team: bool, afk: bool) -> Self {
+         let home = TestHome::new().unwrap();
+         let work = tempfile::tempdir().unwrap();
+         let repo = work.path().join("proj");
+@@ -157,20 +167,23 @@ impl Rig {
+         if with_team {
+             store
+                 .write(|tx| {
+-                    tx.create_team(
+-                        clock.now(),
+-                        &NewTeam {
+-                            name: team.clone(),
+-                            title: "Alpha".to_owned(),
+-                            lead_harness: HarnessId::from_static("claude-code"),
+-                            lead_host: HostId::from_static("herdr"),
+-                            lead_route: LeadRoute::Sink,
+-                            lead_session: Some((
+-                                SessionId::parse("lead-1").unwrap(),
+-                                SessionKind::Interactive,
+-                            )),
+-                        },
+-                    )?;
++                    let new_team = NewTeam {
++                        name: team.clone(),
++                        title: "Alpha".to_owned(),
++                        lead_harness: HarnessId::from_static("claude-code"),
++                        lead_host: HostId::from_static("herdr"),
++                        lead_route: LeadRoute::Sink,
++                        lead_session: Some((
++                            SessionId::parse("lead-1").unwrap(),
++                            SessionKind::Interactive,
++                        )),
++                    };
++                    if afk {
++                        let ends = clock.now().checked_add(Duration::from_secs(3600)).unwrap();
++                        tx.create_afk_team(clock.now(), &new_team, ends, &serde_json::Value::Null)?;
++                    } else {
++                        tx.create_team(clock.now(), &new_team)?;
++                    }
+                     Ok(())
+                 })
+                 .unwrap();
+diff --git a/crates/teamwire-harness-claude/src/lead_setup/plugin.rs b/crates/teamwire-harness-claude/src/lead_setup/plugin.rs
+index 1ba8de5..978035b 100644
+--- a/crates/teamwire-harness-claude/src/lead_setup/plugin.rs
++++ b/crates/teamwire-harness-claude/src/lead_setup/plugin.rs
+@@ -11,7 +11,7 @@ use teamwire_core::Command;
+ 
+ use super::mcp::{McpEntry, claude};
+ use super::skill;
+-use super::skill::REFERENCE_TEXT;
++use super::skill::{AFK_TEXT, REFERENCE_TEXT};
+ use super::{LeadSetupError, SKILL_TEXT};
+ use crate::ClaudeConfig;
+ use crate::launch::shell_word;
+@@ -57,6 +57,8 @@ impl PluginFiles {
+     fn render_with(dir: &Path, want: &McpEntry, reference: &str) -> Result<Self, String> {
+         let skill = skill::stamp(SKILL_TEXT)
+             .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
++        let afk = skill::stamp(AFK_TEXT)
++            .ok_or_else(|| "the compiled-in AFK skill has no frontmatter".to_owned())?;
+         let mut hook_words = vec![shell_word(&want.command)];
+         hook_words.extend(want.home_args().iter().map(|a| shell_word(a)));
+         hook_words.extend(["hook".to_owned(), "claude-lead-stop".to_owned()]);
+@@ -81,6 +83,7 @@ impl PluginFiles {
+                 format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
+                 reference.to_owned(),
+             ),
++            (format!("{PLUGIN_DIR}/skills/afk/SKILL.md"), afk),
+         ];
+         // The version changes with the content, so `claude plugin update`
+         // sees a new binary or skill as a new version and refreshes its copy.
+@@ -275,7 +278,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    fn the_six_files_name_the_binary_and_the_hook() {
++    fn the_plugin_files_name_the_binary_the_hook_and_both_skills() {
+         let files = PluginFiles::render(Path::new("/h/claude-plugin"), &want(None)).unwrap();
+         let paths: Vec<_> = files
+             .files
+@@ -291,6 +294,7 @@ mod tests {
+                 "teamwire/hooks/hooks.json",
+                 "teamwire/skills/teamwire/SKILL.md",
+                 "teamwire/skills/teamwire/reference.md",
++                "teamwire/skills/afk/SKILL.md",
+             ]
+         );
+         let market = json_of(&files, ".claude-plugin/marketplace.json");
+diff --git a/crates/teamwire-harness-claude/src/lead_setup/skill.rs b/crates/teamwire-harness-claude/src/lead_setup/skill.rs
+index 71bf791..5e6eec6 100644
+--- a/crates/teamwire-harness-claude/src/lead_setup/skill.rs
++++ b/crates/teamwire-harness-claude/src/lead_setup/skill.rs
+@@ -16,6 +16,10 @@ pub const SKILL_TEXT: &str = include_str!("../../../../examples/skills/teamwire/
+ pub(super) const REFERENCE_TEXT: &str =
+     include_str!("../../../../examples/skills/teamwire/reference.md");
+ 
++/// The AFK skill, rendered beside the main one so Claude Code lists it as
++/// `/teamwire:afk`.
++pub(super) const AFK_TEXT: &str = include_str!("../../../../examples/skills/afk/SKILL.md");
++
+ /// The frontmatter key of the stamp. It sits under `metadata`, the map the
+ /// skill format leaves for a tool's own keys.
+ const STAMP_KEY: &str = "  teamwire-sha256: ";
+@@ -163,4 +167,11 @@ mod tests {
+         let stamped = stamp(SKILL_TEXT).unwrap();
+         assert_eq!(classify(&stamped, SKILL_TEXT), SkillState::Current);
+     }
++
++    #[test]
++    fn the_afk_skill_is_named_afk_and_has_no_metadata_of_its_own() {
++        let head = AFK_TEXT.get(..frontmatter_end(AFK_TEXT).unwrap()).unwrap();
++        assert!(head.starts_with("---\nname: afk\n"));
++        assert!(!head.contains("\nmetadata:"));
++    }
+ }
+diff --git a/crates/teamwire-harness-claude/tests/lead_setup.rs b/crates/teamwire-harness-claude/tests/lead_setup.rs
+index a5efae8..a0318fd 100644
+--- a/crates/teamwire-harness-claude/tests/lead_setup.rs
++++ b/crates/teamwire-harness-claude/tests/lead_setup.rs
+@@ -181,7 +181,7 @@ fn a_fresh_install_writes_the_files_adds_the_marketplace_and_installs_the_plugin
+         unreachable!("{changes:?}")
+     };
+     assert_eq!(dir, &bed.plugin_dir());
+-    assert_eq!(files.len(), 6);
++    assert_eq!(files.len(), 7);
+     assert_eq!(
+         rest,
+         [
+@@ -550,3 +550,42 @@ fn plugin_problems_name_what_is_missing_stale_or_off() {
+         "a build under target/ is not compared"
+     );
+ }
++
++#[test]
++fn install_writes_the_afk_skill_beside_the_main_one_so_claude_lists_teamwire_afk() {
++    let bed = Bed::new();
++    bed.install(&want());
++    let afk =
++        std::fs::read_to_string(bed.plugin_dir().join("teamwire/skills/afk/SKILL.md")).unwrap();
++    assert!(afk.starts_with("---\nname: afk\ndescription: "), "{afk}");
++    assert!(afk.contains("\nmetadata:\n  teamwire-sha256: "));
++    assert!(afk.contains("Never wait for a person."));
++    let main = std::fs::read_to_string(bed.plugin_dir().join("teamwire/skills/teamwire/SKILL.md"))
++        .unwrap();
++    assert!(main.contains("use `/teamwire:afk`"));
++}
++
++#[test]
++fn a_missing_or_old_afk_skill_is_another_version_and_install_rewrites_it() {
++    let remove: fn(&Path) = |p| std::fs::remove_file(p).unwrap();
++    let make_old: fn(&Path) = |p| std::fs::write(p, "---\nname: afk\n---\nolder text\n").unwrap();
++    for break_it in [remove, make_old] {
++        let bed = Bed::new();
++        bed.install(&want());
++        let afk = bed.plugin_dir().join("teamwire/skills/afk/SKILL.md");
++        break_it(&afk);
++        let problems = bed.claude.config().plugin_problems(&want(), true).unwrap();
++        assert!(problems[0].contains("another version"), "{problems:?}");
++        let changes = bed.plan(&want());
++        assert!(
++            matches!(changes[0], Change::WritePlugin { .. }),
++            "{changes:?}"
++        );
++        bed.claude.apply_lead_setup(&changes).unwrap();
++        assert!(
++            std::fs::read_to_string(&afk)
++                .unwrap()
++                .contains("Never wait for a person.")
++        );
++    }
++}
+diff --git a/crates/teamwire-launch/src/afk.rs b/crates/teamwire-launch/src/afk.rs
+new file mode 100644
+index 0000000..2cc1b85
+--- /dev/null
++++ b/crates/teamwire-launch/src/afk.rs
+@@ -0,0 +1,240 @@
++//! AFK runs: a team whose row has `afk_budget_ends_at` set. Launch refuses a
++//! new implementer once the budget is spent and warns about a member below
++//! the AFK model table; `afk_start` creates the run's team with no members.
++
++use std::path::PathBuf;
++use std::time::Duration;
++
++use teamwire_core::{MemberKind, Pid, SessionId, SessionKind, TeamName, TeamState, Timestamp};
++use teamwire_store::{Ctx, Store, database_path};
++
++use crate::validate::{background_lead, lead_must_be_locatable, lead_plan, team_exists};
++use crate::{LaunchOutcome, LeadPlan, PlannedMember, SpecError, ValidateEnv, hold};
++
++/// When the budget of the AFK team `ctx` holds ended, if it has.
++pub(crate) fn budget_spent(ctx: &Ctx<'_>) -> Option<Timestamp> {
++    let ends = hold::team_of(ctx.store)?.afk_budget_ends_at?;
++    (ctx.clock.now() >= ends).then_some(ends)
++}
++
++pub(crate) fn budget_refusal(ended: Timestamp) -> LaunchOutcome {
++    LaunchOutcome::Refused(format!(
++        "afk_budget_spent: the AFK run's budget ended at {ended}, so no new implementer \
++         starts; finish what runs, verify it, and add the reporter"
++    ))
++}
++
++/// The AFK table's floor per kind: (model, effort).
++fn floor(kind: MemberKind) -> (&'static str, &'static str) {
++    match kind {
++        MemberKind::Implementer | MemberKind::Investigator => ("opus", "high"),
++        MemberKind::Reviewer | MemberKind::Closer => ("opus", "xhigh"),
++    }
++}
++
++/// A Claude model's rank by family name, so `claude-opus-4-1` reads as opus.
++fn model_rank(model: &str) -> Option<usize> {
++    let m = model.to_ascii_lowercase();
++    ["haiku", "sonnet", "opus"]
++        .iter()
++        .position(|family| m.contains(family))
++}
++
++fn effort_rank(effort: &str) -> Option<usize> {
++    ["low", "medium", "high", "xhigh", "max"]
++        .iter()
++        .position(|e| effort.eq_ignore_ascii_case(e))
++}
++
++/// One warning per member below the AFK table. An unset or unknown model or
++/// effort counts as below it, because the harness default may be lower. A
++/// Codex member's model names are not Claude's, so only its effort is read.
++pub(crate) fn model_warnings(members: &[PlannedMember], warnings: &mut Vec<String>) {
++    for m in members {
++        let (want_model, want_effort) = floor(m.kind);
++        let mut below = Vec::new();
++        if m.harness.as_str() != "codex" {
++            let model = m.spec.model.as_deref();
++            if model.and_then(model_rank) < model_rank(want_model) {
++                below.push(format!("model {}", model.unwrap_or("unset")));
++            }
++        }
++        let effort = m.spec.effort.as_deref();
++        if effort.and_then(effort_rank) < effort_rank(want_effort) {
++            below.push(format!("effort {}", effort.unwrap_or("unset")));
++        }
++        if !below.is_empty() {
++            warnings.push(format!(
++                "role {}: {} is below the AFK table for a {} ({want_model}, {want_effort})",
++                m.spec.role,
++                below.join(" and "),
++                m.kind
++            ));
++        }
++    }
++}
++
++/// An AFK start that passed the session and name checks.
++#[derive(Debug, Clone)]
++pub struct AfkPlan {
++    pub team: TeamName,
++    pub title: String,
++    pub lead: LeadPlan,
++    session: SessionId,
++}
++
++/// What `afk_start` made.
++#[derive(Debug, Clone)]
++pub struct AfkStarted {
++    pub team_dir: PathBuf,
++    pub afk_dir: PathBuf,
++    pub report: PathBuf,
++    pub budget_ends_at: Timestamp,
++    pub warnings: Vec<String>,
++}
++
++fn refusal(code: &str, message: impl Into<String>) -> Vec<SpecError> {
++    vec![SpecError::new(None, None, code, message)]
++}
++
++/// The checks before anything is made: a lead session that leads no open
++/// AFK team, then the team name and title by launch's rules.
++pub fn afk_check(
++    env: &ValidateEnv<'_>,
++    team: &str,
++    title: &str,
++) -> Result<AfkPlan, Vec<SpecError>> {
++    let harness = env
++        .registry
++        .harness(&env.lead_harness)
++        .map_err(|e| refusal("unknown_harness", e.to_string()))?;
++    let Some(caller) = harness.current_session() else {
++        return Err(refusal(
++            "no_lead_session",
++            "no lead session id reached this command; run it from the lead's Claude Code session",
++        ));
++    };
++    if caller.kind == SessionKind::Background {
++        return Err(vec![background_lead()]);
++    }
++    if let Some(running) = afk_team_of(env, &caller.id) {
++        return Err(refusal(
++            "afk_already_running",
++            format!(
++                "this session already leads the open AFK team {running}; close it before starting another"
++            ),
++        ));
++    }
++    let name = TeamName::parse(team).map_err(|e| {
++        vec![SpecError::new(
++            None,
++            Some("team"),
++            "bad_name",
++            e.to_string(),
++        )]
++    })?;
++    let mut errors = Vec::new();
++    if database_path(env.home, &name).is_file() {
++        errors.push(team_exists(&name));
++    }
++    crate::validate::title_errors(title, &mut errors);
++    let lead = lead_plan(env, None, Some((caller.id.clone(), caller.kind))).map_err(|e| vec![e])?;
++    lead_must_be_locatable(env, &lead, &mut errors);
++    if !errors.is_empty() {
++        return Err(errors);
++    }
++    Ok(AfkPlan {
++        team: name,
++        title: crate::plan::clean(title),
++        lead,
++        session: caller.id,
++    })
++}
++
++/// The open AFK team `session` leads, if any. A team that cannot be read is
++/// skipped, as every walk over the teams does.
++fn afk_team_of(env: &ValidateEnv<'_>, session: &SessionId) -> Option<TeamName> {
++    let names = teamwire_store::team_names(env.home).ok()?;
++    names.into_iter().find(|name| {
++        Store::open_read_only(env.home, name)
++            .ok()
++            .and_then(|s| hold::team_of(&s))
++            .is_some_and(|t| {
++                t.state == TeamState::Open
++                    && t.lead_session.as_ref() == Some(session)
++                    && t.afk_budget_ends_at.is_some()
++            })
++    })
++}
++
++/// Creates the AFK team with no members, copies the task to `afk/task.md`
++/// and takes the sleep hold. Where the platform has a hold, the lead's
++/// process is found first, so a refusal creates nothing.
++pub fn afk_start(
++    env: &ValidateEnv<'_>,
++    plan: &AfkPlan,
++    task: &[u8],
++    budget: Duration,
++) -> Result<AfkStarted, Vec<SpecError>> {
++    let mut warnings = Vec::new();
++    let lead_pid: Option<Pid> = match env.platform.sleep_hold() {
++        Some(_) => {
++            let mut why = Vec::new();
++            let pid = hold::lead_process(env.registry, &plan.lead.harness, &plan.session, &mut why);
++            Some(pid.ok_or_else(|| refusal("no_lead_process", why.join("; ")))?)
++        }
++        None => None,
++    };
++    let now = env.clock.now();
++    let ends = now.checked_add(budget).ok_or_else(|| {
++        refusal(
++            "bad_budget",
++            "the budget ends past the supported time range",
++        )
++    })?;
++    let failed =
++        |what: &str, e: &dyn std::fmt::Display| refusal("store_error", format!("{what}: {e}"));
++    let mut store = Store::open(env.home, &plan.team)
++        .map_err(|e| failed("the store could not be opened", &e))?;
++    let (team, extra) = crate::member::new_team(env.registry, &plan.team, &plan.title, &plan.lead);
++    store
++        .write(|tx| tx.create_afk_team(now, &team, ends, &extra).map(|_| ()))
++        .map_err(|e| failed("the team could not be recorded", &e))?;
++    let team_dir = env.home.join("teams").join(plan.team.as_str());
++    let afk_dir = team_dir.join("afk");
++    let made = format!(
++        "team {} was created; run teamwire close {} to remove it",
++        plan.team, plan.team
++    );
++    std::fs::create_dir_all(&afk_dir).map_err(|e| {
++        failed(
++            &format!("{} could not be made ({made})", afk_dir.display()),
++            &e,
++        )
++    })?;
++    env.platform
++        .write_atomic(&afk_dir.join("task.md"), task)
++        .map_err(|e| failed(&format!("the task could not be copied ({made})"), &e))?;
++    if let Some(pid) = lead_pid {
++        let mut ctx = Ctx {
++            home: env.home,
++            store: &mut store,
++            registry: env.registry,
++            platform: env.platform,
++            clock: env.clock,
++            config: env.config,
++        };
++        hold::hold_on(&mut ctx, &plan.team, &plan.session, pid, &mut warnings);
++    } else {
++        warnings.push(
++            "no sleep hold on this platform: the machine may sleep under the team".to_owned(),
++        );
++    }
++    Ok(AfkStarted {
++        report: afk_dir.join("REPORT.md"),
++        team_dir,
++        afk_dir,
++        budget_ends_at: ends,
++        warnings,
++    })
++}
+diff --git a/crates/teamwire-launch/src/hold.rs b/crates/teamwire-launch/src/hold.rs
+index bd27b69..f45f913 100644
+--- a/crates/teamwire-launch/src/hold.rs
++++ b/crates/teamwire-launch/src/hold.rs
+@@ -4,7 +4,7 @@
+ 
+ use std::time::Duration;
+ 
+-use teamwire_core::{HarnessId, HoldInfo, Pid, SessionId, TeamName, TeamState};
++use teamwire_core::{HarnessId, HoldInfo, Pid, Registry, SessionId, TeamName, TeamState};
+ use teamwire_store::{Ctx, Store};
+ 
+ const LIST_TIMEOUT: Duration = Duration::from_secs(30);
+@@ -18,16 +18,30 @@ pub(crate) fn ensure_hold(
+     lead: (&HarnessId, Option<&SessionId>),
+     warnings: &mut Vec<String>,
+ ) {
+-    let Some(hold) = ctx.platform.sleep_hold() else {
++    if ctx.platform.sleep_hold().is_none() {
+         warnings.push(
+             "no sleep hold on this platform: the machine may sleep under the team".to_owned(),
+         );
+         return;
+-    };
++    }
+     let (harness, Some(session)) = lead else {
+         return;
+     };
+-    let Some(lead_pid) = lead_process(ctx, harness, session, warnings) else {
++    let Some(lead_pid) = lead_process(ctx.registry, harness, session, warnings) else {
++        return;
++    };
++    hold_on(ctx, team, session, lead_pid, warnings);
++}
++
++/// `ensure_hold` for a lead process the caller already found.
++pub(crate) fn hold_on(
++    ctx: &mut Ctx<'_>,
++    team: &TeamName,
++    session: &SessionId,
++    lead_pid: Pid,
++    warnings: &mut Vec<String>,
++) {
++    let Some(hold) = ctx.platform.sleep_hold() else {
+         return;
+     };
+     let mine = team_of(ctx.store).and_then(|t| t.sleep_hold);
+@@ -63,14 +77,13 @@ pub(crate) fn ensure_hold(
+ }
+ 
+ /// The lead's harness process, found from the lead's session.
+-fn lead_process(
+-    ctx: &Ctx<'_>,
++pub(crate) fn lead_process(
++    registry: &Registry,
+     harness: &HarnessId,
+     session: &SessionId,
+     warnings: &mut Vec<String>,
+ ) -> Option<Pid> {
+-    let found = ctx
+-        .registry
++    let found = registry
+         .harness(harness)
+         .map_err(|e| e.to_string())
+         .and_then(|h| {
+@@ -132,6 +145,6 @@ fn another_team_owns(ctx: &Ctx<'_>, this: &TeamName, session: &SessionId, hold:
+     clippy::redundant_closure_for_method_calls,
+     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
+ )]
+-fn team_of(store: &Store) -> Option<teamwire_store::TeamRow> {
++pub(crate) fn team_of(store: &Store) -> Option<teamwire_store::TeamRow> {
+     store.read(|tx| tx.team()).ok().flatten()
+ }
+diff --git a/crates/teamwire-launch/src/lib.rs b/crates/teamwire-launch/src/lib.rs
+index 80a9c0d..ea29c0c 100644
+--- a/crates/teamwire-launch/src/lib.rs
++++ b/crates/teamwire-launch/src/lib.rs
+@@ -12,6 +12,7 @@
+ //! irreversible step and `started` after the agent runs, so close finds
+ //! everything whatever step a crash hit (LCH-3).
+ 
++mod afk;
+ mod contract;
+ mod env;
+ mod git;
+@@ -37,6 +38,7 @@ use teamwire_core::{
+ };
+ use teamwire_store::Ctx;
+ 
++pub use afk::{AfkPlan, AfkStarted, afk_check, afk_start};
+ pub use contract::{ContractParts, render_contract};
+ pub use env::ValidateEnv;
+ pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
+diff --git a/crates/teamwire-launch/src/member.rs b/crates/teamwire-launch/src/member.rs
+index 5498b6f..3ef9929 100644
+--- a/crates/teamwire-launch/src/member.rs
++++ b/crates/teamwire-launch/src/member.rs
+@@ -9,8 +9,8 @@ use std::time::Duration;
+ use serde_json::{Value, json};
+ use sha2::{Digest, Sha256};
+ use teamwire_core::{
+-    IdentityChannel, MemberLaunch, MemberState, SessionId, StartupOutcome, TeamState, TrustPolicy,
+-    Ulid, one_line,
++    IdentityChannel, MemberKind, MemberLaunch, MemberState, Registry, SessionId, StartupOutcome,
++    TeamName, TeamState, TrustPolicy, Ulid, one_line,
+ };
+ use teamwire_store::{Ctx, NewMember, NewTeam};
+ 
+@@ -21,7 +21,8 @@ use crate::member_steps::{
+ };
+ use crate::worktree;
+ use crate::{
+-    LaunchOutcome, LaunchReport, MemberOutcome, PlannedMember, ValidPlan, hold, watch_command,
++    LaunchOutcome, LaunchReport, LeadPlan, MemberOutcome, PlannedMember, ValidPlan, hold,
++    watch_command,
+ };
+ 
+ const HOST_TIMEOUT: Duration = Duration::from_secs(30);
+@@ -56,8 +57,12 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
+     let dirs = Dirs {
+         team: ctx.home.join("teams").join(plan.spec.team.as_str()),
+     };
++    let spent = crate::afk::budget_spent(ctx);
+     for m in &plan.members {
+-        let outcome = launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings);
++        let outcome = match spent {
++            Some(ended) if m.kind == MemberKind::Implementer => crate::afk::budget_refusal(ended),
++            _ => launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings),
++        };
+         members.push(MemberOutcome {
+             role: m.spec.role.clone(),
+             outcome,
+@@ -91,32 +96,42 @@ fn new_launch_id(ctx: &Ctx<'_>) -> String {
+ 
+ fn create_team(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> Result<(), String> {
+     let at = ctx.clock.now();
++    let (team, extra) = new_team(ctx.registry, &plan.spec.team, &plan.spec.title, &plan.lead);
++    ctx.store
++        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
++        .map_err(|e| e.to_string())
++}
++
++/// The team row for `lead`, and the `team.created` keys launch adds to it.
++pub(crate) fn new_team(
++    registry: &Registry,
++    name: &TeamName,
++    title: &str,
++    lead: &LeadPlan,
++) -> (NewTeam, Value) {
+     let team = NewTeam {
+-        name: plan.spec.team.clone(),
+-        title: crate::plan::clean(&plan.spec.title),
+-        lead_harness: plan.lead.harness.clone(),
+-        lead_host: plan.lead.host.clone(),
+-        lead_route: plan.lead.route,
+-        lead_session: plan.lead.session.clone(),
++        name: name.clone(),
++        title: crate::plan::clean(title),
++        lead_harness: lead.harness.clone(),
++        lead_host: lead.host.clone(),
++        lead_route: lead.route,
++        lead_session: lead.session.clone(),
+     };
+     // The folder lets `reopen` resume the lead from where it runs. A lead
+     // with no session, or one the harness cannot place, leaves it out.
+-    let cwd = plan
+-        .lead
++    let cwd = lead
+         .session
+         .as_ref()
+         .and_then(|(session, _)| {
+-            ctx.registry
+-                .harness(&plan.lead.harness)
++            registry
++                .harness(&lead.harness)
+                 .ok()?
+                 .session_cwd(session)
+                 .ok()?
+         })
+         .map(|p| p.display().to_string());
+     let extra = cwd.map_or(json!({}), |cwd| json!({ "lead_cwd": cwd }));
+-    ctx.store
+-        .write(|tx| tx.create_team_with(at, &team, &extra).map(|_| ()))
+-        .map_err(|e| e.to_string())
++    (team, extra)
+ }
+ 
+ fn launch_member(
+diff --git a/crates/teamwire-launch/src/validate.rs b/crates/teamwire-launch/src/validate.rs
+index 9f322b7..59bb479 100644
+--- a/crates/teamwire-launch/src/validate.rs
++++ b/crates/teamwire-launch/src/validate.rs
+@@ -43,38 +43,30 @@ pub fn validate(
+         .as_ref()
+         .is_some_and(|s| s.kind == SessionKind::Background)
+     {
+-        return Err(vec![SpecError::new(
+-            None,
+-            None,
+-            "background_lead",
+-            "this session runs in the background and has no terminal of its own, so member reports \
+-             would go to another session. Launch the team from a session in a terminal.",
+-        )]);
++        return Err(vec![background_lead()]);
+     }
+     let mut errors = Vec::new();
+     let mut warnings = Vec::new();
+     let existing = read_existing(env, &spec.team)?;
+     match (&existing, add) {
+-        (Some(_), false) => errors.push(SpecError::new(
++        (Some(_), false) => errors.push(team_exists(&spec.team)),
++        (None, true) => errors.push(SpecError::new(
+             None,
+             Some("team"),
+-            "team_exists",
++            "no_such_team",
+             format!(
+-                "team {} already exists; pass --add to extend it, pick another name, or close it first",
++                "--add needs a running team, and team {} has no database",
+                 spec.team
+             ),
+         )),
+-        (None, true) => errors.push(SpecError::new(
+-            None,
+-            Some("team"),
+-            "no_such_team",
+-            format!("--add needs a running team, and team {} has no database", spec.team),
+-        )),
+         (Some(e), true) if e.team.state != TeamState::Open => errors.push(SpecError::new(
+             None,
+             Some("team"),
+             "team_closed",
+-            format!("team {} is {}; nothing can be added", spec.team, e.team.state),
++            format!(
++                "team {} is {}; nothing can be added",
++                spec.team, e.team.state
++            ),
+         )),
+         _ => {}
+     }
+@@ -114,6 +106,12 @@ pub fn validate(
+         .collect();
+     disk_check(env, &members, &mut errors);
+     crate::plan_rules::planning_warnings(&cx, &members, &mut warnings);
++    if existing
++        .as_ref()
++        .is_some_and(|e| e.team.afk_budget_ends_at.is_some())
++    {
++        crate::afk::model_warnings(&members, &mut warnings);
++    }
+     if !errors.is_empty() {
+         return Err(errors);
+     }
+@@ -137,7 +135,11 @@ pub fn validate(
+ /// A lead whose harness cannot read `teamwire watch` is reached only by
+ /// typing into its pane, so it must be found there before anything is made
+ /// (ADR 0023 point 9). A harness that reads watch lines is not checked.
+-fn lead_must_be_locatable(env: &ValidateEnv<'_>, lead: &LeadPlan, errors: &mut Vec<SpecError>) {
++pub(crate) fn lead_must_be_locatable(
++    env: &ValidateEnv<'_>,
++    lead: &LeadPlan,
++    errors: &mut Vec<SpecError>,
++) {
+     let (Ok(harness), Ok(host)) = (
+         env.registry.harness(&lead.harness),
+         env.registry.host(&lead.host),
+@@ -169,6 +171,29 @@ fn lead_must_be_locatable(env: &ValidateEnv<'_>, lead: &LeadPlan, errors: &mut V
+     }
+ }
+ 
++/// The refusal for a lead session that runs in the background.
++pub(crate) fn background_lead() -> SpecError {
++    SpecError::new(
++        None,
++        None,
++        "background_lead",
++        "this session runs in the background and has no terminal of its own, so member reports \
++         would go to another session. Launch the team from a session in a terminal.",
++    )
++}
++
++/// The refusal for a new team whose name already has a database.
++pub(crate) fn team_exists(team: &TeamName) -> SpecError {
++    SpecError::new(
++        None,
++        Some("team"),
++        "team_exists",
++        format!(
++            "team {team} already exists; pass --add to extend it, pick another name, or close it first"
++        ),
++    )
++}
++
+ fn session_missing(lead: &LeadPlan) -> bool {
+     lead.session.is_none()
+ }
+@@ -208,7 +233,7 @@ fn read_existing(
+     }))
+ }
+ 
+-fn lead_plan(
++pub(crate) fn lead_plan(
+     env: &ValidateEnv<'_>,
+     existing: Option<&Existing>,
+     session: Option<(SessionId, SessionKind)>,
+@@ -243,10 +268,14 @@ fn lead_plan(
+ }
+ 
+ fn team_title(spec: &TeamSpec, existing: Option<&Existing>, errors: &mut Vec<SpecError>) {
+-    if existing.is_some() {
+-        return;
++    if existing.is_none() {
++        title_errors(&spec.title, errors);
+     }
+-    let title = plan::clean(&spec.title);
++}
++
++/// A refusal when a new team's title is empty or too long (LCH-23).
++pub(crate) fn title_errors(title: &str, errors: &mut Vec<SpecError>) {
++    let title = plan::clean(title);
+     if title.is_empty() {
+         errors.push(SpecError::new(
+             None,
+diff --git a/crates/teamwire-launch/tests/afk.rs b/crates/teamwire-launch/tests/afk.rs
+new file mode 100644
+index 0000000..f0978b8
+--- /dev/null
++++ b/crates/teamwire-launch/tests/afk.rs
+@@ -0,0 +1,194 @@
++//! AFK runs in launch: `afk_start`, the budget refusal for implementers, the
++//! model-table warnings, and `--add` to a team with no members.
++
++#![expect(
++    clippy::indexing_slicing,
++    clippy::panic,
++    clippy::unwrap_used,
++    clippy::redundant_closure_for_method_calls,
++    clippy::wildcard_enum_match_arm,
++    reason = "a test that indexes past the end or hits the wrong outcome panics and fails"
++)]
++
++#[cfg(test)]
++#[path = "support/common.rs"]
++#[expect(
++    dead_code,
++    reason = "each test binary uses a different part of the shared helpers"
++)]
++mod common;
++
++use std::time::Duration;
++
++use common::{Rig, lead_at, pane_member, team_hold, team_spec, with, worktree_member};
++use serde_json::{Value, json};
++use teamwire_core::{Clock, EventType, TeamName};
++use teamwire_launch::{LaunchOutcome, afk_check, afk_start};
++use teamwire_store::Store;
++
++const BUDGET: Duration = Duration::from_secs(8 * 3600);
++
++/// Starts the AFK team `team` the way `teamwire afk start` does.
++fn start(rig: &Rig, team: &str) -> Result<teamwire_launch::AfkStarted, Vec<String>> {
++    let env = rig.env();
++    let names = |e: Vec<teamwire_launch::SpecError>| e.into_iter().map(|e| e.code).collect();
++    let plan = afk_check(&env, team, "AFK run").map_err(names)?;
++    afk_start(&env, &plan, b"Add a CONTRIBUTING.md\n\xff", BUDGET).map_err(names)
++}
++
++fn store(rig: &Rig, team: &str) -> Store {
++    Store::open_read_only(rig.home.path(), &TeamName::parse(team).unwrap()).unwrap()
++}
++
++#[test]
++fn start_makes_a_memberless_team_with_budget_task_and_hold() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    let started = start(&rig, "run").unwrap();
++    let s = store(&rig, "run");
++    let row = s.read(|tx| tx.team()).unwrap().unwrap();
++    let ends = rig.clock.now().checked_add(BUDGET).unwrap();
++    assert_eq!(row.afk_budget_ends_at, Some(ends));
++    assert_eq!(started.budget_ends_at, ends);
++    assert_eq!(row.lead_session.unwrap().as_str(), "lead-session");
++    assert!(
++        s.read(|tx| tx.members())
++            .unwrap()
++            .all_or_corrupt()
++            .unwrap()
++            .is_empty()
++    );
++    let task = std::fs::read(started.afk_dir.join("task.md")).unwrap();
++    assert_eq!(task, b"Add a CONTRIBUTING.md\n\xff");
++    assert_eq!(started.report, started.team_dir.join("afk/REPORT.md"));
++    assert_eq!(team_hold(&s).map(|h| h.owned), Some(true));
++    let created = s
++        .read(|tx| tx.events_of_type(EventType::TeamCreated))
++        .unwrap()
++        .all_or_corrupt()
++        .unwrap();
++    assert!(created[0].data.get("afk_budget_ends_at").is_some());
++}
++
++#[test]
++fn no_lead_process_refuses_and_creates_nothing() {
++    let rig = Rig::new();
++    assert_eq!(start(&rig, "run").unwrap_err(), ["no_lead_process"]);
++    assert!(rig.home_is_empty());
++}
++
++#[test]
++fn a_second_run_and_a_taken_name_are_refused() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    start(&rig, "run").unwrap();
++    assert_eq!(start(&rig, "other").unwrap_err(), ["afk_already_running"]);
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    common::launch_one(&rig, "taken", "a", false);
++    assert_eq!(start(&rig, "taken").unwrap_err(), ["team_exists"]);
++}
++
++/// Adds `children` to the AFK team `run`, `past` the budget or not.
++fn add(rig: &Rig, children: &[Value], past: bool) -> Vec<(String, LaunchOutcome)> {
++    if past {
++        rig.clock.advance(BUDGET);
++    }
++    let plan = rig.validate(&team_spec("run", children), true).unwrap();
++    let (report, _) = rig.launch("run", plan);
++    report
++        .members
++        .into_iter()
++        .map(|m| (m.role.to_string(), m.outcome))
++        .collect()
++}
++
++#[test]
++fn add_to_a_memberless_afk_team_is_accepted() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    start(&rig, "run").unwrap();
++    let got = add(
++        &rig,
++        &[pane_member("scout", "Scout", rig.work.path())],
++        false,
++    );
++    assert_eq!(got[0].1, LaunchOutcome::Started);
++}
++
++#[test]
++fn past_the_budget_only_implementers_are_refused() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    start(&rig, "run").unwrap();
++    let repo = rig.repo("proj");
++    let reviewer = with(
++        pane_member("rev", "Review", rig.work.path()),
++        "kind",
++        json!("reviewer"),
++    );
++    let got = add(
++        &rig,
++        &[worktree_member("impl", "Build", &repo), reviewer],
++        true,
++    );
++    match &got[0].1 {
++        LaunchOutcome::Refused(why) => assert!(why.starts_with("afk_budget_spent"), "{why}"),
++        other => panic!("{other:?}"),
++    }
++    assert_eq!(got[1].1, LaunchOutcome::Started);
++}
++
++#[test]
++fn a_team_without_a_budget_is_unaffected() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    common::launch_one(&rig, "run", "a", false);
++    let repo = rig.repo("proj");
++    let got = add(&rig, &[worktree_member("impl", "Build", &repo)], true);
++    assert_eq!(got[0].1, LaunchOutcome::Started);
++    let plan = rig.validate(
++        &team_spec("run", &[pane_member("b", "B", rig.work.path())]),
++        true,
++    );
++    assert!(
++        !plan
++            .unwrap()
++            .warnings
++            .iter()
++            .any(|w| w.contains("AFK table"))
++    );
++}
++
++#[test]
++fn members_below_the_model_table_are_warned_once_each() {
++    let rig = Rig::new();
++    lead_at(&rig, 4242);
++    start(&rig, "run").unwrap();
++    let cwd = rig.work.path();
++    let member = |role: &str, kind: &str, model: Value, effort: Value| {
++        let m = with(pane_member(role, role, cwd), "kind", json!(kind));
++        with(with(m, "model", model), "effort", effort)
++    };
++    let children = [
++        member("ok", "investigator", json!("opus"), json!("high")),
++        member("low", "reviewer", json!("claude-sonnet-4-5"), json!("high")),
++        member("unset", "investigator", Value::Null, Value::Null),
++        member("max", "closer", json!("opus"), json!("max")),
++    ];
++    let plan = rig.validate(&team_spec("run", &children), true).unwrap();
++    let afk: Vec<&String> = plan
++        .warnings
++        .iter()
++        .filter(|w| w.contains("AFK table"))
++        .collect();
++    assert_eq!(afk.len(), 2, "{afk:?}");
++    assert!(
++        afk[0].contains("role low: model claude-sonnet-4-5 and effort high"),
++        "{afk:?}"
++    );
++    assert!(
++        afk[1].contains("role unset: model unset and effort unset"),
++        "{afk:?}"
++    );
++}
+diff --git a/crates/teamwire-report/src/lead_stop.rs b/crates/teamwire-report/src/lead_stop.rs
+index 6688dd5..bf7653a 100644
+--- a/crates/teamwire-report/src/lead_stop.rs
++++ b/crates/teamwire-report/src/lead_stop.rs
+@@ -1,9 +1,10 @@
+ //! The lead's Stop hook (ADR 0018 point 5): which teams are working with
+-//! nobody watching them.
++//! nobody watching them, and which AFK runs would end on this stop because
++//! nothing will wake their lead.
+ 
+ use std::path::Path;
+ 
+-use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, TeamState};
++use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, TeamState, Timestamp};
+ use teamwire_deliver::watch_lease_is_dead;
+ use teamwire_store::{Store, StoreError, team_names};
+ 
+@@ -19,45 +20,109 @@ pub fn teams_without_watch(
+     platform: &dyn Platform,
+     clock: &dyn Clock,
+ ) -> Vec<TeamName> {
++    led_teams(home, session, platform, clock)
++        .into_iter()
++        .filter(|t| t.working && !t.live_watch)
++        .map(|t| t.name)
++        .collect()
++}
++
++/// One hold note per open AFK team (`afk_budget_ends_at` set) that `session`
++/// leads, when nothing will wake the lead. Something will wake it when an
++/// open team it leads, AFK or not, has a working member and a live watch
++/// lease; then there are no notes. A team that cannot be read gets no note.
++pub fn afk_hold_notes(
++    home: &Path,
++    session: &SessionId,
++    platform: &dyn Platform,
++    clock: &dyn Clock,
++) -> Vec<String> {
++    let teams = led_teams(home, session, platform, clock);
++    if teams.iter().any(|t| t.working && t.live_watch) {
++        return Vec::new();
++    }
++    let now = clock.now();
++    teams
++        .iter()
++        .filter_map(|t| {
++            let ends = t.afk_budget_ends_at?;
++            let dir = home.join("teams").join(t.name.as_str());
++            Some(afk_hold_note(&t.name, &dir, (now >= ends).then_some(ends)))
++        })
++        .collect()
++}
++
++/// `spent_at` is the budget's end once it has passed.
++fn afk_hold_note(team: &TeamName, dir: &Path, spent_at: Option<Timestamp>) -> String {
++    let dir = dir.display();
++    let again = "If a command you started will wake you, stop again.";
++    match spent_at {
++        None => format!(
++            "[teamwire:{team}] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close {team}` once {dir}/afk/REPORT.md exists. {again}"
++        ),
++        Some(at) => format!(
++            "[teamwire:{team}] budget spent at {at}: AFK run: nobody will answer you, and launch refuses new implementers. If you were about to ask the user, decide it yourself and add it to {dir}/afk/decisions.md. Finish what is running, then add the reporter to write {dir}/afk/REPORT.md and run `teamwire close {team}` once it exists. {again}"
++        ),
++    }
++}
++
++/// An open team that the session leads, as the Stop hook sees it.
++struct Led {
++    name: TeamName,
++    afk_budget_ends_at: Option<Timestamp>,
++    /// A started member has no completion for its current generation.
++    working: bool,
++    /// A watch lease exists and is not dead.
++    live_watch: bool,
++}
++
++/// Every open team under `home` that `session` leads. A team that cannot be
++/// read is left out and logged, so a damaged team never stops the lead from
++/// stopping.
++fn led_teams(
++    home: &Path,
++    session: &SessionId,
++    platform: &dyn Platform,
++    clock: &dyn Clock,
++) -> Vec<Led> {
+     let names = team_names(home).unwrap_or_else(|e| {
+         tracing::warn!(error = %e, "the teams could not be listed");
+         Vec::new()
+     });
+     names
+         .into_iter()
+-        .filter(|name| match needs_watch(home, name, session, platform, clock) {
+-            Ok(needs) => needs,
+-            Err(e) => {
+-                tracing::warn!(team = %name, error = %e, "a team is left out of the watch check");
+-                false
+-            }
+-        })
++        .filter_map(
++            |name| match read_led(home, &name, session, platform, clock) {
++                Ok(led) => led,
++                Err(e) => {
++                    tracing::warn!(team = %name, error = %e, "a team is left out of the stop check");
++                    None
++                }
++            },
++        )
+         .collect()
+ }
+ 
+-fn needs_watch(
++fn read_led(
+     home: &Path,
+     team: &TeamName,
+     session: &SessionId,
+     platform: &dyn Platform,
+     clock: &dyn Clock,
+-) -> Result<bool, StoreError> {
++) -> Result<Option<Led>, StoreError> {
+     let store = Store::open_read_only(home, team)?;
+     let now = clock.now();
+     store.read(|tx| {
+         let Some(row) = tx.team()? else {
+-            return Ok(false);
++            return Ok(None);
+         };
+         if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
+-            return Ok(false);
++            return Ok(None);
+         }
+-        // A lease is cheap to read and rules most teams out first.
+-        if tx
++        let live_watch = tx
+             .watch_lease()?
+-            .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now))
+-        {
+-            return Ok(false);
+-        }
++            .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now));
++        let mut working = false;
+         for member in tx.members()?.items {
+             if member.state != MemberState::Started {
+                 continue;
+@@ -66,10 +131,16 @@ fn needs_watch(
+                 .latest_completion(&member.role)?
+                 .is_some_and(|r| r.completion.generation == member.generation);
+             if !done {
+-                return Ok(true);
++                working = true;
++                break;
+             }
+         }
+-        Ok(false)
++        Ok(Some(Led {
++            name: team.clone(),
++            afk_budget_ends_at: row.afk_budget_ends_at,
++            working,
++            live_watch,
++        }))
+     })
+ }
+ 
+diff --git a/crates/teamwire-report/src/lib.rs b/crates/teamwire-report/src/lib.rs
+index 23e7582..3037691 100644
+--- a/crates/teamwire-report/src/lib.rs
++++ b/crates/teamwire-report/src/lib.rs
+@@ -27,7 +27,7 @@ mod turn_end;
+ mod usage;
+ 
+ pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
+-pub use lead_stop::{teams_without_watch, watch_missing_note};
++pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};
+ pub use received::{Received, mark_received};
+ pub use reminder::on_tool_use;
+ pub use turn_end::on_turn_end;
+diff --git a/crates/teamwire-report/tests/lead_stop.rs b/crates/teamwire-report/tests/lead_stop.rs
+index e54f611..1242a1a 100644
+--- a/crates/teamwire-report/tests/lead_stop.rs
++++ b/crates/teamwire-report/tests/lead_stop.rs
+@@ -7,13 +7,15 @@
+ 
+ use std::time::Duration;
+ 
++const BUDGET: Duration = Duration::from_secs(8 * 3600);
++
+ use teamwire_core::{
+     Clock, CompletionStatus, FinalSource, HarnessId, HostId, LeadRoute, MemberKind, MemberState,
+-    Mode, Pid, Role, SessionId, SessionKind, TeamName,
++    Mode, Pid, Role, SessionId, SessionKind, TeamName, Timestamp,
+ };
+ use teamwire_deliver::WATCH_LEASE_STALE;
+ use teamwire_fakes::{FakeClock, FakePlatform, TestHome};
+-use teamwire_report::{teams_without_watch, watch_missing_note};
++use teamwire_report::{afk_hold_notes, teams_without_watch, watch_missing_note};
+ use teamwire_store::{NewCompletion, NewMember, NewTeam, Store};
+ 
+ struct Rig {
+@@ -37,21 +39,39 @@ impl Rig {
+ 
+     /// An open team led from `lead-1`, with member `api` started.
+     fn team(&self, name: &str) -> Store {
++        self.create(name, "lead-1", None, true)
++    }
++
++    /// An open AFK team led from `lead-1` whose budget ends in 8 hours, with
++    /// no members.
++    fn afk_team(&self, name: &str) -> Store {
++        self.create(name, "lead-1", Some(self.ends()), false)
++    }
++
++    fn ends(&self) -> Timestamp {
++        self.clock.now().checked_add(BUDGET).unwrap()
++    }
++
++    fn create(&self, name: &str, lead: &str, afk: Option<Timestamp>, member: bool) -> Store {
+         let mut store = Store::open(self.home.path(), &TeamName::parse(name).unwrap()).unwrap();
+         let now = self.clock.now();
+         store
+             .write(|tx| {
+-                tx.create_team(
+-                    now,
+-                    &NewTeam {
+-                        name: TeamName::parse(name).unwrap(),
+-                        title: name.to_owned(),
+-                        lead_harness: HarnessId::from_static("claude-code"),
+-                        lead_host: HostId::from_static("herdr"),
+-                        lead_route: LeadRoute::Sink,
+-                        lead_session: Some((sid("lead-1"), SessionKind::Interactive)),
+-                    },
+-                )?;
++                let team = NewTeam {
++                    name: TeamName::parse(name).unwrap(),
++                    title: name.to_owned(),
++                    lead_harness: HarnessId::from_static("claude-code"),
++                    lead_host: HostId::from_static("herdr"),
++                    lead_route: LeadRoute::Sink,
++                    lead_session: Some((sid(lead), SessionKind::Interactive)),
++                };
++                match afk {
++                    Some(ends) => tx.create_afk_team(now, &team, ends, &serde_json::Value::Null)?,
++                    None => tx.create_team(now, &team)?,
++                };
++                if !member {
++                    return Ok(());
++                }
+                 tx.insert_member(
+                     now,
+                     &NewMember {
+@@ -89,6 +109,10 @@ impl Rig {
+             .collect()
+     }
+ 
++    fn afk(&self, session: &str) -> Vec<String> {
++        afk_hold_notes(self.home.path(), &sid(session), &self.platform, &self.clock)
++    }
++
+     fn lease(&self, store: &mut Store, pid: u32) {
+         let now = self.clock.now();
+         store
+@@ -242,3 +266,143 @@ fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
+         "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop."
+     );
+ }
++
++fn afk_note(rig: &Rig, team: &str) -> String {
++    let dir = rig.home.path().join("teams").join(team);
++    let dir = dir.display();
++    format!(
++        "[teamwire:{team}] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to {dir}/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close {team}` once {dir}/afk/REPORT.md exists. If a command you started will wake you, stop again."
++    )
++}
++
++#[test]
++fn an_afk_team_with_no_members_is_held() {
++    let rig = Rig::new();
++    let _store = rig.afk_team("alpha");
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn a_team_without_the_afk_column_gets_no_afk_note() {
++    let rig = Rig::new();
++    let _store = rig.team("alpha");
++    assert!(rig.afk("lead-1").is_empty());
++}
++
++#[test]
++fn a_working_member_with_a_live_watch_will_wake_the_afk_lead() {
++    let rig = Rig::new();
++    let mut store = rig.create("alpha", "lead-1", Some(rig.ends()), true);
++    rig.platform.set_alive(Pid::new(700), true);
++    rig.lease(&mut store, 700);
++    assert!(rig.afk("lead-1").is_empty());
++}
++
++#[test]
++fn a_working_member_with_no_watch_does_not_wake_the_afk_lead() {
++    let rig = Rig::new();
++    let _store = rig.create("alpha", "lead-1", Some(rig.ends()), true);
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn a_dead_watch_does_not_wake_the_afk_lead() {
++    let rig = Rig::new();
++    let mut store = rig.create("alpha", "lead-1", Some(rig.ends()), true);
++    rig.lease(&mut store, 700);
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn a_live_watch_with_nobody_working_does_not_wake_the_afk_lead() {
++    let rig = Rig::new();
++    let mut store = rig.create("alpha", "lead-1", Some(rig.ends()), true);
++    complete(&mut store, &rig);
++    rig.platform.set_alive(Pid::new(700), true);
++    rig.lease(&mut store, 700);
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn another_watched_team_of_the_same_lead_will_wake_it() {
++    let rig = Rig::new();
++    let _afk = rig.afk_team("alpha");
++    let mut other = rig.team("beta");
++    rig.platform.set_alive(Pid::new(700), true);
++    rig.lease(&mut other, 700);
++    assert!(rig.afk("lead-1").is_empty());
++}
++
++#[test]
++fn a_watched_team_of_another_lead_does_not_wake_this_one() {
++    let rig = Rig::new();
++    let _afk = rig.afk_team("alpha");
++    let mut other = rig.create("beta", "lead-2", None, true);
++    rig.platform.set_alive(Pid::new(700), true);
++    rig.lease(&mut other, 700);
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn an_afk_team_of_another_session_is_left_alone() {
++    let rig = Rig::new();
++    let _store = rig.afk_team("alpha");
++    assert!(rig.afk("someone-else").is_empty());
++}
++
++#[test]
++fn a_closed_afk_team_is_left_alone() {
++    let rig = Rig::new();
++    let mut store = rig.afk_team("alpha");
++    store
++        .write(|tx| {
++            tx.connection()
++                .execute("UPDATE team SET state = 'closed'", [])
++                .map(|_| ())
++                .map_err(Into::into)
++        })
++        .unwrap();
++    assert!(rig.afk("lead-1").is_empty());
++}
++
++#[test]
++fn past_the_budget_the_note_says_when_it_was_spent() {
++    let rig = Rig::new();
++    let ends = rig.ends();
++    let _store = rig.afk_team("alpha");
++    rig.clock.advance(BUDGET);
++    let dir = rig.home.path().join("teams").join("alpha");
++    let dir = dir.display();
++    assert_eq!(
++        rig.afk("lead-1"),
++        [format!(
++            "[teamwire:alpha] budget spent at {ends}: AFK run: nobody will answer you, and launch refuses new implementers. If you were about to ask the user, decide it yourself and add it to {dir}/afk/decisions.md. Finish what is running, then add the reporter to write {dir}/afk/REPORT.md and run `teamwire close alpha` once it exists. If a command you started will wake you, stop again."
++        )]
++    );
++    assert_eq!(ends.to_string(), "2026-09-28T20:00:00.000Z");
++}
++
++#[test]
++fn one_millisecond_before_the_budget_ends_the_note_is_the_normal_one() {
++    let rig = Rig::new();
++    let _store = rig.afk_team("alpha");
++    rig.clock
++        .advance(BUDGET.checked_sub(Duration::from_millis(1)).unwrap());
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
++
++#[test]
++fn an_afk_team_that_cannot_be_read_gets_no_afk_note() {
++    let rig = Rig::new();
++    let _store = rig.afk_team("alpha");
++    let mut damaged = rig.afk_team("beta");
++    damaged
++        .write(|tx| {
++            tx.connection()
++                .execute("DROP TABLE team", [])
++                .map(|_| ())
++                .map_err(Into::into)
++        })
++        .unwrap();
++    assert_eq!(rig.afk("lead-1"), [afk_note(&rig, "alpha")]);
++}
+diff --git a/crates/teamwire-store/src/team.rs b/crates/teamwire-store/src/team.rs
+index 29aaf1f..791c483 100644
+--- a/crates/teamwire-store/src/team.rs
++++ b/crates/teamwire-store/src/team.rs
+@@ -145,16 +145,20 @@ impl Tx<'_> {
+         Ok(ulid)
+     }
+ 
+-    /// `create_team` for an AFK run: the row also records when the run's
+-    /// budget ends, and `team.created` carries it as `afk_budget_ends_at`.
++    /// `create_team_with` for an AFK run: the row also records when the run's
++    /// budget ends, and `team.created` carries it as `afk_budget_ends_at`
++    /// beside the keys of `extra` (`teamwire afk start` adds `lead_cwd`).
+     pub fn create_afk_team(
+         &self,
+         at: Timestamp,
+         team: &NewTeam,
+         budget_ends_at: Timestamp,
++        extra: &Value,
+     ) -> Result<Ulid, StoreError> {
+         let ends = budget_ends_at.to_string();
+-        let ulid = self.create_team_with(at, team, &json!({ "afk_budget_ends_at": ends }))?;
++        let mut data = extra.as_object().cloned().unwrap_or_default();
++        data.insert("afk_budget_ends_at".to_owned(), json!(ends));
++        let ulid = self.create_team_with(at, team, &Value::Object(data))?;
+         self.connection().execute(
+             "UPDATE team SET afk_budget_ends_at = ?1 WHERE id = 1",
+             [&ends],
+diff --git a/crates/teamwire-store/src/team/tests.rs b/crates/teamwire-store/src/team/tests.rs
+index 3f250cc..4468116 100644
+--- a/crates/teamwire-store/src/team/tests.rs
++++ b/crates/teamwire-store/src/team/tests.rs
+@@ -45,7 +45,14 @@ fn an_afk_team_records_its_budget_end_and_an_ordinary_team_none() {
+ 
+     let mut f = fixture();
+     f.store
+-        .write(|tx| tx.create_afk_team(at(0), &new_team(), at(8 * 3600)))
++        .write(|tx| {
++            tx.create_afk_team(
++                at(0),
++                &new_team(),
++                at(8 * 3600),
++                &serde_json::json!({ "lead_cwd": "/repo" }),
++            )
++        })
+         .unwrap();
+     let team = f.store.read(|tx| tx.team()).unwrap().unwrap();
+     assert_eq!(team.afk_budget_ends_at, Some(at(8 * 3600)));
+@@ -53,6 +60,8 @@ fn an_afk_team_records_its_budget_end_and_an_ordinary_team_none() {
+     let event = last_event(&f.store);
+     assert_eq!(event.kind, EventType::TeamCreated);
+     assert_eq!(event.data["afk_budget_ends_at"], at(8 * 3600).to_string());
++    assert_eq!(event.data["lead_cwd"], "/repo");
++    assert_eq!(event.data["lead_route"], "sink");
+     assert_eq!(count_events(&f.store, EventType::TeamCreated), 1);
+ }
+ 
+diff --git a/crates/teamwire-watch/src/lib.rs b/crates/teamwire-watch/src/lib.rs
+index b7f5403..5adf7b5 100644
+--- a/crates/teamwire-watch/src/lib.rs
++++ b/crates/teamwire-watch/src/lib.rs
+@@ -143,6 +143,18 @@ pub struct WatchView {
+     pub heartbeat_age_s: Option<u64>,
+ }
+ 
++/// An AFK run's budget and decision log, as `status` shows it.
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct AfkView {
++    /// When the run's wall-clock budget ends (`team.afk_budget_ends_at`).
++    pub budget_ends_at: Timestamp,
++    /// Seconds until then; zero once the budget is spent.
++    pub seconds_left: u64,
++    pub spent: bool,
++    /// The `D<n>` entries in `<team dir>/afk/decisions.md`; 0 without the file.
++    pub decisions: u32,
++}
++
+ /// `teamwire status <team>` and `team_status`. Read-only.
+ #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct StatusView {
+@@ -151,6 +163,8 @@ pub struct StatusView {
+     pub state: Option<TeamState>,
+     pub lead: Option<LeadView>,
+     pub watch: WatchView,
++    /// `None` for a team that is not an AFK run.
++    pub afk: Option<AfkView>,
+     pub members: Vec<MemberView>,
+     /// The last five messages.
+     pub messages: Vec<MessageView>,
+diff --git a/crates/teamwire-watch/src/status.rs b/crates/teamwire-watch/src/status.rs
+index 740628e..5350cea 100644
+--- a/crates/teamwire-watch/src/status.rs
++++ b/crates/teamwire-watch/src/status.rs
+@@ -1,7 +1,7 @@
+ //! `teamwire status`: the same reading of each member as the watch, without
+ //! any memory of earlier polls, and without a single write (WAT-11).
+ 
+-use std::path::PathBuf;
++use std::path::{Path, PathBuf};
+ use std::time::Duration;
+ 
+ use teamwire_core::{
+@@ -16,8 +16,8 @@ use teamwire_store::{
+ use crate::observe::{Activity, Listings, Seen, observe};
+ use crate::text::result_path;
+ use crate::{
+-    LeadView, MemberView, MessageView, StatusView, StuckDelivery, UNREAD_AFTER, UnansweredQuestion,
+-    UndeliveredResult, UnreadDelivery, WatchState, WatchView,
++    AfkView, LeadView, MemberView, MessageView, StatusView, StuckDelivery, UNREAD_AFTER,
++    UnansweredQuestion, UndeliveredResult, UnreadDelivery, WatchState, WatchView,
+ };
+ 
+ /// The longest message excerpt status shows.
+@@ -65,6 +65,9 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
+         session_id: team.lead_session.clone(),
+         liveness: Liveness::Unknown,
+     });
++    view.afk = team
++        .afk_budget_ends_at
++        .map(|ends| afk_view(&team_dir, ends, now));
+ 
+     view.watch = match tx.watch_lease()? {
+         None => WatchView::default(),
+@@ -220,6 +223,29 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
+     })
+ }
+ 
++fn afk_view(team_dir: &Path, budget_ends_at: Timestamp, now: Timestamp) -> AfkView {
++    // A log that cannot be read counts as empty: status shows the budget anyway.
++    let log =
++        std::fs::read_to_string(team_dir.join("afk").join("decisions.md")).unwrap_or_default();
++    AfkView {
++        budget_ends_at,
++        seconds_left: seconds(budget_ends_at.saturating_since(now)),
++        spent: now >= budget_ends_at,
++        decisions: u32::try_from(log.lines().filter(|l| is_decision(l)).count())
++            .unwrap_or(u32::MAX),
++    }
++}
++
++/// A decision entry starts its line with `D<digits>`, then whitespace or
++/// the line's end: `D3  2026-10-19 14:05  Which column...`.
++fn is_decision(line: &str) -> bool {
++    let Some(rest) = line.strip_prefix('D') else {
++        return false;
++    };
++    let after = rest.trim_start_matches(|c: char| c.is_ascii_digit());
++    after.len() < rest.len() && after.chars().next().is_none_or(char::is_whitespace)
++}
++
+ /// The word `status` shows for a member, from its records and one look at it.
+ /// A member started without a first prompt has no startup to wait out, so it
+ /// reads `quiet` when idle.
+@@ -357,3 +383,26 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
+     }
+     view
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::is_decision;
++
++    #[test]
++    fn a_decision_line_is_d_digits_then_space_or_end() {
++        for line in ["D1", "D3  2026-10-19 14:05  Which column?", "D12\tx"] {
++            assert!(is_decision(line), "{line}");
++        }
++        for line in [
++            "D",
++            "Dx",
++            "D3a",
++            " D3 x",
++            "Decision: D3",
++            "Chose: D3",
++            "d3 x",
++        ] {
++            assert!(!is_decision(line), "{line}");
++        }
++    }
++}
+diff --git a/crates/teamwire-watch/tests/afk.rs b/crates/teamwire-watch/tests/afk.rs
+new file mode 100644
+index 0000000..fd88311
+--- /dev/null
++++ b/crates/teamwire-watch/tests/afk.rs
+@@ -0,0 +1,133 @@
++//! `status` of an AFK run: the budget's end, the time left, and the number
++//! of decisions in `afk/decisions.md`; `None` for any other team.
++
++#![expect(
++    clippy::unwrap_used,
++    clippy::indexing_slicing,
++    reason = "integration tests unwrap and index; a failure fails the test"
++)]
++#![expect(
++    clippy::disallowed_methods,
++    reason = "the test stands in for the lead that writes the decision log"
++)]
++
++#[path = "support/fixture.rs"]
++pub mod fixture;
++
++use std::time::Duration;
++
++use fixture::Bed;
++use teamwire_core::Clock as _;
++use teamwire_store::{Ctx, Store};
++use teamwire_watch::{AfkView, StatusView};
++
++const HOUR: Duration = Duration::from_secs(3600);
++
++fn status_of(bed: &Bed) -> StatusView {
++    let team = "alpha".parse().unwrap();
++    let mut store = Store::open_read_only(bed.home.path(), &team).unwrap();
++    let ctx = Ctx {
++        home: bed.home.path(),
++        store: &mut store,
++        registry: &bed.registry,
++        platform: &bed.platform,
++        clock: &bed.clock,
++        config: &bed.config,
++    };
++    teamwire_watch::status(&ctx)
++}
++
++fn write_decisions(bed: &Bed, text: &str) {
++    let dir = bed.home.path().join("teams").join("alpha").join("afk");
++    std::fs::create_dir_all(&dir).unwrap();
++    std::fs::write(dir.join("decisions.md"), text).unwrap();
++}
++
++#[test]
++fn a_zero_member_afk_team_shows_its_budget_and_no_decisions() {
++    let bed = Bed::afk(8 * HOUR);
++    let ends = bed.clock.now().checked_add(8 * HOUR).unwrap();
++    let view = status_of(&bed);
++    assert!(view.errors.is_empty(), "{:?}", view.errors);
++    assert!(view.members.is_empty());
++    assert_eq!(
++        view.afk,
++        Some(AfkView {
++            budget_ends_at: ends,
++            seconds_left: 8 * 3600,
++            spent: false,
++            decisions: 0,
++        })
++    );
++}
++
++#[test]
++fn the_time_left_falls_to_zero_and_the_budget_is_spent() {
++    let mut bed = Bed::afk(HOUR);
++    bed.add("api");
++    bed.age(Duration::from_secs(20 * 60));
++    let afk = status_of(&bed).afk.unwrap();
++    assert_eq!((afk.seconds_left, afk.spent), (40 * 60, false));
++
++    bed.age(40 * Duration::from_secs(60));
++    let afk = status_of(&bed).afk.unwrap();
++    assert_eq!((afk.seconds_left, afk.spent), (0, true));
++
++    bed.age(HOUR);
++    let afk = status_of(&bed).afk.unwrap();
++    assert_eq!((afk.seconds_left, afk.spent), (0, true));
++}
++
++#[test]
++fn decisions_count_the_d_entries_only() {
++    let bed = Bed::afk(HOUR);
++    write_decisions(
++        &bed,
++        "# Decisions\n\
++         \n\
++         D1  2026-10-19 13:00  Roster\n\
++         Chose: an analyst and a planner. See D1 above.\n\
++         Why: D2 below depends on it.\n\
++         \n\
++         D2  2026-10-19 14:05  Which column marks an AFK team?\n\
++         Chose: afk_budget_ends_at on the team row.\n\
++         D10\n\
++         Dx not an entry\n\
++         D3a not an entry\n\
++         \x20D4 indented, not an entry\n",
++    );
++    assert_eq!(status_of(&bed).afk.unwrap().decisions, 3);
++}
++
++#[test]
++fn a_team_that_is_not_an_afk_run_has_no_afk_view() {
++    let mut bed = Bed::new();
++    bed.add("api");
++    write_decisions(&bed, "D1  2026-10-19 13:00  Roster\n");
++    let view = status_of(&bed);
++    assert_eq!(view.afk, None);
++    let json = serde_json::to_value(&view).unwrap();
++    assert_eq!(json["afk"], serde_json::Value::Null);
++}
++
++#[test]
++fn the_json_afk_object_carries_the_four_fields() {
++    let bed = Bed::afk(HOUR);
++    write_decisions(&bed, "D1 x\nD2 y\n");
++    let json = serde_json::to_value(status_of(&bed)).unwrap();
++    let afk = json["afk"].as_object().unwrap();
++    let mut keys: Vec<&str> = afk.keys().map(String::as_str).collect();
++    keys.sort_unstable();
++    assert_eq!(
++        keys,
++        ["budget_ends_at", "decisions", "seconds_left", "spent"]
++    );
++    assert_eq!(json["afk"]["decisions"], 2);
++    assert_eq!(json["afk"]["seconds_left"], 3600);
++    assert!(
++        json["afk"]["budget_ends_at"]
++            .as_str()
++            .unwrap()
++            .ends_with('Z')
++    );
++}
+diff --git a/crates/teamwire-watch/tests/support/fixture.rs b/crates/teamwire-watch/tests/support/fixture.rs
+index dfbe7d3..7680a63 100644
+--- a/crates/teamwire-watch/tests/support/fixture.rs
++++ b/crates/teamwire-watch/tests/support/fixture.rs
+@@ -48,6 +48,15 @@ impl Bed {
+     }
+ 
+     pub fn with_route(route: LeadRoute) -> Self {
++        Self::build(route, None)
++    }
++
++    /// The team of an AFK run whose budget ends `budget` from now.
++    pub fn afk(budget: Duration) -> Self {
++        Self::build(LeadRoute::Sink, Some(budget))
++    }
++
++    fn build(route: LeadRoute, afk: Option<Duration>) -> Self {
+         let home = TestHome::new().unwrap();
+         let team = TeamName::parse(TEAM).unwrap();
+         let mut store = Store::open(home.path(), &team).unwrap();
+@@ -55,17 +64,21 @@ impl Bed {
+         let now = clock.now();
+         store
+             .write(|tx| {
+-                tx.create_team(
+-                    now,
+-                    &NewTeam {
+-                        name: team.clone(),
+-                        title: "Alpha".to_owned(),
+-                        lead_harness: HarnessId::from_static(FakeHarness::ID),
+-                        lead_host: HostId::from_static(FakeHost::ID),
+-                        lead_route: route,
+-                        lead_session: None,
+-                    },
+-                )
++                let new_team = NewTeam {
++                    name: team.clone(),
++                    title: "Alpha".to_owned(),
++                    lead_harness: HarnessId::from_static(FakeHarness::ID),
++                    lead_host: HostId::from_static(FakeHost::ID),
++                    lead_route: route,
++                    lead_session: None,
++                };
++                match afk {
++                    Some(budget) => {
++                        let ends = now.checked_add(budget).unwrap();
++                        tx.create_afk_team(now, &new_team, ends, &serde_json::Value::Null)
++                    }
++                    None => tx.create_team(now, &new_team),
++                }
+                 .map(|_| ())
+             })
+             .unwrap();
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 7e3df99..a2edd39 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -36,7 +36,8 @@ teamwire is a separate project. It keeps all state under `$TEAMWIRE_HOME`
+ install deletes an older install's skill folder), and registers
+ nothing in the user's global configuration. The one exception is
+ `teamwire install`, which writes the teamwire plugin (the lead's skill in
+-`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`, MCP
++`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`, the AFK
++skill in `skills/afk/SKILL.md` (ADR 0025), MCP
+ server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
+ through `claude plugin` (ADR 0018).
+ 
+diff --git a/docs/adr/0025-afk-runs.md b/docs/adr/0025-afk-runs.md
+new file mode 100644
+index 0000000..4521b5e
+--- /dev/null
++++ b/docs/adr/0025-afk-runs.md
+@@ -0,0 +1,144 @@
++# ADR 0025: An AFK run is one team led by a Claude Code session that never waits
++
++Status: accepted, 2026-10-23. The design brief is
++`docs/design/2026-10-19-afk-mode.md`.
++
++## Context
++
++A user wants to type one task, walk away, and come back to a result and a
++report. Members already work with no human present: they start with their
++permission prompts off, and their contract says nobody is watching. The lead
++does not. A lead that ends a turn on a question to the user is never woken
++again. The main skill tells the lead to ask the user its open questions, to
++tell the user about `TEAM-STALLED`, and to ask before a push. The Mac can
++sleep during planning, because launch takes the sleep hold only when the
++first member starts. Nothing limits how long a lead keeps re-planning. And a
++lead that does the research, planning and review itself fills its context
++during a long run.
++
++## Decision
++
++1. **A run starts with a second plugin skill, `/teamwire:afk <task>`.**
++   `examples/skills/afk/SKILL.md` is rendered by `teamwire install` into the
++   plugin as `skills/afk/SKILL.md`, beside the main skill, and stamped like
++   it. The skill reads the main skill first and lists only what AFK changes;
++   the main skill has one line pointing at it. Doctor checks it as part of
++   the plugin's files, so a missing or older AFK skill fails the
++   `teamwire plugin` check as the main skill does. Only a Claude Code lead
++   has AFK mode. A Codex lead keeps today's behaviour.
++2. **One AFK run is one team.** Its state lives where every team's does:
++   `$TEAMWIRE_HOME/teams/<team>/`, with its row in that team's `team.db`.
++   The run's shared files (`task.md`, `understanding.md`, `plan.md`,
++   `decisions.md`, `briefs/`, the wave specs and `REPORT.md`) sit in the
++   team directory's `afk/` folder, so close archives them with no new code.
++   Every member joins that team with `teamwire launch --add`.
++3. **The team row marks the run.** One nullable column, schema version 5:
++   `team.afk_budget_ends_at`. A value means the team is an AFK run, and the
++   value is when its wall-clock budget ends.
++4. **`teamwire afk start --team NAME --title TITLE --task FILE [--budget 8h]`
++   opens the run before any member exists.** It runs from the shell, in
++   this order, and stops at the first failure:
++   - it finds the lead session as launch does (ADR 0006). It refuses with
++     `no_lead_session` outside a lead session, `no_lead_process` when the
++     lead's process cannot be found for the sleep hold, and
++     `afk_already_running` when this session already leads an open AFK
++     team;
++   - it checks the name and title with launch's rules, and refuses with
++     launch's own codes, including a name already taken;
++   - it runs doctor's launch checks (`launch_checks` in `doctor.rs`): disk,
++     host, harness, plugin and `.worktrees/` ignored. These leave out the
++     per-team database checks, because another team's broken database does
++     not stop this run, and FAIL when there is no host, because no member
++     could start. Any FAIL refuses with `doctor_failed`; a warning is
++     printed and does not refuse;
++   - it creates the team with no members, copies the task file to
++     `afk/task.md` byte for byte, and takes or reuses the sleep hold through
++     launch's own code, so close releases it as today.
++5. **The lead's Stop hook holds the stop of an AFK lead that nothing will
++   wake.** It holds when the session leads an open AFK team,
++   `stop_hook_active` is false, the turn is not a subagent's, and no team of
++   this session has a started member without a completion and a live watch.
++   The note tells the lead to decide instead of asking, write the decision
++   to `afk/decisions.md`, and add the reporter when the work is done. It
++   holds once per stop chain, like the existing hold.
++6. **The budget stops new code, not the ending.** Past
++   `afk_budget_ends_at`, launch refuses each new `implementer` with
++   `refused: afk_budget_spent` and accepts every other kind, so the run can
++   still review, verify and report. Launch warns once per member of an AFK
++   team whose model or effort is below the skill's table.
++7. **Close ends a run, after the report.** Close refuses an AFK team whose
++   `afk/REPORT.md` is missing or lacks one of the eight headings with
++   `refused: afk_report_incomplete`. The headings are `##` headings with
++   these exact names, and a leading number such as `## 1. ` is accepted:
++   `What you asked`, `What I understood`, `The result`, `Verified`,
++   `Decisions made for you`, `Not done, and why`, `Risks`, `Cost`. A
++   `--role` removal is unaffected.
++8. **Status is the run's status.** `teamwire status <team>` shows one more
++   line for an AFK team: the budget end, the time left and the number of
++   decisions in `afk/decisions.md`; `--json` gets an `afk` object.
++   `teamwire teams` marks an AFK team with `afk`, and its `--json` carries
++   `afk_budget_ends_at`.
++9. **Members do the work, and the lead decides.** The lead picks members
++   from the skill's profiles (analyst, scout, planner, plan reviewer,
++   implementer, reviewer, closer, reporter) and records its roster as `D1`
++   in `afk/decisions.md` before the first launch. Five things are fixed:
++   never wait, protect the lead's context, the closer once code exists, the
++   reporter, and the boundaries (no push, pull request, merge into the base
++   branch, branch deletion, `teamwire install` or `cargo install`). The
++   planner is an investigator writing only under `afk/`, so no new member
++   kind is needed. Member contracts do not change.
++10. **Models.** Implementers and investigators run on `opus` at `high`;
++    reviewers, the plan reviewer and the closer at `xhigh`; the planner at
++    `xhigh`; `max` for at most one member with a hard task. Every
++    `deadline_s` is 1.5 times the normal value.
++
++## Considered options
++
++- A separate AFK home: a state directory such as `$TEAMWIRE_HOME/afk/<run>/`
++  with its own record of runs. Rejected: every reader of team state (status,
++  teams, watch, close, reopen, metrics, the dashboard) would need a second
++  place to look, and the hold, archive and Stop hook would need a second
++  owner. One team per run needs one column.
++- Several teams per run, one per phase. Rejected: the hold, the archive, the
++  metrics and the Stop hook's check would spread over several rows.
++- An `afk finish` command. Rejected: close already ends a team in the safe
++  order and releases the hold.
++- An `afk status` command. Rejected: the run is a team, so `teamwire status`
++  shows it.
++- Starting with `teamwire launch` and a first member. Rejected: the Mac could
++  sleep during planning, before any member exists.
++- A counter that holds the lead's stop more than once. Rejected: it would
++  hold forever, or need state the read-only hook does not write, and a lead
++  with its own background command must be able to stop.
++- A token budget. Rejected by the user: a wall-clock budget only.
++- A refusal of every member kind past the budget. Rejected: the reporter and
++  the closer must still run, and new code is what drags a run on.
++- The lead doing research, planning and review itself, as the main skill has
++  it below four members. Rejected: a long run fills the lead's context, and
++  the lead decides worse.
++- A new member kind for the planner. Rejected: an investigator may not edit
++  repository files, and `afk/` is outside the repository.
++- Telling members about AFK. Rejected: their contract already assumes no
++  human; only their briefs change, carrying decisions instead of questions.
++- Reading the lead's permission mode in `afk start`. Rejected: the command
++  runs from Bash and cannot see it, so the skill has the lead read its own
++  context.
++
++## Consequences
++
++- The user starts with `/teamwire:afk <task>` in a session run with
++  `claude --permission-mode bypassPermissions` (or auto mode), and gets a
++  local integration branch and `afk/REPORT.md` in the team's archive. The
++  user pushes it.
++- An older binary opens an AFK team's version 5 database read only and
++  refuses to write it (ADR 0015).
++- A lead that stops twice with nothing running is stuck: the second stop
++  passes because `stop_hook_active` is true. The hold also misses a
++  background command the lead started itself. The design accepts this, and
++  `teamwire status` shows the AFK team open with no working member.
++- A Claude usage limit pauses the lead and every member. AFK mode cannot
++  work around it; the report's `Cost` section shows the gap afterwards.
++- A closed lid still sleeps a Mac, whatever the hold does. `afk start` and
++  the skill tell the user to keep the lid open and the machine on power.
++- After `cargo install`, the user runs `teamwire install` again to get the
++  AFK skill, as for any skill change.
+diff --git a/docs/api/cli.md b/docs/api/cli.md
+index 62b65ee..82a2266 100644
+--- a/docs/api/cli.md
++++ b/docs/api/cli.md
+@@ -80,6 +80,35 @@ When no member started, one more line follows `watch:`: `no member started;
+ fix the cause and run teamwire launch --add --spec <spec>, or teamwire close
+ <team>`. The team stays open.
+ 
++On an AFK team (its row has `afk_budget_ends_at`), once that time has passed,
++each new `implementer` prints `<role>: refused: afk_budget_spent: ...` and is
++not started; every other kind starts. The plan also warns once per member
++whose `model` or `effort` is below the AFK table (implementer and
++investigator opus/high, reviewer and closer opus/xhigh; models rank
++haiku < sonnet < opus, efforts low < medium < high < xhigh < max). An unset
++or unknown value counts as below; a Codex member's model is not checked.
++`--add` accepts an AFK team that has no members yet.
++
++### `teamwire afk start --team NAME --title TITLE --task FILE [--budget DURATION]`
++
++Starts an AFK run from the lead's shell: creates the team with no members,
++`afk_budget_ends_at` = now + `--budget` (default `8h`; `30m`, `90s`,
++`1h30m` style), copies FILE byte for byte to `<team dir>/afk/task.md`, and
++starts or reuses the sleep hold on the lead's process. Prints the team, the
++`afk/` directory, the report path `<team dir>/afk/REPORT.md`, when the budget
++ends, and a reminder to keep the lid open and the machine on power. Doctor's
++launch checks run first: each `FAIL` refuses, each `warn` prints
++`warning: <check>: <detail>`.
++
++Refusals, exit 1, `refused: <code>: <message>` on stderr, in this order:
++`bad_budget` (zero or unparsable), `no_lead_session`, `background_lead`,
++`afk_already_running` (this session leads an open AFK team), `bad_name`,
++`team_exists`, `title_missing`, `title_too_long`, `bad_task` (unreadable or
++empty FILE), `doctor_failed` (one line per failing check, `<name>: <detail>`),
++`no_lead_process` (the platform has a sleep hold and the lead's process
++cannot be found). Each of these creates nothing. `store_error` after the team
++row exists says so; `teamwire close <team>` removes it.
++
+ ### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
+ 
+ Runs until the team completes or closes. Prints at most one line per poll,
+@@ -139,6 +168,12 @@ Code: `claude --resume <session-id> --settings ... --mcp-config ...
+ no Stop hook, no identity and no MCP tools. The command carries the
+ `--model` and `--effort` the member was launched with, when launch recorded
+ them. A member started by an older build resumes on Claude's default.
++An AFK run's team (`afk_budget_ends_at` set) gets one more line after the
++watch: `afk: budget ends <time>, <left> left, <n> decisions`, or
++`afk: budget spent at <time>, <n> decisions`, where `<n>` counts the lines of
++`afk/decisions.md` that start with `D<digits>` then a space or the line's end.
++`--json` carries `afk`: `{budget_ends_at, seconds_left, spent, decisions}`,
++`null` for any other team.
+ 
+ ### `teamwire reopen <team> [--role R] [--dry-run]`
+ 
+@@ -228,6 +263,15 @@ hash, not its bytes (STO-10).
+ Whole team: the fixed order of CLS-1. `--role` removes one member with the
+ same checks plus CLS-5; `--stop` allows removing a busy member;
+ `--unverified` overrides CLS-5 and prints why. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
++A whole-team close of an open AFK run's team refuses, before the lock and
++with nothing changed, while `teams/<team>/afk/REPORT.md` is missing or lacks
++a heading: `REFUSED: afk_report_incomplete: <path> is missing; ...` or
++`... lacks the headings: <names>`. The eight headings are `What you asked`,
++`What I understood`, `The result`, `Verified`, `Decisions made for you`,
++`Not done, and why`, `Risks`, `Cost`. Each must be an ATX heading line (`#`
++to `######`, then a space) whose text, without a leading `1.` or `1)`, `*`
++or `**` emphasis and a trailing `:`, equals the name ignoring case. Order is
++not checked. `--role` removal does not check the report.
+ `--keep-state` leaves `$TEAMWIRE_HOME/teams/<team>` in place, marked closed.
+ The archive goes to `$TEAMWIRE_HOME/archive/<team>-<date>` (a `-HHMMSS`
+ suffix when taken) unless `--archive-to` names a directory. The state
+@@ -378,7 +422,9 @@ is working or done is in `teamwire status`.
+ 
+ Every team under the home with its title, state and roster, as `team_teams`
+ returns it (MSG-21), and how to address its agents (`lead@<team>`,
+-`<role>@<team>`). Reads only and needs no proof. A team whose store cannot
++`<role>@<team>`). An AFK run's team reads `<team> (<state>) afk <title>`, and
++`--json` gives every team `afk_budget_ends_at`: the budget's end, or `null`
++for a team that is not an AFK run. Reads only and needs no proof. A team whose store cannot
+ be read is named on stderr and makes the command exit 6; the others are
+ still listed.
+ 
+@@ -394,7 +440,7 @@ These are started by a harness, not typed by people.
+ | `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. |
+ | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
+ | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
+-| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
++| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. It also holds for each open AFK team (`afk_budget_ends_at` set) the session leads when nothing will wake the lead, that is no team it leads has both a working member and a live watch lease: the line `[teamwire:<team>] AFK run: nobody will answer you. ...` (`teamwire_report::afk_hold_notes`) points at the team's `afk/decisions.md` and `afk/REPORT.md`, and past the budget starts `budget spent at <time>:`. Both kinds of line come in one reply. Only a `claude-code` lead gets the AFK lines; `lead-stop --harness codex` does not. Returns nothing in a member session, for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; gives up after about 5 s. Always exits 0. |
+ | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
+ 
+ ## Maintenance
+@@ -402,7 +448,7 @@ These are started by a harness, not typed by people.
+ | Command | Does |
+ | --- | --- |
+ | `teamwire doctor` | Read-only checks: `quick_check` on each team database, schema versions (a team at an older schema passes, with a note that the next write migrates it), free disk, network filesystem, stale close locks (a lock is stale when its pid is gone or now belongs to a process that started at another time) and watch leases, herdr's session hook present, `.worktrees/` ignored in the current repo, harness and host binaries on `PATH`, `claude --version` and `claude --help` (a warning when the help lacks any of `--session-id`, `--resume`, `--permission-mode`, `--append-system-prompt-file`, `--settings`, `--mcp-config`, `--model`, `--effort`), the host's version (`herdr --version` or `tmux -V`; a probe that fails or takes over 5 s is a warning), a warning naming, never showing, any of `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK` or `CLAUDE_CODE_USE_VERTEX` that is set (each overrides the stored login for every member), a warning per open team with a member that another teamwire build started, a per-team check `team <team> counters` that fails when a message counter is below the largest id in use or its counter row is missing (`counter <name> is missing but <n> is in use`), and prints the SQL statement that repairs it (doctor never runs the repair), the teamwire plugin installed at user scope, enabled, and with the files Claude Code loads matching this binary (not compared when this binary is a build under `target/`), a failure for a leftover ADR 0012 skill or MCP entry (`old lead setup`), and a warning for a local- or project-scope `teamwire` entry in the current directory, which Claude Code starts as a second server beside the plugin's. A plugin whose files match what this binary renders for the home it was installed for, but whose home differs from this run's, is a warning and gives no `teamwire install` advice: `warn teamwire plugin: installed for state directory <A>; this run uses <B>` (`<A>` reads `~/.teamwire (the default)` for a plugin installed for the default directory). Any other difference stays a failure. Doctor also prints a host line, for herdr and tmux, with the reason for the pick: `ok   host: herdr (HERDR_ENV is 1)`, `host: tmux (TMUX is set)`, `host: tmux (both HERDR_ENV and TMUX are set; the nearest parent is tmux)` or `host: herdr (both HERDR_ENV and TMUX are set; no parent is tmux or herdr, so herdr first)`. With no host the old line stays. Exit 0 when all pass, 2 otherwise. When `codex` is on PATH, doctor also lists a `codex on PATH` line with its version, and checks the Codex plugin: a missing plugin is ok and names `teamwire install --harness codex`, a stale one is a warning. Without `codex` on PATH, doctor says nothing about Codex. |
+-| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skill (`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, both skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. |
++| `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skill (`skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`), the AFK skill `skills/afk/SKILL.md` that Claude Code lists as `/teamwire:afk` (ADR 0025), the lead's MCP server `<this binary> [--home DIR] mcp --lead` and the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, every skill file included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. |
+ | `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, both skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `codex` is on PATH, it also removes the Codex plugin and marketplace through `codex plugin`. |
+ | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). |
+ | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. |
+diff --git a/docs/api/core.md b/docs/api/core.md
+index f75d4ea..5efb555 100644
+--- a/docs/api/core.md
++++ b/docs/api/core.md
+@@ -188,7 +188,8 @@ so they need no schema change:
+ folder belongs to an older lead session. `ReadTx::run_options` returns a
+ member's recorded `model` and `effort`, and whether either key was recorded.
+ `Tx::create_team_with` and `Tx::adopt_lead_in` write the extra keys.
+-`Tx::create_afk_team` creates an AFK run's team: `create_team_with` plus
++`Tx::create_afk_team(at, team, budget_ends_at, extra)` creates an AFK run's
++team: `create_team_with` with `extra` (`teamwire afk start` passes `lead_cwd`) plus
+ `team.afk_budget_ends_at` and the event key of the same name.
+ 
+ ## 6. Traits
+diff --git a/docs/failure-modes.md b/docs/failure-modes.md
+index d16bc09..da54469 100644
+--- a/docs/failure-modes.md
++++ b/docs/failure-modes.md
+@@ -137,3 +137,15 @@ under test uses.
+ | DEL-17: the lead runs with no host (neither herdr nor tmux) | Wiring picks `NoHost` | Results go through the watch (`COMPLETED`); questions to the lead are `undelivered` (`no_host`) and printed once | `crates/teamwire-report/tests/nohost.rs::no_host_lead_gets_results_through_watch`; `crates/teamwire-msg/tests/nohost.rs::question_to_no_host_lead_undelivered` |
+ | DEL-17: a member has no host | `NoHost` capabilities | Message stored, `undelivered` (`no_host`), readable with `inbox` | `crates/teamwire-msg/tests/nohost.rs::no_host_member_reads_through_inbox` |
+ | A burst of sends to one recipient | Rate limit | Later sends refused with `rate_limited` and logged | `crates/teamwire-msg/tests/send.rs::burst_refused_and_logged` |
++
++## 3. AFK runs (ADR 0025)
++
++| Failure | Detected by | teamwire does | Test that proves it |
++| --- | --- | --- | --- |
++| AFK-5: the lead ends a turn on a question to the absent user | The lead's Stop hook: an open AFK team of this session, no working member with a live watch, `stop_hook_active` false | Holds the stop once with the AFK note: decide, log it in `afk/decisions.md`, carry on | `crates/teamwire-report/tests/lead_stop.rs` and `crates/teamwire-cli/tests/lead_hook.rs` (the AFK hold tests) |
++| AFK-1: the Mac sleeps during planning, before any member exists | None needed: `teamwire afk start` takes the sleep hold when it creates the team | The team owns the hold, and close releases it. A closed lid still sleeps a Mac, so `afk start` and the skill tell the user to keep it open and on power | `crates/teamwire-cli/tests/afk.rs` (the hold taken by `afk start`) |
++| AFK-6: a run goes on past its wall-clock budget | Launch reads `afk_budget_ends_at` from the team row | Refuses each new `implementer` with `refused: afk_budget_spent`; reviewers, the closer and the reporter still launch, so the run ends with a report | `crates/teamwire-launch/tests/afk.rs` (the budget refusal) |
++| The lead stops twice with nothing running, or the hold misses a background command the lead started itself | The second stop has `stop_hook_active` true | Nothing: the stop passes and the lead is stuck. `teamwire status` shows the AFK team open with no working member | None: accepted design risk (ADR 0025), no test |
++| A Claude usage limit pauses the lead and every member | Not detected | Nothing: the run resumes, or not, when the limit lifts. The report's `Cost` section shows the gap afterwards | None: outside teamwire, no test |
++| AFK-8: the run tries to close without a full report | Close reads `afk/REPORT.md` for the eight `##` headings | Refuses with `refused: afk_report_incomplete`; the skill has the lead reprompt the reporter with the missing headings | `crates/teamwire-close/tests/` (the AFK report check) |
++| AFK-11: the AFK skill is missing or older than this binary | `teamwire doctor`'s `teamwire plugin` check compares every plugin file | Fails the check and names `teamwire install`; `afk start` refuses with `doctor_failed` | `crates/teamwire-cli/tests/doctor.rs::a_missing_or_out_of_date_afk_skill_fails_the_plugin_check_like_the_main_skill`; `crates/teamwire-harness-claude/tests/lead_setup.rs::a_missing_or_old_afk_skill_is_another_version_and_install_rewrites_it` |
+diff --git a/docs/requirements.md b/docs/requirements.md
+index 4e31482..3afc492 100644
+--- a/docs/requirements.md
++++ b/docs/requirements.md
+@@ -301,3 +301,22 @@ Each one has a test named in `docs/failure-modes.md`.
+ | --- | --- | --- | --- |
+ | EXT-1 | SHOULD | A PR watch with the same one-line-per-poll rule: `FAIL` once per check, `MERGEABLE` on change, `DONE` when nothing is pending, exit 1 on any failure, `gh`'s exit code ignored. It is kept apart from the team lifecycle. | speclife LC-58 |
+ | EXT-2 | SHOULD | Keep titles in the record and show them in status. Renaming host workspaces to follow the lead's label is host-specific and optional. | speclife Q6, W13 |
++
++### AFK runs (AFK)
++
++ADR 0025 records the design. Source: the AFK design brief,
++`docs/design/2026-10-19-afk-mode.md` (section numbers below are its own).
++
++| Id | Level | Requirement | Source |
++| --- | --- | --- | --- |
++| AFK-1 | MUST | `teamwire afk start --team NAME --title TITLE --task FILE [--budget DURATION]` (default `8h`) runs from the shell and stops at the first failing step: find the lead session as launch does; check the name and title with launch's rules; run doctor's launch checks; create the team with no members and `afk_budget_ends_at` set; copy the task file byte for byte to `teams/<team>/afk/task.md`; take or reuse the sleep hold through launch's code and record it on the team row; print the team, the `afk/` directory, the report path, the budget end and the line to keep the lid open and the machine on power. | design 5.2 |
++| AFK-2 | MUST | `afk start` refuses, before creating anything, with `no_lead_session` outside a lead session, `no_lead_process` when the lead's process cannot be found, `afk_already_running` when this session already leads an open AFK team, launch's own codes for a bad or taken name or title, and `doctor_failed` on any `FAIL` from doctor's launch checks. A warning is printed and does not refuse. | design 5.2; ADR 0025 |
++| AFK-3 | MUST | Doctor's launch checks, as `afk start` runs them, are disk, host, harness, plugin and `.worktrees/` ignored. They leave out the per-team database checks and `FAIL` when there is no host. | design 5.2; ADR 0025 |
++| AFK-4 | MUST | `teamwire launch --add` accepts an AFK team that has no members yet. | design 5.2 |
++| AFK-5 | MUST | The lead's Stop hook holds the stop, once per stop chain, when the session leads an open team with `afk_budget_ends_at` set, `stop_hook_active` is false, the turn is not a subagent's, and no team of this session has a started member without a completion for its current generation and a live watch lease. The note says to decide instead of asking, log the decision in `afk/decisions.md`, add the reporter and close once `afk/REPORT.md` exists, and stop again if a command of the lead's own will wake it. Past the budget it starts with `budget spent at <time>:`. It joins the existing no-watch note in one reply, writes nothing, keeps its time budget and never fails the turn; an unreadable team row means no AFK hold. | design 5.3 |
++| AFK-6 | MUST | Past `afk_budget_ends_at`, launch refuses each new `implementer` member of that team with `refused: afk_budget_spent` and accepts every other kind. A team without the column set is unaffected. | design 5.4 |
++| AFK-7 | SHOULD | Launch prints one warning per member of an AFK team whose `model` or `effort` is below the AFK skill's table. | design 5.4 |
++| AFK-8 | MUST | Close refuses an AFK team whose `afk/REPORT.md` is missing or lacks one of the `##` headings `What you asked`, `What I understood`, `The result`, `Verified`, `Decisions made for you`, `Not done, and why`, `Risks`, `Cost` (a leading number is accepted), with `refused: afk_report_incomplete`. A `--role` removal is unaffected, and the archive holds the `afk/` files. | design 5.5; ADR 0025 |
++| AFK-9 | MUST | `teamwire status <team>` shows one line for an AFK team: the budget end, the time left and the number of `D<n>` entries in `afk/decisions.md`; `--json` carries the same fields in an `afk` object, copied into `ui/src/shared/teamwire.ts`. | design 5.5 |
++| AFK-10 | MUST | `teamwire teams` marks an AFK team with `afk` after its state, and `teamwire teams --json` carries `afk_budget_ends_at`. | design 5.5 |
++| AFK-11 | MUST | `teamwire install` renders `examples/skills/afk/SKILL.md` (frontmatter `name: afk`) into the plugin as `skills/afk/SKILL.md`, so Claude Code lists it as `/teamwire:afk`, and the main skill points at it in one line. `teamwire doctor` checks it as it checks the main skill: a missing or out-of-date copy fails the `teamwire plugin` check. | design 5.6 |
+diff --git a/examples/skills/afk/SKILL.md b/examples/skills/afk/SKILL.md
+new file mode 100644
+index 0000000..d2b8808
+--- /dev/null
++++ b/examples/skills/afk/SKILL.md
+@@ -0,0 +1,183 @@
++---
++name: afk
++description: Run a teamwire team on one task while the user is away, with no questions asked until the report is written. Use when the user types /teamwire:afk <task>, or says they will be away and want the result when they return.
++---
++
++# AFK runs with teamwire
++
++You lead a teamwire team on one task, and nobody will answer you until the
++run ends. Load the `teamwire:teamwire` skill first: in this plugin it is
++`../teamwire/SKILL.md`, with `../teamwire/reference.md` beside it. This file
++lists only what changes. Where the two disagree, this file wins.
++
++## The one rule
++
++Never wait for a person. When you would ask the user something, answer it
++yourself with the answer you would have recommended, write it into the
++decision log, and carry on. A turn that ends on a question to the user ends
++the run, because nothing will wake you again. Step 1 is the only place you
++may stop for the user.
++
++## 1. Preflight, while the user may still be at the keyboard
++
++1. Check that your context says bypass permissions mode or auto mode is
++   active. If it does not, tell the user to restart the session with
++   `claude --permission-mode bypassPermissions`, and stop.
++2. Write the user's task, word for word, to a file. Pick a team name and a
++   title from the task. Run
++   `teamwire afk start --team <name> --title <title> --task <file>`, with
++   `--budget` only when the user named a time limit. On a refusal or a FAIL
++   line, tell the user what failed and stop.
++3. Reply once with the team name, the report path, the time the budget
++   ends, and: "Keep the lid open and the machine on power." Then carry on
++   with the run (section 2 onward) in the same turn. Do not wait for an
++   answer.
++
++The run is this one team. `afk start` prints its team directory,
++`$TEAMWIRE_HOME/teams/<team>/`, and every `afk/` path below is inside it.
++Every member you add later joins the team with `teamwire launch --add`.
++Never start a second team for this run.
++
++## 2. What every run must have
++
++You choose the team for each task. These five things hold in every run, and
++nothing in the task changes them:
++
++1. You never wait for a person (the one rule above).
++2. You protect your own context (section 3).
++3. Once code exists, the `closer` runs. It runs every claimed check and the
++   repository's full gate on each branch and on the joined branch, and
++   records each exit code. It is the only member that turns the team's
++   claims into evidence before the user reads the report.
++4. A `reporter` writes `afk/REPORT.md` (section 7). Close refuses the team
++   until the report has every heading.
++5. The boundaries hold: never push, open a pull request, merge into the base
++   branch, delete a branch, or run `teamwire install` or `cargo install`.
++   Never act on a team this session does not lead.
++
++Everything else is yours to decide: which members to add, how many, and in
++what order.
++
++## 3. Your context is the run's scarcest resource
++
++You decide. Members research, plan, review, verify and write. Every file you
++read stays in your context for the rest of the run, and a lead with a full
++context decides worse. So:
++
++- Give research, planning, review, verification and report-writing to
++  members. Do one yourself only when it is smaller than writing its brief,
++  and never read more than one or two short files for it.
++- Pass work by path. A brief or a reprompt names files. Never paste a
++  report, a diff or a log into a message.
++- Read a member's result line and the summary at the top of its report. Read
++  further only when two members contradict each other, and then only the
++  lines in dispute.
++- Never read a raw diff, check output or a gate log. The closer reads those.
++- Members read each other's files by path. A planner reads the
++  investigators' reports, a plan reviewer reads the plan, and each owner
++  reads its own findings.
++
++Each member you add runs once and finishes. None of them sends work to
++another member. You make every call that changes the plan.
++
++## 4. Members you can add
++
++These profiles are a reference, not a sequence. Pick the ones the task
++needs. When you are unsure whether a member pays for itself, add it. One
++more member costs little. A misread task with nobody watching costs the
++whole run.
++
++| Member | Kind, model, effort | Use it when | It writes |
++| --- | --- | --- | --- |
++| analyst | investigator, opus, high | The task leaves room for more than one reading, or touches code you have not read. | `afk/understanding.md`, at most one page: the end state, the inferred acceptance criteria, what is out of scope, each ambiguity with the reading it chose, and the questions that decide the plan, grouped by area |
++| scout | investigator, opus, high | An area has questions that decide the plan and nobody has answered them. One scout per area, all in one `--add`. Keep scouts open until the build ends, so implementers can ask them directly. | its report: each answer with file:line |
++| planner | investigator, opus, xhigh | The work has more than one unit, open questions, or files that others read or pin. | `afk/plan.md` with a summary of at most 30 lines on top; `afk/decisions.md`; `afk/briefs/<role>.md` per implementer, with the 14 sections of the main skill's "Write the brief as a file"; `afk/spec-wave<n>.json`; the result of each item of the main skill's planning check (in "Plan the work, then check the plan"), using a temporary `git clone` where a fresh worktree is needed |
++| plan reviewer | reviewer, opus, xhigh | A plan exists and a wrong plan would waste more than one implementer's work. Fix the plan once from its findings, by reprompting whoever wrote it. Never review the same plan twice. | ranked gaps: a misread of the task, a criterion nobody can check, a file nobody owns, a check that misses what CI runs, a wrong shape |
++| implementer | implementer, opus, high | Code must change. | its branch |
++| reviewer | reviewer, opus, xhigh | A branch is finished. One per branch by default. Skip it only for a change so small that the closer's coverage check reads the whole diff anyway. | ranked findings |
++| closer | closer, opus, xhigh | Always, once code exists (section 2). | the integrated report and the exit codes |
++| reporter | investigator, opus, high | Always, at the end (section 7). | `afk/REPORT.md` |
++
++Use `max` only for one member whose task is hard to reason about, such as a
++race or a data-loss path. Set every `deadline_s` to 1.5 times what you would
++set otherwise. Write each brief to `afk/briefs/<role>.md`. Tell every member
++that writes files outside its report file to put them under `afk/` in the
++team directory, never in the repository.
++
++Whoever settles an open question, a planner or you, writes it to
++`afk/decisions.md` in this form:
++
++    D3  2026-10-19 14:05  Which column marks an AFK team?
++    Chose: afk_budget_ends_at on the team row.
++    Why: one nullable column says both that the team is AFK and when its budget ends.
++    Reverse by: a schema migration that drops the column; only launch, status, close and the Stop hook read it.
++
++Each answer goes into the affected briefs under "Decisions already made". A
++brief has no "Open questions you must not answer" for work it must deliver.
++When a question cannot be settled from the task, the code or the docs, such
++as a credential nobody has or a product choice the task gives no hint of,
++cut the units that depend on it and list them as not done.
++
++## 5. Write down your roster before the first launch
++
++Before you add the first member, write entry `D1` in `afk/decisions.md`: the
++members you plan to add, the profiles you are skipping, and one line on why
++for each. When you change the roster later, add an entry. The reporter puts
++this in the report, so the user can see which checks the run skipped.
++
++## 6. While the team works
++
++- Answer a member's question in the turn it arrives. When the plan answers
++  it, point at the line. When a scout knows the area, tell the member to ask
++  that scout. Otherwise decide, and add a `D` entry. Never leave a question
++  `UNANSWERED`.
++- Send review findings to the branch's owner by path, all in one turn. Do
++  not sort the findings yourself: the owner checks each one against the
++  code, fixes what holds, and answers the rest with evidence. Allow at most
++  two fix rounds per owner. Never run the closer twice. Run
++  `teamwire verify <team> --role <owner>` after each fix round.
++- Make the integration branch `afk/<team>` off the base branch, and merge in
++  the plan's order. On a conflict, abort that merge. Reprompt the later
++  branch's owner to merge the earlier branch into its own branch and resolve
++  it, then merge again. Do not resolve conflicts yourself.
++- `TEAM-STALLED` is yours to handle, not the user's. Run `teamwire status`,
++  read the pane, and replace the member once. If the replacement stalls too,
++  cut the unit and report it.
++- `teamwire status <team>` shows the time left in the budget. Launch the
++  last implementer no later than two thirds of the way through it, so the
++  review, the closer and the report still fit. Past the budget, launch
++  refuses new implementers. Finish what is running, verify it, and have the
++  reporter list the rest as not done.
++
++## 7. Report and close
++
++Add the `reporter` with the paths of whichever of these exist:
++`afk/task.md`, `afk/understanding.md`, `afk/plan.md`, `afk/decisions.md`,
++the closer's report, and the team's `reports/` directory. It runs
++`teamwire metrics <team>` for the cost, and gathers every member's
++**Decisions I made** list. It writes `afk/REPORT.md` with these eight
++sections, in this order. Each is a Markdown `##` heading with exactly this
++name, because close looks for these names (a leading number, as in
++`## 1. What you asked`, is also accepted):
++
++1. `## What you asked`: the task, quoted.
++2. `## What I understood`: the end state from `understanding.md`.
++3. `## The result`: the branch, its base commit, the commits, and how to try
++   it.
++4. `## Verified`: each command, where it ran, and its exit code.
++5. `## Decisions made for you`: the ones that most change the result, with
++   a pointer to `decisions.md`.
++6. `## Not done, and why`.
++7. `## Risks`: what you could not check, and what the reviewer or closer
++   flagged that is still open.
++8. `## Cost`: wall time, and tokens per member.
++
++Run `teamwire close <team>`. Close refuses until the report has every
++heading, archives the team with the `afk/` files, keeps the branches and
++releases the sleep hold. When close refuses, reprompt the reporter with the
++missing headings. Then call `PushNotification` with the archived report's
++path if you have that tool.
++
++A run always ends with a report. When something fails that nobody can fix,
++have the reporter write up what exists. A partial result with an honest
++report is the goal. A session waiting for a person is the failure.
+diff --git a/examples/skills/teamwire/SKILL.md b/examples/skills/teamwire/SKILL.md
+index 3b538bb..5b0e41b 100644
+--- a/examples/skills/teamwire/SKILL.md
++++ b/examples/skills/teamwire/SKILL.md
+@@ -15,6 +15,7 @@ brief, decide who joins and who leaves, and integrate and verify the results.
+ Nobody else on the team makes those calls. Use a team when the user asks for
+ one, for parallel agents, or for work that carries on while they are away.
+ For one standalone delegated task, split a pane and prompt it yourself.
++For a run the user will not be present for, use `/teamwire:afk`.
+ 
+ teamwire keeps its state in `$TEAMWIRE_HOME` (default `~/.teamwire`). Agent
+ names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
+diff --git a/ui/src/shared/teamwire.test.ts b/ui/src/shared/teamwire.test.ts
+index 69425cd..fafd1a1 100644
+--- a/ui/src/shared/teamwire.test.ts
++++ b/ui/src/shared/teamwire.test.ts
+@@ -18,6 +18,23 @@ describe("schemas refuse a changed shape", () => {
+     changed.messages[0]!.deliveries[0]!.state = "teleported";
+     expect(LogView.safeParse(changed).success).toBe(false);
+   });
++  test("status with an afk object, null, or no afk key at all", () => {
++    const afk = { budget_ends_at: "2026-10-19T22:00:00.000Z", seconds_left: 11520, spent: false, decisions: 4 };
++    const one = status[0]!;
++    expect(StatusAll.parse([{ ...one, afk }])[0]!.afk).toEqual(afk);
++    expect(StatusAll.parse([{ ...one, afk: null }])[0]!.afk).toBeNull();
++    const { afk: _, ...old } = { ...one, afk: null };
++    expect(StatusAll.safeParse([old]).success).toBe(true);
++    expect(StatusAll.safeParse([{ ...one, afk: { ...afk, decisions: -1 } }]).success).toBe(false);
++  });
++  test("teams with afk_budget_ends_at, null, or without the key", () => {
++    const team = teams.teams[0]!;
++    const ends = "2026-10-19T22:00:00.000Z";
++    expect(TeamsList.parse({ teams: [{ ...team, afk_budget_ends_at: ends }] }).teams[0]!.afk_budget_ends_at).toBe(ends);
++    expect(TeamsList.safeParse({ teams: [{ ...team, afk_budget_ends_at: null }] }).success).toBe(true);
++    expect(TeamsList.safeParse({ teams: [team] }).success).toBe(true);
++    expect(TeamsList.safeParse({ teams: [{ ...team, afk_budget_ends_at: 5 }] }).success).toBe(false);
++  });
+   test("a new key is accepted and dropped", () => {
+     const added = { teams: [{ ...teams.teams[0]!, colour: "red" }] };
+     const parsed = TeamsList.parse(added);
+diff --git a/ui/src/shared/teamwire.ts b/ui/src/shared/teamwire.ts
+index 702ece4..73a7d92 100644
+--- a/ui/src/shared/teamwire.ts
++++ b/ui/src/shared/teamwire.ts
+@@ -118,6 +118,17 @@ export const UndeliveredResult = z.object({
+   path: z.string(),
+ });
+ 
++/** An AFK run's budget and decision count. */
++export const AfkView = z.object({
++  /** UTC RFC 3339 with milliseconds. */
++  budget_ends_at: z.string(),
++  /** Zero once the budget is spent. */
++  seconds_left: count,
++  spent: z.boolean(),
++  /** `D<n>` entries in the team's `afk/decisions.md`. */
++  decisions: count,
++});
++
+ /** `teamwire status <team> --json`, and one element of `status --json`. */
+ export const StatusView = z.object({
+   team: z.string().nullable(),
+@@ -125,6 +136,8 @@ export const StatusView = z.object({
+   state: TeamState.nullable(),
+   lead: LeadView.nullable(),
+   watch: WatchView,
++  /** Null for a team that is not an AFK run; absent from older teamwire. */
++  afk: AfkView.nullable().optional(),
+   members: z.array(MemberView),
+   /** The last five messages, newest first. */
+   messages: z.array(MessageView),
+@@ -156,6 +169,8 @@ export const TeamEntry = z.object({
+   title: z.string(),
+   state: TeamState,
+   members: z.array(RosterMember),
++  /** When an AFK run's budget ends; null otherwise, absent from older teamwire. */
++  afk_budget_ends_at: z.string().nullable().optional(),
+ });
+ 
+ /** `teamwire teams --json`. */
+@@ -208,6 +223,7 @@ export type LeadView = z.infer<typeof LeadView>;
+ export type MessageView = z.infer<typeof MessageView>;
+ export type StuckDelivery = z.infer<typeof StuckDelivery>;
+ export type UndeliveredResult = z.infer<typeof UndeliveredResult>;
++export type AfkView = z.infer<typeof AfkView>;
+ export type StatusView = z.infer<typeof StatusView>;
+ export type RosterMember = z.infer<typeof RosterMember>;
+ export type TeamEntry = z.infer<typeof TeamEntry>;

@@ -1,0 +1,35 @@
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-core)
+   Compiling teamwire-store v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-store)
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/tests/fakes)
+   Compiling teamwire-deliver v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-deliver)
+   Compiling teamwire-launch v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-2wri6c5r/copy/crates/teamwire-launch)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.12s
+     Running tests/afk.rs (/private/tmp/claude-501/bench-target/debug/deps/afk-dadd0401ac4bc9fc)
+
+running 6 tests
+test a_member_below_the_afk_table_gets_one_warning_each ... FAILED
+test an_ordinary_team_gets_no_afk_warning ... ok
+test members_join_an_afk_team_that_has_none ... ok
+test past_the_budget_an_implementer_is_refused_and_every_other_kind_starts ... ok
+test before_the_budget_ends_an_implementer_starts ... ok
+test an_ordinary_team_has_no_budget ... ok
+
+failures:
+
+---- a_member_below_the_afk_table_gets_one_warning_each stdout ----
+
+thread 'a_member_below_the_afk_table_gets_one_warning_each' (175402664) panicked at crates/teamwire-launch/tests/afk.rs:168:5:
+assertion `left == right` failed: ["AFK run: member a (investigator) runs on sonnet at high, below the AFK table (opus at high)", "AFK run: member b (reviewer) runs on opus at high, below the AFK table (opus at xhigh)"]
+  left: 2
+ right: 3
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_member_below_the_afk_table_gets_one_warning_each
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+
+error: test failed, to rerun pass `-p teamwire-launch --test afk`
+error: 1 target failed:
+    `-p teamwire-launch --test afk`

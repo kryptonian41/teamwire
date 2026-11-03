@@ -1,0 +1,25 @@
+== clone
+HEAD e78c32be68e599e29857525a28a6186f8576cb56
+== setup: cd "$1/ui" && bun install --frozen-lockfile
+bun install v1.3.11 (af24e281)
+
++ @types/bun@1.4.3
++ @types/react@19.3.0
++ @types/react-dom@19.3.0
++ typescript@7.0.2
++ react@19.3.0
++ react-dom@19.3.0
++ zod@4.6.7
+
+14 packages installed [51.00ms]
+setup exit 0 after 0s
+== check: cd ui && bun test && bun run typecheck
+bun test v1.3.11 (af24e281)
+
+ 163 pass
+ 3 skip
+ 0 fail
+ 1806 expect() calls
+Ran 166 tests across 18 files. [3.35s]
+$ tsc --noEmit
+check exit 0 after 5s

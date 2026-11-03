@@ -1,0 +1,43 @@
+## C1 plan.rs reverted to afk/base (no report check)
+ 1 file changed, 5 deletions(-)
+test close_refuses_an_afk_team_without_its_report ... FAILED
+test removing_one_member_of_an_afk_team_needs_no_report ... ok
+test an_afk_team_whose_only_member_was_removed_still_needs_a_report ... FAILED
+test close_says_an_unreadable_afk_report_is_unreadable_not_missing ... FAILED
+test close_of_an_afk_team_with_a_full_report_archives_the_afk_files ... FAILED
+test an_afk_team_that_never_had_a_member_closes_without_a_report ... ok
+test close_refuses_an_afk_report_that_lacks_a_heading_and_names_it ... FAILED
+test an_ordinary_team_closes_without_a_report ... ok
+test result: FAILED. 3 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s
+   Compiling teamwire-report v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-report)
+   Compiling teamwire-msg v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-msg)
+   Compiling teamwire-watch v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-watch)
+   Compiling teamwire-close v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-close)
+  --> crates/teamwire-close/src/afk_report.rs:12:7
+  --> crates/teamwire-close/src/afk_report.rs:26:15
+  --> crates/teamwire-close/src/afk_report.rs:68:4
+   Compiling teamwire-mcp v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-mcp)
+   Compiling teamwire-cli v0.0.0 (/private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/cache/closer/afkmode/clone/crates/teamwire-cli)
+test close_of_an_afk_team_without_a_report_prints_the_refusal_code ... FAILED
+---- close_of_an_afk_team_without_a_report_prints_the_refusal_code stdout ----
+thread 'close_of_an_afk_team_without_a_report_prints_the_refusal_code' (206299708) panicked at crates/teamwire-cli/tests/close.rs:702:5:
+    close_of_an_afk_team_without_a_report_prints_the_refusal_code
+test result: FAILED. 14 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.88s
+## C2-D39  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if members.is_empty() {
++    if false {
+## C3-unreadable  1 file changed, 1 insertion(+), 1 deletion(-)
+-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++        Err(_) => {
+## C4-no-view  1 file changed, 1 insertion(+), 1 deletion(-)
+-    view.afk = crate::afk::view(&team, &team_dir, now, &mut view.errors);
++    view.afk = None; let _ = (&team_dir, crate::afk::view);
+## C5-indent  1 file changed, 1 insertion(+), 1 deletion(-)
+-            let after_d = line.trim_start().strip_prefix('D').unwrap_or("");
++            let after_d = line.strip_prefix('D').unwrap_or("");
+## C6-teams-key  1 file changed, 1 insertion(+), 1 deletion(-)
+-        afk_budget_ends_at: row.afk_budget_ends_at,
++        afk_budget_ends_at: None,
+## C7-teams-marker teams.rs reverted to base
+test teams_marks_an_afk_team_and_its_json_gives_the_budget_end ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s

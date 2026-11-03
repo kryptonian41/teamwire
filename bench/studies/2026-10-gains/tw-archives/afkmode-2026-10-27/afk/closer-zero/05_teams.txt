@@ -1,0 +1,4 @@
+exit Some(0)
+--- stdout
+zero (open, afk) Zero: address as lead@zero or <role>@zero
+--- stderr

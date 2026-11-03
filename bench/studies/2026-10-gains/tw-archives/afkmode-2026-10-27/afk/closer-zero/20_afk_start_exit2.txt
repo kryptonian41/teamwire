@@ -1,0 +1,4 @@
+exit Some(2)
+--- stdout
+--- stderr
+failed: the task could not be copied into /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/teams/broken/afk: File exists (os error 17); team broken exists

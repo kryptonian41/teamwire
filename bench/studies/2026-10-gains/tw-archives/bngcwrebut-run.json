@@ -1,0 +1,10 @@
+{
+  "task": "t2",
+  "setup": "teamwire",
+  "parent": "f1ac22cb2cdddd626e1b9ef8de110ed8f330b518",
+  "commits": [
+    "32b8a283db25745e90817fb73b175fa7740d8799"
+  ],
+  "clone": "/private/tmp/claude-501/bnruns/bngcwrebut/clone",
+  "started_at": "2026-10-22T14:02:55Z"
+}

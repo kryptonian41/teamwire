@@ -1,0 +1,303 @@
+{
+  "files": [
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-endings/5f5ce0f2-b2fa-44f0-b708-613feff9b483.jsonl",
+      "usd": 2.2947979,
+      "models": {
+        "claude-sonnet-5-5": {
+          "tokens": {
+            "input": 124,
+            "output": 38701,
+            "cache_read": 7907399,
+            "cache_write_5m": 0,
+            "cache_write_1h": 279200,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 2.2947979
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-skill/7c6c5d2d-5038-4375-b750-598db86336a3.jsonl",
+      "usd": 3.0320687000000004,
+      "models": {
+        "claude-sonnet-5-5": {
+          "tokens": {
+            "input": 168,
+            "output": 44799,
+            "cache_read": 12933427,
+            "cache_write_5m": 0,
+            "cache_write_1h": 322600,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 3.0320687000000004
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-start/ad649770-d129-4bc1-9284-c32ffe4a82be.jsonl",
+      "usd": 3.5304479000000004,
+      "models": {
+        "claude-sonnet-5-5": {
+          "tokens": {
+            "input": 154,
+            "output": 57325,
+            "cache_read": 13232899,
+            "cache_write_5m": 0,
+            "cache_write_1h": 408400,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 3.5304479000000004
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone--worktrees-afkmode-stophold/0dd0809f-9bc1-49c5-bbd8-1dc7bd12d4ac.jsonl",
+      "usd": 1.6829165,
+      "models": {
+        "claude-sonnet-5-5": {
+          "tokens": {
+            "input": 104,
+            "output": 26141,
+            "cache_read": 5810225,
+            "cache_write_5m": 0,
+            "cache_write_1h": 210069,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 1.6829165
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/56587970-fd14-43b8-a324-d88823a14af6.jsonl",
+      "usd": 2.7838057999999997,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 84,
+            "output": 26282,
+            "cache_read": 5405189,
+            "cache_write_5m": 0,
+            "cache_write_1h": 147099,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 2.7838057999999997
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/775aff8d-fba3-4a6b-a72a-49c0c7e180fd.jsonl",
+      "usd": 2.6348732000000004,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 86,
+            "output": 29154,
+            "cache_read": 5113126,
+            "cache_write_5m": 0,
+            "cache_write_1h": 128603,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 2.6348732000000004
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/82940aae-8621-412a-ae42-4c194a001418.jsonl",
+      "usd": 2.947336,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 76,
+            "output": 32874,
+            "cache_read": 5113640,
+            "cache_write_5m": 0,
+            "cache_write_1h": 158353,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 2.947336
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/9e0e567f-434a-4955-be06-a9098e69128b.jsonl",
+      "usd": 1.912464,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 62,
+            "output": 22101,
+            "cache_read": 3183180,
+            "cache_write_5m": 0,
+            "cache_write_1h": 104195,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 1.912464
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/a912052d-bf53-48b4-b0f5-5f5d3c94cae0.jsonl",
+      "usd": 1.230864,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 22,
+            "output": 11845,
+            "cache_read": 1037740,
+            "cache_write_5m": 0,
+            "cache_write_1h": 98291,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 1.230864
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3.jsonl",
+      "usd": 7.1505172,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 332,
+            "output": 53142,
+            "cache_read": 19792706,
+            "cache_write_5m": 0,
+            "cache_write_1h": 265976,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 7.1505172
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/c508a262-3376-4dd3-b4c6-37bb4657d032.jsonl",
+      "usd": 9.953976,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 324,
+            "output": 82175,
+            "cache_read": 30420300,
+            "cache_write_5m": 0,
+            "cache_write_1h": 278140,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 9.953976
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/da8b3353-9081-4949-a4e4-fa33e5b509ab.jsonl",
+      "usd": 4.2946008,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 164,
+            "output": 56347,
+            "cache_read": 10645264,
+            "cache_write_5m": 0,
+            "cache_write_1h": 129744,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 4.2946008
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687.jsonl",
+      "usd": 4.3626054000000005,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 118,
+            "output": 55655,
+            "cache_read": 8480567,
+            "cache_write_5m": 0,
+            "cache_write_1h": 194115,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 4.3626054000000005
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-a4f6c3747695bd76c.jsonl",
+      "usd": 2.0863034,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 80,
+            "output": 22062,
+            "cache_read": 4312817,
+            "cache_write_5m": 156436,
+            "cache_write_1h": 0,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 2.0863034
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-a61fdb4091241cd35.jsonl",
+      "usd": 1.5859432000000002,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 72,
+            "output": 17840,
+            "cache_read": 3073051,
+            "cache_write_5m": 122849,
+            "cache_write_1h": 0,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 1.5859432000000002
+        }
+      }
+    },
+    {
+      "path": "/Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/f50a0edc-a8b9-4348-b4bc-337467668687/subagents/agent-adb7d932066b6e9b0.jsonl",
+      "usd": 1.894309,
+      "models": {
+        "claude-opus-5-5": {
+          "tokens": {
+            "input": 92,
+            "output": 20022,
+            "cache_read": 4198705,
+            "cache_write_5m": 130752,
+            "cache_write_1h": 0,
+            "cache_creation_unsplit": 0
+          },
+          "usd": 1.894309
+        }
+      }
+    }
+  ],
+  "by_model": {
+    "claude-opus-5-5": {
+      "tokens": {
+        "input": 1512,
+        "output": 429499,
+        "cache_read": 100776285,
+        "cache_write_5m": 410037,
+        "cache_write_1h": 1504516,
+        "cache_creation_unsplit": 0
+      },
+      "usd": 42.837598
+    },
+    "claude-sonnet-5-5": {
+      "tokens": {
+        "input": 550,
+        "output": 166966,
+        "cache_read": 39883950,
+        "cache_write_5m": 0,
+        "cache_write_1h": 1220269,
+        "cache_creation_unsplit": 0
+      },
+      "usd": 10.540231
+    }
+  },
+  "total_usd": 53.377829,
+  "clone": "/private/tmp/claude-501/bnruns/bnei8xdqkf/clone",
+  "prices_read_on": "2026-10-26"
+}

@@ -6,6 +6,69 @@ a flag names. Run all commands from the repository root.
 
 Check the tools: `python3 -m unittest discover -s bench`
 
+## Run a benchmark again
+
+The October 2026 study ran three tasks. Its results are in
+`bench/studies/2026-10-gains/`, and its reports in `docs/research/2026-10-2*-gains-*.md`.
+
+| Task | Task flags (for `clone.py` and `grade.py`) | Brief |
+| --- | --- | --- |
+| `close-cache` | `--commit 32b8a283` | `bench/briefs/close-cache.md` |
+| `three-fixes` | `--commit 9b05edc8 --commit 40eedcf2 --commit f0fe42ae` | `bench/briefs/three-fixes.md` |
+| `afk` | `--base fb1fd8f --target ceff260` | `bench/briefs/afk.md`, and `bench/briefs/afk-subagents.md` for the subagents setup |
+
+The scripts in `bench/run/` drive one run each. They read `BENCH_RUNS`, a
+folder outside this repository for the run clones, and `BENCH_RESULTS`
+(default `bench/results/`). Keep results out of `/private/tmp`: macOS deletes
+files there that nobody touched for three days.
+
+WARNING: the runs start real Claude Code sessions with
+`--permission-mode bypassPermissions` and spend money. Each solo run is capped by
+`--max-budget-usd`. A teamwire run is capped only by `teamwire-watch.sh`.
+
+1. Build the task's reference once:
+
+   ```bash
+   export BENCH_RUNS=~/bench-runs
+   CARGO_TARGET_DIR=$BENCH_RUNS/grade-target python3 bench/grade.py reference --base fb1fd8f --target ceff260 --out bench/results/afk/reference
+   ```
+
+2. Run the solo setups, one at a time:
+
+   ```bash
+   bench/run/solo.sh afk solo bench/briefs/afk.md 12 --base fb1fd8f --target ceff260
+   bench/run/solo.sh afk subagents bench/briefs/afk-subagents.md 12 --base fb1fd8f --target ceff260
+   ```
+
+3. Run teamwire. Start the session, accept the folder-trust prompt in it
+   (`tmux attach -t bn<random>`), send the first message, then watch the
+   spend with no time limit:
+
+   ```bash
+   run=$(bench/run/teamwire-start.sh afk bench/briefs/afk.md 'Setup for this run: give every member spec "plugins": {"claude-mem@thedotmack": false}. Give every implementer "model": "sonnet"; every other member uses "model": "opus".' --base fb1fd8f --target ceff260)
+   bench/run/teamwire-send.sh "$run"
+   CAP=75 bench/run/teamwire-watch.sh "$run"
+   ```
+
+   Keep the lid open and the power connected: a closed lid sleeps the Mac, and
+   each sleep kills the turn in progress.
+
+4. Grade each run, naming the branch that holds its result (`afk-mode`, or the
+   lead's `afk/<team>`):
+
+   ```bash
+   bench/run/grade-run.sh <run dir> afk <branch> --base fb1fd8f --target ceff260
+   ```
+
+5. Blind-grade the diffs with `grade.py blind` (below), and give the grader the
+   brief and the diffs with every tool blocked.
+
+The briefs are kept exactly as the study ran them. The close-cache and
+three-fixes briefs say the checkout has no `main` branch; the run scripts now
+add one, and the `TEAMWIRE_BASE` the briefs name still works.
+
+## The tools one by one
+
 The scripts in the order the lead uses them:
 
 1. **Mine the archive** (plan section 4). One row per team, to `bench/results/mine.csv`.
@@ -84,7 +147,7 @@ The scripts in the order the lead uses them:
    paths, such as the run's own `TEAMWIRE_HOME`.
 
    ```bash
-   python3 bench/leaks.py --clone <clone> --source /Users/apoorvagarwal/Projects/teamwire --runs-root <runs folder> [--allow <path>]
+   python3 bench/leaks.py --clone <clone> --source <source checkout> --runs-root <runs folder> [--allow <path>]
    ```
 
 6. **Price a run** (plan 5.5), from every transcript under the clone path. A transcript

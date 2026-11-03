@@ -1,0 +1,71 @@
+{
+  "metrics": [
+    {
+      "name": "teamwire.export.lag",
+      "unit": "{event}",
+      "labels": [],
+      "value": 1.0
+    },
+    {
+      "name": "teamwire.members.live",
+      "unit": "{member}",
+      "labels": [
+        [
+          "team",
+          "zero"
+        ],
+        [
+          "state",
+          "creating"
+        ]
+      ],
+      "value": 0.0
+    },
+    {
+      "name": "teamwire.members.live",
+      "unit": "{member}",
+      "labels": [
+        [
+          "team",
+          "zero"
+        ],
+        [
+          "state",
+          "started"
+        ]
+      ],
+      "value": 0.0
+    },
+    {
+      "name": "teamwire.messages.unread",
+      "unit": "{message}",
+      "labels": [
+        [
+          "team",
+          "zero"
+        ],
+        [
+          "recipient_kind",
+          "lead"
+        ]
+      ],
+      "value": 0.0
+    },
+    {
+      "name": "teamwire.messages.unread",
+      "unit": "{message}",
+      "labels": [
+        [
+          "team",
+          "zero"
+        ],
+        [
+          "recipient_kind",
+          "member"
+        ]
+      ],
+      "value": 0.0
+    }
+  ],
+  "errors": []
+}

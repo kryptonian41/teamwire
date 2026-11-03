@@ -1,0 +1,7 @@
+exit Some(0)
+--- stdout
+lead skipped: already open (this session)
+dry run: nothing was opened and nothing was written
+watch: teamwire watch zero
+a member that was killed mid-turn sits idle until the lead sends it a reprompt or a note
+--- stderr

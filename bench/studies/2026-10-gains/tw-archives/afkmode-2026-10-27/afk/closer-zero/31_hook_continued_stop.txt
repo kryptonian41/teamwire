@@ -1,0 +1,3 @@
+exit Some(0)
+--- stdout
+--- stderr
