@@ -18,6 +18,7 @@ use teamwire_core::{
     CatalogSource, Harness, HarnessError, HarnessErrorCode, HarnessId, ModelCatalog, ModelInfo,
 };
 use teamwire_fakes::FakeHarness;
+use teamwire_launch::SpecError;
 
 fn row(provider: Option<&str>, id: &str, aliases: &[&str]) -> ModelInfo {
     ModelInfo {
@@ -58,16 +59,15 @@ fn member(rig: &Rig, role: &str, fields: &Value) -> Value {
         "task_class",
         json!("contained_feature"),
     );
-    for (key, value) in fields.as_object().unwrap() {
+    for (key, value) in fields.as_object().into_iter().flatten() {
         m = with(m, key, value.clone());
     }
     m
 }
 
-fn warnings_of(rig: &Rig, children: &[Value]) -> Vec<String> {
+fn warnings_of(rig: &Rig, children: &[Value]) -> Result<Vec<String>, Vec<SpecError>> {
     rig.validate(&team_spec("demo", children), false)
-        .unwrap()
-        .warnings
+        .map(|plan| plan.warnings)
 }
 
 #[test]
@@ -75,7 +75,7 @@ fn a_member_without_a_class_warns_once_and_still_launches() {
     let rig = Rig::new();
     let plain = pane_member("a", "a", rig.work.path());
     let classed = member(&rig, "b", &json!({}));
-    let warnings = warnings_of(&rig, &[plain, classed]);
+    let warnings = warnings_of(&rig, &[plain, classed]).unwrap();
     assert_eq!(
         warnings,
         ["member a has no task_class; outcomes for it cannot be read per class"]
@@ -122,7 +122,7 @@ fn an_effort_the_harness_does_not_take_is_refused_naming_its_levels() {
 fn a_model_the_list_cannot_match_warns_and_still_launches() {
     let rig = Rig::new();
     rig.harness.set_models(Ok(builtin()));
-    let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"model": "gpt-9"}))]);
+    let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"model": "gpt-9"}))]).unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let warning = warnings.first().unwrap();
     assert!(
@@ -141,7 +141,8 @@ fn a_pi_style_pattern_that_matches_gets_no_warning() {
         let warnings = warnings_of(
             &rig,
             &[member(&rig, "a", &json!({"model": model, "effort": "low"}))],
-        );
+        )
+        .unwrap();
         assert!(warnings.is_empty(), "{model}: {warnings:?}");
     }
 }
@@ -178,7 +179,8 @@ fn a_provider_prefix_the_list_has_launches_without_a_warning() {
             "a",
             &json!({"model": "claude-bridge/claude-opus-5-5:high"}),
         )],
-    );
+    )
+    .unwrap();
     assert!(warnings.is_empty(), "{warnings:?}");
 }
 
@@ -192,7 +194,8 @@ fn a_bare_model_two_providers_offer_warns_naming_them() {
             member(&rig, "a", &json!({"model": "claude-opus-5-5"})),
             member(&rig, "b", &json!({"model": "claude-sonnet-5-5"})),
         ],
-    );
+    )
+    .unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let warning = warnings.first().unwrap();
     assert!(
@@ -216,7 +219,8 @@ fn a_failing_list_warns_once_and_refuses_nothing() {
             member(&rig, "a", &json!({"model": "nonsense", "effort": "ultra"})),
             member(&rig, "b", &json!({"model": "openai/x"})),
         ],
-    );
+    )
+    .unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     let warning = warnings.first().unwrap();
     assert!(
@@ -228,9 +232,13 @@ fn a_failing_list_warns_once_and_refuses_nothing() {
 #[test]
 fn a_harness_without_a_list_warns_only_when_there_is_something_to_check() {
     let rig = Rig::new();
-    assert!(warnings_of(&rig, &[member(&rig, "a", &json!({}))]).is_empty());
+    assert!(
+        warnings_of(&rig, &[member(&rig, "a", &json!({}))])
+            .unwrap()
+            .is_empty()
+    );
     assert_eq!(rig.harness.log().count_named("models"), 0);
-    let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"effort": "ultra"}))]);
+    let warnings = warnings_of(&rig, &[member(&rig, "a", &json!({"effort": "ultra"}))]).unwrap();
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
         warnings.first().unwrap().contains("unsupported"),
@@ -257,7 +265,8 @@ fn each_harness_is_asked_for_its_list_once() {
             member(&rig, "d", &on_other),
             member(&rig, "e", &on_other),
         ],
-    );
+    )
+    .unwrap();
     assert_eq!(rig.harness.log().count_named("models"), 1);
     assert_eq!(other.log().count_named("models"), 1);
 }
