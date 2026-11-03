@@ -587,17 +587,21 @@ pub fn launch_scout(rig: &Rig, work: &Path) {
 
 /// Waits until `close --dry-run` no longer calls a member busy: `close`
 /// refuses a busy member, and a fresh member works on its first task for a
-/// moment.
+/// moment. Until the agent takes a prompt typed to it, it still shows the
+/// status it had, so "not busy" counts only once every prompt is taken. The
+/// count comes first: an agent that took them all is busy or done when the
+/// dry run looks.
 pub fn wait_idle(rig: &Rig) {
     let waited = Instant::now();
     loop {
+        let untaken = rig.herdr.untaken_prompts();
         let out = rig.run(&["close", "alpha", "--dry-run"], &Identity::Nobody);
-        if !out.stdout.contains("busy") && !out.stderr.contains("busy") {
+        if untaken == 0 && !out.stdout.contains("busy") && !out.stderr.contains("busy") {
             return;
         }
         assert!(
             waited.elapsed() < Duration::from_secs(20),
-            "the member stayed busy: {out:?}"
+            "the member stayed busy ({untaken} prompts not taken): {out:?}"
         );
         std::thread::sleep(Duration::from_millis(20));
     }

@@ -493,6 +493,39 @@ fn a_prompt_with_wait_stalls_when_the_agent_shows_no_activity() {
     );
 }
 
+/// A prompt waits in the agent's inbox until the agent takes it, and the
+/// agent shows its old status until then; `untaken_prompts` tells the two
+/// apart.
+#[test]
+fn a_prompt_the_agent_has_not_taken_yet_is_counted() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    assert_eq!(env.untaken_prompts(), 0);
+    let session_file = env.session_files().pop().unwrap();
+    let pid = session_file
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    // A stopped process takes no prompt. It runs again before any assert,
+    // so a failure leaves no stopped process behind.
+    signal("-STOP", &pid);
+    let out = env.run(&["agent", "prompt", "tw_demo_api", "hi"]).unwrap();
+    let while_stopped = env.untaken_prompts();
+    signal("-CONT", &pid);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert_eq!(while_stopped, 1);
+    let began = std::time::Instant::now();
+    while env.untaken_prompts() != 0 {
+        assert!(
+            began.elapsed().as_secs() < 30,
+            "the agent never took the prompt"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn a_hang_runs_past_the_callers_timeout_and_garbage_is_not_json() {
     let mut env = FakeHerdrEnv::new().unwrap();

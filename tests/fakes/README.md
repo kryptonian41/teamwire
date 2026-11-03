@@ -335,7 +335,12 @@ names a directory, so it can never write into the real `~/.claude`.
   step and every hook it runs, as Claude Code does; `hooks.Stop[].hooks[].command`
   entries are the Stop hooks.
 - Prompts arrive in `$FAKE_PANE_DIR/inbox` (when `fake-herdr` started it) or as
-  lines on standard input. Each prompt is one turn: it echoes `> <prompt>`,
+  lines on standard input. Until the agent takes a prompt from the inbox it
+  shows its old status. Each status it writes to `status.json` carries
+  `prompts`, the count it has taken, and the turn's first status already
+  counts the new one. `FakeHerdrEnv::untaken_prompts()` compares that count
+  with the inbox, so a test that waits for an idle agent can tell "idle"
+  from "not started on its prompt yet". Each prompt is one turn: it echoes `> <prompt>`,
   runs the turn's steps, then runs each Stop hook with this JSON on stdin:
   `{"session_id","transcript_path","cwd","permission_mode":"bypassPermissions","hook_event_name":"Stop","stop_hook_active","prompt_id","background_tasks","last_assistant_message"}`.
   `background_tasks` is `[]` unless a script step sets tasks (see below). The
