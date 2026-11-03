@@ -230,8 +230,10 @@ order:
 4. **Read the evidence for each class.** Run
    `teamwire models --for <class>` once per class in the plan. It adds the
    public evidence for that class, with each source and its date, and the
-   outcomes of the user's own past teams for that class. It ranks the
-   evidence and never names one best model.
+   outcomes of the user's own past teams for that class. Each source ranks
+   only its own entries, so a rank compares models within one source. The
+   command never names one best model, so weigh the sources against each
+   other yourself.
 5. **Pick `model` and `effort` yourself**, and give the reason in one line of
    the plan per member. Use an id or an alias exactly as `teamwire models`
    prints it. A pi member's `model` names its provider, as `provider/id`.
@@ -843,8 +845,9 @@ Read each member's token use with `teamwire metrics <team>`. After close,
 that form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but
 an archive put elsewhere with `--archive-to` is not read, so read it before
 you close in that case. The counter `teamwire.member.tokens` has the
-labels `team`, `role`, `kind`, `model`, `effort` and `type` (`input`, `output`,
-`cache_read`, `cache_creation`). A team whose results reach you as
+labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified`
+when the spec set none) and `type` (`input`, `output`, `cache_read`,
+`cache_creation`). A team whose results reach you as
 `COMPLETED` watch lines, because your host cannot type into your pane,
 records no tokens.
 
