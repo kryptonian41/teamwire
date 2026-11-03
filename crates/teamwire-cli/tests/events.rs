@@ -49,15 +49,17 @@ fn populated() -> Bed {
     bed
 }
 
+/// `teamwire events` with a cleared environment. The tests often run inside
+/// a member's session, and any of its identity variables, such as a pi or
+/// Codex member's `TEAMWIRE_TOKEN_FILE`, would make the lead's command refuse.
 fn events(home: &Path, args: &[&str]) -> Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")
         .arg(home)
         .arg("events")
         .args(args)
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TEAM")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .output()
         .unwrap()
 }
@@ -225,7 +227,8 @@ fn a_member_session_is_refused() {
         .arg("--home")
         .arg(bed.home.path())
         .args(["events", "alpha", "--json"])
-        .env_remove("TEAMWIRE_TOKEN")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("TEAMWIRE_TEAM", "alpha")
         .env("TEAMWIRE_ROLE", "api")
         .output()

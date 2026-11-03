@@ -26,18 +26,18 @@ struct Run {
     err: String,
 }
 
+/// Runs `teamwire <args>` with a cleared environment: no host, no export
+/// endpoint, and none of the member identity variables of the session that
+/// runs the tests, which would make the binary refuse the lead's command.
 fn teamwire(bed: &Bed, args: &[&str]) -> Run {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")
         .arg(bed.home.path())
         .args(args)
-        .env_remove("HERDR_ENV")
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TEAM")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("TEAMWIRE_HOME", bed.home.path())
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
-        .env_remove("OTEL_EXPORTER_OTLP_ENDPOINT")
         .output()
         .unwrap();
     Run {
@@ -188,12 +188,10 @@ fn an_export_endpoint_does_not_change_the_output() {
         .arg("--home")
         .arg(bed.home.path())
         .args(["watch", "alpha", "--interval", "1"])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:1")
         .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
-        .env_remove("HERDR_ENV")
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TEAM")
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
