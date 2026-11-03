@@ -175,6 +175,15 @@ pub(crate) fn plan_member(
             ),
         );
     }
+    if kind == MemberKind::PlanReviewer && child.mode != Mode::Pane {
+        bad(
+            "mode",
+            "plan_reviewer_needs_pane",
+            format!(
+                "role {role} is a plan reviewer, so it needs mode pane; it writes nothing, so a worktree would only leave a branch behind"
+            ),
+        );
+    }
     let harness_id = child
         .harness
         .clone()
