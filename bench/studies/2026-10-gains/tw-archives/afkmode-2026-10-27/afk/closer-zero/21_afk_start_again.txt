@@ -1,0 +1,5 @@
+exit Some(1)
+--- stdout
+--- stderr
+refused: afk_already_running: this session already leads the open AFK run broken; close it with `teamwire close broken` first
+nothing was created

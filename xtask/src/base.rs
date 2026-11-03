@@ -6,8 +6,12 @@
 //! which lines are wrong. The lead reads the lines at each integration.
 //!
 //! Invariants: the diff is the working tree against the merge-base, so
-//! committed and uncommitted changes are both seen.
+//! committed and uncommitted changes are both seen. Renames are not
+//! detected: a moved file shows as a removal at the old path and an addition
+//! at the new one. Untracked files are listed separately, since a diff never
+//! shows them.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -38,11 +42,33 @@ const WEAKENING_ATTRS: &[&str] = &[
 
 pub(crate) fn check_base(root: &Path, base: &str, found: &mut Findings) -> Result<()> {
     let merge_base = git(root, &["merge-base", base, "HEAD"])?.trim().to_owned();
-    let names = git(root, &["diff", "--name-only", &merge_base])?;
-    for path in names.lines().filter(|p| is_protected(p)) {
+    let changed = git(root, &["diff", "--name-only", "--no-renames", &merge_base])?;
+    let untracked = git(root, &["ls-files", "--others", "--exclude-standard"])?;
+    for path in changed
+        .lines()
+        .chain(untracked.lines())
+        .filter(|p| is_protected(p))
+    {
         found.notes.push(format!("PROTECTED-CHANGED {path}"));
     }
-    let diff = git(root, &["diff", "-U0", &merge_base, "--", "*.rs"])?;
+    // `weakened` reads the `+++ b/<path>` headers, and a user's git config
+    // (diff.mnemonicprefix, diff.noprefix, diff.external, color.diff) can
+    // change what `git diff` prints there.
+    let diff = git(
+        root,
+        &[
+            "diff",
+            "-U0",
+            "--no-renames",
+            "--no-color",
+            "--no-ext-diff",
+            "--src-prefix=a/",
+            "--dst-prefix=b/",
+            &merge_base,
+            "--",
+            "*.rs",
+        ],
+    )?;
     found.notes.extend(weakened(&diff));
     Ok(())
 }
@@ -71,11 +97,13 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// `WEAKENED <path>:<line>` for each net-removed test, each net-removed
+/// `WEAKENED <path>:<line>` once for each net-removed test, `assert` line,
 /// `#[cfg(test)]` or `mod tests;` line, and each added `#[ignore`,
-/// `#[should_panic`, `#[expect(`, `#[allow(` or `cfg_attr(..., ignore | allow |
-/// expect | should_panic)`, from
-/// a zero-context unified diff. A line moved inside its file is not a removal.
+/// `#[should_panic`, `#[expect(`, `#[allow(`, `cfg_attr(..., ignore | allow |
+/// expect | should_panic)` or `#[cfg(`/`#![cfg(` line other than `cfg(test)`,
+/// from a zero-context unified diff made without rename detection, so a test
+/// file moved to another path counts as removed. A line moved inside its file
+/// is not a removal.
 fn weakened(diff: &str) -> Vec<String> {
     let mut scan = Scan::default();
     for line in diff.lines() {
@@ -97,6 +125,9 @@ fn weakened(diff: &str) -> Vec<String> {
         }
     }
     scan.finish_file();
+    // An added `cfg(` line that also replaces a test switch is found twice.
+    let mut seen = HashSet::new();
+    scan.out.retain(|line| seen.insert(line.clone()));
     scan.out
 }
 
@@ -112,6 +143,8 @@ struct Scan {
     added_tests: usize,
     removed_switches: Vec<usize>,
     added_switches: usize,
+    removed_asserts: Vec<usize>,
+    added_asserts: usize,
 }
 
 impl Scan {
@@ -127,6 +160,9 @@ impl Scan {
             if is_test_switch(text) {
                 self.removed_switches.push(self.old_line);
             }
+            if is_assert(text) {
+                self.removed_asserts.push(self.old_line);
+            }
             self.old_line += 1;
         } else if let Some(text) = line.strip_prefix('+') {
             if starts_with_any(text, TEST_ATTRS) {
@@ -135,7 +171,13 @@ impl Scan {
             if is_test_switch(text) {
                 self.added_switches += 1;
             }
-            if starts_with_any(text, WEAKENING_ATTRS) || is_cfg_attr_weakening(text) {
+            if is_assert(text) {
+                self.added_asserts += 1;
+            }
+            if starts_with_any(text, WEAKENING_ATTRS)
+                || is_cfg_attr_weakening(text)
+                || is_cfg_other_than_test(text)
+            {
                 let entry = format!("WEAKENED {}:{}", self.name(), self.new_line);
                 self.out.push(entry);
             }
@@ -149,6 +191,7 @@ impl Scan {
         for (removed, added) in [
             (&self.removed_tests, self.added_tests),
             (&self.removed_switches, self.added_switches),
+            (&self.removed_asserts, self.added_asserts),
         ] {
             let net = removed.len().saturating_sub(added);
             for line in removed.iter().take(net) {
@@ -159,6 +202,8 @@ impl Scan {
         self.added_tests = 0;
         self.removed_switches.clear();
         self.added_switches = 0;
+        self.removed_asserts.clear();
+        self.added_asserts = 0;
         self.file.clear();
         self.old_file.clear();
         self.in_hunk = false;
@@ -172,6 +217,22 @@ fn file_or(file: &str, old_file: &str) -> String {
 
 fn is_test_switch(text: &str) -> bool {
     TEST_SWITCHES.contains(&text.trim())
+}
+
+/// An `assert`, `assert_eq!`, `debug_assert_ne!` or similar line. Emptying a
+/// test's asserts keeps its `#[test]` line.
+fn is_assert(text: &str) -> bool {
+    let text = text.trim_start();
+    text.starts_with("assert") || text.starts_with("debug_assert")
+}
+
+/// `#[cfg(any())]` or `#![cfg(any())]` compiles a test or a whole file out
+/// without a `WEAKENING_ATTRS` prefix. Only `cfg(test)` is the usual form.
+fn is_cfg_other_than_test(text: &str) -> bool {
+    let text = text.trim();
+    text.strip_prefix("#![cfg(")
+        .or_else(|| text.strip_prefix("#[cfg("))
+        .is_some_and(|rest| rest != "test)]")
 }
 
 /// `#[cfg_attr(test, ignore)]` and its variants turn a test off or a lint
@@ -260,6 +321,33 @@ mod tests {
                 "PROTECTED-CHANGED tests/fakes/src/lib.rs",
             ]
         );
+    }
+
+    /// Commit a file on `main` and bring it into `work`, so `work` can change it.
+    fn commit_on_main(root: &Path, path: &str, text: &str) {
+        git_ok(root, &["checkout", "-q", "main"]);
+        write(root, path, text);
+        git_ok(root, &["add", "."]);
+        git_ok(root, &["commit", "-q", "-m", "on main"]);
+        git_ok(root, &["checkout", "-q", "work"]);
+        git_ok(root, &["merge", "-q", "main"]);
+    }
+
+    #[test]
+    fn a_protected_file_moved_away_is_reported_at_its_old_path() {
+        let dir = committed_workspace();
+        commit_on_main(dir.path(), "clippy.toml", "x = 1\n");
+        git_ok(dir.path(), &["mv", "clippy.toml", "docs/clippy-old.toml"]);
+        git_ok(dir.path(), &["commit", "-q", "-m", "move"]);
+        assert_eq!(report(dir.path()), ["PROTECTED-CHANGED clippy.toml"]);
+    }
+
+    #[test]
+    fn an_untracked_file_under_a_protected_path_is_reported() {
+        let dir = committed_workspace();
+        write(dir.path(), "scripts/x.sh", "#!/bin/sh\n");
+        write(dir.path(), "docs/other.md", "not protected\n");
+        assert_eq!(report(dir.path()), ["PROTECTED-CHANGED scripts/x.sh"]);
     }
 
     #[test]
@@ -384,6 +472,68 @@ mod tests {
                 "WEAKENED crates/teamwire-a/src/lib.rs:3",
                 "WEAKENED crates/teamwire-a/src/lib.rs:6",
                 "WEAKENED crates/teamwire-a/src/lib.rs:9"
+            ]
+        );
+    }
+
+    #[test]
+    fn added_cfg_lines_other_than_cfg_test_are_reported() {
+        let dir = committed_workspace();
+        write(
+            dir.path(),
+            "crates/teamwire-a/src/lib.rs",
+            "//! Purpose.\n#![cfg(any())]\n#[test]\nfn one() {}\n#[cfg(any())]\n#[test]\nfn two() {}\n#[cfg(test)]\nfn helper() {}\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            [
+                "WEAKENED crates/teamwire-a/src/lib.rs:2",
+                "WEAKENED crates/teamwire-a/src/lib.rs:5",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_test_file_moved_to_another_path_is_reported() {
+        let dir = committed_workspace();
+        commit_on_main(
+            dir.path(),
+            "crates/teamwire-a/tests/secrets.rs",
+            "#[test]\nfn one() {}\n",
+        );
+        std::fs::create_dir_all(dir.path().join("crates/teamwire-a/tests/parked")).unwrap();
+        git_ok(
+            dir.path(),
+            &[
+                "mv",
+                "crates/teamwire-a/tests/secrets.rs",
+                "crates/teamwire-a/tests/parked/secrets.rs",
+            ],
+        );
+        assert_eq!(
+            report(dir.path()),
+            ["WEAKENED crates/teamwire-a/tests/secrets.rs:1"]
+        );
+    }
+
+    #[test]
+    fn net_removed_assert_lines_are_reported_once_each() {
+        let dir = committed_workspace();
+        commit_on_main(
+            dir.path(),
+            "crates/teamwire-a/tests/two.rs",
+            "#[test]\nfn one() {\n    assert_eq!(1, 1);\n    assert_eq!(2, 2);\n    assert!(true);\n}\n",
+        );
+        write(
+            dir.path(),
+            "crates/teamwire-a/tests/two.rs",
+            "#[test]\nfn one() {\n    assert!(true);\n}\n",
+        );
+        assert_eq!(
+            report(dir.path()),
+            [
+                "WEAKENED crates/teamwire-a/tests/two.rs:3",
+                "WEAKENED crates/teamwire-a/tests/two.rs:4",
             ]
         );
     }

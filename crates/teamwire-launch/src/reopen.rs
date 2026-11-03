@@ -23,7 +23,7 @@ use teamwire_core::{
 use teamwire_store::{Ctx, RunOptions};
 use thiserror::Error;
 
-use crate::member_steps::spawn;
+use crate::member_steps::{not_open, spawn};
 use crate::reopen_lead::reopen_lead;
 use crate::{hold, watch_command};
 
@@ -253,39 +253,18 @@ fn reopen_member<'r>(
             member.cwd.display()
         ));
     }
-    let team_dir = ctx.home.join("teams").join(team.name.as_str());
-    let plugins = match recorded_plugins(ctx, &member.role) {
-        Ok(plugins) => plugins,
-        Err(e) => {
-            return ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"));
-        }
+    let launch = match member_launch(ctx, &team.name, member, options, opts, session) {
+        Ok(launch) => launch,
+        Err(outcome) => return outcome,
     };
-    let launch = MemberLaunch::for_resume(
-        &team_dir,
-        &team.name,
-        member,
-        session,
-        (options.model.clone(), options.effort.clone()),
-    )
-    .with_run_context(
-        opts.teamwire_bin
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("teamwire")),
-        plugins,
-    );
     let spec = match harness.resume_spec(&launch, session) {
         Ok(spec) => spec,
         Err(e) => {
             return ReopenOutcome::failed(format!("the harness could not build the resume: {e}"));
         }
     };
-    if spec.identity_channel == teamwire_core::IdentityChannel::HostEnv {
-        return ReopenOutcome::refused(
-            "its identity travels in the host's environment and its token is not stored",
-        );
-    }
-    if let Some(file) = spec.files.iter().find(|f| !f.path.is_file()) {
-        return ReopenOutcome::refused(format!("its file {} is missing", file.path.display()));
+    if let Err(outcome) = reusable(&spec) {
+        return outcome;
     }
     if !options.recorded {
         warnings.push(format!(
@@ -313,6 +292,54 @@ fn reopen_member<'r>(
 }
 
 const UNKNOWN: &str = "it is not known whether the session runs";
+
+/// What a started member's harness needs to start one of its sessions again
+/// with the per-run files launch wrote: the model and effort, and the plugin
+/// switches, that `member.started` recorded.
+pub(crate) fn member_launch(
+    ctx: &Ctx<'_>,
+    team: &teamwire_core::TeamName,
+    member: &Member,
+    options: &RunOptions,
+    opts: &ReopenOpts,
+    session: &teamwire_core::SessionId,
+) -> Result<MemberLaunch, ReopenOutcome> {
+    let team_dir = ctx.home.join("teams").join(team.as_str());
+    let plugins = recorded_plugins(ctx, &member.role).map_err(|e| {
+        ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"))
+    })?;
+    Ok(MemberLaunch::for_resume(
+        &team_dir,
+        team,
+        member,
+        session,
+        (options.model.clone(), options.effort.clone()),
+    )
+    .with_run_context(
+        opts.teamwire_bin
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("teamwire")),
+        plugins,
+    ))
+}
+
+/// Refuses a spec that needs what only launch had: an identity in the
+/// host's environment (the token is not stored), or a per-run file that is
+/// gone. The files are never written again; their token is a placeholder.
+pub(crate) fn reusable(spec: &teamwire_core::LaunchSpec) -> Result<(), ReopenOutcome> {
+    if spec.identity_channel == teamwire_core::IdentityChannel::HostEnv {
+        return Err(ReopenOutcome::refused(
+            "its identity travels in the host's environment and its token is not stored",
+        ));
+    }
+    if let Some(file) = spec.files.iter().find(|f| !f.path.is_file()) {
+        return Err(ReopenOutcome::refused(format!(
+            "its file {} is missing",
+            file.path.display()
+        )));
+    }
+    Ok(())
+}
 
 /// A session that passed every check, with what its new tab needs.
 pub(crate) struct Ready<'r> {
@@ -382,7 +409,7 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         ),
         Err(e) => format!("the trust step failed: {e}"),
     };
-    Err(close_new_tab(r.host, &place, &failed))
+    Err(ReopenOutcome::Failed(close_new_tab(r, &place, &failed)))
 }
 
 /// The plugin switches the member's newest `member.started` event recorded.
@@ -391,28 +418,38 @@ fn recorded_plugins(
     ctx: &Ctx<'_>,
     role: &Role,
 ) -> Result<BTreeMap<String, bool>, teamwire_store::StoreError> {
-    let events = ctx
+    let started = ctx
         .store
-        .read(|tx| tx.events_of_role(role))?
-        .all_or_corrupt()?;
-    Ok(events
-        .into_iter()
-        .rev()
-        .find(|e| e.kind == teamwire_core::EventType::MemberStarted)
+        .read(|tx| tx.latest_event(Some(role), teamwire_core::EventType::MemberStarted))?;
+    Ok(started
         .and_then(|e| serde_json::from_value(e.data.get("plugins")?.clone()).ok())
         .unwrap_or_default())
 }
 
 /// Records a member's new place. It runs after its tab is up, so a failed
-/// reopen leaves the old record as it was.
+/// reopen leaves the old record as it was. A team a close locked meanwhile
+/// gets no write, and the new tab is closed (CLS-3).
 fn record_place(ctx: &mut Ctx<'_>, role: &Role, r: &Ready<'_>, place: &Place) -> ReopenOutcome {
-    match ctx.store.write(|tx| tx.set_member_place(role, place)) {
-        Ok(()) => ReopenOutcome::Reopened,
-        Err(e) => close_new_tab(
-            r.host,
+    let mut closed = None;
+    let written = ctx.store.write(|tx| {
+        closed = not_open(&tx.reader())?;
+        match closed {
+            Some(_) => Ok(()),
+            None => tx.set_member_place(role, place),
+        }
+    });
+    match (written, closed) {
+        (Ok(()), None) => ReopenOutcome::Reopened,
+        (Ok(()), Some(state)) => ReopenOutcome::Refused(close_new_tab(
+            r,
+            place,
+            &format!("team_closed: the team is {state}"),
+        )),
+        (Err(e), _) => ReopenOutcome::Failed(close_new_tab(
+            r,
             place,
             &format!("the place could not be recorded: {e}"),
-        ),
+        )),
     }
 }
 
@@ -465,7 +502,7 @@ fn close_old_place(
             return;
         }
     }
-    match r.host.close(old, CLOSE_TIMEOUT) {
+    match r.host.close(old, &r.request.name, CLOSE_TIMEOUT) {
         Ok(()) => {}
         Err(e) if e.code == teamwire_core::HostErrorCode::NotFound => {}
         Err(e) => warnings.push(format!(
@@ -475,13 +512,14 @@ fn close_old_place(
     }
 }
 
-fn close_new_tab(host: &dyn Host, place: &Place, failed: &str) -> ReopenOutcome {
-    match host.close(place, CLOSE_TIMEOUT) {
-        Ok(()) => ReopenOutcome::Failed(format!("{failed}; the new tab was closed")),
-        Err(e) => ReopenOutcome::Failed(format!(
+/// Closes a tab reopen just opened, and says how that went after `failed`.
+pub(crate) fn close_new_tab(r: &Ready<'_>, place: &Place, failed: &str) -> String {
+    match r.host.close(place, &r.request.name, CLOSE_TIMEOUT) {
+        Ok(()) => format!("{failed}; the new tab was closed"),
+        Err(e) => format!(
             "{failed}; the new tab {} could not be closed ({e}): close it by hand before running \
              reopen again",
             place.id
-        )),
+        ),
     }
 }

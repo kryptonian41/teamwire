@@ -2,6 +2,7 @@
 //! dialog? The answer decides whether a host may type into the session, so
 //! `InputPrompt` needs positive evidence and nothing else is trusted.
 
+use teamwire_core::screen::{has_any, squash, visible};
 use teamwire_core::{OneLine, ScreenState};
 
 /// Text of the plain folder-trust dialog.
@@ -43,16 +44,6 @@ const BUSY_MARKERS: [&str; 1] = ["esc to interrupt"];
 /// How many non-empty lines at the end of the screen can belong to the
 /// input box and its footer.
 const BOX_LINES: usize = 8;
-
-/// The text with each run of whitespace made one space, so a phrase that the
-/// terminal wrapped onto two lines still matches.
-pub(crate) fn squash(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-pub(crate) fn has_any(squashed: &str, markers: &[&str]) -> bool {
-    markers.iter().any(|m| squashed.contains(m))
-}
 
 /// A line with its box-drawing border and outer spaces removed.
 fn inner(line: &str) -> &str {
@@ -195,6 +186,48 @@ fn at_input_prompt(last: &[&str]) -> bool {
                 .skip(i + 1)
                 .any(|below| FOOTER_MARKERS.iter().any(|f| below.contains(f)))
     })
+}
+
+/// The state delivery acts on: `classify`, except that an input box holding
+/// text is `Unknown`, so a line is never appended to what a person half
+/// typed. `tail` may carry style codes: `classify` reads it with dim text
+/// kept, since a dialog's dim hint still marks a dialog, and the box check
+/// drops dim text.
+pub(crate) fn delivery_state(tail: &str) -> ScreenState {
+    let state = classify(&visible(tail, true));
+    if state == ScreenState::InputPrompt && box_holds_text(tail) {
+        ScreenState::Unknown
+    } else {
+        state
+    }
+}
+
+/// Whether the last pointer line near the end of the screen, the input box,
+/// holds text. Delivery checks it on every host, since a host that guards
+/// dialogs still types after what a person left in the box. Dim text does
+/// not count: Claude draws its placeholders dim, such as `Press up to edit
+/// queued messages` while lines wait and a prompt suggestion after a turn,
+/// and draws what a person types plain. A suggestion stays until someone
+/// types, so reading it as text would refuse every line to an idle lead.
+pub(crate) fn box_holds_text(tail: &str) -> bool {
+    last_lines(&visible(tail, false))
+        .into_iter()
+        .rev()
+        .find_map(pointer_rest)
+        .is_some_and(|text| holds_text(&squash(text)))
+}
+
+/// Whether the box's text is more than the `Try "…"` placeholder an empty
+/// box shows. A styled screen drops the placeholder as dim text already; this
+/// covers a host that gives only plain text.
+// shortcut: on a plain-text host, a person who types exactly `Try "…"` is
+// read as an empty box. Upgrade when such a host can give styles.
+fn holds_text(text: &str) -> bool {
+    let placeholder = text
+        .strip_prefix("Try \"")
+        .and_then(|rest| rest.strip_suffix('"'))
+        .is_some_and(|quoted| !quoted.contains('"'));
+    !text.is_empty() && !placeholder
 }
 
 pub(crate) fn classify(tail: &str) -> ScreenState {

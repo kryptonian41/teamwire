@@ -41,11 +41,26 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PlatformErro
     set_mode(temp.as_file(), path)
         .map_err(|err| io_error(&context("setting the mode of"), &err))?;
     // On failure the temporary file is removed when `temp` drops.
-    temp.persist(path)
-        .map_err(|err| io_error(&context("renaming into place"), &err.error))?;
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "write_atomic is the one place that renames a temp file into place"
+    )]
+    let persisted = temp.persist(path);
+    persisted.map_err(|err| io_error(&context("renaming into place"), &err.error))?;
     File::open(dir)
         .and_then(|handle| handle.sync_all())
         .map_err(|err| io_error(&context("syncing the directory of"), &err))
+}
+
+/// Creates `path` and its missing parents.
+pub(crate) fn create_dir_all(path: &Path) -> Result<(), PlatformError> {
+    fs::create_dir_all(path).map_err(|err| io_error(&format!("creating {}", path.display()), &err))
+}
+
+/// Deletes the directory `path` and everything in it. `fs::remove_dir_all`
+/// does not follow a symlink at `path`; it removes the link.
+pub(crate) fn remove_dir_all(path: &Path) -> Result<(), PlatformError> {
+    fs::remove_dir_all(path).map_err(|err| io_error(&format!("removing {}", path.display()), &err))
 }
 
 /// Keep the mode of the file being replaced. A temporary file starts private
@@ -62,9 +77,15 @@ fn set_mode(temp: &File, target: &Path) -> std::io::Result<()> {
 /// Bytes a normal user can still write on the file system holding `path`.
 pub(crate) fn free_bytes(path: &Path) -> Result<u64, PlatformError> {
     let stat = statvfs(path).map_err(|errno| errno_error("reading free space of", path, errno))?;
-    let blocks = u64::from(stat.blocks_available());
+    let blocks = widen(stat.blocks_available());
     let unit: u64 = stat.fragment_size();
     Ok(blocks.saturating_mul(unit))
+}
+
+/// `fsblkcnt_t` is `u32` on macOS and `u64` on Linux. A plain `u64::from` is
+/// a useless conversion to clippy on Linux; a generic one is not.
+fn widen(n: impl Into<u64>) -> u64 {
+    n.into()
 }
 
 /// True when `path` is on a network file system, where `SQLite` locking cannot

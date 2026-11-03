@@ -6,16 +6,15 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use teamwire_core::{Clock, Config, SessionId, TeamName, TeamState, Timestamp};
+use teamwire_core::{Clock, Config, SessionId, TeamName, Timestamp};
 use teamwire_launch::{
     LeadPlan, SpecError, ValidateEnv, check_title, ensure_hold, lead_process, new_team_lead,
 };
-use teamwire_store::{Ctx, NewTeam, Store, database_path, team_names};
+use teamwire_store::{Ctx, NewTeam, Store, StoreError, database_path, open_teams};
 
-use crate::cmd::doctor::{self, Host, Level};
-use crate::cmd::install::wanted_entry;
-use crate::cmd::lead_setup_check;
-use crate::cmd::send::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
+use crate::cmd::doctor::{self, Level};
+use crate::cmd::shared::{REFUSED, STORE, fail, home_or_refuse, refuse_member, say};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{AfkArgs, AfkCommand, AfkStartArgs, Global};
 
@@ -41,6 +40,18 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     // 1. A lead session that does not already lead an open AFK run.
     if let Some(code) = refuse_member(COMMAND) {
         return code;
+    }
+    // AFK-2: only a lead whose harness runs AFK, whose pane the run can be
+    // proven to reach.
+    let runs_afk = wiring
+        .registry
+        .harness(&wiring.lead_harness)
+        .is_ok_and(|h| h.capabilities().runs_afk);
+    if !runs_afk {
+        return refuse(
+            "unsupported_lead_harness",
+            "an AFK run starts only from a Claude Code lead",
+        );
     }
     let home = match home_or_refuse(COMMAND, global) {
         Ok(home) => home,
@@ -131,7 +142,7 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
         return refuse("bad_budget", "the budget ends beyond the last date");
     };
     let mut store = match Store::open(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "afk"),
         Err(e) => {
             return fail(
                 COMMAND,
@@ -157,7 +168,13 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     };
     let warnings = match create(&mut ctx, &new) {
         Ok(warnings) => warnings,
-        Err(e) => {
+        Err(Failed::Taken) => {
+            return refuse(
+                "team_exists",
+                &format!("team {team} already exists; pick another name"),
+            );
+        }
+        Err(Failed::Other(e)) => {
             return fail(
                 COMMAND,
                 &format!("{e}; close the team with teamwire close {team} and start again"),
@@ -172,36 +189,7 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
 /// Runs doctor's checks. A `warn` is printed; a `FAIL` refuses.
 #[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
 fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Result<(), ExitCode> {
-    let repo = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let lead_entry = wanted_entry(global);
-    let pick = doctor::pick_host(
-        std::env::var("HERDR_ENV").ok().as_deref(),
-        std::env::var("TMUX").ok().as_deref(),
-        &|pid| wiring.platform.parent_of(pid),
-    );
-    let inputs = doctor::Inputs {
-        host: match pick.id {
-            "herdr" => Host::Herdr,
-            "tmux" => Host::Tmux,
-            _ => Host::None,
-        },
-        home: home.to_path_buf(),
-        platform: wiring.platform.as_ref(),
-        registry: &wiring.registry,
-        clock: &wiring.clock,
-        path_var: std::env::var_os("PATH"),
-        claude: wiring.claude.clone(),
-        codex: wiring.codex_setup(),
-        running_a_build: lead_entry
-            .as_ref()
-            .is_ok_and(|e| lead_setup_check::is_build_output(std::path::Path::new(&e.command))),
-        lead_entry,
-        repo,
-        env_names: std::env::vars_os()
-            .filter(|(_, v)| !v.is_empty())
-            .filter_map(|(k, _)| k.into_string().ok())
-            .collect(),
-    };
+    let (inputs, _) = doctor::inputs(home.to_path_buf(), global, wiring);
     let checks = doctor::diagnose(&inputs);
     let only = |level| {
         let picked: Vec<_> = checks
@@ -219,27 +207,22 @@ fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Resu
     eprint!("{failed}");
     Err(refuse(
         "doctor_failed",
-        "teamwire doctor found a problem that would break a launch; fix it and start again",
+        "teamwire doctor found a problem; fix it and start again",
     ))
 }
 
 /// The name of an open AFK team that `session` leads, if any. A team that
 /// cannot be read is skipped, as the Stop hook skips it.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 fn open_afk_team_of(home: &std::path::Path, session: &SessionId) -> Option<TeamName> {
-    team_names(home).ok()?.into_iter().find(|name| {
-        Store::open_read_only(home, name)
-            .ok()
-            .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
-            .is_some_and(|row| {
-                row.state == TeamState::Open
-                    && row.afk_budget_ends_at.is_some()
-                    && row.lead_session.as_ref() == Some(session)
-            })
-    })
+    open_teams(home, Some(session))
+        .ok()?
+        .into_iter()
+        .find_map(|(name, read)| {
+            read.ok()
+                .flatten()
+                .is_some_and(|t| t.row.afk_budget_ends_at.is_some())
+                .then_some(name)
+        })
 }
 
 struct New<'a> {
@@ -250,9 +233,18 @@ struct New<'a> {
     ends: Timestamp,
 }
 
+/// Why `create` stopped.
+#[derive(Debug)]
+enum Failed {
+    /// A team of that name already exists; nothing of this run was made.
+    Taken,
+    /// The team may exist by now, so the lead has to close it.
+    Other(String),
+}
+
 /// Steps 4 to 6: the team row with the budget end, `afk/task.md`, and the
 /// sleep hold. Returns the hold's warnings.
-fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
+fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, Failed> {
     let at = ctx.clock.now();
     let row = NewTeam {
         name: new.team.clone(),
@@ -279,15 +271,23 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
         serde_json::json!({}),
         |cwd| serde_json::json!({ "lead_cwd": cwd }),
     );
+    // The team row has a fixed primary key, so of two runs with one name the
+    // insert of the loser breaks a constraint, and the winner's files stay.
     ctx.store
         .write(|tx| tx.create_afk_team(at, &row, new.ends, &extra).map(|_| ()))
-        .map_err(|e| format!("the team could not be recorded: {e}"))?;
+        .map_err(|e| {
+            if matches!(e, StoreError::Constraint(_)) {
+                Failed::Taken
+            } else {
+                Failed::Other(format!("the team could not be recorded: {e}"))
+            }
+        })?;
     let dir = afk_dir(ctx.home, new.team);
     std::fs::create_dir_all(&dir)
-        .map_err(|e| format!("{} could not be made: {e}", dir.display()))?;
+        .map_err(|e| Failed::Other(format!("{} could not be made: {e}", dir.display())))?;
     ctx.platform
         .write_atomic(&dir.join("task.md"), new.task)
-        .map_err(|e| format!("afk/task.md could not be written: {e}"))?;
+        .map_err(|e| Failed::Other(format!("afk/task.md could not be written: {e}")))?;
     let mut warnings = Vec::new();
     let lead = (&new.lead.harness, new.lead.session.as_ref().map(|(s, _)| s));
     ensure_hold(ctx, new.team, lead, &mut warnings);
@@ -304,10 +304,10 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, String> {
         .flatten()
         .is_some_and(|t| t.sleep_hold.is_some());
     if !held && ctx.platform.sleep_hold().is_some() {
-        return Err(format!(
+        return Err(Failed::Other(format!(
             "the sleep hold could not be taken: {}",
             warnings.join("; ")
-        ));
+        )));
     }
     Ok(warnings)
 }
@@ -383,7 +383,7 @@ mod tests {
     fn run_create(
         platform: FakePlatform,
         task: &[u8],
-    ) -> (TestHome, Store, FakePlatform, Result<Vec<String>, String>) {
+    ) -> (TestHome, Store, FakePlatform, Result<Vec<String>, Failed>) {
         let home = TestHome::new().unwrap();
         let harness = Arc::new(FakeHarness::new());
         harness.set_session_cwd(session(), "/work/lead");
@@ -460,11 +460,41 @@ mod tests {
             "no caffeinate",
         )));
         let (_home, store, _, result) = run_create(platform, b"x");
-        let why = result.unwrap_err();
+        let why = format!("{:?}", result.unwrap_err());
         assert!(why.contains("sleep hold could not be taken"), "{why}");
         assert!(why.contains("no caffeinate"), "{why}");
         let row = store.read(|tx| tx.team()).unwrap().unwrap();
         assert_eq!(row.sleep_hold, None);
+    }
+
+    #[test]
+    fn a_second_create_on_one_store_reports_the_name_taken_and_keeps_the_first_task() {
+        let (home, mut store, platform) = created(b"first");
+        let clock = FakeClock::new();
+        let registry = Registry::new();
+        let config = Config::default();
+        let team = TeamName::parse("run").unwrap();
+        let lead = lead();
+        let result = create(
+            &mut Ctx {
+                home: home.path(),
+                store: &mut store,
+                registry: &registry,
+                platform: &platform,
+                clock: &clock,
+                config: &config,
+            },
+            &New {
+                team: &team,
+                title: "Again",
+                lead: &lead,
+                task: b"second",
+                ends: clock.now(),
+            },
+        );
+        assert!(matches!(result, Err(Failed::Taken)), "{result:?}");
+        let copy = std::fs::read(home.path().join("teams/run/afk/task.md")).unwrap();
+        assert_eq!(copy, b"first");
     }
 
     #[test]

@@ -19,7 +19,7 @@ use crate::{LeadPlan, SpecError, ValidPlan, ValidateEnv};
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest title (LCH-23).
 pub(crate) const TITLE_MAX: usize = 28;
-/// The longest ticket ref, in characters (ADR 0026).
+/// The longest ticket ref, in characters (ADR 0033).
 const REF_MAX: usize = 64;
 
 /// What the store already holds about the team.
@@ -40,7 +40,7 @@ pub fn validate(
         .registry
         .harness(&env.lead_harness)
         .map_err(|e| vec![SpecError::new(None, None, "unknown_harness", e.to_string())])?;
-    let session = harness.current_session();
+    let session = harness.caller_session(&|name| std::env::var(name).ok());
     if session
         .as_ref()
         .is_some_and(|s| s.kind == SessionKind::Background)
@@ -90,6 +90,7 @@ pub fn validate(
         );
     }
     if existing.is_none() {
+        lead_setup_present(harness, &mut errors);
         lead_must_be_locatable(env, &lead, &mut errors);
     }
     team_title(spec, existing.as_ref(), &mut errors);
@@ -140,6 +141,14 @@ pub fn validate(
         members,
         teamwire_bin: env.teamwire_bin.clone(),
     })
+}
+
+/// A lead whose harness says the lead setup it needs is not loaded would
+/// receive nothing, so a new team is refused (ADR 0030).
+fn lead_setup_present(harness: &dyn teamwire_core::Harness, errors: &mut Vec<SpecError>) {
+    if let Some(why) = harness.lead_setup_missing() {
+        errors.push(SpecError::new(None, None, "lead_setup_missing", why));
+    }
 }
 
 /// A lead whose harness cannot read `teamwire watch` is reached only by
@@ -293,14 +302,15 @@ fn background_lead() -> SpecError {
 }
 
 /// The lead of a team that does not exist yet: the caller's own session, as
-/// `validate` would resolve it. A caller with no session, or one in the
-/// background, is refused.
+/// `validate` would resolve it. A caller with no session, one in the
+/// background, or one whose pane cannot be found when its harness cannot read
+/// `teamwire watch` (ADR 0023 point 9), is refused.
 pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     let harness = env
         .registry
         .harness(&env.lead_harness)
         .map_err(|e| SpecError::new(None, None, "unknown_harness", e.to_string()))?;
-    let Some(session) = harness.current_session() else {
+    let Some(session) = harness.caller_session(&|name| std::env::var(name).ok()) else {
         return Err(SpecError::new(
             None,
             None,
@@ -319,10 +329,14 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
             "host none cannot start a member; v1 needs herdr or tmux",
         ));
     }
-    lead_plan(env, None, Some((session.id, session.kind)))
+    let lead = lead_plan(env, None, Some((session.id, session.kind)))?;
+    let mut errors = Vec::new();
+    lead_setup_present(harness, &mut errors);
+    lead_must_be_locatable(env, &lead, &mut errors);
+    errors.into_iter().next().map_or(Ok(lead), Err)
 }
 
-/// The longest provider name, in characters (ADR 0026).
+/// The longest provider name, in characters (ADR 0033).
 const PROVIDER_MAX: usize = 16;
 
 /// A provider name is `^[a-z][a-z0-9_]{0,15}$`. teamwire keeps no list of

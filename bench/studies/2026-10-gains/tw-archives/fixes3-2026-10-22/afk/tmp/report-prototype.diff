@@ -1,0 +1,126 @@
+diff --git a/crates/teamwire-report/src/final_message.rs b/crates/teamwire-report/src/final_message.rs
+index 3f35588..18208fd 100644
+--- a/crates/teamwire-report/src/final_message.rs
++++ b/crates/teamwire-report/src/final_message.rs
+@@ -22,7 +22,7 @@ pub(crate) fn pick(t: &TurnEnd) -> (Option<String>, FinalSource) {
+ /// The text of the last assistant record in a Claude Code transcript (one
+ /// JSON object per line). A line that does not parse is skipped.
+ fn last_assistant_text(path: &Path) -> Option<String> {
+-    let bytes = std::fs::read(path).ok()?;
++    let (_, bytes) = crate::usage::read_transcript(path, 0)?;
+     let text = String::from_utf8_lossy(&bytes);
+     let mut last = None;
+     for line in text.lines() {
+diff --git a/crates/teamwire-report/src/usage.rs b/crates/teamwire-report/src/usage.rs
+index 9772c2c..b909635 100644
+--- a/crates/teamwire-report/src/usage.rs
++++ b/crates/teamwire-report/src/usage.rs
+@@ -42,12 +42,7 @@ pub(crate) fn session_usage(path: &Path) -> Option<Value> {
+     let mut size = 0_u64;
+     let mut texts = Vec::new();
+     for (i, file) in files.iter().enumerate() {
+-        // Only a regular file: opening a FIFO would block the Stop hook.
+-        let read = std::fs::metadata(file)
+-            .ok()
+-            .filter(|m| m.is_file() && size.saturating_add(m.len()) <= MAX_TRANSCRIPT_BYTES)
+-            .and_then(|m| Some((m.len(), std::fs::read(file).ok()?)));
+-        match read {
++        match read_transcript(file, size) {
+             Some((len, bytes)) => {
+                 size += len;
+                 texts.push(String::from_utf8_lossy(&bytes).into_owned());
+@@ -101,6 +96,17 @@ pub(crate) fn session_usage(path: &Path) -> Option<Value> {
+     Some(Value::Object(object))
+ }
+ 
++/// The bytes of the transcript file at `path` and their length, or `None`
++/// when it is not a regular file, cannot be read, or would bring `used` bytes
++/// already read past `MAX_TRANSCRIPT_BYTES`. Only a regular file is opened:
++/// opening a FIFO would block the Stop hook.
++pub(crate) fn read_transcript(path: &Path, used: u64) -> Option<(u64, Vec<u8>)> {
++    std::fs::metadata(path)
++        .ok()
++        .filter(|m| m.is_file() && used.saturating_add(m.len()) <= MAX_TRANSCRIPT_BYTES)
++        .and_then(|m| Some((m.len(), std::fs::read(path).ok()?)))
++}
++
+ #[cfg(test)]
+ #[expect(
+     clippy::disallowed_methods,
+diff --git a/crates/teamwire-report/tests/result_file.rs b/crates/teamwire-report/tests/result_file.rs
+index 181be32..d374d3a 100644
+--- a/crates/teamwire-report/tests/result_file.rs
++++ b/crates/teamwire-report/tests/result_file.rs
+@@ -179,3 +179,72 @@ fn the_file_shows_the_facts_the_lead_needs() {
+         "the task is cut to 300 characters"
+     );
+ }
++
++fn make_fifo(path: &std::path::Path) {
++    let status = std::process::Command::new("mkfifo")
++        .arg(path)
++        .status()
++        .unwrap();
++    assert!(status.success());
++}
++
++#[test]
++fn probe_a_named_pipe_transcript_gives_no_final_message() {
++    let (tx, rx) = std::sync::mpsc::channel();
++    std::thread::spawn(move || {
++        let (mut rig, api) = team();
++        let path = rig.home.path().join("pipe.jsonl");
++        make_fifo(&path);
++        let mut t = stop("api-1");
++        t.final_message = None;
++        t.transcript = Some(path);
++        finish(&mut rig, &api, &t);
++        tx.send((outbox(&rig), rig.newest(&api).completion.final_source))
++            .ok();
++    });
++    let (text, source) = rx
++        .recv_timeout(std::time::Duration::from_secs(10))
++        .expect("the hook blocked on the pipe");
++    assert!(text.contains("Final message from: none"), "{text}");
++    assert_eq!(source, FinalSource::None);
++}
++
++#[test]
++fn probe_a_transcript_past_64_mib_gives_no_final_message() {
++    let (mut rig, api) = team();
++    let path = transcript(&rig, "From a huge file.");
++    let mut f = std::fs::OpenOptions::new()
++        .append(true)
++        .open(&path)
++        .unwrap();
++    std::io::Write::write_all(&mut f, b"\n").unwrap();
++    f.set_len(64 * 1024 * 1024 + 1).unwrap();
++    let mut t = stop("api-1");
++    t.final_message = None;
++    t.transcript = Some(path);
++    finish(&mut rig, &api, &t);
++    let text = outbox(&rig);
++    assert!(text.contains("Final message from: none"), "{text}");
++    assert_eq!(rig.newest(&api).completion.final_source, FinalSource::None);
++}
++
++#[test]
++fn probe_a_transcript_of_exactly_64_mib_is_read() {
++    let (mut rig, api) = team();
++    let path = transcript(&rig, "From a full file.");
++    let mut f = std::fs::OpenOptions::new()
++        .append(true)
++        .open(&path)
++        .unwrap();
++    std::io::Write::write_all(&mut f, b"\n").unwrap();
++    f.set_len(64 * 1024 * 1024).unwrap();
++    let mut t = stop("api-1");
++    t.final_message = None;
++    t.transcript = Some(path);
++    finish(&mut rig, &api, &t);
++    assert!(outbox(&rig).contains("From a full file."));
++    assert_eq!(
++        rig.newest(&api).completion.final_source,
++        FinalSource::Transcript
++    );
++}

@@ -6,12 +6,10 @@ use std::process::ExitCode;
 use teamwire_core::TeamName;
 use teamwire_report::{DecisionsError, DecisionsQuery, DecisionsView, read_decisions};
 
-use crate::cmd::send::{fail, home_or_refuse, say, warn};
+use crate::cmd::shared::{REFUSED, fail, home_or_refuse, say, warn};
 use crate::wiring::Wiring;
 use crate::{DecisionsArgs, Global, USAGE};
 
-/// Refused by a rule, or nothing could be read (docs/api/cli.md).
-const REFUSED: u8 = 1;
 const USAGE_LINE: &str = "name a team or give --ref or --grep; see teamwire decisions --help";
 
 pub(crate) fn run(args: &DecisionsArgs, global: &Global, _wiring: &Wiring) -> ExitCode {

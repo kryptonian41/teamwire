@@ -17,6 +17,7 @@ const ADAPTERS: &[&str] = &[
     "teamwire_host_tmux",
     "teamwire_harness_claude",
     "teamwire_harness_codex",
+    "teamwire_harness_pi",
 ];
 const CLI_SRC: &str = "crates/teamwire-cli/src";
 const WIRING: &str = "crates/teamwire-cli/src/wiring.rs";
@@ -44,7 +45,7 @@ pub(crate) fn check_adapters(root: &Path, problems: &mut Vec<String>) -> Result<
 }
 
 /// Every `.rs` file under `dir`; a missing directory holds none.
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
+pub(crate) fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(());
     };

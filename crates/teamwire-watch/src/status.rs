@@ -8,7 +8,7 @@ use teamwire_core::{
     DeliveryState, Liveness, Member, MemberState, Recipient, ReportState, Role, SessionId,
     Timestamp, one_line,
 };
-use teamwire_deliver::{PENDING_STALE, attempt_started, unread_since, watch_lease_is_dead};
+use teamwire_deliver::{AttemptHistory, watch_lease_is_dead};
 use teamwire_store::{
     CompletionRecord, Ctx, Party, ReadTx, StoreError, WRITER_VERSION, database_path,
 };
@@ -31,6 +31,7 @@ type MemberRow = (
     Timestamp,
     Option<String>,
     bool,
+    Option<u64>,
 );
 
 /// The rows status shows, read in one transaction.
@@ -93,25 +94,19 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             .iter()
             .rev()
             .find(|e| e.kind == teamwire_core::EventType::MemberStarted);
-        // An older build's event has no `dispatch` key and keeps the grace period.
-        let unprompted = started.is_some_and(|s| {
-            s.data.get("dispatch") == Some(&serde_json::Value::Bool(false))
-                && !events
-                    .iter()
-                    .any(|e| e.kind == teamwire_core::EventType::MemberReprompted && e.seq > s.seq)
-        });
-        let run_start = started
-            .as_ref()
-            .map_or(member.gen_started_at, |e| e.time.max(member.gen_started_at));
+        let unprompted = is_unprompted(started, &events);
+        let run_start = crate::snapshot::run_start(&member, started.map(|e| e.time));
         let completion = tx
             .latest_completion(&member.role)?
             .filter(|c| c.completion.generation == member.generation);
+        let configured = tx.context_handoff_tokens(&member.role)?;
         members.push((
             member,
             completion,
             run_start,
             started.map(|e| e.writer_version.clone()),
             unprompted,
+            configured,
         ));
     }
 
@@ -151,10 +146,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let age = now.saturating_since(attempt_started(tx, &message, &d.recipient)?);
-        if d.state == DeliveryState::Pending && age <= PENDING_STALE {
+        let attempt = AttemptHistory::read(tx, &message, &d.recipient)?;
+        if d.state == DeliveryState::Pending && !attempt.is_stale(now) {
             continue;
         }
+        let age = now.saturating_since(attempt.started());
         view.stuck_deliveries.push(StuckDelivery {
             display_id: message.display_id,
             to: d.recipient,
@@ -171,7 +167,8 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = unread_since(tx, &message, &d.recipient)? else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         let age = now.saturating_since(since);
@@ -211,7 +208,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
             continue;
         }
         view.undelivered_results.push(UndeliveredResult {
-            path: PathBuf::from(result_path(&team_dir, &c.role)),
+            path: PathBuf::from(result_path(
+                &team_dir,
+                &c.role,
+                record.result_sha256.as_ref(),
+            )),
             role: c.role,
             n: c.n,
             report_state: c.report_state,
@@ -249,6 +250,9 @@ fn state_word(
                 "prompted outside teamwire".to_owned()
             }
             ReportState::Delivered => format!("done({})", c.status),
+            // Only the member's own hook reports a pending result, so a
+            // member gone before it ran is dead, as the watch says.
+            ReportState::Pending if seen == Seen::Absent => "died?".to_owned(),
             ReportState::Pending | ReportState::Delivering => "unreported".to_owned(),
             ReportState::Undelivered => "undelivered".to_owned(),
             ReportState::Unconfirmed => "unconfirmed".to_owned(),
@@ -312,7 +316,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         team_dir,
     } = rows;
     let mut listings = Listings::default();
-    for (member, completion, run_start, started_by, unprompted) in &members {
+    for (member, completion, run_start, started_by, unprompted, configured) in &members {
         let seen = observe(ctx, member, &mut listings);
         let age = now.saturating_since(*run_start);
         let resume = match (role, &view.team, &member.session_id) {
@@ -345,6 +349,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             result: completion.as_ref().map(|c| c.completion.report_state),
             branch: member.branch.clone(),
             resume_command: resume,
+            context: crate::context::read(ctx, member, *configured),
         });
     }
     if let (Some(lead), Ok((harness, _))) = (view.lead.as_mut(), ctx.adapters(&Party::Lead))
@@ -360,4 +365,67 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
         view.errors.push(format!("no member {wanted} in this team"));
     }
     view
+}
+
+/// Whether the member got no first prompt and nothing since. An older build's
+/// `member.started` has no `dispatch` key and keeps the grace period. A
+/// handoff counts as a prompt: its new session is about to be given work.
+fn is_unprompted(started: Option<&teamwire_core::Event>, events: &[teamwire_core::Event]) -> bool {
+    use teamwire_core::EventType;
+    started.is_some_and(|s| {
+        s.data.get("dispatch") == Some(&serde_json::Value::Bool(false))
+            && !events.iter().any(|e| {
+                matches!(
+                    e.kind,
+                    EventType::MemberReprompted | EventType::MemberHandoff
+                ) && e.seq > s.seq
+            })
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+    use teamwire_core::{Event, EventType, Timestamp, Ulid};
+
+    use super::is_unprompted;
+
+    fn event(seq: u64, kind: EventType, data: serde_json::Value) -> Event {
+        let time = Timestamp::from_unix_millis(1_790_000_000_000).unwrap();
+        Event {
+            seq,
+            ulid: Ulid::from_parts(time, u128::from(seq)),
+            time,
+            kind,
+            role: None,
+            subject: None,
+            data,
+            writer_version: "test".to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_member_without_a_first_prompt_is_unprompted_until_a_reprompt_or_a_handoff() {
+        let started = event(1, EventType::MemberStarted, json!({ "dispatch": false }));
+        let both = |later: EventType| {
+            let events = [started.clone(), event(2, later, json!({}))];
+            is_unprompted(Some(&started), &events)
+        };
+        assert!(is_unprompted(
+            Some(&started),
+            std::slice::from_ref(&started)
+        ));
+        assert!(!both(EventType::MemberReprompted));
+        assert!(!both(EventType::MemberHandoff));
+        assert!(both(EventType::MessageSent));
+    }
+
+    #[test]
+    fn a_dispatched_member_and_an_older_build_are_not_unprompted() {
+        let dispatched = event(1, EventType::MemberStarted, json!({ "dispatch": true }));
+        let older = event(1, EventType::MemberStarted, json!({}));
+        assert!(!is_unprompted(Some(&dispatched), &[]));
+        assert!(!is_unprompted(Some(&older), &[]));
+        assert!(!is_unprompted(None, &[]));
+    }
 }

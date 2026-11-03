@@ -1,6 +1,6 @@
 # For `cargo nextest run --workspace --locked`, with
-# `TEAMWIRE_FAKES_PREBUILT=1`. The gate does not use nextest yet; see
-# docs/conventions.md section 2 for why.
+# `TEAMWIRE_FAKES_PREBUILT=1`, as the gate and scripts/test-changed.sh run it.
+# docs/conventions.md section 2 has the history.
 
 nextest-version = { required = "0.9.148" }
 

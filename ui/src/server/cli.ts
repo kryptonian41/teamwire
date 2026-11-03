@@ -4,6 +4,7 @@
 import type { z } from "zod";
 import type { Problem } from "../shared/api.ts";
 import {
+  EventsView,
   LogView,
   MetricsView,
   NAME_RE,
@@ -17,6 +18,8 @@ export type CliCall =
   | { cmd: "statusRole"; team: string; role: string }
   | { cmd: "teams" }
   | { cmd: "log"; team: string }
+  | { cmd: "events"; team: string; after?: number }
+  | { cmd: "eventsArchive"; team: string; archive: string }
   | { cmd: "metrics" }
   | { cmd: "version" };
 
@@ -35,7 +38,10 @@ export type CliResult<T> =
 export const STATUS_TIMEOUT_MS = 30_000;
 export const DEFAULT_TIMEOUT_MS = 10_000;
 
-const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
+const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
+
+/** The archive directory names `teamwire events --archive` accepts for `team`. */
+const archiveNameRe = (team: string) => new RegExp(`^${team}-\\d{4}-\\d{2}-\\d{2}(-\\d{6}(-[1-9]\\d*)?)?$`);
 
 /** Builds the arguments after the binary. Throws on a name that is not a team or role name. */
 export function buildArgs(call: CliCall, home?: string): string[] {
@@ -53,6 +59,17 @@ export function buildArgs(call: CliCall, home?: string): string[] {
       return [...prefix, "teams", "--json"];
     case "log":
       return [...prefix, "log", name("team", call.team), "--json"];
+    case "events": {
+      const team = name("team", call.team);
+      if (call.after === undefined) return [...prefix, "events", team, "--json"];
+      if (!Number.isSafeInteger(call.after) || call.after < 0) throw new Error("bad after value");
+      return [...prefix, "events", team, "--after", String(call.after), "--json"];
+    }
+    case "eventsArchive": {
+      const team = name("team", call.team);
+      if (!archiveNameRe(team).test(call.archive)) throw new Error("bad archive name");
+      return [...prefix, "events", team, "--archive", call.archive, "--json"];
+    }
     case "metrics":
       return [...prefix, "metrics", "--json"];
     case "version":
@@ -74,6 +91,9 @@ function schemaFor(call: CliCall): z.ZodType | null {
       return TeamsList;
     case "log":
       return LogView;
+    case "events":
+    case "eventsArchive":
+      return EventsView;
     case "metrics":
       return MetricsView;
     case "version":
@@ -87,6 +107,8 @@ export interface CliOutput {
   statusRole: z.infer<typeof StatusView>;
   teams: z.infer<typeof TeamsList>;
   log: z.infer<typeof LogView>;
+  events: z.infer<typeof EventsView>;
+  eventsArchive: z.infer<typeof EventsView>;
   metrics: z.infer<typeof MetricsView>;
   version: string;
 }
@@ -94,16 +116,24 @@ export interface CliOutput {
 export type Runner = <C extends CliCall>(call: C) => Promise<CliResult<CliOutput[C["cmd"]]>>;
 
 const READ_GRACE_MS = 2000;
+/** The most output of one stream the server keeps. Real output is a few hundred KiB at most. */
+export const MAX_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-function collect(stream: ReadableStream<Uint8Array>) {
+function collect(stream: ReadableStream<Uint8Array>, onTooLarge: () => void) {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let text = "";
+  let bytes = 0;
   const done = (async () => {
     try {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        bytes += value.length;
+        if (bytes > MAX_OUTPUT_BYTES) {
+          onTooLarge();
+          break;
+        }
         text += decoder.decode(value, { stream: true });
       }
     } catch {
@@ -127,7 +157,7 @@ function cleanEnv(): Record<string, string> {
 
 export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {}): Runner {
   return (async (call: CliCall) => {
-    const name = call.cmd;
+    const name = call.cmd === "eventsArchive" ? "events" : call.cmd;
     let args: string[];
     try {
       args = buildArgs(call, config.home);
@@ -147,6 +177,11 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
       return { ok: false, problems: [{ code: "cli_failed", detail: `could not start ${config.bin}: ${(e as Error).message}` }] };
     }
     let timedOut = false;
+    let tooLarge = false;
+    const overflow = () => {
+      tooLarge = true;
+      proc.kill("SIGKILL");
+    };
     const timer = setTimeout(() => {
       timedOut = true;
       proc.kill("SIGKILL");
@@ -154,8 +189,8 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     // Read while the child runs so a full pipe cannot block it. After it
     // exits, a process it started may still hold the pipes open, so the
     // reads get a short grace period and are then cancelled.
-    const out = collect(proc.stdout);
-    const err = collect(proc.stderr);
+    const out = collect(proc.stdout, overflow);
+    const err = collect(proc.stderr, overflow);
     const exitCode = await proc.exited;
     await Promise.race([Promise.all([out.done, err.done]), Bun.sleep(READ_GRACE_MS)]);
     out.stop();
@@ -163,6 +198,9 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     const stdout = out.text();
     const stderr = err.text();
     clearTimeout(timer);
+    if (tooLarge) {
+      return { ok: false, problems: [{ code: "too_large", detail: `teamwire ${name} printed more than ${MAX_OUTPUT_BYTES} bytes and was killed` }] };
+    }
     if (timedOut) {
       return { ok: false, problems: [{ code: "cli_timeout", detail: `teamwire ${name} passed ${limit} ms and was killed` }] };
     }

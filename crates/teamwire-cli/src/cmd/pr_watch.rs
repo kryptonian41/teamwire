@@ -14,6 +14,7 @@ use std::time::Duration;
 use serde_json::Value;
 use teamwire_core::{Command, Platform};
 
+use crate::cmd::shared::{fail, say_line};
 use crate::wiring::Wiring;
 use crate::{Global, PrWatchArgs, USAGE};
 use required::Required;
@@ -288,20 +289,6 @@ fn gh_checks(platform: &dyn Platform, args: &[&str]) -> Option<Value> {
         .then(|| Value::Array(Vec::new()))
 }
 
-#[expect(clippy::print_stdout, reason = "the lines are the command's output")]
-fn say(text: &str) {
-    println!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str) -> ExitCode {
-    eprintln!("teamwire pr-watch: {message}");
-    ExitCode::from(USAGE)
-}
-
 fn view_args<'a>(number: &'a str, repo: &'a str) -> [&'a str; 7] {
     [
         "pr",
@@ -328,11 +315,11 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
         prs,
     } = args;
     if *interval == Some(0) {
-        return fail("--interval must be at least 1 second");
+        return fail("pr-watch", "--interval must be at least 1 second", USAGE);
     }
     let interval = Duration::from_secs(interval.unwrap_or(DEFAULT_INTERVAL_S));
     let names: Vec<String> = prs.iter().map(|pr| label(repo, *pr)).collect();
-    say(&format!(
+    say_line(&format!(
         "WATCHING {} (poll {}s)",
         names.join(", "),
         interval.as_secs()
@@ -373,7 +360,7 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
             events.extend(memory.poll_one(&mut reread, repo, *pr, checks.as_ref(), view.as_ref()));
         }
         if !events.is_empty() {
-            say(&events.join(" | "));
+            say_line(&events.join(" | "));
         }
         if memory.finished(prs) {
             return ExitCode::from(u8::from(memory.any_failed()));

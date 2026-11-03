@@ -16,8 +16,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use teamwire_core::{
-    Clock, DeliveryErrorCode, Host, HostCaps, HostError, HostId, Key, Occupant, OneLine, Place,
-    PlaceState, Registry, SpawnRequest, one_line,
+    Address, Clock, DeliveryErrorCode, Host, HostCaps, HostError, HostId, Key, Occupant, OneLine,
+    Place, PlaceState, Registry, SpawnRequest, one_line,
 };
 use teamwire_deliver::{DeliveryOutcome, deliver_line_within};
 use teamwire_fakes::{FakeClock, FakeHost};
@@ -76,9 +76,9 @@ impl Host for SlowHost {
         self.took(timeout);
         self.inner.send_keys(place, keys, timeout)
     }
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
         self.took(timeout);
-        self.inner.close(place, timeout)
+        self.inner.close(place, expected, timeout)
     }
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError> {
         self.took(timeout);

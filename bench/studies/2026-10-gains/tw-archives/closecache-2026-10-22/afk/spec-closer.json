@@ -1,0 +1,18 @@
+{
+  "team": "closecache",
+  "plugins": {"claude-mem@thedotmack": false},
+  "children": [
+    {
+      "role": "closer",
+      "title": "Verify and integrate reports",
+      "kind": "closer",
+      "mode": "pane",
+      "cwd": "/private/tmp/claude-501/bnruns/bngcwrebut/clone",
+      "model": "opus",
+      "effort": "xhigh",
+      "plugins": {"claude-mem@thedotmack": false, "mattpocock-skills@claude-plugins-official": false, "ponytail@ponytail": false},
+      "deadline_s": 4050,
+      "task_file": "/private/tmp/claude-501/bnruns/bngcwrebut/twhome/teams/closecache/afk/briefs/closer.md"
+    }
+  ]
+}

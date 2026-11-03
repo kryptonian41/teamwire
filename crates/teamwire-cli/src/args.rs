@@ -38,6 +38,9 @@ pub(crate) enum Command {
     Launch(LaunchArgs),
     /// Resume the lead and the members of a team whose sessions are gone.
     Reopen(ReopenArgs),
+    /// Give one member a fresh session in the same seat, or print the guide
+    /// a member follows before one.
+    Handoff(HandoffArgs),
     /// Print one line when something needs the lead, until the team completes.
     Watch(WatchArgs),
     /// Open an AFK run: a team with a time budget and no members yet.
@@ -88,6 +91,8 @@ pub(crate) enum Command {
     Uninstall(UninstallArgs),
     /// Every record of a team as JSON lines.
     Export(ExportArgs),
+    /// A team's event rows, oldest first, from its store or an archive. Reads only.
+    Events(EventsArgs),
     /// Local metrics from the event rows, or the OpenTelemetry export.
     Metrics(MetricsArgs),
     /// The binary's version and the schema version it writes.
@@ -168,6 +173,22 @@ pub(crate) struct ReopenArgs {
     /// Print what would be reopened; open and write nothing.
     #[arg(long)]
     pub(crate) dry_run: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct HandoffArgs {
+    #[arg(required_unless_present = "guide")]
+    pub(crate) team: Option<String>,
+    /// The member that gets a fresh session.
+    #[arg(long, value_name = "R", required_unless_present = "guide")]
+    pub(crate) role: Option<String>,
+    /// Print the steps; close, open and write nothing.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// Print the guide a member follows to write its handoff document. Needs
+    /// no team.
+    #[arg(long, conflicts_with_all = ["team", "role", "dry_run"])]
+    pub(crate) guide: bool,
 }
 
 #[derive(Args)]
@@ -260,6 +281,8 @@ pub(crate) struct SendArgs {
     /// notice, finding, question, answer, reprompt or note.
     #[arg(long = "type", value_name = "TYPE")]
     pub(crate) kind: String,
+    /// The message: at most 600 characters for a notice, 800 for a finding,
+    /// question or answer.
     #[arg(long, value_name = "TEXT")]
     pub(crate) text: Option<String>,
     /// Read the message text from PATH.
@@ -358,7 +381,7 @@ pub(crate) struct InstallArgs {
     #[arg(long)]
     pub(crate) force: bool,
     /// The harnesses to install the lead setup for, comma-separated
-    /// (`claude-code`, `codex`). Without it, a terminal shows a selector of
+    /// (`claude-code`, `codex`, `pi`). Without it, a terminal shows a selector of
     /// the harnesses found on PATH, and anything else installs `claude-code`.
     #[arg(long, value_delimiter = ',', value_name = "ID")]
     pub(crate) harness: Vec<String>,
@@ -423,8 +446,9 @@ pub(crate) struct HookArgs {
     pub(crate) hook: HookCommand,
 }
 
-/// The `claude-*` names are the ones per-run settings written before ADR
-/// 0022 spell, so they stay for teams that are still open.
+/// The `claude-*` names do what the harness-neutral names do (ADR 0023
+/// lines 133-136): settings written by an older launch spell them, and the
+/// Claude adapter still writes them.
 #[derive(Subcommand)]
 pub(crate) enum HookCommand {
     /// A member's turn-end (Stop) hook, on the member's own harness.
@@ -483,6 +507,19 @@ pub(crate) struct ExportArgs {
     /// Write to FILE instead of stdout.
     #[arg(long, value_name = "FILE")]
     pub(crate) out: Option<PathBuf>,
+}
+
+#[derive(Args)]
+pub(crate) struct EventsArgs {
+    pub(crate) team: String,
+    /// Read this directory of `$TEAMWIRE_HOME/archive/` instead of the live store.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) archive: Option<String>,
+    /// Only rows with a `seq` greater than this.
+    #[arg(long, value_name = "SEQ", default_value_t = 0)]
+    pub(crate) after: u64,
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Args)]

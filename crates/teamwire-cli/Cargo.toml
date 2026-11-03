@@ -11,7 +11,6 @@ name = "teamwire"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = { workspace = true }
 clap = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -20,6 +19,7 @@ teamwire-core = { workspace = true }
 teamwire-deliver = { workspace = true }
 teamwire-harness-claude = { workspace = true }
 teamwire-harness-codex = { workspace = true }
+teamwire-harness-pi = { workspace = true }
 teamwire-host-herdr = { workspace = true }
 teamwire-host-tmux = { workspace = true }
 teamwire-launch = { workspace = true }
@@ -31,7 +31,6 @@ teamwire-report = { workspace = true }
 teamwire-store = { workspace = true }
 teamwire-verify = { workspace = true }
 teamwire-watch = { workspace = true }
-time = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

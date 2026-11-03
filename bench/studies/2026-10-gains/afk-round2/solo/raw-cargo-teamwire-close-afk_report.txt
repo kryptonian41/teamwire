@@ -1,0 +1,81 @@
+   Compiling libc v0.2.189
+   Compiling tracing-core v0.1.36
+   Compiling aho-corasick v1.1.5
+   Compiling syn v2.0.119
+   Compiling bstr v1.13.1
+   Compiling log v0.4.34
+   Compiling serde v1.0.229
+   Compiling ppv-lite86 v0.2.21
+   Compiling regex-automata v0.4.18
+   Compiling getrandom v0.4.3
+   Compiling getrandom v0.3.4
+   Compiling errno v0.3.14
+   Compiling cpufeatures v0.3.1
+   Compiling wait-timeout v0.2.1
+   Compiling sha2 v0.11.0
+   Compiling rustix v1.1.5
+   Compiling rand v0.10.3
+   Compiling rand_core v0.9.5
+   Compiling rand_xorshift v0.4.0
+   Compiling rand v0.9.5
+   Compiling rand_chacha v0.9.0
+   Compiling ulid v3.0.0
+   Compiling teamwire-core v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-core)
+   Compiling tempfile v3.27.0
+   Compiling rusty-fork v0.3.1
+   Compiling proptest v1.11.0
+   Compiling globset v0.4.20
+   Compiling tracing-attributes v0.1.31
+   Compiling teamwire-fakes v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/tests/fakes)
+   Compiling tracing v0.1.44
+   Compiling teamwire-store v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-store)
+   Compiling teamwire-verify v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-verify)
+   Compiling teamwire-deliver v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-deliver)
+   Compiling teamwire-close v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-close)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.98s
+     Running tests/afk_report.rs (/private/tmp/claude-501/bench-target/debug/deps/afk_report-19fd44cd7cd1d629)
+
+running 7 tests
+test an_ordinary_team_closes_with_no_report ... ok
+test an_afk_team_that_never_had_a_member_closes_with_no_report ... FAILED
+test a_removed_member_still_needs_the_report ... FAILED
+test an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so ... FAILED
+test removing_one_member_of_an_afk_team_needs_no_report ... ok
+test a_report_missing_any_one_heading_is_refused_and_names_it ... FAILED
+test a_report_with_all_eight_headings_lets_an_afk_team_close ... ok
+
+failures:
+
+---- an_afk_team_that_never_had_a_member_closes_with_no_report stdout ----
+
+thread 'an_afk_team_that_never_had_a_member_closes_with_no_report' (176224108) panicked at crates/teamwire-close/tests/afk_report.rs:120:5:
+assertion failed: refusals(&mut rig).is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_removed_member_still_needs_the_report stdout ----
+
+thread 'a_removed_member_still_needs_the_report' (176224105) panicked at crates/teamwire-close/tests/afk_report.rs:141:5:
+["refused: afk_report_incomplete: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-rzeSVJ/teams/alpha/afk/REPORT.md is missing; have the reporter write it"]
+
+---- an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so stdout ----
+
+thread 'an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so' (176224109) panicked at crates/teamwire-close/tests/afk_report.rs:51:5:
+["refused: afk_report_incomplete: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-rOMyIB/teams/alpha/afk/REPORT.md is missing; have the reporter write it"]
+
+---- a_report_missing_any_one_heading_is_refused_and_names_it stdout ----
+
+thread 'a_report_missing_any_one_heading_is_refused_and_names_it' (176224106) panicked at crates/teamwire-close/tests/afk_report.rs:86:9:
+What you asked: ["refused: afk_report_incomplete: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-GiwCbm/teams/alpha/afk/REPORT.md lacks the heading(s): What you asked"]
+
+
+failures:
+    a_removed_member_still_needs_the_report
+    a_report_missing_any_one_heading_is_refused_and_names_it
+    an_afk_team_that_never_had_a_member_closes_with_no_report
+    an_afk_team_with_no_report_is_refused_and_the_dry_run_says_so
+
+test result: FAILED. 3 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+error: test failed, to rerun pass `-p teamwire-close --test afk_report`
+error: 1 target failed:
+    `-p teamwire-close --test afk_report`

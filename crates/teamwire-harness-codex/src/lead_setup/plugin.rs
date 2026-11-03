@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use teamwire_core::{LaunchSpec, LeadCommand};
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -25,29 +26,11 @@ const CODEX_PART: &str = include_str!("../../../../examples/skills/codex-lead.md
 /// so the plugin carries the text as it is.
 const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/reference.md");
 
+/// The skill a lead loads when promptwire is installed. It names no Claude
+/// tool, so the plugin carries it as it is.
+const PROMPTWIRE_TEXT: &str = include_str!("../../../../examples/skills/promptwire/SKILL.md");
+
 const STAMP_KEY: &str = "  teamwire-sha256: ";
-
-/// The program the plugin runs: `<bin> [--home DIR]`, then `mcp --lead` or
-/// the hook.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeadCommand {
-    pub bin: PathBuf,
-    /// Given only when the state directory is not the default, so a default
-    /// install keeps following the default.
-    pub home: Option<PathBuf>,
-}
-
-impl LeadCommand {
-    fn words(&self) -> Vec<String> {
-        let mut words = vec![self.bin.display().to_string()];
-        if let Some(home) = &self.home {
-            // Rebuilt from its components so `/x/` and `/x` give one command.
-            let home: PathBuf = home.components().collect();
-            words.extend(["--home".to_owned(), home.display().to_string()]);
-        }
-        words
-    }
-}
 
 /// The marketplace directory's files, as this binary renders them: each path
 /// is relative to the directory, with its text.
@@ -73,31 +56,16 @@ fn sha256_hex(text: &str) -> String {
     hex::encode(Sha256::digest(text.as_bytes()))
 }
 
-/// Quote `text` for `sh -c` only when it holds a character the shell would
-/// treat specially.
-fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
-}
-
 /// The skill: the shared text's frontmatter, the Codex part, the shared body,
 /// and a `metadata` block holding the hash of that text as the last
 /// frontmatter key. `None` when the shared text has no frontmatter.
 fn skill(shared: &str) -> Option<String> {
     let rest = shared.strip_prefix("---\n")?;
-    let end = "---\n".len() + rest.find("\n---\n")? + 1;
-    let (head, body) = shared.split_at(end);
-    let text = format!("{head}{CODEX_PART}\n{body}");
-    // The text is split again at the same line, which still starts the
-    // closing fence of the frontmatter.
-    let (head, tail) = text.split_at(end);
+    // `fence` starts the closing `---` line; the Codex part goes after it.
+    let fence = "---\n".len() + rest.find("\n---\n")? + 1;
+    let (head, body) = shared.split_at(fence + "---\n".len());
+    let text = format!("{head}\n{CODEX_PART}{body}");
+    let (head, tail) = text.split_at(fence);
     Some(format!(
         "{head}metadata:\n{STAMP_KEY}{}\n{tail}",
         sha256_hex(&text)
@@ -123,7 +91,11 @@ impl PluginFiles {
             skill(shared).ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut mcp_args = want.words().split_off(1);
         mcp_args.extend(["mcp".to_owned(), "--lead".to_owned()]);
-        let mut hook_words: Vec<String> = want.words().iter().map(|w| shell_word(w)).collect();
+        let mut hook_words: Vec<String> = want
+            .words()
+            .iter()
+            .map(|w| LaunchSpec::shell_word(w))
+            .collect();
         hook_words.extend(["hook", "lead-stop", "--harness", "codex"].map(str::to_owned));
         let body = [
             (
@@ -145,6 +117,10 @@ impl PluginFiles {
             (
                 format!("{PLUGIN_DIR}/skills/teamwire/reference.md"),
                 reference.to_owned(),
+            ),
+            (
+                format!("{PLUGIN_DIR}/skills/promptwire/SKILL.md"),
+                PROMPTWIRE_TEXT.to_owned(),
             ),
         ];
         let mut content = String::new();
@@ -238,7 +214,12 @@ mod tests {
                 "teamwire/hooks/hooks.json",
                 "teamwire/skills/teamwire/SKILL.md",
                 "teamwire/skills/teamwire/reference.md",
+                "teamwire/skills/promptwire/SKILL.md",
             ]
+        );
+        assert_eq!(
+            file(&files, "teamwire/skills/promptwire/SKILL.md"),
+            PROMPTWIRE_TEXT
         );
         assert_eq!(
             file(&files, "teamwire/.mcp.json"),
@@ -301,6 +282,19 @@ mod tests {
         );
         let codex = text.find("codex --no-daemon").unwrap();
         assert!(codex < text.find("# Body").unwrap());
+    }
+
+    #[test]
+    fn the_codex_part_of_the_real_skill_sits_in_the_body() {
+        let shared = include_str!("../../../../examples/skills/teamwire/SKILL.md");
+        let files = PluginFiles::render(Path::new("/d"), &want(None), shared).unwrap();
+        let text = file(&files, "teamwire/skills/teamwire/SKILL.md");
+        let rest = text.strip_prefix("---\n").unwrap();
+        let end = rest.find("\n---\n").unwrap();
+        let (frontmatter, body) = rest.split_at(end);
+        assert!(!frontmatter.contains("codex --no-daemon"), "{frontmatter}");
+        assert!(frontmatter.contains(STAMP_KEY), "{frontmatter}");
+        assert_eq!(body.matches("codex --no-daemon").count(), 1, "{body}");
     }
 
     #[test]

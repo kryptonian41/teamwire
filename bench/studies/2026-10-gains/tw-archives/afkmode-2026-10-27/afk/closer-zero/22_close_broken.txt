@@ -1,0 +1,13 @@
+exit Some(0)
+--- stdout
+lock: close lock taken by pid 66554
+archive: 1 file(s) and team.db in /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/archive/broken-2026-10-27
+verify_archive: every file hashes to SHA256SUMS and matches the team directory
+remove_worktrees: no worktrees to remove
+close_places: no places recorded
+release_hold: no sleep hold is recorded
+finish: the team is closed
+archive_final: the archived database now holds team.closed
+delete_state: deleted /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/teams/broken
+closed team broken. Archive: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/archive/broken-2026-10-27
+--- stderr

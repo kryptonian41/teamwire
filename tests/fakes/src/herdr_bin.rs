@@ -46,6 +46,26 @@ pub(crate) fn fail(code: &str, message: impl Into<String>) -> CliError {
 pub(crate) struct Ctx<'a> {
     pub(crate) state_path: &'a Path,
     pub(crate) state: &'a mut State,
+    /// The state lock. A command that waits on something slow gives it up
+    /// with `release_lock` and takes it again with `relock`.
+    pub(crate) guard: &'a mut Option<state::Lock>,
+}
+
+impl Ctx<'_> {
+    /// Saves the state and lets other calls run.
+    pub(crate) fn release_lock(&mut self) -> Result<(), CliError> {
+        state::save(self.state_path, self.state).map_err(|e| fail("fake_misconfigured", e))?;
+        self.guard.take();
+        Ok(())
+    }
+
+    /// Takes the lock again and reloads the state other calls changed.
+    pub(crate) fn relock(&mut self) -> Result<(), CliError> {
+        *self.guard =
+            Some(state::lock(self.state_path).map_err(|e| fail("fake_misconfigured", e))?);
+        *self.state = state::load(self.state_path).map_err(|e| fail("fake_misconfigured", e))?;
+        Ok(())
+    }
 }
 
 fn say(out: &mut impl std::io::Write, text: &str) {
@@ -84,6 +104,30 @@ fn is_read(command: &str) -> bool {
     )
 }
 
+/// The file in a pane directory that holds the process group of the shell
+/// step `fake-claude` is running, if it runs one.
+pub(crate) const STEP_FILE: &str = "step.pgid";
+
+/// Ends the agent process of a pane and the shell step it is running. Does
+/// nothing for an agent that exited, whose pid may belong to someone else.
+pub(crate) fn end_agent(state_path: &Path, pane_id: &str, pid: u32) {
+    if agent_exited(state_path, pane_id) {
+        return;
+    }
+    fsutil::terminate(pid);
+    let dir = state::pane_dir(state_path, pane_id);
+    let step = fsutil::read_text(&dir.join(STEP_FILE)).and_then(|t| t.trim().parse().ok());
+    if let Some(step) = step {
+        fsutil::terminate(step);
+    }
+}
+
+/// True when the pane's agent wrote `exited`. Its recorded pid may belong to
+/// an unrelated process by now, so nothing signals it.
+pub(crate) fn agent_exited(state_path: &Path, pane_id: &str) -> bool {
+    pane_files::read_status(&state::pane_dir(state_path, pane_id)).0 == "exited"
+}
+
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|v| !v.is_empty())
@@ -99,6 +143,7 @@ fn log_call(argv: &[String], command: &str, fault: Option<&Action>) {
         Action::Hang => "hang".to_owned(),
         Action::Garbage => "garbage".to_owned(),
         Action::Stalled => "stalled".to_owned(),
+        Action::TimedOut => "timed_out".to_owned(),
     });
     let line = json!({
         "argv": argv,
@@ -108,10 +153,10 @@ fn log_call(argv: &[String], command: &str, fault: Option<&Action>) {
     fsutil::append(&path, format!("{line}\n").as_bytes()).ok();
 }
 
-fn dispatch(ctx: &mut Ctx<'_>, args: &Args, stalled: bool) -> Result<Value, CliError> {
+fn dispatch(ctx: &mut Ctx<'_>, args: &Args, fault: Option<&Action>) -> Result<Value, CliError> {
     match args.command().as_str() {
         "agent start" => agent::start(ctx, args),
-        "agent prompt" => agent::prompt(ctx, args, stalled),
+        "agent prompt" => agent::prompt(ctx, args, fault),
         "agent get" => agent::get(ctx, args),
         "agent list" => Ok(agent::list(ctx)),
         "agent read" => agent::read(ctx, args),
@@ -151,8 +196,8 @@ pub fn run(argv: &[String]) -> ExitCode {
         );
         return ExitCode::from(2);
     };
-    let guard = match state::lock(&state_path) {
-        Ok(l) => l,
+    let mut guard = match state::lock(&state_path) {
+        Ok(l) => Some(l),
         Err(e) => {
             print_err(&command, &fail("fake_misconfigured", e));
             return ExitCode::from(2);
@@ -165,17 +210,22 @@ pub fn run(argv: &[String]) -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    let fault_file = env_path("FAKE_HERDR_FAULTS").map(|p| faults::load(&p));
+    let fault_file = match env_path("FAKE_HERDR_FAULTS").map(|p| faults::load(&p)) {
+        Some(Err(e)) => {
+            print_err(&command, &fail("fake_misconfigured", e));
+            return ExitCode::from(2);
+        }
+        other => other.and_then(Result::ok),
+    };
     let fault = fault_file
         .as_ref()
         .and_then(|f| faults::take(f, &mut state, &command, args.operand(0)));
     log_call(argv, &command, fault.as_ref());
 
-    let mut stalled = false;
     match &fault {
         Some(Action::Hang) => {
             state::save(&state_path, &state).ok();
-            drop(guard);
+            guard.take();
             let ms = std::env::var("FAKE_HERDR_HANG_MS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -197,15 +247,15 @@ pub fn run(argv: &[String]) -> ExitCode {
             print_err(&command, &fail(&e.code, e.message.clone()));
             return ExitCode::from(1);
         }
-        Some(Action::Stalled) => stalled = true,
-        None => {}
+        Some(Action::Stalled | Action::TimedOut) | None => {}
     }
 
     let mut ctx = Ctx {
         state_path: &state_path,
         state: &mut state,
+        guard: &mut guard,
     };
-    let outcome = dispatch(&mut ctx, &args, stalled);
+    let outcome = dispatch(&mut ctx, &args, fault.as_ref());
     if let Err(e) = state::save(&state_path, &state) {
         print_err(&command, &fail("fake_misconfigured", e));
         return ExitCode::from(2);

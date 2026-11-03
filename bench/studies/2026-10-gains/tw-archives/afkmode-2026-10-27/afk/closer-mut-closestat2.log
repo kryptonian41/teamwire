@@ -1,0 +1,40 @@
+## C2-D39  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if members.is_empty() {
++    if false {
+test an_afk_team_that_never_had_a_member_closes_without_a_report ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+error: test failed, to rerun pass `-p teamwire-close --test afk_report`
+error: 1 target failed:
+## C3-unreadable  1 file changed, 1 insertion(+), 1 deletion(-)
+-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
++        Err(_) => {
+test close_says_an_unreadable_afk_report_is_unreadable_not_missing ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+error: test failed, to rerun pass `-p teamwire-close --test afk_report`
+error: 1 target failed:
+## C4-no-view  1 file changed, 1 insertion(+), 1 deletion(-)
+-    view.afk = crate::afk::view(&team, &team_dir, now, &mut view.errors);
++    view.afk = None; let _ = (&team_dir, crate::afk::view);
+test a_spent_budget_shows_zero_seconds_left ... FAILED
+test an_afk_team_shows_its_budget_and_decision_count ... FAILED
+test result: FAILED. 16 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.18s
+error: test failed, to rerun pass `-p teamwire-watch --test status`
+error: 1 target failed:
+test status_of_an_afk_team_prints_the_afk_line_and_json_object ... FAILED
+test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.06s
+error: test failed, to rerun pass `-p teamwire-cli --test status`
+error: 1 target failed:
+## C5-indent  1 file changed, 1 insertion(+), 1 deletion(-)
+-            let after_d = line.trim_start().strip_prefix('D').unwrap_or("");
++            let after_d = line.strip_prefix('D').unwrap_or("");
+test an_afk_team_shows_its_budget_and_decision_count ... FAILED
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p teamwire-watch --test status`
+error: 1 target failed:
+## C6-teams-key  1 file changed, 1 insertion(+), 1 deletion(-)
+-        afk_budget_ends_at: row.afk_budget_ends_at,
++        afk_budget_ends_at: None,
+test teams_marks_an_afk_team_and_its_json_gives_the_budget_end ... FAILED
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+error: test failed, to rerun pass `-p teamwire-cli --test teams`
+error: 1 target failed:

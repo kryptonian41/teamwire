@@ -58,10 +58,19 @@ impl HerdrFaults {
         self.rule(cmd, target, times, Action::Garbage)
     }
 
-    /// `agent prompt` types the text, then fails with `agent_prompt_stalled`.
+    /// `agent prompt --wait` types the text, then fails with
+    /// `agent_prompt_stalled`. Without `--wait` the call works, as in herdr.
     #[must_use]
     pub fn stalled_prompt(self, target: Option<&str>, times: Option<u32>) -> Self {
         self.rule("agent prompt", target, times, Action::Stalled)
+    }
+
+    /// `agent prompt` types the text, then fails with `timeout`, the answer
+    /// of a call that ran out of time. The adapter passes no `--wait`, so
+    /// this is the failure after typing that delivery can reach.
+    #[must_use]
+    pub fn timed_out_prompt(self, target: Option<&str>, times: Option<u32>) -> Self {
+        self.rule("agent prompt", target, times, Action::TimedOut)
     }
 
     /// `agent_not_found` for every call of `cmd` on `target`.
@@ -318,8 +327,18 @@ impl FakeHerdrEnv {
     /// The session files `fake-claude` processes have written and not yet
     /// removed.
     pub fn session_files(&self) -> Vec<PathBuf> {
+        // `fake-claude` writes each file through a hidden `.<name>.<pid>.tmp`
+        // in the same folder; a caller that saw one would read a half-written file.
+        let shown = |p: &PathBuf| {
+            p.file_name()
+                .is_some_and(|n| !n.to_string_lossy().starts_with('.'))
+        };
         std::fs::read_dir(self.claude_dir().join("sessions"))
-            .map(|d| d.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .map(|d| {
+                d.filter_map(|e| e.ok().map(|e| e.path()))
+                    .filter(shown)
+                    .collect()
+            })
             .unwrap_or_default()
     }
 }
@@ -339,15 +358,19 @@ impl Drop for FakeHerdrEnv {
         let Ok(doc) = serde_json::from_str::<Value>(&text) else {
             return;
         };
-        let pids = doc
-            .get("panes")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|p| p.pointer("/agent/pid").and_then(Value::as_u64))
-            .filter_map(|p| u32::try_from(p).ok());
-        for pid in pids {
-            fsutil::terminate(pid);
+        let panes = doc.get("panes").and_then(Value::as_array);
+        for pane in panes.into_iter().flatten() {
+            let pid = pane
+                .pointer("/agent/pid")
+                .and_then(Value::as_u64)
+                .and_then(|p| u32::try_from(p).ok());
+            let id = pane
+                .get("pane_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            if let Some(pid) = pid {
+                crate::herdr_bin::end_agent(&self.state_path(), id, pid);
+            }
         }
     }
 }

@@ -125,6 +125,110 @@ fn a_store_error_is_recorded_with_op_and_code() {
     assert_eq!(e.data, json!({ "op": "send", "code": "busy" }));
 }
 
+fn store_errors(store: &crate::Store) -> Vec<serde_json::Value> {
+    crate::testkit::events(store)
+        .into_iter()
+        .filter(|e| e.kind == EventType::StoreError)
+        .map(|e| e.data)
+        .collect()
+}
+
+#[test]
+fn a_busy_write_is_recorded_once_after_the_rollback() {
+    let mut f = with_members(&[]);
+    f.store
+        .read(|tx| Ok(tx.connection().busy_timeout(Duration::from_millis(50))?))
+        .unwrap();
+    let path = crate::database_path(
+        f.home.path(),
+        &teamwire_core::TeamName::parse("alpha").unwrap(),
+    );
+    let other = rusqlite::Connection::open(&path).unwrap();
+    other.execute_batch("BEGIN IMMEDIATE").unwrap();
+    let busy = f
+        .store
+        .write(|tx| tx.record_event(at(9), EventType::WatchLine, None, None, &json!({})));
+    assert_eq!(busy.unwrap_err(), StoreError::Busy);
+    other.execute_batch("ROLLBACK").unwrap();
+
+    f.store.record_failure(at(10), "send");
+    f.store.record_failure(at(11), "send");
+    assert_eq!(
+        store_errors(&f.store),
+        [json!({ "op": "send", "code": "busy" })]
+    );
+    assert_eq!(last_event(&f.store).time, at(10));
+}
+
+#[test]
+fn only_busy_full_corrupt_and_io_failures_are_recorded() {
+    let mut f = with_members(&[]);
+    for refused in [
+        StoreError::SchemaNewer { db: 99, binary: 1 },
+        StoreError::SchemaOlder { db: 1, binary: 6 },
+        StoreError::NotTeamwire,
+        StoreError::Constraint("unique".into()),
+        StoreError::NoDatabase { path: "/x".into() },
+    ] {
+        let failed: Result<(), StoreError> = f.store.write(|_| Err(refused.clone()));
+        assert!(failed.is_err());
+        f.store.record_failure(at(3), "send");
+    }
+    assert_eq!(store_errors(&f.store), Vec::<serde_json::Value>::new());
+
+    let failed: Result<(), StoreError> = f.store.write(|_| Err(StoreError::Corrupt("row".into())));
+    assert!(failed.is_err());
+    f.store.record_failure(at(4), "done");
+    assert_eq!(
+        store_errors(&f.store),
+        [json!({ "op": "done", "code": "corrupt" })]
+    );
+}
+
+#[test]
+fn a_failed_read_of_a_store_opened_for_writing_is_recorded() {
+    let mut f = with_members(&[]);
+    let damaged: Result<(), StoreError> = f.store.read(|_| Err(StoreError::Corrupt("row".into())));
+    assert!(damaged.is_err());
+    f.store.record_failure(at(4), "watch");
+    assert_eq!(
+        store_errors(&f.store),
+        [json!({ "op": "watch", "code": "corrupt" })]
+    );
+}
+
+#[test]
+fn a_failure_is_not_written_into_a_file_a_newer_binary_migrated() {
+    let mut f = with_members(&[]);
+    let failed: Result<(), StoreError> = f.store.write(|_| Err(StoreError::Busy));
+    assert!(failed.is_err());
+    let path = crate::database_path(
+        f.home.path(),
+        &teamwire_core::TeamName::parse("alpha").unwrap(),
+    );
+    let newer = rusqlite::Connection::open(&path).unwrap();
+    newer.pragma_update(None, "user_version", 99).unwrap();
+    drop(newer);
+    f.store.record_failure(at(5), "watch");
+    assert_eq!(store_errors(&f.store), Vec::<serde_json::Value>::new());
+}
+
+#[test]
+fn a_read_only_store_records_nothing() {
+    let f = with_members(&[]);
+    let mut ro = crate::Store::open_read_only(
+        f.home.path(),
+        &teamwire_core::TeamName::parse("alpha").unwrap(),
+    )
+    .unwrap();
+    let refused =
+        ro.write(|tx| tx.record_event(at(9), EventType::WatchLine, None, None, &json!({})));
+    assert!(refused.is_err());
+    ro.record_failure(at(10), "status");
+    drop(ro);
+    assert_eq!(store_errors(&f.store), Vec::<serde_json::Value>::new());
+}
+
 #[test]
 fn events_after_respects_both_bounds_and_the_limit() {
     let mut f = with_members(&[]);

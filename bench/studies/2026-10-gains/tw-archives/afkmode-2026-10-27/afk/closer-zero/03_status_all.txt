@@ -1,0 +1,4 @@
+exit Some(0)
+--- stdout
+zero         open     0 members, 0 done
+--- stderr

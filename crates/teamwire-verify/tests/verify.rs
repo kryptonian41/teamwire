@@ -16,7 +16,7 @@ use fixture::{Fixture, Repo, implementer, implementer_without_repo, start_secs};
 use sha2::{Digest, Sha256};
 use teamwire_core::{CompletionStatus, FinalSource, Role, RunOutput};
 use teamwire_store::NewCompletion;
-use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, verify, waive};
+use teamwire_verify::{FlagId, Verdict, VerifyError, VerifyOpts, VerifyRecord, run, waive};
 
 const T0: i64 = 0;
 
@@ -35,7 +35,9 @@ fn full_report(shas: &[&str]) -> String {
 
 fn run_one(fx: &mut Fixture, name: &str) -> VerifyRecord {
     let role = role(name);
-    let mut records = verify(&mut fx.ctx(), Some(&role), VerifyOpts::default());
+    let mut records = run(&mut fx.ctx(), Some(&role), VerifyOpts::default())
+        .unwrap()
+        .records;
     assert_eq!(records.len(), 1);
     records.remove(0)
 }
@@ -362,7 +364,7 @@ fn uncommitted_paths_are_flagged() {
     repo.write(&[("src/new.rs", "fn n() {}\n"), ("TASK.md", "brief\n")]);
     report_all_commits(&fx, &repo, "api");
     let record = run_one(&mut fx, "api");
-    assert_eq!(flag_ids(&record), ["uncommitted"]);
+    assert_eq!(flag_ids(&record), ["uncommitted:src/new.rs"]);
     assert!(record.flags.first().unwrap().detail.contains("src/new.rs"));
     assert_eq!(record.verdict, Verdict::Flagged);
 }
@@ -653,7 +655,9 @@ fn removed_unstarted_and_checkless_pane_members_are_skipped() {
     pane.mode = teamwire_core::Mode::Pane;
     pane.kind = teamwire_core::MemberKind::Reviewer;
     fx.add_member(&pane);
-    let records = verify(&mut fx.ctx(), None, VerifyOpts::default());
+    let records = run(&mut fx.ctx(), None, VerifyOpts::default())
+        .unwrap()
+        .records;
     let verdicts: Vec<(&str, Verdict)> = records
         .iter()
         .map(|r| (r.role.as_str(), r.verdict))
@@ -754,4 +758,242 @@ fn fast_forward_of_base_does_not_hide_flags() {
     let (mut fx, repo) = member_with_flags();
     repo.git(&["branch", "--force", "main", "HEAD"]);
     assert_flags_kept(&mut fx, &repo);
+}
+
+// ---- skip forms and dropped asserts (VER-3) ----
+
+const LIB: &str = "pub fn a() -> u32 { 1 }\n\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    #[test]\n    fn one() {\n        assert_eq!(a(), 1);\n    }\n}\n";
+const IT: &str = "#[test]\nfn it_one() {\n    assert_eq!(1, 1);\n}\n\n#[test]\nfn it_two() {\n    assert_eq!(2, 2);\n}\n";
+const JS: &str = "const { it } = require('node:test');\n\nit('adds', () => {\n  check();\n});\n";
+const PY: &str = "def test_one():\n    assert f() == 1\n";
+const GO: &str = "package a\n\nimport \"testing\"\n\nfunc TestOne(t *testing.T) {\n\tif f() != 1 {\n\t\tt.Fatal(\"no\")\n\t}\n}\n";
+
+/// The flags of the diff rules after one commit that rewrites `path`.
+fn flags_after_edit(path: &str, text: &str) -> Vec<String> {
+    let repo = repo_on_work(&[
+        ("src/lib.rs", LIB),
+        ("tests/it.rs", IT),
+        ("test/a.test.js", JS),
+        ("tests/test_a.py", PY),
+        ("a_test.go", GO),
+    ]);
+    repo.commit(&[(path, text)], "change", start_secs() + 10);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer(
+        "api",
+        &repo,
+        Some("true"),
+        &["src/", "tests/", "test/", "a_test.go"],
+    ));
+    let record = run_one(&mut fx, "api");
+    record
+        .flags
+        .iter()
+        .map(|f| f.id.as_str().to_owned())
+        .filter(|id| id.starts_with("weakened:") || id.starts_with("asserts-removed:"))
+        .collect()
+}
+
+// Not flagged, by design (D17): `#[cfg(not(test))]` (the rules have no path
+// filter, so it would flag production code), a test wrapped in `/* */`, and
+// a net-zero swap of one test for another. Also not flagged: `it.skip.each`,
+// `it.skipIf(` and the focus form `fit(`.
+#[test]
+fn every_added_skip_form_is_flagged_end_to_end() {
+    let it_ignore = |attr: &str| {
+        IT.replacen(
+            "#[test]\nfn it_one",
+            &format!("#[test]\n{attr}\nfn it_one"),
+            1,
+        )
+    };
+    let cases: Vec<(&str, String, &str)> = vec![
+        (
+            "tests/it.rs",
+            it_ignore("#[ignore]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            it_ignore("# [ignore]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            it_ignore("#[ ignore ]"),
+            "weakened:tests/it.rs:2",
+        ),
+        (
+            "tests/it.rs",
+            format!("#![cfg(any())]\n{IT}"),
+            "weakened:tests/it.rs:1",
+        ),
+        (
+            "tests/it.rs",
+            IT.replace("assert_eq!", "let _ = "),
+            "asserts-removed:tests/it.rs",
+        ),
+        (
+            "test/a.test.js",
+            JS.replace("it('adds'", "it.skip('adds'"),
+            "weakened:test/a.test.js:3",
+        ),
+        (
+            "test/a.test.js",
+            JS.replace("it('adds', () =>", "it('adds', { skip: true }, () =>"),
+            "weakened:test/a.test.js:3",
+        ),
+        (
+            "tests/test_a.py",
+            format!("import pytest\npytestmark = pytest.mark.skip(reason='x')\n{PY}"),
+            "weakened:tests/test_a.py:2",
+        ),
+        (
+            "tests/test_a.py",
+            PY.replace(
+                "def test_one():\n",
+                "def test_one():\n    raise unittest.SkipTest('x')\n",
+            ),
+            "weakened:tests/test_a.py:2",
+        ),
+        (
+            "a_test.go",
+            GO.replace("\tif f()", "\tt.Skipf(\"later %d\", 1)\n\tif f()"),
+            "weakened:a_test.go:6",
+        ),
+        (
+            "a_test.go",
+            GO.replace("\tif f()", "\tt.Skip(\"later\")\n\tif f()"),
+            "weakened:a_test.go:6",
+        ),
+    ];
+    for (path, text, expected) in cases {
+        assert_eq!(flags_after_edit(path, &text), [expected], "{path}");
+    }
+}
+
+#[test]
+fn a_commit_that_removes_two_asserts_from_a_test_file_is_flagged() {
+    let before =
+        "#[test]\nfn a() {\n    assert_eq!(1, 1);\n    assert_eq!(2, 2);\n    assert!(true);\n}\n";
+    let (mut fx, repo) = rust_member(&["tests/"], &[("tests/b.rs", before)]);
+    repo.commit(
+        &[("tests/b.rs", "#[test]\nfn a() {\n    assert!(true);\n}\n")],
+        "simplify",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["asserts-removed:tests/b.rs"]);
+    assert_eq!(record.verdict, Verdict::Flagged);
+    assert!(
+        record
+            .flags
+            .first()
+            .unwrap()
+            .detail
+            .contains("2 assert line(s) removed and 0 added")
+    );
+}
+
+#[test]
+fn a_waiver_of_one_uncommitted_path_does_not_cover_a_later_edit_of_another() {
+    let (mut fx, repo) = rust_member(&["src/", "tests/"], &[]);
+    report_all_commits(&fx, &repo, "api");
+    repo.write(&[("notes.txt", "scratch\n")]);
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["uncommitted:notes.txt"]);
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("uncommitted:notes.txt"),
+        "scratch file",
+    )
+    .unwrap();
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+
+    // Later, at the same HEAD, another file changes.
+    repo.write(&[("tests/a.rs", "#[test]\n#[ignore]\nfn a() {}\n")]);
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    let open: Vec<&str> = record
+        .flags
+        .iter()
+        .filter(|f| !f.waived)
+        .map(|f| f.id.as_str())
+        .collect();
+    assert_eq!(open, ["uncommitted:tests/a.rs"]);
+}
+
+#[test]
+fn a_started_worktree_member_whose_folder_is_gone_fails() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    std::fs::remove_dir_all(repo.path()).unwrap();
+    let report = run(&mut fx.ctx(), None, VerifyOpts::default()).unwrap();
+    let record = report.records.first().unwrap();
+    assert_eq!(record.verdict, Verdict::Fail);
+    assert!(record.note.as_deref().unwrap().contains("does not exist"));
+    assert!(!report.is_clean(false));
+}
+
+#[test]
+fn an_implementer_with_no_owns_list_is_flagged_and_a_waiver_clears_it() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB), ("billing/plan.rs", "x\n")]);
+    let sha = repo.commit(
+        &[("billing/plan.rs", "y\n")],
+        "touch billing",
+        start_secs() + 10,
+    );
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &[]));
+    fx.write_report("api", &full_report(&[&sha]));
+    let record = run_one(&mut fx, "api");
+    assert_eq!(flag_ids(&record), ["no-owns"]);
+    assert_eq!(record.verdict, Verdict::Flagged);
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("no-owns"),
+        "reads only",
+    )
+    .unwrap();
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+}
+
+#[test]
+fn a_commit_made_during_the_check_flags_head_moved_and_no_waiver_clears_it() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let first = repo.head();
+    let git_dir = repo.path().display();
+    let check =
+        format!("git -C {git_dir} -c user.name=t -c user.email=t@t commit --allow-empty -qm moved");
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some(&check), &["src/"]));
+    let record = run_one(&mut fx, "api");
+    let moved = repo.head();
+    assert_ne!(first, moved);
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert_eq!(record.head_sha.as_deref(), Some(first.as_str()));
+    let flag = record
+        .flags
+        .iter()
+        .find(|f| f.id.as_str() == "head-moved")
+        .unwrap();
+    assert_eq!(
+        flag.detail,
+        format!("HEAD moved from {first} to {moved} while verify ran; run verify again")
+    );
+    assert!(!flag.waived);
+    let waived = waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("head-moved"),
+        "ok",
+    );
+    assert!(
+        matches!(waived, Err(VerifyError::UnknownFlag(_))),
+        "{waived:?}"
+    );
 }

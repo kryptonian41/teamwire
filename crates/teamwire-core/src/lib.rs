@@ -1,6 +1,7 @@
 //! teamwire's shared vocabulary: names and ids, member, message, completion
-//! and event types, the `Host`, `Harness`, `Platform` and `Clock` traits,
-//! the adapter registry, and the sanitiser.
+//! and event types, the `Host`, `Harness`, `LeadSetup`, `Platform` and
+//! `Clock` traits, the adapter registry, the sanitiser, screen text without
+//! its style codes, and the `info/exclude` line edits.
 //!
 //! Never: do I/O, read the clock, spawn a process, or name a product. An
 //! adapter is known only by its string id and its capability record.
@@ -14,14 +15,17 @@ mod strings;
 pub mod completion;
 pub mod config;
 pub mod event;
+pub mod exclude;
 pub mod harness;
 pub mod host;
+pub mod lead_setup;
 pub mod member;
 pub mod message;
 pub mod names;
 pub mod platform;
 pub mod registry;
 pub mod sanitize;
+pub mod screen;
 pub mod secret;
 pub mod spec;
 pub mod team;
@@ -32,13 +36,17 @@ pub use completion::{Completion, CompletionStatus, FinalSource, ReportGaps, Repo
 pub use config::{Config, OtelConfig};
 pub use event::{Event, EventType};
 pub use harness::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, IdentityChannel,
-    LaunchFile, LaunchSpec, Liveness, MemberLaunch, ScreenState, SessionKind, StartupOutcome,
-    TrustPolicy, TurnEnd, TurnEndReply,
+    CallerSession, DEFAULT_HANDOFF_PCT, Fill, Harness, HarnessCaps, HarnessError, HarnessErrorCode,
+    IdentityChannel, LaunchFile, LaunchSpec, Liveness, MIN_HANDOFF_TOKENS, MemberLaunch,
+    ScreenState, SessionKind, StartupOutcome, TrustPolicy, TurnEnd, TurnEndReply,
 };
 pub use host::{
     Host, HostCaps, HostError, HostErrorCode, Key, NoHost, Occupant, PlaceState, SpawnRequest,
     SubmitAck,
+};
+pub use lead_setup::{
+    ApplyError, CheckOutcome, DoctorCheck, LeadChange, LeadCommand, LeadPlan, LeadSetup,
+    LeadSetupError, LeadStatus, LeadStep, LeadTarget,
 };
 pub use member::{Member, MemberKind, MemberState, Mode};
 pub use message::{

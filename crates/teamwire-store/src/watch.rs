@@ -1,7 +1,7 @@
 //! The watch's own rows: its lease (one watch per team) and the
 //! announcements that keep it from saying a thing twice.
 
-use rusqlite::{OptionalExtension, Row};
+use rusqlite::Row;
 use serde_json::{Value, json};
 use teamwire_core::{EventType, Pid, Timestamp};
 
@@ -160,17 +160,6 @@ impl ReadTx<'_> {
                 })
             },
         )
-    }
-
-    /// Whether the watch already announced `key`.
-    pub fn was_announced(&self, key: &str) -> Result<bool, StoreError> {
-        Ok(self
-            .connection()
-            .query_row("SELECT 1 FROM announcements WHERE key = ?1", [key], |_| {
-                Ok(())
-            })
-            .optional()?
-            .is_some())
     }
 }
 

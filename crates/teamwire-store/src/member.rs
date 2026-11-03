@@ -12,8 +12,8 @@ use teamwire_core::{
 
 use crate::error::StoreError;
 use crate::tx::{
-    Listing, ReadTx, Tx, bad, col, exactly_one, hash32, listing, one, parsed, parsed_opt, ts,
-    ts_opt,
+    Listing, ReadTx, Tx, bad, col, exactly_one, hash32, listing, one, parsed, parsed_opt,
+    same_hash, token_hash, ts, ts_opt,
 };
 
 /// What launch knows about a member before it starts anything.
@@ -252,6 +252,17 @@ impl Tx<'_> {
         exactly_one(rows, format!("member {role}"))
     }
 
+    /// Clears the stored branch after launch deleted it, so `status` does not
+    /// show it and `close` does not list it as kept. No event (see
+    /// `set_member_place`).
+    pub fn clear_member_branch(&self, role: &Role) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET branch = NULL WHERE role = ?1",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("member {role}"))
+    }
+
     /// Records the member's harness session id. No event (see `set_member_place`).
     pub fn set_member_session(&self, role: &Role, session: &SessionId) -> Result<(), StoreError> {
         let rows = self.connection().execute(
@@ -297,6 +308,26 @@ impl Tx<'_> {
         )?;
         exactly_one(rows, format!("member {role}"))?;
         self.record_event(at, state_event(to), Some(role), None, data)?;
+        Ok(())
+    }
+
+    /// Moves a member from `creating` to `failed` because launch refused it
+    /// after recording it, and writes `member.refused` with `data`. No
+    /// `member.failed` is written: the member counts once, as refused. The row
+    /// stays, so close still finds what the undo left and `--add` can start it
+    /// again. A member that is missing or not `creating` is a constraint error.
+    pub fn refuse_member(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        data: &Value,
+    ) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET state = 'failed' WHERE role = ?1 AND state = 'creating'",
+            [role.as_str()],
+        )?;
+        exactly_one(rows, format!("creating member {role}"))?;
+        self.record_event(at, EventType::MemberRefused, Some(role), None, data)?;
         Ok(())
     }
 
@@ -351,6 +382,57 @@ impl Tx<'_> {
             Some(role),
             None,
             &json!({ "generation": generation, "message": message }),
+        )?;
+        Ok(generation)
+    }
+
+    /// Moves a started member to a new session in a new place: the generation
+    /// goes up by one, `gen_started_at` becomes `at`, and `member.handoff` is
+    /// written. Deliveries the member has not read lose their `reminded_at`,
+    /// so the new session is reminded of them and the Stop hook counts them
+    /// again. `session` is `None` when the harness picks its own id, which
+    /// its session-start hook records afterwards. Returns the new generation.
+    /// Only a `started` member can hand off.
+    pub fn record_handoff(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        session: Option<&SessionId>,
+        place: &Place,
+    ) -> Result<u32, StoreError> {
+        let old = self
+            .reader()
+            .member(role)?
+            .ok_or_else(|| StoreError::Constraint(format!("no such member {role}")))?;
+        let rows = self.connection().execute(
+            "UPDATE members SET session_id = ?2, place = ?3,
+                    generation = generation + 1, gen_started_at = ?4
+             WHERE role = ?1 AND state = 'started'",
+            rusqlite::params![
+                role.as_str(),
+                session.map(SessionId::as_str),
+                place.id,
+                at.to_string()
+            ],
+        )?;
+        exactly_one(rows, format!("started member {role}"))?;
+        self.connection().execute(
+            "UPDATE deliveries SET reminded_at = NULL
+             WHERE recipient = ?1 AND state != 'acked'",
+            [role.as_str()],
+        )?;
+        let generation = old.generation + 1;
+        self.record_event(
+            at,
+            EventType::MemberHandoff,
+            Some(role),
+            None,
+            &json!({
+                "generation": generation,
+                "old_session": old.session_id.as_ref().map(SessionId::as_str),
+                "new_session": session.map(SessionId::as_str),
+                "place": place.id,
+            }),
         )?;
         Ok(generation)
     }
@@ -458,6 +540,20 @@ impl ReadTx<'_> {
             .prepare("SELECT role, token_sha256 FROM members WHERE role = ?1")?;
         let found = listing("members", &mut stmt, [role.as_str()], |r| hash32(r, 1))?;
         Ok(one(found)?.flatten())
+    }
+
+    /// Whether `token` is the one launch gave `role` (ADR 0008 point 2).
+    /// `None` when `role` has no member that is not removed, or no stored
+    /// hash; otherwise whether the token's hash is the stored one, compared
+    /// without stopping at the first difference.
+    pub fn token_matches(&self, role: &Role, token: &str) -> Result<Option<bool>, StoreError> {
+        let live = self
+            .member(role)?
+            .is_some_and(|m| m.state != MemberState::Removed);
+        let stored = self.member_token_hash(role)?;
+        Ok(stored
+            .filter(|_| live)
+            .map(|stored| same_hash(&stored, &token_hash(token))))
     }
 }
 

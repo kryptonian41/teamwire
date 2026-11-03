@@ -79,11 +79,11 @@ fn state_columns_use_the_documented_values() {
 #[test]
 fn event_types_are_the_names_in_core_md() {
     let documented = "team.created team.closing team.closed team.lead_adopted team.refs_added \
-        member.creating member.started member.failed member.replaced member.removed member.reprompted \
+        member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff \
         member.completed member.completion_refused member.held \
         message.sent message.refused \
         delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent \
-        delivery.reentered \
+        delivery.reentered delivery.recipient_stopped \
         result.delivering result.delivered result.undelivered result.unconfirmed \
         watch.started watch.line watch.stopped \
         verify.recorded verify.waived \

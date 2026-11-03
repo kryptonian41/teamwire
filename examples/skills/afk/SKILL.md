@@ -99,7 +99,10 @@ whole run.
 Use `max` only for one member whose task is hard to reason about, such as a
 race or a data-loss path. Set every `deadline_s` to 1.5 times what you would
 set otherwise. Write each brief to `afk/briefs/<role>.md` in the team
-directory. Tell every member that writes files outside its report file to
+directory. When `command -v promptwire` finds the tool, tell whoever writes
+the implementer briefs to follow
+`$TEAMWIRE_HOME/claude-plugin/teamwire/skills/promptwire/SKILL.md` first. A
+member cannot load the `teamwire:promptwire` skill by name. Tell every member that writes files outside its report file to
 put them under `afk/` in the team directory, never in the repository.
 
 Whoever settles an open question, a planner or you, writes it to

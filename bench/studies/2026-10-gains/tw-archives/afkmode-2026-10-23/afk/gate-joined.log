@@ -1,0 +1,671 @@
+gate 1/6 fmt: ok (1s)
+gate 2/6 tidy: ok (3s)
+PROTECTED-CHANGED docs/adr/0025-afk-runs.md
+WEAKENED crates/teamwire-cli/src/cmd/afk.rs:27
+WEAKENED crates/teamwire-cli/src/cmd/afk.rs:185
+WEAKENED crates/teamwire-cli/tests/afk.rs:5
+WEAKENED crates/teamwire-cli/tests/afk.rs:9
+WEAKENED crates/teamwire-cli/tests/afk.rs:13
+WEAKENED crates/teamwire-close/tests/afk.rs:3
+WEAKENED crates/teamwire-launch/tests/afk.rs:4
+WEAKENED crates/teamwire-launch/tests/afk.rs:13
+WEAKENED crates/teamwire-report/tests/afk_hold.rs:3
+WEAKENED crates/teamwire-store/tests/afk.rs:3
+WEAKENED crates/teamwire-store/tests/afk.rs:7
+WEAKENED crates/teamwire-watch/tests/afk.rs:3
+WEAKENED crates/teamwire-watch/tests/afk.rs:8
+gate 3/6 clippy: ok (11s)
+gate 4/6 test: FAILED (82s): sh -c cargo build --workspace --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked
+   Compiling cfg-if v1.0.5
+   Compiling memchr v2.8.3
+   Compiling pin-project-lite v0.2.17
+   Compiling rand_core v0.10.1
+   Compiling once_cell v1.21.4
+   Compiling bitflags v2.13.2
+   Compiling time-core v0.1.9
+   Compiling num-conv v0.2.2
+   Compiling libc v0.2.189
+   Compiling serde_core v1.0.229
+   Compiling deranged v0.5.8
+   Compiling powerfmt v0.2.0
+   Compiling smallvec v1.16.2
+   Compiling typenum v1.20.1
+   Compiling foldhash v0.2.0
+   Compiling thiserror v2.0.21
+   Compiling const-oid v0.10.2
+   Compiling hex v0.4.3
+   Compiling libsqlite3-sys v0.38.2
+   Compiling teamwire-store v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-store)
+   Compiling chacha20 v0.10.2
+   Compiling fallible-iterator v0.3.0
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling log v0.4.34
+   Compiling futures-sink v0.3.34
+   Compiling tracing-core v0.1.36
+   Compiling futures-core v0.3.34
+   Compiling fastrand v2.5.0
+   Compiling bytes v1.12.1
+   Compiling aho-corasick v1.1.5
+   Compiling regex-syntax v0.8.11
+   Compiling futures-task v0.3.34
+   Compiling hashbrown v0.17.1
+   Compiling futures-io v0.3.34
+   Compiling slab v0.4.12
+   Compiling time-macros v0.2.32
+   Compiling futures-channel v0.3.34
+   Compiling strsim v0.11.1
+   Compiling objc2-core-foundation v0.3.2
+   Compiling num-traits v0.2.19
+   Compiling tracing v0.1.44
+   Compiling zerocopy v0.8.59
+   Compiling getrandom v0.4.3
+   Compiling errno v0.3.14
+   Compiling cpufeatures v0.3.1
+   Compiling futures-util v0.3.34
+   Compiling rand v0.10.3
+   Compiling hybrid-array v0.4.15
+   Compiling rustix v1.1.5
+   Compiling hashlink v0.12.2
+   Compiling nix v0.31.3
+   Compiling getrandom v0.3.4
+   Compiling bstr v1.13.1
+   Compiling scopeguard v1.2.0
+   Compiling zeroize v1.9.0
+   Compiling darling_core v0.24.1
+   Compiling rustls-pki-types v1.15.1
+   Compiling rand_core v0.9.5
+   Compiling rusqlite v0.40.2
+   Compiling lock_api v0.4.14
+   Compiling block-buffer v0.12.1
+   Compiling crypto-common v0.2.2
+   Compiling regex-automata v0.4.18
+   Compiling objc2-io-kit v0.3.2
+   Compiling getrandom v0.2.17
+   Compiling parking_lot_core v0.9.12
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.151
+   Compiling serde_spanned v1.1.1
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling sysinfo v0.38.4
+   Compiling tempfile v3.27.0
+   Compiling time v0.3.55
+   Compiling untrusted v0.9.0
+   Compiling base64 v0.23.1
+   Compiling toml v1.1.6+spec-1.1.0
+   Compiling ring v0.17.14
+   Compiling ulid v3.0.0
+   Compiling parking_lot v0.12.5
+   Compiling uuid v1.26.1
+   Compiling signal-hook-registry v1.4.8
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.3
+   Compiling digest v0.11.3
+   Compiling percent-encoding v2.3.2
+   Compiling simd-adler32 v0.3.10
+   Compiling adler2 v2.0.1
+   Compiling sha2 v0.11.0
+   Compiling utf8parse v0.2.2
+   Compiling tokio v1.53.1
+   Compiling chrono v0.4.45
+   Compiling miniz_oxide v0.9.1
+   Compiling anstyle-parse v1.0.0
+   Compiling ref-cast v1.0.27
+   Compiling prost-derive v0.14.4
+   Compiling httparse v1.10.1
+   Compiling crc32fast v1.5.2
+   Compiling http v1.5.0
+   Compiling opentelemetry v0.33.0
+   Compiling dyn-clone v1.0.20
+   Compiling anstyle-query v1.1.5
+   Compiling anstyle v1.0.14
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling rmcp v3.5.0
+   Compiling subtle v2.6.1
+   Compiling futures-executor v0.3.34
+   Compiling colorchoice v1.0.5
+   Compiling equivalent v1.0.2
+   Compiling anstream v1.0.0
+   Compiling indexmap v2.14.2
+   Compiling futures v0.3.34
+   Compiling flate2 v1.1.10
+   Compiling webpki-roots v1.0.9
+   Compiling clap_lex v1.1.1
+   Compiling rustls-webpki v0.103.15
+   Compiling utf8-zero v0.8.1
+   Compiling schemars v1.2.2
+   Compiling ureq-proto v0.6.4
+   Compiling lazy_static v1.5.0
+   Compiling sharded-slab v0.1.7
+   Compiling clap_builder v4.6.7
+   Compiling tracing-log v0.2.0
+   Compiling thread_local v1.1.10
+   Compiling darling_macro v0.24.1
+   Compiling rustls v0.23.45
+   Compiling nu-ansi-term v0.50.3
+   Compiling xtask v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/xtask)
+   Compiling teamwire-core v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-core)
+   Compiling ppv-lite86 v0.2.21
+   Compiling darling v0.24.1
+   Compiling rand_chacha v0.9.0
+   Compiling rmcp-macros v3.5.0
+   Compiling prost v0.14.4
+   Compiling rand v0.9.5
+   Compiling globset v0.4.20
+   Compiling matchers v0.2.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling opentelemetry_sdk v0.33.0
+   Compiling clap v4.6.7
+   Compiling teamwire-platform v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-platform)
+   Compiling teamwire-fakes v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/fakes)
+   Compiling opentelemetry-proto v0.33.0
+   Compiling teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)
+   Compiling teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)
+   Compiling teamwire-harness-codex v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-codex)
+   Compiling teamwire-host-tmux v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-tmux)
+   Compiling teamwire-deliver v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-deliver)
+   Compiling teamwire-verify v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-verify)
+   Compiling tokio-util v0.7.19
+   Compiling ureq v3.4.2
+   Compiling teamwire-msg v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-msg)
+   Compiling teamwire-watch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-watch)
+   Compiling teamwire-launch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-launch)
+   Compiling teamwire-e2e v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/e2e)
+   Compiling teamwire-crash-tests v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/crash)
+   Compiling teamwire-report v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-report)
+   Compiling teamwire-close v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-close)
+   Compiling teamwire-otel v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-otel)
+   Compiling teamwire-mcp v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-mcp)
+   Compiling teamwire-cli v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.84s
+warning: output filename collision at /private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/target/debug/examples/live_check
+  |
+  = note: the example target `live_check` in package `teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)` has the same output filename as the example target `live_check` in package `teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+warning: output filename collision at /private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/target/debug/examples/live_check.dSYM
+  |
+  = note: the example target `live_check` in package `teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)` has the same output filename as the example target `live_check` in package `teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+   Compiling regex-syntax v0.8.11
+   Compiling wait-timeout v0.2.1
+   Compiling quick-error v1.2.3
+   Compiling fnv v1.0.7
+   Compiling bit-vec v0.8.0
+   Compiling unarray v0.1.4
+   Compiling num-traits v0.2.19
+   Compiling rand_xorshift v0.4.0
+   Compiling tokio-stream v0.1.19
+   Compiling teamwire-e2e v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/e2e)
+   Compiling teamwire-crash-tests v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/crash)
+   Compiling rusty-fork v0.3.1
+   Compiling bit-set v0.8.0
+   Compiling chrono v0.4.45
+   Compiling teamwire-host-tmux v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-tmux)
+   Compiling teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)
+   Compiling xtask v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/xtask)
+   Compiling teamwire-harness-codex v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-codex)
+   Compiling schemars v1.2.2
+   Compiling proptest v1.11.0
+   Compiling regex-automata v0.4.18
+   Compiling rmcp v3.5.0
+   Compiling teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)
+   Compiling teamwire-fakes v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/fakes)
+   Compiling globset v0.4.20
+   Compiling matchers v0.2.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling teamwire-deliver v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-deliver)
+   Compiling teamwire-core v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-core)
+   Compiling teamwire-store v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-store)
+   Compiling teamwire-msg v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-msg)
+   Compiling teamwire-platform v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-platform)
+   Compiling teamwire-otel v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-otel)
+   Compiling teamwire-verify v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-verify)
+   Compiling teamwire-launch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-launch)
+   Compiling teamwire-watch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-watch)
+   Compiling teamwire-report v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-report)
+   Compiling teamwire-close v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-close)
+   Compiling teamwire-mcp v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-mcp)
+   Compiling teamwire-cli v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.66s
+     Running unittests src/main.rs (target/debug/deps/teamwire-8480820d3f0b3d96)
+
+running 41 tests
+test cmd::hook::tests::work_inside_the_budget_returns_its_value ... ok
+test cmd::install::tests::a_binary_under_target_is_a_build ... ok
+test cmd::doctor::tests::one_variable_decides_without_looking_at_parents ... ok
+test cmd::doctor::tests::a_loop_in_the_parents_stops_after_64_steps ... ok
+test cmd::close::tests::a_stop_after_finish_says_the_team_is_closed ... ok
+test cmd::doctor::tests::with_both_variables_the_nearest_parent_decides ... ok
+test cmd::send::tests::a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background ... ok
+test cmd::metrics::tests::durations_take_a_unit ... ok
+test cmd::install::tests::a_selector_line_keeps_all_or_picks_numbers ... ok
+test cmd::send::tests::a_pending_recipient_exits_6 ... ok
+test cmd::send::tests::a_pending_recipient_is_explained ... ok
+test cmd::install::tests::home_is_named_only_when_it_is_not_the_default ... ok
+test cmd::watch::tests::the_short_grace_applies_only_once_the_watch_is_stopping ... ok
+test cmd::version::tests::names_the_binary_and_the_schema_it_writes ... ok
+test cmd::send::tests::an_unreadable_lease_is_not_reported_as_no_watch ... ok
+test cmd::watch::tests::a_watch_export_keeps_the_configured_timeout ... ok
+test tests::only_hook_invocations_are_hooks ... ok
+test tests::metrics_export_is_the_subcommand_not_a_team ... ok
+test tests::send_splits_recipients_on_commas ... ok
+test wiring::tests::claude_config_dir_is_followed_and_the_test_override_wins_over_it ... ok
+test wiring::tests::claude_dir_override_holds_both_paths ... ok
+test wiring::tests::herdr_env_one_picks_herdr_for_the_lead ... ok
+test tests::clap_definitions_are_consistent ... ok
+test wiring::tests::registry_holds_every_adapter_of_this_binary ... ok
+test wiring::tests::herdr_wins_over_tmux_and_an_empty_tmux_is_not_tmux ... ok
+test wiring::tests::the_lead_harness_follows_the_variable_then_the_session ... ok
+test wiring::tests::tmux_set_and_herdr_not_picks_tmux_for_the_lead ... ok
+test wiring::tests::the_tmux_adapter_asks_the_server_the_tmux_variable_names ... ok
+test tests::wrong_combinations_are_usage_errors ... ok
+test tests::every_documented_command_parses ... ok
+test cmd::hook::tests::work_that_outlasts_the_budget_is_given_up_on ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_with_an_unknown_harness_says_nothing ... ok
+test cmd::hook::member_tests::a_harness_without_an_in_turn_hook_gets_no_post_tool_reply ... ok
+test cmd::hook::member_tests::a_lead_harness_that_cannot_be_found_gets_the_monitor_wording ... ok
+test cmd::hook::member_tests::the_right_token_records_the_session ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_parses_and_holds_with_the_named_harness ... ok
+test cmd::hook::member_tests::a_second_call_replaces_the_first_session ... ok
+test cmd::hook::member_tests::a_wrong_or_missing_token_records_nothing ... ok
+test cmd::hook::member_tests::a_removed_member_is_ignored ... ok
+test cmd::hook::member_tests::a_turn_end_asks_the_harness_the_member_row_names ... ok
+test cmd::hook::member_tests::the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests/afk.rs (target/debug/deps/afk-6857d159482930d5)
+
+running 11 tests
+test a_missing_task_file_is_refused ... ok
+test a_background_lead_is_refused ... ok
+test outside_a_lead_session_nothing_starts ... ok
+test a_bad_budget_is_refused ... ok
+test a_session_that_leads_an_open_afk_team_cannot_start_another ... ok
+test a_bad_name_or_title_or_a_taken_name_is_refused ... ok
+test a_failed_doctor_check_refuses_and_names_the_check ... ok
+test a_lead_process_that_cannot_be_found_is_refused ... ok
+test lead_cwd_is_the_folder_the_session_started_in_not_the_shells ... ok
+test a_start_creates_the_team_the_task_copy_and_the_hold ... ok
+test a_task_copy_that_fails_leaves_no_team_behind ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.03s
+
+     Running tests/close.rs (target/debug/deps/close-13fa012b5d38d5cd)
+
+running 14 tests
+test a_store_with_no_team_row_is_deleted_and_the_dry_run_changes_nothing ... ok
+test a_member_cannot_watch_or_add_members ... ok
+test usage_and_missing_state_have_their_own_exit_codes ... ok
+test clear_stale_lock_clears_a_dead_owner_and_only_that ... ok
+test stop_is_the_only_way_to_remove_a_busy_member ... ok
+test keep_state_leaves_the_directory_and_archive_to_names_the_parent ... ok
+test dry_run_prints_the_plan_and_changes_nothing ... ok
+test a_step_that_fails_is_exit_two_with_the_state_intact_and_a_rerun_finishes ... ok
+test a_busy_member_is_exit_one_and_nothing_changes ... ok
+test uncommitted_work_is_exit_one ... ok
+test a_member_cannot_remove_a_peer ... ok
+test a_full_close_exits_zero_archives_and_names_the_branches_and_unpushed_work ... ok
+test removing_a_member_needs_a_verify_record_unless_told_otherwise ... ok
+test a_member_whose_start_failed_leaves_no_branch_in_status_or_close ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.57s
+
+     Running tests/doctor.rs (target/debug/deps/doctor-1fcfb138b09f96ee)
+
+running 42 tests
+test a_missing_plugin_fails_and_names_install_as_the_fix ... ok
+test a_credential_variable_warns_by_name_and_a_clean_environment_passes ... ok
+test a_plugin_installed_for_another_home_warns_naming_both_and_gives_no_install_advice ... ok
+test a_plugin_that_differs_in_more_than_its_home_still_fails_in_another_home ... ok
+test a_claude_help_without_a_launch_flag_warns_and_names_it ... ok
+test a_platform_that_cannot_answer_is_a_warning_not_a_pass ... ok
+test a_probe_that_times_out_or_fails_is_a_warning ... ok
+test a_full_disk_fails ... ok
+test a_plugin_for_another_binary_or_a_disabled_one_fails ... ok
+test a_build_under_target_accepts_any_plugin_files_but_still_needs_the_plugin_on ... ok
+test doctor::tests::a_loop_in_the_parents_stops_after_64_steps ... ok
+test a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about ... ok
+test doctor::tests::one_variable_decides_without_looking_at_parents ... ok
+test doctor::tests::with_both_variables_the_nearest_parent_decides ... ok
+test a_project_entry_that_hides_the_user_one_is_a_warning ... ok
+test a_repo_that_does_not_ignore_worktrees_fails ... ok
+test a_settings_file_without_the_herdr_hook_fails ... ok
+test a_stale_codex_plugin_is_a_warning_that_names_the_fix ... ok
+test a_tmux_only_setup_passes_without_herdr_or_its_hook ... ok
+test the_host_in_use_comes_from_the_environment ... ok
+test codex_on_path_is_reported_with_its_version_and_a_missing_plugin_is_ok ... ok
+test a_tmux_setup_without_tmux_on_path_fails ... ok
+test an_edited_old_skill_or_a_foreign_entry_needs_force ... ok
+test a_healthy_setup_passes_every_check_and_exits_zero ... ok
+test network_fs_warned ... ok
+test a_database_of_another_schema_version_fails ... ok
+test outside_a_repository_the_ignore_check_passes ... ok
+test the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out ... ok
+test a_member_from_another_build_that_has_finished_is_not_counted ... ok
+test a_database_at_an_older_schema_passes_and_says_it_will_be_migrated ... ok
+test a_close_lock_whose_pid_was_reused_is_reported ... ok
+test the_versions_of_claude_and_the_host_are_shown_on_the_pass_lines ... ok
+test a_close_lock_held_by_a_dead_process_is_reported_with_the_fix ... ok
+test with_no_host_doctor_says_so_and_requires_neither_host_tool ... ok
+test the_skill_and_entry_from_the_old_install_fail_and_name_install_as_the_fix ... ok
+test doctor_changes_nothing ... ok
+test a_message_counter_below_an_id_in_use_fails_and_prints_the_repair ... ok
+test without_codex_on_path_doctor_says_nothing_about_codex ... ok
+test doctor_reports_quick_check_failure ... ok
+test an_open_team_with_a_member_from_another_build_warns_and_names_the_role_and_fix ... ok
+test members_of_this_build_pass_the_older_members_check ... ok
+test the_binary_exits_zero_when_all_pass_and_two_when_one_fails ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.23s
+
+     Running tests/doctor_probes.rs (target/debug/deps/doctor_probes-83969d9be3845b6e)
+
+running 4 tests
+test versions_and_flags_come_from_the_binaries_on_path ... ok
+test a_credential_variable_is_named_and_its_value_is_never_printed ... ok
+test a_claude_without_a_launch_flag_is_warned_with_the_flag_named ... ok
+test the_host_line_says_which_host_and_why ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/done.rs (target/debug/deps/done-b91157e10140731d)
+
+running 4 tests
+test a_closed_team_refuses_and_stores_nothing ... ok
+test a_member_records_its_completion ... ok
+test invalid_status_refused ... ok
+test a_wrong_token_or_a_missing_identity_is_refused ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/export.rs (target/debug/deps/export-ae5813fbb522e084)
+
+running 3 tests
+test export_covers_every_table ... ok
+test export_writes_the_start_time_beside_each_recorded_pid ... ok
+test a_member_s_export_leaves_out_the_lead_session ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+
+     Running tests/hook.rs (target/debug/deps/hook-ffc37b07fff0c37c)
+
+running 8 tests
+test a_missing_database_exits_zero_and_creates_nothing ... ok
+test a_subagent_stop_is_ignored ... ok
+test stop_holds_once_with_the_claude_reply_shape ... ok
+test a_running_background_task_does_not_stop_the_hook ... ok
+test a_different_session_in_the_place_is_not_the_member ... ok
+test non_member_returns_immediately ... ok
+test post_tool_reminds_once_per_unread_message ... ok
+test garbage_stdin_exits_zero ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running tests/hook_codex.rs (target/debug/deps/hook_codex-648bd0e7025aab59)
+
+running 3 tests
+test a_wrong_token_exits_zero_and_records_nothing ... ok
+test the_token_from_the_token_file_records_the_session ... ok
+test the_token_from_the_environment_records_the_session ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+     Running tests/inbox.rs (target/debug/deps/inbox-d6f7b7c9e3ada1c7)
+
+running 9 tests
+test a_missing_team_is_a_usage_error ... ok
+test inbox_json_carries_the_hash_flag_and_the_note ... ok
+test a_body_cannot_forge_a_message_header ... ok
+test hash_mismatch_reported ... ok
+test ack_marks_read_without_printing_and_says_what_it_did ... ok
+test inbox_prints_the_full_text_once_and_marks_it_read ... ok
+test log_filters_by_the_lead_and_by_an_agent_of_another_team ... ok
+test a_caller_without_a_valid_token_reads_nothing ... ok
+test the_peer_note_appears_only_when_a_peer_wrote ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/install.rs (target/debug/deps/install-3cc1e75f58d7719e)
+
+running 18 tests
+test a_build_under_target_is_refused_and_nothing_is_written ... ok
+test the_help_of_install_and_uninstall_names_the_plugin ... ok
+test install_covers_both_harnesses_when_both_are_named ... ok
+test install_registers_the_plugin_and_a_second_run_changes_nothing ... ok
+test a_codex_dry_run_prints_the_changes_and_makes_none ... ok
+test a_dry_run_prints_the_changes_and_makes_none ... ok
+test a_failed_install_exits_two_says_what_is_left_and_a_rerun_finishes ... ok
+test an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it ... ok
+test a_new_binary_refreshes_the_copy_claude_keeps ... ok
+test without_a_terminal_or_a_flag_install_keeps_to_claude_code ... ok
+test install_adds_the_codex_plugin_and_a_second_run_changes_nothing ... ok
+test install_removes_the_old_skill_and_entry_after_the_plugin_is_in ... ok
+test a_failure_that_changed_nothing_exits_one_not_two ... ok
+test a_failed_codex_install_exits_two_and_a_rerun_finishes ... ok
+test uninstall_removes_the_plugin_the_marketplace_and_the_files_and_then_has_nothing_to_do ... ok
+test uninstall_removes_the_codex_setup_it_finds_and_ignores_it_without_codex ... ok
+test an_edited_old_skill_or_a_foreign_entry_is_refused_and_nothing_is_changed ... ok
+test an_old_codex_does_not_block_the_claude_uninstall ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.86s
+
+     Running tests/launch.rs (target/debug/deps/launch-f9c7d5e25db2858d)
+
+running 10 tests
+test bad_json_is_a_refusal_and_creates_nothing ... ok
+test a_member_on_host_none_is_refused_and_nothing_is_created ... ok
+test a_hyphen_in_the_team_name_is_refused_with_exit_1 ... ok
+test several_refusals_are_printed_together ... ok
+test a_member_whose_harness_program_is_missing_is_refused_before_anything_is_created ... ok
+test a_relative_home_reaches_members_as_an_absolute_path ... ok
+test dry_run_prints_the_plan_and_touches_nothing ... ok
+test the_unverifiable_implementer_warning_names_what_is_missing ... ok
+test the_empty_launch_line_names_the_spec_file_the_user_passed ... ok
+test a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.44s
+
+     Running tests/launch_codex.rs (target/debug/deps/launch_codex-75ae4a843ba3f370)
+
+running 1 test
+test a_codex_member_starts_under_herdr ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.32s
+
+     Running tests/lead_hook.rs (target/debug/deps/lead_hook-0f7bf30b83b8486e)
+
+running 12 tests
+test an_afk_subagent_stop_is_not_held ... ok
+test a_member_session_returns_at_once ... ok
+test an_afk_team_with_nothing_to_wake_the_lead_is_held ... ok
+test another_session_is_not_held ... ok
+test an_afk_continuation_is_not_held_again ... ok
+test holds_the_stop_once_and_names_the_team ... ok
+test a_subagent_stop_is_not_held ... ok
+test a_running_watch_is_not_reported_missing ... ok
+test a_continuation_is_not_held_again ... ok
+test the_watch_note_and_the_afk_note_come_in_one_reply ... ok
+test bad_input_and_a_missing_home_exit_zero_with_no_output ... ok
+test locked_stores_let_the_stop_through_at_the_bound ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.61s
+
+     Running tests/metrics.rs (target/debug/deps/metrics-353e4be23e1e8256)
+
+running 18 tests
+test export_of_an_unknown_team_is_refused ... ok
+test headers_from_the_environment_never_go_to_an_endpoint_from_the_file ... ok
+test the_endpoint_can_come_from_the_config_file ... ok
+test export_skips_a_damaged_row_names_it_and_still_exits_zero ... ok
+test an_unknown_team_is_refused_and_a_bad_duration_is_a_usage_error ... ok
+test a_collector_that_refuses_does_not_change_the_exit_code_or_the_mark ... ok
+test a_closed_team_is_read_from_its_archive_by_the_name_in_its_team_row ... ok
+test since_leaves_out_older_events ... ok
+test json_output_is_the_view ... ok
+test export_sends_new_events_once_and_moves_the_mark ... ok
+test a_delivery_reentered_event_is_exported_and_does_not_stop_the_metrics_export ... ok
+test export_writes_every_record_as_json_lines_with_cloudevents_names ... ok
+test export_is_off_without_an_endpoint ... ok
+test metrics_for_a_team_prints_one_line_per_value ... ok
+test without_a_team_every_team_and_archive_is_read ... ok
+test metrics_status_and_export_read_a_schema_1_team_and_archive_and_change_neither ... ok
+test a_team_closed_for_real_is_read_from_the_archive_close_wrote ... ok
+test export_without_once_keeps_running_after_its_first_pass ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+
+     Running tests/pr_watch.rs (target/debug/deps/pr_watch-1b46929330263b22)
+
+running 30 tests
+test a_missing_required_check_beside_a_clean_merge_state_is_named_but_not_counted ... ok
+test all_checks_passing_prints_one_done_line_and_exits_zero ... ok
+test a_check_reported_with_another_case_or_a_prefix_counts_as_reported ... ok
+test a_merged_pull_request_is_done_without_checks ... ok
+test a_conflict_on_the_first_look_is_said_at_once ... ok
+test a_pull_request_that_does_not_exist_is_said_once_and_ends_the_watch_failed ... ok
+test interval_zero_is_a_usage_error ... ok
+test every_required_check_present_leaves_the_done_line_and_exit_code_alone ... ok
+test a_required_check_that_never_reported_is_named_and_fails_the_run ... ok
+test a_repository_with_only_rules_names_what_its_rules_require_from_every_page ... ok
+test a_404_from_the_rules_endpoint_means_no_rules ... ok
+test a_state_that_is_still_blocked_after_the_second_read_is_reported_as_before ... ok
+test a_blocked_state_at_done_is_read_again_and_the_fresh_one_is_used ... ok
+test a_rules_endpoint_error_that_is_not_a_404_makes_the_set_unknown ... ok
+test the_default_interval_is_forty_five_seconds ... ok
+test when_neither_endpoint_answers_the_done_line_says_the_required_set_is_unknown ... ok
+test a_call_that_prints_no_json_is_skipped_and_tried_again ... ok
+test a_failure_before_merge_still_exits_1 ... ok
+test another_gh_failure_keeps_polling ... ok
+test several_pull_requests_share_one_line_per_poll_and_a_done_one_is_not_asked_again ... ok
+test skipped_checks_are_counted_and_pending_ones_keep_the_watch_going ... ok
+test a_failure_is_said_once_and_the_run_exits_one ... ok
+test gh_saying_no_checks_were_reported_is_done_not_polled_for_ever ... ok
+test no_checks_is_done ... ok
+test no_checks_on_three_polls_in_a_row_is_done ... ok
+test a_blocked_or_draft_pull_request_is_said_once_and_the_done_line_names_the_state ... ok
+test the_required_set_is_read_once_per_pull_request_for_the_whole_watch ... ok
+test a_change_of_mergeability_is_said_but_the_first_clean_verdict_is_not ... ok
+test no_checks_on_the_first_polls_is_not_done_before_ci_starts ... ok
+test an_outage_of_gh_is_said_once_per_run_of_three_failed_polls ... ok
+
+test result: ok. 30 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 10.16s
+
+     Running tests/preset.rs (target/debug/deps/preset-bc38a2edb22fa3f6)
+
+running 8 tests
+test no_preset_holds_a_machine_specific_path ... ok
+test every_non_implementer_member_switches_both_plugins_off ... ok
+test an_unknown_shape_is_a_usage_error_that_names_the_shapes ... ok
+test without_a_name_the_six_shapes_are_listed ... ok
+test lead_json_registers_the_lead_mcp_server_with_arguments_the_binary_accepts ... ok
+test the_skill_names_only_commands_and_tools_that_exist ... ok
+test a_named_shape_prints_its_rules_and_a_spec_skeleton_that_parses ... ok
+test every_preset_is_a_valid_spec ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+     Running tests/reads.rs (target/debug/deps/reads-6f2453a0dcae7d4c)
+
+running 3 tests
+test every_command_refuses_without_a_home ... ok
+test log_of_a_team_with_no_database_is_refused_and_creates_nothing ... ok
+test log_and_members_never_migrate_an_older_database ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+
+     Running tests/reopen.rs (target/debug/deps/reopen-f7d0c1032a529998)
+
+running 8 tests
+test an_unknown_team_is_refused_with_exit_1 ... ok
+test a_dry_run_leaves_an_older_database_byte_for_byte ... ok
+test results_the_lead_never_received_are_listed_with_their_paths ... ok
+test a_dry_run_opens_nothing_and_writes_nothing ... ok
+test a_refused_session_makes_the_exit_2 ... ok
+test a_caller_that_is_not_the_lead_is_told_how_to_adopt ... ok
+test a_caller_that_is_the_lead_is_skipped_by_session_id ... ok
+test the_lead_and_the_dead_member_come_back_and_exit_is_0 ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.02s
+
+     Running tests/send.rs (target/debug/deps/send-728da63940351689)
+
+running 15 tests
+test lead_adopt_records_the_new_session_and_prints_both ... ok
+test a_caller_that_cannot_prove_who_it_is_is_refused ... ok
+test members_lists_the_roster_without_secrets ... ok
+test usage_errors_exit_3_and_store_nothing ... ok
+test an_undelivered_recipient_exits_4_with_the_reason_on_stderr ... ok
+test id_and_key_printed_before_host_call ... ok
+test a_refusal_exits_1_names_its_code_and_stores_nothing ... ok
+test the_lead_sends_without_naming_itself ... ok
+test the_text_can_come_from_a_file ... ok
+test the_lead_reprompts_and_is_told_whether_a_watch_runs ... ok
+test a_member_session_without_its_token_cannot_read_the_whole_log ... ok
+test a_finding_to_a_live_member_is_handed_off_with_exit_0 ... ok
+test a_member_with_only_a_token_file_can_send ... ok
+test a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it ... ok
+test log_shows_states_and_a_member_sees_only_its_own_messages ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.71s
+
+     Running tests/status.rs (target/debug/deps/status-7d154fce4260e391)
+
+running 16 tests
+test a_spent_budget_prints_when_it_ended ... ok
+test an_unknown_team_is_refused ... ok
+test a_directory_without_a_database_is_skipped_in_the_listing ... ok
+test role_reports_why_a_resume_command_is_missing ... ok
+test a_team_shows_members_messages_and_stuck_deliveries ... ok
+test json_is_the_view ... ok
+test a_normal_team_prints_no_afk_line_and_a_null_object ... ok
+test a_watch_whose_heartbeat_is_old_is_stale_in_text_and_json ... ok
+test an_unreadable_database_exits_6 ... ok
+test an_afk_team_prints_one_afk_line_after_the_team_line ... ok
+test without_a_team_every_team_is_listed ... ok
+test role_needs_a_team_and_a_member ... ok
+test a_member_caller_never_sees_the_lead_session ... ok
+test no_teams_says_so ... ok
+test received_clears_a_result_from_status_and_a_second_run_changes_nothing ... ok
+test role_shows_the_model_and_effort_the_member_was_launched_with ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.50s
+
+     Running tests/teams.rs (target/debug/deps/teams-83d57e31ee2c1d6b)
+
+running 4 tests
+test a_send_to_a_quiet_member_or_an_unknown_team_is_refused ... ok
+test teams_lists_every_team_with_how_to_address_it ... ok
+test an_afk_team_is_marked_and_carries_its_budget_end ... ok
+test a_member_sends_to_another_team_and_the_copy_is_stored_there ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests/tmux_wiring.rs (target/debug/deps/tmux_wiring-a2fe7d45cb9d4346)
+
+running 4 tests
+test tmux_set_without_herdr_makes_tmux_the_leads_host ... ok
+test herdr_env_wins_over_tmux ... FAILED
+test no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane ... ok
+test a_pane_at_its_input_prompt_receives_the_line_and_an_enter ... ok
+
+failures:
+
+---- herdr_env_wins_over_tmux stdout ----
+
+thread 'herdr_env_wins_over_tmux' (159596242) panicked at crates/teamwire-cli/tests/tmux_wiring.rs:347:5:
+assertion `left == right` failed: warning: the lead's session id could not be read; results reach the lead through the watch, and no sleep hold is started
+warning: the host's agent list could not be read: other: could not run tmux: not_found: starting tmux: No such file or directory (os error 2); a name already live in tmux is caught when the agent starts
+
+  left: Some(2)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    herdr_env_wins_over_tmux
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.83s
+
+error: test failed, to rerun pass `-p teamwire-cli --test tmux_wiring`

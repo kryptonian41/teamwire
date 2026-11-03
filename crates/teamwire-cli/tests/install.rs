@@ -85,6 +85,31 @@ esac
     dir
 }
 
+/// A `pi` that answers `--version` and keeps the package list that
+/// `pi install` and `pi remove` change in `$PI_CODING_AGENT_DIR`, as pi
+/// does. `FAKE_PI_FAIL=install` makes `install` fail.
+fn fake_pi() -> TestHome {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = TestHome::new().unwrap();
+    let script = r#"#!/bin/sh
+S="$PI_CODING_AGENT_DIR"
+mkdir -p "$S"
+echo "$*" >> "$S/calls.log"
+case "$1" in
+  --version) echo "1.4.0";;
+  install)
+    if [ "$FAKE_PI_FAIL" = install ]; then echo "boom" >&2; exit 1; fi
+    printf '{"packages":["%s"]}\n' "$2" > "$S/settings.json";;
+  remove) printf '{"packages":[]}\n' > "$S/settings.json";;
+  *) exit 2;;
+esac
+"#;
+    let path = dir.path().join("pi");
+    std::fs::write(&path, script).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    dir
+}
+
 impl Bed {
     fn new() -> Self {
         let bin_dir = TestHome::new().unwrap();
@@ -150,6 +175,15 @@ impl Bed {
             ("TEAMWIRE_CODEX_HOME", &codex_home),
         ];
         env.extend_from_slice(extra_env);
+        self.teamwire(args, &env)
+    }
+
+    /// `teamwire` with the fake `pi` on `PATH` and pi's directory in `dir`.
+    fn teamwire_pi(&self, pi: &TestHome, dir: &Path, args: &[&str], extra: &[(&str, &str)]) -> Run {
+        let path = format!("{}:{}", pi.path().display(), self.bins.path().display());
+        let dir = dir.display().to_string();
+        let mut env = vec![("PATH", path.as_str()), ("PI_CODING_AGENT_DIR", &dir)];
+        env.extend_from_slice(extra);
         self.teamwire(args, &env)
     }
 
@@ -589,4 +623,84 @@ fn an_old_codex_does_not_block_the_claude_uninstall() {
     );
     assert_eq!(run.code, 1, "{}", run.err);
     assert!(run.err.contains("codex plugin list --json"), "{}", run.err);
+}
+
+#[test]
+fn install_adds_the_pi_package_and_a_second_run_changes_nothing() {
+    let bed = Bed::new();
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let run = bed.teamwire_pi(&pi, agent.path(), &["install", "--harness", "pi"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let dir = bed.home.path().join("pi-package");
+    for line in [
+        format!("did write the teamwire pi package to {}", dir.display()),
+        format!("did add the pi package {}", dir.display()),
+        "pi loads packages at start".to_owned(),
+    ] {
+        assert!(run.out.contains(&line), "{line}: {}", run.out);
+    }
+    assert!(!bed.marketplace_added(), "Claude Code was not asked for");
+    let extension = std::fs::read_to_string(dir.join("extensions/teamwire-lead.ts")).unwrap();
+    let home = bed.home.path().display().to_string();
+    assert!(
+        extension.contains(&format!(r#""homeArgs":["--home","{home}"]"#)),
+        "{extension}"
+    );
+    assert!(
+        extension.contains(&format!(r#""bin":"{}""#, bed.binary("bin").display())),
+        "{extension}"
+    );
+    let calls = std::fs::read_to_string(agent.path().join("calls.log")).unwrap();
+    let installs: Vec<_> = calls.lines().filter(|l| l.starts_with("install")).collect();
+    assert_eq!(installs, [format!("install {}", dir.display())], "{calls}");
+
+    let again = bed.teamwire_pi(&pi, agent.path(), &["install", "--harness", "pi"], &[]);
+    assert_eq!(again.code, 0, "{}", again.err);
+    assert_eq!(again.out, "the lead setup is already installed\n");
+}
+
+#[test]
+fn a_failed_pi_install_exits_two_and_a_rerun_finishes() {
+    let bed = Bed::new();
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let args = ["install", "--harness", "pi"];
+    let run = bed.teamwire_pi(&pi, agent.path(), &args, &[("FAKE_PI_FAIL", "install")]);
+    assert_eq!(run.code, 2, "{}", run.err);
+    assert!(run.err.contains("boom"), "{}", run.err);
+    assert!(
+        run.err
+            .contains("already done: write the teamwire pi package"),
+        "{}",
+        run.err
+    );
+    let rerun = bed.teamwire_pi(&pi, agent.path(), &args, &[]);
+    assert_eq!(rerun.code, 0, "{}", rerun.err);
+    assert!(
+        rerun.out.contains("did add the pi package"),
+        "{}",
+        rerun.out
+    );
+    assert!(!rerun.out.contains("did write"), "{}", rerun.out);
+}
+
+#[test]
+fn uninstall_removes_the_pi_package_and_its_files() {
+    let bed = Bed::new();
+    let pi = fake_pi();
+    let agent = TestHome::new().unwrap();
+    let install = bed.teamwire_pi(&pi, agent.path(), &["install", "--harness", "pi"], &[]);
+    assert_eq!(install.code, 0, "{}", install.err);
+    let run = bed.teamwire_pi(&pi, agent.path(), &["uninstall"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(run.out.contains("did remove the pi package"), "{}", run.out);
+    assert!(
+        run.out.contains("did delete the teamwire pi package"),
+        "{}",
+        run.out
+    );
+    assert!(!bed.home.path().join("pi-package").exists());
+    let again = bed.teamwire_pi(&pi, agent.path(), &["uninstall"], &[]);
+    assert_eq!(again.out, "no lead setup to remove\n", "{}", again.err);
 }

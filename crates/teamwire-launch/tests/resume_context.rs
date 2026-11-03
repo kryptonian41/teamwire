@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use common::{Rig, member_row, pane_member, team_spec, with};
 use hint_harness::{HintHarness, Resumes};
 use serde_json::json;
-use teamwire_core::{Clock, Host, Registry, Role, SessionId};
+use teamwire_core::{Address, Clock, Host, Registry, Role, SessionId};
 use teamwire_launch::{ReopenOpts, reopen};
 use teamwire_store::Ctx;
 
@@ -45,7 +45,11 @@ fn reopen_with(plugins_in_spec: bool, bin: Option<&str>) -> Vec<teamwire_core::M
     let (_, mut store) = rig.launch("demo", rig.validate(&spec, false).unwrap());
     let place = member_row(&store, "a").unwrap().place.unwrap();
     rig.host
-        .close(&place, std::time::Duration::from_secs(5))
+        .close(
+            &place,
+            &Address::parse("tw_demo_a").unwrap(),
+            std::time::Duration::from_secs(5),
+        )
         .unwrap();
     rig.harness
         .set_interactive_caller(SessionId::parse("other").unwrap());

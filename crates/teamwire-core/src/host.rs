@@ -23,8 +23,22 @@ pub trait Host: Send + Sync {
     /// Who occupies `place`: a session id if the host knows it, else process ids.
     fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError>;
     fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError>;
+    /// Like `read_tail`, but keeps the terminal's SGR style codes, so a reader
+    /// can tell dim placeholder text from text a person typed. The default is
+    /// the plain tail: a host that cannot give styles reads as before.
+    fn read_tail_styled(
+        &self,
+        place: &Place,
+        lines: u16,
+        timeout: Duration,
+    ) -> Result<String, HostError> {
+        self.read_tail(place, lines, timeout)
+    }
     fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError>;
-    fn close(&self, place: &Place, timeout: Duration) -> Result<(), HostError>;
+    /// Close `place` only if the agent in it is `expected`. A place that
+    /// holds another agent, or none, is left alone and reported `NotFound`:
+    /// a place id can be reused after the member's agent died (CLS-7).
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError>;
     fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError>;
     /// Names of every live agent the host knows, from any tool (for LCH-25).
     fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, HostError>;
@@ -222,7 +236,12 @@ impl Host for NoHost {
         Err(Self::not_found())
     }
 
-    fn close(&self, _place: &Place, _timeout: Duration) -> Result<(), HostError> {
+    fn close(
+        &self,
+        _place: &Place,
+        _expected: &Address,
+        _timeout: Duration,
+    ) -> Result<(), HostError> {
         Err(Self::not_found())
     }
 

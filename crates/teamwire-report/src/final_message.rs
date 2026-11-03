@@ -6,6 +6,8 @@ use std::path::Path;
 use serde_json::Value;
 use teamwire_core::{FinalSource, TurnEnd};
 
+use crate::usage::{MAX_TRANSCRIPT_BYTES, read_transcript};
+
 /// The final message and where it came from.
 pub(crate) fn pick(t: &TurnEnd) -> (Option<String>, FinalSource) {
     if let Some(text) = t.final_message.as_deref().map(str::trim)
@@ -20,9 +22,10 @@ pub(crate) fn pick(t: &TurnEnd) -> (Option<String>, FinalSource) {
 }
 
 /// The text of the last assistant record in a Claude Code transcript (one
-/// JSON object per line). A line that does not parse is skipped.
+/// JSON object per line). A line that does not parse is skipped. A file
+/// that is not regular or is too large is not read, as for the usage.
 fn last_assistant_text(path: &Path) -> Option<String> {
-    let bytes = std::fs::read(path).ok()?;
+    let bytes = read_transcript(path, MAX_TRANSCRIPT_BYTES)?;
     let text = String::from_utf8_lossy(&bytes);
     let mut last = None;
     for line in text.lines() {

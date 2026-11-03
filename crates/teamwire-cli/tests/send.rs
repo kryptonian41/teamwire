@@ -14,11 +14,11 @@ use std::process::{Child, Command, Output, Stdio};
 
 use serde_json::Value;
 use teamwire_core::{
-    HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Place, Role, SessionId,
-    SessionKind, TeamName, Timestamp,
+    Actor, HarnessId, HostId, LeadRoute, MemberKind, MemberState, MessageType, Mode, Place,
+    Recipient, Role, SessionId, SessionKind, TeamName, Timestamp,
 };
 use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, HerdrFaults, TestHome};
-use teamwire_store::{NewMember, NewTeam, Store};
+use teamwire_store::{NewMember, NewMessage, NewTeam, Store};
 
 struct Rig {
     herdr: FakeHerdrEnv,
@@ -333,6 +333,25 @@ fn id_and_key_printed_before_host_call() {
         delivery.delivery.state,
         teamwire_core::DeliveryState::Pending
     );
+    // A resume within the minute cannot tell the killed sender from one
+    // still typing, so it types nothing and says so: exit 5, as for a line
+    // that may or may not be on the screen.
+    rig.herdr.set_faults(&HerdrFaults::new()).unwrap();
+    let out = rig.run(
+        &[
+            "send", "alpha", "--to", "api", "--type", "finding", "--text", "x", "--key", "k-777",
+        ],
+        &Identity::Member("scout"),
+    );
+    let stderr = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(5), "{stderr}");
+    assert!(text(&out.stdout).contains("api: skipped"), "{out:?}");
+    assert!(
+        stderr.contains(
+            "SKIPPED for api: another command may still be delivering it; if it does not arrive, run teamwire resend alpha m001 after 60 s"
+        ),
+        "{stderr}"
+    );
 }
 
 #[test]
@@ -365,10 +384,10 @@ fn an_undelivered_recipient_exits_4_with_the_reason_on_stderr() {
 }
 
 #[test]
-fn a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it() {
+fn a_prompt_that_timed_out_after_typing_exits_5_and_a_resend_by_the_lead_finishes_it() {
     let mut rig = live_rig();
     rig.herdr
-        .set_faults(&HerdrFaults::new().stalled_prompt(None, Some(1)))
+        .set_faults(&HerdrFaults::new().timed_out_prompt(None, Some(1)))
         .unwrap();
     let out = rig.run(
         &[
@@ -390,6 +409,53 @@ fn a_stalled_prompt_exits_5_and_a_resend_by_the_lead_finishes_it() {
     // A message that was reached has nothing to resend.
     let nothing = rig.run(&["resend", "alpha", "m001"], &LEAD);
     assert_eq!(nothing.status.code(), Some(1));
+}
+
+/// The host call that finds who holds a member's place (`agent get`) starts
+/// `kill -0` while `fake-herdr` holds its state lock. A `kill` that sleeps
+/// once makes that call run past the 5 s limit of a delivery, which kills it
+/// at that point. The next send must still find the member: a lock the killed
+/// call left behind would make every later call of the world fail with
+/// `host_listing_failed`.
+#[test]
+fn a_host_call_killed_on_its_timeout_does_not_break_the_next_send() {
+    let rig = live_rig();
+    let spy = rig.home.path().join("slow-kill");
+    std::fs::create_dir_all(&spy).unwrap();
+    let marker = spy.join("slept");
+    let script = format!(
+        "#!/bin/sh\nif [ ! -e '{m}' ]; then : > '{m}'; sleep 9; fi\nexec /bin/kill \"$@\"\n",
+        m = marker.display()
+    );
+    let kill = spy.join("kill");
+    std::fs::write(&kill, script).unwrap();
+    std::fs::set_permissions(&kill, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let path = rig
+        .herdr
+        .env()
+        .into_iter()
+        .find_map(|(k, v)| (k == "PATH").then_some(v))
+        .unwrap();
+    let send = |text: &str| {
+        let mut cmd = rig.command(
+            &[
+                "send", "alpha", "--to", "api", "--type", "finding", "--text", text,
+            ],
+            &Identity::Member("scout"),
+        );
+        cmd.env("PATH", format!("{}:{path}", spy.display()));
+        cmd.output().unwrap()
+    };
+    let first = send("slow host call");
+    let (stdout, stderr) = (text(&first.stdout), text(&first.stderr));
+    assert_ne!(first.status.code(), Some(0), "{stdout} / {stderr}");
+    assert!(
+        marker.exists(),
+        "the slow kill never ran: {stdout} / {stderr}"
+    );
+    let second = send("after the kill");
+    let (stdout, stderr) = (text(&second.stdout), text(&second.stderr));
+    assert_eq!(second.status.code(), Some(0), "{stdout} / {stderr}");
 }
 
 #[test]
@@ -661,6 +727,69 @@ fn log_shows_states_and_a_member_sees_only_its_own_messages() {
     assert_eq!(
         rows.first().unwrap().get("display_id"),
         Some(&Value::from("m002"))
+    );
+}
+
+#[test]
+fn log_json_rows_carry_re_and_commit() {
+    let rig = live_rig();
+    for (who, args) in [
+        (
+            Identity::Member("scout"),
+            &[
+                "send", "alpha", "--to", "lead", "--type", "question", "--text", "which?",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "answer", "--re", "m001", "--text",
+                "this",
+            ][..],
+        ),
+        (
+            Identity::Lead("lead-1"),
+            &[
+                "send", "alpha", "--to", "scout", "--type", "note", "--text", "plain",
+            ][..],
+        ),
+    ] {
+        // The lead has no live process here, so a send to it exits 4; the
+        // message is stored all the same, and the log below proves it.
+        rig.run(args, &who);
+    }
+    // A notice is checked against git in the sender's checkout, which this
+    // rig has none of, so the notice is stored directly.
+    let notice = NewMessage {
+        sender: Actor::parse("api").unwrap(),
+        kind: MessageType::Notice,
+        re: None,
+        commit: Some("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312".to_owned()),
+        body: "renamed".to_owned(),
+        client_key: None,
+        recipients: vec![Recipient::Member(Role::parse("scout").unwrap())],
+    };
+    rig.store()
+        .write(|tx| tx.insert_message(at(), &notice).map(|_| ()))
+        .unwrap();
+    let out = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);
+    let value: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let rows = value.get("messages").and_then(Value::as_array).unwrap();
+    let keys: Vec<(Value, Value)> = rows
+        .iter()
+        .map(|r| (r["re"].clone(), r["commit"].clone()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            (Value::Null, Value::Null),
+            (Value::from("m001"), Value::Null),
+            (Value::Null, Value::Null),
+            (
+                Value::Null,
+                Value::from("3f2a9c1e5b7d40a8c6d2e1f0a9b8c7d6e5f40312")
+            ),
+        ]
     );
 }
 

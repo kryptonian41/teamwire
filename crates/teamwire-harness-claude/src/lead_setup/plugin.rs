@@ -7,14 +7,13 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use teamwire_core::Command;
+use teamwire_core::{Command, LaunchSpec};
 
 use super::mcp::{McpEntry, claude};
 use super::skill;
-use super::skill::{AFK_TEXT, REFERENCE_TEXT};
+use super::skill::{AFK_TEXT, PROMPTWIRE_TEXT, REFERENCE_TEXT};
 use super::{LeadSetupError, SKILL_TEXT};
 use crate::ClaudeConfig;
-use crate::launch::shell_word;
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -59,8 +58,10 @@ impl PluginFiles {
             .ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let afk = skill::stamp(AFK_TEXT)
             .ok_or_else(|| "the compiled-in afk skill has no frontmatter".to_owned())?;
-        let mut hook_words = vec![shell_word(&want.command)];
-        hook_words.extend(want.home_args().iter().map(|a| shell_word(a)));
+        let promptwire = skill::stamp(PROMPTWIRE_TEXT)
+            .ok_or_else(|| "the compiled-in promptwire skill has no frontmatter".to_owned())?;
+        let mut hook_words = vec![LaunchSpec::shell_word(&want.command)];
+        hook_words.extend(want.home_args().iter().map(|a| LaunchSpec::shell_word(a)));
         hook_words.extend(["hook".to_owned(), "claude-lead-stop".to_owned()]);
         let body = [
             (
@@ -84,6 +85,10 @@ impl PluginFiles {
                 reference.to_owned(),
             ),
             (format!("{PLUGIN_DIR}/skills/afk/SKILL.md"), afk),
+            (
+                format!("{PLUGIN_DIR}/skills/promptwire/SKILL.md"),
+                promptwire,
+            ),
         ];
         // The version changes with the content, so `claude plugin update`
         // sees a new binary or skill as a new version and refreshes its copy.
@@ -278,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn the_seven_files_name_the_binary_and_the_hook() {
+    fn the_eight_files_name_the_binary_and_the_hook() {
         let files = PluginFiles::render(Path::new("/h/claude-plugin"), &want(None)).unwrap();
         let paths: Vec<_> = files
             .files
@@ -295,6 +300,7 @@ mod tests {
                 "teamwire/skills/teamwire/SKILL.md",
                 "teamwire/skills/teamwire/reference.md",
                 "teamwire/skills/afk/SKILL.md",
+                "teamwire/skills/promptwire/SKILL.md",
             ]
         );
         let market = json_of(&files, ".claude-plugin/marketplace.json");
@@ -316,6 +322,10 @@ mod tests {
         assert!(file(&files, "teamwire/skills/teamwire/SKILL.md").contains("teamwire-sha256: "));
         let afk = file(&files, "teamwire/skills/afk/SKILL.md");
         assert!(afk.contains("\nname: afk\n") && afk.contains("teamwire-sha256: "));
+        let promptwire = file(&files, "teamwire/skills/promptwire/SKILL.md");
+        assert!(
+            promptwire.contains("\nname: promptwire\n") && promptwire.contains("teamwire-sha256: ")
+        );
     }
 
     #[test]

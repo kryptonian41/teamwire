@@ -1,18 +1,14 @@
-//! The step from schema version 5 to 6 adds `team.refs` and rebuilds `events`,
-//! the table every metric reads, on databases that real teams already hold.
+//! The step from schema version 5 to 6 rebuilds `events` a second time, for
+//! `member.refused`, on databases that real teams already hold.
 #![expect(
     clippy::unwrap_used,
     reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
-#![expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
 )]
 
 use std::path::Path;
 
 use rusqlite::Connection;
-use teamwire_core::{EventType, TeamName, TicketRef, Timestamp};
+use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_fakes::TestHome;
 use teamwire_store::{
     APPLICATION_ID, SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_V5_SQL,
@@ -34,9 +30,8 @@ fn team() -> TeamName {
     TeamName::parse("alpha").unwrap()
 }
 
-/// A version-5 database with a team row and events, whose newest two events
-/// were deleted, so the `AUTOINCREMENT` counter (5) is higher than the highest
-/// `seq` kept (3).
+/// A version-5 database whose newest two events were deleted, so the
+/// `AUTOINCREMENT` counter (5) is higher than the highest `seq` kept (3).
 fn version_5_database(home: &TestHome) -> std::path::PathBuf {
     let path = database_path(home.path(), &team());
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -54,15 +49,12 @@ fn version_5_database(home: &TestHome) -> std::path::PathBuf {
         .unwrap();
     conn.pragma_update(None, "user_version", 5).unwrap();
     conn.execute_batch(
-        "INSERT INTO team (id, ulid, name, title, state, lead_harness, lead_host, lead_route, created_at)
-         VALUES (1, '01J9ZQ0000000000000000TEAM', 'alpha', 'Alpha', 'open', 'claude-code', 'herdr', 'sink',
-                 '2026-10-01T00:00:00.000Z');
-         INSERT INTO events (ulid, time, type, role, subject, data, writer_version) VALUES
-           ('01J9ZQ000000000000000EVT01', '2026-10-01T00:00:01.000Z', 'team.created', NULL, NULL, '{}', '0.5.0'),
-           ('01J9ZQ000000000000000EVT02', '2026-10-01T00:00:02.000Z', 'delivery.reentered', 'impl', '01J9ZQ000000000000000MSG01', '{\"attempt\":2}', '0.5.0'),
-           ('01J9ZQ000000000000000EVT03', '2026-10-01T00:00:03.000Z', 'store.error', NULL, NULL, '{\"why\":\"x\"}', '0.5.0'),
-           ('01J9ZQ000000000000000EVT04', '2026-10-01T00:00:04.000Z', 'watch.started', NULL, NULL, '{}', '0.5.0'),
-           ('01J9ZQ000000000000000EVT05', '2026-10-01T00:00:05.000Z', 'watch.stopped', NULL, NULL, '{}', '0.5.0');
+        "INSERT INTO events (ulid, time, type, role, subject, data, writer_version) VALUES
+           ('01J9ZQ000000000000000EVT01', '2026-10-01T00:00:01.000Z', 'team.created', NULL, NULL, '{}', '0.3.0'),
+           ('01J9ZQ000000000000000EVT02', '2026-10-01T00:00:02.000Z', 'delivery.reentered', 'impl', '01J9ZQ000000000000000MSG01', '{\"attempt\":2}', '0.3.0'),
+           ('01J9ZQ000000000000000EVT03', '2026-10-01T00:00:03.000Z', 'store.error', NULL, NULL, '{\"why\":\"x\"}', '0.3.1'),
+           ('01J9ZQ000000000000000EVT04', '2026-10-01T00:00:04.000Z', 'watch.started', NULL, NULL, '{}', '0.3.1'),
+           ('01J9ZQ000000000000000EVT05', '2026-10-01T00:00:05.000Z', 'watch.stopped', NULL, NULL, '{}', '0.3.1');
          DELETE FROM events WHERE seq > 3;
          INSERT INTO metric_export (id, last_event_seq) VALUES (1, 5);",
     )
@@ -93,7 +85,7 @@ fn event_rows(path: &Path) -> Vec<Row> {
 }
 
 const NEW_EVENT: &str = "INSERT INTO events (ulid, time, type, writer_version)
-    VALUES ('01J9ZQ000000000000000EVT09', '2026-10-01T00:00:09.000Z', 'team.refs_added', 'x')";
+    VALUES ('01J9ZQ000000000000000EVT09', '2026-10-01T00:00:09.000Z', 'member.refused', 'x')";
 
 #[test]
 fn the_new_type_is_refused_before_the_step_and_accepted_after() {
@@ -126,17 +118,17 @@ fn a_version_5_database_keeps_every_event_and_never_reuses_a_seq() {
         .write(|tx| {
             tx.record_event(
                 at,
-                EventType::TeamRefsAdded,
+                EventType::MemberRefused,
                 None,
                 None,
-                &serde_json::json!({ "added": ["#2"] }),
+                &serde_json::json!({}),
             )
             .map(|_| ())
         })
         .unwrap();
     let after = event_rows(&path);
     assert_eq!(after.last().unwrap().0, 6);
-    assert_eq!(after.last().unwrap().3, "team.refs_added");
+    assert_eq!(after.last().unwrap().3, "member.refused");
 
     let conn = Connection::open(&path).unwrap();
     let indexes: i64 = conn
@@ -157,30 +149,6 @@ fn a_version_5_database_keeps_every_event_and_never_reuses_a_seq() {
     assert_eq!(leftover, 0);
 }
 
-#[test]
-fn a_version_5_team_row_migrates_with_no_refs_and_takes_new_ones() {
-    let home = TestHome::new().unwrap();
-    version_5_database(&home);
-
-    let mut store = Store::open(home.path(), &team()).unwrap();
-    let row = store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(row.title, "Alpha");
-    assert!(row.refs.is_empty());
-
-    let at = Timestamp::from_unix_millis(1_790_000_000_000).unwrap();
-    let linear = TicketRef {
-        provider: "linear".to_owned(),
-        id: "GKA-580".to_owned(),
-    };
-    let added = store
-        .write(|tx| tx.add_refs(at, std::slice::from_ref(&linear)))
-        .unwrap();
-    assert_eq!(added.len(), 1);
-    assert_eq!(added.first(), Some(&linear));
-    let row = store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(row.refs, [linear]);
-}
-
 /// An empty `events` table has no counter row; the step must not need one.
 #[test]
 fn a_version_5_database_with_no_events_migrates() {
@@ -194,19 +162,14 @@ fn a_version_5_database_with_no_events_migrates() {
     assert!(event_rows(&path).is_empty());
 }
 
-/// A read-only open reads `refs` as empty through the temporary view, and
-/// leaves the file as it was.
 #[test]
-fn a_read_only_open_reads_a_version_5_team_with_no_refs_and_writes_nothing() {
+fn a_read_only_open_reads_a_version_5_database_and_writes_nothing() {
     let home = TestHome::new().unwrap();
     let path = version_5_database(&home);
     let bytes = std::fs::read(&path).unwrap();
 
     let store = Store::open_read_only(home.path(), &team()).unwrap();
     assert_eq!(store.schema_version().unwrap(), 5);
-    let row = store.read(|tx| tx.team()).unwrap().unwrap();
-    assert_eq!(row.title, "Alpha");
-    assert!(row.refs.is_empty());
     let events = store.read(|tx| tx.events_after(0, None, None)).unwrap();
     assert_eq!(events.items.len(), 3);
     drop(store);
@@ -214,9 +177,9 @@ fn a_read_only_open_reads_a_version_5_team_with_no_refs_and_writes_nothing() {
     assert_eq!(std::fs::read(&path).unwrap(), bytes);
 }
 
-/// The step fails after it has added the column and rebuilt the table: one
-/// stored row has a type that no list holds. The open must fail and leave
-/// version 5 with all its rows and no new column, as a crash there would.
+/// The step fails after it has renamed and rebuilt the table: one stored row
+/// has a type that no list holds. The open must fail and leave version 5 with
+/// all its rows, as a crash at that point would.
 #[test]
 fn a_step_that_fails_midway_leaves_the_version_5_database_whole() {
     let home = TestHome::new().unwrap();
@@ -241,14 +204,6 @@ fn a_step_that_fails_midway_leaves_the_version_5_database_whole() {
         .query_row("PRAGMA user_version", [], |r| r.get(0))
         .unwrap();
     assert_eq!(version, 5);
-    let refs_columns: i64 = conn
-        .query_row(
-            "SELECT count(*) FROM pragma_table_info('team') WHERE name = 'refs'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(refs_columns, 0);
     let tables: i64 = conn
         .query_row(
             "SELECT count(*) FROM sqlite_schema WHERE name = 'events_old'",

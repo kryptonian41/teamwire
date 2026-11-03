@@ -128,6 +128,20 @@ fn kill9_during_cross_team_send_keeps_integrity() {
     );
     assert!(keys.len() >= KILL_POINTS / 10, "the kill window is off");
 
+    // A resume skips a `pending` row whose attempt began under a minute ago,
+    // since its sender may still be typing. These senders are dead, so their
+    // attempts are moved back to long ago, as if the minute had passed.
+    rig.store()
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE messages SET created_at = ?1",
+                    [rig::at().to_string()],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
     // Sending each stored key again reaches the recipient and makes no row.
     for (key, from, to) in &keys {
         let out = rig.run(&send_args(to, key), &Identity::Member(from.clone()));

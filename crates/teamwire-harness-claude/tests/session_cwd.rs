@@ -1,5 +1,6 @@
-//! The folder a session runs in, and the plain resume of the lead: read from
-//! the live session file, else the transcript; nothing is written.
+//! The folder a session runs in, the plain resume of the lead, and the fill of
+//! a session's context: read from the live session file or the transcript;
+//! nothing is written.
 
 #![expect(
     clippy::unwrap_used,
@@ -10,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::json;
-use teamwire_core::{Harness, Platform, SessionId};
+use teamwire_core::{Fill, Harness, Platform, SessionId};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
@@ -76,4 +77,125 @@ fn the_lead_resumes_with_a_plain_resume() {
             .unwrap(),
         ["claude", "--resume", "s-1"]
     );
+}
+
+fn assistant(model: &str, input: u64, read: u64, create: u64, side: bool) -> String {
+    json!({"type":"assistant","isSidechain":side,"message":{"model":model,"usage":{
+        "input_tokens":input,"cache_read_input_tokens":read,
+        "cache_creation_input_tokens":create,"output_tokens":9999}}})
+    .to_string()
+}
+
+fn boundary() -> String {
+    json!({"type":"system","subtype":"compact_boundary"}).to_string()
+}
+
+/// A transcript holding `lines`, as `<claude dir>/projects/-x/s1.jsonl`.
+fn transcript(lines: &[String]) -> (tempfile::TempDir, PathBuf) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("projects/-x/s1.jsonl");
+    put(&FakePlatform::new(), &path, &(lines.join("\n") + "\n"));
+    (dir, path)
+}
+
+fn fill(dir: &Path, path: Option<&Path>) -> Option<Fill> {
+    claude(&Arc::new(FakePlatform::new()), dir)
+        .context_fill(&sid("s1"), path)
+        .unwrap()
+}
+
+#[test]
+fn sums_input_and_cache_tokens_of_the_newest_line() {
+    let (d, p) = transcript(&[
+        assistant("claude-opus-5-5", 1, 1, 1, false),
+        assistant("claude-opus-5-5", 3, 700_000, 20_088, false),
+    ]);
+    let want = Some(Fill {
+        tokens: 720_091,
+        window: 1_000_000,
+    });
+    assert_eq!(fill(d.path(), Some(&p)), want);
+    // Without a path, the session's own transcript is found.
+    assert_eq!(fill(d.path(), None), want);
+}
+
+#[test]
+fn skips_a_side_chain_line_newer_than_the_main_chain() {
+    let (d, p) = transcript(&[
+        assistant("claude-opus-5-5", 10, 0, 0, false),
+        assistant("claude-opus-5-5", 999, 0, 0, true),
+    ]);
+    assert_eq!(fill(d.path(), Some(&p)).unwrap().tokens, 10);
+}
+
+#[test]
+fn a_compaction_boundary_after_the_last_assistant_line_gives_none() {
+    let (d, p) = transcript(&[assistant("claude-opus-5-5", 10, 0, 0, false), boundary()]);
+    assert_eq!(fill(d.path(), Some(&p)), None);
+}
+
+#[test]
+fn an_assistant_line_after_the_boundary_counts() {
+    let (d, p) = transcript(&[boundary(), assistant("claude-opus-5-5", 10, 0, 0, false)]);
+    assert_eq!(fill(d.path(), Some(&p)).unwrap().tokens, 10);
+}
+
+#[test]
+fn an_empty_or_missing_file_gives_none() {
+    let (d, p) = transcript(&[]);
+    assert_eq!(fill(d.path(), Some(&p)), None);
+    assert_eq!(
+        fill(d.path(), Some(&p.with_file_name("missing.jsonl"))),
+        None
+    );
+    assert_eq!(fill(&d.path().join("nowhere"), None), None);
+}
+
+#[test]
+fn an_unknown_model_counts_as_a_small_window() {
+    let (d, p) = transcript(&[assistant("mystery-1", 10, 0, 0, false)]);
+    assert_eq!(fill(d.path(), Some(&p)).unwrap().window, 200_000);
+}
+
+#[test]
+fn a_huge_file_is_read_only_from_its_tail() {
+    // An assistant line at the start, 8 MiB of filler (more than the tail
+    // that is read), then a line that is no reading. Only a read of the
+    // whole file could find the first line.
+    let filler = "{\"type\":\"user\"}\n".repeat(8 * 1024 * 1024 / 16);
+    let (d, p) = transcript(&[
+        assistant("claude-opus-5-5", 7, 0, 0, false),
+        filler,
+        json!({"type":"user"}).to_string(),
+    ]);
+    assert_eq!(fill(d.path(), Some(&p)), None);
+}
+
+#[test]
+fn api_error_lines_are_no_reading_and_the_real_one_before_them_counts() {
+    let error = json!({"type":"assistant","isSidechain":false,"isApiErrorMessage":true,
+        "message":{"model":"<synthetic>","usage":{"input_tokens":0,
+        "cache_read_input_tokens":0,"cache_creation_input_tokens":0}}})
+    .to_string();
+    let (d, p) = transcript(&[
+        assistant("claude-fable-5-1", 1, 900_000, 17_370, false),
+        error.clone(),
+        error,
+    ]);
+    assert_eq!(
+        fill(d.path(), Some(&p)),
+        Some(Fill {
+            tokens: 917_371,
+            window: 1_000_000
+        })
+    );
+}
+
+#[test]
+fn an_assistant_line_without_a_message_is_skipped() {
+    let (d, p) = transcript(&[
+        assistant("claude-opus-5-5", 10, 0, 0, false),
+        json!({"type":"assistant","isSidechain":false}).to_string(),
+    ]);
+    assert_eq!(fill(d.path(), Some(&p)).unwrap().tokens, 10);
 }

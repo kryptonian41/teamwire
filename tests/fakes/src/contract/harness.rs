@@ -122,7 +122,7 @@ pub fn harness_contract(setup: &HarnessSetup<'_>) {
     );
 
     // Whatever the environment says, reading the caller's session must not panic.
-    let _caller = h.current_session();
+    let _caller = h.caller_session(&|_| None);
 
     if !caps.can_push {
         let line = one_line("hello", 20);
@@ -199,8 +199,9 @@ fn launch_rules(setup: &HarnessSetup<'_>) {
             }
         }
     }
+    no_secret_in_argv("launch_spec", &spec.argv, &secrets);
     let shown = format!("{spec:?}");
-    for (k, v) in secrets {
+    for (k, v) in &secrets {
         require(
             &format!("Debug of a launch spec hides {k}"),
             !shown.contains(v.as_str()),
@@ -208,6 +209,7 @@ fn launch_rules(setup: &HarnessSetup<'_>) {
     }
 
     let resumed = ok("resume_spec", h.resume_spec(m, &m.session_id));
+    no_secret_in_argv("resume_spec", &resumed.argv, &secrets);
     require("resume_spec gives an argv", !resumed.argv.is_empty());
     require(
         "resume_spec names the session to resume",
@@ -216,6 +218,17 @@ fn launch_rules(setup: &HarnessSetup<'_>) {
             .iter()
             .any(|a| a.contains(m.session_id.as_str())),
     );
+}
+
+/// Any user on the machine can read a process's argv, so a secret never goes
+/// there; it travels in a private file or in the host's environment.
+fn no_secret_in_argv(call: &str, argv: &[String], secrets: &[&(String, String)]) {
+    for (k, v) in secrets {
+        require(
+            &format!("{call} keeps the value of {k} out of argv"),
+            !argv.iter().any(|a| a.contains(v.as_str())),
+        );
+    }
 }
 
 fn contains(haystack: &[u8], needle: &str) -> bool {

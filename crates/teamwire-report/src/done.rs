@@ -2,14 +2,13 @@
 //! the member about report gaps once first (route B of ADR 0007).
 
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use teamwire_core::{
     CompletionStatus, EventType, FinalSource, LeadRoute, MemberState, ReportGaps, Role, TeamName,
     TeamState,
 };
-use teamwire_store::{Ctx, NewCompletion, Party, StoreError};
+use teamwire_store::{Ctx, NewCompletion, Party, StoreError, token_hash};
 
-use crate::note::gap_note;
+use crate::note::{FIX_THEN_DONE, gap_note};
 use crate::result_file::{MISSING_FROM_HARNESS, MISSING_YET, write_current};
 use crate::{DoneError, DoneReport, report_gaps};
 
@@ -78,7 +77,7 @@ fn record_refusal(ctx: &mut Ctx<'_>, me: &Role, why: &DoneError, extra: &serde_j
 
 /// The SHA-256 the store keeps of a member's token (ADR 0008 point 1).
 pub fn hash_token(token: &str) -> [u8; 32] {
-    Sha256::digest(token.as_bytes()).into()
+    token_hash(token)
 }
 
 /// True when `token` is the token launch gave `role` in team `team`.
@@ -87,35 +86,13 @@ pub fn hash_token(token: &str) -> [u8; 32] {
 /// that was removed, a member with no stored hash, a token whose hash
 /// differs (ADR 0008 point 2). The hashes are compared without stopping at
 /// the first difference.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 pub fn token_matches(ctx: &Ctx<'_>, team: &TeamName, role: &Role, token: &str) -> bool {
-    let Ok(Some(row)) = ctx.store.read(|tx| tx.team()) else {
-        return false;
-    };
-    if row.name != *team {
-        return false;
-    }
-    let live = matches!(
-        ctx.store.read(|tx| tx.member(role)),
-        Ok(Some(m)) if m.state != MemberState::Removed
-    );
-    let stored = ctx
-        .store
-        .read(|tx| tx.member_token_hash(role))
-        .ok()
-        .flatten();
-    let given = hash_token(token);
-    let same = stored.is_some_and(|stored| {
-        stored
-            .iter()
-            .zip(given.iter())
-            .fold(0_u8, |diff, (a, b)| diff | (a ^ b))
-            == 0
-    });
-    live && same
+    ctx.store
+        .read(|tx| {
+            Ok(tx.team()?.is_some_and(|row| row.name == *team)
+                && tx.token_matches(role, token)? == Some(true))
+        })
+        .unwrap_or(false)
 }
 
 /// What the write transaction decided.
@@ -186,7 +163,7 @@ pub fn done(
                 gaps: gaps.clone(),
                 report: format!(
                     "{} The second call is stored whatever the report says.",
-                    gap_note(&gaps, &report_file)
+                    gap_note(&gaps, &report_file, FIX_THEN_DONE)
                 ),
             }));
         }

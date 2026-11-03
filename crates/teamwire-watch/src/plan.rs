@@ -15,8 +15,8 @@ use crate::memory::{MemberMemory, WatchMemory, slept_since};
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
-    STALLED_PREFIX, age, agent_text, blocked_key, died_key, late_key, question_key, result_key,
-    result_path, silent_key, stalled_key, unanswered_key, unread_key,
+    STALLED_PREFIX, age, agent_text, blocked_key, context_key, died_key, late_key, question_key,
+    result_key, result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -178,8 +178,13 @@ pub(crate) fn plan(
         question(&mut env, q);
     }
 
+    // Time asleep gave nobody the chance to read or answer, as for `LATE`.
+    let awake_since = |since: Timestamp| {
+        now.saturating_since(since)
+            .saturating_sub(slept_since(&memory.sleeps, since))
+    };
     for u in &snap.unread {
-        let waited = now.saturating_since(u.since);
+        let waited = awake_since(u.since);
         // A removed or failed member's inbox is not waited on.
         if waited > UNREAD_AFTER && snap.members.iter().any(|m| m.member.role == u.to) {
             env.announce(
@@ -190,7 +195,7 @@ pub(crate) fn plan(
         }
     }
     for q in &snap.unanswered {
-        let waited = now.saturating_since(q.since);
+        let waited = awake_since(q.since);
         if waited > UNANSWERED_AFTER {
             env.announce(
                 unanswered_key(&q.message),
@@ -296,7 +301,7 @@ fn judge_completion(
 ) -> Verdict {
     let c = &record.completion;
     let role = &info.member.role;
-    let path = result_path(&env.snap.team_dir, role);
+    let path = result_path(&env.snap.team_dir, role, record.result_sha256.as_ref());
     match c.report_state {
         ReportState::Delivered => Verdict::settled(if c.status == CompletionStatus::Done {
             "done"
@@ -319,13 +324,41 @@ fn judge_completion(
             // Not reported yet. A completion the hook delivers a moment
             // later needs no line, so one poll of grace comes first.
             mm.declared_polls += 1;
-            if mm.declared_polls >= 2 {
+            if mm.declared_polls < 2 {
+                // Idle polls before `done` say nothing about the hook, which
+                // runs only at the turn end after it.
+                mm.quiet = 0;
+                return Verdict::waiting();
+            }
+            env.announce(
+                result_key("DECLARED", &c.ulid),
+                "DECLARED",
+                format!(
+                    "DECLARED {role} ({}) recorded, not reported yet; it is reported when its turn ends",
+                    c.status
+                ),
+            );
+            // Only the member's own turn-end hook reports this completion, so
+            // a member that died before it ran is judged like a running one
+            // (WAT-6). Looking only after `DECLARED` keeps that line first.
+            let Some(seen) = look(env, info, mm) else {
+                return Verdict::settled("died");
+            };
+            // An idle member has ended its turn, so its hook ran. Still
+            // pending after the hook's budget and one poll more means the hook
+            // failed or is an older build's; nothing else tells the lead.
+            match seen {
+                Seen::Alive(Activity::Idle) => mm.quiet += 1,
+                Seen::Alive(_) => mm.quiet = 0,
+                Seen::Absent | Seen::NoInfo => {}
+            }
+            let cfg = env.ctx.config;
+            if u64::from(mm.quiet).saturating_mul(cfg.poll_s) > cfg.hook_budget_s + cfg.poll_s {
                 env.announce(
-                    result_key("DECLARED", &c.ulid),
-                    "DECLARED",
+                    unreported_key(role, info.member.generation),
+                    "UNREPORTED",
                     format!(
-                        "DECLARED {role} ({}) recorded, not reported yet; it is reported when its turn ends",
-                        c.status
+                        "UNREPORTED {role}: done is recorded but its turn-end hook did not report it; run teamwire doctor"
                     ),
                 );
             }
@@ -368,10 +401,10 @@ fn judge_completion(
     }
 }
 
-fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict {
+/// One look at a started member. `None` once it is announced `DIED`.
+fn look(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Option<Seen> {
     let role = &info.member.role;
     let generation = info.member.generation;
-    let cfg = env.ctx.config;
     let seen = observe(env.ctx, &info.member, &mut env.listings);
     match seen {
         Seen::Alive(_) => mm.absent = 0,
@@ -382,7 +415,35 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     }
     if mm.absent >= 3 || env.snap.announced.contains(&died_key(role, generation)) {
         env.announce(died_key(role, generation), "DIED", format!("DIED {role}"));
+        return None;
+    }
+    Some(seen)
+}
+
+fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict {
+    let role = &info.member.role;
+    let generation = info.member.generation;
+    let cfg = env.ctx.config;
+    let Some(seen) = look(env, info, mm) else {
         return Verdict::settled("died");
+    };
+
+    // One read per live member per poll; the announcement key keeps it to
+    // one line per generation.
+    if let Some(c) = crate::context::read(env.ctx, &info.member, info.context_handoff_tokens)
+        && c.tokens >= c.handoff_at
+    {
+        env.announce(
+            context_key(role, generation),
+            "CONTEXT",
+            format!(
+                "CONTEXT {role} {}% {}k of {}k (handoff at {}k)",
+                c.pct,
+                c.tokens / 1000,
+                c.window / 1000,
+                c.handoff_at / 1000
+            ),
+        );
     }
 
     // The quiet grace counts from the later of the run's start and the last

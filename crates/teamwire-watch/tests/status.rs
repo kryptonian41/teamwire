@@ -118,7 +118,7 @@ fn status_changes_no_file() {
         clock: &clock,
         config: &config,
     };
-    let view = teamwire_watch::status(&ctx);
+    let view = teamwire_watch::status_with(&ctx, None);
     drop(ro);
     assert_eq!(hashes(&team_dir), closed_before);
     assert!(view.errors.is_empty(), "{:?}", view.errors);
@@ -160,7 +160,9 @@ fn status_shows_the_team_its_members_and_what_is_stuck() {
 #[test]
 fn member_states_follow_the_records_and_the_look() {
     let mut bed = Bed::new();
-    for name in ["idle", "busy", "stuck", "gone", "late", "fresh", "unrep"] {
+    for name in [
+        "idle", "busy", "stuck", "gone", "late", "fresh", "unrep", "donegone",
+    ] {
         bed.add_with_deadline(name, if name == "late" { 100 } else { 1800 });
     }
     bed.age(std::time::Duration::from_secs(120));
@@ -169,6 +171,8 @@ fn member_states_follow_the_records_and_the_look() {
     bed.blocked("stuck");
     bed.vanish("gone");
     bed.complete("unrep", CompletionStatus::Done);
+    bed.complete("donegone", CompletionStatus::Done);
+    bed.vanish("donegone");
     bed.add("fresh2");
     let view = status_of(&bed, None);
     let state = |name: &str| {
@@ -184,6 +188,11 @@ fn member_states_follow_the_records_and_the_look() {
     assert_eq!(state("gone"), "died?");
     assert_eq!(state("late"), "late");
     assert_eq!(state("unrep"), "unreported");
+    assert_eq!(
+        state("donegone"),
+        "died?",
+        "a pending result is no proof of life"
+    );
     assert_eq!(state("fresh2"), "working", "startup is not quiet");
 }
 
@@ -467,4 +476,82 @@ fn past_the_budget_no_time_is_left() {
     bed.age(secs(61));
     let afk = status_of(&bed, None).afk.unwrap();
     assert_eq!((afk.seconds_left, afk.spent, afk.decisions), (0, true, 0));
+}
+
+#[test]
+fn an_undelivered_result_points_at_a_file_that_is_there() {
+    let bed = busy_team();
+    let team_dir = bed.home.path().join("teams").join("alpha");
+    let path = |view: &StatusView| view.undelivered_results[0].path.clone();
+    assert_eq!(
+        path(&status_of(&bed, None)),
+        team_dir.join("reports").join("web.md"),
+        "no result file was written"
+    );
+    std::fs::create_dir_all(team_dir.join("outbox")).unwrap();
+    std::fs::write(team_dir.join("outbox").join("web.md"), "result").unwrap();
+    assert_eq!(
+        path(&status_of(&bed, None)),
+        team_dir.join("outbox").join("web.md")
+    );
+}
+
+#[test]
+fn a_started_member_shows_its_context_fill_and_handoff_point() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("web");
+    bed.fill("api", 720_091, 1_000_000);
+    let view = status_of(&bed, None);
+    let context = |name: &str| {
+        view.members
+            .iter()
+            .find(|m| m.role == role(name))
+            .unwrap()
+            .context
+    };
+    let got = context("api").unwrap();
+    assert_eq!(
+        (got.tokens, got.window, got.pct, got.handoff_at),
+        (720_091, 1_000_000, 72, 400_000)
+    );
+    assert_eq!(context("web"), None, "no reading means unknown");
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(
+        json["members"][0]["context"],
+        serde_json::json!({"tokens": 720_091, "window": 1_000_000, "pct": 72, "handoff_at": 400_000})
+    );
+    assert!(json["members"][1]["context"].is_null());
+}
+
+#[test]
+fn a_configured_handoff_point_replaces_the_default() {
+    let mut bed = Bed::new();
+    bed.add_started_with(
+        "api",
+        &serde_json::json!({ "context_handoff_tokens": 150_000 }),
+    );
+    bed.fill("api", 100_000, 1_000_000);
+    let view = status_of(&bed, None);
+    assert_eq!(view.members[0].context.unwrap().handoff_at, 150_000);
+}
+
+#[test]
+fn a_member_that_never_started_has_no_context_even_with_a_reading() {
+    let mut bed = Bed::new();
+    bed.add_creating("api");
+    bed.fill("api", 500_000, 1_000_000);
+    assert_eq!(status_of(&bed, None).members[0].context, None);
+}
+
+#[test]
+fn a_failed_member_with_a_session_is_not_read_for_context() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.fill("api", 500_000, 1_000_000);
+    bed.fail("api");
+    let view = status_of(&bed, None);
+    assert_eq!(view.members[0].state, "failed to start");
+    assert_eq!(view.members[0].context, None);
+    assert_eq!(bed.fill_reads("api"), 0);
 }

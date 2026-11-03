@@ -1484,7 +1484,6 @@ dependencies = [
 name = "teamwire-cli"
 version = "0.0.0"
 dependencies = [
- "anyhow",
  "clap",
  "proptest",
  "serde",
@@ -1495,6 +1494,7 @@ dependencies = [
  "teamwire-fakes",
  "teamwire-harness-claude",
  "teamwire-harness-codex",
+ "teamwire-harness-pi",
  "teamwire-host-herdr",
  "teamwire-host-tmux",
  "teamwire-launch",
@@ -1507,7 +1507,6 @@ dependencies = [
  "teamwire-verify",
  "teamwire-watch",
  "tempfile",
- "time",
  "tracing",
  "tracing-subscriber",
 ]
@@ -1630,6 +1629,16 @@ dependencies = [
  "time",
  "toml",
  "tracing",
+]
+
+[[package]]
+name = "teamwire-harness-pi"
+version = "0.0.0"
+dependencies = [
+ "serde_json",
+ "teamwire-core",
+ "teamwire-fakes",
+ "tempfile",
 ]
 
 [[package]]
@@ -1785,17 +1794,13 @@ dependencies = [
 name = "teamwire-store"
 version = "0.0.0"
 dependencies = [
- "hex",
  "proptest",
  "rusqlite",
- "serde",
  "serde_json",
  "sha2",
  "teamwire-core",
  "teamwire-fakes",
- "tempfile",
  "thiserror",
- "time",
  "tracing",
  "ulid",
 ]

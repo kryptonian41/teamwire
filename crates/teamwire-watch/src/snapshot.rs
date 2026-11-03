@@ -8,7 +8,7 @@ use teamwire_core::{
     Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
     Ulid,
 };
-use teamwire_deliver::unread_since;
+use teamwire_deliver::AttemptHistory;
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
@@ -42,6 +42,8 @@ pub(crate) struct MemberInfo {
     /// current generation.
     pub silent_seen: u32,
     pub blocked_seen: u32,
+    /// The handoff point the spec set, if any.
+    pub context_handoff_tokens: Option<u64>,
 }
 
 /// A question to the lead that did not get there cleanly.
@@ -78,6 +80,14 @@ fn highest_episode(tx: &ReadTx<'_>, prefix: &str) -> Result<u32, StoreError> {
         .unwrap_or(0))
 }
 
+/// When the member's current run began, given the time of its latest
+/// `member.started` event. A first generation counts from that event, since
+/// `gen_started_at` is the `creating` time. A later one counts from its
+/// reprompt, which is after the start event.
+pub(crate) fn run_start(member: &Member, started: Option<Timestamp>) -> Timestamp {
+    started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at))
+}
+
 fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError> {
     let started = tx
         .events_of_role(&member.role)?
@@ -86,14 +96,12 @@ fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError
         .rev()
         .find(|e| e.kind == EventType::MemberStarted)
         .map(|e| e.time);
-    // A first generation counts from its start event, since `gen_started_at`
-    // is the `creating` time. A later one counts from its reprompt, which is
-    // after the start event.
-    let run_start = started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at));
+    let run_start = run_start(&member, started);
     let completion = tx
         .latest_completion(&member.role)?
         .filter(|c| c.completion.generation == member.generation);
     Ok(MemberInfo {
+        context_handoff_tokens: tx.context_handoff_tokens(&member.role)?,
         silent_seen: highest_episode(tx, &silent_prefix(&member.role, member.generation))?,
         blocked_seen: highest_episode(tx, &blocked_prefix(&member.role, member.generation))?,
         member,
@@ -143,7 +151,8 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
-        let Some(since) = unread_since(tx, &message, &d.recipient)? else {
+        let Some(since) = AttemptHistory::read(tx, &message, &d.recipient)?.unread_since(tx)?
+        else {
             continue;
         };
         found.push(Unread {

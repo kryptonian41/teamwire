@@ -1,0 +1,6 @@
+1 transcript files, prices read on 2026-10-22
+  claude-opus-5-5      input=204 output=71261 cache_read=15320064 cache_write_1h=236912  $6.3853
+  $  6.3853  /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bnkde8rvxe-clone/ed60e835-2902-45c9-ae99-b64e8c9e309c.jsonl
+total: $6.3853
+claude -p total_cost_usd: $6.3853, difference: $-0.0000
+written to /Users/apoorvagarwal/Projects/teamwire/.worktrees/benchlead/bench/results/cost-clone.json

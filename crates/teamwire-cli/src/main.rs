@@ -8,6 +8,7 @@
 //! error); a `hook` invocation always exits 0, even when its arguments do
 //! not parse, so a hook never fails the harness's turn (REP-10).
 
+use std::io::IsTerminal as _;
 use std::process::ExitCode;
 
 use clap::Parser;
@@ -18,9 +19,13 @@ mod cmd {
     pub(crate) mod close;
     pub(crate) mod decisions;
     pub(crate) mod doctor;
+    pub(crate) mod doctor_teams;
     pub(crate) mod done;
+    pub(crate) mod events;
     pub(crate) mod export;
+    pub(crate) mod handoff;
     pub(crate) mod hook;
+    pub(crate) mod host_pick;
     pub(crate) mod inbox;
     pub(crate) mod install;
     pub(crate) mod launch;
@@ -36,6 +41,7 @@ mod cmd {
     pub(crate) mod reopen;
     pub(crate) mod resend;
     pub(crate) mod send;
+    pub(crate) mod shared;
     pub(crate) mod status;
     pub(crate) mod teams;
     pub(crate) mod verify;
@@ -43,6 +49,7 @@ mod cmd {
     pub(crate) mod watch;
 }
 mod args;
+mod recorded;
 mod wiring;
 
 /// Exit code for a usage error.
@@ -50,10 +57,10 @@ const USAGE: u8 = 3;
 
 pub(crate) use args::{
     AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs,
-    ExportArgs, Global, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs,
-    LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, PrWatchArgs, PresetArgs,
-    ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs, UninstallArgs,
-    VerifyArgs, WatchArgs,
+    EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs,
+    InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand,
+    PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs,
+    UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -72,6 +79,7 @@ fn main() -> ExitCode {
         Command::Afk(a) => cmd::afk::run(a, global, &wiring),
         Command::Launch(a) => cmd::launch::run(a, global, &wiring),
         Command::Reopen(a) => cmd::reopen::run(a, global, &wiring),
+        Command::Handoff(a) => cmd::handoff::run(a, global, &wiring),
         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
         Command::Status(a) => cmd::status::run(a, global, &wiring),
         Command::Verify(a) => cmd::verify::run(a, global, &wiring),
@@ -95,6 +103,7 @@ fn main() -> ExitCode {
         Command::Install(a) => cmd::install::run(a, global, &wiring),
         Command::Uninstall(a) => cmd::install::run_uninstall(a, global, &wiring),
         Command::Export(a) => cmd::export::run(a, global, &wiring),
+        Command::Events(a) => cmd::events::run(a, global, &wiring),
         Command::Metrics(a) => cmd::metrics::run(a, global, &wiring),
         Command::Version => cmd::version::run(global, &wiring),
     }
@@ -132,6 +141,8 @@ fn init_logging() {
     let installed = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stderr)
+        // Colour codes are noise to an agent reading stderr through a pipe.
+        .with_ansi(std::io::stderr().is_terminal())
         .try_init();
     if installed.is_err() {
         tracing::debug!("a log subscriber was already installed");
@@ -169,6 +180,8 @@ mod tests {
             "afk start --team run --title Run --task t.md --budget 90m",
             "launch",
             "launch --add --dry-run --spec s.json",
+            "handoff tw --role api --dry-run",
+            "handoff --guide",
             "watch tw --interval 5 --once",
             "status",
             "status tw --role api --json",
@@ -241,6 +254,9 @@ mod tests {
             "verify tw --waive F",
             "pr-watch -R o/r",
             "ack",
+            "handoff tw",
+            "handoff --role api",
+            "handoff tw --role api --guide",
             "afk start --team run --title Run --task t.md --budget 0h",
             "afk start --team run --title Run --task t.md --budget 8",
             "afk start --team run --title Run --task t.md --budget 8d",

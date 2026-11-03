@@ -1,0 +1,4 @@
+exit Some(0)
+--- stdout
+{"teams":[{"afk_budget_ends_at":"2026-10-27T16:40:41.389Z","members":[],"name":"zero","state":"open","title":"Zero"}]}
+--- stderr

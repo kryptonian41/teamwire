@@ -9,7 +9,7 @@
 mod helpers;
 
 use helpers::{T, World};
-use teamwire_core::{Host, HostErrorCode, Key, Place, PlaceState, SubmitAck, one_line};
+use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SubmitAck, one_line};
 use teamwire_fakes::HerdrFaults;
 
 fn started(world: &World, name: &str, title: &str) -> Place {
@@ -17,6 +17,17 @@ fn started(world: &World, name: &str, title: &str) -> Place {
         .herdr
         .spawn(&world.request(name, title), T)
         .expect("spawn")
+}
+
+fn name(text: &str) -> Address {
+    Address::parse(text).expect("address")
+}
+
+fn pane_closes(world: &World) -> usize {
+    calls(world)
+        .iter()
+        .filter(|c| c.starts_with(&["pane".to_owned(), "close".to_owned()]))
+        .count()
 }
 
 fn calls(world: &World) -> Vec<Vec<String>> {
@@ -127,7 +138,7 @@ fn state_maps_status_and_a_gone_agent() {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     assert_eq!(state, PlaceState::Idle);
-    world.herdr.close(&place, T).unwrap();
+    world.herdr.close(&place, &name("tw_demo_api"), T).unwrap();
     assert_eq!(world.herdr.state(&place, T).unwrap(), PlaceState::Gone);
 }
 
@@ -159,6 +170,23 @@ fn read_tail_returns_the_screen_lines() {
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
     assert!(seen, "the typed text shows as its own line in the tail");
+}
+
+#[test]
+fn the_styled_tail_asks_herdr_for_ansi_and_the_plain_tail_for_text() {
+    let world = World::new();
+    let place = started(&world, "tw_demo_api", "API");
+    world.herdr.read_tail(&place, 50, T).unwrap();
+    world.herdr.read_tail_styled(&place, 50, T).unwrap();
+    let formats: Vec<String> = calls(&world)
+        .iter()
+        .filter(|c| c[..2] == ["agent", "read"])
+        .map(|c| {
+            let at = c.iter().position(|a| a == "--format").unwrap();
+            c[at + 1].clone()
+        })
+        .collect();
+    assert_eq!(formats, ["text", "ansi"]);
 }
 
 #[test]
@@ -269,4 +297,46 @@ fn a_failed_agent_start_closes_the_pane_it_made() {
         .iter()
         .any(|c| c.starts_with(&["pane".to_owned(), "close".to_owned()]));
     assert!(made && closed, "{all:?}");
+}
+
+#[test]
+fn close_leaves_a_pane_that_holds_another_agent() {
+    let world = World::new();
+    started(&world, "tw_demo_api", "API");
+    let reused = started(&world, "tw_other_web", "Web");
+    let e = world
+        .herdr
+        .close(&reused, &name("tw_demo_api"), T)
+        .expect_err("another agent's pane");
+    assert_eq!(e.code, HostErrorCode::NotFound);
+    assert_eq!(pane_closes(&world), 0);
+    assert_eq!(world.herdr.list(T).expect("list").len(), 2);
+}
+
+#[test]
+fn close_leaves_a_pane_with_no_agent() {
+    let world = World::new();
+    let unnamed = Place {
+        host: world.herdr.id(),
+        id: world.env.add_unnamed_agent().expect("unnamed agent"),
+    };
+    let out = world
+        .env
+        .run(&["workspace", "create", "--label", "mine"])
+        .expect("workspace create");
+    let plain = Place {
+        host: world.herdr.id(),
+        id: out.result().expect("result")["root_pane"]["pane_id"]
+            .as_str()
+            .expect("root pane id")
+            .to_owned(),
+    };
+    for place in [unnamed, plain] {
+        let e = world
+            .herdr
+            .close(&place, &name("tw_demo_api"), T)
+            .expect_err("no such agent");
+        assert_eq!(e.code, HostErrorCode::NotFound, "{place:?}");
+    }
+    assert_eq!(pane_closes(&world), 0);
 }

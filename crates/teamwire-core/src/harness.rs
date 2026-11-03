@@ -11,6 +11,7 @@ use thiserror::Error;
 
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
+use crate::lead_setup::LeadSetup;
 use crate::member::{Member, MemberKind};
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
@@ -26,21 +27,30 @@ pub trait Harness: Send + Sync {
     /// argv to resume an existing member session with the same per-run
     /// configuration (shown by `status --role`, never run by teamwire).
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
-    /// The caller's own session, read from its environment.
-    fn current_session(&self) -> Option<CallerSession>;
-    /// The caller's session, read through `get` instead of the process
-    /// environment. `get` also answers `MCP_META_<key>` with a string field of
-    /// the MCP request's `_meta`, for a harness that names the session only
-    /// there (Codex, ADR 0023). The default ignores `get` and reads the
-    /// process environment.
-    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
-        self.current_session()
-    }
+    /// The caller's own session, read through `get`: the process
+    /// environment for a command (`|name| std::env::var(name).ok()`). The
+    /// lead's MCP server also answers `MCP_META_<key>` with a string field of
+    /// the request's `_meta`, for a harness that names the session only there
+    /// (Codex, ADR 0023).
+    fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The
     /// default is `Unsupported`.
     fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
         Err(HarnessError::unsupported())
+    }
+    /// The lead setup `teamwire install`, `uninstall` and `doctor` reach
+    /// this harness's lead through (ADR 0031). `None`, the default, for a
+    /// harness that cannot lead.
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        None
+    }
+    /// Why the caller's session cannot lead a new team, when the harness can
+    /// tell that the lead setup it needs is not loaded there. A pi lead reads
+    /// the watch through teamwire's lead extension, so without it no result
+    /// would reach the lead. The default is `None`.
+    fn lead_setup_missing(&self) -> Option<String> {
+        None
     }
     /// The folder a session runs in, read without writing: the live session
     /// first, then the session's own record. `None` when neither names it.
@@ -67,6 +77,12 @@ pub trait Harness: Send + Sync {
     fn line_pending(&self, _tail: &str, _line: &OneLine) -> bool {
         false
     }
+    /// Whether the input box shown by `tail` already holds text, such as a
+    /// line a person half typed. Delivery waits while it does, on every host.
+    /// The default is `false`: a harness that cannot tell types as before.
+    fn box_holds_text(&self, _tail: &str) -> bool {
+        false
+    }
     /// Handle a startup dialog on the member's screen, if the harness has one.
     fn answer_startup(
         &self,
@@ -79,6 +95,66 @@ pub trait Harness: Send + Sync {
     /// `capabilities().can_push`; the default returns `Unsupported`.
     fn push(&self, _s: &SessionId, _line: &OneLine, _timeout: Duration) -> Result<(), HostError> {
         Err(HostError::unsupported())
+    }
+    /// How full the session's context window is, read without writing.
+    /// `transcript` is the path a hook was handed; without it the harness
+    /// finds the session's own transcript. `Ok(None)` means no reading: none
+    /// yet, or a compaction left none. The caller treats that as unknown,
+    /// never as zero. The default is `Ok(None)`.
+    fn context_fill(
+        &self,
+        _s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        Ok(None)
+    }
+}
+
+/// The share of the window at which a member is told to hand off when its
+/// spec sets no `context_handoff_tokens`. A practitioner's rule of thumb:
+/// no published measurement backs 40% for Claude or for coding agents.
+pub const DEFAULT_HANDOFF_PCT: u64 = 40;
+
+/// The lowest `context_handoff_tokens` that makes sense for Claude Code. A
+/// live check on 2026-10-21 (sonnet, three plugins off) found a fresh session
+/// already holds 61,000 to 64,000 tokens before its first tool call, so a
+/// lower point is passed at once and every handoff starts a session that is
+/// told to hand off again. It is also the floor of `autoCompactWindow`
+/// (<https://code.claude.com/docs/en/settings-reference#autocompactwindow>).
+pub const MIN_HANDOFF_TOKENS: u64 = 100_000;
+
+/// How full one session's context is: the tokens the model read on the
+/// session's newest main-chain request, and the window of that model. Every
+/// harness computes `tokens` the same way, so a percentage means one thing
+/// across harnesses and never copies a harness's own display.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Fill {
+    pub tokens: u64,
+    pub window: u64,
+}
+
+impl Fill {
+    /// Whole percent of the window, rounded down; 0 for an empty window.
+    #[must_use]
+    pub fn pct(self) -> u64 {
+        self.tokens
+            .saturating_mul(100)
+            .checked_div(self.window)
+            .unwrap_or(0)
+    }
+
+    /// The token count at which the member is told to hand off: the spec's
+    /// `context_handoff_tokens` when set, else `DEFAULT_HANDOFF_PCT` of the
+    /// window.
+    #[must_use]
+    pub fn handoff_at(self, configured: Option<u64>) -> u64 {
+        configured.unwrap_or_else(|| self.window.saturating_mul(DEFAULT_HANDOFF_PCT) / 100)
+    }
+
+    /// Whether the session has reached its handoff point.
+    #[must_use]
+    pub fn past_handoff(self, configured: Option<u64>) -> bool {
+        self.tokens >= self.handoff_at(configured)
     }
 }
 
@@ -101,6 +177,15 @@ pub struct HarnessCaps {
     /// `teamwire watch --deliver`, which types the lines into its pane, so
     /// launch refuses such a lead when it cannot be located (ADR 0023).
     pub reads_watch_lines: bool,
+    /// `Harness::box_holds_text` can tell anything. Delivery on a host that
+    /// guards dialogs reads the screen only when it can, so a harness that
+    /// cannot costs no extra read. Delivery gives a harness that reads the
+    /// box its screens from `Host::read_tail_styled`, in `screen_state` and
+    /// `box_holds_text` both, so they must parse style codes.
+    pub reads_input_box: bool,
+    /// A lead on this harness can start an AFK run: its skill carries the
+    /// AFK flow, and its pane can be proven to reach the lead (AFK-2).
+    pub runs_afk: bool,
 }
 
 /// A turn-end hook's input, in neutral form.
@@ -180,6 +265,10 @@ pub struct MemberLaunch {
     /// without plugins ignores it.
     #[serde(default)]
     pub plugins: BTreeMap<String, bool>,
+    /// The team's `context_handoff_tokens` overlaid by the member's. A Claude
+    /// member's compaction backstop is set from it (and from the model).
+    #[serde(default)]
+    pub context_handoff_tokens: Option<u64>,
     /// The spec's `accept_trust`. Read by a harness that takes folder trust
     /// as a start option rather than answering a dialog (Codex, ADR 0023).
     #[serde(default)]
@@ -215,6 +304,8 @@ impl MemberLaunch {
             otel: OtelConfig::default(),
             teamwire_bin: PathBuf::from("teamwire"),
             plugins: BTreeMap::new(),
+            // A resume never rewrites the per-run files.
+            context_handoff_tokens: None,
             // The member started once, so its folder was accepted then.
             accept_trust: true,
         }
@@ -222,6 +313,14 @@ impl MemberLaunch {
 }
 
 impl MemberLaunch {
+    /// `$TEAMWIRE_HOME/teams/<team>/members/<role>` names its home four
+    /// levels up.
+    #[must_use]
+    pub fn home_from_member_dir(&self) -> Option<String> {
+        let home = self.member_dir.ancestors().nth(4)?;
+        (!home.as_os_str().is_empty()).then(|| home.display().to_string())
+    }
+
     /// A resume's launch with what the first start recorded beyond the model:
     /// the `teamwire` binary and the plugin switches. A harness that carries
     /// hook and MCP commands in argv (Codex) needs both to match the start.
@@ -238,21 +337,26 @@ impl MemberLaunch {
 }
 
 impl LaunchSpec {
-    /// `argv` as one shell command line, for a command teamwire only prints:
-    /// a word with anything but plain characters is single-quoted.
+    /// `text` as one shell word, for a command a person or `sh -c` reads: a
+    /// word with anything but plain characters is single-quoted, each `'`
+    /// written `'\''`.
+    #[must_use]
+    pub fn shell_word(text: &str) -> String {
+        let plain = !text.is_empty()
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@,".contains(c));
+        if plain {
+            text.to_owned()
+        } else {
+            format!("'{}'", text.replace('\'', "'\\''"))
+        }
+    }
+
+    /// `argv` as one shell command line, for a command teamwire only prints.
     pub fn shell_line(argv: &[String]) -> String {
         argv.iter()
-            .map(|text| {
-                let plain = !text.is_empty()
-                    && text
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-                if plain {
-                    text.clone()
-                } else {
-                    format!("'{}'", text.replace('\'', "'\\''"))
-                }
-            })
+            .map(|text| Self::shell_word(text))
             .collect::<Vec<_>>()
             .join(" ")
     }
@@ -360,6 +464,7 @@ impl fmt::Debug for MemberLaunch {
             .field("otel", &self.otel)
             .field("teamwire_bin", &self.teamwire_bin)
             .field("plugins", &self.plugins)
+            .field("context_handoff_tokens", &self.context_handoff_tokens)
             .field("accept_trust", &self.accept_trust)
             .finish()
     }
@@ -383,5 +488,61 @@ impl fmt::Debug for LaunchFile {
             .field("bytes", &format_args!("<{} bytes>", self.bytes.len()))
             .field("mode", &format_args!("{:o}", self.mode))
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fill_defaults_to_forty_percent_of_the_window() {
+        let f = Fill {
+            tokens: 399_999,
+            window: 1_000_000,
+        };
+        assert_eq!(f.handoff_at(None), 400_000);
+        assert!(!f.past_handoff(None));
+        assert!(
+            Fill {
+                tokens: 400_000,
+                ..f
+            }
+            .past_handoff(None)
+        );
+        assert_eq!(f.handoff_at(Some(120_000)), 120_000);
+        assert!(f.past_handoff(Some(120_000)));
+        assert_eq!(
+            Fill {
+                tokens: 720_091,
+                window: 1_000_000
+            }
+            .pct(),
+            72
+        );
+        assert_eq!(
+            Fill {
+                tokens: 5,
+                window: 0
+            }
+            .pct(),
+            0
+        );
+    }
+
+    #[test]
+    fn shell_word_quotes_only_what_needs_it() {
+        assert_eq!(LaunchSpec::shell_word("/opt/x/teamwire"), "/opt/x/teamwire");
+        assert_eq!(LaunchSpec::shell_word("a=b,c@d"), "a=b,c@d");
+        assert_eq!(LaunchSpec::shell_word(""), "''");
+        assert_eq!(LaunchSpec::shell_word("/my dir/tw"), "'/my dir/tw'");
+        assert_eq!(LaunchSpec::shell_word("it's"), "'it'\\''s'");
+        assert_eq!(LaunchSpec::shell_word("50%"), "'50%'");
+    }
+
+    #[test]
+    fn shell_line_joins_quoted_words() {
+        let argv = ["claude".to_owned(), "a b".to_owned()];
+        assert_eq!(LaunchSpec::shell_line(&argv), "claude 'a b'");
     }
 }

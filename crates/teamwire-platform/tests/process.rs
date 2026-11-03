@@ -12,7 +12,7 @@
 
 use std::process::{Child, Command, Stdio};
 
-use teamwire_core::platform::ProcessRef;
+use teamwire_core::platform::{ProcessRef, START_TIME_SLACK};
 use teamwire_core::{Pid, PlatformErrorCode, Timestamp};
 use teamwire_platform::native;
 
@@ -93,10 +93,11 @@ fn process_started_is_when_the_child_started_and_none_once_it_is_gone() {
     let after = wall_clock();
     let pid = child.pid();
     let started = native().process_started(pid).unwrap();
-    // The kernel keeps seconds, so the reading can be up to a second early.
-    let slack = std::time::Duration::from_secs(1);
+    // The kernel keeps seconds, and Linux adds a boot time that is itself cut
+    // to the second, so the reading can be early by the slack that every
+    // caller allows.
     assert!(
-        before.saturating_since(started) <= slack && started <= after,
+        before.saturating_since(started) <= START_TIME_SLACK && started <= after,
         "{before} <= {started} <= {after}"
     );
     // Two readings of one process agree exactly.

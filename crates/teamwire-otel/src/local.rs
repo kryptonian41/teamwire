@@ -148,6 +148,16 @@ impl From<TeamDb> for Source {
     }
 }
 
+/// The directory of `team`'s newest archive, found the way `metrics <team>`
+/// finds it. `errors` collects the directories that could not be listed.
+pub fn newest_archive_dir_of(
+    home: &Path,
+    team: &TeamName,
+    errors: &mut Vec<String>,
+) -> Option<PathBuf> {
+    newest_archive(home, team, errors).and_then(|db| db.path.parent().map(Path::to_path_buf))
+}
+
 /// Whether `team` has a live database or an archive to read.
 pub fn team_is_known(home: &Path, team: &TeamName) -> bool {
     !sources(

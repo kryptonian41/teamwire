@@ -2,7 +2,7 @@
 //! setup, the contract text (data files in `contracts/`), member tokens,
 //! spawning through each member's host, the trust step, the dispatch
 //! message, and the sleep hold. `reopen` resumes the sessions of a team whose
-//! sessions are gone.
+//! sessions are gone; `handoff` gives one member a fresh session in its seat.
 //!
 //! Never: create anything before the whole spec is valid; start a member
 //! that has no identity channel; reuse a role unless its earlier launch
@@ -16,6 +16,8 @@ mod afk;
 mod contract;
 mod env;
 mod git;
+mod handoff;
+mod handoff_order;
 mod hold;
 mod member;
 mod member_parts;
@@ -40,9 +42,11 @@ use teamwire_store::Ctx;
 
 pub use contract::{ContractParts, render_contract};
 pub use env::ValidateEnv;
+pub use handoff::{Handoff, HandoffError, HandoffPlan, open_handoff, plan_handoff};
+pub use handoff_order::{PlaceCloser, Said, hand_off};
 pub use hold::{ensure_hold, lead_process};
 pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
-pub use spec::parse_spec;
+pub use spec::{parse_spec, unknown_key_warnings};
 pub use validate::{check_title, new_team_lead, validate};
 
 /// The lead of the team a launch belongs to, as validation resolved it.

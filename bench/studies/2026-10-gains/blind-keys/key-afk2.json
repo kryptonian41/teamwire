@@ -1,0 +1,14 @@
+{
+  "0001742c": {
+    "run_dir": "/private/tmp/claude-501/bnresults/afk/solo",
+    "task": "afk"
+  },
+  "0006c9d4": {
+    "run_dir": "/private/tmp/claude-501/bnresults/afk/subagents",
+    "task": "afk"
+  },
+  "000133fb": {
+    "run_dir": "/private/tmp/claude-501/bnresults/afk/teamwire",
+    "task": "afk"
+  }
+}

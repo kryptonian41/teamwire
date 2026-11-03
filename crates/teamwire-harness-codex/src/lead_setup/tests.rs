@@ -290,7 +290,7 @@ fn apply_writes_the_files_through_the_platform() {
         .plan_install(&want(), SHARED, &b.home(), false)
         .unwrap();
     b.cli.apply_lead_setup(&changes[..1]).unwrap();
-    assert_eq!(b.platform.written().len(), 6);
+    assert_eq!(b.platform.written().len(), 7);
 }
 
 #[test]
@@ -302,18 +302,18 @@ fn the_status_is_missing_stale_or_current() {
             .unwrap()
     };
     b.list(&[]);
-    assert_eq!(status(true), PluginStatus::Missing);
+    assert_eq!(status(true), LeadStatus::Missing);
     let version = b.write_files();
     b.marketplace_from("local", &dir_of(&b));
     b.list(&[(&version, true)]);
-    assert_eq!(status(true), PluginStatus::Current);
+    assert_eq!(status(true), LeadStatus::Current);
     b.list(&[("old", true)]);
-    assert!(matches!(status(true), PluginStatus::Stale(p) if p[0].contains("old")));
+    assert!(matches!(status(true), LeadStatus::Stale(p) if p[0].contains("old")));
     // A cargo build is not compared by version.
     b.list(&[("old", true)]);
-    assert_eq!(status(false), PluginStatus::Current);
+    assert_eq!(status(false), LeadStatus::Current);
     b.list(&[(&version, false)]);
-    assert!(matches!(status(true), PluginStatus::Stale(p) if p[0].contains("disabled")));
+    assert!(matches!(status(true), LeadStatus::Stale(p) if p[0].contains("disabled")));
 }
 
 #[test]

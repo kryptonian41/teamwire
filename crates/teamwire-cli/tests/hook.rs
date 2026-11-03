@@ -25,6 +25,7 @@ use teamwire_store::{DeliveryUpdate, NewMessage};
 struct Run {
     code: i32,
     out: String,
+    err: String,
 }
 
 fn team() -> Fixture {
@@ -69,6 +70,7 @@ fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
     Run {
         code: out.status.code().unwrap(),
         out: String::from_utf8(out.stdout).unwrap(),
+        err: String::from_utf8(out.stderr).unwrap(),
     }
 }
 
@@ -116,9 +118,75 @@ fn garbage_stdin_exits_zero() {
             let run = hook(&fx, which, &as_api(), input);
             assert_eq!(run.code, 0, "{which} {input:?}");
             assert_eq!(run.out, "", "{which} {input:?}");
+            assert!(
+                run.err
+                    .starts_with("teamwire hook: the hook input did not parse: "),
+                "{which} {input:?}: {}",
+                run.err
+            );
+            assert_eq!(run.err.lines().count(), 1, "{which} {input:?}: {}", run.err);
         }
     }
     assert_eq!(events(&fx), before, "nothing changed");
+}
+
+/// A hook exits 0 on every path (REP-10), even when its arguments do not
+/// parse: a settings file written for a newer binary names a hook this one
+/// lacks, and a non-zero exit is a hook error on every turn.
+#[test]
+fn hook_arguments_that_do_not_parse_exit_zero() {
+    let fx = team();
+    let home = fx.home.path().to_str().unwrap();
+    for args in [
+        &["hook", "not-a-hook"][..],
+        &["--home", home, "hook", "claude-stop", "--bogus"],
+        &[&format!("--home={home}"), "hook", "turn-end", "--bogus"],
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {out:?}");
+    }
+    // Any other command still exits 3 on a bad argument.
+    let out = Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .args(["status", "--bogus"])
+        .env_clear()
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(3), "{out:?}");
+}
+
+#[test]
+fn every_member_hook_on_a_newer_schema_says_so_and_changes_nothing() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            tx.connection().pragma_update(None, "user_version", 99)?;
+            Ok(())
+        })
+        .unwrap();
+    let before = events(&fx);
+    for which in [
+        "claude-stop",
+        "turn-end",
+        "claude-post-tool",
+        "session-start",
+    ] {
+        let run = hook(&fx, which, &as_api(), &stop_input("sess-1"));
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{which}");
+        assert!(
+            run.err
+                .starts_with("teamwire hook: the store could not be opened: ")
+                && run.err.contains("schema 99"),
+            "{which}: {}",
+            run.err
+        );
+    }
+    assert_eq!(events(&fx), before, "a refused schema is never written to");
 }
 
 #[test]
@@ -206,14 +274,12 @@ fn a_subagent_stop_is_ignored() {
     assert_eq!((run.code, run.out.as_str()), (0, ""));
 }
 
-#[test]
-fn post_tool_reminds_once_per_unread_message() {
-    let mut fx = team();
+/// An unread message from the lead to `api`; returns its display id.
+fn unread_message(fx: &mut Fixture) -> String {
     let api = Role::parse("api").unwrap();
     let at = teamwire_core::Clock::now(&fx.clock);
     let recipient = Recipient::Member(api.clone());
-    let id = fx
-        .store
+    fx.store
         .write(|tx| {
             let stored = tx.insert_message(
                 at,
@@ -242,8 +308,18 @@ fn post_tool_reminds_once_per_unread_message() {
             )?;
             Ok(stored.message.display_id.to_string())
         })
-        .unwrap();
+        .unwrap()
+}
+
+#[test]
+fn post_tool_reminds_once_per_unread_message() {
+    let mut fx = team();
+    let id = unread_message(&mut fx);
     let input = r#"{"session_id":"sess-1","hook_event_name":"PostToolUse","tool_name":"Bash"}"#;
+
+    // Before the reminder is given, so only the session match can keep it quiet.
+    let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
 
     let run = hook(&fx, "claude-post-tool", &as_api(), input);
     assert_eq!(run.code, 0);
@@ -258,7 +334,156 @@ fn post_tool_reminds_once_per_unread_message() {
 
     let again = hook(&fx, "claude-post-tool", &as_api(), input);
     assert_eq!((again.code, again.out.as_str()), (0, ""), "each id once");
+}
 
-    let other = r#"{"session_id":"someone-else","hook_event_name":"PostToolUse"}"#;
-    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), other).out, "");
+#[test]
+fn a_member_hook_that_meets_a_damaged_row_says_so_and_records_it() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = hook(&fx, "claude-stop", &as_api(), &stop_input("sess-1"));
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    // The store's own log line about the row may come first.
+    let said: Vec<&str> = run
+        .err
+        .lines()
+        .filter(|l| l.starts_with("teamwire hook: "))
+        .collect();
+    assert_eq!(said.len(), 1, "{}", run.err);
+    assert!(
+        said[0].starts_with("teamwire hook: the member could not be read: "),
+        "{}",
+        run.err
+    );
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "turn_end", "code": "corrupt" })]
+    );
+}
+
+/// A Claude transcript whose newest assistant request read `tokens` tokens on
+/// a 1M-window model.
+fn transcript(fx: &Fixture, tokens: u64) -> String {
+    let line = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "model": "claude-sonnet-5-5",
+            "usage": { "input_tokens": 1, "cache_read_input_tokens": tokens - 1 }
+        }
+    });
+    let path = fx.home.path().join("transcript.jsonl");
+    std::fs::write(&path, format!("{line}\n")).unwrap();
+    path.to_str().unwrap().to_owned()
+}
+
+fn post_tool_input(session: &str, transcript: &str) -> String {
+    serde_json::json!({
+        "session_id": session,
+        "hook_event_name": "PostToolUse",
+        "tool_name": "Bash",
+        "transcript_path": transcript,
+    })
+    .to_string()
+}
+
+fn context(run: &Run) -> String {
+    let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn post_tool_tells_a_member_past_its_handoff_point_once_per_generation() {
+    let mut fx = team();
+    let api = Role::parse("api").unwrap();
+    let below = post_tool_input("sess-1", &transcript(&fx, 399_000));
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &below).out, "");
+
+    // Before any note is given, so only the session match can keep it quiet.
+    let other = post_tool_input("someone-else", &transcript(&fx, 412_000));
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &other).out, "");
+
+    let past = post_tool_input("sess-1", &transcript(&fx, 412_000));
+    let run = hook(&fx, "claude-post-tool", &as_api(), &past);
+    assert_eq!(run.code, 0);
+    let text = context(&run);
+    let report = fx.team_dir().join("reports/api.handoff.md");
+    assert!(
+        text.starts_with("[teamwire] Your context holds 412k tokens, 41% of a 1000k window. Your handoff point is 400k."),
+        "{text}"
+    );
+    assert!(text.contains(&report.display().to_string()), "{text}");
+    assert_eq!(hook(&fx, "claude-post-tool", &as_api(), &past).out, "");
+
+    let place = teamwire_core::Place {
+        host: teamwire_core::HostId::from_static("herdr"),
+        id: "pane-2".to_owned(),
+    };
+    let new = SessionId::parse("sess-2").unwrap();
+    let at = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| tx.record_handoff(at, &api, Some(&new), &place))
+        .unwrap();
+    let next = post_tool_input("sess-2", &transcript(&fx, 412_000));
+    assert!(context(&hook(&fx, "claude-post-tool", &as_api(), &next)).contains("412k"));
+}
+
+#[test]
+fn post_tool_uses_the_recorded_handoff_point() {
+    let mut fx = team();
+    let api = Role::parse("api").unwrap();
+    let at = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| {
+            // The fixture started the member without the number; a later
+            // start event carries it, and the newest one decides.
+            tx.record_event(
+                at,
+                teamwire_core::EventType::MemberStarted,
+                Some(&api),
+                None,
+                &serde_json::json!({ "context_handoff_tokens": 100_000 }),
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    let input = post_tool_input("sess-1", &transcript(&fx, 110_000));
+    let text = context(&hook(&fx, "claude-post-tool", &as_api(), &input));
+    assert!(text.contains("Your handoff point is 100k."), "{text}");
+}
+
+#[test]
+fn post_tool_with_no_reading_adds_no_note() {
+    let fx = team();
+    let path = fx.home.path().join("empty.jsonl");
+    std::fs::write(&path, "{}\n").unwrap();
+    let input = post_tool_input("sess-1", path.to_str().unwrap());
+    let run = hook(&fx, "claude-post-tool", &as_api(), &input);
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+}
+
+#[test]
+fn post_tool_joins_the_reminder_and_the_handoff_note() {
+    let mut fx = team();
+    let id = unread_message(&mut fx);
+    let input = post_tool_input("sess-1", &transcript(&fx, 412_000));
+    let text = context(&hook(&fx, "claude-post-tool", &as_api(), &input));
+    assert!(text.contains(&id) && text.contains("412k"), "{text}");
+    assert_eq!(text.lines().count(), 2, "{text}");
 }

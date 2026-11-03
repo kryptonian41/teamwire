@@ -519,3 +519,96 @@ fn more_than_twenty_refs_refused() {
     let errors = rig.validate(&spec, false).unwrap_err();
     assert_eq!(codes(&errors), ["too_many_refs"]);
 }
+
+#[test]
+fn a_zero_handoff_threshold_is_refused_on_the_member_or_the_team() {
+    let rig = Rig::new();
+    let member = common::with(
+        pane_member("a", "Alpha", rig.work.path()),
+        "context_handoff_tokens",
+        json!(0),
+    );
+    let errors = rig
+        .validate(&team_spec("demo", &[member]), false)
+        .unwrap_err();
+    assert_eq!(codes(&errors), ["bad_context_handoff_tokens"]);
+
+    let spec = common::with(
+        team_spec("demo", &[pane_member("a", "Alpha", rig.work.path())]),
+        "context_handoff_tokens",
+        json!(0),
+    );
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["bad_context_handoff_tokens"]);
+}
+
+#[test]
+fn a_member_value_replaces_a_zero_team_value() {
+    let rig = Rig::new();
+    let member = common::with(
+        pane_member("a", "Alpha", rig.work.path()),
+        "context_handoff_tokens",
+        json!(5000),
+    );
+    let spec = common::with(
+        team_spec("demo", &[member]),
+        "context_handoff_tokens",
+        json!(0),
+    );
+    rig.validate(&spec, false).unwrap();
+}
+
+#[test]
+fn a_handoff_threshold_that_is_not_a_whole_number_is_refused() {
+    let rig = Rig::new();
+    for bad in [json!(1.5), json!(-3), json!("40000")] {
+        let member = common::with(
+            pane_member("a", "Alpha", rig.work.path()),
+            "context_handoff_tokens",
+            bad,
+        );
+        let spec = team_spec("demo", &[member]);
+        let errors = rig.validate(&spec, false).unwrap_err();
+        assert_eq!(codes(&errors), ["bad_spec"]);
+    }
+}
+
+#[test]
+fn the_handoff_threshold_key_draws_no_unknown_key_warning() {
+    let spec = common::with(
+        team_spec(
+            "demo",
+            &[common::with(
+                pane_member("a", "Alpha", std::path::Path::new("/w")),
+                "context_handoff_tokens",
+                json!(5000),
+            )],
+        ),
+        "context_handoff_tokens",
+        json!(5000),
+    );
+    assert!(teamwire_launch::unknown_key_warnings(&spec.to_string()).is_empty());
+}
+
+#[test]
+fn a_handoff_point_below_a_fresh_session_warns() {
+    let rig = Rig::new();
+    let warnings = |value: Option<u64>| {
+        let mut member = pane_member("a", "Alpha", rig.work.path());
+        if let Some(v) = value {
+            member = common::with(member, "context_handoff_tokens", json!(v));
+        }
+        rig.validate(&team_spec("demo", &[member]), false)
+            .unwrap()
+            .warnings
+    };
+    let low = warnings(Some(30_000));
+    assert_eq!(low.len(), 1, "{low:?}");
+    assert!(
+        low.iter()
+            .all(|w| w.contains("60,000") && w.contains("100000")),
+        "{low:?}"
+    );
+    assert!(warnings(Some(100_000)).is_empty());
+    assert!(warnings(None).is_empty());
+}

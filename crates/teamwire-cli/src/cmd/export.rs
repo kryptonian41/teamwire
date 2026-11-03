@@ -4,17 +4,14 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 use serde_json::{Value, json};
-use teamwire_core::{TeamName, Timestamp};
+use teamwire_core::{EventType, TeamName, Timestamp};
 use teamwire_store::{BadRow, Listing, MessageFilter, ReadTx, Store, StoreError, database_path};
 
-use crate::cmd::send::{carries_member_identity, home_or_refuse};
+use crate::cmd::shared::{
+    REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say, warn,
+};
 use crate::wiring::Wiring;
 use crate::{ExportArgs, Global, USAGE};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// The store could not be read, or the file could not be written.
-const STORE: u8 = 6;
 
 /// One record in `CloudEvents` 1.0 names. `seq` and `role` are extension
 /// attributes: they let a reader put events back in order and find a
@@ -40,30 +37,30 @@ pub(crate) fn run(args: &ExportArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let ExportArgs { team, out } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&e.to_string(), USAGE),
+        Err(e) => return fail("export", &e.to_string(), USAGE),
     };
     let home = match home_or_refuse("export", global) {
         Ok(home) => home,
         Err(code) => return code,
     };
     if !database_path(&home, &team).is_file() {
-        return fail(&format!("no database for team {team}"), REFUSED);
+        return fail("export", &format!("no database for team {team}"), REFUSED);
     }
     let (text, skipped) = match Store::open_read_only(&home, &team).and_then(|s| render(&s, &team))
     {
         Ok(done) => done,
-        Err(e) => return fail(&e.to_string(), STORE),
+        Err(e) => return fail("export", &e.to_string(), STORE),
     };
     for row in &skipped {
         warn(&format!(
-            "skipped {} row {}: {}",
+            "teamwire export: skipped {} row {}: {}",
             row.table, row.key, row.reason
         ));
     }
     if let Some(path) = out {
         return match wiring.platform.write_atomic(path, text.as_bytes()) {
             Ok(()) => ExitCode::SUCCESS,
-            Err(e) => fail(&format!("{}: {e}", path.display()), STORE),
+            Err(e) => fail("export", &format!("{}: {e}", path.display()), STORE),
         };
     }
     say(&text);
@@ -107,8 +104,18 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
             role: None,
             data,
         };
+    // The lead session id is what a member would need to speak as the lead,
+    // so an export taken from a member's session leaves it out everywhere.
+    let member = carries_member_identity();
     let mut out = Vec::new();
-    for e in keep(&mut skipped, tx.events_after(0, None, None)?) {
+    for mut e in keep(&mut skipped, tx.events_after(0, None, None)?) {
+        if member && e.kind == EventType::TeamLeadAdopted {
+            for key in ["old_session", "new_session"] {
+                if let Some(v) = e.data.get_mut(key) {
+                    *v = Value::Null;
+                }
+            }
+        }
         out.push(Record {
             seq: Some(e.seq),
             role: e.role.as_ref().map(|r| r.as_str().to_owned()),
@@ -197,9 +204,7 @@ fn records(tx: &ReadTx<'_>, source: &str) -> Result<(Vec<Record>, Vec<BadRow>), 
         ));
     }
     if let Some(team) = tx.team()? {
-        // The lead session id is what a member would need to speak as the
-        // lead, so an export taken from a member's session leaves it out.
-        let lead_session = (!carries_member_identity())
+        let lead_session = (!member)
             .then(|| team.lead_session.as_ref().map(ToString::to_string))
             .flatten();
         out.push(record(
@@ -277,19 +282,4 @@ fn hex(bytes: &[u8]) -> String {
         .flat_map(|b| [b >> 4, b & 0x0f])
         .filter_map(|nibble| char::from_digit(u32::from(nibble), 16))
         .collect()
-}
-
-#[expect(clippy::print_stdout, reason = "the records are the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(clippy::print_stderr, reason = "the binary reports problems on stderr")]
-fn warn(message: &str) {
-    eprintln!("teamwire export: {message}");
-}
-
-fn fail(message: &str, code: u8) -> ExitCode {
-    warn(message);
-    ExitCode::from(code)
 }

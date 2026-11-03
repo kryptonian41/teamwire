@@ -17,10 +17,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    Clock, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode, Pid, PlatformError,
-    PlatformErrorCode, Registry, Role, RunOutput, TeamName, Timestamp,
+    Clock, HarnessId, HostId, LeadCommand, LeadRoute, MemberKind, MemberState, Mode, Pid,
+    PlatformError, PlatformErrorCode, Registry, Role, RunOutput, TeamName, Timestamp,
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
@@ -31,9 +32,10 @@ use teamwire_store::{NewTeam, Store};
 mod schema_1;
 
 /// The command file is compiled here with the crate-level items it names
-/// (`Global`, `wiring::Wiring`, `cmd::send::home_or_refuse`,
-/// `cmd::install::wanted_entry`) and the real `cmd::lead_setup_check`, so
-/// the checks run against a fake platform.
+/// (`Global`, `wiring::Wiring`, `cmd::shared::home_or_refuse`,
+/// `cmd::install::wanted_command`) and the real `cmd::lead_setup_check`,
+/// `cmd::host_pick` and `cmd::doctor_teams`, so the checks run against a
+/// fake platform.
 #[derive(Debug)]
 pub(crate) struct Global {
     pub(crate) home: Option<PathBuf>,
@@ -43,52 +45,52 @@ mod wiring {
     use std::sync::Arc;
 
     use teamwire_core::Platform;
-    pub(crate) use teamwire_harness_claude::{
-        ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill, mcp_state,
-        shadowing_entries, skill_state,
-    };
-    pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
-    pub(crate) use teamwire_harness_codex::lead_setup::{
-        LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
-    };
+    pub(crate) use teamwire_harness_claude::{ClaudeConfig, SKILL_TEXT};
+    pub(crate) use teamwire_harness_pi::PiConfig;
 
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
-        pub(crate) codex: teamwire_harness_codex::CodexConfig,
+        pub(crate) pi: PiConfig,
         pub(crate) registry: teamwire_core::Registry,
         pub(crate) clock: teamwire_fakes::FakeClock,
-    }
-
-    impl Wiring {
-        pub(crate) fn codex_setup(&self) -> CodexSetup {
-            CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
-        }
     }
 }
 
 #[path = "../src/cmd/lead_setup_check.rs"]
 mod lead_setup_check;
 
+#[path = "../src/cmd/host_pick.rs"]
+mod host_pick;
+
+#[path = "../src/cmd/doctor_teams.rs"]
+mod doctor_teams;
+
 mod cmd {
-    pub(crate) use crate::lead_setup_check;
+    pub(crate) use crate::{doctor, doctor_teams, host_pick, lead_setup_check};
 
     pub(crate) mod install {
-        use crate::wiring::McpEntry;
+        use teamwire_core::LeadCommand;
 
         use crate::Global;
 
-        /// The tests pass the wanted entry in `Inputs`; the real helper is not compiled here.
-        pub(crate) fn wanted_entry(_global: &Global) -> Result<McpEntry, String> {
+        /// The tests pass the wanted command in `Inputs`; the real helper is not compiled here.
+        pub(crate) fn wanted_command(_global: &Global) -> Result<LeadCommand, String> {
             Err("not compiled in this test".to_owned())
         }
     }
 
-    pub(crate) mod send {
+    pub(crate) mod shared {
         use std::path::PathBuf;
         use std::process::ExitCode;
 
         use crate::Global;
+
+        /// The exit code of a run that found a problem; same value as the real one.
+        pub(crate) const PARTIAL: u8 = 2;
+
+        /// Prints nothing; the tests read the report text, not the output.
+        pub(crate) fn say(_text: &str) {}
 
         /// The state directory the test names; the real helper is not compiled here.
         pub(crate) fn home_or_refuse(_command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
@@ -138,7 +140,7 @@ fn answer(text: &str) -> RunOutput {
 impl Bed {
     /// A setup on which every check passes.
     fn healthy() -> Self {
-        let bed = Self {
+        let mut bed = Self {
             home: TestHome::new().unwrap(),
             claude: TestHome::new().unwrap(),
             bin: TestHome::new().unwrap(),
@@ -146,12 +148,7 @@ impl Bed {
             host: Host::Herdr,
             claude_help: ALL_FLAGS.to_owned(),
             env_names: Vec::new(),
-            registry: {
-                let mut registry = Registry::new();
-                registry.add_harness(Arc::new(FakeHarness::new())).unwrap();
-                registry.add_host(Arc::new(FakeHost::new())).unwrap();
-                registry
-            },
+            registry: Registry::new(),
             clock: FakeClock::new(),
             codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
             codex_platform: Arc::new(FakePlatform::new()),
@@ -166,7 +163,46 @@ impl Bed {
             std::fs::write(bed.bin.path().join(program), "#!/bin/sh\n").unwrap();
         }
         bed.install_lead_setup();
+        bed.registry = bed.registry();
         bed
+    }
+
+    /// The fake harness the teams run on, and the three real harnesses whose
+    /// programs and lead setups doctor checks, each on a platform of its own
+    /// so their commands do not mix with doctor's probes.
+    fn registry(&self) -> Registry {
+        let mut registry = Registry::new();
+        registry.add_harness(Arc::new(FakeHarness::new())).unwrap();
+        registry
+            .add_harness(Arc::new(ClaudeCode::new(
+                Arc::new(FakePlatform::new()),
+                self.claude_config(),
+            )))
+            .unwrap();
+        registry.add_harness(Arc::new(self.codex_setup())).unwrap();
+        registry.add_harness(Arc::new(self.pi_setup())).unwrap();
+        registry.add_host(Arc::new(FakeHost::new())).unwrap();
+        registry
+    }
+
+    fn pi_config(&self) -> teamwire_harness_pi::PiConfig {
+        teamwire_harness_pi::PiConfig {
+            agent_dir: self.home.path().join("pi-agent"),
+            pi_bin: "pi".to_owned(),
+        }
+    }
+
+    /// The command the teamwire binary under test would give each lead
+    /// setup for this bed's state directory.
+    fn lead_command(&self) -> LeadCommand {
+        LeadCommand {
+            bin: std::fs::canonicalize(env!("CARGO_BIN_EXE_teamwire")).unwrap(),
+            home: Some(
+                self.run_home
+                    .clone()
+                    .unwrap_or_else(|| self.home.path().to_path_buf()),
+            ),
+        }
     }
 
     fn codex_setup(&self) -> CodexCli {
@@ -177,6 +213,12 @@ impl Bed {
                 codex_bin: "codex".to_owned(),
             },
         )
+    }
+
+    /// The pi adapter, on a platform of its own: the pi check reads files
+    /// and runs nothing.
+    fn pi_setup(&self) -> teamwire_harness_pi::Pi {
+        teamwire_harness_pi::Pi::new(Arc::new(FakePlatform::new()), self.pi_config())
     }
 
     fn claude_config(&self) -> ClaudeConfig {
@@ -261,7 +303,7 @@ impl Bed {
             self.codex_platform.queue_run(Ok(answer(&self.codex_list)));
         }
         diagnose(&Inputs {
-            codex: self.codex_setup(),
+            pi: self.pi_config(),
             host: self.host,
             home: self
                 .run_home
@@ -272,7 +314,7 @@ impl Bed {
             clock: &self.clock,
             path_var: Some(self.bin.path().as_os_str().to_owned()),
             claude: self.claude_config(),
-            lead_entry: Ok(self.lead_entry()),
+            lead_command: Ok(self.lead_command()),
             running_a_build: build,
             repo: self.home.path().to_path_buf(),
             env_names: self.env_names.clone(),
@@ -507,6 +549,31 @@ fn a_close_lock_held_by_a_dead_process_is_reported_with_the_fix() {
 /// lock of a dead close: doctor reports it, as `close --clear-stale-lock`
 /// would clear it. The original owner, still running, is not reported.
 #[test]
+fn a_watch_lease_with_a_live_pid_and_an_old_heartbeat_warns() {
+    let bed = Bed::healthy();
+    let mut store = bed.team("alpha");
+    let pid = Pid::new(4242);
+    let now = bed.clock.now();
+    store
+        .write(|tx| tx.take_watch_lease(now, pid, "herdr", |_| true).map(|_| ()))
+        .unwrap();
+    drop(store);
+    bed.platform.set_alive(pid, true);
+
+    let checks = bed.checks();
+    assert!(
+        checks.iter().all(|c| c.name != "team alpha watch lease"),
+        "a fresh lease is not stale: {checks:?}"
+    );
+
+    bed.clock.advance(Duration::from_secs(601));
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha watch lease"), Level::Warn);
+    let detail = detail_of(&checks, "team alpha watch lease");
+    assert!(detail.contains("has not beaten"), "{detail}");
+}
+
+#[test]
 fn a_close_lock_whose_pid_was_reused_is_reported() {
     let bed = Bed::healthy();
     let mut store = bed.team("alpha");
@@ -593,6 +660,20 @@ fn a_missing_harness_or_host_binary_fails_and_the_other_host_is_not_asked_about(
     assert_eq!(level_of(&checks, "herdr on PATH"), Level::Fail);
     assert_eq!(level_of(&checks, "claude on PATH"), Level::Pass);
     assert!(!names(&checks).contains(&"tmux on PATH"));
+}
+
+#[test]
+fn herdrs_pi_integration_is_checked_only_when_pi_is_on_path() {
+    let bed = Bed::healthy();
+    assert!(!names(&bed.checks()).contains(&"herdr pi integration"));
+    std::fs::write(bed.bin.path().join("pi"), "#!/bin/sh\n").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "herdr pi integration"), Level::Warn);
+    assert!(detail_of(&checks, "herdr pi integration").contains("herdr integration install pi"));
+    let ext = bed.home.path().join("pi-agent/extensions");
+    std::fs::create_dir_all(&ext).unwrap();
+    std::fs::write(ext.join("herdr-agent-state.ts"), "").unwrap();
+    assert_eq!(level_of(&bed.checks(), "herdr pi integration"), Level::Pass);
 }
 
 #[test]
@@ -777,8 +858,8 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         clock: &bed.clock,
         path_var: Some(bed.bin.path().as_os_str().to_owned()),
         claude: bed.claude_config(),
-        codex: bed.codex_setup(),
-        lead_entry: Err("cannot find this binary".to_owned()),
+        pi: bed.pi_config(),
+        lead_command: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
         env_names: Vec::new(),
@@ -1076,22 +1157,18 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
     let mut older = bed.team("alpha").with_writer_version("0.0.0");
     start_member(&mut older, "web");
     start_member(&mut older, "api");
-    let now = FakeClock::new().now();
-    older
-        .write(|tx| {
-            tx.insert_completion(
-                now,
-                &teamwire_store::NewCompletion {
-                    role: Role::parse("web").unwrap(),
-                    generation: 1,
-                    status: teamwire_core::CompletionStatus::Done,
-                    summary: "finished".to_owned(),
-                    final_message: None,
-                    final_source: teamwire_core::FinalSource::Hook,
-                },
-            )
-            .map(|_| ())
+    complete(&mut older, "web");
+    // The watch delivered the result, so the lead has it.
+    let id = older
+        .read(|tx| {
+            tx.completions_of(&Role::parse("web").unwrap())?
+                .all_or_corrupt()
         })
+        .unwrap()[0]
+        .completion
+        .ulid;
+    older
+        .write(|tx| tx.deliver_completion_via_watch(FakeClock::new().now(), &id))
         .unwrap();
     drop(older);
 
@@ -1106,6 +1183,41 @@ fn a_member_from_another_build_that_has_finished_is_not_counted() {
         "{detail}"
     );
     assert!(detail.contains("shows as 0.0.0"), "{detail}");
+}
+
+fn complete(store: &mut Store, role: &str) {
+    let now = FakeClock::new().now();
+    store
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &teamwire_store::NewCompletion {
+                    role: Role::parse(role).unwrap(),
+                    generation: 1,
+                    status: teamwire_core::CompletionStatus::Done,
+                    summary: "finished".to_owned(),
+                    final_message: None,
+                    final_source: teamwire_core::FinalSource::Hook,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+}
+
+/// The watch's UNREPORTED line sends the lead here, so the member whose
+/// result nobody has received must be listed.
+#[test]
+fn a_member_from_another_build_whose_result_is_pending_is_counted() {
+    let bed = Bed::healthy();
+    let mut older = bed.team("alpha").with_writer_version("0.0.0");
+    start_member(&mut older, "web");
+    complete(&mut older, "web");
+    drop(older);
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
+    assert!(detail_of(&checks, "team alpha older members").contains("web (0.0.0)"));
 }
 
 #[test]
@@ -1150,4 +1262,46 @@ fn a_stale_codex_plugin_is_a_warning_that_names_the_fix() {
     bed.codex_platform.queue_run(Ok(answer(&bed.codex_list)));
     let checks = bed.checks_as(true);
     assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
+}
+
+#[test]
+fn pi_on_path_has_its_lead_package_checked() {
+    use teamwire_harness_pi::lead_setup::{Change, LeadCommand, package_dir};
+    let bed = Bed::healthy();
+    assert!(!names(&bed.checks()).contains(&"pi lead package"));
+    std::fs::write(bed.bin.path().join("pi"), "#!/bin/sh\n").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "pi lead package"), Level::Pass);
+    let detail = detail_of(&checks, "pi lead package");
+    assert!(detail.contains("teamwire install --harness pi"), "{detail}");
+
+    // Install as `teamwire install` would, from this test binary's entry.
+    let entry = bed.lead_entry();
+    let want = LeadCommand {
+        bin: PathBuf::from(&entry.command),
+        home: Some(bed.home.path().to_path_buf()),
+    };
+    let pi = bed.pi_setup();
+    let changes = pi
+        .plan_install(&want, teamwire_harness_claude::SKILL_TEXT, bed.home.path())
+        .unwrap();
+    let writes: Vec<_> = changes
+        .into_iter()
+        .filter(|c| matches!(c, Change::WritePackage { .. }))
+        .collect();
+    pi.apply_lead_setup(&writes).unwrap();
+    let dir = package_dir(bed.home.path());
+    std::fs::create_dir_all(bed.home.path().join("pi-agent")).unwrap();
+    std::fs::write(
+        bed.home.path().join("pi-agent/settings.json"),
+        serde_json::json!({ "packages": [dir.display().to_string()] }).to_string(),
+    )
+    .unwrap();
+    assert_eq!(detail_of(&bed.checks(), "pi lead package"), "installed");
+
+    // A file another binary wrote is a warning that names the fix.
+    std::fs::write(dir.join("extensions/teamwire-lead.ts"), "// old").unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "pi lead package"), Level::Warn);
+    assert!(detail_of(&checks, "pi lead package").contains("teamwire install --harness pi"));
 }

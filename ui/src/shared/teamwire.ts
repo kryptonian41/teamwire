@@ -1,8 +1,9 @@
 // Schemas for the JSON that the `teamwire` CLI prints. These are the only
 // shapes this app accepts from teamwire. Each one was written from the
 // teamwire source (crates/teamwire-watch/src/lib.rs, teamwire-core enums)
-// and checked against real output on 2026-10-13 (teamwire 0.0.0, schema 3);
-// teamwire now prints its version as `0.0.0+<commit>`.
+// and first checked against real output on 2026-10-13 (teamwire 0.0.0).
+// They match store schema 6 (`SCHEMA_VERSION`), and teamwire now prints its
+// version as `0.0.0+<commit>`.
 //
 // Unknown object keys are dropped, so teamwire may add fields freely. A new
 // enum value or a changed type fails the parse on purpose: the server then
@@ -49,6 +50,16 @@ export const TicketRef = z.object({
   id: z.string(),
 });
 
+/** How full a member's context window is, and where it hands off. */
+export const ContextView = z.object({
+  tokens: count,
+  window: count,
+  /** Whole percent of the window. */
+  pct: count,
+  /** The token count at which the member is told to hand off. */
+  handoff_at: count,
+});
+
 /** One member in `teamwire status --json`. Removed members are left out. */
 export const MemberView = z.object({
   role: z.string(),
@@ -72,6 +83,8 @@ export const MemberView = z.object({
   branch: z.string().nullable(),
   /** Only set by `status <team> --role R`. */
   resume_command: z.string().nullable(),
+  /** `null` when unknown. An older teamwire leaves the key out. */
+  context: ContextView.nullish(),
 });
 
 export const LeadView = z.object({
@@ -148,7 +161,7 @@ export const StatusView = z.object({
   /** `null` for an ordinary team. An older teamwire leaves the key out. */
   afk: AfkView.nullish(),
   members: z.array(MemberView),
-  /** The last five messages, newest first. */
+  /** The last five messages, oldest first. The fixtures list them newest first, so do not rely on the order. */
   messages: z.array(MessageView),
   stuck_deliveries: z.array(StuckDelivery),
   unread_deliveries: z.array(UnreadDelivery),
@@ -191,6 +204,8 @@ export const LogDelivery = z.object({
   to: Party,
   state: DeliveryState,
   attempts: count,
+  /** The error code of an undelivered or unconfirmed delivery. An older teamwire leaves the key out. */
+  reason: z.string().nullish(),
 });
 
 export const LogMessage = z.object({
@@ -202,6 +217,10 @@ export const LogMessage = z.object({
   /** At most 300 characters. The full text is the `comms` file. */
   excerpt: z.string(),
   deliveries: z.array(LogDelivery),
+  /** The display id of the message this one answers. An older teamwire leaves the key out. */
+  re: z.string().nullish(),
+  /** The commit a `notice` names. An older teamwire leaves the key out. */
+  commit: z.string().nullish(),
 });
 
 /** `teamwire log <team> --json`, oldest first. */
@@ -221,6 +240,54 @@ export const MetricsView = z.object({
   errors: z.array(z.string()),
 });
 
+/**
+ * The closed list of event types (teamwire `EventType`, docs/metrics.md
+ * section 1). Adding one changes teamwire's store schema, so a new value
+ * fails the parse like every other enum here.
+ */
+export const EventType = z.enum([
+  "team.created", "team.closing", "team.closed", "team.lead_adopted",
+  "member.creating", "member.started", "member.failed", "member.refused", "member.replaced",
+  "member.removed", "member.reprompted", "member.completed", "member.completion_refused", "member.held",
+  "message.sent", "message.refused",
+  "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
+  "delivery.reminded", "delivery.resent", "delivery.reentered", "delivery.recipient_stopped",
+  "result.delivering", "result.delivered", "result.undelivered", "result.unconfirmed",
+  "watch.started", "watch.line", "watch.stopped",
+  "verify.recorded", "verify.waived",
+  "close.step", "close.refused",
+  "store.error",
+]);
+
+/**
+ * One row of `teamwire events <team> --json`. `data` keys differ per type
+ * and are not part of this schema: the page reads each key it needs with
+ * its own check and shows the row plainly when a key is missing, because
+ * older rows carry fewer keys (for example `usage` on `result.delivering`).
+ */
+export const EventRow = z.object({
+  seq: z.number().int().positive(),
+  /** UTC RFC 3339 with milliseconds. */
+  time: z.string(),
+  type: EventType,
+  role: z.string().nullable(),
+  /** Display id of the message the row is about, such as `m014`. */
+  message: z.string().nullable(),
+  data: z.record(z.string(), z.unknown()),
+});
+
+/** `teamwire events <team> [--archive DIR] [--after SEQ] --json`, oldest first. */
+export const EventsView = z.object({
+  team: z.string(),
+  source: z.enum(["live", "archive"]),
+  /** The archive directory name, or null for a live store. */
+  archive: z.string().nullable(),
+  /** The highest seq in the store, also when `--after` left every row out. */
+  last_seq: count,
+  events: z.array(EventRow),
+  errors: z.array(z.string()),
+});
+
 export type TeamState = z.infer<typeof TeamState>;
 export type PlaceState = z.infer<typeof PlaceState>;
 export type ReportState = z.infer<typeof ReportState>;
@@ -229,6 +296,7 @@ export type MessageType = z.infer<typeof MessageType>;
 export type MemberKind = z.infer<typeof MemberKind>;
 export type Lifecycle = z.infer<typeof Lifecycle>;
 export type Liveness = z.infer<typeof Liveness>;
+export type ContextView = z.infer<typeof ContextView>;
 export type MemberView = z.infer<typeof MemberView>;
 export type LeadView = z.infer<typeof LeadView>;
 export type MessageView = z.infer<typeof MessageView>;
@@ -244,3 +312,6 @@ export type LogMessage = z.infer<typeof LogMessage>;
 export type LogView = z.infer<typeof LogView>;
 export type Metric = z.infer<typeof Metric>;
 export type MetricsView = z.infer<typeof MetricsView>;
+export type EventType = z.infer<typeof EventType>;
+export type EventRow = z.infer<typeof EventRow>;
+export type EventsView = z.infer<typeof EventsView>;

@@ -1,28 +1,24 @@
 //! `teamwire send`: send one message. Also holds what the message commands
-//! (`resend`, `log`, `inbox`, `ack`, `members`, `lead`) share: opening the
-//! team's store, reading who the caller says it is, and printing.
+//! (`resend`, `log`, `inbox`, `ack`, `members`, `lead`) share: the send
+//! report's printing and exit codes.
 
-use std::path::PathBuf;
 use std::process::ExitCode;
 
-use teamwire_core::{Config, DisplayId, MessageType, Recipient, SendRequest, TeamName};
+use teamwire_core::{DisplayId, MessageType, Recipient, SendRequest, TeamName};
 use teamwire_msg::{
-    CallerEnv, RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged,
-    send_with, watch_running,
+    RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged, send_with,
+    watch_running,
 };
-use teamwire_store::{Ctx, NO_DATABASE_HINT, Party, Store, StoreError};
+use teamwire_store::Party;
 
+use crate::cmd::shared::{REFUSED, STORE, caller_env, fail, member_token, say, warn, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, SendArgs, USAGE};
 
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-pub(crate) const REFUSED: u8 = 1;
 /// At least one recipient is `undelivered`.
 const NOT_DELIVERED: u8 = 4;
 /// At least one recipient is `unconfirmed`, none `undelivered`.
 const UNCONFIRMED: u8 = 5;
-/// The store could not be read or written.
-pub(crate) const STORE: u8 = 6;
 
 pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let SendArgs {
@@ -56,7 +52,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(parts) => parts,
         Err(e) => return fail("send", &e, USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "send", |ctx| {
         // A member's `--from` defaults to its role. With no role and no
         // token the caller claims to be the lead, as `resend` does, and the
         // harness session decides.
@@ -191,6 +187,12 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
                 d.reason.map_or("unknown", |r| r.as_str())
             )),
             RecipientState::Pending => warn(&pending_line(team, &report.display_id, &d.to)),
+            // In a resume by key a reached row keeps its own state, so
+            // `skipped` means another command may still be typing it.
+            RecipientState::Skipped if report.duplicate_of_key => warn(&format!(
+                "SKIPPED for {}: another command may still be delivering it; if it does not arrive, run teamwire resend {team} {} after 60 s",
+                d.to, report.display_id
+            )),
             RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => {}
         }
     }
@@ -217,14 +219,17 @@ fn state_word(state: RecipientState) -> &'static str {
 
 /// 6 when any recipient is still pending, because its delivery record could
 /// not be written; else 4 when any is undelivered, else 5 when any is
-/// unconfirmed.
+/// unconfirmed, or skipped in a resume by key because another command may
+/// still be delivering it.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
     let any = |s| report.deliveries.iter().any(|d| d.state == s);
     if any(RecipientState::Pending) {
         STORE
     } else if any(RecipientState::Undelivered) {
         NOT_DELIVERED
-    } else if any(RecipientState::Unconfirmed) {
+    } else if any(RecipientState::Unconfirmed)
+        || (report.duplicate_of_key && any(RecipientState::Skipped))
+    {
         UNCONFIRMED
     } else {
         0
@@ -239,171 +244,48 @@ pub(crate) fn error_code(e: &SendError) -> u8 {
     }
 }
 
-/// What the process says about itself: the member's variables and the
-/// claimed sender (ADR 0008).
-pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
-    CallerEnv {
-        team: std::env::var("TEAMWIRE_TEAM").ok(),
-        role: std::env::var("TEAMWIRE_ROLE").ok(),
-        token: member_token(),
-        from,
-        hints: Vec::new(),
-    }
-}
-
-/// The member token the process carries. Every command reads it here, so
-/// they agree on what counts as having one: the variable, else the file
-/// `TEAMWIRE_TOKEN_FILE` names (ADR 0023 point 4).
-pub(crate) fn member_token() -> Option<String> {
-    teamwire_msg::caller_token(|name| std::env::var(name).ok())
-}
-
-/// Whether the process runs inside a member's session. The rule is
-/// `CallerEnv::is_member_session`, the one the message crate's proofs use, so
-/// the CLI and the proofs can never disagree about who is a member.
-pub(crate) fn carries_member_identity() -> bool {
-    caller_env(None).is_member_session()
-}
-
-/// A lead-only command (`close`, `watch`, `launch --add`) run from a member's
-/// session is refused.
-pub(crate) fn refuse_member(command: &str) -> Option<ExitCode> {
-    carries_member_identity().then(|| {
-        fail(
-            command,
-            "refused.identity: this command is for the lead; a member session cannot run it",
-            REFUSED,
-        )
-    })
-}
-
-/// `--home`, else `$TEAMWIRE_HOME`, else `~/.teamwire`, made absolute. A
-/// relative path is handed on to members, whose working directory is not
-/// this one, so it must not stay relative. None when nothing names a
-/// directory.
-pub(crate) fn state_home(global: &Global) -> Option<PathBuf> {
-    let Global { home } = global;
-    let chosen = home
-        .clone()
-        .or_else(|| std::env::var_os("TEAMWIRE_HOME").map(PathBuf::from))
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".teamwire")))?;
-    std::path::absolute(chosen).ok()
-}
-
-/// `state_home`, or the refusal to print and exit with when nothing names
-/// the state directory.
-pub(crate) fn home_or_refuse(command: &str, global: &Global) -> Result<PathBuf, ExitCode> {
-    state_home(global).ok_or_else(|| {
-        fail(
-            command,
-            "no state directory: set --home, TEAMWIRE_HOME or HOME",
-            REFUSED,
-        )
-    })
-}
-
-/// The refusal text for a team whose database file is missing.
-pub(crate) fn no_database_text(team: &TeamName, path: &std::path::Path) -> String {
-    format!(
-        "no database for team {team} at {}. {NO_DATABASE_HINT}",
-        path.display()
-    )
-}
-
-/// Opens the team's store and runs `f` with a `Ctx` on it. A store that
-/// cannot be opened is reported and turned into the exit code to return.
-pub(crate) fn with_ctx<T>(
-    global: &Global,
-    wiring: &Wiring,
-    team: &TeamName,
-    f: impl FnOnce(&mut Ctx<'_>) -> T,
-) -> Result<T, ExitCode> {
-    let home = home_or_refuse("", global)?;
-    let mut store = match Store::open_existing(&home, team) {
-        Ok(store) => store,
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(team, &path);
-            return Err(fail("", &message, REFUSED));
-        }
-        Err(e) => return Err(fail("", &e.to_string(), STORE)),
-    };
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
-    Ok(f(&mut ctx))
-}
-
-/// `with_ctx` for a command that only reads (`log`, `members`): the store is
-/// opened read-only, never created or migrated, and a database of another
-/// schema version is refused (WAT-11). A read never writes, not even a
-/// refusal.
-pub(crate) fn with_read_ctx<T>(
-    global: &Global,
-    wiring: &Wiring,
-    team: &TeamName,
-    f: impl FnOnce(&mut Ctx<'_>) -> T,
-) -> Result<T, ExitCode> {
-    let home = home_or_refuse("", global)?;
-    if !home
-        .join("teams")
-        .join(team.as_str())
-        .join("team.db")
-        .is_file()
-    {
-        return Err(fail(
-            "",
-            &format!("no database for team {team} under {}", home.display()),
-            REFUSED,
-        ));
-    }
-    let mut store = match Store::open_read_only(&home, team) {
-        Ok(store) => store,
-        Err(e) => return Err(fail("", &e.to_string(), STORE)),
-    };
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
-    Ok(f(&mut ctx))
-}
-
-#[expect(clippy::print_stdout, reason = "the command's result is its output")]
-pub(crate) fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
-pub(crate) fn warn(text: &str) {
-    eprintln!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-pub(crate) fn fail(command: &str, message: &str, code: u8) -> ExitCode {
-    if command.is_empty() {
-        eprintln!("teamwire: {message}");
-    } else {
-        eprintln!("teamwire {command}: {message}");
-    }
-    ExitCode::from(code)
-}
-
 #[cfg(test)]
 mod tests {
+    use teamwire_store::{Store, StoreError};
+
     use super::*;
+
+    #[test]
+    fn every_command_on_with_ctx_records_a_failed_write_under_its_name() {
+        let home = teamwire_fakes::TestHome::new().unwrap();
+        drop(Store::open(home.path(), &team()).unwrap());
+        let global = Global {
+            home: Some(home.path().to_path_buf()),
+        };
+        let wiring = crate::wiring::wire(&crate::wiring::WiringEnv {
+            herdr_env: None,
+            tmux: None,
+            user_home: None,
+            claude_dir: None,
+            claude_config_dir: None,
+            codex_test_home: None,
+            codex_home: None,
+            pi_agent_dir: None,
+            lead_harness: None,
+            claude_session: None,
+            codex_thread: None,
+            pi_marker: None,
+        })
+        .unwrap();
+        let out = with_ctx(&global, &wiring, &team(), "ack", |ctx| {
+            ctx.store.write(|_| Err::<(), _>(StoreError::Busy))
+        });
+        assert!(matches!(out, Ok(Err(StoreError::Busy))));
+        let store = Store::open_existing(home.path(), &team()).unwrap();
+        let errors: Vec<serde_json::Value> = store
+            .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+            .map(|e| e.data)
+            .collect();
+        assert_eq!(errors, [serde_json::json!({ "op": "ack", "code": "busy" })]);
+    }
 
     fn team() -> TeamName {
         TeamName::parse("alpha").unwrap()

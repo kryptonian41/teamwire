@@ -86,6 +86,27 @@ fn transcript_is_the_fallback_and_the_file_says_so() {
 }
 
 #[test]
+fn a_transcript_past_the_size_cap_is_not_read() {
+    let (mut rig, api) = team();
+    let mut t = stop("api-1");
+    t.final_message = None;
+    let path = transcript(&rig, "From the transcript.");
+    // A sparse file past the 64 MiB cap: its length alone is too large.
+    std::fs::File::options()
+        .append(true)
+        .open(&path)
+        .unwrap()
+        .set_len(64 * 1024 * 1024 + 1)
+        .unwrap();
+    t.transcript = Some(path);
+    finish(&mut rig, &api, &t);
+    let text = outbox(&rig);
+    assert!(!text.contains("From the transcript."), "{text}");
+    assert!(text.contains("Final message from: none"), "{text}");
+    assert_eq!(rig.newest(&api).completion.final_source, FinalSource::None);
+}
+
+#[test]
 fn no_final_message_at_all_is_said_plainly() {
     let (mut rig, api) = team();
     let mut t = stop("api-1");

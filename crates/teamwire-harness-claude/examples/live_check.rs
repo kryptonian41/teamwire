@@ -8,7 +8,8 @@
 //! from that file's `env` entry. No test runs
 //! this, because it needs the real `claude`, an account and a network.
 //!
-//! It reads `~/.claude.json` for trust and writes nothing under `~/.claude`.
+//! It answers no trust dialog: the person who runs it does, in the terminal.
+//! It writes nothing under `~/.claude`.
 //! Everything else goes under one temporary directory that is printed.
 
 #![expect(
@@ -86,6 +87,7 @@ fn main() -> Result<(), String> {
         otel: OtelConfig::default(),
         teamwire_bin: stub,
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     };
     let claude = ClaudeCode::new(

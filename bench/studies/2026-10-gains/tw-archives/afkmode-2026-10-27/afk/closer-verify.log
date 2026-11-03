@@ -1,0 +1,42 @@
+planner      SKIPPED  0 flag(s)
+             a pane member with no check
+planrev      SKIPPED  0 flag(s)
+             the member was removed
+start        PASS     exit 0 in 68s, 5 flag(s)
+             ! [weakened:crates/teamwire-cli/src/cmd/afk.rs:31] (waived) check weakened (expect) in crates/teamwire-cli/src/cmd/afk.rs:31: #[expect(
+             ! [weakened:crates/teamwire-cli/tests/afk.rs:5] (waived) check weakened (inner-expect) in crates/teamwire-cli/tests/afk.rs:5: #![expect(
+             ! [weakened:crates/teamwire-cli/tests/afk.rs:9] (waived) check weakened (inner-expect) in crates/teamwire-cli/tests/afk.rs:9: #![expect(
+             ! [weakened:crates/teamwire-launch/tests/afk_start.rs:3] (waived) check weakened (inner-expect) in crates/teamwire-launch/tests/afk_start.rs:3: #![expect(
+             ! [weakened:crates/teamwire-launch/tests/afk_start.rs:12] (waived) check weakened (expect) in crates/teamwire-launch/tests/afk_start.rs:12: #[expect(
+             head e026e2208945dacafafb1a737f145c0f459d6e7b
+             log /private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/teams/afkmode/verify/start.log
+budget       PASS     exit 0 in 72s, 2 flag(s)
+             ! [weakened:crates/teamwire-launch/src/member.rs:59] (waived) check weakened (expect) in crates/teamwire-launch/src/member.rs:59: #[expect(
+             ! [weakened:crates/teamwire-launch/tests/afk_budget.rs:4] (waived) check weakened (expect) in crates/teamwire-launch/tests/afk_budget.rs:4: #[expect(
+             head 629e68f12a62c8b9a13d90c7ff905ce07d444422
+             log /private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/teams/afkmode/verify/budget.log
+stophold     PASS     exit 0 in 66s, 0 flag(s)
+             head 94e467590c0a783cad1dbccb5bee691e9359c204
+             log /private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/teams/afkmode/verify/stophold.log
+closestat    PASS     exit 0 in 77s, 1 flag(s)
+             ! [weakened:crates/teamwire-close/tests/afk_report.rs:3] (waived) check weakened (inner-expect) in crates/teamwire-close/tests/afk_report.rs:3: #![expect(
+             head 8158ee6d07aa16c5e5065ec181c8afe6e9d38373
+             log /private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/teams/afkmode/verify/closestat.log
+skill        PASS     exit 0 in 62s, 0 flag(s)
+             head 55842b8bd408dfb91bceac1551d02aa619415528
+             log /private/tmp/claude-501/bnruns/bn4tu2e1us/twhome/teams/afkmode/verify/skill.log
+revbudget    SKIPPED  0 flag(s)
+             the member was removed
+revstophold  SKIPPED  0 flag(s)
+             the member was removed
+revclosestat SKIPPED  0 flag(s)
+             the member was removed
+revstart     SKIPPED  0 flag(s)
+             the member was removed
+revskill     SKIPPED  0 flag(s)
+             the member was removed
+closer       SKIPPED  0 flag(s)
+             a pane member with no check
+
+clean
+verify exit 0

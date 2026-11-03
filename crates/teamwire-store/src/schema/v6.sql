@@ -1,18 +1,19 @@
--- teamwire schema version 6: a team records the tickets it works on
--- (ADR 0026), and a new event type, `team.refs_added`, records refs that a
--- later `launch --add` appended. The column holds a JSON array of
--- `{"provider": ..., "id": ...}` objects in first-recorded order; a team
--- launched without refs holds `[]`.
+-- teamwire schema version 6: a new event type, `member.refused`, records a
+-- member that launch turned away before it started: the AFK budget had
+-- ended, or the team had started closing. The `events.type` CHECK is a
+-- closed list and SQLite cannot change a CHECK in place, so the table is
+-- rebuilt exactly as version 4 rebuilt it: the old one is renamed, the new
+-- one is created with the longer list, and every row is copied with its
+-- `seq`. The migration runs inside the one transaction that also sets
+-- `user_version`, so a crash before the commit leaves version 5 untouched.
 --
--- The `events.type` CHECK is a closed list and SQLite cannot change a CHECK
--- in place, so the table is rebuilt exactly as version 4 did: the old one is
--- renamed, the new one is created with the longer list, every row is copied
--- with its `seq`, and the `AUTOINCREMENT` counter is restored so that a `seq`
--- already given out is never given out again. Nothing else refers to
--- `events`, so the rename rewrites no other object. The migration runs inside
--- the one transaction that also sets `user_version`.
-
-ALTER TABLE team ADD COLUMN refs TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(refs));
+-- Nothing else refers to `events` (no foreign key, trigger or view), so
+-- the rename rewrites no other object. The `AUTOINCREMENT` counter lives in
+-- `sqlite_sequence` under the table's name. The rename carries it to
+-- `events_old`, the copy leaves it at the highest copied `seq`, and the
+-- UPDATE restores the old value, which is higher when the newest rows were
+-- deleted. A `seq` already given out, and already read by `metric_export`,
+-- is never given out again.
 
 ALTER TABLE events RENAME TO events_old;
 
@@ -22,8 +23,8 @@ CREATE TABLE events (
     time           TEXT    NOT NULL,
     type           TEXT    NOT NULL CHECK (type IN (
         'team.created', 'team.closing', 'team.closed', 'team.lead_adopted',
-        'team.refs_added',
-        'member.creating', 'member.started', 'member.failed', 'member.replaced',
+        'member.creating', 'member.started', 'member.failed', 'member.refused',
+        'member.replaced',
         'member.removed', 'member.reprompted', 'member.completed',
         'member.completion_refused', 'member.held',
         'message.sent', 'message.refused',

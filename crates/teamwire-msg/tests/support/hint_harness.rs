@@ -87,9 +87,6 @@ impl Harness for HintHarness {
         }
         self.inner.resume_spec(m, s)
     }
-    fn current_session(&self) -> Option<CallerSession> {
-        None
-    }
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         Some(CallerSession {
             id: SessionId::parse(&get(self.key)?).unwrap(),

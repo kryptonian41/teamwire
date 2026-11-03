@@ -105,6 +105,7 @@ fn harness_setup(harness: &FakeHarness) -> HarnessSetup<'_> {
             otel: OtelConfig::default(),
             teamwire_bin: "/bin/teamwire".into(),
             plugins: std::collections::BTreeMap::new(),
+            context_handoff_tokens: None,
             accept_trust: false,
         },
         turn_end_stdin: br#"{"session_id":"member-1","stop_hook_active":false}"#.to_vec(),
@@ -153,6 +154,16 @@ fn harness_contract_fails_when_a_running_session_reads_dead() {
 }
 
 #[test]
+#[should_panic(expected = "launch_spec keeps the value of TEAMWIRE_TOKEN out of argv")]
+fn harness_contract_fails_when_a_secret_is_in_argv() {
+    let harness = FakeHarness::new();
+    let mut setup = harness_setup(&harness);
+    // The fake puts the session id in argv, so a token with that value is there too.
+    setup.member.identity = vec![("TEAMWIRE_TOKEN".into(), "member-1".into())];
+    harness_contract(&setup);
+}
+
+#[test]
 fn escalated_dialog_text_is_a_dialog_too() {
     let harness = FakeHarness::new();
     let mut setup = harness_setup(&harness);
@@ -196,6 +207,116 @@ fn fake_platform_passes_platform_contract() {
         dir.path(),
         RunCase::unix_standard(),
     ));
+}
+
+#[test]
+#[should_panic(expected = "a timeout kills what the child started too: the grandchild is gone")]
+fn platform_contract_fails_when_a_timeout_leaves_the_grandchild_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    // The queue holds what a platform that kept the grandchild would say.
+    platform.set_alive(Pid::new(555), true);
+    for case in &cases {
+        let mut out = case.expect.conforming_output();
+        if case.expect.ends_grandchild {
+            out.stdout = b"555\n".to_vec();
+        }
+        platform.queue_run(Ok(out));
+    }
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
+}
+
+/// The run outputs for `cases`, where the grandchild case's first `killed`
+/// runs time out before the child printed its pid.
+fn queue_with_early_kills(platform: &FakePlatform, cases: &[RunCase], killed: usize) {
+    for case in cases {
+        if case.expect.ends_grandchild {
+            for _ in 0..killed {
+                platform.queue_run(Ok(teamwire_core::RunOutput {
+                    stdout: Vec::new(),
+                    ..case.expect.conforming_output()
+                }));
+            }
+        }
+        platform.queue_run(Ok(case.expect.conforming_output()));
+    }
+}
+
+#[test]
+fn platform_contract_tries_longer_timeouts_until_the_child_prints_its_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    queue_with_early_kills(&platform, &cases, 2);
+    let grandchild = cases.iter().find(|c| c.expect.ends_grandchild).unwrap();
+    let command = grandchild.command.clone();
+    platform_contract(&PlatformSetup {
+        run_cases: cases,
+        ..setup
+    });
+    let timeouts: Vec<Duration> = platform
+        .runs()
+        .into_iter()
+        .filter(|(cmd, _)| *cmd == command)
+        .map(|(_, timeout)| timeout)
+        .collect();
+    assert_eq!(
+        timeouts,
+        [
+            Duration::from_millis(300),
+            Duration::from_secs(3),
+            Duration::from_secs(30)
+        ]
+    );
+}
+
+/// A grandchild that ends on its own before the last attempt's timeout lets a
+/// platform that leaks it pass, and lets the shell exit 0 before a correct
+/// platform kills it. So its sleep must outlast the longest attempt.
+#[test]
+fn the_grandchild_outlives_the_longest_attempt() {
+    let cases = RunCase::unix_standard();
+    let case = cases.iter().find(|c| c.expect.ends_grandchild).unwrap();
+    let longest = case.timeout.saturating_mul(100);
+    let script = case.command.args.last().unwrap();
+    let secs: u64 = script
+        .strip_prefix("sleep ")
+        .and_then(|rest| rest.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .expect("the grandchild case starts with `sleep <seconds>`");
+    assert!(
+        Duration::from_secs(secs) >= longest.saturating_mul(2),
+        "sleep {secs} against a longest attempt of {longest:?}"
+    );
+}
+
+#[test]
+fn platform_contract_fails_when_no_attempt_prints_a_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let platform = FakePlatform::new();
+    let cases = RunCase::unix_standard();
+    let setup = platform_setup(&platform, dir.path(), Vec::new());
+    queue_with_early_kills(&platform, &cases, 3);
+    let failed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        platform_contract(&PlatformSetup {
+            run_cases: cases,
+            ..setup
+        });
+    }))
+    .unwrap_err();
+    let message = failed.downcast_ref::<String>().unwrap();
+    assert!(
+        message.ends_with(
+            "a timeout kills what the child started too: the grandchild is gone: \"the child printed no pid\""
+        ),
+        "{message}"
+    );
 }
 
 #[test]

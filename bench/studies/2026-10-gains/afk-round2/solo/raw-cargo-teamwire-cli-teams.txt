@@ -1,0 +1,12 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.26s
+     Running tests/teams.rs (/private/tmp/claude-501/bench-target/debug/deps/teams-ff0297e0b5eebb1c)
+
+running 4 tests
+test a_send_to_a_quiet_member_or_an_unknown_team_is_refused ... ok
+test an_afk_team_is_marked_in_text_and_carries_its_budget_in_json ... ok
+test teams_lists_every_team_with_how_to_address_it ... ok
+test a_member_sends_to_another_team_and_the_copy_is_stored_there ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+

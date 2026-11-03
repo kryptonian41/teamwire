@@ -134,14 +134,23 @@ fn check_input_ready(
         return Err(blocked("the harness"));
     }
     if host.capabilities().guards_dialogs {
+        if harness.capabilities().reads_input_box {
+            return check_box_empty(harness, host, place, budget);
+        }
         return Ok(());
     }
     // A screen the harness cannot read yet (a redraw, a slow start) is read
     // again a few times, as a busy host is. A dialog is final at once.
     for tries in 1..=MAX_TRIES {
-        let tail = host
-            .read_tail(place, TAIL_LINES, budget.call()?)
-            .map_err(DeliveryError::from)?;
+        let timeout = budget.call()?;
+        // A harness that reads the input box tells dim placeholder text from
+        // typed text by its style codes.
+        let tail = if harness.capabilities().reads_input_box {
+            host.read_tail_styled(place, TAIL_LINES, timeout)
+        } else {
+            host.read_tail(place, TAIL_LINES, timeout)
+        }
+        .map_err(DeliveryError::from)?;
         match harness.screen_state(&tail) {
             ScreenState::InputPrompt => return Ok(()),
             ScreenState::Unknown if tries < MAX_TRIES => {
@@ -154,6 +163,35 @@ fn check_input_ready(
     Err(DeliveryError::new(
         DeliveryErrorCode::NotAtInputPrompt,
         "the screen does not show the input prompt",
+    ))
+}
+
+/// A host that guards dialogs refuses them itself, but still types after
+/// text a person left in the input box. The box is read again a few times,
+/// as an unreadable screen is, because the person may be about to send it.
+fn check_box_empty(
+    harness: &dyn Harness,
+    host: &dyn Host,
+    place: &Place,
+    budget: &Budget<'_>,
+) -> Result<(), DeliveryError> {
+    for tries in 1..=MAX_TRIES {
+        // A screen the host cannot give says nothing about the box, and the
+        // host still guards dialogs, so the line goes as it did before.
+        let Ok(tail) = host.read_tail_styled(place, TAIL_LINES, budget.call()?) else {
+            return Ok(());
+        };
+        if !harness.box_holds_text(&tail) {
+            return Ok(());
+        }
+        if tries < MAX_TRIES {
+            let pause = RETRY_PAUSE * tries;
+            thread::sleep(budget.left().map_or(pause, |left| pause.min(left)));
+        }
+    }
+    Err(DeliveryError::new(
+        DeliveryErrorCode::NotAtInputPrompt,
+        "the input box holds text someone typed",
     ))
 }
 

@@ -18,6 +18,21 @@ case "${1:-full}" in
   *) echo "usage: scripts/gate.sh [fast]" >&2; exit 3 ;;
 esac
 
+# The ref that tidy compares against: $TEAMWIRE_BASE, else a local main, else
+# origin/main (a fresh clone has only the remote branch).
+base="${TEAMWIRE_BASE:-}"
+if [ -z "$base" ]; then
+  if git rev-parse --verify --quiet refs/heads/main >/dev/null; then
+    base=main
+  elif git rev-parse --verify --quiet refs/remotes/origin/main >/dev/null; then
+    base=origin/main
+  else
+    echo "gate: no local main and no origin/main; set TEAMWIRE_BASE to the ref to compare against" >&2
+    exit 1
+  fi
+fi
+echo "gate: base: $base"
+
 log="$(mktemp -t teamwire-gate.XXXXXX)"
 trap 'rm -f "$log"' EXIT
 
@@ -36,7 +51,7 @@ step() {
 }
 
 step 1 fmt cargo fmt --all -- --check
-step 2 tidy cargo xtask tidy --base main
+step 2 tidy cargo xtask tidy --base "$base"
 step 3 clippy cargo clippy --workspace --all-targets --locked -- -D warnings
 if [ "$last" -eq 3 ]; then
   exit 0
@@ -44,6 +59,8 @@ fi
 # cargo build, not cargo test, writes the dep-info files that the prebuilt
 # fakes are checked against (tests/fakes/src/bins.rs), so a fresh checkout
 # needs it before the tests skip their own rebuild of the fakes.
-step 4 test sh -c 'cargo build --workspace --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo test --workspace --locked'
+# --all-targets turns on the dev-dependencies' features too, so cargo test
+# reuses every crate this build made instead of compiling 16 of them again.
+step 4 test sh -c 'cargo build --workspace --all-targets --locked && TEAMWIRE_FAKES_PREBUILT=1 cargo nextest run --workspace --locked'
 step 5 doc env RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --locked
 step 6 docs scripts/check-docs.sh

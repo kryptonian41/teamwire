@@ -19,6 +19,11 @@ pub(super) const REFERENCE_TEXT: &str =
 /// The skill for a run the user is away from, rendered as `/teamwire:afk`.
 pub(super) const AFK_TEXT: &str = include_str!("../../../../examples/skills/afk/SKILL.md");
 
+/// The skill a lead loads when promptwire is installed, rendered as
+/// `teamwire:promptwire`.
+pub(super) const PROMPTWIRE_TEXT: &str =
+    include_str!("../../../../examples/skills/promptwire/SKILL.md");
+
 /// The frontmatter key of the stamp. It sits under `metadata`, the map the
 /// skill format leaves for a tool's own keys.
 const STAMP_KEY: &str = "  teamwire-sha256: ";
@@ -159,7 +164,7 @@ mod tests {
     fn the_shipped_skills_can_be_stamped_and_have_no_metadata_of_their_own() {
         // A `metadata` key in a shipped file would make the stamp a
         // duplicate YAML key.
-        for text in [SKILL_TEXT, AFK_TEXT] {
+        for text in [SKILL_TEXT, AFK_TEXT, PROMPTWIRE_TEXT] {
             let head = text.get(..frontmatter_end(text).unwrap()).unwrap();
             assert!(!head.contains("\nmetadata:"));
             let stamped = stamp(text).unwrap();

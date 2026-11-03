@@ -44,9 +44,11 @@ fn bed(session: Option<&str>) -> Bed {
         claude_config_dir: None,
         codex_test_home: None,
         codex_home: None,
+        pi_agent_dir: None,
         lead_harness: None,
         claude_session: None,
         codex_thread: None,
+        pi_marker: None,
     })
     .unwrap();
     wiring.registry = Registry::new();
@@ -270,10 +272,12 @@ fn the_lead_stop_hook_with_an_unknown_harness_says_nothing() {
 #[test]
 fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
     let mut bed = bed(None);
+    let lead = lead_harness_of(bed.home.path(), &bed.team);
+    assert_eq!(lead.as_ref().map(HarnessId::as_str), Some("fake-a"));
     bed.wiring.registry = Registry::new();
-    assert!(lead_reads_watch_lines(
-        bed.home.path(),
-        &bed.team,
-        &bed.wiring
-    ));
+    assert!(lead_reads_watch_lines(lead.as_ref(), &bed.wiring));
+    // A team that could not be read gives no harness, and the same wording.
+    let gone = TeamName::parse("gone").unwrap();
+    assert_eq!(lead_harness_of(bed.home.path(), &gone), None);
+    assert!(lead_reads_watch_lines(None, &bed.wiring));
 }

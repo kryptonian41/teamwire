@@ -6,9 +6,9 @@
 
 use std::time::Duration;
 
+use teamwire_core::screen::{STARTUP_HOST_TIMEOUT, StartupPoll};
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, Host, HostErrorCode, Key, Place, ScreenState, StartupOutcome,
-    TrustPolicy,
+    HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
 };
 
 use crate::screen::{
@@ -23,28 +23,8 @@ const LOGIN_MARKERS: [&str; 3] = [
     "Finish signing in via your browser",
 ];
 
-/// How many screen lines to read for the dialog: more than any terminal is
-/// tall, so a tall dialog is read whole.
-const TAIL_LINES: u16 = 1000;
-const HOST_TIMEOUT: Duration = Duration::from_secs(5);
-
-/// How long `answer_startup` waits: `steps` reads, `step` apart. A count of
-/// sleeps bounds the wait because the clock is not readable here.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StartupPoll {
-    pub step: Duration,
-    pub steps: u32,
-}
-
-impl Default for StartupPoll {
-    /// About 30 s in half-second steps.
-    fn default() -> Self {
-        Self {
-            step: Duration::from_millis(500),
-            steps: 60,
-        }
-    }
-}
+/// The timeout of each key teamwire sends to a starting member.
+const HOST_TIMEOUT: Duration = STARTUP_HOST_TIMEOUT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Dialog {
@@ -133,16 +113,6 @@ fn timeout() -> HarnessError {
     )
 }
 
-/// The steps a read that ran out of `HOST_TIMEOUT` uses up: the steps that time
-/// covers. At most a sixth of the loop, so a loop always allows six such reads
-/// whatever `step` is.
-fn timed_out_steps(poll: StartupPoll) -> u32 {
-    let covered = HOST_TIMEOUT.as_millis() / poll.step.as_millis().max(1);
-    u32::try_from(covered)
-        .unwrap_or(u32::MAX)
-        .clamp(1, (poll.steps / 6).max(1))
-}
-
 /// Watches the member's screen until it shows the composer. Folder trust is
 /// answered when `policy` allows. The update prompt is skipped and the resume
 /// folder prompt keeps the session's folder. The hooks review is never
@@ -161,22 +131,9 @@ pub(crate) fn answer_startup(
     let mut left = poll.steps;
     while left > 0 {
         left -= 1;
-        // A read that ran out of its time, or that herdr refused because the
-        // agent is working, is "no screen this time": read again. A timed-out
-        // read also uses up the steps its 5 s covered, so the loop still ends
-        // after about `poll.steps * poll.step` plus one read; a busy read
-        // returns at once and costs nothing more. Any other host error ends
-        // the step.
-        let screen = match host.read_tail(place, TAIL_LINES, HOST_TIMEOUT) {
-            Ok(screen) => screen,
-            Err(e) if matches!(e.code, HostErrorCode::Timeout | HostErrorCode::Busy) => {
-                if e.code == HostErrorCode::Timeout {
-                    left = left.saturating_sub(timed_out_steps(poll) - 1);
-                }
-                std::thread::sleep(poll.step);
-                continue;
-            }
-            Err(e) => return Err(e.into()),
+        let Some(screen) = poll.read(host, place, &mut left)? else {
+            std::thread::sleep(poll.step);
+            continue;
         };
         match dialog_on(&screen) {
             Some(Dialog::Login) => {
@@ -197,7 +154,10 @@ pub(crate) fn answer_startup(
             }
             Some(Dialog::HooksReview) => return Ok(StartupOutcome::RefusedEscalated),
             Some(Dialog::Trust) if policy == TrustPolicy::Refuse => {
-                return Ok(StartupOutcome::RefusedEscalated);
+                return Err(HarnessError::new(
+                    HarnessErrorCode::Refused,
+                    "the spec does not accept the folder-trust dialog",
+                ));
             }
             Some(dialog) => {
                 // A key that moved the pointer has taken effect, so the next

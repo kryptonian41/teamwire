@@ -2,7 +2,7 @@
 //! its hold note. Each message id is reminded at most once (ADR 0003 point 8).
 
 use teamwire_core::{DeliveryState, Recipient, Role, Ulid};
-use teamwire_deliver::{is_pending_stale, line_holds_whole};
+use teamwire_deliver::{AttemptHistory, line_holds_whole};
 use teamwire_store::{Ctx, StoreError};
 
 use crate::note::unread_note;
@@ -51,7 +51,9 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
                 // hook, which also delivers the member's own result: the
                 // message is treated as not stale and left out.
                 if d.delivery.state == DeliveryState::Pending
-                    && !is_pending_stale(tx, &message, &recipient, now).unwrap_or_else(|e| {
+                    && !AttemptHistory::read(tx, &message, &recipient)
+                        .map(|a| a.is_stale(now))
+                        .unwrap_or_else(|e| {
                         tracing::warn!(error = %e, "could not tell whether a pending message is stale");
                         false
                     })
@@ -66,6 +68,40 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
         }
         Ok(out)
     })
+}
+
+/// Marks each delivery to `me` that a sender still holds `pending`
+/// (`delivery.recipient_stopped`, ADR 0028). `unread` leaves such a message
+/// to its sender, who may type it; if that sender then finds the member
+/// busy and gives up, no later stop would name it, so the sender reads the
+/// mark and tries again. The list and the marks are one write: a sender
+/// that records `undelivered` either commits first, and this stop's hold
+/// names the message, or commits after, and sees the mark.
+///
+/// Every turn end marks, the one after a hold too, since that one names
+/// nothing. Any store error is logged: a hook never fails a turn.
+pub(crate) fn mark_stopped(ctx: &mut Ctx<'_>, me: &Role) {
+    let now = ctx.clock.now();
+    let recipient = Recipient::Member(me.clone());
+    let marked = ctx.store.write(|tx| {
+        let reader = tx.reader();
+        let pending = reader.deliveries_for(&recipient, &[DeliveryState::Pending])?;
+        for d in &pending.items {
+            let Some(message) = reader.message(&d.delivery.message)? else {
+                continue;
+            };
+            // A stale row is a crashed sender's; `unread` names it instead.
+            // One whose age cannot be read is marked: a needless mark costs
+            // the sender one more try, a missing one loses the message.
+            if !AttemptHistory::read(&reader, &message, &recipient).is_ok_and(|a| a.is_stale(now)) {
+                tx.record_recipient_stopped(now, &message.ulid, &recipient)?;
+            }
+        }
+        Ok(())
+    });
+    if let Err(e) = marked {
+        tracing::warn!(error = %e, role = %me, "could not mark the deliveries still being sent");
+    }
 }
 
 /// The reminder of unread message ids for the in-turn hook, once per id.

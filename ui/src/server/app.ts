@@ -4,7 +4,7 @@
 import { NAME_RE, type MetricsView } from "../shared/teamwire.ts";
 import type { Problem } from "../shared/api.ts";
 import type { Runner } from "./cli.ts";
-import { archiveDir, listArchives, listFiles, readKindFile, teamDir } from "./files.ts";
+import { archiveDir, listArchives, listFiles, parseArchiveName, readKindFile, teamDir } from "./files.ts";
 import type { Poller } from "./poller.ts";
 import { json, problem, type Security } from "./security.ts";
 
@@ -29,6 +29,12 @@ const notFound = (detail: string) => problem(404, { code: "not_found", detail })
 /** The status for a CLI failure: the server is fine, the program behind it is not. */
 function cliFailure(problems: Problem[]): Response {
   return problem(502, problems[0] ?? { code: "cli_failed", detail: "teamwire failed" });
+}
+
+/** Turns a runner result into a response; a refused argument is the caller's mistake, not the CLI's. */
+function cliResponse(res: { ok: true; data: unknown } | { ok: false; problems: Problem[] }): Response {
+  if (res.ok) return json(res.data);
+  return res.problems[0]?.code === "bad_request" ? problem(400, res.problems[0]) : cliFailure(res.problems);
 }
 
 export function createApp(deps: AppDeps): App {
@@ -69,13 +75,21 @@ export function createApp(deps: AppDeps): App {
     });
   }
 
-  async function teamRoute(team: string, rest: string[]): Promise<Response> {
+  async function teamRoute(team: string, rest: string[], query: URLSearchParams): Promise<Response> {
     const dir = await teamDir(deps.home, team);
     if (!dir) return notFound(`no team named ${team}`);
     const [what, a, b] = rest;
     if (what === "log" && rest.length === 1) {
       const res = await deps.run({ cmd: "log", team });
       return res.ok ? json(res.data) : cliFailure(res.problems);
+    }
+    if (what === "timeline" && rest.length === 1) {
+      const raw = query.get("after");
+      // Digits only: Number() would accept "", " 1", "1e3" and "0x10".
+      if (raw !== null && !/^\d{1,15}$/.test(raw)) {
+        return problem(400, { code: "bad_request", detail: "after must be a non-negative integer" });
+      }
+      return cliResponse(await deps.run(raw === null ? { cmd: "events", team } : { cmd: "events", team, after: Number(raw) }));
     }
     if (what === "files" && rest.length === 1) return json(await listFiles(dir));
     if (what === "file" && rest.length === 3 && a && b) return fileResponse(dir, a, b);
@@ -104,6 +118,12 @@ export function createApp(deps: AppDeps): App {
       const dir = await archiveDir(deps.home, dirName);
       if (!dir) return notFound(`no archive named ${dirName}`);
       return fileResponse(dir, kind, name);
+    }
+    if (rest.length === 2 && dirName && what === "timeline") {
+      const archive = await archiveDir(deps.home, dirName);
+      const parsed = parseArchiveName(dirName);
+      if (!archive || !parsed) return notFound(`no archive named ${dirName}`);
+      return cliResponse(await deps.run({ cmd: "eventsArchive", team: parsed.team, archive: dirName }));
     }
     return notFound("no such route");
   }
@@ -140,7 +160,7 @@ export function createApp(deps: AppDeps): App {
         if (head === "events" && rest.length === 0) return events(req);
         if (head === "metrics" && rest.length === 0) return await metrics();
         if (head === "archives") return await archiveRoute(rest);
-        if (head === "teams" && rest[0]) return await teamRoute(rest[0], rest.slice(1));
+        if (head === "teams" && rest[0]) return await teamRoute(rest[0], rest.slice(1), url.searchParams);
       } catch (e) {
         return problem(500, { code: "cli_failed", detail: `server error: ${(e as Error).message}` });
       }

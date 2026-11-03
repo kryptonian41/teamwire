@@ -12,6 +12,7 @@
 mod adapters;
 mod base;
 mod code_text;
+mod connection;
 mod crates;
 #[cfg(test)]
 mod fixture;
@@ -61,7 +62,8 @@ fn say(line: &str) {
     println!("{line}");
 }
 
-fn run(args: Vec<String>) -> Result<Findings> {
+/// The `--base` ref of `tidy [--base <ref>]`.
+fn parse_args(args: Vec<String>) -> Result<Option<String>> {
     let mut args = args.into_iter();
     match args.next().as_deref() {
         Some("tidy") => {}
@@ -74,6 +76,11 @@ fn run(args: Vec<String>) -> Result<Findings> {
             _ => bail!("unknown argument {arg:?}; {USAGE}"),
         }
     }
+    Ok(base)
+}
+
+fn run(args: Vec<String>) -> Result<Findings> {
+    let base = parse_args(args)?;
     let root = repo_root()?;
     let metadata = layers::cargo_metadata(&root)?;
     let mut found = tidy(&root, &metadata)?;
@@ -119,6 +126,7 @@ fn tidy(root: &Path, metadata: &Value) -> Result<Findings> {
     sizes::check_sizes(root, &mut found)?;
     layers::check_layers(metadata, &mut found.problems);
     adapters::check_adapters(root, &mut found.problems)?;
+    connection::check_connection(root, &members, &mut found.problems)?;
     Ok(found)
 }
 
@@ -323,8 +331,14 @@ mod tests {
 
     #[test]
     fn base_is_accepted_and_unknown_flags_refused() {
-        assert!(run(vec!["tidy".into(), "--base".into()]).is_err());
-        assert!(run(vec!["tidy".into(), "--nope".into()]).is_err());
-        assert!(run(vec!["lint".into()]).is_err());
+        let args = |a: &[&str]| a.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            parse_args(args(&["tidy", "--base", "main"])).unwrap(),
+            Some("main".to_owned())
+        );
+        assert_eq!(parse_args(args(&["tidy"])).unwrap(), None);
+        assert!(parse_args(args(&["tidy", "--base"])).is_err());
+        assert!(parse_args(args(&["tidy", "--nope"])).is_err());
+        assert!(parse_args(args(&["lint"])).is_err());
     }
 }

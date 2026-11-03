@@ -9,6 +9,7 @@ comment_prefixes = ["//"]
 ignore_in_strings = true
 test_paths = ["**/tests/**", "**/tests.rs", "**/*_test.rs"]
 test_markers = ["#[test]", "#[tokio::test", "#[proptest", "proptest!"]
+assert_markers = ["assert", "debug_assert"]
 config_files = [
   "**/clippy.toml",
   "**/.clippy.toml",
@@ -30,28 +31,34 @@ sections = ["lints", "workspace.lints"]
 [[weakening]]
 id = "ignore"
 contains = "#[ignore"
+squeeze = true
 
 [[weakening]]
 id = "should-panic"
 contains = "#[should_panic"
+squeeze = true
 
 [[weakening]]
 id = "allow"
 contains = "#[allow("
+squeeze = true
 
 [[weakening]]
 id = "inner-allow"
 contains = "#![allow("
+squeeze = true
 
 # A new `expect` may have a real reason. It is flagged so the lead reads the
 # reason and waives it, or has it removed.
 [[weakening]]
 id = "expect"
 contains = "#[expect("
+squeeze = true
 
 [[weakening]]
 id = "inner-expect"
 contains = "#![expect("
+squeeze = true
 
 # `#[cfg_attr(test, ignore)]` ignores a test without writing `#[ignore`. The
 # attribute must be `ignore` itself, not a lint such as `ignored_unit_patterns`.
@@ -75,15 +82,52 @@ id = "cfg-attr-ignore-list"
 contains = "cfg_attr("
 and_contains = [", ignore,"]
 
+# The same with spaces inside: `cfg_attr(test , ignore)`.
+[[weakening]]
+id = "cfg-attr-ignore-squeezed"
+contains = "cfg_attr("
+and_contains = [",ignore)"]
+squeeze = true
+
+[[weakening]]
+id = "cfg-attr-ignore-eq-squeezed"
+contains = "cfg_attr("
+and_contains = [",ignore="]
+squeeze = true
+
+[[weakening]]
+id = "cfg-attr-ignore-list-squeezed"
+contains = "cfg_attr("
+and_contains = [",ignore,"]
+squeeze = true
+
 # A cfg that is never true compiles the item out, so a test above it never runs.
 [[weakening]]
 id = "cfg-never"
 contains = "#[cfg(any())]"
+squeeze = true
 
 [[weakening]]
 id = "cfg-never-false"
 contains = "#[cfg(FALSE)]"
+squeeze = true
 
 [[weakening]]
 id = "cfg-never-not-all"
 contains = "#[cfg(not(all()))]"
+squeeze = true
+
+[[weakening]]
+id = "inner-cfg-never"
+contains = "#![cfg(any())]"
+squeeze = true
+
+[[weakening]]
+id = "inner-cfg-never-false"
+contains = "#![cfg(FALSE)]"
+squeeze = true
+
+[[weakening]]
+id = "inner-cfg-never-not-all"
+contains = "#![cfg(not(all()))]"
+squeeze = true

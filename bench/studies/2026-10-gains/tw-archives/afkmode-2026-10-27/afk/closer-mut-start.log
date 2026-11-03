@@ -1,0 +1,74 @@
+## S2a-already-running  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if let Some(open) = open_afk_team_of(env, &session.id) {
++    if let Some(open) = None::<TeamName> {
+test afk_start_refuses_a_session_that_already_leads_an_open_afk_team ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2b-team-exists  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if database_path(env.home, &team).is_file() {
++    if false {
+test afk_start_refuses_a_taken_team_name ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2c-no-lead-process  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if env.platform.sleep_hold().is_some()
++    if false
+test afk_start_with_no_lead_process_refuses_and_creates_nothing ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2d-hold-condition  1 file changed, 1 insertion(+), 1 deletion(-)
+-    if env.platform.sleep_hold().is_some()
++    if true
+test afk_start_on_a_platform_without_a_hold_creates_the_team_and_warns ... FAILED
+test result: FAILED. 7 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2e-task-copy  1 file changed, 1 insertion(+), 1 deletion(-)
+-                .write_atomic(&afk_dir.join("task.md"), &task)
++                .write_atomic(&afk_dir.join("other.md"), &task)
+test afk_start_creates_the_team_copies_the_task_and_takes_the_hold ... FAILED
+test afk_start_on_a_platform_without_a_hold_creates_the_team_and_warns ... FAILED
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2f-no-hold  1 file changed, 1 insertion(+), 1 deletion(-)
+-    hold::ensure_hold(
++    let _ = (
+test afk_start_on_a_platform_without_a_hold_creates_the_team_and_warns ... FAILED
+test afk_start_creates_the_team_copies_the_task_and_takes_the_hold ... FAILED
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S2g-no-lead-cwd  1 file changed, 1 insertion(+), 1 deletion(-)
+-            tx.create_afk_team(at, &row, budget_ends_at, &json!({ "lead_cwd": cwd }))
++            tx.create_afk_team(at, &row, budget_ends_at, &json!({ "x": cwd }))
+test afk_start_records_the_current_directory_when_the_harness_cannot_place_the_lead ... FAILED
+test afk_start_creates_the_team_copies_the_task_and_takes_the_hold ... FAILED
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+error: test failed, to rerun pass `-p teamwire-launch --test afk_start`
+error: 1 target failed:
+## S3-host-none  1 file changed, 1 insertion(+), 1 deletion(-)
+-    let mut checks = vec![if inputs.host == Host::None {
++    let mut checks = vec![if false {
+test launch_checks_fail_on_host_none_and_keep_the_plugin_check ... FAILED
+test result: FAILED. 43 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.78s
+error: test failed, to rerun pass `-p teamwire-cli --test doctor`
+error: 1 target failed:
+## S1 cmd/afk.rs = afk/base stub
+test afk_start_that_cannot_copy_the_task_exits_two_and_names_the_team ... FAILED
+test afk_start_outside_a_lead_session_is_refused ... FAILED
+test afk_start_prints_the_run_and_exits_zero ... FAILED
+test afk_start_refuses_when_a_doctor_check_fails ... FAILED
+test afk_start_refuses_a_missing_or_empty_task_file ... FAILED
+test afk_start_refuses_a_bad_name_title_or_budget_and_creates_nothing ... FAILED
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.84s
+error: test failed, to rerun pass `-p teamwire-cli --test afk`
+error: 1 target failed:
+## S1b doctor FAIL ignored  1 file changed, 1 insertion(+), 1 deletion(-)
+test afk_start_refuses_when_a_doctor_check_fails ... FAILED
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+error: test failed, to rerun pass `-p teamwire-cli --test afk`
+error: 1 target failed:

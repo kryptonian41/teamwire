@@ -5,6 +5,7 @@
 //! Every marker below is text from a snapshot file of Codex's TUI
 //! (`tui/src/**/snapshots/*.snap`, commit `8c07694`).
 
+pub(crate) use teamwire_core::screen::{has_any, squash};
 use teamwire_core::{OneLine, ScreenState};
 
 /// The folder-trust dialog (`onboarding/trust_directory.rs`).
@@ -48,16 +49,6 @@ const BOX_LINES: usize = 20;
 /// How much of a submitted line is looked for in the composer. The composer
 /// wraps a long line, but its first row holds the start.
 const PREFIX_CHARS: usize = 40;
-
-/// The text with each run of whitespace made one space, so a phrase that the
-/// terminal wrapped onto two lines still matches.
-pub(crate) fn squash(text: &str) -> String {
-    text.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
-pub(crate) fn has_any(squashed: &str, markers: &[&str]) -> bool {
-    markers.iter().any(|m| squashed.contains(m))
-}
 
 /// The text after the pointer `›` (U+203A) that starts Codex's composer line
 /// and marks the selected choice of a dialog.

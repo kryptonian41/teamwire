@@ -76,6 +76,14 @@ macro_rules! platform_impl {
                 files::write_atomic(path, bytes)
             }
 
+            fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+                files::create_dir_all(path)
+            }
+
+            fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+                files::remove_dir_all(path)
+            }
+
             fn sleep_hold(&self) -> Option<&dyn SleepHold> {
                 let $me = self;
                 $hold
@@ -110,7 +118,12 @@ pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now(&self) -> Timestamp {
-        Timestamp::from_datetime(OffsetDateTime::now_utc())
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "SystemClock is the one Clock that reads the real wall clock"
+        )]
+        let now = OffsetDateTime::now_utc();
+        Timestamp::from_datetime(now)
     }
 
     #[expect(

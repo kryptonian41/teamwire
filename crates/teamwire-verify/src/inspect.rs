@@ -73,6 +73,8 @@ struct FileState {
     new_line: u32,
     tests_added: usize,
     tests_removed: usize,
+    asserts_added: usize,
+    asserts_removed: usize,
     /// Added lines, and removed lines, that fall in a lint table of a manifest.
     lint_added: Vec<u32>,
     lint_removed: Vec<u32>,
@@ -127,6 +129,9 @@ fn scan_patch(patch: &str, rules: &Ruleset) -> (Vec<RawFlag>, Vec<FileState>) {
                 if rules.is_test_marker(&path, added) {
                     file.tests_added += 1;
                 }
+                if rules.is_assert_line(&path, added) {
+                    file.asserts_added += 1;
+                }
                 if rules.lint_sections(&path).is_some() {
                     file.lint_added.push(file.new_line);
                 }
@@ -136,6 +141,9 @@ fn scan_patch(patch: &str, rules: &Ruleset) -> (Vec<RawFlag>, Vec<FileState>) {
             if let Some(path) = file.old_path.clone() {
                 if rules.is_test_marker(&path, removed) {
                     file.tests_removed += 1;
+                }
+                if rules.is_assert_line(&path, removed) {
+                    file.asserts_removed += 1;
                 }
                 if rules.lint_sections(&path).is_some() {
                     file.lint_removed.push(file.old_line);
@@ -154,6 +162,7 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
         return flags;
     };
     flags.extend(test_removed_flag(file, path, rules));
+    flags.extend(asserts_removed_flag(file, path));
     let Some(sections) = rules.lint_sections(path) else {
         return flags;
     };
@@ -201,6 +210,21 @@ fn test_removed_flag(file: &FileState, path: &str, rules: &Ruleset) -> Option<Ra
             format!(
                 "{} test marker(s) removed and {} added in {path}",
                 file.tests_removed, file.tests_added
+            ),
+        )
+    })
+}
+
+/// More assert lines removed than added: a test that checks less. A deleted
+/// test file is already the `test-deleted` flag, and a deleted source file
+/// takes its asserts with it as it does its tests.
+fn asserts_removed_flag(file: &FileState, path: &str) -> Option<RawFlag> {
+    (file.asserts_removed > file.asserts_added && file.new_path.is_some()).then(|| {
+        RawFlag::new(
+            format!("asserts-removed:{path}"),
+            format!(
+                "{} assert line(s) removed and {} added in {path}",
+                file.asserts_removed, file.asserts_added
             ),
         )
     })

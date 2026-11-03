@@ -22,7 +22,12 @@ use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 use teamwire_host_tmux::Tmux;
 use teamwire_store::{Ctx, NewTeam, Party, Store};
 
-const T: Duration = Duration::from_secs(10);
+/// The budget of one tmux call. The limit only guards against a hang, and a
+/// loaded machine takes seconds to start a process.
+const T: Duration = Duration::from_secs(60);
+
+/// How many 50 ms looks make `T`.
+const LOOKS: u32 = 1200;
 
 static NEXT_SOCKET: AtomicU32 = AtomicU32::new(0);
 
@@ -83,7 +88,7 @@ fn write_file(path: &Path, text: &str) {
 }
 
 fn shows(host: &dyn Host, place: &Place, text: &str) -> bool {
-    for _ in 0..100 {
+    for _ in 0..LOOKS {
         if host.read_tail(place, 50, T).unwrap().contains(text) {
             return true;
         }
@@ -131,7 +136,9 @@ impl Rig {
                         .collect(),
                     env: Vec::new(),
                 },
-                T,
+                // The adapter splits a spawn's timeout among up to six tmux
+                // calls, so each still gets `T`.
+                T.saturating_mul(6),
             )
             .unwrap();
         let first_line = screen.lines().next().unwrap();
@@ -139,7 +146,12 @@ impl Rig {
             shows(tmux.as_ref(), &place, first_line),
             "the pane never showed its screen"
         );
-        let pane_pid = *tmux.occupant(&place, T).unwrap().pids.first().unwrap();
+        let pane_pid = *tmux
+            .occupant(&place, T.saturating_mul(2))
+            .unwrap()
+            .pids
+            .first()
+            .unwrap();
 
         // Claude Code's own record of the session, naming the pane's process.
         let claude_dir = tempfile::tempdir().unwrap();
@@ -237,8 +249,10 @@ fn no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane() {
     // tmux delivers keys to a pane in order. Once the marker has arrived, a
     // paste or Enter sent before it would have arrived too.
     let marker = [Key::Char('Z'), Key::Char('Q')];
-    rig.tmux.send_keys(&rig.place, &marker, T).unwrap();
-    for _ in 0..100 {
+    rig.tmux
+        .send_keys(&rig.place, &marker, T.saturating_mul(2))
+        .unwrap();
+    for _ in 0..LOOKS {
         if rig.typed().contains("ZQ") {
             break;
         }
@@ -258,7 +272,7 @@ fn a_pane_at_its_input_prompt_receives_the_line_and_an_enter() {
         ),
         "{outcome:?}"
     );
-    for _ in 0..100 {
+    for _ in 0..LOOKS {
         if rig.typed().contains("hello lead") {
             break;
         }
@@ -293,6 +307,7 @@ fn teamwire() -> std::process::Command {
 fn launch_with(
     herdr_env: Option<&str>,
     tmux: Option<&str>,
+    fake_tmux: bool,
 ) -> (std::process::Output, Option<String>) {
     let herdr = teamwire_fakes::FakeHerdrEnv::new().unwrap();
     let home = TestHome::new().unwrap();
@@ -307,6 +322,25 @@ fn launch_with(
         .env_clear()
         .envs(herdr.env())
         .env("TEAMWIRE_HOME", home.path());
+    if fake_tmux {
+        // A `tmux` that lists no panes and starts none.
+        let bin = work.path().join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let script = bin.join("tmux");
+        write_file(
+            &script,
+            "#!/bin/sh\nfor arg in \"$@\"; do\n  [ \"$arg\" = list-panes ] && exit 0\ndone\necho 'fake tmux starts no pane' >&2\nexit 1\n",
+        );
+        std::fs::set_permissions(&script, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        let path = std::env::var("PATH").unwrap_or_default();
+        let herdr_path = herdr
+            .env()
+            .into_iter()
+            .find_map(|(k, v)| (k == "PATH").then_some(v))
+            .unwrap_or(path);
+        cmd.env("PATH", format!("{}:{herdr_path}", bin.display()));
+    }
     if let Some(v) = herdr_env {
         cmd.env("HERDR_ENV", v);
     }
@@ -327,15 +361,25 @@ fn text(bytes: &[u8]) -> String {
 
 #[test]
 fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
-    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"));
+    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"), true);
     assert_eq!(recorded.as_deref(), Some("tmux"), "{}", text(&out.stderr));
-    // The member was to start in tmux, which is not on `PATH` here.
+    // The member was to start in tmux, whose fake starts no pane.
     assert_eq!(out.status.code(), Some(2));
     assert!(
-        text(&out.stdout).contains("could not run tmux"),
+        text(&out.stdout).contains("fake tmux starts no pane"),
         "{}",
         text(&out.stdout)
     );
+}
+
+/// LCH-25: launch does not rely on the host to refuse a live name, so a tmux
+/// that cannot list the names refuses the member and creates nothing.
+#[test]
+fn tmux_that_cannot_list_names_refuses_the_member() {
+    let (out, recorded) = launch_with(None, Some("/tmp/tmux-1/default,42,0"), false);
+    assert_eq!(recorded, None, "{}", text(&out.stderr));
+    let shown = format!("{}{}", text(&out.stdout), text(&out.stderr));
+    assert!(shown.contains("host_listing_failed"), "{shown}");
 }
 
 /// With both variables set, herdr is the fallback; the parents of the test
@@ -343,7 +387,7 @@ fn tmux_set_without_herdr_makes_tmux_the_leads_host() {
 /// among them. The walk itself is tested with a fake lookup in `doctor.rs`.
 #[test]
 fn herdr_env_wins_over_tmux() {
-    let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"));
+    let (out, recorded) = launch_with(Some("1"), Some("/tmp/tmux-1/default,42,0"), false);
     assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
     assert_eq!(recorded.as_deref(), Some("herdr"));
 }

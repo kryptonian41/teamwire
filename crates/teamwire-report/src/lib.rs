@@ -18,6 +18,7 @@ use thiserror::Error;
 mod decisions;
 mod done;
 mod final_message;
+mod handoff;
 mod lead_stop;
 mod note;
 mod paths;
@@ -32,6 +33,7 @@ pub use decisions::{
     TeamDecisions, find_blocks, read_decisions, repo_dirs,
 };
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
+pub use handoff::handoff_note;
 pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};
 pub use received::{Received, mark_received};
 pub use reminder::on_tool_use;

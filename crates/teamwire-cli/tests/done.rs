@@ -120,6 +120,15 @@ fn a_wrong_token_or_a_missing_identity_is_refused() {
     let run = done(&fx, &wrong, &["--status", "done", "--summary", "x"]);
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
     assert!(run.err.contains("refused.identity"), "{}", run.err);
+    let refused = fx
+        .store
+        .read(|tx| tx.events_of_type(teamwire_core::EventType::MessageRefused))
+        .unwrap();
+    assert_eq!(
+        refused.items.len(),
+        1,
+        "a wrong token is logged as MCP team_done logs it"
+    );
 
     let run = done(&fx, &[], &["--status", "done", "--summary", "x"]);
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
@@ -138,4 +147,34 @@ fn a_closed_team_refuses_and_stores_nothing() {
     assert_eq!(run.code, 1, "{}{}", run.out, run.err);
     assert!(run.err.contains("team_closed"), "{}", run.err);
     assert_eq!(stored(&fx), 0);
+}
+
+#[test]
+fn a_store_failure_leaves_a_row_named_for_the_command() {
+    let mut fx = team();
+    fx.store
+        .write(|tx| {
+            // Valid JSON, so the CHECK passes, but not a list of paths.
+            tx.connection()
+                .execute("UPDATE members SET owns = '{}'", [])?;
+            Ok(())
+        })
+        .unwrap();
+    let run = done(&fx, &as_api(), &["--status", "done", "--summary", "x"]);
+    assert_ne!(run.code, 0, "{}{}", run.out, run.err);
+    let errors: Vec<serde_json::Value> = fx
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "done", "code": "corrupt" })],
+        "{}{}",
+        run.out,
+        run.err
+    );
 }

@@ -18,7 +18,7 @@ use teamwire_core::{
     Refusal, RunOutput, SendRequest, Timestamp,
 };
 use teamwire_fakes::Fault;
-use teamwire_msg::{RecipientState, SendError, send, send_with};
+use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with};
 use teamwire_store::{Ctx, Store};
 
 use rig::{Rig, id, role, to};
@@ -520,6 +520,33 @@ fn a_comms_write_failure_does_not_lose_the_message_or_stop_delivery() {
 }
 
 #[test]
+fn a_comms_copy_that_was_not_written_is_named_as_such_in_the_lead_line() {
+    let mut rig = team_rig();
+    rig.platform
+        .fail_writes(Some(teamwire_core::PlatformError::new(
+            teamwire_core::PlatformErrorCode::NoSpace,
+            "disk full",
+        )));
+    let lead_place = teamwire_core::Place {
+        host: teamwire_core::HostId::from_static("fake"),
+        id: "p1".to_owned(),
+    };
+    let req = rig.request(
+        "web",
+        &["lead"],
+        MessageType::Finding,
+        &format!("the finding {}", "and more ".repeat(40)),
+    );
+    send(&mut rig.ctx(), req).unwrap();
+    let typed = rig.host.submitted(&lead_place);
+    let line = typed.last().expect("a line typed into the lead's place");
+    assert!(
+        line.contains("comms/m001.md (not written; run teamwire verify alpha --repair-files)"),
+        "{line}"
+    );
+}
+
+#[test]
 fn replaced_recipient_is_not_delivered() {
     let mut rig = team_rig();
     // The recipient's session is gone: the locator finds no live process.
@@ -607,6 +634,9 @@ fn resume_with_key_delivers_pending_and_undelivered_only() {
             )
         })
         .unwrap();
+    // The pending row's attempt is over a minute old, so no sender is
+    // still delivering it.
+    rig.clock.advance(Duration::from_secs(61));
     let mut req = rig.request(
         "scout",
         &["api", "web", "docs"],
@@ -637,6 +667,109 @@ fn resume_with_key_delivers_pending_and_undelivered_only() {
         rig.store.read(|tx| tx.counter("display_id")).unwrap(),
         Some(1)
     );
+}
+
+/// A first send with key `k1` to `api` that is still delivering: its row is
+/// committed `pending` and nothing has been typed yet.
+fn still_delivering(rig: &mut Rig) -> teamwire_store::StoredMessage {
+    let at = rig.now();
+    let new = teamwire_store::NewMessage {
+        sender: teamwire_core::Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "the finding".to_owned(),
+        client_key: Some("k1".to_owned()),
+        recipients: vec![to("api")],
+    };
+    rig.store.write(|tx| tx.insert_message(at, &new)).unwrap()
+}
+
+fn resume_k1(rig: &mut Rig) -> SendReport {
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    send(&mut rig.ctx(), req).unwrap()
+}
+
+#[test]
+fn a_resume_within_a_minute_of_the_attempt_skips_the_row() {
+    let mut rig = team_rig();
+    still_delivering(&mut rig);
+    rig.clock.advance(Duration::from_secs(59));
+    let report = resume_k1(&mut rig);
+    assert!(report.duplicate_of_key);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+}
+
+#[test]
+fn a_resume_claims_the_row_so_a_second_resume_skips_it() {
+    let mut rig = team_rig();
+    let stored = still_delivering(&mut rig);
+    rig.clock.advance(Duration::from_secs(61));
+    // The claim restarts the attempt clock, so a second resume that reads
+    // the row before this one records its outcome finds it busy.
+    let at = rig.now();
+    let attempts = rig
+        .store
+        .write(|tx| tx.begin_resend(at, &stored.message.ulid, &to("api")))
+        .unwrap();
+    assert_eq!(attempts, 1);
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+    rig.clock.advance(Duration::from_secs(61));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(only(&report).attempts, Some(2));
+    assert_eq!(all_submitted(&rig).len(), 1);
+    let resent = rig
+        .store
+        .read(|tx| {
+            tx.events_of_type(teamwire_core::EventType::DeliveryResent)?
+                .all_or_corrupt()
+        })
+        .unwrap();
+    assert_eq!(resent.len(), 2);
+}
+
+#[test]
+fn a_resume_skips_an_undelivered_row_another_command_just_claimed() {
+    let mut rig = team_rig();
+    rig.set_reachable("api", false);
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    let first = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(only(&first).state, RecipientState::Undelivered);
+    rig.set_reachable("api", true);
+    // Another resume claimed the row and is still typing: its claim is on
+    // record, its outcome is not.
+    let at = rig.now();
+    rig.store
+        .write(|tx| tx.begin_resend(at, &first.id, &to("api")))
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(2));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::Skipped);
+    assert!(all_submitted(&rig).is_empty());
+    // A minute on, that command is taken for dead and the row is retried.
+    rig.clock.advance(Duration::from_secs(61));
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(all_submitted(&rig).len(), 1);
+}
+
+#[test]
+fn a_resume_retries_an_undelivered_row_whose_last_attempt_ended() {
+    let mut rig = team_rig();
+    rig.set_reachable("api", false);
+    let mut req = rig.request("scout", &["api"], MessageType::Finding, "the finding");
+    req.client_key = Some("k1".to_owned());
+    send(&mut rig.ctx(), req).unwrap();
+    rig.set_reachable("api", true);
+    let report = resume_k1(&mut rig);
+    assert_eq!(only(&report).state, RecipientState::HandedOff);
+    assert_eq!(all_submitted(&rig).len(), 1);
 }
 
 #[test]

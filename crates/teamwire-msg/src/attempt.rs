@@ -4,13 +4,73 @@
 
 use serde_json::json;
 use teamwire_core::{
-    DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient, Refusal,
-    Route, TeamName, Timestamp,
+    Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
+    Refusal, Route, TeamName, TeamState, Timestamp,
 };
-use teamwire_deliver::{DeliveryOutcome, deliver_line, message_line_to};
+use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line, message_line_to};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
-use crate::{RecipientReport, SendError};
+use crate::send::record_refusal;
+use crate::{RecipientReport, RecipientState, SendError};
+
+/// Claims one more attempt at `row`, which the caller read earlier, for a
+/// resend or a send resumed by its key. `None` when another command is on
+/// the row: the row moved since the caller read it, or its latest attempt
+/// began under `PENDING_STALE` ago with no outcome recorded since, which is
+/// a command still delivering it. The checks, the count and its
+/// `delivery.resent` are one write, so of two commands claiming one row
+/// only the first types; the second sees the fresh attempt. A team that is
+/// not open refuses `team_closed`, recorded as `message.refused` (CLS-3).
+pub(crate) fn claim_attempt(
+    ctx: &mut Ctx<'_>,
+    actor: &Actor,
+    message: &Message,
+    row: &DeliveryRecord,
+) -> Result<Option<u32>, SendError> {
+    enum Claim {
+        Counted(u32),
+        Busy,
+        Closed,
+    }
+    let recipient = &row.delivery.recipient;
+    let now = ctx.clock.now();
+    let claim = ctx.store.write(|tx| {
+        let reader = tx.reader();
+        if reader.team()?.is_none_or(|t| t.state != TeamState::Open) {
+            return Ok(Claim::Closed);
+        }
+        let moved = reader.delivery(&message.ulid, recipient)?.is_none_or(|c| {
+            c.delivery.state != row.delivery.state || c.delivery.attempts != row.delivery.attempts
+        });
+        if moved || AttemptHistory::read(&reader, message, recipient)?.in_flight(now) {
+            return Ok(Claim::Busy);
+        }
+        tx.begin_resend(now, &message.ulid, recipient)
+            .map(Claim::Counted)
+    })?;
+    match claim {
+        Claim::Counted(attempts) => Ok(Some(attempts)),
+        Claim::Busy => Ok(None),
+        Claim::Closed => {
+            record_refusal(
+                ctx,
+                Some(actor),
+                &Refusal::TeamClosed,
+                Some(message.kind),
+                std::slice::from_ref(recipient),
+            );
+            Err(Refusal::TeamClosed.into())
+        }
+    }
+}
+
+/// The report for a row this command left to another.
+pub(crate) fn skipped(row: &DeliveryRecord) -> RecipientReport {
+    RecipientReport {
+        state: RecipientState::Skipped,
+        ..report_of(row)
+    }
+}
 
 /// The member's generation before a reprompt bumped it, kept to undo the
 /// bump when the reprompt is known not to have arrived.
@@ -57,19 +117,34 @@ pub(crate) fn earlier_bump(
     if message.kind != MessageType::Reprompt {
         return Ok(None);
     }
-    let (events, member) = ctx
-        .store
-        .read(|tx| Ok((tx.events_of_role(role)?.all_or_corrupt()?, tx.member(role)?)))?;
+    let (events, member) = ctx.store.read(|tx| {
+        let kinds = [
+            EventType::MemberCreating,
+            EventType::MemberReprompted,
+            EventType::MemberHandoff,
+        ];
+        Ok((tx.events_of_kinds(role, &kinds)?, tx.member(role)?))
+    })?;
     let Some(member) = member else {
         return Ok(None);
     };
     // Each generation with the time it started and the message that started
-    // it. A `member.creating` event starts generation 1, a bump pushes the
-    // next one, and its undo pops it again.
+    // it. A `member.creating` event starts generation 1, a bump or a handoff
+    // pushes the next one, and an undo pops a bump again. A handoff has no
+    // undo and no message.
     let mut starts: Vec<(u32, Timestamp, Option<String>)> = Vec::new();
     for e in &events {
         if e.kind == EventType::MemberCreating {
             starts = vec![(1, e.time, None)];
+        } else if e.kind == EventType::MemberHandoff {
+            if let Some(g) = e
+                .data
+                .get("generation")
+                .and_then(serde_json::Value::as_u64)
+                .and_then(|g| u32::try_from(g).ok())
+            {
+                starts.push((g, e.time, None));
+            }
         } else if e.kind == EventType::MemberReprompted {
             if e.data.get("undone") == Some(&json!(true)) {
                 if starts.len() > 1 {
@@ -131,6 +206,18 @@ pub(crate) fn bump_again(
     }
 }
 
+/// The most tries one command adds because the recipient's turn ended
+/// during its attempt (ADR 0028). A recipient that stops during each try was
+/// held for one more turn each time, and its next stop names the message.
+const MAX_STOP_RETRIES: usize = 3;
+
+/// What the outcome transaction did: recorded the row, or found that the
+/// recipient stopped since the last look and left it for another try.
+enum Written {
+    Recorded(Option<DeliveryRecord>),
+    TryAgain(usize),
+}
+
 /// Delivers `message` to one recipient, outside any transaction, and records
 /// the outcome in a short transaction of its own. A known failure of a
 /// reprompt gives the member's earlier generation back; an unconfirmed
@@ -151,6 +238,10 @@ pub(crate) fn deliver_one(
         .join(team.as_str())
         .join("comms")
         .join(format!("{}.md", message.display_id));
+    // A failed write leaves the copy missing or holding an older text, and
+    // the lead must not read either as this message.
+    let comms_written = *recipient != Recipient::Lead
+        || std::fs::read(&comms_path).is_ok_and(|b| b == message.body.as_bytes());
     let line = message_line_to(
         team,
         &message.display_id,
@@ -158,7 +249,10 @@ pub(crate) fn deliver_one(
         &message.sender,
         &message.body,
         recipient,
-        &comms_path,
+        CommsCopy {
+            path: &comms_path,
+            written: comms_written,
+        },
     );
     let party = match recipient {
         Recipient::Lead => Party::Lead,
@@ -170,34 +264,63 @@ pub(crate) fn deliver_one(
             )));
         }
     };
-    let outcome = deliver_line(ctx, &party, &line);
-    let (state, route, error) = forward_only(before, outcome);
-    let now = ctx.clock.now();
-    let update = DeliveryUpdate {
-        state,
-        route,
-        error,
-        attempts,
-    };
-    let record = ctx.store.write(|tx| {
-        let reader = tx.reader();
-        let current = reader.delivery(&message.ulid, recipient)?;
-        // The recipient may have read it, or another command handed it off,
-        // while this one was typing. Those states are final here. So is
-        // `unconfirmed` against a clean failure: the other command may have
-        // typed the line, and the store refuses that move (INV-5, REP-3).
-        if let Some(c) = &current
-            && (matches!(
-                c.delivery.state,
-                DeliveryState::Acked | DeliveryState::HandedOff
-            ) || (c.delivery.state == DeliveryState::Unconfirmed
-                && update.state == DeliveryState::Undelivered))
-        {
-            return Ok(current);
+    let mut stops_seen = 0;
+    let mut stop_retries = 0;
+    let record = loop {
+        let outcome = deliver_line(ctx, &party, &line);
+        let (state, route, error) = forward_only(before, outcome);
+        let now = ctx.clock.now();
+        let update = DeliveryUpdate {
+            state,
+            route,
+            error,
+            attempts,
+        };
+        let written = ctx.store.write(|tx| {
+            let reader = tx.reader();
+            let current = reader.delivery(&message.ulid, recipient)?;
+            // The recipient may have read it, or another command handed it
+            // off, while this one was typing. Those states are final here. So
+            // is `unconfirmed` against a clean failure: the other command may
+            // have typed the line, and the store refuses that move (INV-5,
+            // REP-3).
+            if let Some(c) = &current
+                && (matches!(
+                    c.delivery.state,
+                    DeliveryState::Acked | DeliveryState::HandedOff
+                ) || (c.delivery.state == DeliveryState::Unconfirmed
+                    && update.state == DeliveryState::Undelivered))
+            {
+                return Ok(Written::Recorded(current));
+            }
+            // The recipient's turn ended while this row was `pending`, so its
+            // hook left the message to this command, and no later stop would
+            // name it once it is `undelivered` (ADR 0028). The check and the
+            // write are one transaction, as the hook's list and mark are.
+            if update.state == DeliveryState::Undelivered && stop_retries < MAX_STOP_RETRIES {
+                let stops = AttemptHistory::read(&reader, message, recipient)
+                    .map(|a| a.stops())
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "could not read whether the recipient stopped");
+                        0
+                    });
+                if stops > stops_seen {
+                    return Ok(Written::TryAgain(stops));
+                }
+            }
+            tx.set_delivery_state(now, &message.ulid, recipient, &update)?;
+            reader
+                .delivery(&message.ulid, recipient)
+                .map(Written::Recorded)
+        })?;
+        match written {
+            Written::Recorded(record) => break record,
+            Written::TryAgain(stops) => {
+                stops_seen = stops;
+                stop_retries += 1;
+            }
         }
-        tx.set_delivery_state(now, &message.ulid, recipient, &update)?;
-        reader.delivery(&message.ulid, recipient)
-    })?;
+    };
     let Some(record) = record else {
         return Err(SendError::Internal(format!(
             "the delivery of {} to {recipient} vanished",

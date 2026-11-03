@@ -1,0 +1,43 @@
+   Compiling teamwire-cli v0.0.0 (/private/var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/bench-grade-5cp50ovu/copy/crates/teamwire-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.29s
+     Running tests/install.rs (/private/tmp/claude-501/bench-target/debug/deps/install-ac4565ecb567511c)
+
+running 18 tests
+test a_build_under_target_is_refused_and_nothing_is_written ... FAILED
+test a_codex_dry_run_prints_the_changes_and_makes_none ... ok
+test a_dry_run_prints_the_changes_and_makes_none ... ok
+test install_removes_the_old_skill_and_entry_after_the_plugin_is_in ... ok
+test a_failed_install_exits_two_says_what_is_left_and_a_rerun_finishes ... ok
+test without_a_terminal_or_a_flag_install_keeps_to_claude_code ... ok
+test the_help_of_install_and_uninstall_names_the_plugin ... ok
+test uninstall_removes_the_codex_setup_it_finds_and_ignores_it_without_codex ... ok
+test a_failure_that_changed_nothing_exits_one_not_two ... ok
+test install_covers_both_harnesses_when_both_are_named ... ok
+test install_adds_the_codex_plugin_and_a_second_run_changes_nothing ... ok
+test an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it ... ok
+test install_registers_the_plugin_and_a_second_run_changes_nothing ... ok
+test uninstall_removes_the_plugin_the_marketplace_and_the_files_and_then_has_nothing_to_do ... ok
+test a_failed_codex_install_exits_two_and_a_rerun_finishes ... ok
+test a_new_binary_refreshes_the_copy_claude_keeps ... ok
+test an_old_codex_does_not_block_the_claude_uninstall ... ok
+test an_edited_old_skill_or_a_foreign_entry_is_refused_and_nothing_is_changed ... ok
+
+failures:
+
+---- a_build_under_target_is_refused_and_nothing_is_written stdout ----
+
+thread 'a_build_under_target_is_refused_and_nothing_is_written' (176217326) panicked at crates/teamwire-cli/tests/install.rs:228:5:
+assertion `left == right` failed: 
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_build_under_target_is_refused_and_nothing_is_written
+
+test result: FAILED. 17 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.66s
+
+error: test failed, to rerun pass `-p teamwire-cli --test install`
+error: 1 target failed:
+    `-p teamwire-cli --test install`

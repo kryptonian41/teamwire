@@ -1,0 +1,40 @@
+
+ ▀▀█  v1.4.0
+ █▀ █ escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · ctrl+o more
+ Press ctrl+o to show full startup help and loaded resources.
+
+ Pi can explain its own features and look up its docs. Ask it how to use or extend Pi.
+
+[Skills]
+  ask-matt, auditing-pull-requests, choosing-a-scheduler, claude-handoff, cmux, cmux-browser, cmux-custom-sidebar,
+cmux-customization, cmux-keyboard-shortcuts, cmux-markdown, cmux-settings, cmux-workspace, code-review, codebase-design,
+copy-conversation, daily-standup, diagnosing-bugs, domain-modeling, explainer-video, find-skills, gh-stack, graphify,
+grill-me, grill-with-docs, grilling, grilling-a-scheduled-job, handoff, herdr, implement, improve-codebase-architecture,
+linear-hygiene, obsidian-vault, prototype, research, resolving-merge-conflicts, restacking-gh-stacks,
+reverse-engineer-anything, setup-matt-pocock-skills, show-me, sync-worktrees, tdd, teach, to-spec, to-tickets, triage,
+wayfinder, writing-great-skills
+
+[Extensions]
+  src
+
+
+ Warning: tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf
+ and restart tmux.
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+hello from teamwire probe
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+/private/tmp/twpi.lbhS (main)
+0.0%/1.0M (auto)                                                                (claude-bridge) claude-opus-5-5 • medium

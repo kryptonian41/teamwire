@@ -1,0 +1,49 @@
+## M1  1 file changed, 1 insertion(+), 1 deletion(-)
+-            afk_ends: row.afk_budget_ends_at,
++            afk_ends: None,
+test a_dead_watch_on_a_working_team_still_gets_the_afk_note ... FAILED
+test a_working_member_without_a_watch_still_gets_the_afk_note ... FAILED
+test an_afk_team_with_nothing_to_wake_the_lead_gets_the_afk_note ... FAILED
+test past_the_budget_the_afk_note_says_budget_spent_after_the_team_tag ... FAILED
+test a_live_watch_with_every_member_finished_still_gets_the_afk_note ... FAILED
+test an_ordinary_or_closed_team_or_another_session_gets_no_afk_note ... FAILED
+test result: FAILED. 13 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+## M2  1 file changed, 1 insertion(+), 1 deletion(-)
+-            wakes_lead: watched && has_working_member(tx)?,
++            wakes_lead: false,
+test a_live_watch_on_a_working_team_means_no_afk_note ... FAILED
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+## M3  1 file changed, 1 insertion(+), 1 deletion(-)
+-        if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
++        if false {
+test an_ordinary_or_closed_team_or_another_session_gets_no_afk_note ... FAILED
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+## M4  1 file changed, 1 insertion(+), 1 deletion(-)
+-            wakes_lead: watched && has_working_member(tx)?,
++            wakes_lead: watched,
+test a_live_watch_with_every_member_finished_still_gets_the_afk_note ... FAILED
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+## M5  1 file changed, 1 insertion(+), 1 deletion(-)
+-            .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now));
++            .is_some();
+test a_dead_watch_on_a_working_team_still_gets_the_afk_note ... FAILED
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:
+## M6  1 file changed, 2 insertions(+), 2 deletions(-)
+-    let spent = if now >= ends {
++    let spent = if now > ends {
+-    let launch = if now >= ends {
++    let launch = if now > ends {
+test past_the_budget_the_afk_note_says_budget_spent_after_the_team_tag ... FAILED
+test result: FAILED. 18 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+error: test failed, to rerun pass `-p teamwire-report --test lead_stop`
+error: 1 target failed:

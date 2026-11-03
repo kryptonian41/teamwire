@@ -1,0 +1,23 @@
+{
+  "team": "closecache",
+  "title": "Close deletes closer cache",
+  "plugins": {"claude-mem@thedotmack": false},
+  "setup": "",
+  "children": [
+    {
+      "role": "impl",
+      "title": "Delete closer cache on close",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/private/tmp/claude-501/bnruns/bngcwrebut/clone",
+      "branch": "closecache/impl",
+      "base": "bench",
+      "model": "opus",
+      "effort": "high",
+      "deadline_s": 4050,
+      "check": "cargo test -p teamwire-close --locked",
+      "owns": ["crates/teamwire-close/", "docs/"],
+      "task_file": "/private/tmp/claude-501/bnruns/bngcwrebut/twhome/teams/closecache/afk/briefs/impl.md"
+    }
+  ]
+}

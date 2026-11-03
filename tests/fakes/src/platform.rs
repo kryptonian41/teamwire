@@ -5,6 +5,7 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::Write as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -123,6 +124,8 @@ struct State {
     /// that cannot read start times does.
     started: HashMap<Pid, Timestamp>,
     envs: HashMap<(Pid, String), String>,
+    /// Each pid's parent and program name, as `parent_of` reports them.
+    parents: HashMap<Pid, (Pid, String)>,
     env_fault: Option<PlatformError>,
     run_queue: VecDeque<Result<RunOutput, PlatformError>>,
     runs: Vec<(Command, Duration)>,
@@ -162,6 +165,7 @@ impl FakePlatform {
                 alive: HashSet::new(),
                 started: HashMap::new(),
                 envs: HashMap::new(),
+                parents: HashMap::new(),
                 env_fault: None,
                 run_queue: VecDeque::new(),
                 runs: Vec::new(),
@@ -221,12 +225,20 @@ impl FakePlatform {
             .insert((pid, var.to_owned()), value.to_owned());
     }
 
+    /// Makes `parent_of(pid)` report `parent`, a program named `name`.
+    pub fn set_parent(&self, pid: Pid, parent: Pid, name: &str) {
+        lock(&self.state)
+            .parents
+            .insert(pid, (parent, name.to_owned()));
+    }
+
     /// Every later `env_of` fails with `err` until cleared with `None`.
     pub fn fail_env_reads(&self, err: Option<PlatformError>) {
         lock(&self.state).env_fault = err;
     }
 
-    /// Every later `write_atomic` fails with `err` until cleared.
+    /// Every later `write_atomic`, `create_dir_all` and `remove_dir_all`
+    /// fails with `err` until cleared.
     pub fn fail_writes(&self, err: Option<PlatformError>) {
         lock(&self.state).write_fault = err;
     }
@@ -350,6 +362,12 @@ fn io_to_platform(e: &std::io::Error) -> PlatformError {
     PlatformError::new(code, e.to_string())
 }
 
+/// The mode `write_atomic` gives the new file, as the real platform does:
+/// the mode of the file it replaces, else 0644.
+fn mode_of(target: &Path) -> u32 {
+    std::fs::metadata(target).map_or(0o644, |meta| meta.permissions().mode() & 0o7777)
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "the fake platform is what stands in for Platform::write_atomic, so it does the temp-file-then-rename itself"
@@ -374,6 +392,12 @@ impl Platform for FakePlatform {
             .get(&pid)
             .copied()
             .filter(|_| state.alive.contains(&pid))
+    }
+
+    fn parent_of(&self, pid: Pid) -> Option<(Pid, String)> {
+        self.log
+            .record("parent_of", CallKind::Read, pid.to_string());
+        lock(&self.state).parents.get(&pid).cloned()
     }
 
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
@@ -416,11 +440,19 @@ impl Platform for FakePlatform {
         let n = self.temp_counter.fetch_add(1, Ordering::Relaxed);
         let name = path.file_name().map(|s| s.to_string_lossy().into_owned());
         let temp = dir.join(format!(".{}.tmp{n}", name.unwrap_or_default()));
+        #[expect(
+            clippy::disallowed_methods,
+            reason = "the fake Platform is the write_atomic stand-in for tests"
+        )]
         let result = std::fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(&temp)
-            .and_then(|mut f| f.write_all(bytes).and_then(|()| f.sync_all()))
+            .and_then(|mut f| {
+                f.write_all(bytes)?;
+                f.set_permissions(std::fs::Permissions::from_mode(mode_of(path)))?;
+                f.sync_all()
+            })
             .and_then(|()| rename(&temp, path));
         match result {
             Ok(()) => {
@@ -433,6 +465,30 @@ impl Platform for FakePlatform {
                 Err(io_to_platform(&e))
             }
         }
+    }
+
+    fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "create_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::create_dir_all(path).map_err(|e| io_to_platform(&e))
+    }
+
+    fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
+        self.log.record(
+            "remove_dir_all",
+            CallKind::Write,
+            path.display().to_string(),
+        );
+        if let Some(err) = lock(&self.state).write_fault.clone() {
+            return Err(err);
+        }
+        std::fs::remove_dir_all(path).map_err(|e| io_to_platform(&e))
     }
 
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {

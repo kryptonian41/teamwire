@@ -1,0 +1,17 @@
+{
+  "team": "afkmode",
+  "children": [
+    {
+      "role": "planner2",
+      "title": "Plan the AFK build again",
+      "kind": "investigator",
+      "mode": "pane",
+      "cwd": "/private/tmp/claude-501/bnruns/bnei8xdqkf/clone",
+      "model": "opus",
+      "effort": "high",
+      "plugins": {"claude-mem@thedotmack": false},
+      "deadline_s": 5400,
+      "task_file": "/private/tmp/claude-501/bnruns/bnei8xdqkf/twhome/teams/afkmode/afk/briefs/planner2.md"
+    }
+  ]
+}

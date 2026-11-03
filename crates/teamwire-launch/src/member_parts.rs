@@ -87,7 +87,7 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
     let mut left = false;
     let mut notes = Vec::new();
     if let (Some(place), Ok(host)) = (&made.place, ctx.registry.host(&m.host)) {
-        match host.close(place, HOST_TIMEOUT) {
+        match host.close(place, &m.address, HOST_TIMEOUT) {
             Ok(()) => notes.push(format!("place {} closed", place.id)),
             Err(e) if e.code == HostErrorCode::NotFound => {
                 notes.push(format!("place {} was already gone", place.id));
@@ -102,22 +102,14 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
         // A deleted branch must not stay in the member row: `status` would
         // show it and `close` would list it as kept.
         if branch_deleted && made.recorded {
-            let cleared = ctx.store.write(|tx| {
-                tx.connection()
-                    .execute(
-                        "UPDATE members SET branch = NULL WHERE role = ?1",
-                        [m.spec.role.as_str()],
-                    )
-                    .map(|_| ())
-                    .map_err(Into::into)
-            });
+            let cleared = ctx.store.write(|tx| tx.clear_member_branch(&m.spec.role));
             if let Err(e) = cleared {
                 notes.push(format!("could not clear the stored branch: {e}"));
             }
         }
     }
     for e in &made.excluded {
-        notes.push(worktree::unexclude(ctx.platform, e));
+        notes.push(worktree::unexclude(ctx.platform, ctx.home, e));
     }
     (notes.join("; "), left)
 }

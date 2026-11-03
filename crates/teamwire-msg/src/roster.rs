@@ -36,15 +36,13 @@ pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
     Ok(members
         .into_iter()
         .map(|m| {
-            let accepts_from_members = match m.kind {
-                MemberKind::Reviewer | MemberKind::Closer => Vec::new(),
-                MemberKind::Implementer | MemberKind::Investigator => vec![
-                    MessageType::Notice,
-                    MessageType::Finding,
-                    MessageType::Question,
-                    MessageType::Answer,
-                ],
-            };
+            // A member accepts the types a member may send (MSG-1); a quiet
+            // kind accepts none (MSG-3).
+            let accepts_from_members = MessageType::ALL
+                .iter()
+                .copied()
+                .filter(|t| !m.kind.is_quiet() && m.kind.may_send(*t))
+                .collect();
             let can_be_typed_to = ctx
                 .registry
                 .host(&m.host)

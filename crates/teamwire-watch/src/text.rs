@@ -12,8 +12,11 @@ pub(crate) use teamwire_deliver::agent_text;
 /// The longest one event may be. A poll joins several, so each is cut alone
 /// and a long summary cannot push a later event out of the line.
 const EVENT_MAX: usize = 300;
-/// The longest a whole line may be.
+/// The longest a whole line may be. A poll whose events do not all fit
+/// prints those that do and leaves the rest for a later poll.
 pub(crate) const LINE_MAX: usize = 2000;
+/// What a poll puts between two events in its line.
+pub(crate) const SEP: &str = " | ";
 
 pub(crate) fn silent_prefix(role: &Role, generation: u32) -> String {
     format!("SILENT:{role}:{generation}:")
@@ -49,6 +52,14 @@ pub(crate) fn died_key(role: &Role, generation: u32) -> String {
     format!("DIED:{role}:{generation}")
 }
 
+pub(crate) fn unreported_key(role: &Role, generation: u32) -> String {
+    format!("UNREPORTED:{role}:{generation}")
+}
+
+pub(crate) fn context_key(role: &Role, generation: u32) -> String {
+    format!("CONTEXT:{role}:{generation}")
+}
+
 pub(crate) fn result_key(kind: &str, completion: &Ulid) -> String {
     format!("{kind}:{completion}")
 }
@@ -77,13 +88,22 @@ pub(crate) fn age(span: Duration) -> String {
     }
 }
 
-/// The path of a member's result file, printed in the event.
-pub(crate) fn result_path(team_dir: &Path, role: &Role) -> String {
-    team_dir
-        .join("outbox")
-        .join(format!("{role}.md"))
-        .display()
-        .to_string()
+/// The file the lead should open for a member's result, printed in the
+/// event: its result file, unless that is missing or no longer holds the
+/// text whose hash the completion recorded. Then its report, which the
+/// member wrote itself, is the better pointer.
+pub(crate) fn result_path(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> String {
+    let file = format!("{role}.md");
+    let outbox = team_dir.join("outbox").join(&file);
+    let current = std::fs::read(&outbox)
+        .is_ok_and(|bytes| sha256.is_none_or(|h| teamwire_store::sha256(&bytes) == *h));
+    if current {
+        outbox
+    } else {
+        team_dir.join("reports").join(file)
+    }
+    .display()
+    .to_string()
 }
 
 /// One event with its `[teamwire:<team>]` prefix, cut to `EVENT_MAX`.

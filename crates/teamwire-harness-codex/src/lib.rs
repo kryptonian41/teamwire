@@ -20,15 +20,15 @@ mod screen;
 mod session;
 mod startup;
 
-pub use startup::StartupPoll;
+pub use teamwire_core::screen::StartupPoll;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
     MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
     StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
@@ -72,11 +72,6 @@ impl CodexCli {
     pub fn config(&self) -> &CodexConfig {
         &self.config
     }
-
-    /// The platform Codex's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
-    }
 }
 
 impl fmt::Debug for CodexCli {
@@ -103,6 +98,8 @@ impl Harness for CodexCli {
             session_env_via_config: true,
             // Codex has no tool that streams a command's output to the model.
             reads_watch_lines: false,
+            reads_input_box: false,
+            runs_afk: false,
         }
     }
 
@@ -114,12 +111,12 @@ impl Harness for CodexCli {
         launch::build(&self.config.codex_bin, m, &launch::Start::Resume(s))
     }
 
-    fn current_session(&self) -> Option<CallerSession> {
-        self.caller_session(&|name| std::env::var(name).ok())
-    }
-
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_session(&self.config.codex_home, get)
+    }
+
+    fn lead_setup(&self) -> Option<&dyn teamwire_core::LeadSetup> {
+        Some(self)
     }
 
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
@@ -175,6 +172,16 @@ impl Harness for CodexCli {
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
         startup::answer_startup(host, place, policy, self.startup_poll)
+    }
+
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        // Codex hooks hand over no rollout path, so the rollout is always
+        // found from the session id.
+        Ok(session::context_fill(&self.config.codex_home, s))
     }
 
     fn otel_env(

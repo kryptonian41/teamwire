@@ -3,20 +3,14 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use teamwire_core::{Config, Role, TeamName};
-use teamwire_store::{Ctx, Store, StoreError};
+use teamwire_core::{Role, TeamName};
 use teamwire_verify::{FileProblem, FlagId, VerifyError, VerifyOpts, VerifyRecord, VerifyReport};
 
-use crate::cmd::send::{home_or_refuse, no_database_text, refuse_member};
+use crate::cmd::shared::{
+    Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say, with_ctx_using,
+};
 use crate::wiring::Wiring;
 use crate::{Global, USAGE, VerifyArgs};
-
-/// Refused by a rule; nothing changed (docs/api/cli.md).
-const REFUSED: u8 = 1;
-/// A member is not clean, or a copy or the database is not right.
-const NOT_CLEAN: u8 = 2;
-/// The store could not be read or written.
-const STORE: u8 = 6;
 
 pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let VerifyArgs {
@@ -29,11 +23,11 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
     } = args;
     let team = match TeamName::parse(team) {
         Ok(team) => team,
-        Err(e) => return fail(&format!("{e}"), USAGE),
+        Err(e) => return fail("verify", &format!("{e}"), USAGE),
     };
     let role = match role.as_deref().map(Role::parse).transpose() {
         Ok(role) => role,
-        Err(e) => return fail(&format!("{e}"), USAGE),
+        Err(e) => return fail("verify", &format!("{e}"), USAGE),
     };
     // A member who could waive its own flag would turn FLAGGED into PASS. A
     // plain run stays open, because the closer runs it from a member session.
@@ -42,51 +36,37 @@ pub(crate) fn run(args: &VerifyArgs, global: &Global, wiring: &Wiring) -> ExitCo
     {
         return code;
     }
-    let home = match home_or_refuse("verify", global) {
-        Ok(home) => home,
-        Err(code) => return code,
+    let opening = Opening {
+        command: "verify",
+        ..Opening::default()
     };
-    let mut store = match Store::open_existing(&home, &team) {
-        Ok(store) => store,
-        Err(StoreError::NoDatabase { path }) => {
-            let message = no_database_text(&team, &path);
-            return fail(&message, REFUSED);
+    with_ctx_using(global, wiring, &team, "verify", opening, |ctx| {
+        if let (Some(flag), Some(reason), Some(role)) = (waive, reason, &role) {
+            return match teamwire_verify::waive(ctx, role, &FlagId::new(flag), reason) {
+                Ok(()) => {
+                    say(&format!("waived {flag} for {role} at its current HEAD\n"));
+                    ExitCode::SUCCESS
+                }
+                Err(e) => fail("verify", &e.to_string(), error_code(&e)),
+            };
         }
-        Err(e) => return fail(&e.to_string(), STORE),
-    };
-    let config = Config::default();
-    let mut ctx = Ctx {
-        home: &home,
-        store: &mut store,
-        registry: &wiring.registry,
-        platform: wiring.platform.as_ref(),
-        clock: &wiring.clock,
-        config: &config,
-    };
-    if let (Some(flag), Some(reason), Some(role)) = (waive, reason, &role) {
-        return match teamwire_verify::waive(&mut ctx, role, &FlagId::new(flag), reason) {
-            Ok(()) => {
-                say(&format!("waived {flag} for {role} at its current HEAD\n"));
-                ExitCode::SUCCESS
-            }
-            Err(e) => fail(&e.to_string(), error_code(&e)),
+        let opts = VerifyOpts {
+            deep: *deep,
+            repair_files: *repair_files,
         };
-    }
-    let opts = VerifyOpts {
-        deep: *deep,
-        repair_files: *repair_files,
-    };
-    match teamwire_verify::run(&mut ctx, role.as_ref(), opts) {
-        Ok(report) => {
-            say(&render(&report, &home, role.is_some()));
-            if report.is_clean(role.is_some()) {
-                ExitCode::SUCCESS
-            } else {
-                ExitCode::from(NOT_CLEAN)
+        match teamwire_verify::run(ctx, role.as_ref(), opts) {
+            Ok(report) => {
+                say(&render(&report, ctx.home, role.is_some()));
+                if report.is_clean(role.is_some()) {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::from(PARTIAL)
+                }
             }
+            Err(e) => fail("verify", &e.to_string(), error_code(&e)),
         }
-        Err(e) => fail(&e.to_string(), error_code(&e)),
-    }
+    })
+    .unwrap_or_else(|code| code)
 }
 
 fn error_code(e: &VerifyError) -> u8 {
@@ -184,18 +164,4 @@ fn relative(path: &Path, home: &Path) -> String {
         .unwrap_or(path)
         .display()
         .to_string()
-}
-
-#[expect(clippy::print_stdout, reason = "the verdicts are the command's output")]
-fn say(text: &str) {
-    print!("{text}");
-}
-
-#[expect(
-    clippy::print_stderr,
-    reason = "the binary reports a refusal on stderr"
-)]
-fn fail(message: &str, code: u8) -> ExitCode {
-    eprintln!("teamwire verify: {message}");
-    ExitCode::from(code)
 }

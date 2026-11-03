@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place, PlaceState,
-    SpawnRequest, SubmitAck,
+    Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place,
+    PlaceState, SpawnRequest, SubmitAck,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
@@ -318,15 +318,22 @@ impl Host for FakeHost {
     fn spawn(&self, req: &SpawnRequest, _timeout: Duration) -> Result<Place, HostError> {
         self.log.record("spawn", CallKind::Write, req.name.as_str());
         let late_error = self.before("spawn")?;
+        // A place whose agent is gone (a dead session left in its tab) holds
+        // no live agent, here and in `live_agent_names`, so its name is free.
         let taken = {
             let st = lock(&self.state);
-            st.places.values().any(|r| r.name == req.name.as_str())
+            st.places
+                .values()
+                .any(|r| r.name == req.name.as_str() && r.state != PlaceState::Gone)
                 || st.foreign_agents.iter().any(|n| n == req.name.as_str())
         };
         if taken {
             return Err(HostError::new(
                 HostErrorCode::BadArgument,
-                format!("an agent named {} is already live", req.name),
+                format!(
+                    "agent_name_taken: an agent named {} is already live",
+                    req.name
+                ),
             ));
         }
         let place = self.add_place(
@@ -442,10 +449,18 @@ impl Host for FakeHost {
         Self::finish((), late_error)
     }
 
-    fn close(&self, place: &Place, _timeout: Duration) -> Result<(), HostError> {
+    fn close(
+        &self,
+        place: &Place,
+        expected: &Address,
+        _timeout: Duration,
+    ) -> Result<(), HostError> {
         self.log.record("close", CallKind::Write, place.id.as_str());
         let late_error = self.before("close")?;
         self.check_place(place)?;
+        if self.read_rec(place, |r| r.name != expected.as_str()) == Some(true) {
+            return Err(Self::not_found(place));
+        }
         let mut st = lock(&self.state);
         st.places.remove(&place.id);
         st.order.retain(|id| id != &place.id);
@@ -474,7 +489,9 @@ impl Host for FakeHost {
         let mut names: Vec<String> = st
             .order
             .iter()
-            .filter_map(|id| st.places.get(id).map(|r| r.name.clone()))
+            .filter_map(|id| st.places.get(id))
+            .filter(|r| r.state != PlaceState::Gone)
+            .map(|r| r.name.clone())
             .collect();
         names.extend(st.foreign_agents.iter().cloned());
         Ok(names)

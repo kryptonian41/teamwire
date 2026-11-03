@@ -6,7 +6,6 @@ use super::args::Args;
 use super::shapes::{pane_info, tab_info, workspace_info};
 use super::state::{Pane, State, Tab, Workspace, pane_dir};
 use super::{CliError, Ctx, fail};
-use crate::fsutil;
 
 fn add_pane(state: &mut State, ws: &str, tab: &str, cwd: &str) -> String {
     let id = format!("{ws}:p{}", state.next_id());
@@ -170,7 +169,7 @@ pub(super) fn pane_close(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliErr
     let id = args.operand(0).unwrap_or_default().to_owned();
     let pane = find_pane(ctx, &id)?.clone();
     if let Some(agent) = pane.agent.as_ref().filter(|a| !a.fixed) {
-        fsutil::terminate(agent.pid);
+        super::end_agent(ctx.state_path, &id, agent.pid);
     }
     std::fs::remove_dir_all(pane_dir(ctx.state_path, &id)).ok();
     ctx.state.panes.retain(|p| p.pane_id != id);

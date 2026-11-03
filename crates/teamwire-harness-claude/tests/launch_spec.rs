@@ -10,8 +10,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use teamwire_core::{
-    Address, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind, MemberLaunch,
-    OtelConfig, Role, SessionId, TeamName,
+    Address, Config, Harness, HarnessErrorCode, IdentityChannel, LaunchSpec, MemberKind,
+    MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
@@ -52,6 +52,7 @@ fn member() -> MemberLaunch {
         otel: OtelConfig::default(),
         teamwire_bin: "/usr/local/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     }
 }
@@ -263,7 +264,7 @@ fn otel_env_matches_what_launch_puts_in_settings() {
 }
 
 #[test]
-fn stop_hook_names_team_and_role_and_has_a_60_second_timeout() {
+fn stop_hook_names_team_and_role_and_has_the_configured_timeout() {
     let spec = claude().launch_spec(&member()).unwrap();
     let hook = &file_json(&spec, "settings.json")["hooks"]["Stop"][0]["hooks"][0];
     assert_eq!(hook["type"], "command");
@@ -271,7 +272,10 @@ fn stop_hook_names_team_and_role_and_has_a_60_second_timeout() {
         hook["command"],
         "/usr/local/bin/teamwire hook claude-stop --team demo --role api"
     );
-    assert_eq!(hook["timeout"], 60);
+    let config = Config::default();
+    assert_eq!(hook["timeout"], config.hook_timeout_s);
+    // Claude must not kill the hook before its own delivery budget ends.
+    assert!(config.hook_budget_s < config.hook_timeout_s);
 }
 
 #[test]
@@ -387,9 +391,60 @@ fn no_plugins_leaves_only_the_lead_plugin_switched_off() {
     let spec = claude().launch_spec(&m).unwrap();
     let settings = file_json(&spec, "settings.json");
     let keys: Vec<&String> = settings.as_object().unwrap().keys().collect();
-    assert_eq!(keys, ["enabledPlugins", "env", "hooks"]);
+    assert_eq!(
+        keys,
+        [
+            "autoCompactEnabled",
+            "autoCompactWindow",
+            "enabledPlugins",
+            "env",
+            "hooks"
+        ]
+    );
     assert_eq!(
         settings["enabledPlugins"],
         serde_json::json!({"teamwire@teamwire": false})
     );
+}
+
+fn backstop(model: Option<&str>, tokens: Option<u64>) -> (serde_json::Value, serde_json::Value) {
+    let mut m = member();
+    m.model = model.map(str::to_owned);
+    m.context_handoff_tokens = tokens;
+    let settings = file_json(&claude().launch_spec(&m).unwrap(), "settings.json");
+    (
+        settings["autoCompactEnabled"].clone(),
+        settings["autoCompactWindow"].clone(),
+    )
+}
+
+#[test]
+fn the_backstop_is_twice_the_default_handoff_point_of_the_model() {
+    // Opus 5.5: window 1M, handoff 40% = 400,000, backstop 800,000.
+    assert_eq!(
+        backstop(Some("claude-opus-5-5"), None),
+        (serde_json::json!(true), serde_json::json!(800_000))
+    );
+    // An Opus 4.6 member has a 200K window: handoff 80,000, so 160,000.
+    assert_eq!(backstop(Some("claude-opus-4-6"), None).1, 160_000);
+}
+
+#[test]
+fn the_backstop_is_twice_the_configured_threshold_but_at_least_100k() {
+    assert_eq!(backstop(Some("opus"), Some(30_000)).1, 100_000);
+    assert_eq!(backstop(Some("opus"), Some(200_000)).1, 400_000);
+}
+
+#[test]
+fn the_backstop_never_exceeds_the_window() {
+    assert_eq!(
+        backstop(Some("claude-sonnet-4-6"), Some(150_000)).1,
+        200_000
+    );
+}
+
+#[test]
+fn a_member_with_no_model_gets_the_backstop_of_a_large_window() {
+    assert_eq!(backstop(None, None).1, 800_000);
+    assert_eq!(backstop(Some("mystery-1"), None).1, 800_000);
 }

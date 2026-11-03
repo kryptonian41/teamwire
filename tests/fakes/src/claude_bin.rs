@@ -25,6 +25,7 @@ use serde_json::json;
 
 use crate::fsutil;
 use crate::harness::{ESCALATED_TRUST_TEXT, PLAIN_TRUST_TEXT, PROMPT_TEXT, TRUST_OPTION_TEXT};
+use crate::herdr_bin::STEP_FILE;
 use crate::owner::Owner;
 use settings::{Settings, hold_reason, run_shell};
 
@@ -207,6 +208,11 @@ impl Session {
         ExitCode::SUCCESS
     }
 
+    /// Where a running shell step records its process group (see `run_shell`).
+    fn step_file(&self) -> Option<PathBuf> {
+        self.pane_dir.as_ref().map(|d| d.join(STEP_FILE))
+    }
+
     fn run_step(&mut self, step: &Step) {
         match step {
             Step::BackgroundTasks(tasks) => self.background_tasks.clone_from(tasks),
@@ -214,7 +220,14 @@ impl Session {
             Step::SleepMs(ms) => std::thread::sleep(Duration::from_millis(*ms)),
             Step::Run(command) => {
                 say(&format!("$ {command}"));
-                let ran = run_shell(command, &self.settings.env, None);
+                let step_file = self.step_file();
+                let ran = run_shell(
+                    command,
+                    &self.settings.env,
+                    None,
+                    &mut self.owner,
+                    step_file.as_deref(),
+                );
                 for line in ran.stdout.lines().chain(ran.stderr.lines()) {
                     say(line);
                 }
@@ -226,7 +239,7 @@ impl Session {
     /// Runs every Stop hook with the JSON Claude Code sends. Returns the
     /// reason if one of them holds the agent.
     fn run_stop_hooks(
-        &self,
+        &mut self,
         turn: usize,
         hold_active: bool,
         wrong_session: bool,
@@ -256,8 +269,15 @@ impl Session {
         })
         .to_string();
         let mut hold = None;
+        let step_file = self.step_file();
         for command in &self.settings.stop_hooks {
-            let ran = run_shell(command, &self.settings.env, Some(&input));
+            let ran = run_shell(
+                command,
+                &self.settings.env,
+                Some(&input),
+                &mut self.owner,
+                step_file.as_deref(),
+            );
             hold = hold.or_else(|| hold_reason(&ran));
         }
         hold

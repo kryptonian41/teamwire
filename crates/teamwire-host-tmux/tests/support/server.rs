@@ -8,6 +8,27 @@ use teamwire_core::{Address, Command, Host, Platform, SpawnRequest};
 use teamwire_fakes::NoTmuxConfig;
 use teamwire_host_tmux::Tmux;
 
+/// The budget of one tmux call. A loaded machine takes seconds to start a
+/// freshly built test binary, and the limit only guards against a hang.
+pub(crate) const T: Duration = Duration::from_secs(60);
+
+// The adapter splits a method's timeout evenly among the tmux calls the
+// method makes, so a caller gives `T` once per call: spawn makes up to six,
+// submit three, close and occupant two each.
+pub(crate) const SPAWN: Duration = T.saturating_mul(6);
+pub(crate) const SUBMIT: Duration = T.saturating_mul(3);
+pub(crate) const CLOSE: Duration = T.saturating_mul(2);
+pub(crate) const OCCUPANT: Duration = T.saturating_mul(2);
+
+/// What `send_keys` needs to give `T` to each of `keys` tmux calls, one per key.
+pub(crate) fn keys(keys: usize) -> Duration {
+    T.saturating_mul(u32::try_from(keys.max(1)).unwrap())
+}
+
+/// How many 50 ms looks make `T`: a loop that waits for the screen only
+/// guards against a hang, so it waits as long as one tmux call may.
+pub(crate) const LOOKS: u32 = 1200;
+
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
 pub(crate) struct PrivateServer {
@@ -38,7 +59,7 @@ impl PrivateServer {
         let cmd = Command::new("tmux")
             .args(["-L", &self.socket])
             .args(args.iter().copied());
-        let out = self.platform.run(&cmd, Duration::from_secs(10)).unwrap();
+        let out = self.platform.run(&cmd, T).unwrap();
         String::from_utf8_lossy(&out.stdout).into_owned()
     }
 }
@@ -47,9 +68,7 @@ impl PrivateServer {
 /// Killing a server leaves it behind, so `Drop` removes it. Only the socket
 /// this value made is ever named.
 fn socket_file(platform: &dyn Platform, socket: &str) -> Option<std::path::PathBuf> {
-    let out = platform
-        .run(&Command::new("id").arg("-u"), Duration::from_secs(10))
-        .ok()?;
+    let out = platform.run(&Command::new("id").arg("-u"), T).ok()?;
     let uid = String::from_utf8_lossy(&out.stdout).trim().to_owned();
     let base =
         std::env::var_os("TMUX_TMPDIR").map_or_else(|| "/tmp".into(), std::path::PathBuf::from);
@@ -59,7 +78,7 @@ fn socket_file(platform: &dyn Platform, socket: &str) -> Option<std::path::PathB
 impl Drop for PrivateServer {
     fn drop(&mut self) {
         let cmd = Command::new("tmux").args(["-L", &self.socket, "kill-server"]);
-        drop(self.platform.run(&cmd, Duration::from_secs(10)));
+        drop(self.platform.run(&cmd, T));
         if let Some(file) = socket_file(self.platform.as_ref(), &self.socket) {
             drop(std::fs::remove_file(file));
         }
@@ -76,10 +95,10 @@ pub(crate) fn request(name: &str, dir: &std::path::Path, argv: &[&str]) -> Spawn
     }
 }
 
-/// Looks at the pane's screen every 50 ms until `text` shows, up to 5 s.
+/// Looks at the pane's screen every 50 ms until `text` shows, `LOOKS` times.
 pub(crate) fn screen_shows(host: &dyn Host, place: &teamwire_core::Place, text: &str) -> bool {
-    for _ in 0..100 {
-        let tail = host.read_tail(place, 50, Duration::from_secs(10)).unwrap();
+    for _ in 0..LOOKS {
+        let tail = host.read_tail(place, 50, T).unwrap();
         if tail.contains(text) {
             return true;
         }

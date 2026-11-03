@@ -16,6 +16,8 @@ const VALUE_FLAGS: &[&str] = &[
     "until",
     "direction",
     "tab",
+    "format",
+    "env",
 ];
 
 #[derive(Debug, Default)]
@@ -69,6 +71,14 @@ impl Args {
 
     pub(crate) fn value(&self, flag: &str) -> Option<&str> {
         self.values.get(flag).map(String::as_str)
+    }
+
+    /// The name of every flag the call used, value flags and switches.
+    pub(crate) fn flag_names(&self) -> impl Iterator<Item = &str> {
+        self.values
+            .keys()
+            .chain(self.switches.iter())
+            .map(String::as_str)
     }
 
     pub(crate) fn has(&self, switch: &str) -> bool {

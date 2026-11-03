@@ -3,13 +3,49 @@ import status from "../../fixtures/status.json";
 import teams from "../../fixtures/teams.json";
 import log from "../../fixtures/log.json";
 import metrics from "../../fixtures/metrics.json";
-import { LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
+import events from "../../fixtures/events.json";
+import { createRunner } from "../server/cli.ts";
+import { EventsView, LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
 
 describe("fixtures match the teamwire schemas", () => {
   test("status", () => expect(StatusAll.safeParse(status).success).toBe(true));
   test("teams", () => expect(TeamsList.safeParse(teams).success).toBe(true));
   test("log", () => expect(LogView.safeParse(log).success).toBe(true));
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
+  test("events", () => expect(EventsView.safeParse(events).success).toBe(true));
+});
+
+describe("log and events additions", () => {
+  test("log keeps re, commit and a delivery reason", () => {
+    const parsed = LogView.parse(log);
+    const byId = new Map(parsed.messages.map((m) => [m.display_id, m]));
+    expect(byId.get("m008")!.re).toBe("m006");
+    expect(byId.get("m004")!.commit).toBe("4f1c2ab");
+    expect(byId.get("m005")!.deliveries[0]!.reason).toBe("not_at_input_prompt");
+  });
+  test("log from an older teamwire without the new keys still parses", () => {
+    const old = { messages: [{ ...log.messages[0]!, re: undefined, commit: undefined, deliveries: [{ to: "ledger", state: "acked", attempts: 1 }] }] };
+    expect(LogView.safeParse(old).success).toBe(true);
+  });
+  test("an unknown event type fails the parse", () => {
+    const changed = structuredClone(events);
+    changed.events[0]!.type = "member.teleported";
+    expect(EventsView.safeParse(changed).success).toBe(false);
+  });
+});
+
+describe("context output", () => {
+  const context = { tokens: 720091, window: 1000000, pct: 72, handoff_at: 400000 };
+  const withContext = (value: unknown) =>
+    StatusAll.parse([{ ...status[0]!, members: [{ ...status[0]!.members[0]!, context: value }] }])[0]!
+      .members[0]!.context;
+  test("a member accepts a context object and keeps it", () => {
+    expect(withContext(context)).toEqual(context);
+  });
+  test("a member accepts a null context and an older output without the key", () => {
+    expect(withContext(null)).toBeNull();
+    expect(StatusAll.parse(status)[0]!.members[0]!.context).toBeUndefined();
+  });
 });
 
 describe("AFK output", () => {
@@ -80,13 +116,17 @@ describe("ticket refs on a team", () => {
 });
 
 // Reads the real teamwire on this machine. Opt in with TW_UI_LIVE=1, so a
-// member's check never depends on which teams happen to be running.
+// member's check never depends on which teams happen to be running. It runs
+// through the server's own runner: identity variables removed, time limits.
 describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {
-  const run = (args: string[]) => {
-    const out = Bun.spawnSync(["teamwire", ...args], { stdout: "pipe", stderr: "pipe" });
-    return JSON.parse(out.stdout.toString());
-  };
-  test("status --json", () => void StatusAll.parse(run(["status", "--json"])));
-  test("teams --json", () => void TeamsList.parse(run(["teams", "--json"])));
-  test("metrics --json", () => void MetricsView.parse(run(["metrics", "--json"])));
+  const run = createRunner({ bin: "teamwire" });
+  test("status --json", async () => expect((await run({ cmd: "status" })).ok).toBe(true));
+  test("teams --json", async () => expect((await run({ cmd: "teams" })).ok).toBe(true));
+  test("metrics --json", async () => expect((await run({ cmd: "metrics" })).ok).toBe(true));
+  test("log --json", async () => {
+    const list = await run({ cmd: "teams" });
+    const team = list.ok ? list.data.teams[0]?.name : undefined;
+    if (team === undefined) return; // No team to read a log from.
+    expect((await run({ cmd: "log", team })).ok).toBe(true);
+  });
 });

@@ -1,0 +1,71 @@
+{
+  "team": "fixes3dry",
+  "title": "Three teamwire fixes",
+  "plugins": {"claude-mem@thedotmack": false},
+  "children": [
+    {
+      "_note": "Fix 1. The brief holds the tdd and diagnosing-bugs sentences.",
+      "role": "report",
+      "title": "Stop hook transcript check",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/private/tmp/claude-501/bnruns/bne68n09a4/clone",
+      "branch": "fixes3/report",
+      "base": "bench",
+      "model": "opus",
+      "effort": "high",
+      "deadline_s": 5400,
+      "setup": "",
+      "check": "cargo test -p teamwire-report --locked && TEAMWIRE_BASE=e78c32be scripts/gate.sh fast",
+      "owns": ["crates/teamwire-report/"],
+      "plugins": {"claude-mem@thedotmack": false},
+      "task_file": "/private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/afk/briefs/report.md"
+    },
+    {
+      "_note": "Fix 2. The brief holds the tdd and diagnosing-bugs sentences.",
+      "role": "msg",
+      "title": "Resend to a closing team",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/private/tmp/claude-501/bnruns/bne68n09a4/clone",
+      "branch": "fixes3/msg",
+      "base": "bench",
+      "model": "opus",
+      "effort": "high",
+      "deadline_s": 5400,
+      "setup": "",
+      "check": "cargo test -p teamwire-msg --locked && TEAMWIRE_BASE=e78c32be scripts/gate.sh fast",
+      "owns": [
+        "crates/teamwire-msg/",
+        "docs/api/cli.md",
+        "docs/api/mcp.md",
+        "crates/teamwire-cli/tests/preset.rs"
+      ],
+      "plugins": {"claude-mem@thedotmack": false},
+      "task_file": "/private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/afk/briefs/msg.md"
+    },
+    {
+      "_note": "Fix 3. The brief holds the tdd and diagnosing-bugs sentences.",
+      "role": "ui",
+      "title": "Dashboard problem reasons",
+      "kind": "implementer",
+      "mode": "worktree",
+      "repo": "/private/tmp/claude-501/bnruns/bne68n09a4/clone",
+      "branch": "fixes3/ui",
+      "base": "bench",
+      "model": "opus",
+      "effort": "high",
+      "deadline_s": 5400,
+      "setup": "cd \"$1/ui\" && bun install --frozen-lockfile",
+      "check": "cd ui && bun test && bun run typecheck",
+      "owns": [
+        "ui/src/web/model/teams.ts",
+        "ui/src/web/model/teams.test.ts",
+        "ui/src/web/Overview.tsx",
+        "ui/src/web/Overview.test.ts"
+      ],
+      "plugins": {"claude-mem@thedotmack": false},
+      "task_file": "/private/tmp/claude-501/bnruns/bne68n09a4/twhome/teams/fixes3/afk/briefs/ui.md"
+    }
+  ]
+}

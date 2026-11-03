@@ -14,6 +14,7 @@
 //! `env` key of its own `settings.json`.
 
 mod cwd;
+mod fill;
 mod hook;
 mod launch;
 mod lead_setup;
@@ -22,20 +23,20 @@ mod session;
 mod trust;
 
 pub use lead_setup::{
-    ApplyError, Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow,
-    SkillState, edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
+    Change, LeadSetupError, LeadSetupState, McpEntry, McpState, SKILL_TEXT, Shadow, SkillState,
+    edited_skill, lead_setup_state, mcp_state, shadowing_entries, skill_state,
 };
-pub use trust::StartupPoll;
+pub use teamwire_core::screen::StartupPoll;
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
+    LeadSetup, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Platform, Role,
+    ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -85,14 +86,8 @@ impl ClaudeCode {
     /// environment: `CLAUDE_CODE_SESSION_ID`, and the kind from the session
     /// file of `CLAUDE_PID` (`bg` is a background session), else from
     /// `CLAUDE_CODE_SESSION_KIND` or `CLAUDE_CODE_SESSION_ATTENDED=0`.
-    /// `current_session` calls this with the real environment.
     pub fn session_from_env(&self, get: impl Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_from_env(&self.config.claude_dir, get)
-    }
-
-    /// The platform Claude's commands run through.
-    pub fn platform(&self) -> &dyn Platform {
-        self.platform.as_ref()
     }
 }
 
@@ -118,6 +113,8 @@ impl Harness for ClaudeCode {
             can_push: false,
             session_env_via_config: true,
             reads_watch_lines: true,
+            reads_input_box: true,
+            runs_afk: true,
         }
     }
 
@@ -129,12 +126,12 @@ impl Harness for ClaudeCode {
         launch::build(&self.config.claude_bin, m, &launch::SessionArg::Resume(s))
     }
 
-    fn current_session(&self) -> Option<CallerSession> {
-        self.session_from_env(|name| std::env::var(name).ok())
-    }
-
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         self.session_from_env(get)
+    }
+
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        Some(self)
     }
 
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
@@ -182,11 +179,15 @@ impl Harness for ClaudeCode {
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {
-        screen::classify(tail)
+        screen::delivery_state(tail)
     }
 
     fn line_pending(&self, tail: &str, line: &OneLine) -> bool {
         screen::line_pending(tail, line)
+    }
+
+    fn box_holds_text(&self, tail: &str) -> bool {
+        screen::box_holds_text(tail)
     }
 
     fn answer_startup(
@@ -196,6 +197,14 @@ impl Harness for ClaudeCode {
         policy: TrustPolicy,
     ) -> Result<StartupOutcome, HarnessError> {
         trust::answer_startup(host, place, policy, self.startup_poll)
+    }
+
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        transcript: Option<&Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        Ok(fill::context_fill(&self.config.claude_dir, s, transcript))
     }
 
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {

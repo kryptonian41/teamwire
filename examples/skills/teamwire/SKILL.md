@@ -1,6 +1,6 @@
 ---
 name: teamwire
-description: The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task.
+description: "The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
 ---
 
 # Agent teams with teamwire
@@ -21,7 +21,7 @@ names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
 lines start with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
-For a run the user will not be present for, use `/teamwire:afk`.
+For a run the user will not be present for, use `/teamwire:afk`. Only a Claude Code lead can run it.
 
 ## Your tools
 
@@ -189,15 +189,16 @@ Each member has a `kind`. Launch writes that seat's rules into the member's
 system prompt, so the role holds even when a brief forgets it. Every member
 needs `mode`. Launch sets no model or effort by kind, and a member without
 them runs on its harness's defaults, so set the last three columns. A member
-without `harness` runs on the lead's harness; `"harness": "codex"` or
-`"harness": "claude-code"` picks one.
+without `harness` runs on the lead's harness; `"harness": "codex"`,
+`"harness": "pi"` or `"harness": "claude-code"` picks one. A pi member's
+`model` is a pi model pattern, such as `anthropic/claude-sonnet-4-5`.
 
 | Kind | Does | May not | Set `mode` | Set `model` | Set `effort` |
 | --- | --- | --- | --- | --- | --- |
 | `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) | `sonnet` | `medium` |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` | `opus` | `xhigh` |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` | `sonnet` | `high` |
-| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In a temporary clone it makes itself, runs the member's `setup` with the clone's path as its first argument (an install allowed there), or copies an existing `target/` or `node_modules` folder in. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
+| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` | `opus` | `xhigh` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode. Every member is
@@ -243,6 +244,10 @@ under `~/.claude/skills/`. Ponytail marks a deliberate limit with a
 `shortcut: <limit>, <when to upgrade>` comment, and the closer lists the new
 ones as known debt.
 
+When `command -v promptwire` finds the tool, load the `teamwire:promptwire`
+skill before you write the briefs. It picks vendor skills for members whose
+task touches a domain such as Stripe, Terraform or PostgreSQL.
+
 ## Write the spec
 
 Start from `teamwire preset <name>`. The team and each member need a `title`
@@ -265,6 +270,8 @@ has a hyphen, and `lead` is reserved.
   named, as in `"refs": [{"provider": "linear", "id": "GKA-580"}]`. teamwire
   never assumes a provider. `--add` may name more refs, and none is ever
   removed. Later teams find this team's decisions by ref.
+- `context_handoff_tokens` sets the token count at which a member is told to
+  hand off (see "When a member's context runs high").
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
   starts a member idle, for you to prompt. With `"accept_trust": false`,
   launch does not answer the folder-trust prompt, and it fails the member
@@ -368,7 +375,12 @@ Check three things first:
   folder-trust prompt itself. It refuses the stronger prompt that also grants
   the folder's own settings, so open Claude Code in that repository yourself,
   accept the dialog, then add the member again with `--add`. A member rooted
-  at the home directory is refused.
+  at the home directory is refused. The plain prompt is not proof that the
+  folder is safe. Claude Code 2.1.303 shows it also for a folder whose
+  settings declare hooks, project MCP servers or an `apiKeyHelper`, and those
+  then run with the member's rights. The user accepted this risk on
+  2026-10-19. Read the folder's `.claude/` and `.mcp.json` before you launch
+  members into it for the first time.
 
 ```bash
 teamwire launch --dry-run --spec team.json    # validate and print the plan; touches nothing
@@ -604,6 +616,51 @@ and the failed member's report. In a 2026 study of restarted coding agents, a
 restart that could see the earlier diff raised one model's solve rate from
 66.6% to 71.8%. A cold restart reached 66.8%.
 
+### When a member's context runs high
+
+A member's answers get worse as its context window fills. With auto-compact
+off, a member that fills its window stops with an error. `teamwire status`
+shows each member's fill in the `ctx` column, for example `ctx 72% 720k`, and
+`ctx -` when teamwire cannot read it. The watch prints one
+`CONTEXT <role> <pct>% <n>k of <window>k (handoff at <n>k)` line per member
+and generation once the member passes its handoff point.
+
+The handoff point is 40% of the model's window unless the spec sets
+`context_handoff_tokens`, a number of tokens, on the team or on a member.
+A fresh Claude Code session already holds about 60,000 tokens, so set a number well above that. Launch warns below 100,000. No measurement backs the 40% for Claude. Measured studies see quality fall
+in absolute tokens, so on a 1M window set the number yourself if 400k is too
+high for the task.
+
+Past its point, the member gets a note after its next tool call. The note tells
+it to finish its step, commit, run `teamwire handoff --guide`, write a handoff
+document at `reports/<role>.handoff.md` and record `done` with a summary that
+starts with `handoff:`. When that `done` arrives, run:
+
+```bash
+teamwire handoff <team> --role <role>
+```
+
+The command closes the member's old session and opens a fresh one in the same
+worktree, on the same branch, with the same brief, report and token. The new
+session starts a new generation and reads the brief and the handoff document.
+The command refuses a member that is in a turn, at a dialog or has uncommitted
+work, and changes nothing then. When the handoff document is missing or older
+than the member's session, the command prints a `warning:` line and points the
+new session at the brief, the member's report and `git log` instead. Read that
+warning: the member may not have finished writing. The first line also tells
+the new session how many unread messages it has. Wait for the turn to end and run it again. It
+never stops a turn.
+
+If the command fails after it closed the old session, run
+`teamwire reopen <team> --role <role>` once the old session has ended. That
+resumes the old session, with its full context. The command writes the old
+session back first when it can. When the member had no recorded session, the
+error says `reopen` has nothing to resume.
+
+A Claude member that passes its point and gets no handoff compacts its own
+context at twice that point. A Codex member runs to its own limit, so hand it
+off at the `CONTEXT` line.
+
 ## After the last wave: integrate, then verify
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
@@ -617,12 +674,19 @@ becomes one tree that passes the full gate.
    preset, add it to the finished team with `--add`, and start a new watch.
    The closer runs `teamwire verify` and every claimed check, on each
    member's branch and again on the joined head when one exists, and records
-   real exit codes. In a temporary clone it makes itself, it first runs the
-   member's `setup` with the clone's path as its first argument, an install
-   allowed there, or copies an existing `target/` or `node_modules` folder in.
-   Then it reverts the fix behind each claimed new test and each finding
-   graded wrong conclusion, and confirms the test then fails. A passing test
-   can prove nothing: in at least six of teamwire's own runs, a closer found a
+   real exit codes. It works in one clone it makes at
+   `$TEAMWIRE_HOME/cache/closer/<team>/clone`. Members can have different
+   setups, so the closer runs each member's `setup` there once, the first
+   time it checks that member, with the clone's path as its first argument,
+   an install allowed there. It never copies a `target/` or `node_modules`
+   folder in, because each copied file costs a scan by the machine's
+   security agent. For each check it fetches and checks out the member's
+   branch, runs `git reset --hard` to drop staged reverts, and
+   `git clean -fd` keeps the ignored build folders. `teamwire close`
+   deletes the clone. Then it reverts the fix behind each claimed new test
+   and each finding graded wrong conclusion, and confirms the test then
+   fails. A passing test can prove nothing: in at least six of teamwire's own
+   runs, a closer found a
    test that passed without its fix. Spotify calls code that "passes CI but is
    functionally incorrect" "the most serious error". At Bun, Claude read "get
    all the crates to compile" as "stub out the functions with compilation
@@ -647,6 +711,9 @@ becomes one tree that passes the full gate.
    teamwire send <team> --to tenancy --type reprompt --file findings-for-tenancy.md
    ```
 
+   Hand off a member that is past its handoff point before you send it a
+   reprompt with findings, so the fixes run in a fresh context.
+
    The owner checks each finding against the code, fixes what holds, and
    answers with evidence where it does not. Confirm each fix with
    `teamwire verify <team> --role <owner>`. Allow one fresh review, then at
@@ -669,12 +736,17 @@ becomes one tree that passes the full gate.
    lint, type, test or CI configuration. Even inside `owns`, it flags a
    deleted or removed test and an added line that skips or silences a check.
    It flags `no-commits` when an implementer said `done` with no commit
-   beyond its base. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
+   beyond its base, `no-owns` for an implementer with an empty `owns` list,
+   `uncommitted:<path>` for each uncommitted path, `asserts-removed:<path>`
+   for a file that lost assert lines, and `head-moved` when a commit landed
+   while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
    `SKIPPED`. A brief may have asked for a flagged change, so read every
    flag, and never merge past one you have not read.
    `teamwire verify <team> --role R --waive FLAG --reason TEXT`
    waives one flag, named as verify prints it in brackets, at the member's
-   current HEAD. A later commit needs a new waiver. `--deep` adds the database
+   current HEAD. A later commit needs a new waiver. `uncommitted:<path>` is
+   one flag per path, so a waiver covers that path only. `head-moved` cannot
+   be waived: run verify again. `--deep` adds the database
    integrity check and a check of every message hash.
 
    Your own commits show up here. A commit you make on a member's branch
@@ -736,7 +808,7 @@ Read each member's token use with `teamwire metrics <team>`. After close,
 that form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but
 an archive put elsewhere with `--archive-to` is not read, so read it before
 you close in that case. The counter `teamwire.member.tokens` has the
-labels `team`, `role`, `kind`, `model` and `type` (`input`, `output`,
+labels `team`, `role`, `kind`, `model`, `effort` and `type` (`input`, `output`,
 `cache_read`, `cache_creation`). A team whose results reach you as
 `COMPLETED` watch lines, because your host cannot type into your pane,
 records no tokens.
@@ -753,7 +825,9 @@ Close runs in the only safe order and stops at the first step that fails:
    adding `--unverified` when its verify or the closer has not passed, and
    tell the user plainly.
 2. It refuses while a worktree has uncommitted changes. Commit them or copy
-   them out, then run again.
+   them out, then run again. A worktree on a detached HEAD whose commits are
+   on no branch gets the branch `teamwire/rescue/<team>-<role>-<sha7>`, and
+   close prints it among the kept branches.
 3. It archives the team (briefs, contracts, messages, results, reports, setup
    logs) to `$TEAMWIRE_HOME/archive/<team>-<date>`, or to
    `DIR/<team>-<date>` with `--archive-to DIR`, and adds a time to the name

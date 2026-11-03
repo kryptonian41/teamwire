@@ -71,6 +71,16 @@ pub trait Platform: Send + Sync {
     /// Run in a new process group; on timeout kill the group; exit 124.
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError>;
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError>;
+    /// Creates the directory `path` and every missing parent. The default
+    /// refuses, for a platform that writes no files.
+    fn create_dir_all(&self, _path: &Path) -> Result<(), PlatformError> {
+        Err(PlatformError::unsupported())
+    }
+    /// Deletes the directory `path` and everything in it; a symlink at
+    /// `path` loses only the link. The default refuses, as above.
+    fn remove_dir_all(&self, _path: &Path) -> Result<(), PlatformError> {
+        Err(PlatformError::unsupported())
+    }
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
@@ -190,6 +200,30 @@ impl RunOutput {
     pub fn success(&self) -> bool {
         self.exit_code == 0 && !self.timed_out
     }
+
+    /// The text a failed call left, for a message: "timed out", else the
+    /// trimmed stderr and stdout, else the exit code.
+    pub fn failure_text(&self) -> String {
+        if self.timed_out {
+            return "timed out".to_owned();
+        }
+        let text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&self.stderr),
+            String::from_utf8_lossy(&self.stdout)
+        );
+        let text = text.trim();
+        if text.is_empty() {
+            format!("exit {}", self.exit_code)
+        } else {
+            text.to_owned()
+        }
+    }
+
+    /// The trimmed standard output.
+    pub fn stdout_trimmed(&self) -> String {
+        String::from_utf8_lossy(&self.stdout).trim().to_owned()
+    }
 }
 
 /// A sleep hold process (`caffeinate` on macOS), as recorded on the team.
@@ -253,6 +287,23 @@ string_enum! {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn output(code: i32, out: &str, err: &str, timed_out: bool) -> RunOutput {
+        RunOutput {
+            exit_code: code,
+            stdout: out.into(),
+            stderr: err.into(),
+            timed_out,
+        }
+    }
+
+    #[test]
+    fn failure_text_prefers_a_timeout_then_the_streams_then_the_exit_code() {
+        assert_eq!(output(124, "x", "y", true).failure_text(), "timed out");
+        assert_eq!(output(1, "out\n", "err ", false).failure_text(), "err out");
+        assert_eq!(output(3, "\n", "", false).failure_text(), "exit 3");
+        assert_eq!(output(0, " a b\n", "", false).stdout_trimmed(), "a b");
+    }
 
     /// One live pid with a known start time, or none.
     struct OneProcess {

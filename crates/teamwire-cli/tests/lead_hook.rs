@@ -14,7 +14,7 @@
 #[path = "../../teamwire-verify/tests/support/fixture.rs"]
 pub mod fixture;
 
-use std::io::Write;
+use std::io::{BufRead, Write};
 use std::process::{Command, Stdio};
 
 use fixture::{Fixture, MemberSetup};
@@ -128,8 +128,25 @@ fn a_subagent_stop_is_not_held() {
 #[test]
 fn a_member_session_returns_at_once() {
     let fx = team();
-    let run = hook(&fx, &[("TEAMWIRE_TEAM", "alpha")], &stop("lead-1", ""));
-    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    for env in [
+        &[("TEAMWIRE_TEAM", "alpha")][..],
+        &[("TEAMWIRE_TOKEN", "t")],
+    ] {
+        let run = hook(&fx, env, &stop("lead-1", ""));
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{env:?}");
+    }
+}
+
+#[test]
+fn an_empty_team_variable_is_still_the_lead() {
+    let fx = team();
+    let run = hook(&fx, &[("TEAMWIRE_TEAM", "")], &stop("lead-1", ""));
+    assert_eq!(run.code, 0);
+    assert!(
+        run.out.contains("[teamwire:alpha] no watch is running"),
+        "{}",
+        run.out
+    );
 }
 
 #[test]
@@ -251,10 +268,19 @@ fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
     assert_eq!((run.code, run.out.as_str()), (0, ""));
 }
 
-/// Two teams' databases are each held under an exclusive lock by another
-/// process, so each read waits for the database engine's own 5 s busy timeout. Read one
-/// after the other that is 10 s; the hook must give up at its own 5 s bound
-/// and let the stop through with no output.
+/// Four teams' databases are each held under an exclusive lock by another
+/// process, so each read waits for the database engine's own 5 s busy
+/// timeout. Read one after the other that is at least 20 s; the hook must
+/// give up at its own 5 s bound and let the stop through with no output.
+///
+/// What this proves: the whole hook, the part after its bound included,
+/// ends near the bound however many stores are locked. What it cannot
+/// prove: that the part after the bound reads no store. A hook whose later
+/// part still read stores passes too, because once the bounded part gives
+/// up the hook lets the stop through and nothing runs after it. Catching
+/// that needs a lock that starts between the bounded reads and the later
+/// ones, which a test cannot time reliably. The signature of
+/// `lead_reads_watch_lines`, which takes no path, guards it instead.
 #[test]
 fn locked_stores_let_the_stop_through_at_the_bound() {
     let fx = team();
@@ -265,10 +291,13 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
     let db = |name: &str| {
         teamwire_store::database_path(&home, &teamwire_core::TeamName::parse(name).unwrap())
     };
-    std::fs::create_dir_all(db("beta").parent().unwrap()).unwrap();
-    std::fs::copy(db("alpha"), db("beta")).unwrap();
+    let teams = ["alpha", "beta", "gamma", "delta"];
+    for name in &teams[1..] {
+        std::fs::create_dir_all(db(name).parent().unwrap()).unwrap();
+        std::fs::copy(db("alpha"), db(name)).unwrap();
+    }
     let mut holders = Vec::new();
-    for name in ["alpha", "beta"] {
+    for name in teams {
         let mut holder = Command::new("sqlite3")
             .arg(db(name))
             .stdin(Stdio::piped())
@@ -280,10 +309,18 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
         held.write_all(b"PRAGMA journal_mode=DELETE;\nBEGIN EXCLUSIVE;\nSELECT 1;\n")
             .unwrap();
         held.flush().unwrap();
+        // `SELECT 1` prints only once `BEGIN EXCLUSIVE` holds the lock, so
+        // the hook starts after every store is locked. A holder that died
+        // closes its output, and the read ends instead of waiting.
+        let mut out = std::io::BufReader::new(holder.stdout.take().unwrap());
+        let mut lines = Vec::new();
+        let mut line = String::new();
+        while out.read_line(&mut line).unwrap() > 0 && line.trim() != "1" {
+            lines.push(std::mem::take(&mut line));
+        }
+        assert_eq!(line.trim(), "1", "{name} was not locked: {lines:?}");
         holders.push((holder, held));
     }
-    // Time for the holders to take their locks before the hook starts.
-    std::thread::sleep(std::time::Duration::from_millis(500));
 
     let start = std::time::Instant::now();
     let run = hook_at(&home, &[], &stop("lead-1", ""));
@@ -298,7 +335,7 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
     // Not much below 5 s: a hook that failed fast on the lock would also print
     // nothing, and only the wait shows it used its bound.
     assert!(waited >= std::time::Duration::from_secs(4), "{waited:?}");
-    // Well under the 10 s that two unbounded reads take, yet loose enough for
-    // process start and exit on a loaded machine.
-    assert!(waited < std::time::Duration::from_secs(8), "{waited:?}");
+    // Well under the 20 s that four unbounded reads take, yet loose enough
+    // for process start and exit on a loaded machine.
+    assert!(waited < std::time::Duration::from_secs(15), "{waited:?}");
 }

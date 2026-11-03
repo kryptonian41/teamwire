@@ -86,6 +86,74 @@ fn a_generation_span_carries_the_harness_session_id() {
 }
 
 #[test]
+fn a_handoff_opens_a_new_generation_span_with_the_new_session() {
+    let mut log = Log(Vec::new());
+    log.add(
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        json!({"session_id": "sess-1"}),
+    );
+    let handoff = log.add(
+        21,
+        EventType::MemberHandoff,
+        Some("api"),
+        None,
+        json!({"generation": 2, "old_session": "sess-1", "new_session": "sess-2", "place": "p"}),
+    );
+    assert!(log.spans(&handoff).is_empty());
+    let done = log.add(
+        51,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(51), 1)),
+        json!({"status": "done", "generation": 2}),
+    );
+    let spans = log.spans(&done);
+    let span = spans
+        .iter()
+        .find(|s| s.name == "teamwire.member.generation")
+        .unwrap();
+    assert_eq!(span.end.saturating_since(span.start).as_secs(), 30);
+    assert_eq!(
+        attr(span, "session.id"),
+        Some(&Attr::Str("sess-2".to_owned()))
+    );
+
+    // A harness that picks its own session leaves none known until its hook
+    // records one; the old session must not be shown for the new generation.
+    let mut log = Log(Vec::new());
+    log.add(
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        json!({"session_id": "sess-1"}),
+    );
+    log.add(
+        21,
+        EventType::MemberHandoff,
+        Some("api"),
+        None,
+        json!({"generation": 2, "old_session": "sess-1", "new_session": null, "place": "p"}),
+    );
+    let done = log.add(
+        51,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(51), 1)),
+        json!({"status": "done", "generation": 2}),
+    );
+    let spans = log.spans(&done);
+    let span = spans
+        .iter()
+        .find(|s| s.name == "teamwire.member.generation")
+        .unwrap();
+    assert_eq!(attr(span, "session.id"), None);
+}
+
+#[test]
 fn a_launch_span_ends_at_the_event_that_settles_the_last_member() {
     let mut log = Log(Vec::new());
     let data = |extra: Value| {
@@ -136,6 +204,37 @@ fn a_launch_span_ends_at_the_event_that_settles_the_last_member() {
     // The failed member's span says why, and hangs under the launch.
     assert_eq!(spans[0].error.as_deref(), Some("no_place"));
     assert_eq!(spans[0].parent, Some(span_id("launch", "L1")));
+}
+
+/// A member refused before it was recorded has no member span, even when an
+/// earlier launch recorded the role, but it settles its place in the launch:
+/// the launch span is built once all three are in.
+#[test]
+fn a_refused_member_settles_the_launch_span() {
+    let mut log = Log(Vec::new());
+    let data = || json!({"launch": "L1", "requested": 3});
+    let earlier = json!({"launch": "L0", "requested": 1});
+    log.add(0, EventType::MemberCreating, Some("db"), None, earlier);
+    for (secs, who) in [(1, "api"), (2, "web")] {
+        log.add(secs, EventType::MemberCreating, Some(who), None, data());
+    }
+    log.add(5, EventType::MemberStarted, Some("api"), None, data());
+    let failed = log.add(6, EventType::MemberFailed, Some("web"), None, data());
+    let names = |spans: &[Span]| spans.iter().map(|s| s.name).collect::<Vec<_>>();
+    assert_eq!(names(&log.spans(&failed)), ["teamwire.launch.member"]);
+    let mut refused = data();
+    refused["reason_code"] = json!("afk_budget_spent");
+    let refused = log.add(7, EventType::MemberRefused, Some("db"), None, refused);
+    let spans = log.spans(&refused);
+    assert_eq!(names(&spans), ["teamwire.launch"]);
+    assert_eq!(
+        attr(&spans[0], "teamwire.members.requested"),
+        Some(&Attr::Int(3))
+    );
+    assert_eq!(
+        attr(&spans[0], "teamwire.members.started"),
+        Some(&Attr::Int(1))
+    );
 }
 
 #[test]
@@ -258,10 +357,14 @@ fn a_verify_span_starts_when_the_check_started() {
         EventType::VerifyRecorded,
         Some("api"),
         None,
-        json!({"verdict": "PASS", "seconds": 12}),
+        json!({"verdict": "PASS", "seconds": 12, "head_sha": "abc123"}),
     );
     let spans = log.spans(&recorded);
     assert_eq!(spans.len(), 1);
+    assert_eq!(
+        attr(&spans[0], "teamwire.head_sha"),
+        Some(&Attr::Str("abc123".to_owned()))
+    );
     assert_eq!(spans[0].end.saturating_since(spans[0].start).as_secs(), 12);
     assert_eq!(
         attr(&spans[0], "teamwire.verdict"),
@@ -302,5 +405,31 @@ fn a_delivery_to_another_team_is_its_own_recipient_and_never_the_lead() {
     assert_eq!(
         attr(&spans[0], "teamwire.to"),
         Some(&Attr::Str("db@beta".to_owned()))
+    );
+}
+
+#[test]
+fn a_message_span_names_the_sender_not_the_recipient() {
+    let mut log = Log(Vec::new());
+    let m = Ulid::from_parts(at(10), 97);
+    log.add(
+        10,
+        EventType::MessageSent,
+        None,
+        Some(m),
+        json!({"type": "question", "sender_kind": "other_team", "from": "api@beta", "recipients": ["lead"]}),
+    );
+    let done = log.add(
+        12,
+        EventType::DeliveryHandedOff,
+        None,
+        Some(m),
+        json!({"to": "lead", "route": "host_typing", "attempts": 1}),
+    );
+    let spans = log.spans(&done);
+    let message = spans.iter().find(|s| s.name == "teamwire.message").unwrap();
+    assert_eq!(
+        attr(message, "teamwire.from"),
+        Some(&Attr::Str("api@beta".to_owned()))
     );
 }

@@ -1,0 +1,49 @@
+    Checking regex-syntax v0.8.11
+    Checking teamwire-core v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-core)
+    Checking num-traits v0.2.19
+ Documenting xtask v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/xtask)
+ Documenting teamwire-core v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-core)
+    Checking chrono v0.4.45
+    Checking regex-automata v0.4.18
+    Checking schemars v1.2.2
+    Checking teamwire-store v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-store)
+    Checking teamwire-platform v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-platform)
+    Checking teamwire-fakes v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/fakes)
+ Documenting teamwire-fakes v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/fakes)
+ Documenting teamwire-store v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-store)
+ Documenting teamwire-platform v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-platform)
+    Checking teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)
+    Checking teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)
+    Checking teamwire-host-tmux v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-tmux)
+    Checking teamwire-harness-codex v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-codex)
+ Documenting teamwire-harness-claude v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-claude)
+ Documenting teamwire-host-tmux v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-tmux)
+ Documenting teamwire-host-herdr v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-host-herdr)
+ Documenting teamwire-harness-codex v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-harness-codex)
+    Checking rmcp v3.5.0
+    Checking teamwire-deliver v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-deliver)
+    Checking teamwire-otel v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-otel)
+ Documenting teamwire-deliver v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-deliver)
+ Documenting teamwire-otel v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-otel)
+    Checking teamwire-msg v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-msg)
+    Checking teamwire-watch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-watch)
+ Documenting teamwire-watch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-watch)
+ Documenting teamwire-msg v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-msg)
+ Documenting teamwire-e2e v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/e2e)
+ Documenting teamwire-crash-tests v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/tests/crash)
+    Checking globset v0.4.20
+    Checking matchers v0.2.0
+    Checking tracing-subscriber v0.3.23
+    Checking teamwire-verify v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-verify)
+    Checking teamwire-launch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-launch)
+ Documenting teamwire-verify v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-verify)
+ Documenting teamwire-launch v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-launch)
+    Checking teamwire-report v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-report)
+    Checking teamwire-close v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-close)
+ Documenting teamwire-report v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-report)
+ Documenting teamwire-close v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-close)
+    Checking teamwire-mcp v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-mcp)
+ Documenting teamwire-mcp v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-mcp)
+ Documenting teamwire-cli v0.0.0 (/private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/crates/teamwire-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 5.06s
+   Generated /private/tmp/claude-501/-private-tmp-claude-501-bnruns-bnei8xdqkf-clone/ad7f97de-f823-49a5-91a8-3ef40ab18bb3/scratchpad/integrate/target/doc/teamwire/index.html and 22 other files

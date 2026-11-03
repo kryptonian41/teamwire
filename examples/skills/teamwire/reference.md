@@ -53,7 +53,7 @@ lead (you)
 
 ## Watch lines
 
-`DIED <role>` (the session is gone with no completion), `BLOCKED <role>` (at
+`DIED <role>` (the session is gone with no reported completion), `BLOCKED <role>` (at
 a dialog), `LATE <role> <age>` (past its deadline with nothing recorded),
 `SILENT <role>` (quiet with no completion, so ask it) and
 `TEAM-STALLED <roles>` (every remaining member stuck) report trouble to act
@@ -64,10 +64,12 @@ database, so run `teamwire doctor`. The other lines:
 | --- | --- |
 | `WATCHING n members` | The watch started. |
 | `DECLARED <role>` | A completion is recorded while its turn still runs. The report lands at turn end. |
-| `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. |
+| `UNREPORTED <role>: ...` | The member recorded done and its turn ended, but its turn-end hook never reported. Run `teamwire doctor`, then read the member's report. The team keeps waiting. |
+| `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. When the result file is missing or out of date, the path is the report, `reports/<role>.md`. |
 | `UNDELIVERED <role> <reason> Result: <path>` | The hook did not type the result into your pane. This line is your only notice. Read the path, then run `teamwire received <team> <role>`, so `status` stops listing the result. |
 | `UNCONFIRMED <role> ...` | Typing the result stalled. It may or may not be on your screen. Once you have the result, run `teamwire received <team> <role>`. |
 | `QUESTION-UNDELIVERED <id> from <role>` or `QUESTION-UNCONFIRMED <id> from <role>` | A question to you could not be typed, or its typing stalled. `teamwire log` shows an excerpt, and the team's `comms/` directory holds the full text. |
+| `CONTEXT <role> <pct>% <n>k of <window>k (handoff at <n>k)` | The member's context passed its handoff point. Once per generation. Wait for its `handoff:` completion, then run `teamwire handoff <team> --role <role>`. |
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
@@ -80,8 +82,16 @@ database, so run `teamwire doctor`. The other lines:
 | `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. |
+| `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |
+
+When a member's context runs high: `teamwire status` shows `ctx` per member,
+and the `CONTEXT` line says it passed its point (40% of its window, or the
+`context_handoff_tokens` of the spec; no measurement backs the 40% for
+Claude). The member writes `reports/<role>.handoff.md` and records `done` with
+a summary that starts with `handoff:`. Then run `teamwire handoff <team> --role
+<role>`. A failed handoff is recovered with `teamwire reopen <team> --role <role>`.
 
 When a member sits at a dialog the launcher does not answer, read its pane
 with the host's own tools, and do not retry in a loop. When a member is idle

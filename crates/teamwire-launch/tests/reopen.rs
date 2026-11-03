@@ -21,7 +21,7 @@ use std::time::Duration;
 use common::{Rig, member_row, pane_member, team_spec, with};
 use serde_json::json;
 use teamwire_core::{
-    Clock, Host, Liveness, MemberState, Pid, PlaceState, Role, SessionId, SessionKind,
+    Address, Clock, Host, Liveness, MemberState, Pid, PlaceState, Role, SessionId, SessionKind,
 };
 use teamwire_launch::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 use teamwire_store::{Ctx, Store};
@@ -64,7 +64,13 @@ fn closed_team(rig: &Rig, roles: &[&str]) -> Store {
 
 fn close_tab(rig: &Rig, store: &Store, role_name: &str) {
     let place = member_row(store, role_name).unwrap().place.unwrap();
-    rig.host.close(&place, T).unwrap();
+    rig.host
+        .close(
+            &place,
+            &Address::parse(&format!("tw_demo_{role_name}")).unwrap(),
+            T,
+        )
+        .unwrap();
 }
 
 fn run(rig: &Rig, store: &mut Store, opts: &ReopenOpts) -> Result<ReopenReport, ReopenError> {
@@ -617,9 +623,9 @@ fn a_lead_whose_folder_is_the_home_directory_is_refused_and_nothing_is_spawned()
 }
 
 /// A launched team whose session is dead but whose recorded tab is still
-/// listed, under a name no agent uses any more (a bare shell the dead
-/// session left behind). The fake host refuses a second agent under a live
-/// name, so the real tab is closed and the shell tab is recorded instead.
+/// listed under the member's name (a bare shell the dead session left
+/// behind). The fake host frees the name of a place whose agent is gone, so
+/// the real tab is closed and a gone tab under the same name is recorded.
 fn dead_session_in_a_live_tab(rig: &Rig) -> (Store, teamwire_core::Place) {
     rig.harness
         .set_session_cwd(sid("lead-session"), rig.work.path());
@@ -628,10 +634,16 @@ fn dead_session_in_a_live_tab(rig: &Rig) -> (Store, teamwire_core::Place) {
     let row = member_row(&store, "api").unwrap();
     rig.harness
         .set_liveness(&row.session_id.unwrap(), Liveness::Dead);
-    rig.host.close(&row.place.unwrap(), T).unwrap();
+    rig.host
+        .close(
+            &row.place.unwrap(),
+            &Address::parse("tw_demo_api").unwrap(),
+            T,
+        )
+        .unwrap();
     let shell = rig.host.add_place(
-        "left-over-shell",
-        PlaceState::Idle,
+        "tw_demo_api",
+        PlaceState::Gone,
         teamwire_core::Occupant {
             session: None,
             pids: vec![Pid::new(4242)],
@@ -716,4 +728,147 @@ fn an_old_tab_that_holds_another_session_is_left_open_with_a_warning() {
         report.warnings
     );
     assert!(rig.host.list(T).unwrap().contains(&old));
+}
+
+#[test]
+fn a_damaged_unrelated_event_of_the_member_does_not_stop_its_reopen() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute(
+                    "UPDATE events SET time = 'yesterday' WHERE type = 'member.creating' AND role = 'api'",
+                    [],
+                )
+                .map(|_| ())
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+}
+
+/// A host that takes team `demo`'s close lock, as `teamwire close` does,
+/// right before its first `read_tail` (the trust step after the spawn), then
+/// does what the fake does.
+struct LockingHost {
+    inner: std::sync::Arc<teamwire_fakes::FakeHost>,
+    home: std::path::PathBuf,
+    taken: std::sync::atomic::AtomicBool,
+}
+
+impl Host for LockingHost {
+    fn id(&self) -> teamwire_core::HostId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> teamwire_core::HostCaps {
+        self.inner.capabilities()
+    }
+    fn spawn(
+        &self,
+        req: &teamwire_core::SpawnRequest,
+        timeout: Duration,
+    ) -> Result<teamwire_core::Place, teamwire_core::HostError> {
+        self.inner.spawn(req, timeout)
+    }
+    fn submit(
+        &self,
+        place: &teamwire_core::Place,
+        text: &teamwire_core::OneLine,
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.submit(place, text, timeout)
+    }
+    fn state(
+        &self,
+        place: &teamwire_core::Place,
+        timeout: Duration,
+    ) -> Result<PlaceState, teamwire_core::HostError> {
+        self.inner.state(place, timeout)
+    }
+    fn occupant(
+        &self,
+        place: &teamwire_core::Place,
+        timeout: Duration,
+    ) -> Result<teamwire_core::Occupant, teamwire_core::HostError> {
+        self.inner.occupant(place, timeout)
+    }
+    fn read_tail(
+        &self,
+        place: &teamwire_core::Place,
+        lines: u16,
+        timeout: Duration,
+    ) -> Result<String, teamwire_core::HostError> {
+        if !self.taken.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            let team = teamwire_core::TeamName::parse("demo").unwrap();
+            let mut store = Store::open(&self.home, &team).unwrap();
+            let now = teamwire_fakes::FakeClock::new().now();
+            assert!(store.write(|tx| tx.begin_close(now, Pid::new(1))).unwrap());
+        }
+        self.inner.read_tail(place, lines, timeout)
+    }
+    fn send_keys(
+        &self,
+        place: &teamwire_core::Place,
+        keys: &[teamwire_core::Key],
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.send_keys(place, keys, timeout)
+    }
+    fn close(
+        &self,
+        place: &teamwire_core::Place,
+        expected: &Address,
+        timeout: Duration,
+    ) -> Result<(), teamwire_core::HostError> {
+        self.inner.close(place, expected, timeout)
+    }
+    fn list(
+        &self,
+        timeout: Duration,
+    ) -> Result<Vec<teamwire_core::Place>, teamwire_core::HostError> {
+        self.inner.list(timeout)
+    }
+    fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, teamwire_core::HostError> {
+        self.inner.live_agent_names(timeout)
+    }
+    fn place_env_var(&self) -> Option<&'static str> {
+        self.inner.place_env_var()
+    }
+    fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
+        self.inner.place_from_env(read)
+    }
+}
+
+#[test]
+fn a_close_after_the_new_tab_opened_refuses_and_closes_that_tab() {
+    let mut rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    let before = member_row(&store, "api").unwrap().place;
+    let host = std::sync::Arc::new(LockingHost {
+        inner: rig.host.clone(),
+        home: rig.home.path().to_path_buf(),
+        taken: std::sync::atomic::AtomicBool::new(false),
+    });
+    let mut registry = teamwire_core::Registry::new();
+    registry.add_harness(rig.harness.clone()).unwrap();
+    registry.add_host(host).unwrap();
+    rig.registry = registry;
+    let only = ReopenOpts {
+        role: Some(role("api")),
+        dry_run: false,
+        ..ReopenOpts::default()
+    };
+    let report = run(&rig, &mut store, &only).unwrap();
+    let ReopenOutcome::Refused(why) = outcome(&report, "api") else {
+        unreachable!("{:?}", report.members);
+    };
+    assert!(
+        why.starts_with("team_closed:") && why.contains("the new tab was closed"),
+        "{why}"
+    );
+    assert_eq!(closed_places(&rig).len(), 1, "the new tab was closed");
+    assert_eq!(member_row(&store, "api").unwrap().place, before);
+    assert!(rig.host.live_agent_names(T).unwrap().is_empty());
 }

@@ -557,7 +557,8 @@ fn the_dry_run_of_a_removal_lists_the_refusals_and_the_overrides_and_changes_not
             "unverified",
             "close_place",
             "remove_worktree",
-            "mark_removed"
+            "mark_removed",
+            "branches_kept"
         ]
     );
     assert_eq!(rig.member("api").state, MemberState::Started);
@@ -713,5 +714,228 @@ fn a_removed_members_deleted_branch_is_not_reported_kept() {
     git(&rig.repo, &["branch", "-D", "br-api"]);
     let report = remove(&mut rig, "api", CloseOpts::default());
     assert!(report.refusals.is_empty(), "{report:?}");
-    assert!(report.branches_kept.is_empty(), "{report:?}");
+    assert!(
+        !report.branches_kept.iter().any(|b| b == "br-api"),
+        "{report:?}"
+    );
+    // The deleted branch held the HEAD commit, so a rescue branch keeps it now.
+    assert_eq!(report.branches_kept.len(), 1, "{report:?}");
+}
+
+#[test]
+fn removing_a_member_on_a_detached_head_keeps_its_commits_on_a_rescue_branch() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let sha = commit_more(&rig, "api", "detached.rs");
+    verify_at(&mut rig, "api", &sha, "PASS", &[]);
+    let rescue = format!(
+        "teamwire/rescue/{}-api-{}",
+        rig::TEAM,
+        sha.get(..7).unwrap_or(&sha)
+    );
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(git(&rig.repo, &["rev-parse", &rescue]), sha);
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue]);
+    assert_ne!(git(&rig.repo, &["for-each-ref", "--contains", &sha]), "");
+}
+
+#[test]
+fn a_commit_made_after_the_rescue_branch_stops_the_removal_and_keeps_the_worktree() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let first = commit_more(&rig, "api", "detached.rs");
+    verify_at(&mut rig, "api", &first, "PASS", &[]);
+    rig.set_place_state("api", PlaceState::Working);
+    let cwd = api.cwd.clone();
+    let late = std::cell::RefCell::new(String::new());
+    // The agent, still running under --stop, commits after close made the
+    // rescue branch and before its place closes.
+    let report = teamwire_close::close_observed(
+        &mut rig.ctx(),
+        CloseTarget::Member(role("api")),
+        CloseOpts {
+            stop: true,
+            ..CloseOpts::default()
+        },
+        &|step| {
+            if step == "close_place" {
+                *late.borrow_mut() = commit_more_in(&cwd, "late.rs");
+            }
+        },
+    );
+    let late = late.into_inner();
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("remove_worktree"),
+        "{report:?}"
+    );
+    assert!(
+        asks(
+            &report
+                .steps
+                .iter()
+                .map(|s| s.detail.clone())
+                .collect::<Vec<_>>(),
+            "no ref holds it"
+        ),
+        "{report:?}"
+    );
+    assert!(cwd.is_dir(), "the worktree holding {late} is kept");
+    assert_eq!(rig.member("api").state, MemberState::Started);
+
+    // The agent is stopped now; a rerun keeps the late commit on its own
+    // rescue branch and finishes.
+    rig.set_place_state("api", PlaceState::Idle);
+    verify_at(&mut rig, "api", &late, "PASS", &[]);
+    let rerun = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(rerun.stopped_at, None, "{rerun:?}");
+    assert!(!cwd.exists());
+    assert_ne!(git(&rig.repo, &["for-each-ref", "--contains", &late]), "");
+}
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn commit_more_in(cwd: &std::path::Path, file: &str) -> String {
+    std::fs::write(cwd.join(file), "more\n").unwrap();
+    git(cwd, &["add", "-A"]);
+    git(cwd, &["commit", "-q", "-m", "more work"]);
+    git(cwd, &["rev-parse", "HEAD"])
+}
+
+#[test]
+fn a_removal_keeps_the_worktree_while_a_process_from_the_closed_place_still_runs() {
+    let mut rig = verified_implementer();
+    let api = rig.member("api");
+    let place = rig.place_of("api");
+    // A git command the hangup reached, still finishing after the place closed.
+    let late = teamwire_core::Pid::new(7002);
+    rig.host.set_occupant(
+        &place,
+        teamwire_core::Occupant {
+            session: None,
+            pids: vec![late],
+        },
+    );
+    rig.platform.inner.set_alive(late, true);
+    // The process never ends here, so the wait would always run out.
+    rig.config.close_exit_wait_ms = 100;
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("close_place"),
+        "{report:?}"
+    );
+    let failed = report.steps.last().unwrap();
+    assert!(
+        !failed.ok && failed.detail.contains("7002") && failed.detail.contains("run close again"),
+        "{report:?}"
+    );
+    // The CLI reads this start to say the place is closed and the worktree kept.
+    assert!(
+        failed
+            .detail
+            .starts_with(&format!("api's place {} closed, but ", place.id)),
+        "{report:?}"
+    );
+    assert!(place_is_closed(&rig, "api"));
+    assert!(
+        api.cwd.is_dir(),
+        "the worktree stays while the process runs"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Started);
+
+    // The process ends: a rerun removes the worktree and marks the row.
+    rig.platform.inner.set_alive(late, false);
+    let rerun = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(rerun.stopped_at, None, "{rerun:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}
+
+#[test]
+fn a_reused_place_id_is_not_closed_by_a_removal_with_stop() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("api", MemberKind::Investigator);
+    // As after a tmux server restart: the member's recorded id now names
+    // another team's agent, in a state the host cannot report.
+    let old = rig.place_of("api");
+    let mine = teamwire_core::Address::parse(&format!("tw_{}_api", rig::TEAM)).unwrap();
+    rig.host
+        .close(&old, &mine, std::time::Duration::ZERO)
+        .unwrap();
+    rig.host.add_place_with_id(
+        old.id,
+        "tw_other_web",
+        PlaceState::Unknown,
+        teamwire_core::Occupant {
+            session: None,
+            pids: Vec::new(),
+        },
+    );
+    let report = remove(
+        &mut rig,
+        "api",
+        CloseOpts {
+            stop: true,
+            ..CloseOpts::default()
+        },
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        rig.host
+            .live_agent_names(std::time::Duration::ZERO)
+            .unwrap(),
+        ["tw_other_web"],
+        "{report:?}"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}
+
+#[test]
+fn removing_a_member_takes_back_its_exclude_lines_that_no_teammate_needs() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Investigator);
+    let web = rig.add_worktree_member("web", MemberKind::Investigator);
+    let exclude = rig.repo.join(".git/info/exclude");
+    std::fs::write(&exclude, "*.local\n/TASK.md\n/gen/api.out\n").unwrap();
+    let file = exclude.display().to_string();
+    let data = serde_json::json!({ "excluded": [{ "file": file, "lines": ["/TASK.md", "/gen/api.out"] }] });
+    let now = rig.clock.now();
+    rig.store
+        .write(|tx| {
+            tx.record_event(
+                now,
+                EventType::MemberStarted,
+                Some(&role("api")),
+                None,
+                &data,
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    for cwd in [&api.cwd, &web.cwd] {
+        std::fs::write(cwd.join("TASK.md"), "brief\n").unwrap();
+    }
+    std::fs::create_dir_all(api.cwd.join("gen")).unwrap();
+    std::fs::write(api.cwd.join("gen/api.out"), "x\n").unwrap();
+
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(
+        std::fs::read_to_string(&exclude).unwrap(),
+        "*.local\n/TASK.md\n",
+        "web's worktree still needs /TASK.md"
+    );
+
+    let report = remove(&mut rig, "web", CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(std::fs::read_to_string(&exclude).unwrap(), "*.local\n");
 }

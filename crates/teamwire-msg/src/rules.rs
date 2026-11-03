@@ -143,24 +143,11 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
     }
 }
 
-fn is_quiet(kind: MemberKind) -> bool {
-    matches!(kind, MemberKind::Reviewer | MemberKind::Closer)
-}
-
 /// Every agent that talks sends every kind of information; only the lead
 /// instructs (MSG-1).
 fn check_type(sender: SenderKind, kind: MessageType) -> Result<(), SendError> {
     let allowed = match (sender, kind) {
-        // Reviewers and closers report; the lead acts on the report (MSG-3).
-        (Some(k), _) if is_quiet(k) => false,
-        (Some(_), MessageType::Reprompt | MessageType::Note) => false,
-        (
-            Some(_),
-            MessageType::Notice
-            | MessageType::Finding
-            | MessageType::Question
-            | MessageType::Answer,
-        ) => true,
+        (Some(k), _) => k.may_send(kind),
         // A notice names a commit in the sender's checkout, and the lead has
         // no checkout on record to look it up in (MSG-2).
         (None, MessageType::Notice) => false,
@@ -220,7 +207,7 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
         };
         if let Some(m) = member {
             // A fresh view of the work: only the lead speaks to these (MSG-3).
-            if is_quiet(m.kind) && !from_lead {
+            if m.kind.is_quiet() && !from_lead {
                 return Err(Refusal::RecipientNotAllowed.into());
             }
             // A generation can only start for a member that is running.

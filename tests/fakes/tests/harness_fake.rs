@@ -40,6 +40,7 @@ fn member() -> MemberLaunch {
         otel: OtelConfig::default(),
         teamwire_bin: "/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
+        context_handoff_tokens: None,
         accept_trust: false,
     }
 }
@@ -109,9 +110,12 @@ fn dead_session_two_processes_and_listing_failure() {
 #[test]
 fn background_caller_is_reported() {
     let h = FakeHarness::new();
-    assert!(h.current_session().is_none());
+    assert!(h.caller_session(&|_| None).is_none());
     h.set_background_caller(sid("bg"));
-    assert_eq!(h.current_session().unwrap().kind, SessionKind::Background);
+    assert_eq!(
+        h.caller_session(&|_| None).unwrap().kind,
+        SessionKind::Background
+    );
 }
 
 #[test]
@@ -185,6 +189,6 @@ fn otel_env_is_empty_without_an_endpoint() {
 fn every_call_is_logged() {
     let h = FakeHarness::new();
     h.screen_state("");
-    h.current_session();
-    assert_eq!(h.log().names(), ["screen_state", "current_session"]);
+    h.caller_session(&|_| None);
+    assert_eq!(h.log().names(), ["screen_state", "caller_session"]);
 }

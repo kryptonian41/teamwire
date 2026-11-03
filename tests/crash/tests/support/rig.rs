@@ -46,7 +46,7 @@ pub fn token_of(role: &str) -> String {
 /// library, and the product hashes tokens with plain SHA-256.
 pub fn sha256(text: &str) -> [u8; 32] {
     use std::io::Write as _;
-    let mut child = Command::new("/usr/bin/shasum")
+    let mut child = Command::new("shasum")
         .args(["-a", "256"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -467,14 +467,33 @@ impl Rig {
     /// returned signal file and waits six seconds before it returns. A caller
     /// stuck there is between the host call and whatever it records next.
     pub fn pause_after(&mut self, words: &str) -> PathBuf {
+        let test = format!("[ \"$1 $2\" = '{words}' ]");
+        self.pause_wrapper("herdr", "fake-herdr", &test)
+    }
+
+    /// Like `pause_after` for git: a `git -C <dir> <words>` call runs the
+    /// real git, then pauses. The real git is named by its absolute path,
+    /// because the wrapper stands first on the `PATH`.
+    pub fn pause_after_git(&mut self, words: &str) -> PathBuf {
+        let real = real_git();
+        let test = format!("case \" $* \" in *' {words} '*) true;; *) false;; esac");
+        self.pause_wrapper("git", &real.display().to_string(), &test)
+    }
+
+    /// Writes `slow/<tool>`: run `real`, and when `test` holds for the
+    /// arguments, create the signal file and sleep six seconds.
+    fn pause_wrapper(&mut self, tool: &str, real: &str, test: &str) -> PathBuf {
         use std::os::unix::fs::PermissionsExt as _;
-        let signal = self.herdr.root().join("paused");
+        let signal = self.herdr.root().join(format!("paused-{tool}"));
         let script = format!(
-            "#!/bin/sh\nfake-herdr \"$@\"\nrc=$?\nif [ \"$1 $2\" = '{words}' ]; then\n  : > '{}'\n  sleep 6\nfi\nexit $rc\n",
+            "#!/bin/sh\n{real} \"$@\"\nrc=$?\nif {test}; then\n  : > '{}'\n  sleep 6\nfi\nexit $rc\n",
             signal.display()
         );
         std::fs::create_dir_all(self.herdr.root().join("slow")).unwrap();
-        let path = self.herdr.write_file("slow/herdr", &script).unwrap();
+        let path = self
+            .herdr
+            .write_file(&format!("slow/{tool}"), &script)
+            .unwrap();
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
         self.path_prefix = Some(path.parent().unwrap().to_path_buf());
         signal
@@ -584,6 +603,61 @@ pub fn wait_idle(rig: &Rig) {
     }
 }
 
+/// The first `git` on the test `PATH`, by absolute path.
+fn real_git() -> PathBuf {
+    let path = std::env::var_os("PATH").unwrap();
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("git"))
+        .find(|p| p.is_file())
+        .expect("no git on the PATH")
+}
+
+/// Runs `git -C dir args` with a fixed identity and asserts it succeeded.
+pub fn git(dir: &Path, args: &[&str]) -> String {
+    let out = Command::new(real_git())
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_AUTHOR_NAME", "t")
+        .env("GIT_AUTHOR_EMAIL", "t@example.com")
+        .env("GIT_COMMITTER_NAME", "t")
+        .env("GIT_COMMITTER_EMAIL", "t@example.com")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// Writes `name` into the checkout `dir` and commits it.
+pub fn commit_file(dir: &Path, name: &str, text: &str) {
+    std::fs::write(dir.join(name), text).unwrap();
+    git(dir, &["add", name]);
+    git(dir, &["commit", "-q", "-m", name]);
+}
+
+/// A repository on `main` with one commit, ignoring `.worktrees/` as launch
+/// requires.
+pub fn temp_repo() -> tempfile::TempDir {
+    let repo = tempfile::tempdir().unwrap();
+    git(repo.path(), &["init", "-q", "-b", "main"]);
+    std::fs::write(repo.path().join(".gitignore"), ".worktrees/\n").unwrap();
+    git(repo.path(), &["add", "-A"]);
+    git(repo.path(), &["commit", "-q", "-m", "first"]);
+    repo
+}
+
+/// The launch spec of one worktree member `wt` of team `alpha` in `repo`.
+pub fn worktree_spec(repo: &Path) -> String {
+    serde_json::json!({"team": "alpha", "title": "Alpha", "children": [
+        {"role": "wt", "title": "Worktree", "kind": "implementer", "mode": "worktree",
+         "repo": repo, "task": "build", "check": "true", "owns": ["a.txt"]}]})
+    .to_string()
+}
+
 /// Every archive directory of the home, oldest name first.
 pub fn archives(home: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(home.join("archive")) else {
@@ -594,9 +668,44 @@ pub fn archives(home: &Path) -> Vec<PathBuf> {
     dirs
 }
 
+/// Runs `close` until it succeeds, clearing a lock a dead close left. Returns
+/// how many runs it took.
+pub fn close_until_done(rig: &Rig) -> usize {
+    let mut finished = None;
+    for run in 1..=4 {
+        let out = rig.run(&["close", "alpha"], &Identity::Nobody);
+        if out.code == Some(0) {
+            finished = Some(run);
+            break;
+        }
+        assert!(
+            out.stderr.contains("--clear-stale-lock"),
+            "close refused for another reason: {out:?}"
+        );
+        let cleared = rig.run(&["close", "alpha", "--clear-stale-lock"], &Identity::Nobody);
+        assert_eq!(cleared.code, Some(0), "{cleared:?}");
+    }
+    finished.expect("close never finished")
+}
+
+/// The state directory is gone and the newest archive matches its sums.
+pub fn assert_closed_for_good(rig: &Rig) {
+    assert!(
+        !rig.home.path().join("teams/alpha").exists(),
+        "the state directory is still there"
+    );
+    let all = archives(rig.home.path());
+    let newest = all.last().expect("an archive exists");
+    assert!(
+        archive_verifies(newest),
+        "the newest archive {} does not match its SHA256SUMS",
+        newest.display()
+    );
+}
+
 /// True when every file of the archive hashes to its `SHA256SUMS` line.
 pub fn archive_verifies(dir: &Path) -> bool {
-    Command::new("/usr/bin/shasum")
+    Command::new("shasum")
         .args(["-a", "256", "-c", "SHA256SUMS"])
         .current_dir(dir)
         .stdout(Stdio::null())

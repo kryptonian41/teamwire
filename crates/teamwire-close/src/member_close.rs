@@ -1,11 +1,15 @@
-//! The per-member steps of a whole-team close: take the worktree back, close
+//! The per-member steps of a close: keep the member's branches (a detached
+//! HEAD's commits get a rescue branch first), take the worktree back, close
 //! the place, and say what a kept branch has that no remote has.
 
 use std::time::Duration;
 
-use teamwire_core::{HostErrorCode, Member, MemberState, Mode, RunOutput};
+use teamwire_core::{
+    Address, HostErrorCode, Member, MemberState, Mode, Pid, Platform, RunOutput, TeamName,
+};
 use teamwire_store::{Ctx, Party};
 
+use crate::facts::{self, Detached, Rescue};
 use crate::git;
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -23,6 +27,9 @@ pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, 
             "{role}'s worktree {} was already gone",
             member.cwd.display()
         ));
+    }
+    if let Some(why) = facts::stranded_refusal(ctx, member) {
+        return Err(why);
     }
     let path = member.cwd.display().to_string();
     let out = git::run(ctx.platform, repo, &["worktree", "remove", &path])
@@ -82,9 +89,42 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     Some(format!("removal deletes ignored files: {named}"))
 }
 
+/// How often a close checks whether the processes that ran in a closed place
+/// have ended. The whole wait is `Config::close_exit_wait_ms`: they only have
+/// to exit on the hangup.
+const EXIT_PAUSE: Duration = Duration::from_millis(50);
+
 /// Closes the member's own place through the member's own host (CLS-7).
-/// A place the host no longer knows is closed already.
-pub(crate) fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<String>, String> {
+/// A place the host no longer knows, or one that now holds another agent
+/// (a reused id), is closed already. When the member's worktree is still
+/// there, it is removed next, so close waits for the processes that ran in
+/// the place to end: the host returns once the place is closed, and a git
+/// command the hangup reached may still be finishing. If they still run when
+/// the wait ends, the error keeps the worktree and names them; it is the
+/// only error that starts with `<role>'s place `, which the CLI reads to say
+/// the place is already closed.
+pub(crate) fn close_place(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+) -> Result<Option<String>, String> {
+    let removing = member.mode == Mode::Worktree && member.cwd.is_dir();
+    close_place_then(
+        ctx,
+        team,
+        member,
+        removing.then_some("the worktree is kept. Stop them, then run close again"),
+    )
+}
+
+/// `close_place`, waiting for the place's processes whenever `kept` is
+/// given; `kept` says what the caller does not do while they still run.
+pub(crate) fn close_place_then(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+    kept: Option<&str>,
+) -> Result<Option<String>, String> {
     let Some(place) = &member.place else {
         return Ok(None);
     };
@@ -92,8 +132,31 @@ pub(crate) fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<Strin
     let (_, host) = ctx
         .adapters(&Party::Member(role.clone()))
         .map_err(|e| format!("{role}: {e}"))?;
-    match host.close(place, HOST_TIMEOUT) {
-        Ok(()) => Ok(Some(format!("{role}'s place {} closed", place.id))),
+    // Read before the close: a closed place has no occupant to ask about.
+    let pids = if kept.is_some() {
+        host.occupant(place, HOST_TIMEOUT)
+            .map(|o| o.pids)
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    match host.close(place, &Address::of(team, role), HOST_TIMEOUT) {
+        Ok(()) => {
+            let wait = Duration::from_millis(ctx.config.close_exit_wait_ms);
+            let running = still_running(ctx.platform, pids, wait);
+            if running.is_empty() {
+                return Ok(Some(format!("{role}'s place {} closed", place.id)));
+            }
+            let named: Vec<String> = running.iter().map(ToString::to_string).collect();
+            Err(format!(
+                "{role}'s place {} closed, but process(es) {} that ran in it still run {:?} \
+                 later; {}",
+                place.id,
+                named.join(", "),
+                wait,
+                kept.unwrap_or_default()
+            ))
+        }
         Err(e) if e.code == HostErrorCode::NotFound => Ok(Some(format!(
             "{role}'s place {} was already gone",
             place.id
@@ -102,12 +165,108 @@ pub(crate) fn close_place(ctx: &Ctx<'_>, member: &Member) -> Result<Option<Strin
     }
 }
 
+/// The processes of `pids` still running after the wait. A pid seen gone is
+/// not asked about again, so a later process that reuses it does not count.
+fn still_running(platform: &dyn Platform, mut pids: Vec<Pid>, wait: Duration) -> Vec<Pid> {
+    let tries = wait.as_millis().div_ceil(EXIT_PAUSE.as_millis());
+    for _ in 0..tries {
+        pids.retain(|p| platform.pid_alive(*p));
+        if pids.is_empty() {
+            return pids;
+        }
+        std::thread::sleep(EXIT_PAUSE);
+    }
+    pids.retain(|p| platform.pid_alive(*p));
+    pids
+}
+
+/// The branches close keeps for one member, and what they hold that no
+/// remote has.
+#[derive(Debug, Default)]
+pub(crate) struct Kept {
+    pub(crate) branches: Vec<String>,
+    pub(crate) unpushed: Vec<String>,
+    /// The worktree's HEAD was detached when the branches were read.
+    pub(crate) detached: bool,
+}
+
+/// The branches close keeps for one member: the recorded one, unless the
+/// user deleted it, and a rescue branch for a detached HEAD whose commits no
+/// branch, tag or remote ref holds. Removing that worktree would leave those
+/// commits on no ref, so the rescue branch is made here, before the worktree
+/// goes; `dry_run` only names it. An error means the commits could not be
+/// kept, and the caller must not remove the worktree.
+pub(crate) fn kept_branches(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+    member: &Member,
+    dry_run: bool,
+) -> Result<Kept, String> {
+    let role = &member.role;
+    let mut kept = Kept::default();
+    kept.branches.extend(member.branch.clone().filter(|b| {
+        !member
+            .repo
+            .as_deref()
+            .is_some_and(|r| git::branch_is_gone(ctx.platform, r, b))
+    }));
+    let head = facts::detached(ctx, team, member).map_err(|e| format!("{role}: {e}"))?;
+    kept.detached = head.is_some();
+    let rescue = match head {
+        Some(head) if dry_run => head
+            .pick(&[])
+            .map_err(|e| format!("{role}'s {e}"))?
+            .map(Rescue::into_name),
+        Some(head) => rescue(ctx, member, &head)?,
+        None => None,
+    };
+    kept.branches.extend(rescue.clone());
+    if !kept.branches.is_empty() {
+        kept.unpushed = unpushed(ctx, member, rescue.as_deref());
+    }
+    Ok(kept)
+}
+
+/// Creates (or reuses) the rescue branch at the detached HEAD. `git branch`
+/// runs without `-f`, so an existing branch never moves; a name git refuses
+/// sends close to the next one.
+fn rescue(ctx: &Ctx<'_>, member: &Member, head: &Detached) -> Result<Option<String>, String> {
+    let role = &member.role;
+    let mut refused = Vec::new();
+    let mut said = String::new();
+    loop {
+        let name = match head.pick(&refused) {
+            Ok(Some(Rescue::Create(name))) => name,
+            Ok(other) => return Ok(other.map(Rescue::into_name)),
+            Err(e) if said.is_empty() => return Err(format!("{role}'s {e}")),
+            Err(e) => return Err(format!("{role}'s {e}; git said: {said}")),
+        };
+        let out = git::run(ctx.platform, &member.cwd, &["branch", &name, &head.sha])
+            .map_err(|e| format!("{role}: {e}"))?;
+        if out.success() {
+            return Ok(Some(name));
+        }
+        said = git::failure_text(&out);
+        refused.push(name);
+    }
+}
+
 /// What a kept branch has that no remote has (CLS-8): commits ahead of its
 /// upstream, or, with no upstream, every commit since the member started.
-pub(crate) fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<String> {
+/// The note names the branch HEAD is on, which need not be the recorded one;
+/// a detached HEAD is named by its rescue branch.
+fn unpushed(ctx: &Ctx<'_>, member: &Member, rescue: Option<&str>) -> Vec<String> {
     if member.state == MemberState::Failed || !member.cwd.is_dir() {
         return Vec::new();
     }
+    let on = git::stdout_of(
+        ctx.platform,
+        &member.cwd,
+        &["symbolic-ref", "--short", "-q", "HEAD"],
+    )
+    .ok()
+    .or_else(|| rescue.map(str::to_owned));
+    let branch = on.map_or_else(|| "the detached HEAD".to_owned(), |b| format!("branch {b}"));
     let count = |args: &[&str]| -> Option<u64> {
         let out = git::run(ctx.platform, &member.cwd, args).ok()?;
         out.success()
@@ -118,7 +277,7 @@ pub(crate) fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<Stri
     if let Some(ahead) = count(&["rev-list", "--count", "@{upstream}..HEAD"]) {
         return if ahead > 0 {
             vec![format!(
-                "{role}: branch {branch} is {ahead} commit(s) ahead of its upstream, not pushed"
+                "{role}: {branch} is {ahead} commit(s) ahead of its upstream, not pushed"
             )]
         } else {
             Vec::new()
@@ -131,7 +290,7 @@ pub(crate) fn unpushed(ctx: &Ctx<'_>, member: &Member, branch: &str) -> Vec<Stri
         .unwrap_or_else(|| "HEAD".to_owned());
     match count(&["rev-list", "--count", &since]) {
         Some(n) if n > 0 => vec![format!(
-            "{role}: branch {branch} has no upstream; {n} commit(s) exist only on this machine"
+            "{role}: {branch} has no upstream; {n} commit(s) exist only on this machine"
         )],
         _ => Vec::new(),
     }

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="13" assertions="14" failures="0" skipped="3" time="0.030935">
+  <testsuite name="src/shared/teamwire.test.ts" file="src/shared/teamwire.test.ts" tests="13" assertions="14" failures="0" skipped="3" time="0" hostname="Apoorvs-Workmachine.local">
+    <testsuite name="fixtures match the teamwire schemas" file="src/shared/teamwire.test.ts" line="8" tests="4" assertions="4" failures="0" skipped="0" time="0.002" hostname="Apoorvs-Workmachine.local">
+      <testcase name="status" classname="fixtures match the teamwire schemas" time="0.00296" file="src/shared/teamwire.test.ts" line="9" assertions="1" />
+      <testcase name="teams" classname="fixtures match the teamwire schemas" time="0.000422" file="src/shared/teamwire.test.ts" line="10" assertions="1" />
+      <testcase name="log" classname="fixtures match the teamwire schemas" time="0.000388" file="src/shared/teamwire.test.ts" line="11" assertions="1" />
+      <testcase name="metrics" classname="fixtures match the teamwire schemas" time="0.000314" file="src/shared/teamwire.test.ts" line="12" assertions="1" />
+    </testsuite>
+    <testsuite name="AFK output" file="src/shared/teamwire.test.ts" line="15" tests="4" assertions="8" failures="0" skipped="0" time="0" hostname="Apoorvs-Workmachine.local">
+      <testcase name="status accepts an afk object and keeps it" classname="AFK output" time="0.000214" file="src/shared/teamwire.test.ts" line="22" assertions="1" />
+      <testcase name="status accepts a null afk and an older output without the key" classname="AFK output" time="0.00006" file="src/shared/teamwire.test.ts" line="26" assertions="2" />
+      <testcase name="teams accepts the budget end as a string, null, or no key" classname="AFK output" time="0.000068" file="src/shared/teamwire.test.ts" line="30" assertions="4" />
+      <testcase name="a spent budget with a text seconds_left fails the parse" classname="AFK output" time="0" file="src/shared/teamwire.test.ts" line="40" assertions="1" />
+    </testsuite>
+    <testsuite name="schemas refuse a changed shape" file="src/shared/teamwire.test.ts" line="46" tests="2" assertions="2" failures="0" skipped="0" time="0" hostname="Apoorvs-Workmachine.local">
+      <testcase name="a new delivery state fails the parse" classname="schemas refuse a changed shape" time="0.000249" file="src/shared/teamwire.test.ts" line="47" assertions="1" />
+      <testcase name="a new key is accepted and dropped" classname="schemas refuse a changed shape" time="0" file="src/shared/teamwire.test.ts" line="52" assertions="1" />
+    </testsuite>
+    <testsuite name="real teamwire output" file="src/shared/teamwire.test.ts" line="61" tests="3" assertions="0" failures="0" skipped="3" time="0" hostname="Apoorvs-Workmachine.local">
+      <testcase name="status --json" classname="real teamwire output" time="0" file="src/shared/teamwire.test.ts" line="66" assertions="0">
+        <skipped />
+      </testcase>
+      <testcase name="teams --json" classname="real teamwire output" time="0" file="src/shared/teamwire.test.ts" line="67" assertions="0">
+        <skipped />
+      </testcase>
+      <testcase name="metrics --json" classname="real teamwire output" time="0" file="src/shared/teamwire.test.ts" line="68" assertions="0">
+        <skipped />
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

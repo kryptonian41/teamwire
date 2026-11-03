@@ -8,9 +8,9 @@
 #[path = "support/rig.rs"]
 pub mod rig;
 
-use rig::Rig;
+use rig::{Rig, git};
 use teamwire_close::{CloseOpts, CloseTarget, close, plan_close};
-use teamwire_core::MemberKind;
+use teamwire_core::{Clock, EventType, MemberKind, Role};
 
 /// A rig whose worktree `api` holds ignored files named `names`. The pattern
 /// goes in the repository's own exclude file, so the worktree stays clean.
@@ -113,5 +113,117 @@ fn build_folders_are_not_named_but_everything_else_is() -> std::io::Result<()> {
         warning(plan.steps.into_iter().map(|s| (s.step, s.detail))),
         ["api: removal deletes ignored files: .env.local"]
     );
+    Ok(())
+}
+
+/// Records `lines` in `role`'s `member.started` data as the lines launch
+/// added to the repository's exclude file.
+#[cfg(test)]
+fn record_excluded(rig: &mut Rig, role: &str, lines: &[&str]) {
+    let file = rig.repo.join(".git/info/exclude").display().to_string();
+    let data = serde_json::json!({ "excluded": [{ "file": file, "lines": lines }] });
+    let now = rig.clock.now();
+    let role = Role::parse(role).unwrap();
+    rig.store
+        .write(|tx| {
+            tx.record_event(now, EventType::MemberStarted, Some(&role), None, &data)
+                .map(|_| ())
+        })
+        .unwrap();
+}
+
+/// A linked worktree of the repository that this team does not own, as
+/// another team's member would have it, holding `files`.
+fn other_worktree(rig: &Rig, files: &[&str]) -> std::io::Result<std::path::PathBuf> {
+    let path = rig.work.path().join("wt-other");
+    git(
+        &rig.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "other",
+            &path.display().to_string(),
+        ],
+    );
+    for file in files {
+        let at = path.join(file);
+        if let Some(dir) = at.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(at, "x\n")?;
+    }
+    Ok(path)
+}
+
+#[test]
+fn close_takes_back_launchs_lines_unless_another_worktree_needs_them() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let api = rig.member("api");
+    let exclude = rig.repo.join(".git/info/exclude");
+    std::fs::write(&exclude, "# mine\n/TASK.md\n/gen/api.out\n/gen/shared\n")?;
+    record_excluded(
+        &mut rig,
+        "api",
+        &["/TASK.md", "/gen/api.out", "/gen/shared"],
+    );
+    std::fs::write(api.cwd.join("TASK.md"), "brief\n")?;
+    std::fs::create_dir_all(api.cwd.join("gen"))?;
+    std::fs::write(api.cwd.join("gen/api.out"), "x\n")?;
+    other_worktree(&rig, &["TASK.md", "gen/shared"])?;
+
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.is_empty() && report.stopped_at.is_none(),
+        "{report:?}"
+    );
+    assert_eq!(
+        std::fs::read_to_string(&exclude)?,
+        "# mine\n/TASK.md\n/gen/shared\n",
+        "the other worktree still needs /TASK.md and /gen/shared"
+    );
+    let step = report.steps.iter().find(|s| s.step == "remove_worktrees");
+    assert!(
+        step.is_some_and(|s| s.detail.contains("took back /gen/api.out from")),
+        "{report:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn the_team_that_closes_last_takes_back_task_md_another_team_added() -> std::io::Result<()> {
+    // Team one launched first and recorded /TASK.md; this team found it there
+    // and recorded nothing. Team one has closed, and the user keeps a TASK.md
+    // of their own in the main checkout.
+    let mut rig = rig_with_ignored(&[])?;
+    let exclude = rig.repo.join(".git/info/exclude");
+    std::fs::write(&exclude, "*.local\n/TASK.md\n")?;
+    std::fs::write(rig.repo.join("TASK.md"), "the user's own notes\n")?;
+
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.is_empty() && report.stopped_at.is_none(),
+        "{report:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&exclude)?, "*.local\n");
+    assert_eq!(git(&rig.repo, &["status", "--porcelain"]), "?? TASK.md");
+    Ok(())
+}
+
+#[test]
+fn task_md_stays_while_another_teams_worktree_needs_it() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let exclude = rig.repo.join(".git/info/exclude");
+    std::fs::write(&exclude, "/TASK.md\n")?;
+    record_excluded(&mut rig, "api", &["/TASK.md"]);
+    other_worktree(&rig, &["TASK.md"])?;
+
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        report.refusals.is_empty() && report.stopped_at.is_none(),
+        "{report:?}"
+    );
+    assert_eq!(std::fs::read_to_string(&exclude)?, "/TASK.md\n");
     Ok(())
 }

@@ -5,17 +5,15 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use teamwire_core::{Clock, Config};
-use teamwire_launch::{LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, validate};
+use teamwire_launch::{
+    LaunchOutcome, ValidPlan, ValidateEnv, launch, parse_spec, unknown_key_warnings, validate,
+};
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::send::{home_or_refuse, refuse_member};
+use crate::cmd::shared::{PARTIAL, REFUSED, STORE, home_or_refuse, refuse_member};
+use crate::recorded::Recorded;
 use crate::wiring::Wiring;
 use crate::{Global, LaunchArgs};
-
-/// Exit codes of `docs/api/cli.md`.
-const REFUSED: u8 = 1;
-const PARTIAL: u8 = 2;
-const STORE_ERROR: u8 = 6;
 
 fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     if let Some(file) = &args.spec {
@@ -35,7 +33,9 @@ fn read_spec(args: &LaunchArgs) -> Result<String, String> {
     reason = "the binary reports on stdout and stderr"
 )]
 pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCode {
-    if args.add
+    // A member's launch would make its own session a new team's lead, outside
+    // the parent's close; a dry run creates nothing, so a member may still plan.
+    if !args.dry_run
         && let Some(code) = refuse_member("launch")
     {
         return code;
@@ -100,7 +100,8 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
         eprintln!("nothing was created");
         return ExitCode::from(REFUSED);
     }
-    for warning in &plan.warnings {
+    // Unknown keys are warned about, never refused: the spec still launches.
+    for warning in unknown_key_warnings(&text).iter().chain(&plan.warnings) {
         eprintln!("warning: {warning}");
     }
     if args.dry_run {
@@ -110,10 +111,10 @@ pub(crate) fn run(args: &LaunchArgs, global: &Global, wiring: &Wiring) -> ExitCo
     let team = plan.spec.team.clone();
     let printed = plan.warnings.len();
     let mut store = match Store::open(&home, &team) {
-        Ok(store) => store,
+        Ok(store) => Recorded::new(store, &wiring.clock, "launch"),
         Err(e) => {
             eprintln!("teamwire launch: the store could not be opened: {e}");
-            return ExitCode::from(STORE_ERROR);
+            return ExitCode::from(STORE);
         }
     };
     let report = {

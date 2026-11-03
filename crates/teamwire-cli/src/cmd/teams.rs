@@ -10,7 +10,7 @@ use teamwire_core::{TicketRef, Timestamp};
 use teamwire_msg::{TeamEntry, describe};
 
 use crate::cmd::members::render;
-use crate::cmd::send::{STORE, fail, home_or_refuse, say, warn, with_read_ctx};
+use crate::cmd::shared::{STORE, fail, home_or_refuse, say, warn, with_read_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, TeamsArgs};
 

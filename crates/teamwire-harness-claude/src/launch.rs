@@ -7,16 +7,12 @@
 
 use std::path::Path;
 
+use crate::fill;
 use serde_json::{Map, Value, json};
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec, MemberLaunch,
-    OtelConfig, Role, SessionId, TeamName,
+    Config, Fill, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec,
+    MIN_HANDOFF_TOKENS, MemberLaunch, OtelConfig, Role, SessionId, TeamName,
 };
-
-/// The hook timeout Claude Code enforces on the Stop hook, in seconds. It is
-/// the `hook_timeout_s` default of core's `Config`, kept above the 40 s
-/// budget the hook itself works to.
-const STOP_HOOK_TIMEOUT_S: u64 = 60;
 
 const PRIVATE: u32 = 0o600;
 
@@ -102,26 +98,6 @@ fn identity_value<'a>(m: &'a MemberLaunch, name: &str) -> Option<&'a str> {
         .map(|(_, v)| v.as_str())
 }
 
-/// `$TEAMWIRE_HOME/teams/<team>/members/<role>` names its home four levels up.
-fn home_from_member_dir(member_dir: &Path) -> Option<String> {
-    let home = member_dir.ancestors().nth(4)?;
-    (!home.as_os_str().is_empty()).then(|| path_text(home))
-}
-
-/// Quote `text` for `sh -c` only when it holds a character the shell would
-/// treat specially, so plain paths stay readable in the file.
-pub(crate) fn shell_word(text: &str) -> String {
-    let plain = !text.is_empty()
-        && text
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "/._-+:=@%,".contains(c));
-    if plain {
-        text.to_owned()
-    } else {
-        format!("'{}'", text.replace('\'', "'\\''"))
-    }
-}
-
 fn env_object(m: &MemberLaunch) -> Result<Map<String, Value>, HarnessError> {
     let mut env: Vec<(String, String)> = m.identity.clone();
     let mut ensure = |name: &str, value: Option<String>| {
@@ -133,7 +109,7 @@ fn env_object(m: &MemberLaunch) -> Result<Map<String, Value>, HarnessError> {
     };
     ensure("TEAMWIRE_TEAM", Some(m.team.as_str().to_owned()));
     ensure("TEAMWIRE_ROLE", Some(m.role.as_str().to_owned()));
-    ensure("TEAMWIRE_HOME", home_from_member_dir(&m.member_dir));
+    ensure("TEAMWIRE_HOME", m.home_from_member_dir());
     if !env.iter().any(|(k, _)| k == "TEAMWIRE_TOKEN") {
         return Err(HarnessError::new(
             HarnessErrorCode::Refused,
@@ -154,7 +130,7 @@ fn env_object(m: &MemberLaunch) -> Result<Map<String, Value>, HarnessError> {
 fn hook_entry(m: &MemberLaunch, event: &str, timeout_s: Option<u64>) -> Value {
     let command = format!(
         "{} hook {event} --team {} --role {}",
-        shell_word(&path_text(&m.teamwire_bin)),
+        LaunchSpec::shell_word(&path_text(&m.teamwire_bin)),
         m.team.as_str(),
         m.role.as_str()
     );
@@ -171,7 +147,7 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     settings.insert(
         "hooks".to_owned(),
         json!({
-            "Stop": hook_entry(m, "claude-stop", Some(STOP_HOOK_TIMEOUT_S)),
+            "Stop": hook_entry(m, "claude-stop", Some(Config::default().hook_timeout_s)),
             "PostToolUse": hook_entry(m, "claude-post-tool", None),
         }),
     );
@@ -181,7 +157,28 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     let mut plugins = m.plugins.clone();
     plugins.insert(LEAD_PLUGIN_ID.to_owned(), false);
     settings.insert("enabledPlugins".to_owned(), json!(plugins));
+    settings.insert("autoCompactEnabled".to_owned(), json!(true));
+    settings.insert("autoCompactWindow".to_owned(), json!(compact_window(m)));
     Ok(Value::Object(settings))
+}
+
+/// The backstop: Claude Code compacts at `autoCompactWindow` tokens, set to
+/// twice the handoff point so the handoff note always comes first. The floor
+/// is 100,000 (<https://code.claude.com/docs/en/settings-reference#autocompactwindow>)
+/// and Claude Code caps the value at the real window anyway. With no model or
+/// an unknown one the window is guessed large: here the large guess is the
+/// safe one, because the backstop must never fire before the note.
+fn compact_window(m: &MemberLaunch) -> u64 {
+    let window = m
+        .model
+        .as_deref()
+        .and_then(|model| fill::model_window(model, fill::disable_1m_from_env()))
+        .unwrap_or(fill::LARGE_WINDOW);
+    let handoff = Fill { tokens: 0, window }.handoff_at(m.context_handoff_tokens);
+    handoff
+        .saturating_mul(2)
+        .max(MIN_HANDOFF_TOKENS)
+        .min(window)
 }
 
 fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
@@ -196,7 +193,7 @@ fn mcp_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
     // because argv is readable by every process on the machine (ADR 0011).
     let home = identity_value(m, "TEAMWIRE_HOME")
         .map(str::to_owned)
-        .or_else(|| home_from_member_dir(&m.member_dir));
+        .or_else(|| m.home_from_member_dir());
     let mut args: Vec<&str> = Vec::new();
     if let Some(home) = &home {
         args.extend(["--home", home]);

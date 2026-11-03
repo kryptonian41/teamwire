@@ -39,7 +39,7 @@ fn a_reprompt_to_a_finished_member_makes_a_second_result() {
     let launch = w.launch(&spec, &[]);
     assert_eq!(launch.code, 0, "{}", launch.all());
     w.wait_started("demo", &["a", "b"]);
-    let watch = w.watch("demo", 2);
+    let watch = w.watch("demo", 1);
     watch.wait_for("WATCHING 2 members", Duration::from_secs(20));
     w.wait_lead_screen("[teamwire:demo] a finished (done)", Duration::from_secs(30));
 
@@ -65,10 +65,10 @@ fn a_reprompt_to_a_finished_member_makes_a_second_result() {
         reprompt.out
     );
     // `a` is working on its second turn. Let `b` finish and give the watch
-    // several polls (2 s each) in which a wrong count would show.
+    // three polls (1 s each) in which a wrong count would show.
     w.write(&w.home.path().join("go-b"), "");
     w.wait_lead_screen("[teamwire:demo] b finished (done)", Duration::from_secs(30));
-    let early = teamwire_e2e::wait_until(Duration::from_secs(7), || {
+    let early = teamwire_e2e::wait_until(Duration::from_secs(3), || {
         watch.output().contains("TEAM-COMPLETE")
     });
     assert!(

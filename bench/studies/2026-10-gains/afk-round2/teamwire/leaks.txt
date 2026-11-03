@@ -1,0 +1,17 @@
+16 transcript files scanned, 16 hits
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b0bf7d7b-9a49-4a5d-957f-c1d5294fff1d.jsonl:55 Bash ~/.teamwire/claude-plugin/teamwire/skills/
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b0bf7d7b-9a49-4a5d-957f-c1d5294fff1d.jsonl:56 Bash ~/.teamwire/claude-plugin/teamwire/skills/
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b0bf7d7b-9a49-4a5d-957f-c1d5294fff1d.jsonl:65 Bash ~/.teamwire/claude-plugin/teamwire/skills/teamwire/SKILL.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b0bf7d7b-9a49-4a5d-957f-c1d5294fff1d.jsonl:223 Bash ~/.teamwire/claude-plugin/teamwire/skills/teamwire/SKILL.md`
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:63 Bash ~/.teamwire/claude-plugin/teamwire/skills/
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:76 Bash ~/.teamwire/claude-plugin/teamwire/skills/*/*.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:77 Bash ~/.teamwire/claude-plugin/teamwire/skills/*/*.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:123 Bash ~/.teamwire/claude-plugin/teamwire/skills/teamwire
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:127 Bash ~/.teamwire/claude-plugin/teamwire/skills/teamwire
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:139 Bash ~/.teamwire/claude-plugin/teamwire/skills/promptwire/SKILL.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:479 Bash ~/.teamwire/claude-plugin/teamwire/skills/afk/SKILL.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:479 Bash ~/.teamwire/claude-plugin/teamwire/skills/afk/SKILL.md
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:578 Bash ~/.teamwire/archive
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:578 Bash ~/.teamwire/archive/*/spec*.json
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:578 Bash ~/.teamwire/archive/*/*.json
+LEAK /Users/apoorvagarwal/.claude/projects/-private-tmp-claude-501-bnruns-bn4tu2e1us-clone/b72fc146-7394-4eb6-a26e-1f8b343d5a2d.jsonl:578 Bash ~/.teamwire/archive/

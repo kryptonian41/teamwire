@@ -1,0 +1,31 @@
+[
+  {
+    "team": "zero",
+    "title": "Zero",
+    "state": "open",
+    "lead": {
+      "session_id": "afk-lead-session",
+      "liveness": {
+        "alive": "unknown"
+      }
+    },
+    "watch": {
+      "state": "none",
+      "pid": null,
+      "heartbeat_age_s": null
+    },
+    "afk": {
+      "budget_ends_at": "2026-10-27T16:40:41.389Z",
+      "seconds_left": 7199,
+      "spent": false,
+      "decisions": 0
+    },
+    "members": [],
+    "messages": [],
+    "stuck_deliveries": [],
+    "unread_deliveries": [],
+    "unanswered_questions": [],
+    "undelivered_results": [],
+    "errors": []
+  }
+]

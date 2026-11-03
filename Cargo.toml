@@ -18,6 +18,7 @@ teamwire-host-herdr = { path = "crates/teamwire-host-herdr" }
 teamwire-host-tmux = { path = "crates/teamwire-host-tmux" }
 teamwire-harness-claude = { path = "crates/teamwire-harness-claude" }
 teamwire-harness-codex = { path = "crates/teamwire-harness-codex" }
+teamwire-harness-pi = { path = "crates/teamwire-harness-pi" }
 teamwire-deliver = { path = "crates/teamwire-deliver" }
 teamwire-verify = { path = "crates/teamwire-verify" }
 teamwire-msg = { path = "crates/teamwire-msg" }
@@ -102,4 +103,6 @@ get_unwrap = "warn"
 use_self = "warn"
 
 [profile.dev]
-debug = "line-tables-only"
+# No debug info: on macOS rustc keeps each build's object files beside the
+# binaries for their debug info, and cargo never deletes the old ones.
+debug = false

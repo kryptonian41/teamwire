@@ -1,0 +1,18 @@
+{
+  "team": "closecache",
+  "plugins": {"claude-mem@thedotmack": false},
+  "children": [
+    {
+      "role": "review",
+      "title": "Review closer cache delete",
+      "kind": "reviewer",
+      "mode": "pane",
+      "cwd": "/private/tmp/claude-501/bnruns/bngcwrebut/clone",
+      "model": "opus",
+      "effort": "xhigh",
+      "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false},
+      "deadline_s": 1800,
+      "task_file": "/private/tmp/claude-501/bnruns/bngcwrebut/twhome/teams/closecache/afk/briefs/review.md"
+    }
+  ]
+}

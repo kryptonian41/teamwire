@@ -1,0 +1,8 @@
+exit Some(0)
+--- stdout
+team zero: AFK run started
+afk dir: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/teams/zero/afk
+report: /var/folders/dt/6bc0djt54sn4419c4903_yh40000gn/T/teamwire-home-0InpKp/teams/zero/afk/REPORT.md
+budget ends: 2026-10-27T16:40:41.389Z
+Keep the lid open and the machine on power: a closed lid still sleeps a Mac.
+--- stderr

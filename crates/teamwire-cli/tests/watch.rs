@@ -152,6 +152,12 @@ fn a_bad_team_name_or_interval_is_a_usage_error() {
         teamwire(&bed, &["watch", "alpha", "--interval", "0", "--once"]).code,
         3
     );
+    // A longer interval would let the lease look dead between two polls.
+    let run = teamwire(&bed, &["watch", "alpha", "--interval", "301", "--once"]);
+    assert_eq!(run.code, 3, "{}", run.err);
+    assert!(run.err.contains("300"), "{}", run.err);
+    let run = teamwire(&bed, &["watch", "alpha", "--interval", "300", "--once"]);
+    assert_eq!(run.code, 0, "{}", run.err);
 }
 
 #[test]
@@ -360,4 +366,40 @@ fn a_line_that_cannot_be_delivered_is_still_printed() {
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert_eq!(run.out, "[teamwire:alpha] WATCHING 1 members\n");
     assert!(rig.typed().is_empty());
+}
+
+#[test]
+fn a_watch_that_cannot_take_the_lease_leaves_a_store_error_row() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    // The first poll records its own failures, so the failure has to come
+    // before it, in the write that takes the lease. A function that does not
+    // exist fails the insert with an `io` error.
+    bed.store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_lease BEFORE INSERT ON watch_lease
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let run = teamwire(&bed, &["watch", "alpha", "--once"]);
+    assert_eq!(run.code, 6, "{}{}", run.out, run.err);
+    let errors: Vec<serde_json::Value> = bed
+        .store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [serde_json::json!({ "op": "watch", "code": "io" })],
+        "{}{}",
+        run.out,
+        run.err
+    );
 }

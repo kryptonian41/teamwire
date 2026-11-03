@@ -6,7 +6,8 @@ use serde_json::json;
 use teamwire_core::{Actor, Refusal, TeamName};
 use teamwire_msg::{InboxItem, SendError, inbox, prove_actor_logged};
 
-use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{caller_env, fail, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, InboxArgs, USAGE};
 
@@ -22,7 +23,7 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
     else {
         return fail("inbox", "TEAMWIRE_TEAM does not name a team", USAGE);
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "inbox", |ctx| {
         match prove_actor_logged(ctx, &caller_env(None)).map_err(SendError::Refused)? {
             Actor::Member(role) => inbox(ctx, &role, *all),
             Actor::Lead => Err(SendError::InvalidArgument(

@@ -50,12 +50,24 @@ impl Rig {
     /// Runs `teamwire launch` with a cleared environment: the fakes' `PATH`,
     /// a temporary home, and `HERDR_ENV=1` unless `no_herdr`.
     fn launch(&self, args: &[&str], stdin: Option<&str>, no_herdr: bool) -> Output {
+        self.launch_with(args, stdin, no_herdr, &[])
+    }
+
+    /// `launch` with extra variables, such as a member's identity.
+    fn launch_with(
+        &self,
+        args: &[&str],
+        stdin: Option<&str>,
+        no_herdr: bool,
+        vars: &[(&str, &str)],
+    ) -> Output {
         let mut cmd = command(env!("CARGO_BIN_EXE_teamwire"));
         cmd.arg("launch")
             .args(args)
             .env_clear()
             .envs(self.herdr.env())
             .env("TEAMWIRE_HOME", self.home.path())
+            .envs(vars.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
@@ -203,11 +215,40 @@ fn dry_run_prints_the_plan_and_touches_nothing() {
 }
 
 #[test]
+fn an_unknown_key_is_warned_about_and_the_launch_goes_ahead() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["titel"] = json!("typo");
+    spec["children"][0]["acept_trust"] = json!(false);
+    let file = rig.spec_file(&spec);
+    let file = file.to_str().unwrap();
+    for args in [&["--dry-run", "--spec", file][..], &["--spec", file][..]] {
+        let out = rig.launch(args, None, false);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{args:?}: {}",
+            text(&out.stderr)
+        );
+        let err = text(&out.stderr);
+        assert!(
+            err.contains(r#"warning: team level: unknown key "titel" is ignored"#)
+                && err.contains(r#"warning: role a: unknown key "acept_trust" is ignored"#),
+            "{args:?}: {err}"
+        );
+        let shown = text(&out.stdout);
+        let real = !args.contains(&"--dry-run");
+        assert_eq!(shown.contains("a: started"), real, "{args:?}: {shown}");
+    }
+}
+
+#[test]
 fn a_launch_that_fails_is_exit_2_with_the_member_failed_and_cleaned_up() {
     let mut rig = Rig::new();
     // Whatever the adapters are, starting the agent fails.
     rig.herdr
-        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        // Not `agent_pane_busy`: the adapter retries that 8 times, 1.5 s apart.
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "invalid_params"))
         .unwrap();
     let repo = rig.repo();
     let spec = json!({"team": "demo", "title": "Demo team", "children": [
@@ -337,6 +378,44 @@ fn a_member_whose_harness_program_is_missing_is_refused_before_anything_is_creat
 }
 
 #[test]
+fn a_pi_member_launches_when_pi_is_on_path() {
+    let rig = Rig::new();
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "scout", "title": "pi work", "mode": "pane", "cwd": rig.work.path(),
+         "task": "look around", "harness": "pi"}]});
+    let file = rig.spec_file(&spec);
+    let args = ["--dry-run", "--spec", file.to_str().unwrap()];
+    let out = rig.launch(&args, None, false);
+    assert_eq!(out.status.code(), Some(1), "{}", text(&out.stdout));
+    assert!(
+        text(&out.stderr).contains("refused: member scout: harness pi is not on PATH"),
+        "{}",
+        text(&out.stderr)
+    );
+
+    let stubs = rig.work.path().join("stubs");
+    std::fs::create_dir_all(&stubs).unwrap();
+    let pi = stubs.join("pi");
+    write_file(&pi, "#!/bin/sh\necho 1.4.0\n");
+    std::fs::set_permissions(&pi, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let fakes = rig
+        .herdr
+        .env()
+        .into_iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v)
+        .unwrap();
+    let path = format!("{}:{fakes}", stubs.display());
+    let out = rig.launch_with(&args, None, false, &[("PATH", path.as_str())]);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    assert!(
+        text(&out.stdout).contains("would launch"),
+        "{}",
+        text(&out.stdout)
+    );
+}
+
+#[test]
 fn the_unverifiable_implementer_warning_names_what_is_missing() {
     let rig = Rig::new();
     let repo = rig.repo();
@@ -372,7 +451,8 @@ fn the_unverifiable_implementer_warning_names_what_is_missing() {
 fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
     let mut rig = Rig::new();
     rig.herdr
-        .set_faults(&HerdrFaults::new().error("agent start", None, None, "agent_pane_busy"))
+        // Not `agent_pane_busy`: the adapter retries that 8 times, 1.5 s apart.
+        .set_faults(&HerdrFaults::new().error("agent start", None, None, "invalid_params"))
         .unwrap();
     let file = rig.spec_file(&pane_spec("demo", rig.work.path()));
     let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);
@@ -401,6 +481,47 @@ fn a_bad_ref_is_refused_by_launch_and_by_dry_run() {
             text(&out.stderr)
         );
         assert!(rig.home_is_empty(), "{extra:?}: nothing was created");
+    }
+}
+
+#[test]
+fn a_member_cannot_launch_a_team_but_may_ask_for_the_plan() {
+    let rig = Rig::new();
+    let file = rig.spec_file(&pane_spec("nested", rig.work.path()));
+    let file = file.to_str().unwrap();
+    let member: [&[(&str, &str)]; 3] = [
+        &[("TEAMWIRE_TOKEN", "not-a-real-token")],
+        &[("TEAMWIRE_TEAM", "alpha"), ("TEAMWIRE_ROLE", "api")],
+        &[("TEAMWIRE_ROLE", "api")],
+    ];
+    for vars in member {
+        for args in [&["--spec", file][..], &["--add", "--spec", file]] {
+            let out = rig.launch_with(args, None, false, vars);
+            let err = text(&out.stderr);
+            assert_eq!(out.status.code(), Some(1), "{vars:?} {args:?}: {err}");
+            assert!(err.contains("refused.identity"), "{err}");
+            assert!(
+                rig.home_is_empty(),
+                "{vars:?} {args:?}: no team was created"
+            );
+        }
+        // A dry run creates nothing, so a member may ask for the plan.
+        let out = rig.launch_with(&["--dry-run", "--spec", file], None, false, vars);
+        assert_eq!(
+            out.status.code(),
+            Some(0),
+            "{vars:?}: {}",
+            text(&out.stderr)
+        );
+        assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
+        // With no running team `--add` is refused, but not for who asks.
+        let out = rig.launch_with(&["--dry-run", "--add", "--spec", file], None, false, vars);
+        let err = text(&out.stderr);
+        assert!(
+            err.contains("no_such_team") && !err.contains("refused.identity"),
+            "{err}"
+        );
+        assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
     }
 }
 
@@ -470,4 +591,45 @@ fn a_bare_string_ref_is_refused_naming_the_object_form() {
         "{err}"
     );
     assert!(rig.home_is_empty());
+}
+
+#[test]
+fn a_launch_that_fails_in_the_store_leaves_one_store_error_row() {
+    let rig = Rig::new();
+    let first = rig.spec_file(&pane_spec("demo", rig.work.path()));
+    let out = rig.launch(&["--spec", first.to_str().unwrap()], None, false);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let team = TeamName::parse("demo").unwrap();
+    let mut store = Store::open_existing(rig.home.path(), &team).unwrap();
+    // Added after the plan was checked: a function that does not exist fails
+    // the new member's insert with an `io` error.
+    store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER no_member BEFORE INSERT ON members
+                     BEGIN SELECT no_such_function(); END",
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap();
+    let more = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "b", "title": "Beta", "mode": "pane", "cwd": rig.work.path(), "task": "look around"}]});
+    let file = rig.spec_file(&more);
+    let out = rig.launch(&["--add", "--spec", file.to_str().unwrap()], None, false);
+    assert_ne!(out.status.code(), Some(0), "{}", text(&out.stdout));
+    let errors: Vec<Value> = store
+        .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == teamwire_core::EventType::StoreError)
+        .map(|e| e.data)
+        .collect();
+    assert_eq!(
+        errors,
+        [json!({ "op": "launch", "code": "io" })],
+        "{}{}",
+        text(&out.stdout),
+        text(&out.stderr)
+    );
 }

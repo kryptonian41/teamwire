@@ -5,7 +5,8 @@ use std::process::ExitCode;
 use teamwire_core::TeamName;
 use teamwire_msg::adopt_lead;
 
-use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{caller_env, fail, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, LeadArgs, USAGE};
 
@@ -15,7 +16,7 @@ pub(crate) fn run(args: &LeadArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(team) => team,
         Err(e) => return fail("lead", &e.to_string(), USAGE),
     };
-    let outcome = with_ctx(global, wiring, &team, |ctx| {
+    let outcome = with_ctx(global, wiring, &team, "lead", |ctx| {
         adopt_lead(ctx, &caller_env(Some("lead".to_owned())))
     });
     match outcome {

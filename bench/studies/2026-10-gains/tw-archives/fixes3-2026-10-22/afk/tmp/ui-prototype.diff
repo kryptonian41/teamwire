@@ -1,0 +1,132 @@
+diff --git a/ui/src/web/Overview.tsx b/ui/src/web/Overview.tsx
+index 522a875..91205bb 100644
+--- a/ui/src/web/Overview.tsx
++++ b/ui/src/web/Overview.tsx
+@@ -1,6 +1,6 @@
+ import { CATEGORY_ORDER } from "../shared/state.ts";
+ import { Empty, StateChip } from "./components.tsx";
+-import { countByCategory, hasProblem, livenessInfo, sortTeams, type TeamModel } from "./model/teams.ts";
++import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
+ import { href } from "./model/route.ts";
+ 
+ export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; loaded: boolean; neverPolled: boolean }) {
+@@ -52,6 +52,7 @@ function TeamRow({ team }: { team: TeamModel }) {
+   const counts = countByCategory(team.members);
+   const live = livenessInfo(s.lead);
+   const problem = hasProblem(team);
++  const reasons = problemReasons(team);
+   const body = (
+     <>
+       <div className="team-id">
+@@ -84,6 +85,15 @@ function TeamRow({ team }: { team: TeamModel }) {
+             ))}
+           </p>
+         )}
++        {reasons.length > 0 && (
++          <p className="chips">
++            {reasons.map((r) => (
++              <span key={r} className="flag">
++                {r}
++              </span>
++            ))}
++          </p>
++        )}
+         {(s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (
+           <p className="chips">
+             {s.stuck_deliveries.length > 0 && <span className="flag">{s.stuck_deliveries.length} stuck deliveries</span>}
+diff --git a/ui/src/web/model/teams.test.ts b/ui/src/web/model/teams.test.ts
+index eed03ae..be4a1b1 100644
+--- a/ui/src/web/model/teams.test.ts
++++ b/ui/src/web/model/teams.test.ts
+@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness } from "../../shared/t
+ import status from "../../../fixtures/status.json";
+ import teams from "../../../fixtures/teams.json";
+ import metrics from "../../../fixtures/metrics.json";
+-import { countByCategory, formatAge, joinAll, joinTeam, leadCategory, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
++import { countByCategory, formatAge, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, sortTeams, summarizeMetrics } from "./teams.ts";
+ 
+ const S = StatusAll.parse(status);
+ const T = TeamsList.parse(teams).teams;
+@@ -39,7 +39,7 @@ test("counts members per category, keeping unknown words apart", () => {
+ test("sorts problem teams first, then by title", () => {
+   const sorted = sortTeams(joinAll(S, T));
+   expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs"]);
+-  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], team: "aaa", title: "Zed" }, T);
++  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [], team: "aaa", title: "Zed" }, T);
+   const other = joinTeam({ ...quiet.status, team: "bbb", title: "Alpha" }, T);
+   const bad = joinTeam({ ...quiet.status, team: "ccc", title: "Zzz", errors: ["x"] }, T);
+   expect(sortTeams([quiet, other, bad]).map((t) => t.title)).toEqual(["Zzz", "Alpha", "Zed"]);
+@@ -76,3 +76,8 @@ test("maps the lead's liveness to one category", () => {
+   expect(livenessInfo(lead({ alive: "working" }))).toEqual({ category: "active", label: "lead working" });
+   expect(livenessInfo(null).label).toBe("no lead");
+ });
++
++test("probe: problemReasons on the fixtures", () => {
++  const all = joinAll(S, T);
++  expect(all.map((t) => problemReasons(t))).toEqual([["1 unread", "1 question waiting"], ["watch stale"], []]);
++});
+diff --git a/ui/src/web/model/teams.ts b/ui/src/web/model/teams.ts
+index 33513b0..abcc88d 100644
+--- a/ui/src/web/model/teams.ts
++++ b/ui/src/web/model/teams.ts
+@@ -59,10 +59,30 @@ export function hasProblem(t: TeamModel): boolean {
+     s.errors.length > 0 ||
+     s.stuck_deliveries.length > 0 ||
+     s.undelivered_results.length > 0 ||
+-    t.members.some((m) => m.category === "failed" || m.category === "attention" || m.category === "unknown")
++    t.members.some((m) => m.category === "failed" || m.category === "attention" || m.category === "unknown") ||
++    problemReasons(t).length > 0
+   );
+ }
+ 
++/** A question to the lead counts once it has waited this long. */
++const QUESTION_WAIT_S = 600;
++
++/** One label per signal that needs the lead, in a fixed order. */
++export function problemReasons(t: TeamModel): string[] {
++  const s = t.status;
++  const reasons: string[] = [];
++  if (s.state === "open") {
++    const live = livenessInfo(s.lead);
++    if (live.category === "failed" || live.category === "attention") reasons.push(live.label);
++    if (s.watch.state === "stale") reasons.push("watch stale");
++    if (s.afk?.spent === true) reasons.push("AFK spent");
++  }
++  if (s.unread_deliveries.length > 0) reasons.push(`${s.unread_deliveries.length} unread`);
++  const waiting = s.unanswered_questions.filter((q) => q.to.includes("lead") && q.age_s >= QUESTION_WAIT_S).length;
++  if (waiting > 0) reasons.push(`${waiting} question waiting`);
++  return reasons;
++}
++
+ /** Problems first, then by title, then by key so the order never flickers. */
+ export function sortTeams(teams: readonly TeamModel[]): TeamModel[] {
+   return [...teams].sort((a, b) => {
+diff --git a/ui/src/web/Overview.test.ts b/ui/src/web/Overview.test.ts
+new file mode 100644
+index 0000000..be7c34d
+--- /dev/null
++++ b/ui/src/web/Overview.test.ts
+@@ -0,0 +1,23 @@
++import { expect, test } from "bun:test";
++import { createElement } from "react";
++import { renderToStaticMarkup } from "react-dom/server";
++import { StatusAll, TeamsList } from "../shared/teamwire.ts";
++import status from "../../fixtures/status.json";
++import teams from "../../fixtures/teams.json";
++import { joinAll } from "./model/teams.ts";
++import { Overview } from "./Overview.tsx";
++
++test("probe: overview renders", () => {
++  const html = renderToStaticMarkup(
++    createElement(Overview, { teams: joinAll(StatusAll.parse(status), TeamsList.parse(teams).teams), loaded: true, neverPolled: false }),
++  );
++  expect(html).toContain("Needs a look");
++  expect(html).toContain("Refund flow rewrite");
++});
++
++test("probe: the card shows the reasons", () => {
++  const html = renderToStaticMarkup(
++    createElement(Overview, { teams: joinAll(StatusAll.parse(status), TeamsList.parse(teams).teams), loaded: true, neverPolled: false }),
++  );
++  for (const r of ["1 unread", "1 question waiting", "watch stale"]) expect(html).toContain(r);
++});

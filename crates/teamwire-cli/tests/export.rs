@@ -71,6 +71,53 @@ fn a_member_s_export_leaves_out_the_lead_session() {
 }
 
 #[test]
+fn no_line_of_a_member_s_export_holds_an_adopted_session() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    for name in ["old", "lead"] {
+        let now = bed.clock.now();
+        bed.store
+            .write(|tx| {
+                tx.adopt_lead(
+                    now,
+                    &Bed::session(name),
+                    teamwire_core::SessionKind::Interactive,
+                )
+            })
+            .unwrap();
+    }
+    let lines = |as_member| {
+        let out = export(&bed, as_member);
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let lead = lines(false);
+    assert!(
+        lead.contains("sess-old") && lead.contains("sess-lead"),
+        "{lead}"
+    );
+    let member = lines(true);
+    for line in member.lines() {
+        assert!(
+            !line.contains("sess-old") && !line.contains("sess-lead"),
+            "{line}"
+        );
+    }
+    let adopted: Vec<Value> = member
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|r| r["type"] == "teamwire.team.lead_adopted")
+        .collect();
+    assert_eq!(adopted.len(), 2, "{member}");
+    for r in adopted {
+        assert!(
+            r["data"]["old_session"].is_null() && r["data"]["new_session"].is_null(),
+            "{r}"
+        );
+    }
+}
+
+#[test]
 fn export_covers_every_table() {
     let mut bed = Bed::new();
     bed.add("api");

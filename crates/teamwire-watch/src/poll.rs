@@ -7,22 +7,7 @@ use crate::apply::apply;
 use crate::memory::{WatchEnd, WatchMemory};
 use crate::plan::plan;
 use crate::snapshot;
-use crate::text::{LINE_MAX, event};
-
-/// The short name of a store failure, as `STORE-ERROR <code>` prints it.
-fn code(e: &StoreError) -> &'static str {
-    match e {
-        StoreError::Busy => "busy",
-        StoreError::Full => "disk_full",
-        StoreError::SchemaNewer { .. } => "schema_newer",
-        StoreError::SchemaOlder { .. } => "schema_older",
-        StoreError::NotTeamwire => "not_teamwire",
-        StoreError::Corrupt(_) => "corrupt",
-        StoreError::Constraint(_) => "constraint",
-        StoreError::NoDatabase { .. } => "no_database",
-        StoreError::Io(_) => "io",
-    }
-}
+use crate::text::{LINE_MAX, SEP, event};
 
 /// This binary can never read the store again: waiting will not help.
 fn is_final(e: &StoreError) -> bool {
@@ -51,7 +36,12 @@ fn check_schema(ctx: &Ctx<'_>) -> Result<(), StoreError> {
 
 fn join(team: &str, texts: &[String]) -> OneLine {
     let events: Vec<String> = texts.iter().map(|t| event(team, t)).collect();
-    one_line(&events.join(" | "), LINE_MAX)
+    line(&events)
+}
+
+/// Events that already carry their prefix, as one line.
+fn line(events: &[String]) -> OneLine {
+    one_line(&events.join(SEP), LINE_MAX)
 }
 
 /// The last line of a watch whose team was closed under it. The lead is
@@ -77,17 +67,25 @@ fn step(
         return Ok(Some(closed(memory)));
     }
     let decided = plan(ctx, &snap, memory, now);
-    let watching = (memory.polls == 0).then_some(snap.members.len());
-    let applied = apply(ctx, decided, memory.lease_pid, watching, now)?;
+    let watching = (!memory.said_watching).then_some(snap.members.len());
+    let applied = apply(
+        ctx,
+        decided,
+        snap.team.name.as_ref(),
+        memory.lease_pid,
+        watching,
+        now,
+    )?;
     if applied.lease_lost {
         memory.end = Some(WatchEnd::LeaseLost);
         return Ok(None);
     }
-    let texts: Vec<String> = applied.emitted.iter().map(|e| e.text.clone()).collect();
+    memory.said_watching = true;
+    let events: Vec<String> = applied.emitted.iter().map(|e| e.text.clone()).collect();
     if applied.emitted.iter().any(|e| e.name == "TEAM-COMPLETE") {
         memory.end = Some(WatchEnd::TeamComplete);
     }
-    Ok((!texts.is_empty()).then(|| join(snap.team.name.as_ref(), &texts)))
+    Ok((!events.is_empty()).then(|| line(&events)))
 }
 
 /// One poll: at most one line, announcements stored before it is returned.
@@ -99,6 +97,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
     }
     let now = ctx.clock.now();
     let outcome = step(ctx, memory, now);
+    ctx.store.record_failure(now, "watch");
     memory.polls += 1;
     memory.last_poll = Some(now);
     memory.last_mono = Some(ctx.clock.monotonic());
@@ -109,7 +108,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
             if is_final(&e) {
                 memory.end = Some(WatchEnd::StoreError);
             }
-            let code = code(&e);
+            let code = e.code();
             if !memory.reported_errors.insert(code) {
                 return None;
             }

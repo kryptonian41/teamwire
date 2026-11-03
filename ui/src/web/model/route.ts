@@ -10,7 +10,7 @@ export type Route =
   | { page: "archive"; dir: string }
   | { page: "notfound"; hash: string };
 
-const ARCHIVE_RE = /^[a-z][a-z0-9_]*-\d{4}-\d{2}-\d{2}(-\d{6})?$/;
+const ARCHIVE_RE = /^[a-z][a-z0-9_]*-\d{4}-\d{2}-\d{2}(-\d{6}(-\d+)?)?$/;
 
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#/, "");

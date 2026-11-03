@@ -316,13 +316,31 @@ fn a_full_close_runs_the_fixed_order_and_archives_everything() {
         .read(|tx| Ok(tx.events_of_type(EventType::TeamClosed)?.items))
         .unwrap();
     assert_eq!(closed.len(), 1, "the final backup holds team.closed");
-    let steps = db
+    let steps: Vec<String> = db
         .read(|tx| Ok(tx.events_of_type(EventType::CloseStep)?.items))
-        .unwrap();
-    assert!(
-        steps.len() >= 6,
-        "the close steps are in the archive: {}",
-        steps.len()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            e.data
+                .get("step")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default()
+                .to_owned()
+        })
+        .collect();
+    // The archive is copied before archive_final records itself, and it must
+    // be verified before delete_state runs, so the archived steps end at finish.
+    assert_eq!(
+        steps,
+        [
+            "lock",
+            "archive",
+            "verify_archive",
+            "remove_worktrees",
+            "close_places",
+            "release_hold",
+            "finish"
+        ]
     );
 }
 
@@ -939,10 +957,12 @@ fn a_close_records_its_own_start_time_with_the_lock() {
 }
 
 #[test]
-fn reprompt_and_add_refused_during_close() {
+fn while_a_close_runs_the_state_reads_closing_and_a_second_close_and_a_removal_are_refused() {
     // Launch --add, reprompt and removal each read the team state inside their
-    // own write transaction. While a close runs, that state is `closing`, and
-    // a second close or a removal is refused.
+    // own write transaction. This test checks what they read while a close
+    // runs (`closing`), that the lock cannot be taken twice, and that a second
+    // close and a removal are refused; launch --add and reprompt themselves
+    // are tested in teamwire-launch and teamwire-msg.
     let mut rig = busy_team();
     let home = rig.home.path().to_path_buf();
     let team = teamwire_core::TeamName::parse(rig::TEAM).unwrap();
@@ -1198,4 +1218,281 @@ fn a_branch_the_user_deleted_is_not_reported_kept() {
     git(&rig.repo, &["branch", "-D", "br-api"]);
     let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
     assert!(report.branches_kept.is_empty(), "{report:?}");
+}
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+/// An implementer that detached its HEAD and committed there: the commit is
+/// on no branch, tag or remote ref. Returns the commit's sha.
+fn detached_commit(rig: &mut Rig) -> String {
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    std::fs::write(api.cwd.join("lib.rs"), "fn a() {}\n").unwrap();
+    git(&api.cwd, &["add", "-A"]);
+    git(&api.cwd, &["commit", "-q", "-m", "work on a detached head"]);
+    git(&api.cwd, &["rev-parse", "HEAD"])
+}
+
+fn rescue_name(sha: &str) -> String {
+    format!(
+        "teamwire/rescue/{}-api-{}",
+        rig::TEAM,
+        sha.get(..7).unwrap_or(sha)
+    )
+}
+
+#[test]
+fn commits_on_a_detached_head_get_a_rescue_branch_and_the_close_finishes() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let api = rig.member("api");
+    let rescue = rescue_name(&sha);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!api.cwd.exists());
+    assert_eq!(git(&rig.repo, &["rev-parse", &rescue]), sha);
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue.clone()]);
+    assert_ne!(
+        git(&rig.repo, &["for-each-ref", "--contains", &sha]),
+        "",
+        "the commit is on a ref"
+    );
+    // The note names the branch that holds the commits, not the recorded one.
+    assert_eq!(
+        report.unpushed,
+        [format!(
+            "api: branch {rescue} has no upstream; 1 commit(s) exist only on this machine"
+        )]
+    );
+}
+
+#[test]
+fn a_rescue_name_taken_at_another_commit_moves_on_to_dash_two() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    git(&rig.repo, &["branch", &rescue, "main"]);
+    let main = git(&rig.repo, &["rev-parse", "main"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let second = format!("{rescue}-2");
+    assert_eq!(git(&rig.repo, &["rev-parse", &second]), sha);
+    assert_eq!(
+        git(&rig.repo, &["rev-parse", &rescue]),
+        main,
+        "the existing branch did not move"
+    );
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), second]);
+}
+
+#[test]
+fn a_rescue_branch_already_at_the_commit_is_reused() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    git(&rig.repo, &["branch", &rescue, &sha]);
+    let before = git(&rig.repo, &["for-each-ref", "--format=%(refname)"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        git(&rig.repo, &["for-each-ref", "--format=%(refname)"]),
+        before,
+        "no new ref"
+    );
+    assert_eq!(report.branches_kept, ["br-api".to_owned(), rescue]);
+}
+
+#[test]
+fn the_dry_run_names_the_rescue_branch_and_creates_none() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let rescue = rescue_name(&sha);
+    let before = git(&rig.repo, &["for-each-ref", "--format=%(refname)"]);
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    assert!(plan.refusals.is_empty(), "{plan:?}");
+    let kept = plan.steps.iter().find(|s| s.step == "branches_kept");
+    assert_eq!(
+        kept.map(|s| s.detail.clone()),
+        Some(format!("br-api, {rescue}")),
+        "{plan:?}"
+    );
+    assert_eq!(
+        git(&rig.repo, &["for-each-ref", "--format=%(refname)"]),
+        before
+    );
+}
+
+#[test]
+fn a_detached_head_that_no_rescue_name_fits_refuses_and_keeps_the_worktree() {
+    let mut rig = Rig::new();
+    let sha = detached_commit(&mut rig);
+    let api = rig.member("api");
+    // A branch named `teamwire` blocks every `teamwire/...` name.
+    git(&rig.repo, &["branch", "teamwire", "main"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert!(
+        asks(
+            &report.refusals,
+            "no rescue branch name is free: the branch teamwire blocks every name under \
+             teamwire/"
+        ),
+        "{report:?}"
+    );
+    assert!(asks(&report.refusals, sha.get(..7).unwrap()), "{report:?}");
+    assert!(api.cwd.is_dir());
+    assert_eq!(rig.team().state, TeamState::Open);
+}
+
+#[test]
+fn a_detached_head_another_ref_holds_gets_no_rescue_branch() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "--detach"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(report.branches_kept, ["br-api"]);
+    assert_eq!(
+        git(
+            &rig.repo,
+            &["for-each-ref", "--format=%(refname)", "refs/heads/teamwire"]
+        ),
+        ""
+    );
+}
+
+#[test]
+fn the_unpushed_note_names_the_branch_head_is_on() {
+    let mut rig = Rig::new();
+    let api = rig.add_worktree_member("api", MemberKind::Implementer);
+    git(&api.cwd, &["checkout", "-q", "-b", "other"]);
+    std::fs::write(api.cwd.join("lib.rs"), "fn a() {}\n").unwrap();
+    git(&api.cwd, &["add", "-A"]);
+    git(&api.cwd, &["commit", "-q", "-m", "work on another branch"]);
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(
+        report.unpushed,
+        ["api: branch other has no upstream; 1 commit(s) exist only on this machine"]
+    );
+}
+
+#[test]
+fn a_reused_place_id_is_not_closed_by_a_whole_team_close() {
+    let mut rig = Rig::without_repo();
+    rig.add_pane_member("api", MemberKind::Investigator);
+    // As after a tmux server restart: the member's recorded id now names an
+    // idle agent of another team.
+    let old = rig.place_of("api");
+    let mine = teamwire_core::Address::parse(&format!("tw_{}_api", rig::TEAM)).unwrap();
+    rig.host
+        .close(&old, &mine, std::time::Duration::ZERO)
+        .unwrap();
+    rig.host.add_place_with_id(
+        old.id,
+        "tw_other_web",
+        PlaceState::Idle,
+        teamwire_core::Occupant {
+            session: None,
+            pids: Vec::new(),
+        },
+    );
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert_eq!(rig.team().state, TeamState::Closed);
+    assert_eq!(
+        rig.host
+            .live_agent_names(std::time::Duration::ZERO)
+            .unwrap(),
+        ["tw_other_web"]
+    );
+}
+
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn closer_cache_file(rig: &Rig) -> std::path::PathBuf {
+    let dir = rig
+        .home
+        .path()
+        .join("cache/closer")
+        .join(rig.team().name.as_str());
+    std::fs::create_dir_all(dir.join("clone/target")).unwrap();
+    std::fs::write(dir.join("clone/target/x"), "build output").unwrap();
+    dir
+}
+
+#[test]
+fn closing_the_team_deletes_the_closer_cache() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let detail = &plan
+        .steps
+        .iter()
+        .find(|s| s.step == "delete_state")
+        .unwrap()
+        .detail;
+    assert!(detail.contains(&cache.display().to_string()), "{detail}");
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!cache.exists());
+    assert!(!rig.team_dir().exists());
+}
+
+#[test]
+fn keep_state_keeps_the_closer_cache() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let opts = CloseOpts {
+        keep_state: true,
+        ..CloseOpts::default()
+    };
+    let report = close(&mut rig.ctx(), CloseTarget::Team, opts);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(cache.join("clone/target/x").is_file());
+}
+
+#[test]
+fn a_symlinked_closer_cache_is_removed_as_a_link() {
+    let mut rig = busy_team();
+    let outside = tempfile::tempdir().unwrap();
+    std::fs::write(outside.path().join("keep"), "mine").unwrap();
+    let cache = closer_cache_file(&rig);
+    std::fs::remove_dir_all(&cache).unwrap();
+    std::os::unix::fs::symlink(outside.path(), &cache).unwrap();
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(cache.symlink_metadata().is_err());
+    assert!(outside.path().join("keep").is_file());
+}
+
+#[test]
+fn the_closer_cache_is_staged_before_the_team_directory_is_deleted() {
+    let mut rig = busy_team();
+    let cache = closer_cache_file(&rig);
+    let teams_dir = rig.home.path().join("teams");
+    // The team directory cannot be moved out: the parent is read-only. A
+    // kill after that move would leave the cache with no team to close, so
+    // the cache must already be out of its path when the move is tried.
+    let report = close_observed(
+        &mut rig.ctx(),
+        CloseTarget::Team,
+        CloseOpts::default(),
+        &|step| {
+            if step == "delete_state" {
+                set_mode(&teams_dir, 0o555);
+            }
+        },
+    );
+    set_mode(&teams_dir, 0o755);
+    assert_eq!(
+        report.stopped_at.as_deref(),
+        Some("delete_state"),
+        "{report:?}"
+    );
+    assert!(rig.team_dir().is_dir());
+    assert!(!cache.exists());
 }

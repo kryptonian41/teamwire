@@ -1,9 +1,9 @@
 import { expect, test } from "bun:test";
-import { StatusAll, TeamsList, MetricsView, type Liveness } from "../../shared/teamwire.ts";
+import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } from "../../shared/teamwire.ts";
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { countByCategory, formatAge, joinAll, joinTeam, leadCategory, livenessInfo, sortTeams, summarizeMetrics } from "./teams.ts";
+import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -38,8 +38,8 @@ test("counts members per category, keeping unknown words apart", () => {
 
 test("sorts problem teams first, then by title", () => {
   const sorted = sortTeams(joinAll(S, T));
-  expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs"]);
-  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], team: "aaa", title: "Zed" }, T);
+  expect(sorted.map((t) => t.key)).toEqual(["lost", "payments", "docs", "nightly"]);
+  const quiet = joinTeam({ ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [], team: "aaa", title: "Zed" }, T);
   const other = joinTeam({ ...quiet.status, team: "bbb", title: "Alpha" }, T);
   const bad = joinTeam({ ...quiet.status, team: "ccc", title: "Zzz", errors: ["x"] }, T);
   expect(sortTeams([quiet, other, bad]).map((t) => t.title)).toEqual(["Zzz", "Alpha", "Zed"]);
@@ -75,4 +75,73 @@ test("maps the lead's liveness to one category", () => {
   expect(leadCategory(lead({ alive: "gone" }))).toBe("failed");
   expect(livenessInfo(lead({ alive: "working" }))).toEqual({ category: "active", label: "lead working" });
   expect(livenessInfo(null).label).toBe("no lead");
+});
+
+test("each signal alone flags a team, and a quiet team has none", () => {
+  const base: StatusView = { ...S[0]!, members: [], stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] };
+  const flagged = (patch: Partial<typeof base>) => {
+    const reasons = problemReasons(joinTeam({ ...base, ...patch }, T));
+    // The overview splits teams with hasProblem, so it must agree with the flags.
+    expect(hasProblem(joinTeam({ ...base, ...patch }, T))).toBe(reasons.length > 0);
+    return reasons;
+  };
+  expect(hasProblem(joinTeam(base, T))).toBe(false);
+  expect(flagged({})).toEqual([]);
+  expect(flagged({ lead: { session_id: null, liveness: "dead" } })).toEqual(["lead dead"]);
+  expect(flagged({ watch: { state: "stale", pid: 1, heartbeat_age_s: 900 } })).toEqual(["watch stale"]);
+  expect(flagged({ unread_deliveries: [{ display_id: "m1", to: "api", age_s: 1 }] })).toEqual(["1 unread"]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["lead"], age_s: 600 }] })).toEqual(["1 question waiting"]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["lead"], age_s: 599 }] })).toEqual([]);
+  expect(flagged({ unanswered_questions: [{ display_id: "m1", from: "api", to: ["web"], age_s: 9000 }] })).toEqual([]);
+  expect(flagged({ afk: { budget_ends_at: "x", seconds_left: 0, spent: true, decisions: 0 } })).toEqual(["AFK spent"]);
+  // A closed team keeps no lead, watch or budget to watch.
+  expect(flagged({ state: "closed", lead: null, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
+  expect(flagged({ lead: { session_id: null, liveness: "unknown" }, watch: { state: "none", pid: null, heartbeat_age_s: null } })).toEqual([]);
+});
+
+test("label sets of one duration combine into a count-weighted average", () => {
+  const row = (kind: string, name: string, unit: string, value: number) => ({
+    name,
+    unit,
+    labels: [["team", "ads"], ["kind", kind]] as [string, string][],
+    value,
+  });
+  const d = "teamwire.member.run.duration";
+  const sum = summarizeMetrics([
+    row("implementer", d, "s", 100),
+    row("implementer", `${d}.count`, "{observation}", 1),
+    row("reviewer", d, "s", 400),
+    row("reviewer", `${d}.count`, "{observation}", 3),
+  ]);
+  expect(sum.get("ads")!.durations[d]).toEqual({ mean: 325, count: 4 });
+});
+
+test("the refresh key ignores a quiet poll and changes with the team", () => {
+  const s = S[0]!;
+  expect(refreshKey({ ...s })).toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, age_s: m.age_s + 5 } : m)) })).toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, state: "idle" } : m)) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, members: s.members.map((m, i) => (i === 0 ? { ...m, generation: m.generation + 1 } : m)) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, messages: s.messages.slice(1) })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, unread_deliveries: [] })).not.toBe(refreshKey(s));
+  expect(refreshKey({ ...s, stuck_deliveries: [] })).not.toBe(refreshKey(s));
+});
+
+test("the refresh key changes when a message arrives, whatever order the list is in", () => {
+  const s = S[0]!;
+  const [a, b, c] = s.messages;
+  const oldestFirst = (n: number) => ({ ...s, messages: [a!, b!, c!, s.messages[3]!].slice(0, n) });
+  expect(refreshKey(oldestFirst(4))).not.toBe(refreshKey(oldestFirst(3)));
+  expect(refreshKey({ ...s, messages: [...s.messages].reverse() })).not.toBe(refreshKey(s));
+});
+
+test("durations round to whole seconds", () => {
+  expect(formatDuration(10.666666666666666)).toBe("11s");
+  expect(formatDuration(59.6)).toBe("1m");
+});
+
+test("the context label is the percentage, and nothing when unknown", () => {
+  expect(contextLabel({ tokens: 720091, window: 1000000, pct: 72, handoff_at: 400000 })).toBe("72%");
+  expect(contextLabel(null)).toBeNull();
+  expect(contextLabel(undefined)).toBeNull();
 });

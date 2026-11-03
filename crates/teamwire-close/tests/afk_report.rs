@@ -140,3 +140,13 @@ fn a_removed_member_still_needs_the_report() {
     assert_eq!(why.len(), 1, "{why:?}");
     assert!(why[0].starts_with("afk_report_incomplete: "), "{why:?}");
 }
+
+#[test]
+fn a_report_heading_may_leave_out_the_comma() {
+    let mut rig = afk_rig();
+    rig.team_file(
+        "afk/REPORT.md",
+        &FULL.replace("Not done, and why", "Not done and why"),
+    );
+    assert!(refusals(&mut rig).is_empty());
+}

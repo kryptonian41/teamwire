@@ -10,7 +10,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | Who | How it starts | How it knows who is calling |
 | --- | --- | --- |
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
-| The lead | `teamwire install` registers `teamwire mcp --lead` through the plugin that `teamwire install` adds: the Claude plugin (ADR 0018) or the Codex plugin (ADR 0023). Nothing else registers it. | The harness session id, checked against the team's recorded lead session per call. The harness reads it from the server's environment. A harness that gives the session only in the request (Codex, ADR 0023) gets it from the string fields of the call's `_meta`: the server passes each one to the harness as `MCP_META_<key>`, and the harness's `caller_session` reads them through a lookup. The Codex harness reads `CODEX_SESSION_ID`, then `CODEX_THREAD_ID`, then `MCP_META_sessionId`, then `MCP_META_threadId`, so a `CODEX_*` variable in the server's environment wins over the hints. A member's server ignores `_meta`. The `team` argument picks the team. |
+| The lead | `teamwire install` registers `teamwire mcp --lead` through the plugin that `teamwire install` adds: the Claude plugin (ADR 0018), the Codex plugin (ADR 0023) or the pi lead package, whose extension registers it (ADR 0030). Nothing else registers it. | The harness session id, checked against the team's recorded lead session per call. The harness reads it from the server's environment. A harness that gives the session only in the request (Codex, ADR 0023) gets it from the string fields of the call's `_meta`: the server passes each one to the harness as `MCP_META_<key>`, and the harness's `caller_session` reads them through a lookup. The Codex harness reads `CODEX_SESSION_ID`, then `CODEX_THREAD_ID`, then `MCP_META_sessionId`, then `MCP_META_threadId`, so a `CODEX_*` variable in the server's environment wins over the hints. pi gives an MCP server neither a variable nor `_meta`, so the lead extension names the session in the server's `TEAMWIRE_PI_LEAD_SESSION`, and the pi harness accepts it only when the session's pi process, from the state file the extension writes, is the server's parent (ADR 0030). A member's server ignores `_meta`. The `team` argument picks the team. The server reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` and the token from its own environment once at start. When any of them is set, the environment is a member's, and every call is refused with `refused.identity`; a call that changes state also logs `message.refused` (ADR 0008). |
 
 Every server lists all ten tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's
@@ -74,7 +74,7 @@ Input:
   "team": "tw",                    // lead only; members use their own team
   "to": ["harness", "db@billing"],  // roles or "lead"; another team's as role@team or lead@team
   "type": "finding",
-  "text": "…",
+  "text": "…",                    // at most 600 characters for a notice, 800 for a finding, question or answer
   "commit": "abc1234",             // required for notice
   "re": "m012",                    // required for answer
   "key": "optional-idempotency-key"
@@ -89,16 +89,22 @@ Output:
   "display_id": "m014",
   "seq": 7,
   "deliveries": [
-    {"to": "harness", "state": "handed_off"},
-    {"to": "rust", "state": "undelivered", "reason": "host_other_session"}
+    {"to": "harness", "state": "handed_off", "attempts": 1},
+    {"to": "rust", "state": "undelivered", "reason": "host_other_session", "attempts": 3}
   ],
   "duplicate_of_key": false
 }
 ```
 
+A delivery lists `reason` only when it has one and `attempts` only when an
+attempt was made. A `reprompt` also carries a `watch` key: `{"running": true,
+"pid": 4242}`, `{"running": false}`, or `{"running": null, "error": "..."}`
+when the lead's watch lease could not be read.
+
 With a `key` already used by this sender, the output is the first message's,
-with `duplicate_of_key: true`, and only recipients still `pending` or
-`undelivered` are tried again.
+with `duplicate_of_key: true`. Only recipients still `pending` or
+`undelivered` are tried again. A recipient whose latest attempt began under 60 s
+ago with no outcome recorded since is listed as `skipped`.
 
 ## `team_resend`
 
@@ -111,8 +117,10 @@ resendable recipient).
 Output: the same shape as `team_send`, for the same message id, with each
 retried recipient's new state and `attempts`. Recipients that are
 `handed_off` or `acked` are listed as `skipped`. No new message is created.
-For a recipient in another team, the resend also writes that team's copy if
-it is missing, and leaves a line that team already handed off untyped.
+A recipient another command is still delivering, or claimed first, is listed
+as `skipped`. For a recipient in another team, the resend also writes that
+team's copy if it is missing, and leaves a line that team already handed off
+untyped.
 
 ## `team_inbox`
 
@@ -167,8 +175,10 @@ this generation has not been told yet, nothing is stored and the output is:
 ```json
 {"stored": false,
  "gaps": {"report_missing": false, "commits_without_line": ["3f2a9c1"], "decisions_missing": true},
- "report": "Fix these in your report file, then call team_done again. The second call is stored whatever the report says."}
+ "report": "Team report check: <facts>. Fix the report file, then call team_done again."}
 ```
+
+The second call stores the completion whatever the report says.
 
 ## `team_status`
 
@@ -199,8 +209,10 @@ session ids.
 
 Message log. Input: `{"role": "specmsg", "limit": 50}` (both optional). `role` takes the same
 address as `team_send`'s `to`: `<role>`, `lead`, `<role>@<team>` or `lead@<team>`.
-Output per row: `display_id`, `time`, `type`, `from`, `to`, `excerpt` (300
-chars, sanitised), and each recipient's delivery state. Members see only
+Output per row: `display_id`, `time`, `type`, `from`, `re` (the display id the
+message answers, or `null`), `commit` (the commit a `notice` names, or
+`null`), `to`, `excerpt` (300 chars, sanitised), and each recipient's delivery
+state. Members see only
 messages they sent or received; the lead sees all.
 
 ## `team_teams`
@@ -237,7 +249,7 @@ reads only teams that worked in a repository its own team works in (below). Inpu
 }
 ```
 
-`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v6, never matches a `ref`. With `grep` and no
+`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v9, never matches a `ref`. With `grep` and no
 `of`, the search reaches every running team and every archive, and a team seen
 more than once is read once: the running copy, else the newest archive. Output:
 
