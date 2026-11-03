@@ -11,9 +11,9 @@ use serde_json::{Value, json};
 use teamwire_core::Key;
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
-    HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, Liveness, MemberLaunch, OneLine,
-    OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind, StartupOutcome, TeamName,
-    TrustPolicy, TurnEnd,
+    HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, Liveness, MemberLaunch,
+    ModelCatalog, OneLine, OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind,
+    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
@@ -67,6 +67,7 @@ struct State {
     pushed: Vec<(SessionId, String)>,
     cwds: HashMap<SessionId, PathBuf>,
     setup_missing: Option<String>,
+    models: Option<Result<ModelCatalog, HarnessError>>,
 }
 
 /// An in-process `Harness`.
@@ -118,6 +119,7 @@ impl FakeHarness {
                 pushed: Vec::new(),
                 cwds: HashMap::new(),
                 setup_missing: None,
+                models: None,
             }),
             lead: None,
         }
@@ -191,6 +193,12 @@ impl FakeHarness {
     /// The folder `session_cwd` reports for `id`.
     pub fn set_session_cwd(&self, id: SessionId, cwd: impl Into<PathBuf>) {
         lock(&self.state).cwds.insert(id, cwd.into());
+    }
+
+    /// What `models` returns. Until this is called, `models` returns
+    /// `Unsupported`, as an adapter without a model list does.
+    pub fn set_models(&self, models: Result<ModelCatalog, HarnessError>) {
+        lock(&self.state).models = Some(models);
     }
 
     /// Lines `push` accepted, per session.
@@ -437,6 +445,14 @@ impl Harness for FakeHarness {
                 format!("team={},role={}", team.as_str(), role.as_str()),
             ),
         ]
+    }
+
+    fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
+        self.log.record("models", CallKind::Read, "");
+        lock(&self.state)
+            .models
+            .clone()
+            .unwrap_or_else(|| Err(HarnessError::unsupported()))
     }
 
     fn push(&self, s: &SessionId, line: &OneLine, _timeout: Duration) -> Result<(), HostError> {

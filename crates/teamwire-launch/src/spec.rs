@@ -1,6 +1,6 @@
 //! Reading a team spec from JSON.
 
-use teamwire_core::{Role, TeamName, TeamSpec};
+use teamwire_core::{Role, TaskClass, TeamName, TeamSpec};
 
 use crate::SpecError;
 
@@ -32,7 +32,11 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
     }
     let children = value.get("children").and_then(serde_json::Value::as_array);
     for child in children.into_iter().flatten() {
-        let Some(role) = child.get("role").and_then(serde_json::Value::as_str) else {
+        let role = child.get("role").and_then(serde_json::Value::as_str);
+        if let Some(error) = task_class_error(role, child.get("task_class")) {
+            errors.push(error);
+        }
+        let Some(role) = role else {
             continue;
         };
         if let Err(e) = Role::parse(role) {
@@ -62,6 +66,30 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
     })
 }
 
+/// The refusal for a `task_class` that is not one of the seven classes. Read
+/// from the JSON before serde, so the refusal names the values a lead may
+/// write instead of serde's message about an enum. `null` means unset.
+fn task_class_error(role: Option<&str>, value: Option<&serde_json::Value>) -> Option<SpecError> {
+    let value = value.filter(|v| !v.is_null())?;
+    if value
+        .as_str()
+        .is_some_and(|text| TaskClass::parse(text).is_ok())
+    {
+        return None;
+    }
+    let classes: Vec<&str> = TaskClass::ALL.iter().map(|c| c.as_str()).collect();
+    let who = role.map_or_else(|| "a member".to_owned(), |r| format!("role {r}"));
+    Some(SpecError::new(
+        role,
+        Some("task_class"),
+        "task_class_unknown",
+        format!(
+            "{who}: task_class {value} is not a task class; use one of {}",
+            classes.join(", ")
+        ),
+    ))
+}
+
 /// The keys `TeamSpec` reads. A test keeps this list equal to the type.
 const TEAM_KEYS: [&str; 8] = [
     "team",
@@ -75,7 +103,7 @@ const TEAM_KEYS: [&str; 8] = [
 ];
 
 /// The keys `MemberSpec` reads. A test keeps this list equal to the type.
-const MEMBER_KEYS: [&str; 21] = [
+const MEMBER_KEYS: [&str; 22] = [
     "role",
     "title",
     "kind",
@@ -87,6 +115,7 @@ const MEMBER_KEYS: [&str; 21] = [
     "cwd",
     "model",
     "effort",
+    "task_class",
     "check",
     "owns",
     "task",
@@ -229,6 +258,37 @@ mod tests {
             ]
         );
         assert!(unknown_key_warnings("{").is_empty());
+    }
+
+    #[test]
+    fn a_task_class_is_a_known_key_and_parses() {
+        let text = r#"{"team":"demo","title":"T","children":[
+            {"role":"api","title":"A","mode":"pane","task":"t","task_class":"root_cause"},
+            {"role":"web","title":"W","mode":"pane","task":"t","task_class":null}]}"#;
+        assert!(unknown_key_warnings(text).is_empty());
+        let spec = parse_spec(text).unwrap();
+        let classes: Vec<_> = spec.children.iter().map(|c| c.task_class).collect();
+        assert_eq!(classes, [Some(TaskClass::RootCause), None]);
+    }
+
+    #[test]
+    fn an_unknown_task_class_is_refused_naming_the_seven_classes() {
+        for value in [r#""hard""#, "3"] {
+            let text = format!(
+                r#"{{"team":"demo","title":"T","children":[
+                    {{"role":"api","title":"A","mode":"pane","task":"t","task_class":{value}}}]}}"#
+            );
+            let errors = parse_spec(&text).unwrap_err();
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            let error = errors.first().unwrap();
+            assert_eq!(error.code, "task_class_unknown");
+            assert_eq!(error.role.as_deref(), Some("api"));
+            assert_eq!(error.field.as_deref(), Some("task_class"));
+            assert!(error.message.contains(value), "{}", error.message);
+            for class in TaskClass::ALL {
+                assert!(error.message.contains(class.as_str()), "{}", error.message);
+            }
+        }
     }
 
     #[test]

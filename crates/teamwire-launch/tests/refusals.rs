@@ -498,7 +498,12 @@ fn the_handoff_threshold_key_draws_no_unknown_key_warning() {
 fn a_handoff_point_below_a_fresh_session_warns() {
     let rig = Rig::new();
     let warnings = |value: Option<u64>| {
-        let mut member = pane_member("a", "Alpha", rig.work.path());
+        // A classed member, so the missing-class warning stays out of the count.
+        let mut member = common::with(
+            pane_member("a", "Alpha", rig.work.path()),
+            "task_class",
+            json!("read_only_survey"),
+        );
         if let Some(v) = value {
             member = common::with(member, "context_handoff_tokens", json!(v));
         }
