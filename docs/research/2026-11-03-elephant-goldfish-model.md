@@ -243,18 +243,69 @@ A few trials cannot prove a gain. They can show whether the plan reviewer
 finds gaps the lead fixes, and whether the members then make fewer
 decisions of their own.
 
-## 8. Later ideas
+## 8. First trial: team `planrev`, 2026-11-04
+
+The team that built the `plan_reviewer` kind (ADR 0034) ran a plan review
+of its own briefs first. The kind did not exist yet, so the plan reviewer
+ran as a read-only investigator that followed the new kind's rules file.
+Every member ran on pi, on a Claude model.
+
+| Member | Kind | Model and effort | Wall time | Context at the end |
+| --- | --- | --- | --- | --- |
+| `planreview` | investigator, with the plan reviewer's rules | Opus 5.5, `high` | 18 min | 198k |
+| `store` | implementer, `concurrency_data_loss` | Opus 5.5, `xhigh` | 11 min | 165k |
+| `launch` | implementer, `contained_feature` | Sonnet 5.5, `high` | 11 min | 57k |
+| `guidance` | implementer, `contained_feature` | Sonnet 5.5, `high` | 10 min, then a 1 min fix round | 82k |
+| `storereview` | reviewer of the `store` branch | Opus 5.5, `high` | 10 min | 90k |
+| `closer` | closer | Opus 5.5, `xhigh` | 25 min | 249k |
+
+`teamwire metrics` recorded no tokens for these pi members, so this run has
+no cost figure.
+
+**What the plan review found.** It reported 14 findings. The closer later
+graded every one as correct when it was written: 3 wrong conclusions, 10
+wrong details and 1 wording. The lead fixed all 14 before any implementer
+started. None needed contesting or the user. The worst finding would have
+stopped one implementer outright: its message tests stored a plan reviewer,
+which only another member's branch could store. A second finding showed
+that the brief's definition of the rebuilt table left out its primary key
+and its NOT NULL constraints, and that no existing test would have noticed.
+
+**What it missed.** One test outside every member's `owns`,
+`crates/teamwire-cli/tests/doctor.rs`, wrote `9` as "a newer schema". The
+schema step made 9 current. The plan review, the code reviewer and every
+member's check missed it. The lead's full gate caught it, and the closer
+graded it a wrong conclusion. The brief also claimed that a raw SQLite
+connection starts with foreign key checks off. The repository's bundled
+SQLite turns them on, and the `store` member caught that.
+
+**The numbers from section 7.**
+
+| Number | This team |
+| --- | --- |
+| Entries in **Decisions I made**, per implementer | store 8, launch 2, guidance 8 before its fix round. Most are test-shape choices, such as which helper a test reuses. |
+| Questions from members | none. `teamwire log` holds only the lead's one reprompt. Past teams: 33 real questions over the archive, 18 to 22 of them asking to edit outside `owns` (`2026-10-18-lead-field-reports.md`). |
+| Implementers that needed a fix round | 1 of 3: `guidance`, for a wrong citation and two unwrapped lines. |
+| Extra time of the plan review | 18 minutes before the implementers started. |
+
+One run on a team whose lead had just designed the feature cannot show a
+gain. The run does show that a fresh reader of the briefs found real gaps
+that the lead's own planning check had passed, and that the members then
+asked nothing. The miss shows the limit: the plan reviewer searched the
+files the briefs named, and the broken test sat in a crate no brief
+mentioned.
+
+## 9. Later ideas
 
 - **Drift reports.** `docs/design/` and `docs/adr/` are teamwire's Elephant
   memory. A check that the code still matches them could become one more
-  thing the closer checks. This idea has less value until the trial in
-  section 7 shows a gain.
-- **A preset.** If trials show a gain, a `plan-review` preset could set up
-  step 3 above, and the reviewer contract could name a plan as well as a
-  code diff. Both live in files that ADR 0033 just rewrote, so any change
-  starts from the merged versions.
+  thing the closer checks. This idea has less value until more trials
+  like the one in section 8 show a gain.
+- **A wider search for pinned values.** The miss in section 8 was a test in
+  a crate that no brief named. A plan reviewer could be told to search the
+  whole workspace for each constant or count that a brief changes.
 
-## 9. Open questions
+## 10. Open questions
 
 - Should a plan review run before every team, or only from a team size or
   task class up? EGM's FAQ says to use it only for changes that need design
