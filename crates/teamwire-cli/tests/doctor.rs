@@ -189,6 +189,7 @@ impl Bed {
         teamwire_harness_pi::PiConfig {
             agent_dir: self.home.path().join("pi-agent"),
             pi_bin: "pi".to_owned(),
+            exclude_providers: Vec::new(),
         }
     }
 
