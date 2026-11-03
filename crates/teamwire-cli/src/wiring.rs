@@ -10,30 +10,18 @@ use teamwire_core::{HarnessId, HostId, NoHost, Pid, Platform, Registry, Registry
 use crate::cmd::doctor::pick_host;
 use teamwire_harness_claude::ClaudeCode;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
-use teamwire_harness_pi::{Pi, PiConfig};
+use teamwire_harness_pi::Pi;
 use teamwire_host_herdr::Herdr;
 use teamwire_host_tmux::Tmux;
 use teamwire_platform::SystemClock;
 
-// The Claude Code lead-setup items that `install`, `doctor` and the hook
-// name. They are re-exported here so no other file names an adapter crate.
-pub(crate) use teamwire_harness_claude::ClaudeCode as LeadSetup;
-pub(crate) use teamwire_harness_claude::{
-    Change, ClaudeConfig, McpEntry, McpState, SKILL_TEXT, SkillState, edited_skill, mcp_state,
-    shadowing_entries, skill_state,
-};
-
-// The Codex lead-setup items, re-exported for the same reason.
-pub(crate) use teamwire_harness_codex::CodexCli as CodexSetup;
-pub(crate) use teamwire_harness_codex::lead_setup::{
-    Change as CodexChange, LeadCommand as CodexCommand, PluginStatus as CodexPluginStatus,
-};
-
-// The pi lead-setup items, re-exported for the same reason.
-pub(crate) use teamwire_harness_pi::Pi as PiSetup;
-pub(crate) use teamwire_harness_pi::lead_setup::{
-    Change as PiChange, LeadCommand as PiCommand, PackageStatus as PiPackageStatus,
-};
+// What `install` and `doctor` name of the Claude Code and pi adapters: the
+// shared skill every lead setup is given (ADR 0023 point 9), and the folders
+// doctor reads herdr's integrations from. Re-exported here so no other file
+// names an adapter crate; each lead setup itself is reached through the
+// `Registry` (ADR 0031).
+pub(crate) use teamwire_harness_claude::{ClaudeConfig, SKILL_TEXT};
+pub(crate) use teamwire_harness_pi::PiConfig;
 
 /// The harness whose hook commands this binary serves.
 pub(crate) fn claude_harness_id() -> HarnessId {
@@ -47,32 +35,12 @@ pub(crate) struct Wiring {
     pub(crate) clock: SystemClock,
     pub(crate) lead_harness: HarnessId,
     pub(crate) lead_host: HostId,
-    /// Where Claude Code keeps its files, for the commands that read or
-    /// write the lead setup.
+    /// Where Claude Code keeps its files: doctor reads herdr's session hook
+    /// from its `settings.json`.
     pub(crate) claude: ClaudeConfig,
-    /// Where Codex keeps its files, for the same commands.
-    pub(crate) codex: CodexConfig,
-    /// Where pi keeps its files and how to start it: launch checks the
-    /// program, doctor reads herdr's pi integration from the directory,
-    /// and install adds the lead package.
+    /// Where pi keeps its files and how to start it: doctor reads herdr's
+    /// pi integration from the directory.
     pub(crate) pi: PiConfig,
-}
-
-impl Wiring {
-    /// The Codex adapter that adds and removes the lead plugin.
-    pub(crate) fn codex_setup(&self) -> CodexSetup {
-        CodexSetup::new(Arc::clone(&self.platform), self.codex.clone())
-    }
-
-    /// The pi adapter that adds and removes the lead package.
-    pub(crate) fn pi_setup(&self) -> PiSetup {
-        PiSetup::new(Arc::clone(&self.platform), self.pi.clone())
-    }
-
-    /// The Claude Code adapter that reads and writes the lead setup.
-    pub(crate) fn lead_setup(&self) -> LeadSetup {
-        LeadSetup::new(Arc::clone(&self.platform), self.claude.clone())
-    }
 }
 
 /// The environment facts wiring reads, gathered in one place so tests can
@@ -139,10 +107,7 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         Arc::clone(&platform),
         claude.clone(),
     )))?;
-    registry.add_harness(Arc::new(CodexCli::new(
-        Arc::clone(&platform),
-        codex.clone(),
-    )))?;
+    registry.add_harness(Arc::new(CodexCli::new(Arc::clone(&platform), codex)))?;
     registry.add_harness(Arc::new(Pi::new(Arc::clone(&platform), pi.clone())))?;
     registry.add_host(Arc::new(Herdr::new(Arc::clone(&platform))))?;
     registry.add_host(Arc::new(tmux_host(Arc::clone(&platform), env)))?;
@@ -155,7 +120,6 @@ pub(crate) fn wire(env: &WiringEnv) -> Result<Wiring, RegistryError> {
         lead_harness: lead_harness(env),
         lead_host,
         claude,
-        codex,
         pi,
     })
 }

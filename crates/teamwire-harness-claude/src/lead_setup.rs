@@ -8,32 +8,24 @@
 
 mod mcp;
 mod plugin;
+mod seam;
 mod shadow;
 mod skill;
 
 pub use mcp::{McpEntry, McpState};
 pub use shadow::{Shadow, shadowing_entries};
 pub use skill::{SKILL_TEXT, SkillState};
+pub use teamwire_core::LeadSetupError;
 
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+
+use teamwire_core::lead_setup::{apply_in_order, make_step, run_program};
+use teamwire_core::{ApplyError, LeadStep};
 
 use plugin::{MarketplaceState, PLUGIN_ID, PluginFiles, plugin_dir, plugin_state};
 
 use crate::{ClaudeCode, ClaudeConfig};
-
-/// How long one `claude` command may take.
-const CLAUDE_TIMEOUT: Duration = Duration::from_secs(30);
-
-#[derive(Debug, thiserror::Error)]
-pub enum LeadSetupError {
-    #[error("cannot read {}: {detail}", path.display())]
-    Read { path: PathBuf, detail: String },
-    /// A check failed before anything was written.
-    #[error("{0}")]
-    Refused(String),
-}
 
 /// The skill file and MCP entry that ADR 0012 wrote, as they are now.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +68,27 @@ impl Change {
             Self::WritePlugin { .. } | Self::RemovePluginFiles(_) | Self::RemoveSkill(_)
         )
     }
+
+    /// What making the change does.
+    pub(crate) fn step(&self, cfg: &ClaudeConfig) -> LeadStep {
+        let run = LeadStep::Run;
+        match self {
+            Self::WritePlugin { dir, files } => LeadStep::WriteFiles {
+                dir: dir.clone(),
+                files: files.clone(),
+            },
+            Self::RemovePluginFiles(dir) => LeadStep::RemoveDir(dir.clone()),
+            Self::RemoveSkill(path) => LeadStep::Own(path.clone()),
+            Self::AddMarketplace(dir) => run(plugin::marketplace_add(cfg, dir)),
+            Self::UpdateMarketplace => run(plugin::marketplace_update(cfg)),
+            Self::RemoveMarketplace => run(plugin::marketplace_remove(cfg)),
+            Self::InstallPlugin => run(plugin::plugin_verb(cfg, "install")),
+            Self::UpdatePlugin => run(plugin::plugin_verb(cfg, "update")),
+            Self::EnablePlugin => run(plugin::plugin_verb(cfg, "enable")),
+            Self::UninstallPlugin => run(plugin::plugin_verb(cfg, "uninstall")),
+            Self::RemoveMcp(_) => run(mcp::remove_command(cfg)),
+        }
+    }
 }
 
 impl fmt::Display for Change {
@@ -106,21 +119,6 @@ impl fmt::Display for Change {
             }
         }
     }
-}
-
-/// A change that failed after the checks passed.
-#[derive(Debug, thiserror::Error)]
-#[error("{failed} failed: {detail}")]
-pub struct ApplyError {
-    /// The changes made before the failure, in order.
-    pub done: Vec<Change>,
-    pub failed: Change,
-    pub detail: String,
-}
-
-/// Why an item was refused, with the way past it: `--force` to `verb` it.
-fn refused(what: &str, verb: &str) -> LeadSetupError {
-    LeadSetupError::Refused(format!("{what}; pass --force to {verb} it"))
 }
 
 /// The refusal text for each kind of item that is not teamwire's.
@@ -248,7 +246,10 @@ fn plan_migration(config: &ClaudeConfig, force: bool) -> Result<Vec<Change>, Lea
     match state.skill {
         SkillState::Missing => {}
         SkillState::Edited if !force => {
-            return Err(refused(&edited_skill(&state.skill_path), "remove"));
+            return Err(LeadSetupError::needs_force(
+                &edited_skill(&state.skill_path),
+                "remove",
+            ));
         }
         SkillState::Current | SkillState::Outdated | SkillState::Edited => {
             changes.push(Change::RemoveSkill(state.skill_path.clone()));
@@ -257,7 +258,7 @@ fn plan_migration(config: &ClaudeConfig, force: bool) -> Result<Vec<Change>, Lea
     match &state.mcp {
         McpState::Missing => {}
         McpState::Foreign(found) if !force => {
-            return Err(refused(&foreign_entry(found), "remove"));
+            return Err(LeadSetupError::needs_force(&foreign_entry(found), "remove"));
         }
         McpState::Current | McpState::Outdated(_) | McpState::Foreign(_) => {
             changes.push(Change::RemoveMcp(describe(&state.mcp)));
@@ -297,7 +298,7 @@ impl ClaudeCode {
         match state.marketplace {
             MarketplaceState::Missing => changes.push(Change::AddMarketplace(dir.clone())),
             MarketplaceState::Foreign if !force => {
-                return Err(refused(FOREIGN_MARKETPLACE, "replace"));
+                return Err(LeadSetupError::needs_force(FOREIGN_MARKETPLACE, "replace"));
             }
             MarketplaceState::Foreign => {
                 changes.push(Change::RemoveMarketplace);
@@ -335,7 +336,7 @@ impl ClaudeCode {
         match state.marketplace {
             MarketplaceState::Missing => {}
             MarketplaceState::Foreign if !force => {
-                return Err(refused(FOREIGN_MARKETPLACE, "remove"));
+                return Err(LeadSetupError::needs_force(FOREIGN_MARKETPLACE, "remove"));
             }
             MarketplaceState::Ours | MarketplaceState::Foreign => {
                 changes.push(Change::RemoveMarketplace);
@@ -350,36 +351,17 @@ impl ClaudeCode {
     }
 
     /// Makes `changes` in order, stopping at the first failure.
-    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError>> {
-        let mut done = Vec::new();
-        for change in changes {
-            if let Err(detail) = self.apply_one(change) {
-                return Err(Box::new(ApplyError {
-                    done,
-                    failed: change.clone(),
-                    detail,
-                }));
-            }
-            done.push(change.clone());
-        }
-        Ok(())
+    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError<Change>>> {
+        apply_in_order(changes, |c| self.make(&c.step(&self.config)))
     }
 
-    fn apply_one(&self, change: &Change) -> Result<(), String> {
-        let cfg = &self.config;
-        match change {
-            Change::WritePlugin { dir, files } => self.write_plugin(dir, files),
-            Change::RemovePluginFiles(dir) => std::fs::remove_dir_all(dir)
-                .map_err(|e| format!("cannot remove {}: {e}", dir.display())),
-            Change::RemoveSkill(path) => remove_skill(path),
-            Change::AddMarketplace(dir) => self.run_claude(&plugin::marketplace_add(cfg, dir)),
-            Change::UpdateMarketplace => self.run_claude(&plugin::marketplace_update(cfg)),
-            Change::RemoveMarketplace => self.run_claude(&plugin::marketplace_remove(cfg)),
-            Change::InstallPlugin => self.run_claude(&plugin::plugin_verb(cfg, "install")),
-            Change::UpdatePlugin => self.run_claude(&plugin::plugin_verb(cfg, "update")),
-            Change::EnablePlugin => self.run_claude(&plugin::plugin_verb(cfg, "enable")),
-            Change::UninstallPlugin => self.run_claude(&plugin::plugin_verb(cfg, "uninstall")),
-            Change::RemoveMcp(_) => self.run_claude(&mcp::remove_command(cfg)),
+    /// Makes one step: the old skill's removal here, the rest in core.
+    pub(crate) fn make(&self, step: &LeadStep) -> Result<(), String> {
+        match step {
+            LeadStep::Own(path) => remove_skill(path),
+            other @ (LeadStep::WriteFiles { .. } | LeadStep::RemoveDir(_) | LeadStep::Run(_)) => {
+                make_step(self.platform.as_ref(), other)
+            }
         }
     }
 
@@ -390,45 +372,14 @@ impl ClaudeCode {
         if !changes.iter().any(Change::is_claude) {
             return Ok(());
         }
-        self.run_claude(&plugin::probe_command(&self.config))
+        run_program(self.platform.as_ref(), &plugin::probe_command(&self.config))
+            .map(drop)
             .map_err(|detail| {
                 LeadSetupError::Refused(format!(
                     "cannot run `{} plugin`, which registers the teamwire plugin: {detail}",
                     self.config.claude_bin
                 ))
             })
-    }
-
-    fn run_claude(&self, cmd: &teamwire_core::Command) -> Result<(), String> {
-        let out = self
-            .platform
-            .run(cmd, CLAUDE_TIMEOUT)
-            .map_err(|e| e.to_string())?;
-        if out.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        let said = if stderr.is_empty() { stdout } else { stderr };
-        Err(if out.timed_out {
-            format!("timed out after {}s", CLAUDE_TIMEOUT.as_secs())
-        } else {
-            format!("exit {}: {said}", out.exit_code)
-        })
-    }
-
-    fn write_plugin(&self, dir: &Path, files: &[(PathBuf, String)]) -> Result<(), String> {
-        for (rel, text) in files {
-            let path = dir.join(rel);
-            if let Some(dir) = path.parent() {
-                std::fs::create_dir_all(dir)
-                    .map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-            }
-            self.platform
-                .write_atomic(&path, text.as_bytes())
-                .map_err(|e| e.to_string())?;
-        }
-        Ok(())
     }
 }
 

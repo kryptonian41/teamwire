@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, TeamState};
+use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, Timestamp};
 use teamwire_deliver::watch_lease_is_dead;
-use teamwire_store::{ReadTx, Store, StoreError, team_names};
+use teamwire_store::{OpenTeam, ReadTx, StoreError, TeamRead, open_teams};
 
 /// The teams under `home` that the lead of `session` should be watching and
 /// is not. A team counts when it is open, `session` is its lead session, a
@@ -19,38 +19,37 @@ pub fn teams_without_watch(
     platform: &dyn Platform,
     clock: &dyn Clock,
 ) -> Vec<TeamName> {
-    let names = team_names(home).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "the teams could not be listed");
-        Vec::new()
-    });
-    names
+    let now = clock.now();
+    led_by(home, session)
         .into_iter()
-        .filter(|name| match needs_watch(home, name, session, platform, clock) {
-            Ok(needs) => needs,
+        .filter_map(|(name, read)| match needs_watch(read, platform, now) {
+            Ok(needs) => needs.then_some(name),
             Err(e) => {
                 tracing::warn!(team = %name, error = %e, "a team is left out of the watch check");
-                false
+                None
             }
         })
         .collect()
 }
 
+/// The open teams `session` leads, each with what its read gave; none when
+/// the teams cannot be listed, which is logged.
+fn led_by(home: &Path, session: &SessionId) -> Vec<(TeamName, TeamRead)> {
+    open_teams(home, Some(session)).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "the teams could not be listed");
+        Vec::new()
+    })
+}
+
 fn needs_watch(
-    home: &Path,
-    team: &TeamName,
-    session: &SessionId,
+    read: TeamRead,
     platform: &dyn Platform,
-    clock: &dyn Clock,
+    now: Timestamp,
 ) -> Result<bool, StoreError> {
-    let store = Store::open_read_only(home, team)?;
-    let now = clock.now();
-    store.read(|tx| {
-        let Some(row) = tx.team()? else {
-            return Ok(false);
-        };
-        if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
-            return Ok(false);
-        }
+    let Some(team) = read? else {
+        return Ok(false);
+    };
+    team.store.read(|tx| {
         // A lease is cheap to read and rules most teams out first.
         if tx
             .watch_lease()?
@@ -81,21 +80,11 @@ fn has_working_member(tx: &ReadTx<'_>) -> Result<bool, StoreError> {
 /// Whether an open team led by `session` has a working member and a live
 /// watch, so its watch will wake the lead.
 fn wakes_lead(
-    home: &Path,
-    team: &TeamName,
-    session: &SessionId,
+    team: &OpenTeam,
     platform: &dyn Platform,
-    clock: &dyn Clock,
+    now: Timestamp,
 ) -> Result<bool, StoreError> {
-    let store = Store::open_read_only(home, team)?;
-    let now = clock.now();
-    store.read(|tx| {
-        let Some(row) = tx.team()? else {
-            return Ok(false);
-        };
-        if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
-            return Ok(false);
-        }
+    team.store.read(|tx| {
         let watched = tx
             .watch_lease()?
             .is_some_and(|lease| !watch_lease_is_dead(&lease, platform, now));
@@ -113,12 +102,15 @@ pub fn afk_hold_notes(
     platform: &dyn Platform,
     clock: &dyn Clock,
 ) -> Vec<String> {
-    let names = team_names(home).unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "the teams could not be listed");
-        Vec::new()
-    });
-    let woken = names.iter().any(|name| {
-        wakes_lead(home, name, session, platform, clock).unwrap_or_else(|e| {
+    let now = clock.now();
+    let teams = led_by(home, session);
+    let woken = teams.iter().any(|(name, read)| {
+        let woken = match read {
+            Ok(Some(team)) => wakes_lead(team, platform, now).map_err(|e| e.to_string()),
+            Ok(None) => Ok(false),
+            Err(e) => Err(e.to_string()),
+        };
+        woken.unwrap_or_else(|e| {
             tracing::warn!(team = %name, error = %e, "a team is left out of the wake check");
             false
         })
@@ -126,9 +118,9 @@ pub fn afk_hold_notes(
     if woken {
         return Vec::new();
     }
-    names
+    teams
         .into_iter()
-        .filter_map(|name| match afk_note_for(home, &name, session, clock) {
+        .filter_map(|(name, read)| match afk_note_for(home, &name, read, now) {
             Ok(note) => note,
             Err(e) => {
                 tracing::warn!(team = %name, error = %e, "a team is left out of the AFK hold");
@@ -141,21 +133,16 @@ pub fn afk_hold_notes(
 fn afk_note_for(
     home: &Path,
     team: &TeamName,
-    session: &SessionId,
-    clock: &dyn Clock,
+    read: TeamRead,
+    now: Timestamp,
 ) -> Result<Option<String>, StoreError> {
-    let store = Store::open_read_only(home, team)?;
-    let now = clock.now();
-    store.read(|tx| {
-        let Some(row) = tx.team()? else {
-            return Ok(None);
-        };
-        let Some(ends) = row.afk_budget_ends_at else {
-            return Ok(None);
-        };
-        if row.state != TeamState::Open || row.lead_session.as_ref() != Some(session) {
-            return Ok(None);
-        }
+    let Some(open) = read? else {
+        return Ok(None);
+    };
+    let Some(ends) = open.row.afk_budget_ends_at else {
+        return Ok(None);
+    };
+    open.store.read(|tx| {
         let dir = home.join("teams").join(team.as_str()).display().to_string();
         // Close accepts a team that never had a member without a report, so
         // telling that lead to add a reporter first would be wrong advice.

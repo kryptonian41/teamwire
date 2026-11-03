@@ -52,6 +52,17 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> Result<(), PlatformErro
         .map_err(|err| io_error(&context("syncing the directory of"), &err))
 }
 
+/// Creates `path` and its missing parents.
+pub(crate) fn create_dir_all(path: &Path) -> Result<(), PlatformError> {
+    fs::create_dir_all(path).map_err(|err| io_error(&format!("creating {}", path.display()), &err))
+}
+
+/// Deletes the directory `path` and everything in it. `fs::remove_dir_all`
+/// does not follow a symlink at `path`; it removes the link.
+pub(crate) fn remove_dir_all(path: &Path) -> Result<(), PlatformError> {
+    fs::remove_dir_all(path).map_err(|err| io_error(&format!("removing {}", path.display()), &err))
+}
+
 /// Keep the mode of the file being replaced. A temporary file starts private
 /// (0600), and a config that was readable would otherwise turn unreadable.
 fn set_mode(temp: &File, target: &Path) -> std::io::Result<()> {

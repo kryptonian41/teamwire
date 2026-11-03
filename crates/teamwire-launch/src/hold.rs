@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use teamwire_core::{HarnessId, HoldInfo, Pid, Registry, SessionId, TeamName, TeamState};
+use teamwire_core::{HarnessId, HoldInfo, Pid, Registry, SessionId, TeamName};
 use teamwire_store::{Ctx, Store};
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -105,25 +105,18 @@ pub fn lead_process(
 
 /// True when another open team of the same lead records this hold as its own.
 fn another_team_owns(ctx: &Ctx<'_>, this: &TeamName, session: &SessionId, hold: Pid) -> bool {
-    let Ok(names) = teamwire_store::team_names(ctx.home) else {
+    let Ok(teams) = teamwire_store::open_teams(ctx.home, Some(session)) else {
         return false;
     };
-    names.into_iter().any(|name| {
-        if &name == this {
-            return false;
-        }
-        let Ok(store) = Store::open_read_only(ctx.home, &name) else {
-            return false;
-        };
-        team_of(&store).is_some_and(|t| {
-            t.state == TeamState::Open
-                && t.lead_session.as_ref() == Some(session)
-                && t.sleep_hold
+    teams.into_iter().any(|(name, read)| {
+        &name != this
+            && read.ok().flatten().is_some_and(|t| {
+                t.row.sleep_hold
                     == Some(HoldInfo {
                         pid: hold,
                         owned: true,
                     })
-        })
+            })
     })
 }
 

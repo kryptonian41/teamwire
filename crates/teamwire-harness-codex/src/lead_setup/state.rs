@@ -3,17 +3,14 @@
 //! list --json`. Both are only read; every write goes through `codex plugin`.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::Value;
 use teamwire_core::Command;
+use teamwire_core::lead_setup::run_program;
 
 use super::LeadSetupError;
 use super::plugin::{MARKETPLACE, PLUGIN_ID};
 use crate::CodexCli;
-
-/// How long one `codex` command may take.
-pub(crate) const CODEX_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Where the user's `teamwire` marketplace came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -80,21 +77,7 @@ impl CodexCli {
 
     /// Runs `cmd` and returns its stdout, or what went wrong in words.
     pub(crate) fn run_codex(&self, cmd: &Command) -> Result<String, String> {
-        let out = self
-            .platform
-            .run(cmd, CODEX_TIMEOUT)
-            .map_err(|e| e.to_string())?;
-        if out.success() {
-            return Ok(String::from_utf8_lossy(&out.stdout).into_owned());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-        let stdout = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-        let said = if stderr.is_empty() { stdout } else { stderr };
-        Err(if out.timed_out {
-            format!("timed out after {}s", CODEX_TIMEOUT.as_secs())
-        } else {
-            format!("exit {}: {said}", out.exit_code)
-        })
+        run_program(self.platform.as_ref(), cmd)
     }
 
     fn installed(&self) -> Result<Option<Installed>, LeadSetupError> {

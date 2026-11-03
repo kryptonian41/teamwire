@@ -17,7 +17,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use teamwire_core::RunOutput;
 use teamwire_fakes::FakePlatform;
-use teamwire_harness_pi::lead_setup::{Change, LeadCommand, PackageStatus, package_dir};
+use teamwire_harness_pi::lead_setup::{Change, LeadCommand, LeadStatus, package_dir};
 use teamwire_harness_pi::{Pi, PiConfig};
 
 const SHARED: &str = "---\nname: teamwire\ndescription: d\n---\n\n# Body\n";
@@ -179,7 +179,7 @@ fn a_listed_package_with_current_files_needs_no_change_and_no_pi() {
         bed.pi()
             .package_status(&want(), SHARED, &bed.home(), true)
             .unwrap(),
-        PackageStatus::Current
+        LeadStatus::Current
     );
 }
 
@@ -191,14 +191,14 @@ fn the_status_is_missing_stale_or_current() {
             .package_status(&want(), SHARED, &bed.home(), compare)
             .unwrap()
     };
-    assert_eq!(status(true), PackageStatus::Missing);
+    assert_eq!(status(true), LeadStatus::Missing);
     // Listed in object form, files not written yet.
     let dir = package_dir(&bed.home());
     bed.packages(&[json!({ "source": dir.display().to_string() })]);
-    assert!(matches!(status(true), PackageStatus::Stale(p) if p[0].contains("not this binary's")));
-    assert!(matches!(status(false), PackageStatus::Stale(p) if p[0].contains("missing")));
+    assert!(matches!(status(true), LeadStatus::Stale(p) if p[0].contains("not this binary's")));
+    assert!(matches!(status(false), LeadStatus::Stale(p) if p[0].contains("missing")));
     bed.write_files();
-    assert_eq!(status(true), PackageStatus::Current);
+    assert_eq!(status(true), LeadStatus::Current);
     // Another binary's files: only a build skips the comparison.
     let other = LeadCommand {
         bin: PathBuf::from("/new/teamwire"),
@@ -208,12 +208,12 @@ fn the_status_is_missing_stale_or_current() {
         .pi()
         .package_status(&other, SHARED, &bed.home(), true)
         .unwrap();
-    assert!(matches!(other_status, PackageStatus::Stale(_)));
+    assert!(matches!(other_status, LeadStatus::Stale(_)));
     assert_eq!(
         bed.pi()
             .package_status(&other, SHARED, &bed.home(), false)
             .unwrap(),
-        PackageStatus::Current
+        LeadStatus::Current
     );
 }
 

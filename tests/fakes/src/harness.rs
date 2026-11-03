@@ -11,12 +11,13 @@ use serde_json::{Value, json};
 use teamwire_core::Key;
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
-    HostError, IdentityChannel, LaunchFile, LaunchSpec, Liveness, MemberLaunch, OneLine,
+    HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, Liveness, MemberLaunch, OneLine,
     OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind, StartupOutcome, TeamName,
     TrustPolicy, TurnEnd,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
+use crate::lead_setup::FakeLeadSetup;
 
 /// The title of Claude Code's plain folder-trust dialog, as in Claude Code
 /// 2.1.x. The dialog lists "No, exit" (preselected) and "Yes, I trust this
@@ -78,12 +79,13 @@ pub struct FakeHarness {
     id: HarnessId,
     log: CallLog,
     state: Mutex<State>,
+    lead: Option<FakeLeadSetup>,
 }
 
 impl FakeHarness {
     pub const ID: &'static str = "fake";
 
-    /// Every capability on except `can_push`.
+    /// Every capability on except `can_push` and `reads_input_box`.
     pub fn caps() -> HarnessCaps {
         HarnessCaps {
             turn_end_hook: true,
@@ -93,6 +95,8 @@ impl FakeHarness {
             can_push: false,
             session_env_via_config: true,
             reads_watch_lines: true,
+            reads_input_box: false,
+            runs_afk: true,
         }
     }
 
@@ -115,7 +119,16 @@ impl FakeHarness {
                 cwds: HashMap::new(),
                 setup_missing: None,
             }),
+            lead: None,
         }
+    }
+
+    /// A harness that can lead, through `lead`. Without this the fake has no
+    /// lead setup, so install and doctor pass it by.
+    #[must_use]
+    pub fn with_lead_setup(mut self, lead: FakeLeadSetup) -> Self {
+        self.lead = Some(lead);
+        self
     }
 
     pub fn log(&self) -> &CallLog {
@@ -138,8 +151,8 @@ impl FakeHarness {
         }
     }
 
-    /// The session `current_session` reports. `None` means the caller has
-    /// no session id in its environment.
+    /// The session `caller_session` reports, whatever its lookup says.
+    /// `None` means the caller has no session id in its environment.
     pub fn set_caller(&self, caller: Option<CallerSession>) {
         lock(&self.state).caller = caller;
     }
@@ -281,6 +294,10 @@ impl Harness for FakeHarness {
         self.spec(m, Some(s))
     }
 
+    fn lead_setup(&self) -> Option<&dyn LeadSetup> {
+        self.lead.as_ref().map(|l| l as &dyn LeadSetup)
+    }
+
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {
         self.log
             .record("lead_resume_argv", CallKind::Read, s.as_str());
@@ -296,8 +313,8 @@ impl Harness for FakeHarness {
         Ok(lock(&self.state).cwds.get(s).cloned())
     }
 
-    fn current_session(&self) -> Option<CallerSession> {
-        self.log.record("current_session", CallKind::Read, "");
+    fn caller_session(&self, _get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
+        self.log.record("caller_session", CallKind::Read, "");
         lock(&self.state).caller.clone()
     }
 

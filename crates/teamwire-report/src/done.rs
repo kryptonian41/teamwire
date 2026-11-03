@@ -6,7 +6,7 @@ use teamwire_core::{
     CompletionStatus, EventType, FinalSource, LeadRoute, MemberState, ReportGaps, Role, TeamName,
     TeamState,
 };
-use teamwire_store::{Ctx, NewCompletion, Party, StoreError, same_hash, token_hash};
+use teamwire_store::{Ctx, NewCompletion, Party, StoreError, token_hash};
 
 use crate::note::{FIX_THEN_DONE, gap_note};
 use crate::result_file::{MISSING_FROM_HARNESS, MISSING_YET, write_current};
@@ -86,28 +86,13 @@ pub fn hash_token(token: &str) -> [u8; 32] {
 /// that was removed, a member with no stored hash, a token whose hash
 /// differs (ADR 0008 point 2). The hashes are compared without stopping at
 /// the first difference.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 pub fn token_matches(ctx: &Ctx<'_>, team: &TeamName, role: &Role, token: &str) -> bool {
-    let Ok(Some(row)) = ctx.store.read(|tx| tx.team()) else {
-        return false;
-    };
-    if row.name != *team {
-        return false;
-    }
-    let live = matches!(
-        ctx.store.read(|tx| tx.member(role)),
-        Ok(Some(m)) if m.state != MemberState::Removed
-    );
-    let stored = ctx
-        .store
-        .read(|tx| tx.member_token_hash(role))
-        .ok()
-        .flatten();
-    let same = stored.is_some_and(|stored| same_hash(&stored, &token_hash(token)));
-    live && same
+    ctx.store
+        .read(|tx| {
+            Ok(tx.team()?.is_some_and(|row| row.name == *team)
+                && tx.token_matches(role, token)? == Some(true))
+        })
+        .unwrap_or(false)
 }
 
 /// What the write transaction decided.

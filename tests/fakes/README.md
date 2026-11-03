@@ -10,7 +10,8 @@ Every later test runs on these. Nothing here touches the real `~/.claude`,
 | `TestHome` | helper | A fresh `TEAMWIRE_HOME` in a temporary directory. |
 | `FakeClock` | in-process `Clock` | Time moves when the test says. `advance`, `sleep_and_wake` (wall clock jumps, monotonic does not), `set_wall`. |
 | `FakePlatform` | in-process `Platform` | Environments and start times per pid, free space, network-filesystem flag, a sleep hold that records start and release (`hold_events`). It writes real files, so give it a temporary directory. |
-| `FakeHarness` | in-process `Harness` | Sessions, pids, liveness; switchable capabilities (`set_caps`); a background caller; a listing failure. |
+| `FakeHarness` | in-process `Harness` | Sessions, pids, liveness; switchable capabilities (`set_caps`); a background caller; a listing failure. No lead setup unless built `with_lead_setup`. |
+| `FakeLeadSetup` | in-process `LeadSetup` | Files in `<home>/fake-lead/` written through the platform it is given; its program's `add` and `remove` only flip `is_registered`. `as_default_lead`, `with_program`. |
 | `FakeHost` | in-process `Host` | Places in a map; scripted faults per method. `close` leaves a place whose agent name is not the expected one and returns `NotFound`. `spawn` refuses a name that a live place holds with `BadArgument` and a detail starting `agent_name_taken:`; a place in state `Gone` holds no live agent. |
 | `NoTmuxConfig` | wrapper `Platform` | The real platform it wraps, except that every `tmux` call gets `-f /dev/null`. A test's private tmux server then never reads the user's `~/.tmux.conf`, whose plugins can make a server start slow enough to time out. |
 | `fake-herdr`, `fake-claude` | binaries | See below. |
@@ -42,8 +43,8 @@ calls" (`log.count(CallKind::Write) == 0`).
 
 ## Contract suites
 
-`teamwire_fakes::contract::{host_contract, harness_contract, platform_contract}`
-each take one setup record, run every rule that all adapters share, and panic
+`teamwire_fakes::contract::{host_contract, harness_contract, platform_contract,
+lead_setup_contract}` each take one setup record, run every rule that all adapters share, and panic
 with `contract violated: <rule>` on the first broken rule. A suite never
 assumes a product: it checks only what the trait promises. Each caller builds
 the setup; the suite makes and closes its own places.
@@ -181,8 +182,22 @@ platform_contract(&PlatformSetup {
 child.kill()?;
 ```
 
-The in-process fakes pass their own suites in `tests/fakes/tests/contract.rs`;
-that file also shows a fake that breaks a rule making the suite fail.
+### `lead_setup_contract(&LeadSetupSetup)`
+
+Fields: `setup` (the `LeadSetup`), `platform` (the `FakePlatform` it was
+built on), `home` (an empty state directory, apart from the harness's own
+directory), `command`, `shared_skill`, and `before_read`, which queues on the
+platform what the harness's program answers when asked what is installed
+(Codex's `plugin list --json`; a no-op for the others). The suite checks a
+fresh setup end to end without running the program: missing status, a plan
+that writes nothing, files only under `home`, steps that run only
+`setup.program()`, a write failure and a failing program each stopping
+`apply` with what was done named, a second plan without the written files,
+and an uninstall that deletes them (ADR 0031).
+
+The in-process fakes pass their own suites in `tests/fakes/tests/contract.rs`
+and `tests/fakes/tests/lead_setup_fake.rs`; those files also show a fake that
+breaks a rule making the suite fail.
 
 ## `fake-herdr`
 

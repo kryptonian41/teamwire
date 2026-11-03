@@ -47,24 +47,24 @@ and no host (ADP-1).
 
 | Crate | What it does |
 | --- | --- |
-| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `Host`, `Platform` and `Clock` traits, the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
+| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `LeadSetup`, `Host`, `Platform` and `Clock` traits, the lead setup's shared apply loop (ADR 0031), the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
 | `teamwire-store` | Opens a team's SQLite database with the required settings, runs migrations, and offers typed transactions for every table. The only code that writes state. |
-| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, and the sleep hold (`caffeinate` on macOS). |
+| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, and the sleep hold (`caffeinate` on macOS). |
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
 | `teamwire-harness-codex` | The `Harness` trait for the Codex CLI: launch and resume argv from `-c` overrides, the member's token file, Stop, PostToolUse and SessionStart hook input, the TUI screen, rollout files and thread locks, and the Codex lead plugin (ADR 0023). |
 | `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
-| `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. |
+| `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. Reads one message's events into the state of its latest attempt to a recipient (`AttemptHistory`: started, stale, in flight, stops, unread). |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
 | `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |
-| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. |
+| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. It runs the order of `teamwire handoff` in `hand_off` (ADR 0032), with close's checks and place close passed in by the CLI. |
 | `teamwire-verify` | Runs checks, diffs from the start commit, applies the per-language rules, writes verify records and waivers. |
 | `teamwire-close` | Whole-team close and single-member removal, in the fixed order, with the archive. |
 | `teamwire-watch` | The watch loop and the status view. Both derive each member's state the same way, except that status reads an idle `"dispatch": false` member quiet at once (WAT-3) and measures ages in wall time, because only a running watch measures sleeps. |
 | `teamwire-otel` | Local metrics queries and the OpenTelemetry export. |
 | `teamwire-mcp` | The stdio MCP server (`rmcp`), a thin front for `msg`, `report` and `watch`. |
-| `teamwire-cli` | The `teamwire` binary: argument parsing, wiring concrete adapters, exit codes. It also runs `teamwire handoff` (ADR 0027): `teamwire-launch` and `teamwire-close` may not depend on each other, so the order of check, place close, open and record lives in `cmd/handoff.rs`. |
+| `teamwire-cli` | The `teamwire` binary: argument parsing, wiring concrete adapters, exit codes. For `teamwire handoff` (ADR 0027, ADR 0032), `teamwire-launch` and `teamwire-close` may not depend on each other, so `cmd/handoff.rs` passes close's checks and place close to launch's `hand_off`. |
 | `tests/fakes` (`teamwire-fakes`) | The fake host, harness and platform, the fake `herdr` and `claude` binaries, and the contract-test suites every adapter must pass. |
 
 How they run (ADR 0001):

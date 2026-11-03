@@ -5,7 +5,8 @@ use std::process::ExitCode;
 use teamwire_core::TeamName;
 use teamwire_msg::adopt_lead;
 
-use crate::cmd::send::{caller_env, error_code, fail, say, with_ctx};
+use crate::cmd::send::error_code;
+use crate::cmd::shared::{caller_env, fail, say, with_ctx};
 use crate::wiring::Wiring;
 use crate::{Global, LeadArgs, USAGE};
 

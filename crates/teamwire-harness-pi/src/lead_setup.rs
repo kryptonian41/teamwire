@@ -11,16 +11,17 @@
 
 use std::fmt;
 use std::path::{Component, Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::{Value, json};
-use teamwire_core::Command;
+use teamwire_core::lead_setup::{
+    DoctorCheck, apply_in_order, make_step, optional_check, run_program,
+};
+use teamwire_core::{ApplyError, Command, LeadChange, LeadPlan, LeadSetup, LeadStep, LeadTarget};
+
+pub use teamwire_core::{LeadCommand, LeadSetupError, LeadStatus};
 
 use crate::Pi;
 use crate::lead_extension::{self, LeadValues};
-
-/// How long one `pi` command may take.
-const PI_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// How a pi lead differs from the Claude Code lead the shared skill
 /// describes. It goes between the frontmatter and the shared text.
@@ -31,33 +32,11 @@ const REFERENCE_TEXT: &str = include_str!("../../../examples/skills/teamwire/ref
 /// tool.
 const PROMPTWIRE_TEXT: &str = include_str!("../../../examples/skills/promptwire/SKILL.md");
 
-/// The program the package runs: `<bin> [--home DIR]`, then `mcp --lead`,
-/// the lead hook or `watch`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeadCommand {
-    pub bin: PathBuf,
-    /// Given only when the state directory is not the default, so a default
-    /// install keeps following the default.
-    pub home: Option<PathBuf>,
-}
-
 /// `<home>/pi-package`: the package's directory.
 #[must_use]
 pub fn package_dir(home: &Path) -> PathBuf {
     home.join("pi-package")
 }
-
-/// A check that failed before anything was written.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeadSetupError(pub String);
-
-impl fmt::Display for LeadSetupError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for LeadSetupError {}
 
 /// One change install or uninstall makes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,6 +58,21 @@ impl Change {
     pub fn is_pi(&self) -> bool {
         matches!(self, Self::AddPackage(_) | Self::RemovePackage(_))
     }
+
+    /// What making the change does.
+    fn step(&self, pi: &Pi) -> LeadStep {
+        match self {
+            Self::WritePackage { dir, files } => LeadStep::WriteFiles {
+                dir: dir.clone(),
+                files: files.clone(),
+            },
+            Self::RemovePackageFiles(dir) => LeadStep::RemoveDir(dir.clone()),
+            Self::AddPackage(dir) => LeadStep::Run(pi.pi(&["install", &dir.display().to_string()])),
+            Self::RemovePackage(dir) => {
+                LeadStep::Run(pi.pi(&["remove", &dir.display().to_string()]))
+            }
+        }
+    }
 }
 
 impl fmt::Display for Change {
@@ -94,33 +88,6 @@ impl fmt::Display for Change {
             }
         }
     }
-}
-
-/// A change that failed after the checks passed.
-#[derive(Debug)]
-pub struct ApplyError {
-    /// The changes made before the failure, in order.
-    pub done: Vec<Change>,
-    pub failed: Change,
-    pub detail: String,
-}
-
-impl fmt::Display for ApplyError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} failed: {}", self.failed, self.detail)
-    }
-}
-
-impl std::error::Error for ApplyError {}
-
-/// What pi has of the package, compared with what this binary would write.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PackageStatus {
-    /// pi's settings do not list the package.
-    Missing,
-    /// Listed, but its files are not this binary's.
-    Stale(Vec<String>),
-    Current,
 }
 
 /// The skill: the shared text's frontmatter, the pi part, then the shared
@@ -141,12 +108,10 @@ impl Pi {
         want: &LeadCommand,
         shared_skill: &str,
     ) -> Result<Vec<(PathBuf, String)>, LeadSetupError> {
-        let skill = skill(shared_skill)
-            .ok_or_else(|| LeadSetupError("the compiled-in skill has no frontmatter".to_owned()))?;
-        let home = want.home.as_ref().map(|h| {
-            // Rebuilt from its components so `/x/` and `/x` give one text.
-            h.components().collect::<PathBuf>().display().to_string()
-        });
+        let skill = skill(shared_skill).ok_or_else(|| {
+            LeadSetupError::Refused("the compiled-in skill has no frontmatter".to_owned())
+        })?;
+        let home = want.home_text();
         let extension = lead_extension::render(&LeadValues {
             teamwire_bin: &want.bin.display().to_string(),
             home: home.as_deref(),
@@ -209,10 +174,10 @@ impl Pi {
         shared_skill: &str,
         home: &Path,
         compare_files: bool,
-    ) -> Result<PackageStatus, LeadSetupError> {
+    ) -> Result<LeadStatus, LeadSetupError> {
         let dir = package_dir(home);
         if !self.registered(&dir)? {
-            return Ok(PackageStatus::Missing);
+            return Ok(LeadStatus::Missing);
         }
         let files = self.package_files(want, shared_skill)?;
         let problem = if compare_files && !is_written(&dir, &files) {
@@ -228,7 +193,7 @@ impl Pi {
         } else {
             None
         };
-        Ok(problem.map_or(PackageStatus::Current, |p| PackageStatus::Stale(vec![p])))
+        Ok(problem.map_or(LeadStatus::Current, |p| LeadStatus::Stale(vec![p])))
     }
 
     /// The changes that make the package this binary's, after every check.
@@ -269,29 +234,10 @@ impl Pi {
     }
 
     /// Makes `changes` in order, stopping at the first failure.
-    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError>> {
-        let mut done = Vec::new();
-        for change in changes {
-            if let Err(detail) = self.apply_one(change) {
-                return Err(Box::new(ApplyError {
-                    done,
-                    failed: change.clone(),
-                    detail,
-                }));
-            }
-            done.push(change.clone());
-        }
-        Ok(())
-    }
-
-    fn apply_one(&self, change: &Change) -> Result<(), String> {
-        match change {
-            Change::WritePackage { dir, files } => self.write_package(dir, files),
-            Change::RemovePackageFiles(dir) => std::fs::remove_dir_all(dir)
-                .map_err(|e| format!("cannot remove {}: {e}", dir.display())),
-            Change::AddPackage(dir) => self.run_pi(&["install", &dir.display().to_string()]),
-            Change::RemovePackage(dir) => self.run_pi(&["remove", &dir.display().to_string()]),
-        }
+    pub fn apply_lead_setup(&self, changes: &[Change]) -> Result<(), Box<ApplyError<Change>>> {
+        apply_in_order(changes, |c| {
+            make_step(self.platform.as_ref(), &c.step(self))
+        })
     }
 
     /// Runs `pi --version` when a change needs `pi`, so a missing `pi` is
@@ -300,62 +246,101 @@ impl Pi {
         if !changes.iter().any(Change::is_pi) {
             return Ok(());
         }
-        self.run_pi(&["--version"]).map_err(|detail| {
-            LeadSetupError(format!(
-                "cannot run `{}`, which registers the teamwire package: {detail}",
-                self.config.pi_bin
-            ))
-        })
+        run_program(self.platform.as_ref(), &self.pi(&["--version"]))
+            .map(drop)
+            .map_err(|detail| {
+                LeadSetupError::Refused(format!(
+                    "cannot run `{}`, which registers the teamwire package: {detail}",
+                    self.config.pi_bin
+                ))
+            })
     }
 
-    /// Runs `pi <args>` against this config's directory, with no network
-    /// call of pi's own.
-    fn run_pi(&self, args: &[&str]) -> Result<(), String> {
-        let cmd = Command::new(self.config.pi_bin.clone())
+    /// `pi <args>` against this config's directory, with no network call of
+    /// pi's own.
+    fn pi(&self, args: &[&str]) -> Command {
+        Command::new(self.config.pi_bin.clone())
             .args(args.iter().map(|a| (*a).to_owned()))
             .env(
                 "PI_CODING_AGENT_DIR",
                 self.config.agent_dir.display().to_string(),
             )
             .env("PI_OFFLINE", "1")
-            .env("PI_SKIP_VERSION_CHECK", "1");
-        let out = self
-            .platform
-            .run(&cmd, PI_TIMEOUT)
-            .map_err(|e| e.to_string())?;
-        if out.success() {
-            return Ok(());
-        }
-        let stderr = String::from_utf8_lossy(&out.stderr).trim().to_owned();
-        let said = if stderr.is_empty() {
-            String::from_utf8_lossy(&out.stdout).trim().to_owned()
-        } else {
-            stderr
-        };
-        Err(if out.timed_out {
-            format!("timed out after {}s", PI_TIMEOUT.as_secs())
-        } else {
-            format!("exit {}: {said}", out.exit_code)
-        })
+            .env("PI_SKIP_VERSION_CHECK", "1")
     }
 
-    fn write_package(&self, dir: &Path, files: &[(PathBuf, String)]) -> Result<(), String> {
-        for (rel, text) in files {
-            let path = dir.join(rel);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
-            }
-            self.platform
-                .write_atomic(&path, text.as_bytes())
-                .map_err(|e| e.to_string())?;
+    fn plan(&self, changes: &[Change]) -> LeadPlan {
+        LeadPlan {
+            changes: changes
+                .iter()
+                .map(|c| LeadChange::new(c.to_string(), c.step(self)))
+                .collect(),
+            note: (!changes.is_empty()).then_some(
+                "pi loads packages at start: new pi sessions see the change, open ones do not",
+            ),
         }
-        Ok(())
+    }
+}
+
+impl LeadSetup for Pi {
+    fn program(&self) -> &str {
+        &self.config.pi_bin
+    }
+
+    fn label(&self) -> &'static str {
+        "pi"
+    }
+
+    fn status(&self, target: &LeadTarget<'_>) -> Result<LeadStatus, LeadSetupError> {
+        self.package_status(
+            target.command,
+            target.shared_skill,
+            target.home,
+            target.compare_files,
+        )
+    }
+
+    fn plan_install(
+        &self,
+        target: &LeadTarget<'_>,
+        _force: bool,
+    ) -> Result<LeadPlan, LeadSetupError> {
+        let changes = Self::plan_install(self, target.command, target.shared_skill, target.home)?;
+        Ok(self.plan(&changes))
+    }
+
+    /// pi registers a package only by its path, so nothing foreign can sit
+    /// where teamwire's is and `force` changes nothing.
+    fn plan_uninstall(&self, home: &Path, _force: bool) -> Result<LeadPlan, LeadSetupError> {
+        let changes = Self::plan_uninstall(self, home)?;
+        Ok(self.plan(&changes))
+    }
+
+    fn apply(&self, changes: &[LeadChange]) -> Result<(), Box<ApplyError>> {
+        apply_in_order(changes, |c| make_step(self.platform.as_ref(), c.step()))
+    }
+
+    /// A missing package is fine: pi is optional. A stale one warns.
+    fn doctor_checks(
+        &self,
+        target: Result<&LeadTarget<'_>, &str>,
+        _dir: &Path,
+    ) -> Vec<DoctorCheck> {
+        let Ok(target) = target else {
+            return Vec::new();
+        };
+        vec![(
+            "pi lead package",
+            optional_check(self.status(target), Self::ID, self.label()),
+        )]
     }
 }
 
 fn read_error(file: &Path, detail: &str) -> LeadSetupError {
-    LeadSetupError(format!("cannot read {}: {detail}", file.display()))
+    LeadSetupError::Read {
+        path: file.to_path_buf(),
+        detail: detail.to_owned(),
+    }
 }
 
 /// The same folder, as the file system resolves both or, for a folder that

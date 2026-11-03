@@ -98,6 +98,8 @@ impl Harness for CodexCli {
             session_env_via_config: true,
             // Codex has no tool that streams a command's output to the model.
             reads_watch_lines: false,
+            reads_input_box: false,
+            runs_afk: false,
         }
     }
 
@@ -109,12 +111,12 @@ impl Harness for CodexCli {
         launch::build(&self.config.codex_bin, m, &launch::Start::Resume(s))
     }
 
-    fn current_session(&self) -> Option<CallerSession> {
-        self.caller_session(&|name| std::env::var(name).ok())
-    }
-
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
         session::caller_session(&self.config.codex_home, get)
+    }
+
+    fn lead_setup(&self) -> Option<&dyn teamwire_core::LeadSetup> {
+        Some(self)
     }
 
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError> {

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use teamwire_core::LaunchSpec;
+use teamwire_core::{LaunchSpec, LeadCommand};
 
 /// The marketplace and the plugin in it, both named `teamwire`.
 pub(crate) const MARKETPLACE: &str = "teamwire";
@@ -31,28 +31,6 @@ const REFERENCE_TEXT: &str = include_str!("../../../../examples/skills/teamwire/
 const PROMPTWIRE_TEXT: &str = include_str!("../../../../examples/skills/promptwire/SKILL.md");
 
 const STAMP_KEY: &str = "  teamwire-sha256: ";
-
-/// The program the plugin runs: `<bin> [--home DIR]`, then `mcp --lead` or
-/// the hook.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LeadCommand {
-    pub bin: PathBuf,
-    /// Given only when the state directory is not the default, so a default
-    /// install keeps following the default.
-    pub home: Option<PathBuf>,
-}
-
-impl LeadCommand {
-    fn words(&self) -> Vec<String> {
-        let mut words = vec![self.bin.display().to_string()];
-        if let Some(home) = &self.home {
-            // Rebuilt from its components so `/x/` and `/x` give one command.
-            let home: PathBuf = home.components().collect();
-            words.extend(["--home".to_owned(), home.display().to_string()]);
-        }
-        words
-    }
-}
 
 /// The marketplace directory's files, as this binary renders them: each path
 /// is relative to the directory, with its text.

@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use crate::harness::Harness;
 use crate::host::Host;
+use crate::lead_setup::LeadSetup;
 use crate::message::{DeliveryError, DeliveryErrorCode};
 use crate::names::{HarnessId, HostId};
 
@@ -77,6 +78,15 @@ impl Registry {
     /// The registered harness ids, sorted.
     pub fn harness_ids(&self) -> Vec<&str> {
         self.harnesses.keys().map(String::as_str).collect()
+    }
+
+    /// Every registered harness that has a lead setup, with its id, sorted
+    /// by id. Install, uninstall and doctor loop over these (ADR 0031).
+    pub fn lead_setups(&self) -> Vec<(&str, &dyn LeadSetup)> {
+        self.harnesses
+            .iter()
+            .filter_map(|(id, h)| Some((id.as_str(), h.lead_setup()?)))
+            .collect()
     }
 
     /// The registered host ids, sorted.

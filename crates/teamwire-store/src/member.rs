@@ -12,8 +12,8 @@ use teamwire_core::{
 
 use crate::error::StoreError;
 use crate::tx::{
-    Listing, ReadTx, Tx, bad, col, exactly_one, hash32, listing, one, parsed, parsed_opt, ts,
-    ts_opt,
+    Listing, ReadTx, Tx, bad, col, exactly_one, hash32, listing, one, parsed, parsed_opt,
+    same_hash, token_hash, ts, ts_opt,
 };
 
 /// What launch knows about a member before it starts anything.
@@ -540,6 +540,20 @@ impl ReadTx<'_> {
             .prepare("SELECT role, token_sha256 FROM members WHERE role = ?1")?;
         let found = listing("members", &mut stmt, [role.as_str()], |r| hash32(r, 1))?;
         Ok(one(found)?.flatten())
+    }
+
+    /// Whether `token` is the one launch gave `role` (ADR 0008 point 2).
+    /// `None` when `role` has no member that is not removed, or no stored
+    /// hash; otherwise whether the token's hash is the stored one, compared
+    /// without stopping at the first difference.
+    pub fn token_matches(&self, role: &Role, token: &str) -> Result<Option<bool>, StoreError> {
+        let live = self
+            .member(role)?
+            .is_some_and(|m| m.state != MemberState::Removed);
+        let stored = self.member_token_hash(role)?;
+        Ok(stored
+            .filter(|_| live)
+            .map(|stored| same_hash(&stored, &token_hash(token))))
     }
 }
 

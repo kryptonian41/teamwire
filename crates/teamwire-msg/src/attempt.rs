@@ -7,10 +7,7 @@ use teamwire_core::{
     Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
     Refusal, Route, TeamName, TeamState, Timestamp,
 };
-use teamwire_deliver::{
-    CommsCopy, DeliveryOutcome, attempt_in_flight, deliver_line, message_line_to,
-    stops_since_attempt,
-};
+use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line, message_line_to};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
 use crate::send::record_refusal;
@@ -45,7 +42,7 @@ pub(crate) fn claim_attempt(
         let moved = reader.delivery(&message.ulid, recipient)?.is_none_or(|c| {
             c.delivery.state != row.delivery.state || c.delivery.attempts != row.delivery.attempts
         });
-        if moved || attempt_in_flight(&reader, message, recipient, now)? {
+        if moved || AttemptHistory::read(&reader, message, recipient)?.in_flight(now) {
             return Ok(Claim::Busy);
         }
         tx.begin_resend(now, &message.ulid, recipient)
@@ -301,10 +298,12 @@ pub(crate) fn deliver_one(
             // name it once it is `undelivered` (ADR 0028). The check and the
             // write are one transaction, as the hook's list and mark are.
             if update.state == DeliveryState::Undelivered && stop_retries < MAX_STOP_RETRIES {
-                let stops = stops_since_attempt(&reader, message, recipient).unwrap_or_else(|e| {
-                    tracing::warn!(error = %e, "could not read whether the recipient stopped");
-                    0
-                });
+                let stops = AttemptHistory::read(&reader, message, recipient)
+                    .map(|a| a.stops())
+                    .unwrap_or_else(|e| {
+                        tracing::warn!(error = %e, "could not read whether the recipient stopped");
+                        0
+                    });
                 if stops > stops_seen {
                     return Ok(Written::TryAgain(stops));
                 }
