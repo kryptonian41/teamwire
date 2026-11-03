@@ -1,4 +1,4 @@
-//! `teamwire preset`, and the six files of `examples/presets/`. Each file
+//! `teamwire preset`, and the seven files of `examples/presets/`. Each file
 //! must be a spec that `launch` accepts once its placeholders are filled in,
 //! so the test fills them in and runs the real validation.
 #![expect(
@@ -27,12 +27,13 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 6] = [
+const NAMES: [&str; 7] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
     "dependent-tickets",
     "contract-split",
+    "plan-review",
     "closer",
 ];
 
@@ -203,7 +204,7 @@ fn no_preset_holds_a_machine_specific_path() {
     assert_eq!(
         seen,
         NAMES.len(),
-        "the directory holds exactly the six shapes"
+        "the directory holds exactly the seven presets"
     );
 }
 
@@ -230,7 +231,7 @@ fn teamwire(args: &[&str]) -> Run {
 }
 
 #[test]
-fn without_a_name_the_six_shapes_are_listed() {
+fn without_a_name_the_seven_presets_are_listed() {
     let run = teamwire(&["preset"]);
     assert_eq!(run.code, 0, "{}", run.err);
     let names: Vec<&str> = run
@@ -239,6 +240,50 @@ fn without_a_name_the_six_shapes_are_listed() {
         .filter_map(|l| l.split_whitespace().next())
         .collect();
     assert_eq!(names, NAMES);
+}
+
+/// The five team shapes come first. `plan-review` and `closer` are steps a
+/// lead adds to a team, so each says so at the start of its description.
+#[test]
+fn the_two_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
+    for (name, start) in [
+        ("plan-review", "FIRST STEP, not a team shape."),
+        ("closer", "FINAL STEP, not a team shape."),
+    ] {
+        let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
+        assert!(
+            file["_shape"].as_str().unwrap().starts_with(start),
+            "{name}"
+        );
+    }
+    for name in &NAMES[..5] {
+        let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
+        assert!(
+            !file["_shape"]
+                .as_str()
+                .unwrap()
+                .contains("not a team shape")
+        );
+    }
+}
+
+/// The plan reviewer starts alone, before any implementer, so the preset is
+/// one read-only member. One rule for each decision about when and how a
+/// lead uses it.
+#[test]
+fn the_plan_review_preset_is_one_plan_reviewer_in_a_pane() {
+    let file: Value = serde_json::from_str(&preset_text("plan-review")).unwrap();
+    let members = file["children"].as_array().unwrap();
+    assert_eq!(members.len(), 1);
+    let member = &members[0];
+    assert_eq!(member["role"], "planreview");
+    assert_eq!(member["kind"], "plan_reviewer");
+    assert_eq!(member["mode"], "pane");
+    assert_eq!(member["task_class"], "judgement");
+    assert_eq!(member["cwd"], "/abs/path/repo");
+    assert_eq!(member["deadline_s"], 1200);
+    assert!(member["task"].as_str().is_some_and(|t| !t.is_empty()));
+    assert_eq!(file["_rules"].as_array().unwrap().len(), 6);
 }
 
 #[test]
@@ -505,7 +550,7 @@ fn every_member_names_a_task_class_and_no_model() {
             let class = TaskClass::parse(class).unwrap();
             let fits = match member["kind"].as_str() {
                 Some("implementer") => TaskClass::ContainedFeature,
-                Some("reviewer" | "closer") => TaskClass::Judgement,
+                Some("reviewer" | "plan_reviewer" | "closer") => TaskClass::Judgement,
                 Some("investigator") => TaskClass::ReadOnlySurvey,
                 other => unreachable!("{name}/{role}: kind {other:?}"),
             };

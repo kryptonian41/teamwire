@@ -81,6 +81,7 @@ fill in.
 | `survey` | Read-only investigation across several areas. |
 | `implement-then-review` | One implementer, one fresh reviewer on the finished diff, then at most two fix rounds by the owner. Never a second review of the same diff. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
+| `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
 | `closer` | The last step from about four members up. One agent verifies the team's claims and writes one report. |
 
 The model and effort of each member are the largest cost lever in a run.
