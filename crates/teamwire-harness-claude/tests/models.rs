@@ -51,6 +51,19 @@ fn every_listed_name_resolves_through_find() {
 }
 
 #[test]
+fn the_4_5_models_are_listed_with_200k_and_no_effort_level() {
+    let catalog = catalog().unwrap();
+    for id in ["claude-haiku-4-5", "claude-opus-4-5", "claude-sonnet-4-5"] {
+        let model = catalog.find(id).unwrap();
+        assert_eq!(model.context_tokens, Some(200_000), "{id}");
+        assert!(!model.thinking, "{id}");
+    }
+    for id in ["claude-haiku-5-5", "claude-opus-4-6", "claude-sonnet-4-6"] {
+        assert!(catalog.find(id).unwrap().thinking, "{id}");
+    }
+}
+
+#[test]
 fn no_name_is_listed_twice() {
     let catalog = catalog().unwrap();
     let mut names: Vec<&String> = catalog
