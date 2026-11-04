@@ -144,7 +144,7 @@ cargo install --locked --path crates/teamwire-cli
 Or install a tagged release straight from git:
 
 ```bash
-cargo install --locked --git https://github.com/kryptonian41/teamwire.git --tag v0.17.0 teamwire-cli
+cargo install --locked --git https://github.com/kryptonian41/teamwire.git --tag v0.18.0 teamwire-cli
 ```
 
 Then check the machine and install the Claude Code plugin:
