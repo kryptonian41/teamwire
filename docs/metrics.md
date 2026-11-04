@@ -9,8 +9,9 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 
 | Event type | Written when | Data fields |
 | --- | --- | --- |
-| `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`; `outcome`, `failed_step` |
+| `team.created`, `team.closing`, `team.closed` | launch starts; close starts; close ends | `title`, `harness`, `host`, `lead_route`, `refs`; `outcome`, `failed_step` |
 | `team.lead_adopted` | `teamwire lead --adopt` | `old_session`, `new_session` (null in an export taken from a member session) |
+| `team.refs_added` | `launch --add` names a ticket ref the team does not hold yet (records no metric) | `added` (the refs appended, in order) |
 | `member.creating`, `member.started`, `member.failed` | each launch step | `kind`, `mode`, `task_class` (creating: one of the seven classes of `TaskClass`, or null when the spec set none; also copied onto the same launch's `started`, `failed` and `refused` events); `launch`, `requested`, `dispatch`, `steps`; `reason`, `reason_code` (failed); `model`, `effort`, `plugins`, `context_handoff_tokens` (a number, or null when unset), `excluded`, `session_id` (started) |
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |

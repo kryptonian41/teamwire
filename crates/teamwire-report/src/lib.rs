@@ -15,6 +15,7 @@ use teamwire_core::{CompletionStatus, Member, ReportGaps, Role, Ulid};
 use teamwire_store::{Ctx, StoreError};
 use thiserror::Error;
 
+mod decisions;
 mod done;
 mod final_message;
 mod handoff;
@@ -28,6 +29,10 @@ mod result_file;
 mod turn_end;
 mod usage;
 
+pub use decisions::{
+    Block, DecisionsError, DecisionsQuery, DecisionsView, MemberDecisions, RepoScope,
+    TeamDecisions, find_blocks, read_decisions, repo_dirs,
+};
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use handoff::handoff_note;
 pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};

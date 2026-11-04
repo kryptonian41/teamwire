@@ -164,7 +164,7 @@ pub struct Event {
 names in `docs/metrics.md` section 1:
 
 ```
-team.created team.closing team.closed team.lead_adopted
+team.created team.closing team.closed team.lead_adopted team.refs_added
 member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff
 member.completed member.completion_refused member.held
 message.sent message.refused
@@ -185,6 +185,8 @@ so they need no schema change:
 | `member.started` | `excluded` | The `info/exclude` lines this launch added, as `[{ "file": <absolute path>, "lines": [...] }]`, one entry per append (setup files, then `/TASK.md`). A line that was already in the file is not listed. Close takes these back. A missing key means an older build started the member. |
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
+| `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
+| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0038). |
 | `team.created` | `afk_budget_ends_at` | When an AFK run's budget ends, written by `teamwire afk start`. Missing on an ordinary team. |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
@@ -523,7 +525,9 @@ pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<S
                       pub harness: Option<HarnessId>, pub host: Option<HostId>,
                       pub children: Vec<MemberSpec>,
                       pub context_handoff_tokens: Option<u64>,
-                      pub plugins: BTreeMap<String, bool> }     // plugin id -> on/off, all members
+                      pub plugins: BTreeMap<String, bool>,      // plugin id -> on/off, all members
+                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0038
+pub struct TicketRef { pub provider: String, pub id: String }   // both required; no default provider
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
                         pub branch: Option<String>, pub base: Option<String>, pub cwd: Option<PathBuf>,
@@ -654,13 +658,13 @@ id, body and hash rows, with no hash refusal).
 Every `Tx` method that makes a lifecycle or message change also records the
 matching event. A few bookkeeping writes record none, because the closed event
 list has no type for them: `set_sleep_hold`, `set_member_place`,
-`set_member_session`, `set_member_token_hash`, `set_gate_told_generation`,
+`set_member_session`, `set_member_token_hash`, `set_refs`, `set_gate_told_generation`,
 `set_completion_final`, `clear_member_branch`, `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 9: `crates/teamwire-store/src/schema/v1.sql` to `v9.sql`,
+The schema is version 10: `crates/teamwire-store/src/schema/v1.sql` to `v10.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -675,7 +679,14 @@ Version 9 rebuilds `members` with `plan_reviewer` in its `kind` CHECK list
 drops `members` and renames `members_new`, so the foreign keys of
 `completions`, `verify_records` and `waivers` still name `members`. Every
 migration runs with foreign key checks off and fails, rolling back, when
-`PRAGMA foreign_key_check` finds a broken key before the commit. The tables and columns are those in
+`PRAGMA foreign_key_check` finds a broken key before the commit. Version 10 (`src/schema/v10.sql`) adds `team.refs`, a JSON array of
+`{"provider", "id"}` objects in recorded order that is never NULL and defaults to `[]`, and rebuilds
+`events` with the `team.refs_added` type. `TeamRow.refs` is that array; `Tx::set_refs` sets it
+when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs not yet held and writes
+`team.refs_added`, or writes nothing when none is new (ADR 0038). It refuses with
+`StoreError::Constraint`, and appends nothing, when the team would hold more than `REFS_MAX` (20)
+refs, because two `--add` runs may each have passed `validate`'s check before either wrote. A
+read-only open of an older database reads `refs` as empty. The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

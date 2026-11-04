@@ -48,6 +48,12 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
             ));
         }
     }
+    let refs = value.get("refs").and_then(serde_json::Value::as_array);
+    for r in refs.into_iter().flatten() {
+        if let Some(why) = ref_shape_problem(r) {
+            errors.push(SpecError::new(None, Some("refs"), "bad_ref", why));
+        }
+    }
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -64,6 +70,30 @@ pub fn parse_spec(text: &str) -> Result<TeamSpec, Vec<SpecError>> {
             format!("the spec is not a team spec: {e}"),
         )]
     })
+}
+
+/// Why `r` is not `{"provider": "linear", "id": "GKA-580"}`: serde would say
+/// only "invalid type", and a bare string is the mistake people will make.
+fn ref_shape_problem(r: &serde_json::Value) -> Option<String> {
+    let Some(map) = r.as_object() else {
+        return Some(format!(
+            "ref {r} must be an object naming its tracker, such as \
+             {{\"provider\": \"linear\", \"id\": \"GKA-580\"}}; teamwire assumes no provider"
+        ));
+    };
+    for key in map.keys() {
+        if key != "provider" && key != "id" {
+            return Some(format!(
+                "ref {r} has an unknown field {key:?}; a ref has only provider and id"
+            ));
+        }
+    }
+    for key in ["provider", "id"] {
+        if !map.get(key).is_some_and(serde_json::Value::is_string) {
+            return Some(format!("ref {r} needs a text field {key:?}"));
+        }
+    }
+    None
 }
 
 /// The refusal for a `task_class` that is not one of the seven classes. Read
@@ -91,7 +121,7 @@ fn task_class_error(role: Option<&str>, value: Option<&serde_json::Value>) -> Op
 }
 
 /// The keys `TeamSpec` reads. A test keeps this list equal to the type.
-const TEAM_KEYS: [&str; 8] = [
+const TEAM_KEYS: [&str; 9] = [
     "team",
     "title",
     "setup",
@@ -100,6 +130,7 @@ const TEAM_KEYS: [&str; 8] = [
     "children",
     "plugins",
     "context_handoff_tokens",
+    "refs",
 ];
 
 /// The keys `MemberSpec` reads. A test keeps this list equal to the type.

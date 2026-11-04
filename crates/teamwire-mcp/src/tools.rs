@@ -1,4 +1,4 @@
-//! What each of the nine tools does with its arguments: prove the caller,
+//! What each of the ten tools does with its arguments: prove the caller,
 //! call the same service function the CLI calls, and shape the result. The
 //! read-only tools are in `reads`.
 
@@ -28,7 +28,7 @@ pub(crate) struct Reply {
 }
 
 /// The name and description of each tool, in the order they are listed.
-pub(crate) const TOOLS: [(&str, &str); 9] = [
+pub(crate) const TOOLS: [(&str, &str); 10] = [
     (
         "team_send",
         "Send one message to agents of this team (a role, or lead) or of another team \
@@ -67,6 +67,11 @@ pub(crate) const TOOLS: [(&str, &str); 9] = [
         "Every team on this machine with its state and members, to find agents of other \
          teams to message as role@team or lead@team.",
     ),
+    (
+        "team_decisions",
+        "The 'Decisions I made' blocks of members' reports: this team's, the team named \
+         in `of`, or every running team and archive that matches `grep`.",
+    ),
 ];
 
 /// Runs one call: opens the team's store, proves the caller, runs the tool,
@@ -88,7 +93,7 @@ pub(crate) fn call(
     // the store for writing and records that refusal.
     let reads = matches!(
         tool,
-        "team_status" | "team_members" | "team_log" | "team_teams"
+        "team_status" | "team_members" | "team_log" | "team_teams" | "team_decisions"
     );
     let opened = if reads {
         Store::open_read_only(&env.home, &team)
@@ -305,7 +310,7 @@ fn run(
                 summary,
             })
         }
-        "team_status" | "team_members" | "team_log" | "team_teams" => {
+        "team_status" | "team_members" | "team_log" | "team_teams" | "team_decisions" => {
             crate::reads::run(ctx, team, actor, tool, args)
         }
         other => Err(ToolFailure::invalid(format!("no tool named {other}"))),

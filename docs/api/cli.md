@@ -72,7 +72,7 @@ With the `tmux` host and no running tmux server, launch and reopen open the tabs
 in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
-`children`, `context_handoff_tokens`, `plugins`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
+`children`, `context_handoff_tokens`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
 `base`, `cwd`, `model`, `effort`, `check`, `owns`, `task` or `task_file`,
 `deadline_s` (default 1800), `harness` (default: the lead's harness, so a member of a Codex lead runs on Codex), `setup`, `dispatch` (default true),
 `accept_trust` (default true), `context_handoff_tokens` (tokens, above zero; launch warns below 100,000, because a fresh Claude Code session already holds about 60,000), `plugins`. A Codex member's arguments hold no
@@ -90,6 +90,21 @@ use is also ignored, and launch prints one warning for each, then goes ahead:
 `warning: team level: unknown key "x" is ignored` or `warning: role <r>:
 unknown key "x" is ignored` (`child <n>` stands in for a member with no
 role).
+
+`refs` is a list of the tickets the team works on (ADR 0038). Each ref is an
+object with a required `provider` and a required `id`, such as
+`{"provider": "linear", "id": "GKA-580"}`; teamwire assumes no provider. A
+provider is a lowercase name matching `^[a-z][a-z0-9_]{0,15}$` (`linear`,
+`github`, `jira`; no fixed list). An id is 1 to 64 characters with no white
+space and no control character. A team holds at most 20 refs, and an exact
+repeat (same provider, same id) is recorded once, in first-seen order. A bare
+string, a missing or unknown field, a bad provider name, a bad id, or a total
+over 20 fails the whole spec (`bad_ref`, `too_many_refs`) like an invalid
+role. The first launch records the refs on the team row and in `team.created`.
+An `--add` spec may name more refs, and launch appends the ones not yet
+recorded, with a `team.refs_added` event; a ref is never removed. `--dry-run`
+prints `would record refs ...` or `would append refs ...`, each ref as
+`provider:id`.
 
 Prints one line per member (`started`, `refused: <reason>`, `failed:
 <reason>`), the warnings of LCH-9 and LCH-18, a warning naming each file a
@@ -215,7 +230,8 @@ completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `rep
 `handed_off` after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
-binary. `--json` gives each member a `context` object, `{"tokens", "window", "pct", "handoff_at"}` (integers; `pct` is a whole percent, rounded down, `handoff_at` the token count at which the member is told to hand off), or `null` when the member is not `started`, has no session, or the harness gives no reading. Output of an older build has no `context` key. The fill is the input, cache-read and cache-creation tokens of the session's newest main-chain request. `--json` carries the same fields as `watch`, `unread_deliveries`,
+binary. When the team has refs, the team's first line ends with `(refs linear:GKA-580, github:#1)`;
+`--json` always carries `"refs": [{"provider": ..., "id": ...}]`, empty for none. `--json` gives each member a `context` object, `{"tokens", "window", "pct", "handoff_at"}` (integers; `pct` is a whole percent, rounded down, `handoff_at` the token count at which the member is told to hand off), or `null` when the member is not `started`, has no session, or the harness gives no reading. Output of an older build has no `context` key. The fill is the input, cache-read and cache-creation tokens of the session's newest main-chain request. `--json` carries the same fields as `watch`, `unread_deliveries`,
 `unanswered_questions`, and `started_by` and `older_build` per member. An AFK team shows one line
 right after the `team <name> "<title>" <state>` header: `afk: budget ends <RFC 3339 ms Z>, <NhMMm|Nm|Ns> left, <n>
 decisions`, or `afk: budget spent at <time>, <n> decisions` once the budget is
@@ -724,12 +740,63 @@ is working or done is in `teamwire status`.
 
 Every team under the home with its title, state and roster, as `team_teams`
 returns it (MSG-21), and how to address its agents (`lead@<team>`,
-`<role>@<team>`). Reads only and needs no proof. A team whose store cannot
+`<role>@<team>`), followed by `(refs ...)` when the team has refs. `--json`
+gives each team a `"refs": [...]` list, always present. Reads only and needs no proof. A team whose store cannot
 be read is named on stderr and makes the command exit 6; the others are
 still listed. An AFK team shows `<name> (open, afk) <title>: address as ...` in place of
 `(open)`, and `--json` gives each element of `teams` an `afk_budget_ends_at`
 key, an RFC 3339 ms `Z` string or `null`. `team_teams` of the MCP server has
 no such key.
+
+### `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]`
+
+Prints the "Decisions I made" blocks of members' reports. Reads only. At least
+one of `<team>`, `--ref` and `--grep` is required; with neither the command exits 3.
+
+`<team>` is a running team's database, else the newest complete archive of that
+team (the archive whose `SHA256SUMS` is newest). A name with neither is
+refused, exit 1, `no such team or archive`. Without `<team>`, every running team
+and every complete archive is read, and a team seen more than once is read once:
+the running copy, else the newest archive. The team row's ULID names the team,
+not the folder.
+
+`--ref REF` keeps the teams whose recorded refs hold REF: `provider:id` matches
+that provider and that id (id compared ignoring case), a bare `id` matches that
+id under any provider. The text before the first `:` counts as a provider only
+when it matches `^[a-z][a-z0-9_]{0,15}$`. A team launched without refs, or
+archived before schema v10, never matches. Text output shows a team's refs as
+`[provider:id, ...]` after its title. `--role R` keeps one member. `--grep TEXT` keeps the blocks whose text holds
+TEXT, ignoring case, and prints each whole block; a member with no matching
+block, or no report, is left out. Filters combine with AND. Teams print oldest
+first, members in role order.
+
+A report is `<team folder>/reports/<role>.md`. A block starts at a line that,
+after any `#`s, a number such as `7.` and `**`, begins with "Decisions I made"
+(ignoring case); a mention in the middle of a line does not start one. A
+heading block runs to the next heading of the same or a higher level. Any
+other block (`Decisions I made:`, `**Decisions I made**`) runs to the next
+heading, the next bold label line, or the first non-blank line after its list
+that is neither a list item nor indented. Text after the label on the same line
+is part of the block. A report may hold several blocks; all are printed, in
+file order. A member with no report file prints `(no report)` when no `--grep`
+is given.
+
+`--json` prints `{"teams": [...], "errors": [...]}`, the same as the
+`team_decisions` tool returns:
+
+```json
+{"teams": [{"team": "fixall", "title": "…", "ulid": "…", "created_at": "…",
+  "live": false, "path": "/abs/path/to/team/dir", "refs": [{"provider": "linear", "id": "GKA-580"}],
+  "members": [{"role": "toolfix", "kind": "implementer", "title": "…",
+    "report": "/abs/path/reports/toolfix.md",
+    "blocks": [{"heading": "## Decisions I made", "line": 88, "text": "- …"}]}]}],
+ "errors": []}
+```
+
+`report` is `null` for a member with no report file. A database or report that
+cannot be read is named on stderr and listed in `errors`; the rest still
+prints. Exit 0 when anything printed (or nothing matched and nothing failed),
+1 when only errors came back.
 
 ## Harness and server entry points
 

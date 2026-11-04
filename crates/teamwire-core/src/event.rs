@@ -26,6 +26,7 @@ string_enum! {
         TeamClosing => "team.closing",
         TeamClosed => "team.closed",
         TeamLeadAdopted => "team.lead_adopted",
+        TeamRefsAdded => "team.refs_added",
         MemberCreating => "member.creating",
         MemberStarted => "member.started",
         MemberFailed => "member.failed",

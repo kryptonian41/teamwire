@@ -42,6 +42,14 @@ export const WatchState = z.enum(["running", "stale", "none"]);
 
 const count = z.number().int().nonnegative();
 
+/** A ticket in a tracker. teamwire assumes no provider: both fields are required. */
+export const TicketRef = z.object({
+  /** The tracker's lowercase name, such as `linear` or `github`. */
+  provider: z.string(),
+  /** The ticket's id in that tracker, such as `GKA-580`. */
+  id: z.string(),
+});
+
 /** How full a member's context window is, and where it hands off. */
 export const ContextView = z.object({
   tokens: count,
@@ -146,6 +154,8 @@ export const StatusView = z.object({
   team: z.string().nullable(),
   title: z.string().nullable(),
   state: TeamState.nullable(),
+  /** Tickets the team works on. Older teamwire omits it. */
+  refs: z.array(TicketRef).default([]),
   lead: LeadView.nullable(),
   watch: WatchView,
   /** `null` for an ordinary team. An older teamwire leaves the key out. */
@@ -180,6 +190,8 @@ export const TeamEntry = z.object({
   name: z.string(),
   title: z.string(),
   state: TeamState,
+  /** Tickets the team works on. Older teamwire omits it. */
+  refs: z.array(TicketRef).default([]),
   /** When an AFK run's budget ends; `null` for an ordinary team. An older teamwire leaves the key out. */
   afk_budget_ends_at: z.string().nullish(),
   members: z.array(RosterMember),

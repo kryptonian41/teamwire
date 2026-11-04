@@ -8,7 +8,8 @@ hold for every section below.
   Without it, a launch of a new team refuses with `lead_setup_missing`.
 - **Your tools** are `mcp__teamwire__team_send`, `mcp__teamwire__team_resend`,
   `mcp__teamwire__team_status`, `mcp__teamwire__team_members`,
-  `mcp__teamwire__team_log` and `mcp__teamwire__team_teams`. They are already
+  `mcp__teamwire__team_log`, `mcp__teamwire__team_teams` and
+  `mcp__teamwire__team_decisions`. They are already
   loaded. There is no ToolSearch step.
 - **The watch.** pi has no Monitor tool. Start the watch with the
   `teamwire_watch` tool and the team's name, right after launch. Each line

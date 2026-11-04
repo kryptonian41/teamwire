@@ -8,6 +8,7 @@ use teamwire_store::{Ctx, NO_DATABASE_HINT, Store, StoreError};
 use teamwire_watch::{ContextView, StatusView, UndeliveredResult, WatchState};
 
 use crate::cmd::shared::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
+use crate::cmd::teams::refs_suffix;
 use crate::wiring::Wiring;
 use crate::{Global, StatusArgs, USAGE};
 
@@ -99,9 +100,10 @@ fn render(view: &StatusView) -> String {
     let mut out = Vec::new();
     let name = view.team.as_ref().map_or("?", TeamName::as_str);
     out.push(format!(
-        "team {name} \"{}\" {}",
+        "team {name} \"{}\" {}{}",
         view.title.as_deref().unwrap_or(""),
-        view.state.map_or("unreadable", |s| s.as_str())
+        view.state.map_or("unreadable", |s| s.as_str()),
+        refs_suffix(&view.refs)
     ));
     if let Some(afk) = &view.afk {
         out.push(if afk.spent {

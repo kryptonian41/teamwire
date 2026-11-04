@@ -59,6 +59,8 @@ pub(crate) enum Command {
     Received(ReceivedArgs),
     /// Every message with its delivery state.
     Log(LogArgs),
+    /// The "Decisions I made" blocks of members' reports. Reads only.
+    Decisions(DecisionsArgs),
     /// Record this session as the team's lead.
     Lead(LeadArgs),
     /// Watch GitHub pull-request checks until every PR is done.
@@ -331,6 +333,24 @@ pub(crate) struct LogArgs {
     /// Only messages to or from this role.
     #[arg(long)]
     pub(crate) role: Option<String>,
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct DecisionsArgs {
+    /// The team: its running database, else its newest archive.
+    pub(crate) team: Option<String>,
+    /// Only this member.
+    #[arg(long, value_name = "R")]
+    pub(crate) role: Option<String>,
+    /// Only blocks whose text contains TEXT, ignoring case; reaches every
+    /// running team and every archive.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) grep: Option<String>,
+    /// Only teams with this ticket ref: `provider:id`, or a bare id under any provider.
+    #[arg(long = "ref", value_name = "REF")]
+    pub(crate) reference: Option<String>,
     #[arg(long)]
     pub(crate) json: bool,
 }

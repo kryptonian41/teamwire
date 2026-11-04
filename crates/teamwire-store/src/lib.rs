@@ -22,6 +22,7 @@ mod export;
 mod member;
 mod message;
 mod older;
+mod places;
 mod received;
 mod reopen;
 mod store;
@@ -39,6 +40,7 @@ pub use error::{NO_DATABASE_HINT, StoreError};
 pub use export::{ExportClaim, ExportHolder, ExportMark};
 pub use member::NewMember;
 pub use message::{InboxEntry, MessageFilter, NewMessage, SentRecord, StoredMessage};
+pub use places::{TeamDb, newest_archive, team_databases};
 pub use received::ReceivedMessage;
 pub use reopen::RunOptions;
 pub use store::{
@@ -50,7 +52,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -87,6 +89,11 @@ pub const SCHEMA_V8_SQL: &str = include_str!("schema/v8.sql");
 /// `plan_reviewer` kind in its CHECK list. Every row is kept, and the
 /// foreign keys of other tables still name `members`.
 pub const SCHEMA_V9_SQL: &str = include_str!("schema/v9.sql");
+
+/// The step from schema version 9 to 10: the `team.refs` column, and the
+/// `events` table rebuilt with the `team.refs_added` type in its CHECK list.
+/// Every row is kept.
+pub const SCHEMA_V10_SQL: &str = include_str!("schema/v10.sql");
 
 #[cfg(test)]
 mod tests {

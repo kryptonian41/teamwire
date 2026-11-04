@@ -521,6 +521,26 @@ fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
 }
 
 #[test]
+fn a_bad_ref_is_refused_by_launch_and_by_dry_run() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["refs"] = json!([{"provider": "linear", "id": "GKA 580"}]);
+    let file = rig.spec_file(&spec);
+    for extra in [&["--dry-run"][..], &[][..]] {
+        let mut args = extra.to_vec();
+        args.extend(["--spec", file.to_str().unwrap()]);
+        let out = rig.launch(&args, None, false);
+        assert_eq!(out.status.code(), Some(1), "{extra:?}");
+        assert!(
+            text(&out.stderr).contains("bad_ref"),
+            "{}",
+            text(&out.stderr)
+        );
+        assert!(rig.home_is_empty(), "{extra:?}: nothing was created");
+    }
+}
+
+#[test]
 fn a_member_cannot_launch_a_team_but_may_ask_for_the_plan() {
     let rig = Rig::new();
     let file = rig.spec_file(&pane_spec("nested", rig.work.path()));
@@ -559,6 +579,74 @@ fn a_member_cannot_launch_a_team_but_may_ask_for_the_plan() {
         );
         assert!(rig.home_is_empty(), "{vars:?}: a dry run creates nothing");
     }
+}
+
+#[test]
+fn dry_run_names_the_refs_it_would_record_and_then_append() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["refs"] = json!([
+        {"provider": "linear", "id": "GKA-580"},
+        {"provider": "github", "id": "#1"},
+        {"provider": "linear", "id": "GKA-580"},
+    ]);
+    let file = rig.spec_file(&spec);
+    let dry = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(dry.status.code(), Some(0), "{}", text(&dry.stderr));
+    assert!(
+        text(&dry.stdout).contains("would record refs linear:GKA-580, github:#1"),
+        "{}",
+        text(&dry.stdout)
+    );
+    assert!(rig.home_is_empty());
+
+    let out = rig.launch(&["--spec", file.to_str().unwrap()], None, false);
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let store = Store::open_read_only(rig.home.path(), &TeamName::parse("demo").unwrap()).unwrap();
+    let refs = store.read(|tx| Ok(tx.team()?.map(|t| t.refs))).unwrap();
+    let shown: Vec<String> = refs.unwrap().iter().map(ToString::to_string).collect();
+    assert_eq!(shown, ["linear:GKA-580", "github:#1"]);
+    drop(store);
+
+    let mut more = pane_spec("demo", rig.work.path());
+    more["children"][0]["role"] = json!("b");
+    more["children"][0]["title"] = json!("Beta");
+    more["refs"] = json!([
+        {"provider": "github", "id": "#1"},
+        {"provider": "github", "id": "#2"},
+        {"provider": "gitlab", "id": "#1"},
+    ]);
+    let file = rig.spec_file(&more);
+    let dry = rig.launch(
+        &["--add", "--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(dry.status.code(), Some(0), "{}", text(&dry.stderr));
+    assert!(
+        text(&dry.stdout).contains("would append refs github:#2, gitlab:#1"),
+        "{}",
+        text(&dry.stdout)
+    );
+}
+
+#[test]
+fn a_bare_string_ref_is_refused_naming_the_object_form() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["refs"] = json!(["GKA-580"]);
+    let out = rig.launch(&[], Some(&spec.to_string()), false);
+    assert_eq!(out.status.code(), Some(1));
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("bad_ref") && err.contains("\"provider\": \"linear\""),
+        "{err}"
+    );
+    assert!(rig.home_is_empty());
 }
 
 #[test]

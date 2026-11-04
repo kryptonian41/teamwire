@@ -7,8 +7,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use teamwire_core::{
-    EventType, Host, HostId, LeadRoute, Member, MemberState, Role, SessionId, SessionKind,
-    TeamName, TeamSpec, TeamState,
+    EventType, Host, HostId, LeadRoute, Member, MemberState, REFS_MAX, Role, SessionId,
+    SessionKind, TeamName, TeamSpec, TeamState, TicketRef,
 };
 use teamwire_store::{Store, TeamRow, database_path};
 
@@ -19,6 +19,8 @@ use crate::{LeadPlan, SpecError, ValidPlan, ValidateEnv};
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
 /// The longest title (LCH-23).
 pub(crate) const TITLE_MAX: usize = 28;
+/// The longest ticket ref, in characters (ADR 0038).
+const REF_MAX: usize = 64;
 
 /// What the store already holds about the team.
 pub(crate) struct Existing {
@@ -93,6 +95,10 @@ pub fn validate(
     }
     team_title(spec, existing.as_ref(), &mut errors);
     plugin_keys(&spec.plugins, None, &mut errors);
+    let recorded = existing
+        .as_ref()
+        .map_or(&[][..], |e| e.team.refs.as_slice());
+    let refs = ticket_refs(&spec.refs, recorded, &mut errors);
     if spec.children.is_empty() {
         errors.push(SpecError::new(
             None,
@@ -116,6 +122,12 @@ pub fn validate(
     }
     // `--add` may leave the title out: the team row already holds it.
     let mut planned = spec.clone();
+    let new_refs = refs
+        .iter()
+        .filter(|r| !recorded.contains(r))
+        .cloned()
+        .collect();
+    planned.refs = refs;
     if let Some(e) = &existing
         && plan::clean(&planned.title).is_empty()
     {
@@ -123,6 +135,7 @@ pub fn validate(
     }
     Ok(ValidPlan {
         spec: planned,
+        new_refs,
         add,
         warnings,
         lead,
@@ -322,6 +335,64 @@ pub fn new_team_lead(env: &ValidateEnv<'_>) -> Result<LeadPlan, SpecError> {
     lead_setup_present(harness, &mut errors);
     lead_must_be_locatable(env, &lead, &mut errors);
     errors.into_iter().next().map_or(Ok(lead), Err)
+}
+
+/// The longest provider name, in characters (ADR 0038).
+const PROVIDER_MAX: usize = 16;
+
+/// A provider name is `^[a-z][a-z0-9_]{0,15}$`. teamwire keeps no list of
+/// providers, so any name of that shape is accepted.
+fn provider_ok(p: &str) -> bool {
+    p.chars().count() <= PROVIDER_MAX
+        && p.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && p.chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// The spec's refs without repeats, in first-seen order, and a refusal for each
+/// whose provider is not a name of the right shape or whose id is empty, over
+/// `REF_MAX` characters, or holds white space or a control character. A repeat
+/// is the same provider and the same id. `recorded` are the refs the team
+/// already holds: with the spec's new ones they may not pass `REFS_MAX`.
+fn ticket_refs(
+    refs: &[TicketRef],
+    recorded: &[TicketRef],
+    errors: &mut Vec<SpecError>,
+) -> Vec<TicketRef> {
+    let mut kept: Vec<TicketRef> = Vec::new();
+    for r in refs {
+        let mut refuse = |message: String| {
+            errors.push(SpecError::new(None, Some("refs"), "bad_ref", message));
+        };
+        if !provider_ok(&r.provider) {
+            refuse(format!(
+                "ref provider {:?} must be a lowercase name of at most {PROVIDER_MAX} characters \
+                 (letters, digits, '_'), such as linear or github",
+                r.provider
+            ));
+        } else if r.id.is_empty()
+            || r.id.chars().count() > REF_MAX
+            || r.id.chars().any(|c| c.is_whitespace() || c.is_control())
+        {
+            refuse(format!(
+                "ref id {:?} (provider {}) must be 1 to {REF_MAX} characters with no white space, \
+                 such as GKA-580 or #3772",
+                r.id, r.provider
+            ));
+        } else if !kept.contains(r) {
+            kept.push(r.clone());
+        }
+    }
+    let total = recorded.len() + kept.iter().filter(|r| !recorded.contains(r)).count();
+    if total > REFS_MAX {
+        errors.push(SpecError::new(
+            None,
+            Some("refs"),
+            "too_many_refs",
+            format!("a team holds at most {REFS_MAX} refs, and this spec would make {total}"),
+        ));
+    }
+    kept
 }
 
 /// A refusal for each plugin key that is not `name@marketplace`. The id goes

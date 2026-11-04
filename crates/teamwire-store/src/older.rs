@@ -15,8 +15,9 @@ use crate::error::StoreError;
 
 /// The columns each migration adds, as (table, column): `ADDED_COLUMNS[i]`
 /// belongs to the step from version `i` to `i + 1`. Every added column is
-/// nullable, so NULL is what a migrated row would hold. A step that does more
-/// than add a nullable column needs another way to be read unmigrated.
+/// nullable or has a default the reader accepts NULL for (`team.refs` reads
+/// NULL as no refs). A step that does more than add such a column needs
+/// another way to be read unmigrated.
 const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
     &[
@@ -30,6 +31,7 @@ const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
     &[],
     &[],
+    &[("team", "refs")],
 ];
 
 /// Shows the columns that a database at version `db` lacks as NULL, on a

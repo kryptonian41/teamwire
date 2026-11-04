@@ -7,8 +7,8 @@ use rusqlite::{OptionalExtension, Row};
 use serde_json::{Value, json};
 use teamwire_core::platform::ProcessRef;
 use teamwire_core::{
-    EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName,
-    TeamState, Timestamp, Ulid,
+    EventType, HarnessId, HoldInfo, HostId, LeadRoute, Pid, REFS_MAX, SessionId, SessionKind,
+    TeamName, TeamState, TicketRef, Timestamp, Ulid,
 };
 
 use crate::error::StoreError;
@@ -48,6 +48,10 @@ pub struct TeamRow {
     pub created_at: Timestamp,
     /// Set only on an AFK run's team: when its wall-clock budget ends.
     pub afk_budget_ends_at: Option<Timestamp>,
+    /// The tickets the team works on, in the order they were recorded. Empty
+    /// for a team launched without refs and for a database older than
+    /// schema version 10.
+    pub refs: Vec<TicketRef>,
 }
 
 /// How a close ended.
@@ -62,7 +66,14 @@ pub enum CloseEnd {
 
 const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id, lead_kind, \
      lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
-     closing_pid_started_at, afk_budget_ends_at";
+     closing_pid_started_at, afk_budget_ends_at, refs";
+
+/// A read-only view of a database older than version 10 shows `refs` as NULL.
+fn refs_from_column(text: Option<String>) -> Result<Vec<TicketRef>, String> {
+    text.map_or(Ok(Vec::new()), |t| {
+        serde_json::from_str(&t).map_err(|e| bad("refs", e))
+    })
+}
 
 fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
     let pid = |i| -> Result<Option<Pid>, String> {
@@ -91,6 +102,7 @@ fn team_from_row(row: &Row<'_>) -> Result<TeamRow, String> {
         sleep_hold,
         created_at: ts(row, 12)?,
         afk_budget_ends_at: ts_opt(row, 14)?,
+        refs: refs_from_column(col(row, 15)?)?,
     })
 }
 
@@ -249,6 +261,58 @@ impl Tx<'_> {
             &json!({ "step": "clear_stale_lock", "outcome": "cleared" }),
         )?;
         Ok(true)
+    }
+
+    /// Sets the refs column of the team row. The first launch calls it in the
+    /// transaction that creates the row; the `team.created` event carries the
+    /// same list, so no event is written here.
+    pub fn set_refs(&self, refs: &[TicketRef]) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE team SET refs = ?1 WHERE id = 1",
+            [json!(refs).to_string()],
+        )?;
+        exactly_one(rows, "team")
+    }
+
+    /// Appends the refs the team does not hold yet, in the given order, and
+    /// writes `team.refs_added` with the ones it appended. Returns them. A
+    /// call that adds nothing writes no event. A ref is never removed.
+    pub fn add_refs(
+        &self,
+        at: Timestamp,
+        refs: &[TicketRef],
+    ) -> Result<Vec<TicketRef>, StoreError> {
+        let Some(team) = self.reader().team()? else {
+            return Err(StoreError::Constraint("no such team".to_owned()));
+        };
+        let mut all = team.refs;
+        let mut added: Vec<TicketRef> = Vec::new();
+        for r in refs {
+            if !all.contains(r) {
+                all.push(r.clone());
+                added.push(r.clone());
+            }
+        }
+        if added.is_empty() {
+            return Ok(added);
+        }
+        // `validate` read the team before this lock, so a second `--add` may
+        // have used the room since.
+        if all.len() > REFS_MAX {
+            return Err(StoreError::Constraint(format!(
+                "a team holds at most {REFS_MAX} refs, and this would make {}",
+                all.len()
+            )));
+        }
+        self.set_refs(&all)?;
+        self.record_event(
+            at,
+            EventType::TeamRefsAdded,
+            None,
+            Some(&team.ulid),
+            &json!({ "added": added }),
+        )?;
+        Ok(added)
     }
 
     /// Records a new lead session (`teamwire lead --adopt`) and returns the

@@ -280,7 +280,7 @@ Each one has a test named in `docs/failure-modes.md`.
 
 | Id | Level | Requirement | Source |
 | --- | --- | --- | --- |
-| MCP-1 | MUST | teamwire ships a stdio MCP server that exposes nine tools: send, resend, inbox, ack, done, status, members, log and teams. They follow the same rules and refusals as the CLI. The lead's server reads the identity variables once at start; when any is set, the environment is a member's and every call is refused with `refused.identity`. | specmsg R31; harness R8, R17; protocols R21; ADR 0016; ADR 0008; ADR 0026 |
+| MCP-1 | MUST | teamwire ships a stdio MCP server that exposes ten tools: send, resend, inbox, ack, done, status, members, log, teams and decisions. They follow the same rules and refusals as the CLI. The lead's server reads the identity variables once at start; when any is set, the environment is a member's and every call is refused with `refused.identity`. | specmsg R31; harness R8, R17; protocols R21; ADR 0016; ADR 0008; ADR 0026 |
 | MCP-2 | MUST | Tool results state what happened: the ids created and each recipient's delivery state. A refused call creates no record other than the refusal. | harness R8 |
 | MCP-3 | SHOULD | The inbox is also a resource, whose update notification is only a hint. Dropping every notification loses nothing. | protocols R24 |
 | MCP-4 | SHOULD | Use `rmcp` pinned to an exact 3.x version. | rust 24; protocols R23 |

@@ -32,7 +32,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use teamwire_core::{
     Actor, DeliveryState, DisplayId, Liveness, MessageType, Pid, Recipient, ReportState, Role,
-    SessionId, TeamName, TeamState, Timestamp,
+    SessionId, TeamName, TeamState, TicketRef, Timestamp,
 };
 
 pub use lease::{WatchError, start, stop};
@@ -178,6 +178,8 @@ pub struct StatusView {
     pub team: Option<TeamName>,
     pub title: Option<String>,
     pub state: Option<TeamState>,
+    /// The tickets the team works on; empty when it has none.
+    pub refs: Vec<TicketRef>,
     pub lead: Option<LeadView>,
     pub watch: WatchView,
     /// Set only for an AFK team.

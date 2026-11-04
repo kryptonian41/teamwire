@@ -106,12 +106,12 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `verify/<role>.log` | verify | Full check output |
 | `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 
-The database tables (schema version 9; exact DDL is owned by the store
+The database tables (schema version 10; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
 | --- | --- | --- |
-| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends) |
+| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends), `refs` (JSON array of `{provider, id}` ticket refs, ADR 0038) |
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |

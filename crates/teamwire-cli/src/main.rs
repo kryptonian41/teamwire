@@ -17,6 +17,7 @@ mod cmd {
     pub(crate) mod ack;
     pub(crate) mod afk;
     pub(crate) mod close;
+    pub(crate) mod decisions;
     pub(crate) mod doctor;
     pub(crate) mod doctor_teams;
     pub(crate) mod done;
@@ -56,11 +57,11 @@ mod wiring;
 const USAGE: u8 = 3;
 
 pub(crate) use args::{
-    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DoneArgs, EventsArgs,
-    ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs,
-    LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, ModelsArgs,
-    PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, StatusArgs, TeamsArgs,
-    UninstallArgs, VerifyArgs, WatchArgs,
+    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs,
+    EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs,
+    InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand,
+    ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs,
+    StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -89,6 +90,7 @@ fn main() -> ExitCode {
         Command::Resend(a) => cmd::resend::run(a, global, &wiring),
         Command::Received(a) => cmd::received::run(a, global, &wiring),
         Command::Log(a) => cmd::log::run(a, global, &wiring),
+        Command::Decisions(a) => cmd::decisions::run(a, global, &wiring),
         Command::Lead(a) => cmd::lead::run(a, global, &wiring),
         Command::PrWatch(a) => cmd::pr_watch::run(a, global, &wiring),
         Command::Preset(a) => cmd::preset::run(a, global, &wiring),

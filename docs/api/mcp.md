@@ -12,7 +12,7 @@ same library calls the CLI makes, so every rule and refusal is identical
 | A member | From `members/<role>/mcp.json`, which launch writes and passes with `--mcp-config`: `teamwire mcp --home <home> --team <team> --role <role>`, with `TEAMWIRE_TOKEN` in the entry's `env` | The token from its environment, checked against the stored hash (ADR 0008, ADR 0011). `--token` is still accepted |
 | The lead | `teamwire install` registers `teamwire mcp --lead` through the plugin that `teamwire install` adds: the Claude plugin (ADR 0018), the Codex plugin (ADR 0023) or the pi lead package, whose extension registers it (ADR 0030). Nothing else registers it. | The harness session id, checked against the team's recorded lead session per call. The harness reads it from the server's environment. A harness that gives the session only in the request (Codex, ADR 0023) gets it from the string fields of the call's `_meta`: the server passes each one to the harness as `MCP_META_<key>`, and the harness's `caller_session` reads them through a lookup. The Codex harness reads `CODEX_SESSION_ID`, then `CODEX_THREAD_ID`, then `MCP_META_sessionId`, then `MCP_META_threadId`, so a `CODEX_*` variable in the server's environment wins over the hints. pi gives an MCP server neither a variable nor `_meta`, so the lead extension names the session in the server's `TEAMWIRE_PI_LEAD_SESSION`, and the pi harness accepts it only when the session's pi process, from the state file the extension writes, is the server's parent (ADR 0030). A member's server ignores `_meta`. The `team` argument picks the team. The server reads `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` and the token from its own environment once at start. When any of them is set, the environment is a member's, and every call is refused with `refused.identity`; a call that changes state also logs `message.refused` (ADR 0008). |
 
-Every server lists all nine tools. The descriptions of `team_inbox`,
+Every server lists all ten tools. The descriptions of `team_inbox`,
 `team_ack` and `team_done` say they are for members only, so a lead's
 session knows not to call them.
 
@@ -35,6 +35,7 @@ refused or failed call returns `isError: true` with:
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
 | `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, plan reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
 | `refused.unknown_recipient` | No such member | no |
+| `refused.other_repo` | `team_decisions` `of` names a team that worked in no repository the caller's team works in. The message says the CLI can read it | no |
 | `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
 | `refused.recipient_team_closed` | The recipient's team is closing or closed | no |
 | `refused.removed_recipient` | The member was removed | no |
@@ -223,6 +224,7 @@ own team, in which they are proven. Output:
 ```json
 {"teams": [
   {"name": "billing", "title": "Billing", "state": "open",
+   "refs": [{"provider": "linear", "id": "GKA-580"}],
    "members": [ /* each as in team_members */ ]}
 ]}
 ```
@@ -230,6 +232,56 @@ own team, in which they are proven. Output:
 Address an agent listed here as `<role>@<name>`, and its lead as
 `lead@<name>`. Only an `open` team takes messages. A team whose store cannot
 be read is left out of the list.
+
+## `team_decisions`
+
+The "Decisions I made" blocks of members' reports, read-only. The same result as
+`teamwire decisions --json`. Every kind of member and the lead may call it. A caller
+reads only teams that worked in a repository its own team works in (below). Input:
+
+```json
+{
+  "team": "tw",         // lead only; members use their own team
+  "of": "billing",      // the team to read: its running database, else its newest archive
+  "role": "db",         // only this member
+  "ref": "linear:GKA-580", // only teams with this ticket ref
+  "grep": "stash",      // only blocks whose text holds this, ignoring case
+  "limit": 50           // blocks; default 50
+}
+```
+
+`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v10, never matches a `ref`. With `grep` and no
+`of`, the search reaches every running team and every archive, and a team seen
+more than once is read once: the running copy, else the newest archive. Output:
+
+```json
+{"teams": [{"team": "billing", "title": "Billing", "ulid": "…", "created_at": "…",
+  "live": false, "path": "/abs/path/to/team/dir",
+  "refs": [{"provider": "linear", "id": "GKA-580"}],
+  "members": [{"role": "db", "kind": "implementer", "title": "…",
+    "report": "/abs/path/reports/db.md",
+    "blocks": [{"heading": "## Decisions I made", "line": 88, "text": "- …"}]}]}],
+ "errors": [],
+ "truncated": true}
+```
+
+`report` is `null` for a member who wrote no report; with `grep`, such a
+member is left out. `truncated` is present, and `true`, only when more blocks
+matched than `limit`. A database or report that cannot be read goes to
+`errors`, and the rest is still returned. A team with no database and no
+archive is `refused.unknown_team`.
+
+The repository rule exists because many archives hold another company's work.
+A team's directories are each member's `repo`, or its `cwd` when `repo` is
+empty (removed members included). Each path is canonicalized when it still
+exists, and a path under `<x>/.worktrees/...` becomes `<x>`. Two teams share a
+repository when a directory of one equals a directory of the other or sits
+inside it. The home directory and `/` count as no directory, so a member rooted
+there matches no team. The rule is plain path comparison; no `git` command
+runs. A search (`grep` or `ref` without `of`) skips every team that shares no
+repository. `of` naming such a team is `refused.other_repo`. The caller's own
+team is always readable. `teamwire decisions` on the command line has no such
+rule: it reads every team.
 
 ## What is not an MCP tool
 

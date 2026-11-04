@@ -18,6 +18,7 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
 
 use fixture::{Bed, role};
+use teamwire_core::TicketRef;
 use teamwire_core::{
     Actor, Clock as _, CompletionStatus, DeliveryState, MessageType, PlaceState, Recipient,
     ReportState,
@@ -394,6 +395,29 @@ fn a_result_the_lead_marked_received_is_not_listed() {
     assert!(view.undelivered_results.is_empty());
     let state = view.members.iter().find(|m| m.role == web.role).unwrap();
     assert_eq!(state.state, "done(failed)");
+}
+
+fn linear(id: &str) -> TicketRef {
+    TicketRef {
+        provider: "linear".to_owned(),
+        id: id.to_owned(),
+    }
+}
+
+#[test]
+fn status_names_the_refs_the_team_holds() {
+    let mut bed = Bed::new();
+    assert!(status_of(&bed, None).refs.is_empty());
+    let json = serde_json::to_value(status_of(&bed, None)).unwrap();
+    assert_eq!(json["refs"], serde_json::json!([]));
+
+    bed.store
+        .write(|tx| tx.set_refs(&[linear("GKA-580"), linear("GKA-9")]))
+        .unwrap();
+    assert_eq!(
+        status_of(&bed, None).refs,
+        [linear("GKA-580"), linear("GKA-9")]
+    );
 }
 
 fn make_afk(bed: &mut Bed, seconds: u64) {

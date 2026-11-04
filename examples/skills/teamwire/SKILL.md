@@ -36,16 +36,18 @@ For a run the user will not be present for, use `/teamwire:afk`. Only a Claude C
 
 ## Your tools
 
-The lead's MCP server, in the teamwire plugin, lists nine tools named
-`mcp__plugin_teamwire_teamwire__<tool>`. Six are yours, for messages and
+The lead's MCP server, in the teamwire plugin, lists ten tools named
+`mcp__plugin_teamwire_teamwire__<tool>`. Seven are yours, for messages and
 reads: `team_send`, `team_resend`, `team_log`, `team_members` (`of` reads
-another team), `team_status` (`teamwire status --json`) and `team_teams`
-(`teamwire teams --json`). Each applies its CLI command's rules and refusal
-codes, and returns JSON. Claude Code loads these tools only on request, so
-load all six in one call before the first use in a session:
+another team), `team_status` (`teamwire status --json`), `team_teams`
+(`teamwire teams --json`) and `team_decisions` (`teamwire decisions --json`,
+limited to teams that worked in your team's repositories; the CLI reads all).
+Each applies its CLI command's rules and refusal codes, and returns JSON.
+Claude Code loads these tools only on request, so load all seven in one call
+before the first use in a session:
 
 ```
-ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams"  max_results: 6
+ToolSearch  query: "select:mcp__plugin_teamwire_teamwire__team_send,mcp__plugin_teamwire_teamwire__team_resend,mcp__plugin_teamwire_teamwire__team_status,mcp__plugin_teamwire_teamwire__team_members,mcp__plugin_teamwire_teamwire__team_log,mcp__plugin_teamwire_teamwire__team_teams,mcp__plugin_teamwire_teamwire__team_decisions"  max_results: 7
 ```
 
 Pass `team` in every call, `team_teams` included. It must be a team this
@@ -157,6 +159,12 @@ spec and the code for it, and run no build and no test.
    the file in its `owns`. Bun calls this
    "fixing the process that generates the code instead of hand-fixing the
    code", and Stripe works the same way.
+
+**Read what earlier teams decided.** Before you ask anything, run
+`teamwire decisions --ref linear:GKA-580` for the ticket, or
+`teamwire decisions --grep <topic>`, across running teams and archives. Put
+each decision that still holds in the briefs under "Decisions already made",
+with its team and date.
 
 **Have a fresh member read the plan.** The session that wrote the plan
 shares its blind spots, so the planning check above misses what the plan
@@ -361,6 +369,10 @@ has a hyphen, and `lead` is reserved.
 - `base`: the branch a new member branch is cut from. Set it on every member
   of a contract split and of stacked branches, so `verify` reads the right
   diff.
+- `refs` on the team: the tickets the team works on, each with its tracker
+  named, as in `"refs": [{"provider": "linear", "id": "GKA-580"}]`. teamwire
+  never assumes a provider. `--add` may name more refs, and none is ever
+  removed. Later teams find this team's decisions by ref.
 - `context_handoff_tokens` sets the token count at which a member is told to
   hand off (see "When a member's context runs high").
 - `deadline_s` (default 1800) sets when `LATE` fires. `"dispatch": false`
@@ -838,8 +850,9 @@ members merge, build, test and push, and you judge what they report.
    errors". The closer also runs the repository's full gate on each branch
    that no integrator joins. It names contradictions, writes one report, and
    cannot send work. Read its report, then a member's result only where it
-   points. Compare every **Decisions I made** list side by side. Two members
-   that decided one question differently are a bug waiting to happen.
+   points. Compare every **Decisions I made** list side by side with
+   `teamwire decisions <team>`. Two members that decided one question
+   differently are a bug waiting to happen.
 3. **Triage, then run the fix round.** The closer grades each finding (wrong
    conclusion, wrong detail, or wording) and names its member. Decide which
    findings hold first. In a study of LLM code reviewers (Jin and Chen, 2026),

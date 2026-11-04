@@ -12,6 +12,7 @@ use common::{Rig, codes, pane_member, team_spec, worktree_member};
 use serde_json::json;
 use teamwire_core::{Clock, MemberKind, SessionId};
 use teamwire_fakes::CallKind;
+use teamwire_launch::parse_spec;
 
 #[test]
 fn background_lead_refused_before_anything() {
@@ -470,6 +471,101 @@ fn good_plugin_ids_pass() {
         json!({"ponytail@ponytail": false}),
     );
     rig.validate(&spec, false).unwrap();
+}
+
+fn r(provider: &str, id: &str) -> serde_json::Value {
+    json!({"provider": provider, "id": id})
+}
+
+#[test]
+fn refs_name_their_provider_and_repeats_are_dropped() {
+    let rig = Rig::new();
+    let members = [pane_member("a", "Alpha", rig.work.path())];
+    let ok = common::with(
+        team_spec("demo", &members),
+        "refs",
+        json!([
+            r("linear", "GKA-580"),
+            r("github", "#3772"),
+            r("github", "knit-insights/teamwire#12"),
+            r("linear", "GKA-580"),
+            r("a_1", &"x".repeat(64)),
+            r("abcdefghijklmnop", "ok"),
+            // The same id under another provider is another ref.
+            r("jira", "GKA-580"),
+        ]),
+    );
+    let plan = rig.validate(&ok, false).unwrap();
+    let shown: Vec<String> = plan.spec.refs.iter().map(ToString::to_string).collect();
+    assert_eq!(
+        shown.len(),
+        6,
+        "only the exact repeat is dropped: {shown:?}"
+    );
+    assert_eq!(shown.first().map(String::as_str), Some("linear:GKA-580"));
+    assert_eq!(shown.get(1).map(String::as_str), Some("github:#3772"));
+    assert_eq!(shown.last().map(String::as_str), Some("jira:GKA-580"));
+}
+
+#[test]
+fn a_ref_without_a_provider_or_with_a_bad_one_is_refused() {
+    let rig = Rig::new();
+    let members = [pane_member("a", "Alpha", rig.work.path())];
+    let spec = |refs: serde_json::Value| common::with(team_spec("demo", &members), "refs", refs);
+
+    // A bare string, a missing field, a field of the wrong type and an
+    // unknown field fail parsing, each as its own `bad_ref`.
+    for (bad, words) in [
+        (json!(["GKA-580"]), "assumes no provider"),
+        (json!([{"id": "GKA-580"}]), "\"provider\""),
+        (json!([{"provider": "linear"}]), "\"id\""),
+        (json!([{"provider": 1, "id": "x"}]), "\"provider\""),
+        (
+            json!([{"provider": "linear", "id": "x", "url": "u"}]),
+            "unknown field",
+        ),
+    ] {
+        let errors = parse_spec(&spec(bad.clone()).to_string()).unwrap_err();
+        assert_eq!(codes(&errors), ["bad_ref"], "{bad}");
+        let message = errors.first().map_or("", |e| e.message.as_str());
+        assert!(message.contains(words), "{bad}: {message}");
+    }
+
+    // A name of the wrong shape, and ids that break the old rules, fail `validate`.
+    let bad = spec(json!([
+        r("Linear", "A-1"),
+        r("", "A-1"),
+        r("1x", "A-1"),
+        r("has-hyphen", "A-1"),
+        r("abcdefghijklmnopq", "A-1"),
+        r("linear", "GKA 580"),
+        r("linear", ""),
+        r("linear", &"x".repeat(65)),
+        r("linear", "tab\there"),
+        r("linear", "nul\u{1}"),
+        r("linear", "ok-1"),
+    ]));
+    let errors = rig.validate(&bad, false).unwrap_err();
+    assert_eq!(codes(&errors), ["bad_ref"; 10]);
+    assert!(errors.iter().all(|e| e.field.as_deref() == Some("refs")));
+    assert!(rig.home_is_empty());
+}
+
+#[test]
+fn more_than_twenty_refs_refused() {
+    let rig = Rig::new();
+    let members = [pane_member("a", "Alpha", rig.work.path())];
+    let many = |n: usize| {
+        (0..n)
+            .map(|n| r("linear", &format!("T-{n}")))
+            .collect::<Vec<_>>()
+    };
+    let spec = common::with(team_spec("demo", &members), "refs", json!(many(20)));
+    rig.validate(&spec, false).unwrap();
+
+    let spec = common::with(team_spec("demo", &members), "refs", json!(many(21)));
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["too_many_refs"]);
 }
 
 #[test]

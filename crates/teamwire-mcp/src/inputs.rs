@@ -112,6 +112,29 @@ pub(crate) struct LogInput {
     pub(crate) limit: Option<usize>,
 }
 
+#[derive(Deserialize, JsonSchema)]
+#[expect(
+    dead_code,
+    reason = "`team` is read from the raw arguments before the store opens; the field puts it in the schema"
+)]
+pub(crate) struct DecisionsInput {
+    /// The caller's team; the lead names it.
+    pub(crate) team: Option<String>,
+    /// The team to read, running or its newest archive. Default: the caller's own
+    /// team, when `grep` is not given.
+    pub(crate) of: Option<String>,
+    /// Only this member.
+    pub(crate) role: Option<String>,
+    /// Only teams with this ticket ref: `provider:id`, or a bare id under any provider.
+    #[serde(rename = "ref")]
+    pub(crate) reference: Option<String>,
+    /// Only blocks whose text contains this, ignoring case. Reaches every running
+    /// team and every archive unless `of` is given.
+    pub(crate) grep: Option<String>,
+    /// At most this many blocks; default 50. The result says `truncated` when more matched.
+    pub(crate) limit: Option<usize>,
+}
+
 /// The input schema of a tool, for `tools/list`.
 pub(crate) fn input_schema(tool: &str) -> Option<JsonObject> {
     fn of<T: JsonSchema>() -> Option<JsonObject> {
@@ -126,6 +149,7 @@ pub(crate) fn input_schema(tool: &str) -> Option<JsonObject> {
         "team_status" | "team_teams" => of::<TeamOnly>(),
         "team_members" => of::<MembersInput>(),
         "team_log" => of::<LogInput>(),
+        "team_decisions" => of::<DecisionsInput>(),
         _ => None,
     }
 }

@@ -61,6 +61,7 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         .unwrap_or_default();
     view.team = Some(team.name.clone());
     view.title = Some(team.title.clone());
+    view.refs.clone_from(&team.refs);
     view.state = Some(team.state);
     view.afk = team
         .afk_budget_ends_at
