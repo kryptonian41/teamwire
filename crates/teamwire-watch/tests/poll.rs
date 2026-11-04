@@ -5,7 +5,7 @@ pub mod fixture;
 
 use std::time::Duration;
 
-use fixture::{Bed, count, counts, names};
+use fixture::{Bed, count, counts, events, names};
 use teamwire_core::{
     CompletionStatus, DeliveryErrorCode, DeliveryState, LeadRoute, Platform as _, ReportState,
 };
@@ -73,15 +73,74 @@ fn seasoned(bed: &mut Bed, name: &str) {
     bed.age(secs(120));
 }
 
+/// WAT-21: the prefix carries the poll's own time in UTC, so a lead can
+/// tell a line an exited watch printed minutes ago from a current one. The
+/// fake clock starts at 2026-09-29T12:00:00Z and a tick is 20 s, so every
+/// expected time here is fixed.
+#[test]
+fn every_event_in_a_line_carries_the_polls_time_in_utc() {
+    let mut bed = Bed::new();
+    for name in ["a", "b", "c"] {
+        bed.add_with_deadline(name, 100_000);
+    }
+    // 12:00:00Z plus 5h24m07s, the time of the `fb-2026-11-03` line.
+    bed.age(secs(5 * 3600 + 24 * 60 + 7));
+    assert_eq!(
+        bed.poll().as_deref(),
+        Some("[teamwire:alpha 17:24:07Z] WATCHING 3 members")
+    );
+    // Every event of one line carries that line's own time, and the next
+    // poll carries its own, one interval later.
+    for name in ["a", "b", "c"] {
+        bed.delivered(name, CompletionStatus::Done);
+        bed.send(teamwire_core::MessageType::Note, name, None);
+    }
+    bed.age(secs(601));
+    assert_eq!(
+        bed.tick().as_deref(),
+        Some(
+            "[teamwire:alpha 17:34:28Z] UNREAD m001 -> a 10m | \
+             [teamwire:alpha 17:34:28Z] UNREAD m002 -> b 10m | \
+             [teamwire:alpha 17:34:28Z] UNREAD m003 -> c 10m | \
+             [teamwire:alpha 17:34:28Z] TEAM-COMPLETE 3/3 done"
+        )
+    );
+}
+
+/// WAT-21: the two lines a poll prints without reading the roster carry
+/// the time as well.
+#[test]
+fn a_store_error_and_a_team_closed_line_carry_the_time_too() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.working("api");
+    bed.poll();
+    let started = bed.started_at("api");
+    set_started_at(&mut bed, "api", "not a time");
+    assert_eq!(
+        bed.tick().as_deref(),
+        Some("[teamwire:alpha 12:00:20Z] STORE-ERROR corrupt")
+    );
+    set_started_at(&mut bed, "api", &started);
+    let now = teamwire_core::Clock::now(&bed.clock);
+    bed.store
+        .write(|tx| {
+            tx.begin_close(now, teamwire_core::Pid::new(1))?;
+            tx.finish_close(now, &teamwire_store::CloseEnd::Completed)
+        })
+        .unwrap();
+    assert_eq!(
+        bed.tick().as_deref(),
+        Some("[teamwire:alpha 12:00:40Z] TEAM-CLOSED")
+    );
+}
+
 #[test]
 fn first_poll_says_watching_and_healthy_polls_say_nothing() {
     let mut bed = Bed::new();
     bed.add("api");
     bed.working("api");
-    assert_eq!(
-        bed.poll().as_deref(),
-        Some("[teamwire:alpha] WATCHING 1 members")
-    );
+    assert_eq!(events(&bed.poll().unwrap()), ["WATCHING 1 members"]);
     assert!(bed.ticks(10).is_empty());
 }
 
@@ -268,7 +327,7 @@ fn three_events_one_line() {
     assert_eq!(got.get("TEAM-STALLED"), Some(&1), "{got:?}");
     assert!(joined.contains(" | "), "{}", joined);
     // Every event carries the prefix.
-    let prefix = joined.matches("[teamwire:alpha]").count();
+    let prefix = joined.matches("[teamwire:alpha ").count();
     assert_eq!(prefix, names(joined).len());
 }
 
@@ -320,8 +379,8 @@ fn team_complete_counts_only_done() {
     bed.delivered("c", CompletionStatus::Blocked);
     let line = bed.tick().unwrap();
     assert_eq!(
-        line,
-        "[teamwire:alpha] TEAM-COMPLETE 0/3 done; not done: a failed, b failed, c blocked"
+        events(&line),
+        ["TEAM-COMPLETE 0/3 done; not done: a failed, b failed, c blocked"]
     );
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
     assert!(bed.tick().is_none());
@@ -337,10 +396,7 @@ fn a_clean_team_is_complete_once_and_completions_are_silent() {
     bed.delivered("api", CompletionStatus::Done);
     assert!(bed.tick().is_none(), "a delivered result adds no line");
     bed.delivered("web", CompletionStatus::Done);
-    assert_eq!(
-        bed.tick().as_deref(),
-        Some("[teamwire:alpha] TEAM-COMPLETE 2/2 done")
-    );
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 2/2 done"]);
 }
 
 /// WAT-20: a watch can start a moment before `launch --add` writes the
@@ -357,7 +413,7 @@ fn the_first_poll_of_a_settled_team_says_watching_and_the_next_says_team_complet
     assert_eq!(names(&first), ["WATCHING"]);
     assert_eq!(bed.memory.end, None, "the watch keeps polling");
     let second = bed.tick().unwrap();
-    assert_eq!(second, "[teamwire:alpha] TEAM-COMPLETE 1/1 done");
+    assert_eq!(events(&second), ["TEAM-COMPLETE 1/1 done"]);
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
@@ -502,10 +558,7 @@ fn added_member_is_watched() {
     bed.delivered("alpha_one", CompletionStatus::Done);
     assert!(bed.tick().is_none(), "the new member is still working");
     bed.delivered("beta", CompletionStatus::Done);
-    assert_eq!(
-        bed.tick().as_deref(),
-        Some("[teamwire:alpha] TEAM-COMPLETE 2/2 done")
-    );
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 2/2 done"]);
 }
 
 #[test]
@@ -520,10 +573,7 @@ fn removed_member_not_died() {
     bed.vanish("web");
     assert!(bed.ticks(4).is_empty(), "a removed member is not reported");
     bed.delivered("api", CompletionStatus::Done);
-    assert_eq!(
-        bed.tick().as_deref(),
-        Some("[teamwire:alpha] TEAM-COMPLETE 1/1 done")
-    );
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
 }
 
 #[test]
@@ -540,7 +590,7 @@ fn closed_team_ends_with_one_team_closed_line() {
         })
         .unwrap();
     bed.vanish("api");
-    assert_eq!(bed.tick().as_deref(), Some("[teamwire:alpha] TEAM-CLOSED"));
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-CLOSED"]);
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamClosed));
     assert!(bed.ticks(6).is_empty(), "TEAM-CLOSED is printed once");
 }
@@ -551,10 +601,7 @@ fn a_team_closed_after_team_complete_prints_no_team_closed() {
     bed.add("api");
     bed.poll();
     bed.delivered("api", CompletionStatus::Done);
-    assert_eq!(
-        bed.tick().as_deref(),
-        Some("[teamwire:alpha] TEAM-COMPLETE 1/1 done")
-    );
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
     let now = teamwire_core::Clock::now(&bed.clock);
     bed.store
         .write(|tx| {
@@ -751,7 +798,7 @@ fn old_watch_exits_after_migration() {
         })
         .unwrap();
     let line = bed.tick().unwrap();
-    assert_eq!(line, "[teamwire:alpha] STORE-ERROR schema_newer");
+    assert_eq!(events(&line), ["STORE-ERROR schema_newer"]);
     assert_eq!(bed.memory.end, Some(WatchEnd::StoreError));
     assert!(bed.tick().is_none());
 }
@@ -1433,7 +1480,7 @@ fn the_first_good_poll_says_watching_after_a_failed_one() {
     assert_eq!(bed.memory.end, None, "the failure is not final");
     set_started_at(&mut bed, "api", &started);
     let line = bed.tick().unwrap();
-    assert_eq!(line, "[teamwire:alpha] WATCHING 1 members");
+    assert_eq!(events(&line), ["WATCHING 1 members"]);
     assert!(bed.ticks(3).is_empty());
 }
 

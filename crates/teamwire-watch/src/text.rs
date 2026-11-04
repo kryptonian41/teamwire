@@ -5,7 +5,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use teamwire_core::{Role, Ulid, one_line};
+use teamwire_core::{Role, Timestamp, Ulid, one_line};
 
 pub(crate) use teamwire_deliver::agent_text;
 
@@ -113,7 +113,21 @@ pub(crate) fn result_path(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]
         .to_string()
 }
 
-/// One event with its `[teamwire:<team>]` prefix, cut to `EVENT_MAX`.
-pub(crate) fn event(team: &str, text: &str) -> String {
-    one_line(&format!("[teamwire:{team}] {text}"), EVENT_MAX).into_string()
+/// The poll's time as its prefix carries it: `17:24:07Z`. A `Timestamp` is
+/// UTC by construction, so its hour needs no conversion.
+fn printed_at(at: Timestamp) -> String {
+    let at = at.as_datetime();
+    format!("{:02}:{:02}:{:02}Z", at.hour(), at.minute(), at.second())
+}
+
+/// One event with its `[teamwire:<team> HH:MM:SSZ]` prefix, cut to
+/// `EVENT_MAX`. The time is the poll's own, so a lead can tell a line
+/// printed before its last `launch --add` or reprompt from a current one
+/// (WAT-21).
+pub(crate) fn event(team: &str, at: Timestamp, text: &str) -> String {
+    one_line(
+        &format!("[teamwire:{team} {}] {text}", printed_at(at)),
+        EVENT_MAX,
+    )
+    .into_string()
 }

@@ -12,7 +12,7 @@
 //!
 //! Invariants: an announcement is stored before it is printed, with its
 //! generation or episode in its key; `TEAM-COMPLETE` comes once per watch,
-//! on a poll after the one that said `WATCHING`.
+//! after the poll that said `WATCHING`; a line carries the poll's UTC time.
 
 mod afk;
 mod apply;

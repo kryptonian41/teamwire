@@ -530,15 +530,28 @@ impl Default for Bed {
     }
 }
 
-/// The events in a line, in order, each with its `[teamwire:<team>] `
-/// prefix taken off: `["WATCHING 2 members", "TEAM-COMPLETE 2/2 done"]`. A
-/// part carrying no such prefix is returned whole, so a test that compares
-/// the wording pins the prefix as well.
+/// `17:24:07Z`: two digits, a colon, twice over, then `Z`.
+fn is_utc_time(text: &str) -> bool {
+    text.len() == 9
+        && text.bytes().enumerate().all(|(i, b)| match i {
+            2 | 5 => b == b':',
+            8 => b == b'Z',
+            _ => b.is_ascii_digit(),
+        })
+}
+
+/// The events in a line, in order, each with its
+/// `[teamwire:<team> HH:MM:SSZ] ` prefix taken off:
+/// `["WATCHING 2 members", "TEAM-COMPLETE 2/2 done"]`. A part whose prefix
+/// is missing, names another team or holds no time is returned whole, so a
+/// test that compares the wording pins the prefix's shape as well.
 pub fn events(line: &str) -> Vec<String> {
     line.split(" | ")
         .map(|part| {
-            part.strip_prefix(&format!("[teamwire:{TEAM}] "))
-                .unwrap_or(part)
+            part.strip_prefix(&format!("[teamwire:{TEAM} "))
+                .and_then(|rest| rest.split_once("] "))
+                .filter(|(time, _)| is_utc_time(time))
+                .map_or(part, |(_, text)| text)
                 .to_owned()
         })
         .collect()

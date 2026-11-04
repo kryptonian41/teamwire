@@ -169,7 +169,7 @@ fn once_prints_one_line_and_exits_zero() {
     bed.add_with_deadline("web", 100_000_000);
     let run = teamwire(&bed, &["watch", "alpha", "--once"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    assert_eq!(run.out, "[teamwire:alpha] WATCHING 2 members\n");
+    assert_eq!(printed(&run.out), [["WATCHING 2 members"]]);
     // Nothing is left behind: the lease is released.
     assert!(bed.store.read(|tx| tx.watch_lease()).unwrap().is_none());
 }
@@ -291,12 +291,7 @@ fn a_closed_team_ends_the_watch_with_one_team_closed_line() {
         .unwrap();
     let run = teamwire(&bed, &["watch", "alpha", "--interval", "1"]);
     assert_eq!(run.code, 0, "{}", run.err);
-    assert_eq!(
-        run.out.trim_end(),
-        "[teamwire:alpha] TEAM-CLOSED",
-        "{}",
-        run.out
-    );
+    assert_eq!(printed(&run.out), [["TEAM-CLOSED"]], "{}", run.out);
 }
 
 #[test]
@@ -501,15 +496,12 @@ fn deliver_types_each_printed_line_into_the_leads_pane() {
     let rig = LeadRig::new(true);
     let run = rig.watch(&["--deliver"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    assert_eq!(run.out, "[teamwire:alpha] WATCHING 1 members\n");
+    assert_eq!(printed(&run.out), [["WATCHING 1 members"]]);
     let typed = rig.typed();
     assert_eq!(typed.len(), 1, "{typed:?}");
-    assert!(
-        typed
-            .iter()
-            .all(|t| t.contains("[teamwire:alpha] WATCHING 1 members")),
-        "{typed:?}"
-    );
+    // WAT-21: the typed line is the printed line, its dated prefix and all.
+    let line = run.out.trim_end();
+    assert!(typed.iter().all(|t| t.contains(line)), "{line}: {typed:?}");
 }
 
 #[test]
@@ -525,7 +517,7 @@ fn a_line_that_cannot_be_delivered_is_still_printed() {
     let rig = LeadRig::new(false);
     let run = rig.watch(&["--deliver"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    assert_eq!(run.out, "[teamwire:alpha] WATCHING 1 members\n");
+    assert_eq!(printed(&run.out), [["WATCHING 1 members"]]);
     assert!(rig.typed().is_empty());
 }
 

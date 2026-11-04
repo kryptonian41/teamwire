@@ -10,7 +10,7 @@ pub mod fixture;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 
-use fixture::{Bed, names};
+use fixture::{Bed, events, names};
 use proptest::prelude::*;
 use teamwire_core::{CompletionStatus, DeliveryErrorCode, ReportState};
 
@@ -67,9 +67,14 @@ struct Run {
 impl Run {
     fn record(&mut self, line: &str) {
         assert!(!line.contains('\n'), "{line:?}");
-        for event in line.split(" | ") {
-            assert!(event.starts_with("[teamwire:alpha] "), "{event}");
-            let mut words = event.trim_start_matches("[teamwire:alpha] ").split(' ');
+        let texts = events(line);
+        for (event, text) in line.split(" | ").zip(&texts) {
+            // WAT-21: every event carries the team and the poll's time.
+            assert!(event.starts_with("[teamwire:alpha "), "{event}");
+            assert_ne!(event, text, "no prefix was taken off: {event}");
+        }
+        for text in &texts {
+            let mut words = text.split(' ');
             let (kind, role) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
             if matches!(kind, "DIED" | "LATE") {
                 let generation = self.generation.get(role).copied().unwrap_or(0);
@@ -83,8 +88,7 @@ impl Run {
                 );
             }
         }
-        let events = names(line);
-        let says = |name: &str| events.iter().any(|e| e == name);
+        let says = |name: &str| texts.iter().any(|t| t.split(' ').next() == Some(name));
         // WAT-20: the poll that says `WATCHING` leaves `TEAM-COMPLETE` to
         // the next poll, so a member written by a `launch --add` a moment
         // after that poll read the roster is still watched.
