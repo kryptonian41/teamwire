@@ -20,7 +20,8 @@ A read-only survey of this machine's own teams (team `evtriage`, 2026-11-04;
 its reports are in `~/.teamwire/archive/evtriage-2026-11-04/`) found three
 faults in how a watch line reaches a lead. ADR 0036 records the first, which
 is pi's delivery mode. This ADR records the other two, which belong to the
-watch itself.
+watch itself. Decision 3 below closes the first-poll exit that ADR 0036's
+Consequences name as a separate fault it does not touch.
 
 **A lead could not date a line.** Every line looked alike but for its member
 count, so a lead had no way to tell a current line from one an exited watch

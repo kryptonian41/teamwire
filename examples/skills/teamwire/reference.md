@@ -82,7 +82,7 @@ watch lines carry a time; a result, a message and a hook note do not.
 
 | Line | Meaning |
 | --- | --- |
-| `WATCHING n members` | The watch started. This line never comes with `TEAM-COMPLETE`, so a watch you start beside a `launch --add` stays alive and watches the new member. |
+| `WATCHING n members` | The watch started. This line never comes with `TEAM-COMPLETE`, so a watch you start beside a `launch --add` stays alive and picks the new member up. The poll reads the roster a moment before it prints, so a member whose row is written inside that moment is still missed (ADR 0037): run `teamwire status` when you need to be sure. |
 | `DECLARED <role>` | A completion is recorded while its turn still runs. The report lands at turn end. |
 | `UNREPORTED <role>: ...` | The member recorded done and its turn ended, but its turn-end hook never reported. Run `teamwire doctor`, then read the member's report. The team keeps waiting. |
 | `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. When the result file is missing or out of date, the path is the report, `reports/<role>.md`. |

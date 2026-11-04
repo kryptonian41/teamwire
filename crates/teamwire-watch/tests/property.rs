@@ -62,9 +62,11 @@ struct Run {
     seen_once: HashMap<String, u32>,
     /// `TEAM-COMPLETE` was printed by the current process.
     complete: bool,
-    /// The current process has said `WATCHING` over a roster that held at
-    /// least one live member, so an empty roster later means the lead has
-    /// removed them all and the watch must complete (WAT-20).
+    /// A poll of the current process has read a roster that held at least
+    /// one live member, so an empty roster later means the lead has removed
+    /// them all and the watch must complete (WAT-20). The watch keeps the
+    /// same flag, from the same fact: `plan.rs` sets it from
+    /// `!snap.members.is_empty()` on every poll, printed line or not.
     watched_a_member: bool,
 }
 
@@ -93,12 +95,6 @@ impl Run {
             }
         }
         let says = |name: &str| texts.iter().any(|t| t.split(' ').next() == Some(name));
-        if texts
-            .iter()
-            .any(|t| t.starts_with("WATCHING ") && !t.starts_with("WATCHING 0 "))
-        {
-            self.watched_a_member = true;
-        }
         // WAT-20: the poll that says `WATCHING` leaves `TEAM-COMPLETE` to
         // the next poll, so a member written by a `launch --add` a moment
         // after that poll read the roster is still watched.
@@ -161,8 +157,12 @@ fn run(steps: &[Step]) {
 
     for s in steps {
         let mut printed = None;
+        let mut polled = false;
         match s {
-            Step::Tick => printed = bed.tick(),
+            Step::Tick => {
+                polled = true;
+                printed = bed.tick();
+            }
             Step::Work(i) if live(i, &present, &removed) => bed.working(i),
             Step::Idle(i) if live(i, &present, &removed) => bed.idle(i),
             Step::Block(i) if live(i, &present, &removed) => bed.blocked(i),
@@ -172,6 +172,7 @@ fn run(steps: &[Step]) {
             })),
             Step::Sleep(secs) => {
                 bed.clock.sleep_and_wake(Duration::from_secs(*secs));
+                polled = true;
                 printed = bed.poll();
             }
             Step::Deliver(i, ok) if live(i, &present, &removed) => {
@@ -222,6 +223,11 @@ fn run(steps: &[Step]) {
             | Step::Remove(_)
             | Step::Add => {}
         }
+        // The watch reads the roster on every poll, so a poll that printed
+        // nothing still saw the members this step's roster held.
+        if polled && MEMBERS.iter().any(|m| live(m, &present, &removed)) {
+            state.watched_a_member = true;
+        }
         if let Some(line) = printed {
             state.record(&line);
         }
@@ -238,7 +244,11 @@ fn run(steps: &[Step]) {
         bed.delivered(name, CompletionStatus::Done);
     }
     for _ in 0..4 {
-        if let Some(line) = bed.tick() {
+        let printed = bed.tick();
+        if !live_members.is_empty() {
+            state.watched_a_member = true;
+        }
+        if let Some(line) = printed {
             state.record(&line);
         }
     }
