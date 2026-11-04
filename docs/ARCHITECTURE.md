@@ -37,8 +37,8 @@ install deletes an older install's skill folder), and registers
 nothing in the user's global configuration. The one exception is
 `teamwire install`, which writes the teamwire plugin (the lead's skill in
 `skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`, MCP
-server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
-through `claude plugin` (ADR 0018).
+server, Stop hook and tool hook) to `$TEAMWIRE_HOME/claude-plugin/` and
+registers it through `claude plugin` (ADR 0018, ADR 0035).
 
 ## Components
 
@@ -54,7 +54,7 @@ and no host (ADP-1).
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
 | `teamwire-harness-codex` | The `Harness` trait for the Codex CLI: launch and resume argv from `-c` overrides, the member's token file, Stop, PostToolUse and SessionStart hook input, the TUI screen, rollout files and thread locks, and the Codex lead plugin (ADR 0023). |
-| `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
+| `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook, tool hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
 | `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. Reads one message's events into the state of its latest attempt to a recipient (`AttemptHistory`: started, stale, in flight, stops, unread). |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
 | `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |
@@ -106,12 +106,12 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `verify/<role>.log` | verify | Full check output |
 | `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 
-The database tables (schema version 9; exact DDL is owned by the store
+The database tables (schema version 10; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
 | --- | --- | --- |
-| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends), `refs` (JSON array of `{provider, id}` ticket refs, ADR 0034) |
+| `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends), `refs` (JSON array of `{provider, id}` ticket refs, ADR 0038) |
 | `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
@@ -369,7 +369,7 @@ the database itself. This section says what is enforced.
 | The lead's MCP server skips the member-environment check | The session id check already refuses a member | ADR 0018 |
 | A member moves the base ref and shifts the diff that verify reads | Nothing: this is outside the threat model of a confused agent | ADR 0009 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
-| A reviewer's independence is lost | Reviewers and closers receive only from the lead | MSG-3 |
+| A reviewer's independence is lost | Reviewers, plan reviewers and closers receive only from the lead | MSG-3 |
 
 ## Installing teamwire
 
@@ -387,7 +387,7 @@ The steps to set teamwire up on a machine, in order:
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr, or
      `crates/teamwire-host-tmux/examples/tmux_live_check.rs` for tmux).
 3. Run `teamwire install`. It registers the teamwire plugin, which holds the
-   lead's skill, MCP server and Stop hook (ADR 0018). Start a session, launch a throwaway team, and
+   lead's skill, MCP server, Stop hook and tool hook (ADR 0018, ADR 0035). Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
    id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.

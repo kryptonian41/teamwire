@@ -63,6 +63,21 @@ fn each_kind_lists_what_it_accepts_from_members() {
     }
 }
 
+/// A plan reviewer is quiet like a reviewer: only the lead messages it.
+#[test]
+fn a_plan_reviewer_accepts_nothing_from_members() {
+    let mut rig = Rig::new();
+    rig.add_member("impl", MemberKind::Implementer);
+    rig.add_member("plan", MemberKind::PlanReviewer);
+    let entries = roster(&rig.ctx()).unwrap();
+    let plan = entries.iter().find(|e| e.role.as_str() == "plan").unwrap();
+    assert_eq!(plan.kind, MemberKind::PlanReviewer);
+    assert!(plan.accepts_from_members.is_empty());
+    let json = serde_json::to_value(plan).unwrap();
+    assert_eq!(json["kind"], "plan_reviewer");
+    assert_eq!(json["accepts_from_members"], serde_json::json!([]));
+}
+
 #[test]
 fn the_json_names_the_lifecycle_and_not_a_live_state() {
     let mut rig = Rig::new();

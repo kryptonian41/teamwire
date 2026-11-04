@@ -1,7 +1,8 @@
 //! The watch property of `docs/test-strategy.md`: whatever the members, the
 //! host and the clock do, a poll prints at most one line, every announcement
 //! key is printed exactly once, and `TEAM-COMPLETE` ends a run exactly once
-//! when every live member is settled.
+//! when every live member is settled. No line says both `WATCHING` and
+//! `TEAM-COMPLETE`, so a watch always polls at least twice (WAT-20).
 
 #[path = "support/fixture.rs"]
 pub mod fixture;
@@ -9,7 +10,7 @@ pub mod fixture;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::time::Duration;
 
-use fixture::{Bed, names};
+use fixture::{Bed, events, names};
 use proptest::prelude::*;
 use teamwire_core::{CompletionStatus, DeliveryErrorCode, ReportState};
 
@@ -61,14 +62,25 @@ struct Run {
     seen_once: HashMap<String, u32>,
     /// `TEAM-COMPLETE` was printed by the current process.
     complete: bool,
+    /// A poll of the current process has read a roster that held at least
+    /// one live member, so an empty roster later means the lead has removed
+    /// them all and the watch must complete (WAT-20). The watch keeps the
+    /// same flag, from the same fact: `plan.rs` sets it from
+    /// `!snap.members.is_empty()` on every poll, printed line or not.
+    watched_a_member: bool,
 }
 
 impl Run {
     fn record(&mut self, line: &str) {
         assert!(!line.contains('\n'), "{line:?}");
-        for event in line.split(" | ") {
-            assert!(event.starts_with("[teamwire:alpha] "), "{event}");
-            let mut words = event.trim_start_matches("[teamwire:alpha] ").split(' ');
+        let texts = events(line);
+        for (event, text) in line.split(" | ").zip(&texts) {
+            // WAT-21: every event carries the team and the poll's time.
+            assert!(event.starts_with("[teamwire:alpha "), "{event}");
+            assert_ne!(event, text, "no prefix was taken off: {event}");
+        }
+        for text in &texts {
+            let mut words = text.split(' ');
             let (kind, role) = (words.next().unwrap_or(""), words.next().unwrap_or(""));
             if matches!(kind, "DIED" | "LATE") {
                 let generation = self.generation.get(role).copied().unwrap_or(0);
@@ -82,7 +94,15 @@ impl Run {
                 );
             }
         }
-        if names(line).iter().any(|n| n == "TEAM-COMPLETE") {
+        let says = |name: &str| texts.iter().any(|t| t.split(' ').next() == Some(name));
+        // WAT-20: the poll that says `WATCHING` leaves `TEAM-COMPLETE` to
+        // the next poll, so a member written by a `launch --add` a moment
+        // after that poll read the roster is still watched.
+        assert!(
+            !(says("WATCHING") && says("TEAM-COMPLETE")),
+            "the poll that said WATCHING also completed the team: {line}"
+        );
+        if says("TEAM-COMPLETE") {
             assert!(!self.complete, "TEAM-COMPLETE twice");
             self.complete = true;
         } else {
@@ -137,8 +157,12 @@ fn run(steps: &[Step]) {
 
     for s in steps {
         let mut printed = None;
+        let mut polled = false;
         match s {
-            Step::Tick => printed = bed.tick(),
+            Step::Tick => {
+                polled = true;
+                printed = bed.tick();
+            }
             Step::Work(i) if live(i, &present, &removed) => bed.working(i),
             Step::Idle(i) if live(i, &present, &removed) => bed.idle(i),
             Step::Block(i) if live(i, &present, &removed) => bed.blocked(i),
@@ -148,6 +172,7 @@ fn run(steps: &[Step]) {
             })),
             Step::Sleep(secs) => {
                 bed.clock.sleep_and_wake(Duration::from_secs(*secs));
+                polled = true;
                 printed = bed.poll();
             }
             Step::Deliver(i, ok) if live(i, &present, &removed) => {
@@ -180,9 +205,12 @@ fn run(steps: &[Step]) {
             }
             Step::Restart => {
                 // A new process is a new run: it may end with its own
-                // `TEAM-COMPLETE`, but repeats nothing else.
+                // `TEAM-COMPLETE`, but repeats nothing else. It has watched
+                // no member of its own yet, so an empty roster leaves it
+                // waiting, as for a team whose first wave is still coming.
                 bed.memory = teamwire_watch::WatchMemory::default();
                 state.complete = false;
+                state.watched_a_member = false;
             }
             // A step for a member that is not there, or is gone, does nothing.
             Step::Work(_)
@@ -194,6 +222,11 @@ fn run(steps: &[Step]) {
             | Step::Reprompt(_)
             | Step::Remove(_)
             | Step::Add => {}
+        }
+        // The watch reads the roster on every poll, so a poll that printed
+        // nothing still saw the members this step's roster held.
+        if polled && MEMBERS.iter().any(|m| live(m, &present, &removed)) {
+            state.watched_a_member = true;
         }
         if let Some(line) = printed {
             state.record(&line);
@@ -211,14 +244,21 @@ fn run(steps: &[Step]) {
         bed.delivered(name, CompletionStatus::Done);
     }
     for _ in 0..4 {
-        if let Some(line) = bed.tick() {
+        let printed = bed.tick();
+        if !live_members.is_empty() {
+            state.watched_a_member = true;
+        }
+        if let Some(line) = printed {
             state.record(&line);
         }
     }
-    if !live_members.is_empty() {
+    // A watch that has watched a live member must end: either every live
+    // member is settled, or the lead has removed them all and nothing is
+    // left to watch. Only a watch that never saw one keeps polling.
+    if !live_members.is_empty() || state.watched_a_member {
         assert!(
             state.complete,
-            "every live member is settled but the watch never completed: {:?}",
+            "the watch never completed: {:?}",
             state.lines
         );
         assert!(bed.memory.end.is_some());

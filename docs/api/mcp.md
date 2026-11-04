@@ -33,7 +33,7 @@ refused or failed call returns `isError: true` with:
 | --- | --- | --- |
 | `refused.identity` | Token or lead session does not match, or the team has no database. A closed team has none, because close deletes its state after archiving it; the message then says so, and is the same for every team. For the lead, the message also says when no harness session id reached the server at all | no |
 | `refused.type_not_allowed` | This kind of member may not send this type | no |
-| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
+| `refused.recipient_not_allowed` | This recipient may not receive this type from you (reviewer, plan reviewer, closer, answer not to asker, a `reprompt` or `note` to another team) | no |
 | `refused.unknown_recipient` | No such member | no |
 | `refused.other_repo` | `team_decisions` `of` names a team that worked in no repository the caller's team works in. The message says the CLI can read it | no |
 | `refused.unknown_team` | `role@team` or `of` names a team with no database | no |
@@ -201,9 +201,9 @@ session ids.
   member is working, quiet or done is the `state` of `team_status`.
 - `accepts_from_members` lists the types this member accepts from another
   member, of its own team or another. Every member also accepts its own
-  lead's `note` and `reprompt`, which the list leaves out. A reviewer or
-  closer has an empty list, because it accepts messages only from its own
-  lead.
+  lead's `note` and `reprompt`, which the list leaves out. A reviewer, plan
+  reviewer or closer has an empty list, because it accepts messages only
+  from its own lead.
 
 ## `team_log`
 
@@ -249,7 +249,7 @@ reads only teams that worked in a repository its own team works in (below). Inpu
 }
 ```
 
-`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v9, never matches a `ref`. With `grep` and no
+`ref` is `provider:id` (that provider and that id, the id compared ignoring case) or a bare `id` (that id under any provider). The text before the first `:` counts as a provider only when it matches `^[a-z][a-z0-9_]{0,15}$`. With no `of`, no `ref` and no `grep`, the caller reads its own team. A team launched without refs, or archived before schema v10, never matches a `ref`. With `grep` and no
 `of`, the search reaches every running team and every archive, and a team seen
 more than once is read once: the running copy, else the newest archive. Output:
 

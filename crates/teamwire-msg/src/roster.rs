@@ -28,9 +28,9 @@ pub struct RosterEntry {
     pub can_be_typed_to: bool,
 }
 
-/// Every member, in the order they joined. A reviewer or closer accepts
-/// messages only from its own lead (MSG-3); every other member accepts every
-/// kind of information from anyone (MSG-1).
+/// Every member, in the order they joined. A quiet member (a reviewer, plan
+/// reviewer or closer) accepts messages only from its own lead (MSG-3);
+/// every other member accepts every kind of information from anyone (MSG-1).
 pub fn roster(ctx: &Ctx<'_>) -> Result<Vec<RosterEntry>, SendError> {
     let members = ctx.store.read(|tx| tx.members()?.all_or_corrupt())?;
     Ok(members

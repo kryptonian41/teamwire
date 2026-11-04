@@ -8,11 +8,13 @@ hold for every section below.
   Without it, a launch of a new team refuses with `lead_setup_missing`.
 - **Your tools** are `mcp__teamwire__team_send`, `mcp__teamwire__team_resend`,
   `mcp__teamwire__team_status`, `mcp__teamwire__team_members`,
-  `mcp__teamwire__team_log` and `mcp__teamwire__team_teams`. They are already
+  `mcp__teamwire__team_log`, `mcp__teamwire__team_teams` and
+  `mcp__teamwire__team_decisions`. They are already
   loaded. There is no ToolSearch step.
 - **The watch.** pi has no Monitor tool. Start the watch with the
   `teamwire_watch` tool and the team's name, right after launch. Each line
-  the watch prints reaches you as a message from teamwire, and starts a turn
+  the watch prints reaches you as a message from teamwire. A line arrives
+  once the tool calls of your current turn have finished, and starts a turn
   when you are idle, so you never poll. Wherever this skill says to start
   `teamwire watch <team>` with Monitor, call `teamwire_watch` instead. Never
   run `teamwire watch` through bash: the call would hold until it timed out,

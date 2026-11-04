@@ -15,7 +15,7 @@ const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 fn table(kind: MemberKind) -> (&'static str, &'static str) {
     match kind {
         MemberKind::Implementer | MemberKind::Investigator => ("opus", "high"),
-        MemberKind::Reviewer | MemberKind::Closer => ("opus", "xhigh"),
+        MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer => ("opus", "xhigh"),
     }
 }
 

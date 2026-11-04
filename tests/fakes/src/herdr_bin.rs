@@ -128,6 +128,22 @@ pub(crate) fn agent_exited(state_path: &Path, pane_id: &str) -> bool {
     pane_files::read_status(&state::pane_dir(state_path, pane_id)).0 == "exited"
 }
 
+/// How many prompts typed into the pane's inbox its agent has not taken yet.
+/// Zero when the agent will take none: it exited, its process is gone, or it
+/// does not count what it takes (no `prompts` in its `status.json`, as with
+/// the Codex stand-in).
+pub(crate) fn untaken_prompts(state_path: &Path, pane_id: &str, pid: u32) -> usize {
+    if agent_exited(state_path, pane_id) || !fsutil::pid_alive(pid) {
+        return 0;
+    }
+    let dir = state::pane_dir(state_path, pane_id);
+    let Some(taken) = pane_files::prompts_taken(&dir) else {
+        return 0;
+    };
+    let typed = fsutil::read_text(&dir.join("inbox")).map_or(0, |t| t.lines().count());
+    typed.saturating_sub(taken)
+}
+
 fn env_path(name: &str) -> Option<PathBuf> {
     std::env::var_os(name)
         .filter(|v| !v.is_empty())

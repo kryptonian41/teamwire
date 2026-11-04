@@ -8,7 +8,7 @@ and its MCP entry in `~/.claude.json`.
 
 | Path | What it is | Where it goes |
 | --- | --- | --- |
-| `presets/*.json` | The six team shapes. `teamwire preset` prints them. | Copy one, fill in the `CHANGEME` and `/abs/path` values, leave out each member that has a `_launch` or `_launch_after` note and add it later with `--add`, then `teamwire launch --spec FILE`. |
+| `presets/*.json` | The five team shapes and the three steps added to a team (`plan-review` first, then `integrator` and `closer` after the last wave). `teamwire preset` prints them. | Copy one, fill in the `CHANGEME` and `/abs/path` values, leave out each member that has a `_launch` or `_launch_after` note and add it later with `--add`, then `teamwire launch --spec FILE`. |
 | `skills/teamwire/SKILL.md` | The lead's procedures, written for `teamwire` commands and MCP tools. | Run `teamwire install`. It puts the skill, compiled into the binary from this file, into the teamwire plugin under `$TEAMWIRE_HOME/claude-plugin/`. Claude Code names it `teamwire:teamwire`. |
 | `skills/teamwire/reference.md` | The lead's lookup tables: watch lines, flags, model advice. `SKILL.md` links to it. | `teamwire install` puts it beside `SKILL.md` in the plugin. |
 | `skills/afk/SKILL.md` | The procedure for an unattended AFK run. | `teamwire install` puts it in the Claude Code plugin. Claude Code names it `teamwire:afk`. Codex has no AFK skill. |

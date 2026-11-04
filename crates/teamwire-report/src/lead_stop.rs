@@ -34,7 +34,7 @@ pub fn teams_without_watch(
 
 /// The open teams `session` leads, each with what its read gave; none when
 /// the teams cannot be listed, which is logged.
-fn led_by(home: &Path, session: &SessionId) -> Vec<(TeamName, TeamRead)> {
+pub(crate) fn led_by(home: &Path, session: &SessionId) -> Vec<(TeamName, TeamRead)> {
     open_teams(home, Some(session)).unwrap_or_else(|e| {
         tracing::warn!(error = %e, "the teams could not be listed");
         Vec::new()

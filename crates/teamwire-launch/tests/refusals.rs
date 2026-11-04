@@ -10,7 +10,7 @@ mod common;
 
 use common::{Rig, codes, pane_member, team_spec, worktree_member};
 use serde_json::json;
-use teamwire_core::{Clock, SessionId};
+use teamwire_core::{Clock, MemberKind, SessionId};
 use teamwire_fakes::CallKind;
 use teamwire_launch::parse_spec;
 
@@ -71,6 +71,54 @@ fn several_problems_are_reported_together() {
         assert!(found.contains(&code), "{code} missing from {found:?}");
     }
     assert!(rig.home_is_empty());
+}
+
+#[test]
+fn plan_reviewer_in_worktree_mode_refused_with_the_other_refusals() {
+    let rig = Rig::new();
+    let repo = rig.repo("proj");
+    let reviewer = common::with(
+        worktree_member("p", "Plan check", &repo),
+        "kind",
+        json!("plan_reviewer"),
+    );
+    let spec = team_spec(
+        "demo",
+        &[reviewer, pane_member("b", "Beta", &rig.user_home)],
+    );
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(
+        codes(&errors),
+        ["plan_reviewer_needs_pane", "home_directory"]
+    );
+    let refusal = errors.first().unwrap();
+    assert_eq!(refusal.field.as_deref(), Some("mode"));
+    assert!(
+        refusal
+            .message
+            .contains("role p is a plan reviewer, so it needs mode pane"),
+        "{}",
+        refusal.message
+    );
+    assert!(rig.home_is_empty());
+}
+
+#[test]
+fn plan_reviewer_in_pane_mode_validates() {
+    let rig = Rig::new();
+    let reviewer = common::with(
+        pane_member("p", "Plan check", rig.work.path()),
+        "kind",
+        json!("plan_reviewer"),
+    );
+    let plan = rig
+        .validate(&team_spec("demo", &[reviewer]), false)
+        .unwrap();
+    assert_eq!(plan.members.len(), 1);
+    assert_eq!(
+        plan.members.first().map(|m| m.kind),
+        Some(MemberKind::PlanReviewer)
+    );
 }
 
 #[test]

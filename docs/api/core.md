@@ -46,9 +46,9 @@ pub struct Remote { /* team, role (None for the lead) */ }
 ## 2. Members
 
 ```rust
-pub enum MemberKind { Implementer, Reviewer, Investigator, Closer }
+pub enum MemberKind { Implementer, Reviewer, Investigator, Closer, PlanReviewer }
 impl MemberKind {
-    pub fn is_quiet(self) -> bool;                       // reviewers and closers (MSG-3)
+    pub fn is_quiet(self) -> bool;                       // reviewers, plan reviewers and closers (MSG-3)
     pub fn may_send(self, kind: MessageType) -> bool;    // a member never sends reprompt or note; a quiet kind sends nothing
 }
 pub enum Mode { Worktree, Pane }
@@ -186,7 +186,7 @@ so they need no schema change:
 | `result.delivering` | `usage`, `session` | `usage` maps a model name to the session's running totals `input`, `output`, `cache_read` and `cache_creation`, counted once per `message.id` across the member's main transcript and its subagent transcripts (`<session-id>/subagents/*.jsonl`). A subagent file that would take the sum past 64 MiB, is not a regular file or cannot be read is skipped, and the rest still count. `session` is the session id, so a new session's totals are not taken as a continuation. `usage` is missing when the transcript is missing, unreadable, over 64 MiB, not a regular file, or holds no assistant usage; `session` is always written. `teamwire metrics` reads them. |
 | `team.created` | `lead_cwd` | The folder of the lead's session at launch, when the harness can name it. |
 | `team.created` | `refs` | The spec's ticket refs as `{"provider", "id"}` objects, deduplicated, in order; `[]` for none. A missing key means an older build created the team. |
-| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0034). |
+| `team.refs_added` | `added` | The refs, as objects, that a later `launch --add` appended to the team, in order (ADR 0038). |
 | `team.created` | `afk_budget_ends_at` | When an AFK run's budget ends, written by `teamwire afk start`. Missing on an ordinary team. |
 | `team.lead_adopted` | `lead_cwd` | The same, for the session that took over. |
 
@@ -295,6 +295,11 @@ pub trait Harness: Send + Sync {
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError>;
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
+    /// Parse the lead's tool hook stdin into the neutral form (ADR 0035).
+    /// Default `Unsupported`, and the hook then says nothing. Claude Code and
+    /// Codex parse their `PostToolUse` input; pi parses the input teamwire's
+    /// lead extension writes.
+    fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
     /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
     /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
@@ -335,6 +340,11 @@ pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      // read only when it is a regular file of at most 64 MiB,
                      // for the final-message fallback and the usage alike
                      pub transcript: Option<PathBuf> }
+/// One tool call of the lead's session (ADR 0035). `cwd` is the folder a
+/// relative path in `action` is read against.
+pub struct ToolCall { pub session: SessionId, pub subagent: bool,
+                      pub cwd: Option<PathBuf>, pub action: ToolAction }
+pub enum ToolAction { Edit(Vec<PathBuf>), Shell(String), Other }
 pub enum Liveness { Alive(PlaceState), Dead, Unknown }
 pub enum ScreenState { InputPrompt, Dialog, Unknown }
 pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated }
@@ -516,7 +526,7 @@ pub struct TeamSpec { pub team: TeamName, pub title: String, pub setup: Option<S
                       pub children: Vec<MemberSpec>,
                       pub context_handoff_tokens: Option<u64>,
                       pub plugins: BTreeMap<String, bool>,      // plugin id -> on/off, all members
-                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0034
+                      pub refs: Vec<TicketRef> }                // ticket refs, ADR 0038
 pub struct TicketRef { pub provider: String, pub id: String }   // both required; no default provider
 pub struct MemberSpec { pub role: Role, pub title: String, pub kind: Option<MemberKind>,
                         pub mode: Mode, pub harness: Option<HarnessId>, pub repo: Option<PathBuf>,
@@ -654,7 +664,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 8: `crates/teamwire-store/src/schema/v1.sql` to `v8.sql`,
+The schema is version 9: `crates/teamwire-store/src/schema/v1.sql` to `v9.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -663,11 +673,17 @@ adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
 row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
-(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028). Version 9 (`src/schema/v9.sql`) adds `team.refs`, a JSON array of
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028).
+Version 9 rebuilds `members` with `plan_reviewer` in its `kind` CHECK list
+(ADR 0034) and keeps every row. It creates `members_new`, copies the rows,
+drops `members` and renames `members_new`, so the foreign keys of
+`completions`, `verify_records` and `waivers` still name `members`. Every
+migration runs with foreign key checks off and fails, rolling back, when
+`PRAGMA foreign_key_check` finds a broken key before the commit. Version 10 (`src/schema/v10.sql`) adds `team.refs`, a JSON array of
 `{"provider", "id"}` objects in recorded order that is never NULL and defaults to `[]`, and rebuilds
 `events` with the `team.refs_added` type. `TeamRow.refs` is that array; `Tx::set_refs` sets it
 when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs not yet held and writes
-`team.refs_added`, or writes nothing when none is new (ADR 0034). It refuses with
+`team.refs_added`, or writes nothing when none is new (ADR 0038). It refuses with
 `StoreError::Constraint`, and appends nothing, when the team would hold more than `REFS_MAX` (20)
 refs, because two `--add` runs may each have passed `validate`'s check before either wrote. A
 read-only open of an older database reads `refs` as empty. The tables and columns are those in

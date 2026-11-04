@@ -58,22 +58,15 @@ what order.
 
 ## 3. Your context is the run's scarcest resource
 
-You decide. Members research, plan, review, verify and write. Every file you
-read stays in your context for the rest of the run, and a lead with a full
-context decides worse. So:
+The teamwire skill's section "Your context holds the design" applies, and
+an AFK run goes further. Nobody is present to plan with, so members research
+and plan too, and you read less:
 
 - Give research, planning, review, verification and report-writing to
-  members. Do one yourself only when it is smaller than writing its brief,
-  and never reading more than one or two short files.
-- Pass work by path. A brief or a reprompt names files. Never paste a
-  report, a diff or a log into a message.
-- Read a member's result line and the summary at the top of its report. Read
-  further only when two members contradict each other, and then only the
-  lines in dispute.
-- Never read a raw diff, check output or a gate log. The closer reads those.
-- Members read each other's files by path. A planner reads the
-  investigators' reports, a plan reviewer reads the plan, and each owner
-  reads its own findings.
+  members. Read a file yourself only when the read is smaller than writing
+  its brief, and never more than one or two short files.
+- A planner reads the investigators' reports, and a plan reviewer reads the
+  plan.
 
 Each member you add runs once and finishes. None of them sends work to
 another member. You make every call that changes the plan.
@@ -89,9 +82,10 @@ whole run.
 | --- | --- | --- | --- |
 | analyst | investigator, opus, high | The task leaves room for more than one reading, or touches code you have not read. | `afk/understanding.md`, at most one page: the end state, the inferred acceptance criteria, what is out of scope, each ambiguity with the reading it chose, and the questions that decide the plan, grouped by area |
 | scout | investigator, opus, high | An area has questions that decide the plan and nobody has answered them. One scout per area, all in one `--add`. Keep scouts open until the build ends, so implementers can ask them directly. | its report: each answer with file:line |
-| planner | investigator, opus, xhigh | The work has more than one unit, open questions, or files that others read or pin. | `afk/plan.md` with a summary of at most 30 lines on top; `afk/decisions.md`; `afk/briefs/<role>.md` per implementer in the main skill's 14 sections; `afk/spec-wave<n>.json`; the result of each item of the main skill's planning check, using a temporary `git clone` where a fresh worktree is needed |
-| plan reviewer | reviewer, opus, xhigh | A plan exists and a wrong plan would waste more than one implementer's work. Fix the plan once from its findings, by reprompting whoever wrote it. Never review the same plan twice. | ranked gaps: a misread of the task, a criterion nobody can check, a file nobody owns, a check that misses what CI runs, a wrong shape |
+| planner | investigator, opus, xhigh | The work has more than one unit, open questions, or files that others read or pin. | `afk/plan.md` with a summary of at most 30 lines on top; `afk/decisions.md`; `afk/briefs/<role>.md` per implementer in the main skill's 14 sections; `afk/spec-wave<n>.json`; the result of each item of the main skill's planning check, with each implementer's `check` run once in a temporary `git clone` after its `setup` |
+| plan reviewer | plan_reviewer, opus, xhigh | A plan exists and a wrong plan would waste more than one implementer's work. Fix the plan once from its findings, by reprompting whoever wrote it. Never review the same plan twice. | a paraphrase of each brief, then ranked findings: a choice the brief leaves open, a file nobody owns, two briefs that contradict, a wrong claim about the code, a criterion nobody can check, a check that misses what CI runs, a wrong shape |
 | implementer | implementer, opus, high | Code must change. | its branch |
+| integrator | implementer, opus, high | Branches must join into one, as in every shape but parallel tickets and a single implementer. Start its task from `teamwire preset integrator`, and name its branch `afk/<team>`. | the joined branch `afk/<team>` |
 | reviewer | reviewer, opus, xhigh | A branch is finished. One per branch by default. Skip it only for a change so small that the closer's coverage check reads the whole diff anyway. | ranked findings |
 | closer | closer, opus, xhigh | Always, once code exists (section 2). | the integrated report and the exit codes |
 | reporter | investigator, opus, high | Always, at the end (section 7). | `afk/REPORT.md` |
@@ -137,10 +131,11 @@ this in the report, so the user can see which checks the run skipped.
   code, fixes what holds, and answers the rest with evidence. Allow at most
   two fix rounds per owner. Never run the closer twice. Run
   `teamwire verify <team> --role <owner>` after each fix round.
-- Make the integration branch `afk/<team>` off the base branch, and merge in
-  the plan's order. On a conflict, abort that merge. Reprompt the later
-  branch's owner to merge the earlier branch into its own branch and resolve
-  it, then merge again. Do not resolve conflicts yourself.
+- Add the integrator, with the plan's merge order in its task. On a
+  conflict it aborts that merge and reports it. Reprompt the later branch's
+  owner to merge the earlier branch into its own branch and resolve it, then
+  reprompt the integrator. Neither you nor the integrator resolves a
+  conflict.
 - `TEAM-STALLED` is yours to handle. Run `teamwire status`, read the pane,
   and replace the member once. If the replacement stalls too, cut the unit
   and report it.

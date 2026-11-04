@@ -37,7 +37,7 @@ use std::time::Duration;
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
     LeadSetup, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform,
-    Role, ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    Role, ScreenState, SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -177,6 +177,10 @@ impl Harness for ClaudeCode {
 
     fn hold_reply(&self, note: &str) -> Vec<u8> {
         hook::hold_reply(note)
+    }
+
+    fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError> {
+        hook::parse_tool_call(stdin)
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {

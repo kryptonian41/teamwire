@@ -28,6 +28,9 @@ fn teamwire(fx: &Fixture, args: &[&str]) -> Run {
     teamwire_with(fx, args, &[])
 }
 
+/// `teamwire` with a cleared environment plus `extra`. The tests often run
+/// inside a member's session, and its identity variables would make the
+/// lead's `verify --waive` refuse.
 fn teamwire_with(fx: &Fixture, args: &[&str], extra: &[(&str, &str)]) -> Run {
     let Output {
         status,
@@ -37,10 +40,8 @@ fn teamwire_with(fx: &Fixture, args: &[&str], extra: &[(&str, &str)]) -> Run {
         .arg("--home")
         .arg(fx.home.path())
         .args(args)
-        .env_remove("HERDR_ENV")
-        .env_remove("TEAMWIRE_TEAM")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TOKEN")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .env("TEAMWIRE_HOME", fx.home.path())
         .envs(extra.iter().copied())
         .output()

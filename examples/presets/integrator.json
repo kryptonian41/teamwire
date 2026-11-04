@@ -1,0 +1,34 @@
+{
+  "_shape": "FINAL STEP, not a team shape. One implementer that joins the finished branches and runs the full gate.",
+  "_why_this_works": "Merging finished branches and running the full gate are steps, not decisions: the plan fixes the order, and a conflict goes back to the owners whose branches meet. One member writes the joined branch, so writes stay single-threaded, as Cognition advises. The lead keeps its context for judging the results, and its own merges stop showing up in `teamwire verify`: in teamwire's own runs, closers traced 426 outside-owns flags in 21 teams to the lead's own merges and commits, a tracing nobody has re-checked.",
+  "_when_to_skip": "Parallel tickets, whose branches are never merged into each other, and a team with one implementer, whose branch is already the deliverable.",
+  "_rules": [
+    "Add it with `teamwire launch --add` once the last wave that writes code has reported and each branch it merges passed `teamwire verify`. Add the closer after it, so the closer checks the joined branch.",
+    "Its `owns` lists every path the merged members own, because `verify` counts the files a merge brings in as the merging member's. Its `check` is the repository's full gate, and its `base` is the branch the pull request will target.",
+    "Name the merge order in its task: blockers before the branches built on them. It never resolves a conflict. On a conflict it aborts that merge and reports the two branches and the files. Reprompt the later branch's owner to merge the earlier branch into its own branch and resolve it, then reprompt the integrator.",
+    "After each fix round, reprompt it to merge the owners' new commits and run the full gate again. Keep it open until the pull request round is done.",
+    "It pushes its branch and opens the pull request only when your reprompt says the user agreed. Until then its branch stays local.",
+    "Its task class is `mechanical_edit`: you set the order and the gate, and it decides nothing. Run `teamwire models --for mechanical_edit` and pick a model that runs commands reliably at a modest cost."
+  ],
+  "team": "myteam",
+  "title": "Join CHANGEME",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "children": [
+    {
+      "role": "integrator",
+      "title": "Join branches, run gate",
+      "kind": "implementer",
+      "mode": "worktree",
+      "task_class": "mechanical_edit",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/integrate",
+      "base": "main",
+      "deadline_s": 3600,
+      "check": "CHANGEME the repository's full gate command",
+      "owns": [
+        "CHANGEME/every/path/the/merged/members/own/"
+      ],
+      "task": "Join the finished branches of team myteam on your branch. (1) MERGE. Merge each branch in this order with `git merge --no-edit <branch>`: CHANGEME. When a merge conflicts, run `git merge --abort`, stop merging, and report the two branches and the conflicting files. Never resolve a conflict and never edit a file: each owner fixes its own code. (2) GATE. Your check is the repository's full gate. Run it once before the first merge, so a failure the base already had is not blamed on a branch, and again after the last merge. Report each failure with the branch whose code it tests, never as one total. When the gate fails after the merges, write the failing tests and their branches in your report file, set status 'failed' and finish. (3) LATER ROUNDS. When the lead reprompts you after a fix round, merge the branches it names again and run the gate again. Push your branch and open the pull request only when a message from the lead says the user agreed."
+    }
+  ]
+}

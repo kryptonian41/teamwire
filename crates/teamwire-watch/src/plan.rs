@@ -16,7 +16,8 @@ use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
     STALLED_PREFIX, age, agent_text, blocked_key, context_key, died_key, late_key, question_key,
-    result_key, result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
+    result_key, result_path, result_written, silent_key, stalled_key, unanswered_key, unread_key,
+    unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -139,6 +140,7 @@ pub(crate) fn plan(
     memory
         .members
         .retain(|role, _| snap.members.iter().any(|m| &m.member.role == role));
+    memory.watched_a_member |= !snap.members.is_empty();
 
     let mut env = Env {
         ctx,
@@ -235,7 +237,17 @@ pub(crate) fn plan(
         env.actions.push(Action::EndStall);
     }
 
-    let complete = (outstanding == 0 && !settled.is_empty()).then(|| complete_text(&settled));
+    // The poll that says `WATCHING` may have read the roster a moment
+    // before `launch --add` wrote a new member, and a watch that prints
+    // `TEAM-COMPLETE` exits, so that member would run unwatched. That poll
+    // leaves `TEAM-COMPLETE` to the next one (WAT-20).
+    //
+    // An empty roster completes the team only once this watch has seen a
+    // live member: the lead has removed the last one, and nothing is left
+    // to watch. Before that, the lead is still launching the first wave.
+    let anything_to_report = !settled.is_empty() || memory.watched_a_member;
+    let complete = (outstanding == 0 && anything_to_report && !memory.holds_complete())
+        .then(|| complete_text(&settled));
     Plan {
         actions: env.actions,
         complete,
@@ -243,6 +255,8 @@ pub(crate) fn plan(
 }
 
 /// `TEAM-COMPLETE 2/3 done; not done: c died`. Only status `done` counts.
+/// `TEAM-COMPLETE 0/0 done` for a team whose members the lead has all
+/// removed: no live member is left to count.
 fn complete_text(settled: &[(Role, String)]) -> String {
     let done = settled.iter().filter(|(_, label)| label == "done").count();
     let mut text = format!("TEAM-COMPLETE {done}/{} done", settled.len());
@@ -309,6 +323,17 @@ fn judge_completion(
             c.status.as_str()
         }),
         ReportState::Pending if env.reports_through_watch(role) => {
+            // `done` stores the completion and writes the result file just
+            // after, and the file must exist before the line that delivers
+            // it (REP-9). A poll between the two waits one poll for the
+            // file, then reports anyway, so a `done` that died after storing
+            // still reaches the lead, pointing at the member's report.
+            mm.declared_polls += 1;
+            if mm.declared_polls < 2
+                && !result_written(&env.snap.team_dir, role, record.result_sha256.as_ref())
+            {
+                return Verdict::waiting();
+            }
             env.actions.push(Action::ViaWatch {
                 completion: c.ulid,
                 key: result_key("COMPLETED", &c.ulid),

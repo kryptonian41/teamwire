@@ -475,7 +475,11 @@ pub(crate) enum HookCommand {
     #[command(about = "A member's SessionStart hook: record the session id the harness chose.")]
     SessionStart(HookTarget),
     #[command(about = "The lead's Stop hook, on the named harness.")]
-    LeadStop(LeadStopArgs),
+    LeadStop(LeadHookArgs),
+    #[command(
+        about = "The lead's tool hook, on the named harness: a note when the lead does a member's work."
+    )]
+    LeadTool(LeadHookArgs),
     /// A member's Stop hook: hold once for gaps or unread messages, else deliver the result.
     ClaudeStop(HookTarget),
     #[command(about = "A member's PostToolUse hook: remind it of unread message ids.")]
@@ -486,9 +490,9 @@ pub(crate) enum HookCommand {
     ClaudeLeadStop,
 }
 
-/// Which harness's input the lead's Stop hook reads; `claude-code` when absent.
+/// Which harness's input a lead hook reads; `claude-code` when absent.
 #[derive(Args)]
-pub(crate) struct LeadStopArgs {
+pub(crate) struct LeadHookArgs {
     #[arg(long)]
     pub(crate) harness: Option<String>,
 }

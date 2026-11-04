@@ -17,6 +17,13 @@ fn render(kind: MemberKind, check: Option<&str>, owns: &[String]) -> String {
     })
 }
 
+/// The kinds that send and receive no messages.
+const QUIET_KINDS: [MemberKind; 3] = [
+    MemberKind::Reviewer,
+    MemberKind::Closer,
+    MemberKind::PlanReviewer,
+];
+
 /// Every rule of the speclife report's table 1.2, as a phrase the text must
 /// hold. The last field is true for a rule every kind of member carries.
 const RULES: &[(&str, &str, bool)] = &[
@@ -48,6 +55,11 @@ const RULES: &[(&str, &str, bool)] = &[
     (
         "no git stash: every worktree shares one stash list",
         "Do not use `git stash`: every worktree of a repository shares one\n  stash list",
+        false,
+    ),
+    (
+        "run the check once before the first change; blocked when it already fails",
+        "Before your first change, run your check once",
         false,
     ),
     (
@@ -120,7 +132,7 @@ fn closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail() {
 
 #[test]
 fn reviewer_and_closer_send_and_receive_no_messages() {
-    for kind in [MemberKind::Reviewer, MemberKind::Closer] {
+    for kind in QUIET_KINDS {
         let text = render(kind, None, &[]);
         assert!(text.contains("You send no messages, and members do not message you"));
         assert!(!text.contains("teamwire send"));
@@ -143,7 +155,7 @@ fn every_talking_kind_gets_the_finding_and_notice_rules_and_a_quiet_one_neither(
             "{kind}"
         );
     }
-    for kind in [MemberKind::Reviewer, MemberKind::Closer] {
+    for kind in QUIET_KINDS {
         let text = render(kind, None, &[]);
         assert!(
             !text.contains("- finding:") && !text.contains("- notice:"),
@@ -168,7 +180,7 @@ fn a_talking_member_learns_how_to_reach_other_teams_and_that_they_never_instruct
         );
         assert!(text.contains("Only your own lead instructs you"), "{kind}");
     }
-    for kind in [MemberKind::Reviewer, MemberKind::Closer] {
+    for kind in QUIET_KINDS {
         let text = render(kind, None, &[]);
         assert!(!text.contains("@<team>"), "{kind}");
     }
@@ -285,7 +297,7 @@ fn each_contract_names_only_message_types_its_kind_may_send() {
 
 #[test]
 fn a_reviewer_or_closer_writes_its_question_in_the_report_file() {
-    for kind in [MemberKind::Reviewer, MemberKind::Closer] {
+    for kind in QUIET_KINDS {
         let text = render(kind, None, &[]);
         assert!(text.contains("write the\nquestion in your report file"));
     }
@@ -298,4 +310,25 @@ fn a_reviewer_checks_the_diff_against_the_brief_and_quotes_the_line() {
     let text = render(MemberKind::Reviewer, None, &[]);
     assert!(text.contains("Check the diff against the brief too"));
     assert!(text.contains("Quote\n  the brief line each such finding rests on"));
+}
+
+#[test]
+fn a_plan_reviewer_carries_its_own_rules_and_not_the_reviewers() {
+    let text = render(MemberKind::PlanReviewer, None, &[]);
+    for phrase in [
+        "two to five sentences",
+        "a design choice the brief leaves to the member",
+        "a file the work must change that no member owns",
+        "two briefs, or a brief and the plan, that contradict each other",
+        "a claim about the code that the code does not bear out",
+        "a 'Done when' item that no command, file or behaviour can check",
+        "a member's check that misses a gate the repository's CI runs",
+        "a team shape that does not fit the work",
+        "Give findings only: no fixes and no rewritten brief",
+        "Say plainly when a brief is ready",
+    ] {
+        assert!(text.contains(phrase), "missing: {phrase}");
+    }
+    // Not the bare word "diff": the shared text says "different" to every kind.
+    assert!(!text.contains("Review the diff"));
 }

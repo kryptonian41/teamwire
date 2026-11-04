@@ -71,16 +71,22 @@ fn three_members_run_the_whole_lifecycle() {
         2,
         "a healthy team wakes the lead with exactly two watch lines: {lines:?}"
     );
-    assert!(
-        lines
-            .first()
-            .is_some_and(|l| l.contains("WATCHING 3 members")),
+    // WAT-21: a watch line starts `[teamwire:demo HH:MM:SSZ] `. The member
+    // result lines below keep the undated `[teamwire:demo] ` prefix.
+    let dated = |line: &String| {
+        line.strip_prefix("[teamwire:demo ")
+            .and_then(|rest| rest.split_once("] "))
+            .filter(|(time, _)| time.len() == 9 && time.ends_with('Z'))
+            .map(|(_, event)| event.to_owned())
+    };
+    assert_eq!(
+        lines.first().and_then(dated).as_deref(),
+        Some("WATCHING 3 members"),
         "{lines:?}"
     );
-    assert!(
-        lines
-            .get(1)
-            .is_some_and(|l| l.contains("TEAM-COMPLETE 3/3 done")),
+    assert_eq!(
+        lines.get(1).and_then(dated).as_deref(),
+        Some("TEAM-COMPLETE 3/3 done"),
         "{lines:?}"
     );
 

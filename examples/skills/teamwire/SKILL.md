@@ -1,6 +1,6 @@
 ---
 name: teamwire
-description: "The default way to launch and lead a team of coding agents — implementers, reviewers, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
+description: "The default way to launch and lead a team of coding agents — implementers, reviewers, a plan reviewer, investigators, a closer — that work unattended and report back on their own; add or remove members mid-run. Use for any new agent team: several agents working in parallel on separate tasks, a lead and engineers split, or work that continues while the user steps away. Not for one standalone delegated task."
 ---
 
 # Agent teams with teamwire
@@ -10,15 +10,26 @@ each one a role and a task, and gets their results back with no human
 present. A member records one completion with `teamwire done`, and its Stop
 hook types the result into your pane. That line wakes you, so you never poll.
 
-**You are the team lead.** You pick the shape, plan the work, write every
-brief, decide who joins and who leaves, and integrate and verify the results.
-Nobody else on the team makes those calls. Use a team when the user asks for
-one, for parallel agents, or for work that carries on while they are away.
-For one standalone delegated task, split a pane and prompt it yourself.
+**You are the team lead.** You plan the work with the user, pick the shape,
+write every brief, decide who joins and who leaves, and judge every result.
+Nobody else on the team makes those calls. Members do the rest of the work:
+they edit the code, run the builds and tests, merge the branches and open
+the pull requests. You write no code. You run teamwire's own commands, read
+what members report, and keep your plan, specs and briefs outside the
+repository. When the user asks for a change while a team runs, give it to
+the member that owns the file, or brief a new one. Do the work yourself only
+when the user says so. While you lead an open team, the lead's tool hook adds
+a note when you edit a file in its repository, or run a build, a test, or a
+git command that commits, merges or pushes.
+
+Use a team when the user asks for one, for parallel agents, or for work that
+carries on while they are away. For one standalone task, split a pane and
+prompt a fresh agent there.
 
 teamwire keeps its state in `$TEAMWIRE_HOME` (default `~/.teamwire`). Agent
-names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
-lines start with `[teamwire:<team>]`. This file follows your order of work,
+names are `tw_<team>_<role>` and never contain a hyphen. A watch line starts
+with `[teamwire:<team> HH:MM:SSZ]`, and every other teamwire line, a wake-up
+among them, with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
 For a run the user will not be present for, use `/teamwire:afk`. Only a Claude Code lead can run it.
@@ -50,7 +61,7 @@ registering it beside the plugin starts a second server. Everything else
 `preset`, `export`, `metrics`, `pr-watch`) runs only from the shell, so a
 member's server can never run the lifecycle commands.
 
-## Pick the shape first: most coding work should not be a team
+## Pick the shape first: most coding work needs one writer
 
 Parallel reading is safe, and parallel writing is the exception. Every lab now
 agrees that agents may read, research and review in parallel, and that one
@@ -60,7 +71,8 @@ Parallel writers make conflicting unstated decisions, and the integrator
 inherits them.
 
 Before you plan a team, ask whether a codemod, a rewrite tool or a script can
-make the change. Use agents for the cases the tool leaves. Uber: "We attempted
+make the change. Give the tool run to one implementer, and plan more members
+only for the cases the tool leaves. Uber: "We attempted
 to use generative AI to migrate multiple test class files at once, but this
 approach was unsuccessful." Stripe runs its deterministic steps as code.
 
@@ -71,19 +83,21 @@ long-running harness cost $200 against $9 for a solo run. Every number in this
 file is sourced in `docs/research/2026-10-18-lead-field-reports.md` in the
 teamwire repository.
 
-`teamwire preset` lists five team shapes and the `closer`, a final step added
-to a team. `teamwire preset <name>` prints one preset's rules and a spec to
-fill in.
+`teamwire preset` lists the five team shapes and three steps added to a
+team. The `plan-review` step goes before the implementers, and the
+`integrator` and `closer` steps go after the last wave.
+`teamwire preset <name>` prints one preset's rules and a spec to fill in.
 
 | Shape | Use when |
 | --- | --- |
-| no team | The work is sequential, or members would need to see each other's decisions. Use one agent. |
+| `implement-then-review` | The work is sequential, or members would need to see each other's decisions. One implementer writes all of it, one fresh reviewer reads the finished diff, then at most two fix rounds by the owner. Never a second review of the same diff. |
 | `parallel-tickets` | Tickets that touch different modules. The best case: no integration at all. |
-| `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and blockers merge first. |
+| `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and the integrator merges blockers first. |
 | `survey` | Read-only investigation across several areas. |
-| `implement-then-review` | One implementer, one fresh reviewer on the finished diff, then at most two fix rounds by the owner. Never a second review of the same diff. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
-| `closer` | The last step from about four members up. One agent verifies the team's claims and writes one report. |
+| `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
+| `integrator` | The step after the last wave of a shape that joins branches. One implementer merges the branches in the plan's order and runs the full gate. It decides nothing. |
+| `closer` | The last step of every team that wrote code. One agent verifies the team's claims and writes one report. |
 
 The model and effort of each member are the largest cost lever in a run.
 "Choose each member's model" below says how to pick them.
@@ -108,41 +122,41 @@ settle by guessing becomes the same guess in several fresh contexts.
 - From about four same-shaped members up, pilot one first. Read its result,
   run `teamwire verify`, fix the brief, then add the rest with `--add`.
 
-**The planning check.** Run it before a launch, and before any `--add` that
-brings in new work. Fix what it finds first.
+**The planning check.** Go through it before a launch, and before any `--add`
+that brings in new work. Fix what it finds first. You read the plan, the
+spec and the code for it, and run no build and no test.
 
-1. Each implementer has a runnable `check` that you have run once.
+1. Each implementer has a `check`: one targeted command that proves its
+   work. You do not run it. The implementer runs it once before its first
+   change, in its own fresh worktree after `setup`, and changes nothing when
+   it fails there for a reason its brief does not ask it to fix. A shared
+   virtual environment or `node_modules` can differ from the lockfile, so a
+   check that passes in your checkout can still fail in a fresh one.
 2. Each `check` covers what CI covers. Compare it with the repository's CI
    jobs: lint scope, duplication and rule gates, type checks, tests that need
    a database. In teamwire's own runs, gates outside a member's `check`
    failed at or after pull request time.
-3. Each `check` passes in a fresh worktree of the base after the spec's
-   `setup`, because a shared virtual environment or `node_modules` can differ
-   from the lockfile. Make one with `git worktree add`, run `setup` in it with
-   its path as the first argument, run the checks, then remove it. Launch
-   also gives `setup` the variables `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`,
-   `TEAMWIRE_HOME` and `TEAMWIRE_CHILD_CWD`, so set them by hand when the
-   script reads them.
-4. No two members of one wave have overlapping `owns`. Launch compares `owns`
+3. No two members of one wave have overlapping `owns`. Launch compares `owns`
    only within one spec file, so check an `--add` against the running members
    yourself.
-5. No file the work must change is unowned. For each implementer, search for
+4. No file the work must change is unowned. For each implementer, search for
    what else reads or pins what it changes: tests that pin a count or a
    title, access inventories, exhaustive matches on a type it extends, hook or
    lint configs, mocks of its module. Put each such file in one member's
    `owns`. A member has no standing permission to edit outside `owns`, so
    otherwise it asks you, at a turn each time. In teamwire's own runs, 18 to
    22 of 33 real questions asked to edit a file outside the member's `owns`.
-6. Each content or product rule, such as which real people may appear, has
+5. Each content or product rule, such as which real people may appear, has
    one worked example, settled with the user. In five of teamwire's own runs,
    members decided the same question differently.
-7. The brief leaves out conventions that the harness or the user's session
+6. The brief leaves out conventions that the harness or the user's session
    also sets, such as the commit trailer. In one of teamwire's own runs, a
    fixed trailer in a shared brief lost to the session's attribution
    instruction in all four members.
-8. Build and test commands and directory-scoped rules live once in the
+7. Build and test commands and directory-scoped rules live once in the
    repository's instruction files, not in each brief. When a member fails in
-   a new way, add one rule there before the next launch. Bun calls this
+   a new way, have one member add a rule there before the next launch, with
+   the file in its `owns`. Bun calls this
    "fixing the process that generates the code instead of hand-fixing the
    code", and Stripe works the same way.
 
@@ -151,6 +165,42 @@ brings in new work. Fix what it finds first.
 `teamwire decisions --grep <topic>`, across running teams and archives. Put
 each decision that still holds in the briefs under "Decisions already made",
 with its team and date.
+
+**Have a fresh member read the plan.** The session that wrote the plan
+shares its blind spots, so the planning check above misses what the plan
+leaves unsaid. A plan reviewer is a member that never saw the planning
+conversation. It reads only the written plan, and every place it has to guess
+is a place an implementer would guess too. Two implementers guess
+differently, so the review is cheaper than the rework.
+
+- **When.** Start one when a wrong plan would waste more than one
+  implementer's work. Skip it for a team with one small, clear task.
+- **Order.** Write the plan, the team spec and every brief to files. Run the
+  planning check. Then launch a team with the plan reviewer alone, from
+  `teamwire preset plan-review`. Fix the briefs from its report. Then add the
+  implementers with `teamwire launch --add`. Launch has no rule that orders
+  the two steps, so the order is yours to keep.
+- **Its task.** Give the path of the plan, of the team spec and of every
+  brief, and nothing else. Name no expected finding, because a reader that
+  has been told what to find is no longer fresh.
+- **Its report.** For each brief, a paraphrase of what the brief asks for.
+  Then findings, ranked by harm, each with the brief's file and line. First
+  compare each paraphrase with what you meant. A paraphrase that differs
+  means the brief says something else. Then put each finding in one of four
+  groups:
+  - **fix**: the finding holds, so edit the brief;
+  - **contest**: the finding is wrong, and a file the reviewer could read
+    shows it, such as a file and symbol or a line of the plan;
+  - **ask the user**: the finding is wrong, but the evidence is outside every
+    file the reviewer could read, such as something the user said;
+  - **decline**: the finding is a nit, so record it.
+
+  "This was intentional" is not evidence. Add context to a brief when a
+  member needs it, not to satisfy the reviewer.
+- **Once per plan.** Fix the briefs once from the report, then add the
+  implementers. Never review the same plan twice. A reviewer asked again
+  finds something new each time, and the fixes grow without end. The
+  `implement-then-review` row has the same rule for a diff.
 
 **Settle the open questions.** When the user is present, ask every question
 you would otherwise answer yourself, each with your recommended answer. Show
@@ -163,16 +213,18 @@ affected brief under "Open questions you must not answer", and list them in
 your final report.
 
 **Plan in one session, lead from a fresh one.** Every report and watch line
-costs you a full turn against your whole context. Write the plan and a brief
-to a file, then start a clean lead session with a first message like this:
+costs you a full turn against your whole context. Write the plan and the
+briefs to files outside the repository, then start a clean lead session with
+a first message like this:
 
 ```
-You are the lead for <ticket>. Read ./<TICKET>-BRIEF.md in full first; it
-assumes no prior conversation. Then plan the work, and lead a team with
-the teamwire skill: one implementer per unit in its own worktree with
-explicit file ownership, plus the reviewer or closer the skill calls for.
-Re-run the checks yourself after integrating. Do not push or open a pull
-request without asking.
+You are the lead for <ticket>. Read <dir>/<TICKET>-PLAN.md in full first;
+it assumes no prior conversation. It is the agreed plan. Lead the team from
+it with the teamwire skill, and ask me where it is unclear instead of
+planning the work again: one implementer per unit in its own worktree with
+explicit file ownership, plus the integrator and the closer the skill calls
+for. You write no code and run no checks. Members do. Nobody pushes or opens
+a pull request until I agree.
 ```
 
 The new session runs `teamwire lead --adopt <team>` for each team it takes
@@ -188,15 +240,17 @@ needs `mode`, as the last column shows.
 | --- | --- | --- | --- |
 | `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) |
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
+| `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for. Then it reports ranked findings, each with the brief's file and line, of seven kinds: a design choice the brief leaves open, a file no member owns, two briefs that contradict each other, a claim about the code that is wrong, a "Done when" item nobody can check, a check that misses a gate CI runs, and a team shape that does not fit the work. Give it the paths of the plan, the spec and every brief, and start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. | `pane` (launch refuses `worktree`) |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
 | `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists. In one clone it keeps at `$TEAMWIRE_HOME/cache/closer/<team>/clone`, it runs the member's `setup` once with the clone's path as its first argument (an install allowed there). It never copies a `target/` or `node_modules` folder in. For each check it fetches, checks out the member's branch, and resets and cleans the clone. `teamwire close` deletes the clone. Then it reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding, and writes one integrated report. Start its task from `teamwire preset closer`, which also has it name each finding's owner. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
-investigator. Launch refuses an implementer in `pane` mode. Every member is
-told that the brief is the agreed plan, to list any choice the brief does not
-cover under **Decisions I made**, and to record a question the brief marks
-open without answering it. Implementers and investigators talk only through
-`teamwire send`. Reviewers and closers send nothing.
+investigator. Launch refuses an implementer in `pane` mode and a plan
+reviewer in `worktree` mode. Every member is told that the brief is the
+agreed plan, to list any choice the brief does not cover under **Decisions I
+made**, and to record a question the brief marks open without answering it.
+Implementers and investigators talk only through `teamwire send`. Reviewers,
+plan reviewers and closers send nothing.
 
 A member's `kind` sets its role. Its `task_class` says how hard its task is
 to reason about. The two are separate: a review of a one-line rename and a
@@ -212,7 +266,7 @@ class, and a task that was put in the wrong class shows up there.
 | `root_cause` | Finding why something fails, before any fix. | Find why one test fails only in CI. |
 | `concurrency_data_loss` | Reasoning about ordering, races, crashes or data loss. | Show that a crash between two writes cannot lose a message. |
 | `read_only_survey` | Reading code and data to map how something works. Writes nothing. | Map every caller of a queue and what each one assumes. |
-| `judgement` | Judging other agents' work: a review or the closer's checks. | Review an implementer's finished diff. |
+| `judgement` | Judging other agents' work: a review, a plan review or the closer's checks. | Review an implementer's finished diff. |
 
 When a task fits two classes, pick the harder one. A class set too low costs a
 retry on a weaker model. A class set too high costs only tokens.
@@ -259,7 +313,7 @@ Members load every user plugin, skill, hook and output style. Only the spec's
 harness. Claude Code and Codex members read it, and pi members ignore it.
 The plugins named in this section are Claude Code plugins, so this advice
 applies to Claude Code members. Implementers keep the user's plugins. Give
-every Claude Code reviewer, closer and investigator this map:
+every Claude Code reviewer, plan reviewer, closer and investigator this map:
 
 ```json
 "plugins": {"ponytail@ponytail": false, "mattpocock-skills@claude-plugins-official": false, "claude-mem@thedotmack": false}
@@ -267,7 +321,8 @@ every Claude Code reviewer, closer and investigator this map:
 
 Claude-mem records member sessions. A read-only member that keeps it reads the
 other members' findings back through injected memory, so the reviews stop
-being independent.
+being independent. A plan reviewer that keeps it reads other sessions'
+findings on earlier plans, and is no longer fresh.
 
 Turn `mattpocock-skills` on for an investigator that hunts a bug, and name
 `diagnosing-bugs` phases 1 to 3 (no fix) in its brief. Tell it to build the
@@ -340,7 +395,9 @@ so repeat it in every `--add` spec.
 **Every coding member needs `setup`.** A fresh worktree has no dependencies
 and no environment files, so a member without `setup` burns its budget on a
 broken checkout. `setup` runs in the member's directory, with that directory
-as its first argument, before the tab opens. A `setup` at the top of the spec
+as its first argument, before the tab opens. Launch also gives it the
+variables `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE`, `TEAMWIRE_HOME` and
+`TEAMWIRE_CHILD_CWD`. A `setup` at the top of the spec
 covers the worktree members of that spec file only, so repeat it in every
 `--add` spec, or set it per member. `"setup": ""` opts a member out. A
 non-zero exit prints `failed:` and removes the worktree, so the same role,
@@ -387,15 +444,19 @@ these sections:
 14. **Open questions you must not answer.**
 
 **Contract-first splits.** When one feature is split across members, the
-contract is a real module committed to the base branch before launch: shared
-types, function signatures, and doc comments that carry the reasoning. Cut
-every member's branch from that commit, and set every member's `base` to the
-base branch. For a risky change, also commit failing acceptance tests there
-first. In a 2026 study of LLM test generation, tests written without seeing
-the code found 25% of seeded faults, and tests written after faulty code
-found 14%. When you find a hole in the contract mid-run, fix it on the base
-branch, commit, and send each affected member this one message, never a prose
-description:
+contract is a real module that exists before the feature members start:
+shared types, function signatures, and doc comments that carry the
+reasoning. You design it in the plan, down to each signature. A `contract`
+implementer commits it, alone in the first wave, on the branch
+`<team>/contract-base`. Its `owns` lists the contract's files, and its
+`check` builds them without running the new tests. Cut every other member's
+branch from that branch, and set every member's `base` to it. For a risky
+change, the contract member also commits failing acceptance tests there. In
+a 2026 study of LLM test generation, tests written without seeing the code
+found 25% of seeded faults, and tests written after faulty code found 14%.
+Keep the contract member open until the team closes. When you find a hole in
+the contract mid-run, reprompt the contract member to fix it and commit.
+Then send each affected member this one message, never a prose description:
 
 ```bash
 teamwire send <team> --to api,web --type note --text \
@@ -403,8 +464,8 @@ teamwire send <team> --to api,web --type note --text \
 ```
 
 `verify` skips merge commits. It starts its `owns` diff after the merged
-amendment only when `base` names the base branch. Without `base`, it flags the
-amended files as outside `owns`.
+amendment only when `base` names the contract branch. Without `base`, it
+flags the amended files as outside `owns`.
 
 ## Launch
 
@@ -458,6 +519,24 @@ mistyped or closed team, so check the name with `teamwire teams` first. Any
 other `refused.identity` means this session is not the team's recorded lead.
 Run `teamwire lead --adopt <team>`, then call again.
 
+## Your context holds the design
+
+You are the one session that holds the whole plan and the user's decisions.
+Every file you read stays in your context for the rest of the run, and a lead
+with a full context decides worse. Spend your context on the design:
+
+- Read code and docs yourself only to design: to argue the plan with the
+  user, to write a brief, or to settle a disagreement between members.
+- Pass work by path. A brief or a reprompt names files. Never paste a
+  report, a diff or a log into a message.
+- Read a member's result file and the summary at the top of its report.
+  Read further only when two members contradict each other, and then only
+  the lines in dispute.
+- Never read a raw diff, check output or a gate log. The integrator and the
+  closer read those. `teamwire verify` prints one verdict per member.
+- Members read each other's files by path. A reviewer reads the brief and the
+  diff, and each owner reads its own findings.
+
 ## While the team runs
 
 ### Watching for the failures nobody sees
@@ -477,13 +556,28 @@ for a result typed into your pane. It still prints `DECLARED`, `UNDELIVERED`
 or `UNCONFIRMED` when delivery lags or fails. "Watch lines" in `reference.md`
 explains each line.
 
+Every watch line carries the time it was printed, in UTC:
+`[teamwire:<team> 17:24:07Z] WATCHING 3 members`. Read that time before you
+act on the line. A line printed before your last `launch --add` or reprompt
+describes the team as it was then, not as it is now, so check it against
+`teamwire status` instead of acting on it. `date -u +%T` gives the current
+UTC time. The lines for a member's result, a message, and your own hooks
+carry no time.
+
 `Monitor` stops a command after 5 minutes by default and 30 at most. When it
 reports that the watch expired, restart it at once, unless it printed
 `TEAM-COMPLETE` and no wave is due. A running watch picks up members added
 with `--add`, but a watch that printed `TEAM-COMPLETE` has exited, so start a
-new one after a later `--add`. If you end a turn while a member works and no
-watch runs, your Stop hook holds your stop once with the line below. While no
-watch runs, a member's result line also ends with
+new one after a later `--add`. A watch started in the same turn as a
+`launch --add` keeps running, because the poll that prints `WATCHING` never
+prints `TEAM-COMPLETE`. That poll reads the roster a moment before it
+prints, so a member whose row is written inside that moment is still missed
+(ADR 0037). Run `teamwire status` when you need to be sure the member you
+have just added is watched.
+
+If you end a turn while a member works and no watch runs, your Stop hook
+holds your stop once with the line below. While no watch runs, a member's
+result line also ends with
 `(no watch is running: teamwire watch <team>)`.
 
 ```
@@ -521,8 +615,9 @@ missing. A member's "tests pass" is a claim, not evidence.
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
-Reviewers and closers send nothing, and only their own lead may message them,
-so their look at the work stays fresh. teamwire enforces every rule here.
+Reviewers, plan reviewers and closers send nothing, and only their own lead
+may message them, so their look at the work stays fresh. teamwire enforces
+every rule here.
 
 ```bash
 teamwire send <team> --to <role[,role]|lead> --type <type> --text "..."   # or --file PATH
@@ -536,7 +631,7 @@ teamwire log <team> [--role ROLE]
 | `question` | The asker keeps working. With no answer when it would finish, it decides and lists the choice under Decisions I made. At most 800 characters. |
 | `answer` | From the question's recipient to the asker, with `--re <question id>`. At most 800 characters. |
 | `reprompt` | From you to a member of your team: new work. It starts the member's next generation, so the watch watches it again and its next finish is a new result. |
-| `note` | From you to a member of your team: information with no new work, such as a commit you made on its branch. |
+| `note` | From you to a member of your team: information with no new work, such as a contract amendment to merge. |
 
 `send` stores the message under the team's `comms/` directory, even when
 delivery fails. Then it types one line into each recipient's pane: the whole
@@ -632,7 +727,7 @@ Remove a member once it can no longer be useful, with
 | --- | --- |
 | investigator | Once the closer's findings on it are resolved. With no closer, once the members that may ask it questions have finished. |
 | implementer | Once `teamwire verify <team> --role <role>` passes and the closer's findings on it are resolved. |
-| reviewer, closer | Once you have read its report and acted on it. |
+| reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
@@ -653,7 +748,7 @@ and the reports.
 
 **Cap retries at two.** The cap is for a member that failed the same task
 twice, not for review rounds. That member needs a better brief, not a third
-attempt or higher effort. Rewrite the task yourself.
+attempt or higher effort. Rewrite its brief yourself.
 
 **Replace rather than rescue.** Remove the member with
 `teamwire close <team> --role <role> --unverified --stop`, and tell the user.
@@ -714,16 +809,29 @@ off at the `CONTEXT` line.
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
 of a dependent set is not this point, and neither is an implementer finishing
-before its reviewer has run. Parallel tickets each become their own pull
-request and are never merged into each other, so skip step 4 and run step 5
-on each branch in its own worktree. Every other shape that writes code
-becomes one tree that passes the full gate.
+before its reviewer has run. You run none of the steps below yourself:
+members merge, build, test and push, and you judge what they report.
 
-1. **From about four members up, add the closer first.** Use the `closer`
+1. **Add the integrator when branches join.** Parallel tickets each become
+   their own pull request and are never merged into each other, and a lone
+   implementer's branch is already the deliverable, so neither gets an
+   integrator. Every other shape that writes code becomes one tree that
+   passes the full gate. Start the integrator from
+   `teamwire preset integrator` and add it with `--add`. It merges each
+   branch in the plan's order on its own branch, and its `check` is the full
+   gate, the one members were told to skip. It reports per branch, never as
+   one total, because an aggregate green hides a branch that is green only
+   because it has no tests. It decides nothing and resolves no conflict. On
+   a conflict it aborts that merge and reports it. Reprompt the later
+   branch's owner to merge the earlier branch into its own branch and
+   resolve it, then reprompt the integrator. A clean merge is not evidence,
+   because parts that pass alone can fail together.
+2. **Add the closer to every team that wrote code.** Use the `closer`
    preset, add it to the finished team with `--add`, and start a new watch.
    The closer runs `teamwire verify` and every claimed check, on each
-   member's branch and again on the joined head when one exists, and records
-   real exit codes. It works in one clone it makes at
+   member's branch and again on the joined head, the integrator's branch,
+   when one exists, and records real exit codes. It works in one clone it
+   makes at
    `$TEAMWIRE_HOME/cache/closer/<team>/clone`. Members can have different
    setups, so the closer runs each member's `setup` there once, the first
    time it checks that member, with the clone's path as its first argument,
@@ -739,13 +847,13 @@ becomes one tree that passes the full gate.
    test that passed without its fix. Spotify calls code that "passes CI but is
    functionally incorrect" "the most serious error". At Bun, Claude read "get
    all the crates to compile" as "stub out the functions with compilation
-   errors". The closer names contradictions, writes one report, and cannot
-   send work. Read its report, then a member's result only where it points.
-   Below four members, read every result and report yourself before touching
-   a branch. Either way, compare every **Decisions I made** list side by
-   side with `teamwire decisions <team>`. Two members that decided one
-   question differently are a bug waiting to happen.
-2. **Triage, then run the fix round.** The closer grades each finding (wrong
+   errors". The closer also runs the repository's full gate on each branch
+   that no integrator joins. It names contradictions, writes one report, and
+   cannot send work. Read its report, then a member's result only where it
+   points. Compare every **Decisions I made** list side by side with
+   `teamwire decisions <team>`. Two members that decided one question
+   differently are a bug waiting to happen.
+3. **Triage, then run the fix round.** The closer grades each finding (wrong
    conclusion, wrong detail, or wording) and names its member. Decide which
    findings hold first. In a study of LLM code reviewers (Jin and Chen, 2026),
    an LLM judging correct short functions against their requirement rejected
@@ -763,17 +871,19 @@ becomes one tree that passes the full gate.
    Hand off a member that is past its handoff point before you send it a
    reprompt with findings, so the fixes run in a fresh context.
 
-   The owner checks each finding against the code, fixes what holds, and
-   answers with evidence where it does not. Confirm each fix with
-   `teamwire verify <team> --role <owner>`. Allow one fresh review, then at
-   most two fix rounds by the owner, and never a second review of the same
-   diff. Do not run the closer again, and do not hand the corrections to a
+   The owner checks each finding against the code, fixes what holds on its
+   own branch, and answers with evidence where it does not. Even a one-line
+   fix goes to its owner. Confirm each fix with
+   `teamwire verify <team> --role <owner>`, then reprompt the integrator to
+   merge the new commits and run the full gate again. Allow one fresh review,
+   then at most two fix rounds by the owner, and never a second review of the
+   same diff. Do not run the closer again, and do not hand the corrections to a
    fork of yourself. A fix round is the normal case, not a failure: 54% of
    reviewed implementers in teamwire's own runs got one. Cognition has Devin
    and Devin Review "natively iterate against one another", Shopify's
    checkpoints must pass two adversarial reviewers, and Stripe allows "at most
    two rounds of CI". Tell the user the closer's grades as it wrote them.
-3. **Run the check that judges the branches**, for every member or for one:
+4. **Run the check that judges the branches**, for every member or for one:
 
    ```bash
    teamwire verify <team>
@@ -790,7 +900,7 @@ becomes one tree that passes the full gate.
    for a file that lost assert lines, and `head-moved` when a commit landed
    while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
    `SKIPPED`. A brief may have asked for a flagged change, so read every
-   flag, and never merge past one you have not read.
+   flag, and let no branch merge past one you have not read.
    `teamwire verify <team> --role R --waive FLAG --reason TEXT`
    waives one flag, named as verify prints it in brackets, at the member's
    current HEAD. A later commit needs a new waiver. `uncommitted:<path>` is
@@ -798,27 +908,17 @@ becomes one tree that passes the full gate.
    be waived: run verify again. `--deep` adds the database
    integrity check and a check of every message hash.
 
-   Your own commits show up here. A commit you make on a member's branch
-   raises `report-no-line:<sha>`, and `outside-owns:<path>` for each file
-   outside the member's `owns`. A merge of another member's branch into it
-   raises `outside-owns` for that branch's files, unless the member's `base`
-   names that branch, so set `base` on stacked branches. In the same turn,
-   waive the flags your commit caused, and send the member a `note` asking
-   for a progress line that names the commit. In teamwire's own runs,
+   A commit on a member's branch that the member did not make raises
+   `report-no-line:<sha>`, and `outside-owns:<path>` for each file outside
+   the member's `owns`. A merge of another member's branch into it raises
+   `outside-owns` for that branch's files, unless the member's `base` names
+   that branch, so set `base` on stacked branches. In teamwire's own runs,
    `verify` recorded 426 outside-owns flags in 21 teams. Those runs' closers
    traced them to the lead's own merges and commits, a tracing nobody has
-   re-checked.
-4. **Make an integration worktree** off the base branch, and merge each branch
-   in the plan's order. A clean merge is not evidence, because parts that pass
-   alone can fail together.
-5. **Run the full gate there**, the one members were told to skip. Report per
-   branch, never as one total, because an aggregate green hides a branch that
-   is green only because it has no tests.
-6. **Fix on the owning member's branch**, not the integration branch. Make a
-   one-line fix yourself rather than re-dispatching a finished member. Then
-   waive its flags and send the `note`, as in step 3.
-7. **Merge into the feature branch and open the pull request**, or one per
-   branch for parallel tickets. Watch them with `Monitor` and
+   re-checked. The merges now belong to the integrator.
+5. **Open the pull requests once the user agrees.** Reprompt the integrator,
+   or each owner for parallel tickets and a lone implementer, to push its
+   branch and open its pull request. Watch them with `Monitor` and
    `timeout_ms: 1800000`:
 
    ```bash
@@ -830,22 +930,25 @@ becomes one tree that passes the full gate.
    and in the end a `DONE` line per pull request, or `MERGED` or `CLOSED`
    when that happened first. A `DONE` line that ends with
    `(merge state: ...)` names a state other than clean, such as `BLOCKED`, so
-   read it before you merge. One that adds `(required, never reported: ...)`
+   read it before anyone merges. One that adds `(required, never reported: ...)`
    names required checks that never ran. After 3 polls with no answer from
    `gh`, it prints `UNREADABLE` once per outage. A pull request or repo that
    does not exist prints `NOT-FOUND` and counts as done and failed. It exits
    when every pull request is done, with code 1 when a check failed, a pull
    request was `NOT-FOUND`, or a required check never reported and the merge
    state is not clean.
-8. **Run one more round on the pull request.** Send each owner its share of
-   the bot and CI comments as one more reprompt. Keep the owners open until
-   this round is done.
+6. **Run one more round on the pull request.** Send each owner its share of
+   the bot and CI comments as one more reprompt, then reprompt the
+   integrator to merge the fixes. Keep the owners and the integrator open
+   until this round is done.
 
 Give mechanical work over the reports, such as a table or a digest, to a
 fresh subagent on a cheaper model than yours, with only the file paths. Never
 give it to a fork of yourself. Avoid an always-on coordinator between you and
 the members, because it decides with less context than you have and then acts
-on it. The closer runs once, at the end, and only reports.
+on it. The closer runs once, at the end, and only reports. The integrator
+is no coordinator either: it merges in the order you set and decides
+nothing.
 
 ## Closing a team down
 

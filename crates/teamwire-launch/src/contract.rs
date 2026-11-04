@@ -12,6 +12,7 @@ const KIND_IMPLEMENTER: &str = include_str!("../contracts/kind_implementer.md");
 const KIND_REVIEWER: &str = include_str!("../contracts/kind_reviewer.md");
 const KIND_INVESTIGATOR: &str = include_str!("../contracts/kind_investigator.md");
 const KIND_CLOSER: &str = include_str!("../contracts/kind_closer.md");
+const KIND_PLAN_REVIEWER: &str = include_str!("../contracts/kind_plan_reviewer.md");
 const SCOPE_HEAD: &str = include_str!("../contracts/scope_head.md");
 const SCOPE_OWNS: &str = include_str!("../contracts/scope_owns.md");
 const SCOPE_CHECK: &str = include_str!("../contracts/scope_check.md");
@@ -50,6 +51,7 @@ fn kind_text(kind: MemberKind) -> &'static str {
         MemberKind::Reviewer => KIND_REVIEWER,
         MemberKind::Investigator => KIND_INVESTIGATOR,
         MemberKind::Closer => KIND_CLOSER,
+        MemberKind::PlanReviewer => KIND_PLAN_REVIEWER,
     }
 }
 
@@ -69,21 +71,23 @@ fn scope(check: Option<&str>, owns: &[String]) -> String {
 }
 
 /// Every member that talks sends every kind of information, to its own team
-/// and to other teams (MSG-1, MSG-20); a reviewer or closer talks to no one.
+/// and to other teams (MSG-1, MSG-20); a quiet kind talks to no one.
 fn talking(kind: MemberKind) -> String {
     match kind {
-        MemberKind::Reviewer | MemberKind::Closer => TALKING_SILENT.to_owned(),
+        MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer => {
+            TALKING_SILENT.to_owned()
+        }
         MemberKind::Implementer | MemberKind::Investigator => {
             [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
         }
     }
 }
 
-/// How a member reaches the parent with a question. A reviewer or closer may
-/// send no message (MSG-3), so its question goes in its report file.
+/// How a member reaches the parent with a question. A quiet kind may send no
+/// message (MSG-3), so its question goes in its report file.
 fn ask_the_parent(kind: MemberKind) -> String {
     let ask = match kind {
-        MemberKind::Reviewer | MemberKind::Closer => TOGETHER_ASK_REPORT,
+        MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer => TOGETHER_ASK_REPORT,
         MemberKind::Implementer | MemberKind::Investigator => TOGETHER_ASK_MESSAGE,
     };
     [TOGETHER, ask].concat()

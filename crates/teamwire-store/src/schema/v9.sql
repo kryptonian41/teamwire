@@ -1,62 +1,56 @@
--- teamwire schema version 9: a team records the tickets it works on
--- (ADR 0034), and a new event type, `team.refs_added`, records refs that a
--- later `launch --add` appended. The column holds a JSON array of
--- `{"provider": ..., "id": ...}` objects in first-recorded order; a team
--- launched without refs holds `[]`.
+-- teamwire schema version 9: a fifth member kind, `plan_reviewer`, reads
+-- the lead's plan and every brief before any implementer starts (ADR 0034).
+-- The `members.kind` CHECK is a closed list and SQLite cannot change a
+-- CHECK in place, so the table is rebuilt: `members_new` is created with
+-- the longer list and otherwise exactly as version 1 created `members`,
+-- every row is copied column by column, the old table is dropped, and the
+-- new one takes its name. The migration runs inside the one transaction
+-- that also sets `user_version`, so a crash before the commit leaves
+-- version 8 untouched.
 --
--- The `events.type` CHECK is a closed list and SQLite cannot change a CHECK
--- in place, so the table is rebuilt exactly as versions 4, 6, 7 and 8
--- rebuilt it: the old one is renamed, the new one is created with the
--- longer list, and every row is copied with its `seq`. The migration runs
--- inside the one transaction that also sets `user_version`, so a crash
--- before the commit leaves version 8 untouched.
---
--- Nothing else refers to `events` (no foreign key, trigger or view), so
--- the rename rewrites no other object. The `AUTOINCREMENT` counter lives in
--- `sqlite_sequence` under the table's name. The rename carries it to
--- `events_old`, the copy leaves it at the highest copied `seq`, and the
--- UPDATE restores the old value, which is higher when the newest rows were
--- deleted. A `seq` already given out, and already read by `metric_export`,
--- is never given out again.
+-- This is not the `events` rebuild of versions 4, 6, 7 and 8, which renames
+-- the old table first. `completions`, `verify_records` and `waivers` refer
+-- to `members (role)` by foreign key, and renaming `members` rewrites those
+-- references to follow the old table, which is then dropped. Renaming
+-- `members_new` instead leaves them naming `members` throughout. Dropping
+-- `members` while their rows still name it would fail with foreign key
+-- checks on, so `migrate` turns the checks off before its transaction and
+-- runs `PRAGMA foreign_key_check` before the commit.
 
-ALTER TABLE team ADD COLUMN refs TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(refs));
-
-ALTER TABLE events RENAME TO events_old;
-
-CREATE TABLE events (
-    seq            INTEGER PRIMARY KEY AUTOINCREMENT,
-    ulid           TEXT    NOT NULL UNIQUE,
-    time           TEXT    NOT NULL,
-    type           TEXT    NOT NULL CHECK (type IN (
-        'team.created', 'team.closing', 'team.closed', 'team.lead_adopted',
-        'team.refs_added',
-        'member.creating', 'member.started', 'member.failed', 'member.refused',
-        'member.replaced',
-        'member.removed', 'member.reprompted', 'member.handoff', 'member.completed',
-        'member.completion_refused', 'member.held',
-        'message.sent', 'message.refused',
-        'delivery.handed_off', 'delivery.unconfirmed', 'delivery.undelivered',
-        'delivery.acked', 'delivery.reminded', 'delivery.resent',
-        'delivery.reentered', 'delivery.recipient_stopped',
-        'result.delivering', 'result.delivered', 'result.undelivered', 'result.unconfirmed',
-        'watch.started', 'watch.line', 'watch.stopped',
-        'verify.recorded', 'verify.waived',
-        'close.step', 'close.refused',
-        'store.error')),
-    role           TEXT,
-    subject        TEXT,
-    data           TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(data)),
-    writer_version TEXT    NOT NULL
+CREATE TABLE members_new (
+    role                 TEXT    PRIMARY KEY,
+    title                TEXT    NOT NULL,
+    kind                 TEXT    NOT NULL CHECK (kind IN ('implementer', 'reviewer', 'investigator', 'closer', 'plan_reviewer')),
+    mode                 TEXT    NOT NULL CHECK (mode IN ('worktree', 'pane')),
+    harness              TEXT    NOT NULL,
+    host                 TEXT    NOT NULL,
+    place                TEXT,
+    session_id           TEXT,
+    token_sha256         BLOB    CHECK (token_sha256 IS NULL OR length(token_sha256) = 32),
+    cwd                  TEXT    NOT NULL,
+    repo                 TEXT,
+    branch               TEXT,
+    base                 TEXT,
+    base_sha             TEXT,
+    check_cmd            TEXT,
+    owns                 TEXT    NOT NULL DEFAULT '[]' CHECK (json_valid(owns)),
+    deadline_s           INTEGER NOT NULL CHECK (deadline_s > 0),
+    state                TEXT    NOT NULL CHECK (state IN ('creating', 'started', 'failed', 'removed')),
+    generation           INTEGER NOT NULL CHECK (generation >= 1),
+    gen_started_at       TEXT    NOT NULL,
+    gate_told_generation INTEGER,
+    removed_at           TEXT,
+    removed_note         TEXT
 ) STRICT;
 
-INSERT INTO events (seq, ulid, time, type, role, subject, data, writer_version)
-    SELECT seq, ulid, time, type, role, subject, data, writer_version FROM events_old;
+INSERT INTO members_new (role, title, kind, mode, harness, host, place, session_id,
+        token_sha256, cwd, repo, branch, base, base_sha, check_cmd, owns, deadline_s,
+        state, generation, gen_started_at, gate_told_generation, removed_at, removed_note)
+    SELECT role, title, kind, mode, harness, host, place, session_id,
+        token_sha256, cwd, repo, branch, base, base_sha, check_cmd, owns, deadline_s,
+        state, generation, gen_started_at, gate_told_generation, removed_at, removed_note
+    FROM members;
 
-UPDATE sqlite_sequence
-   SET seq = (SELECT seq FROM sqlite_sequence WHERE name = 'events_old')
- WHERE name = 'events'
-   AND seq < (SELECT seq FROM sqlite_sequence WHERE name = 'events_old');
+DROP TABLE members;
 
-DROP TABLE events_old;
-
-CREATE INDEX events_type ON events (type);
+ALTER TABLE members_new RENAME TO members;

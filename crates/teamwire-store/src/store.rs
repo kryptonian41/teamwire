@@ -5,7 +5,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use rusqlite::{Connection, OpenFlags, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use teamwire_core::{TeamName, Timestamp};
 
 use crate::error::StoreError;
@@ -13,7 +13,7 @@ use crate::older::show_missing_columns;
 use crate::tx::{ReadTx, Tx};
 use crate::{
     SCHEMA_V1_SQL, SCHEMA_V2_SQL, SCHEMA_V3_SQL, SCHEMA_V4_SQL, SCHEMA_V5_SQL, SCHEMA_V6_SQL,
-    SCHEMA_V7_SQL, SCHEMA_V8_SQL, SCHEMA_V9_SQL, SCHEMA_VERSION,
+    SCHEMA_V7_SQL, SCHEMA_V8_SQL, SCHEMA_V9_SQL, SCHEMA_V10_SQL, SCHEMA_VERSION,
 };
 
 /// `PRAGMA application_id` of every teamwire database: the ASCII bytes
@@ -44,6 +44,7 @@ pub(crate) const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [
     SCHEMA_V7_SQL,
     SCHEMA_V8_SQL,
     SCHEMA_V9_SQL,
+    SCHEMA_V10_SQL,
 ];
 
 /// One team's database. One `rusqlite::Connection`, never shared across
@@ -447,13 +448,29 @@ fn apply_pragmas(conn: &Connection) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// Brings the database to `SCHEMA_VERSION` in one transaction. The state is
-/// read again after the write lock is taken, because another process may
-/// have migrated (or created the file) in between.
+/// Brings the database to `SCHEMA_VERSION` in one transaction, with foreign
+/// key checks off while the steps run (ADR 0034). A step that rebuilds a
+/// table other tables refer to must drop the old table while their rows
+/// still name it, which the checks refuse. `SQLite` ignores the pragma
+/// inside a transaction, so it is turned off before the transaction begins
+/// and on again after it ends, whichever way it ends. When both the
+/// migration and turning the checks back on fail, the migration's error is
+/// the one returned: the open fails and drops the connection either way.
 fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     if found(conn)? == Found::Ours(SCHEMA_VERSION) {
         return Ok(());
     }
+    conn.execute_batch("PRAGMA foreign_keys = OFF;")?;
+    let migrated = run_steps(conn);
+    let restored = conn.execute_batch("PRAGMA foreign_keys = ON;");
+    migrated.and(restored.map_err(StoreError::from))
+}
+
+/// The migration transaction. The state is read again after the write lock
+/// is taken, because another process may have migrated (or created the
+/// file) in between. Every key is checked before the commit, because the
+/// steps ran with the checks off.
+fn run_steps(conn: &mut Connection) -> Result<(), StoreError> {
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let from = match found(&tx)? {
         Found::Foreign => return Err(StoreError::NotTeamwire),
@@ -466,10 +483,36 @@ fn migrate(conn: &mut Connection) -> Result<(), StoreError> {
     for step in MIGRATIONS.iter().skip(from as usize) {
         tx.execute_batch(step)?;
     }
+    check_foreign_keys(&tx)?;
     tx.pragma_update(None, "application_id", APPLICATION_ID)?;
     tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     tx.commit()?;
     Ok(())
+}
+
+/// Fails on the first row whose foreign key names a row that is not there.
+/// The store writes with the checks on, so such a row was either left by a
+/// wrong step or was already in a damaged file. Either way the file is not
+/// migrated.
+fn check_foreign_keys(conn: &Connection) -> Result<(), StoreError> {
+    let broken = conn
+        .query_row("PRAGMA foreign_key_check", [], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, Option<i64>>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .optional()?;
+    match broken {
+        None => Ok(()),
+        Some((table, rowid, parent)) => {
+            let row = rowid.map_or_else(String::new, |id| format!(" {id}"));
+            Err(StoreError::Corrupt(format!(
+                "{table} row{row} names a {parent} row that does not exist"
+            )))
+        }
+    }
 }
 
 fn check_version_not_newer(db: u32) -> Result<(), StoreError> {
@@ -592,5 +635,52 @@ mod build_identity_tests {
         assert_eq!(version, env!("CARGO_PKG_VERSION"), "{WRITER_VERSION}");
         let is_commit = commit.len() == 12 && commit.bytes().all(|b| b.is_ascii_hexdigit());
         assert!(is_commit || commit == "unknown", "{WRITER_VERSION}");
+    }
+}
+
+#[cfg(test)]
+mod migrate_tests {
+    use rusqlite::Connection;
+    use teamwire_fakes::TestHome;
+
+    use super::{MIGRATIONS, apply_pragmas, migrate};
+
+    /// `migrate` turns foreign key checks off around its transaction. A
+    /// migration that fails must not hand back a connection that still has
+    /// them off, even though the failed open drops it.
+    #[test]
+    fn a_failed_migration_turns_foreign_key_checks_back_on() {
+        let home = TestHome::new().unwrap();
+        let path = home.path().join("team.db");
+        {
+            // A version-7 database with an event whose type no list holds,
+            // so the step that rebuilds `events` fails partway through.
+            let conn = Connection::open(&path).unwrap();
+            for step in MIGRATIONS.iter().take(7) {
+                conn.execute_batch(step).unwrap();
+            }
+            conn.pragma_update(None, "application_id", crate::APPLICATION_ID)
+                .unwrap();
+            conn.pragma_update(None, "user_version", 7).unwrap();
+            conn.execute_batch(
+                "PRAGMA ignore_check_constraints = ON;
+                 INSERT INTO events (ulid, time, type, writer_version)
+                 VALUES ('01J9ZQ000000000000000EVT07', '2026-10-01T00:00:07.000Z', 'not.a.type', 'x');",
+            )
+            .unwrap();
+        }
+        let mut conn = Connection::open(&path).unwrap();
+        apply_pragmas(&conn).unwrap();
+
+        assert!(migrate(&mut conn).is_err());
+
+        let on: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(on, 1);
+        let version: u32 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, 7);
     }
 }

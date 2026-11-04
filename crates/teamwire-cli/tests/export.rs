@@ -23,14 +23,16 @@ use serde_json::Value;
 use teamwire_core::{Clock, CompletionStatus, DeliveryState, HoldInfo, Pid};
 use teamwire_store::{NewVerifyRecord, Waiver};
 
+/// `teamwire export` with a cleared environment, so only `as_member` decides
+/// whether the binary sees a member. The tests often run inside a member's
+/// session, whose identity variables would otherwise reach the binary.
 fn export(bed: &Bed, as_member: bool) -> std::process::Output {
     let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"));
     cmd.arg("--home")
         .arg(bed.home.path())
         .args(["export", "alpha"])
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_ROLE")
-        .env_remove("TEAMWIRE_TEAM");
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin");
     if as_member {
         cmd.env("TEAMWIRE_TEAM", "alpha")
             .env("TEAMWIRE_ROLE", "api");

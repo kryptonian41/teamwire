@@ -30,6 +30,7 @@ const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
     &[],
     &[],
+    &[],
     &[("team", "refs")],
 ];
 

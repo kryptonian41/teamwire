@@ -35,12 +35,12 @@ pub struct TeamSpec {
     /// `DEFAULT_HANDOFF_PCT` of the model's window. Launch refuses 0.
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
-    /// Tickets the team works on (ADR 0034).
+    /// Tickets the team works on (ADR 0038).
     #[serde(default)]
     pub refs: Vec<TicketRef>,
 }
 
-/// The most refs a team holds after any `--add` (ADR 0034). `validate` checks
+/// The most refs a team holds after any `--add` (ADR 0038). `validate` checks
 /// it for a dry run, and `Tx::add_refs` checks it again under the write lock.
 pub const REFS_MAX: usize = 20;
 

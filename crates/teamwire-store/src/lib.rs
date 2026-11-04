@@ -52,7 +52,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -85,10 +85,15 @@ pub const SCHEMA_V7_SQL: &str = include_str!("schema/v7.sql");
 /// `delivery.recipient_stopped` type in its CHECK list. Every row is kept.
 pub const SCHEMA_V8_SQL: &str = include_str!("schema/v8.sql");
 
-/// The step from schema version 8 to 9: the `team.refs` column, and the
+/// The step from schema version 8 to 9: the `members` table rebuilt with the
+/// `plan_reviewer` kind in its CHECK list. Every row is kept, and the
+/// foreign keys of other tables still name `members`.
+pub const SCHEMA_V9_SQL: &str = include_str!("schema/v9.sql");
+
+/// The step from schema version 9 to 10: the `team.refs` column, and the
 /// `events` table rebuilt with the `team.refs_added` type in its CHECK list.
 /// Every row is kept.
-pub const SCHEMA_V9_SQL: &str = include_str!("schema/v9.sql");
+pub const SCHEMA_V10_SQL: &str = include_str!("schema/v10.sql");
 
 #[cfg(test)]
 mod tests {

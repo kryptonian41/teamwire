@@ -56,16 +56,36 @@ pub(crate) struct Ran {
     pub(crate) stderr: String,
 }
 
-/// Runs `sh -c command` with the settings' `env` on top of this process's
-/// environment, `stdin` on its standard input, and waits. The command runs
-/// in a process group of its own, and `step_file` (if any) holds the group's
-/// id while it runs, so whoever ends the agent can end the group too. When
-/// `owner` is gone the group is ended and the call returns exit code -1, so
-/// a command that never returns cannot outlive the test that started it.
+/// What the shell runs first: it waits for one line on its standard input,
+/// the go-ahead, then becomes `sh -c <command>` in the same process, so `$$`
+/// stays the group's id. If fake-claude dies before it sends the go-ahead,
+/// the pipe closes, `read` fails, and the command never runs.
+const GATE: &str = r#"IFS= read -r _ || exit 125; exec /bin/sh -c "$1""#;
+
+/// `sh -c command` behind `GATE`, in a process group of its own.
 #[expect(
     clippy::disallowed_methods,
     reason = "fake-claude runs the shell steps and hooks of its script; this crate may start processes"
 )]
+fn gated_shell(command: &str, env: &[(String, String)]) -> std::process::Command {
+    let mut cmd = std::process::Command::new("/bin/sh");
+    cmd.args(["-c", GATE, "sh", command])
+        .envs(env.iter().map(|(k, v)| (k, v)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0);
+    cmd
+}
+
+/// Runs `sh -c command` with the settings' `env` on top of this process's
+/// environment, `stdin` on its standard input, and waits. The command runs
+/// in a process group of its own, and `step_file` (if any) holds the group's
+/// id while it runs, so whoever ends the agent can end the group too. The
+/// id is on record before the command starts (`GATE`): an agent ended at any
+/// moment leaves no step running that nobody can find. When `owner` is gone
+/// the group is ended and the call returns exit code -1, so a command that
+/// never returns cannot outlive the test that started it.
 pub(crate) fn run_shell(
     command: &str,
     env: &[(String, String)],
@@ -73,19 +93,7 @@ pub(crate) fn run_shell(
     owner: &mut Owner,
     step_file: Option<&Path>,
 ) -> Ran {
-    let mut cmd = std::process::Command::new("/bin/sh");
-    cmd.arg("-c")
-        .arg(command)
-        .envs(env.iter().map(|(k, v)| (k, v)))
-        .stdin(if stdin.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
-    let mut child = match cmd.spawn() {
+    let mut child = match gated_shell(command, env).spawn() {
         Ok(c) => c,
         Err(e) => {
             return Ran {
@@ -95,12 +103,17 @@ pub(crate) fn run_shell(
             };
         }
     };
-    if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
-        // The child may exit without reading; a broken pipe is fine.
-        pipe.write_all(text.as_bytes()).ok();
-    }
     if let Some(file) = step_file {
         fsutil::write_atomic(file, child.id().to_string().as_bytes()).ok();
+    }
+    if let Some(mut pipe) = child.stdin.take() {
+        // The go-ahead, then the input. Dropping the pipe ends the input, as
+        // /dev/null did. The child may exit without reading; a broken pipe
+        // is fine.
+        pipe.write_all(b"\n").ok();
+        if let Some(text) = stdin {
+            pipe.write_all(text.as_bytes()).ok();
+        }
     }
     let stdout = child.stdout.take().map(drain);
     let stderr = child.stderr.take().map(drain);
@@ -225,6 +238,38 @@ mod tests {
             None,
         );
         assert_eq!((ran.code, ran.stdout.as_str()), (0, "yes:in"));
+    }
+
+    /// fake-claude dying before the go-ahead closes the pipe, as dropping it
+    /// does here: the shell exits and its command never runs.
+    #[test]
+    fn a_shell_never_runs_its_command_without_the_go_ahead() {
+        let dir = tempfile::tempdir().unwrap();
+        let ran = dir.path().join("ran");
+        let mut child = gated_shell(&format!("touch '{}'", ran.display()), &[])
+            .spawn()
+            .unwrap();
+        drop(child.stdin.take());
+        assert_eq!(child.wait().unwrap().code(), Some(125));
+        assert!(!ran.exists(), "the command ran without the go-ahead");
+    }
+
+    /// Whoever ends the agent finds the step's group in the step file, so the
+    /// file must name the group before the command can do anything.
+    #[test]
+    fn the_step_file_names_the_group_before_the_command_runs() {
+        let dir = tempfile::tempdir().unwrap();
+        let step_file = dir.path().join("step.pgid");
+        let env = vec![("STEP".to_owned(), step_file.display().to_string())];
+        let ran = run_shell(
+            r#"[ "$(cat "$STEP")" = "$$" ] && echo recorded"#,
+            &env,
+            None,
+            &mut Owner::from_env(),
+            Some(&step_file),
+        );
+        assert_eq!((ran.code, ran.stdout.as_str()), (0, "recorded\n"));
+        assert!(!step_file.exists(), "the step file outlived its step");
     }
 
     #[test]

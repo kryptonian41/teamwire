@@ -50,7 +50,7 @@ pub struct TeamRow {
     pub afk_budget_ends_at: Option<Timestamp>,
     /// The tickets the team works on, in the order they were recorded. Empty
     /// for a team launched without refs and for a database older than
-    /// schema version 9.
+    /// schema version 10.
     pub refs: Vec<TicketRef>,
 }
 
@@ -68,7 +68,7 @@ const TEAM_COLS: &str = "ulid, name, title, state, closing_pid, lead_session_id,
      lead_harness, lead_host, lead_route, sleep_hold_pid, sleep_hold_owned, created_at, \
      closing_pid_started_at, afk_budget_ends_at, refs";
 
-/// A read-only view of a database older than version 9 shows `refs` as NULL.
+/// A read-only view of a database older than version 10 shows `refs` as NULL.
 fn refs_from_column(text: Option<String>) -> Result<Vec<TicketRef>, String> {
     text.map_or(Ok(Vec::new()), |t| {
         serde_json::from_str(&t).map_err(|e| bad("refs", e))
