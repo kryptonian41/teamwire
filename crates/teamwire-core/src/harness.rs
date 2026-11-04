@@ -18,6 +18,7 @@ use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
 use crate::strings::string_enum;
+use crate::tool_call::ToolCall;
 
 pub trait Harness: Send + Sync {
     fn id(&self) -> HarnessId;
@@ -69,6 +70,11 @@ pub trait Harness: Send + Sync {
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError>;
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
+    /// Parse the lead's tool hook stdin into the neutral form (ADR 0035).
+    /// The default is `Unsupported`, and the hook then says nothing.
+    fn parse_tool_call(&self, _stdin: &[u8]) -> Result<ToolCall, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether `line`, just submitted, still sits unsent in the input box

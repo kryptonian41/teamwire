@@ -1,5 +1,6 @@
 //! The member hooks run in-process against two fake harnesses, so a test can
-//! tell which harness a hook asked.
+//! tell which harness a hook asked. The lead's hooks run here too, and the
+//! tool hook also through the real harnesses' parsers.
 
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use teamwire_core::{
 use teamwire_fakes::{FakeClock, FakeHarness, TestHome};
 use teamwire_store::{NewMember, NewTeam};
 
+use super::lead::{lead_harness_of, lead_reads_watch_lines, lead_stop_in, lead_tool_in};
 use super::*;
 use crate::wiring::{WiringEnv, wire};
 use teamwire_core::SessionKind;
@@ -26,17 +28,9 @@ struct Bed {
     b: Arc<FakeHarness>,
 }
 
-/// A team whose only member `api` runs on `fake-b`, with a token and, when
-/// `session` is given, a recorded session.
-fn bed(session: Option<&str>) -> Bed {
-    let home = TestHome::new().unwrap();
-    let team = TeamName::parse("alpha").unwrap();
-    let role = Role::parse("api").unwrap();
-    let (a, b) = (
-        Arc::new(FakeHarness::with_id(HarnessId::from_static("fake-a"))),
-        Arc::new(FakeHarness::with_id(HarnessId::from_static("fake-b"))),
-    );
-    let mut wiring = wire(&WiringEnv {
+/// The wiring of a command run with no environment, with every real harness.
+fn real_wiring() -> Wiring {
+    wire(&WiringEnv {
         herdr_env: None,
         tmux: None,
         user_home: None,
@@ -50,7 +44,20 @@ fn bed(session: Option<&str>) -> Bed {
         codex_thread: None,
         pi_marker: None,
     })
-    .unwrap();
+    .unwrap()
+}
+
+/// A team whose only member `api` runs on `fake-b`, with a token and, when
+/// `session` is given, a recorded session.
+fn bed(session: Option<&str>) -> Bed {
+    let home = TestHome::new().unwrap();
+    let team = TeamName::parse("alpha").unwrap();
+    let role = Role::parse("api").unwrap();
+    let (a, b) = (
+        Arc::new(FakeHarness::with_id(HarnessId::from_static("fake-a"))),
+        Arc::new(FakeHarness::with_id(HarnessId::from_static("fake-b"))),
+    );
+    let mut wiring = real_wiring();
     wiring.registry = Registry::new();
     wiring.registry.add_harness(a.clone()).unwrap();
     wiring.registry.add_harness(b.clone()).unwrap();
@@ -280,4 +287,71 @@ fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
     let gone = TeamName::parse("gone").unwrap();
     assert_eq!(lead_harness_of(bed.home.path(), &gone), None);
     assert!(lead_reads_watch_lines(None, &bed.wiring));
+}
+
+fn lead_tool(
+    bed: &Bed,
+    wiring: &Wiring,
+    harness: Option<&str>,
+    input: &serde_json::Value,
+) -> Option<String> {
+    let reply = lead_tool_in(
+        harness,
+        bed.home.path(),
+        wiring,
+        &mut input.to_string().as_bytes(),
+    )?;
+    let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
+    let note = doc
+        .get("hookSpecificOutput")
+        .and_then(|o| o.get("additionalContext"))
+        .and_then(serde_json::Value::as_str);
+    Some(note.unwrap().to_owned())
+}
+
+#[test]
+fn the_lead_tool_hook_notes_a_build_through_every_harness_that_can_lead() {
+    let bed = bed(None);
+    let real = real_wiring();
+    let shared = json!({
+        "session_id": "lead-1", "tool_name": "Bash", "tool_input": {"command": "cargo test"},
+    });
+    let pi = json!({
+        "session_id": "lead-1", "tool_name": "bash", "tool_input": {"command": "cargo test"},
+    });
+    for (harness, input) in [
+        (None, &shared),
+        (Some("claude-code"), &shared),
+        (Some("codex"), &shared),
+        (Some("pi"), &pi),
+    ] {
+        let note = lead_tool(&bed, &real, harness, input).unwrap();
+        assert!(
+            note.starts_with("[teamwire:alpha] You lead team alpha, so leave this build"),
+            "{harness:?}: {note}"
+        );
+    }
+}
+
+#[test]
+fn the_lead_tool_hook_says_nothing_for_a_read_another_session_or_no_tool_parser() {
+    let bed = bed(None);
+    let real = real_wiring();
+    let read = json!({
+        "session_id": "lead-1", "tool_name": "Read", "tool_input": {"file_path": "/x"},
+    });
+    assert_eq!(lead_tool(&bed, &real, None, &read), None);
+    let build = json!({
+        "session_id": "lead-1", "tool_name": "Bash", "tool_input": {"command": "cargo test"},
+    });
+    let elsewhere = json!({
+        "session_id": "lead-2", "tool_name": "Bash", "tool_input": {"command": "cargo test"},
+    });
+    assert_eq!(lead_tool(&bed, &real, None, &elsewhere), None);
+    // The fakes keep the default parser, which refuses every input.
+    assert_eq!(lead_tool(&bed, &bed.wiring, Some("fake-a"), &build), None);
+    assert_eq!(
+        lead_tool(&bed, &real, Some("no-such-harness"), &build),
+        None
+    );
 }

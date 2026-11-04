@@ -1,4 +1,4 @@
-//! `teamwire preset`: the six team shapes.
+//! `teamwire preset`: the five team shapes and the two final steps.
 //!
 //! The shapes are the files of `examples/presets/`, compiled into the binary
 //! so the command works wherever it is installed. Each file is a team spec
@@ -15,7 +15,7 @@ use crate::{Global, PresetArgs, USAGE};
 
 /// The shapes in the order `preset` lists them: the ones to reach for first
 /// come first.
-const PRESETS: [(&str, &str); 6] = [
+const PRESETS: [(&str, &str); 7] = [
     (
         "survey",
         include_str!("../../../../examples/presets/survey.json"),
@@ -35,6 +35,10 @@ const PRESETS: [(&str, &str); 6] = [
     (
         "contract-split",
         include_str!("../../../../examples/presets/contract-split.json"),
+    ),
+    (
+        "integrator",
+        include_str!("../../../../examples/presets/integrator.json"),
     ),
     (
         "closer",

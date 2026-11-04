@@ -37,8 +37,8 @@ install deletes an older install's skill folder), and registers
 nothing in the user's global configuration. The one exception is
 `teamwire install`, which writes the teamwire plugin (the lead's skill in
 `skills/teamwire/SKILL.md` and `skills/teamwire/reference.md`, MCP
-server and Stop hook) to `$TEAMWIRE_HOME/claude-plugin/` and registers it
-through `claude plugin` (ADR 0018).
+server, Stop hook and tool hook) to `$TEAMWIRE_HOME/claude-plugin/` and
+registers it through `claude plugin` (ADR 0018, ADR 0035).
 
 ## Components
 
@@ -54,7 +54,7 @@ and no host (ADP-1).
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
 | `teamwire-harness-codex` | The `Harness` trait for the Codex CLI: launch and resume argv from `-c` overrides, the member's token file, Stop, PostToolUse and SessionStart hook input, the TUI screen, rollout files and thread locks, and the Codex lead plugin (ADR 0023). |
-| `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
+| `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook, tool hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
 | `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. Reads one message's events into the state of its latest attempt to a recipient (`AttemptHistory`: started, stale, in flight, stops, unread). |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
 | `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |
@@ -387,7 +387,7 @@ The steps to set teamwire up on a machine, in order:
      (`crates/teamwire-host-herdr/examples/live_check.rs` for herdr, or
      `crates/teamwire-host-tmux/examples/tmux_live_check.rs` for tmux).
 3. Run `teamwire install`. It registers the teamwire plugin, which holds the
-   lead's skill, MCP server and Stop hook (ADR 0018). Start a session, launch a throwaway team, and
+   lead's skill, MCP server, Stop hook and tool hook (ADR 0018, ADR 0035). Start a session, launch a throwaway team, and
    call `team_status` on it. A `refused.identity` reply that says no session
    id reached the server means the lead must use the CLI.
 4. Run one throwaway team with teamwire in a scratch repository.

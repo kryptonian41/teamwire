@@ -7,9 +7,10 @@ HOW TO WORK
 - Run only your check, the tests and checks your brief names, the
   tests you write yourself, and, as a closer, the checks your
   teammates claimed. Do not run the whole suite or a
-  repo-wide type gate unless the brief says so; the parent runs those
-  once after integration. Minutes-long runs with nothing committed are
-  the most common way a child wastes its budget.
+  repo-wide type gate unless the brief says so; the integrator or the
+  closer runs those once, on the finished branches. Minutes-long runs
+  with nothing committed are the most common way a child wastes its
+  budget.
 - If your role writes code, commit after each unit of work. Your branch
   is the deliverable, and uncommitted work in a worktree is lost at
   teardown. If your role does not write code, never commit.

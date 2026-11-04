@@ -293,6 +293,11 @@ pub trait Harness: Send + Sync {
     fn parse_turn_end(&self, stdin: &[u8]) -> Result<TurnEnd, HarnessError>;
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
+    /// Parse the lead's tool hook stdin into the neutral form (ADR 0035).
+    /// Default `Unsupported`, and the hook then says nothing. Claude Code and
+    /// Codex parse their `PostToolUse` input; pi parses the input teamwire's
+    /// lead extension writes.
+    fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
     /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
     /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
@@ -333,6 +338,11 @@ pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      // read only when it is a regular file of at most 64 MiB,
                      // for the final-message fallback and the usage alike
                      pub transcript: Option<PathBuf> }
+/// One tool call of the lead's session (ADR 0035). `cwd` is the folder a
+/// relative path in `action` is read against.
+pub struct ToolCall { pub session: SessionId, pub subagent: bool,
+                      pub cwd: Option<PathBuf>, pub action: ToolAction }
+pub enum ToolAction { Edit(Vec<PathBuf>), Shell(String), Other }
 pub enum Liveness { Alive(PlaceState), Dead, Unknown }
 pub enum ScreenState { InputPrompt, Dialog, Unknown }
 pub enum StartupOutcome { NoDialog, AnsweredPlainTrust, RefusedEscalated }

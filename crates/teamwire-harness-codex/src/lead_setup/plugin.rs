@@ -12,8 +12,8 @@ use teamwire_core::{LaunchSpec, LeadCommand};
 pub(crate) const MARKETPLACE: &str = "teamwire";
 pub(crate) const PLUGIN_ID: &str = "teamwire@teamwire";
 
-/// The hook timeout in seconds. The hook only reads local files.
-const STOP_HOOK_TIMEOUT_S: u64 = 10;
+/// The hook timeout in seconds. The hooks only read local files.
+const HOOK_TIMEOUT_S: u64 = 10;
 
 /// The plugin's directory inside the marketplace.
 const PLUGIN_DIR: &str = "teamwire";
@@ -91,12 +91,16 @@ impl PluginFiles {
             skill(shared).ok_or_else(|| "the compiled-in skill has no frontmatter".to_owned())?;
         let mut mcp_args = want.words().split_off(1);
         mcp_args.extend(["mcp".to_owned(), "--lead".to_owned()]);
-        let mut hook_words: Vec<String> = want
+        let binary: Vec<String> = want
             .words()
             .iter()
             .map(|w| LaunchSpec::shell_word(w))
             .collect();
-        hook_words.extend(["hook", "lead-stop", "--harness", "codex"].map(str::to_owned));
+        let hook = |name: &str| {
+            let mut line = binary.clone();
+            line.extend(["hook", name, "--harness", "codex"].map(str::to_owned));
+            line.join(" ")
+        };
         let body = [
             (
                 format!("{PLUGIN_DIR}/.mcp.json"),
@@ -107,11 +111,21 @@ impl PluginFiles {
             ),
             (
                 format!("{PLUGIN_DIR}/hooks/hooks.json"),
-                pretty(&json!({"hooks": {"Stop": [{"hooks": [{
-                    "type": "command",
-                    "command": hook_words.join(" "),
-                    "timeout": STOP_HOOK_TIMEOUT_S,
-                }]}]}})),
+                // The tool hook names no matcher, as a member's hooks name
+                // none: the hook leaves at once on a call that is no
+                // member's work (ADR 0035).
+                pretty(&json!({"hooks": {
+                    "Stop": [{"hooks": [{
+                        "type": "command",
+                        "command": hook("lead-stop"),
+                        "timeout": HOOK_TIMEOUT_S,
+                    }]}],
+                    "PostToolUse": [{"hooks": [{
+                        "type": "command",
+                        "command": hook("lead-tool"),
+                        "timeout": HOOK_TIMEOUT_S,
+                    }]}],
+                }})),
             ),
             (format!("{PLUGIN_DIR}/skills/teamwire/SKILL.md"), skill),
             (
@@ -136,7 +150,7 @@ impl PluginFiles {
             pretty(&json!({
                 "name": MARKETPLACE,
                 "version": version,
-                "description": "Lead tools, skill and Stop hook for teamwire teams",
+                "description": "Lead tools, skill and hooks for teamwire teams",
             })),
         );
         let marketplace = (
@@ -240,6 +254,17 @@ mod tests {
             file(&files, "teamwire/hooks/hooks.json"),
             r#"{
   "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/opt/bin/teamwire hook lead-tool --harness codex",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -270,6 +295,10 @@ mod tests {
         assert_eq!(
             hooks["hooks"]["Stop"][0]["hooks"][0]["command"],
             "/opt/bin/teamwire --home '/scratch tw' hook lead-stop --harness codex"
+        );
+        assert_eq!(
+            hooks["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
+            "/opt/bin/teamwire --home '/scratch tw' hook lead-tool --harness codex"
         );
     }
 

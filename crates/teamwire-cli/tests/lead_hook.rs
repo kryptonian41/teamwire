@@ -1,6 +1,6 @@
-//! `teamwire hook claude-lead-stop`, run as the real binary Claude Code
-//! starts in the lead's session. It exits 0 and writes nothing whatever
-//! happens.
+//! `teamwire hook claude-lead-stop` and `lead-tool`, run as the real binary
+//! a harness starts in the lead's session. Each exits 0 and writes nothing
+//! whatever happens.
 #![expect(
     clippy::disallowed_methods,
     reason = "the test starts the teamwire binary as a harness would"
@@ -56,10 +56,14 @@ fn hook(fx: &Fixture, env: &[(&str, &str)], stdin: &str) -> Run {
 }
 
 fn hook_at(home: &std::path::Path, env: &[(&str, &str)], stdin: &str) -> Run {
+    run_hook(home, &["hook", "claude-lead-stop"], env, stdin)
+}
+
+fn run_hook(home: &std::path::Path, args: &[&str], env: &[(&str, &str)], stdin: &str) -> Run {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire"));
     cmd.arg("--home")
         .arg(home)
-        .args(["hook", "claude-lead-stop"])
+        .args(args)
         .env_clear()
         .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::piped())
@@ -338,4 +342,54 @@ fn locked_stores_let_the_stop_through_at_the_bound() {
     // Well under the 20 s that four unbounded reads take, yet loose enough
     // for process start and exit on a loaded machine.
     assert!(waited < std::time::Duration::from_secs(15), "{waited:?}");
+}
+
+/// `hook lead-tool` as each harness's lead setup runs it, with that
+/// harness's input for a `cargo test` run.
+#[test]
+fn the_tool_hook_notes_a_build_for_every_harness_and_writes_nothing() {
+    let fx = team();
+    let before = events(&fx);
+    let shared = r#"{"session_id":"lead-1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#;
+    let pi = r#"{"session_id":"lead-1","tool_name":"bash","tool_input":{"command":"cargo test"}}"#;
+    for (harness, input) in [("claude-code", shared), ("codex", shared), ("pi", pi)] {
+        let run = run_hook(
+            fx.home.path(),
+            &["hook", "lead-tool", "--harness", harness],
+            &[],
+            input,
+        );
+        assert_eq!(run.code, 0, "{harness}");
+        let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+        assert_eq!(reply["hookSpecificOutput"]["hookEventName"], "PostToolUse");
+        let note = reply["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap();
+        assert!(
+            note.starts_with(
+                "[teamwire:alpha] You lead team alpha, so leave this build or test run"
+            ),
+            "{harness}: {note}"
+        );
+    }
+    assert_eq!(events(&fx), before, "the hook writes nothing");
+}
+
+#[test]
+fn the_tool_hook_is_silent_for_a_read_a_member_or_another_session() {
+    let fx = team();
+    let args = ["hook", "lead-tool", "--harness", "claude-code"];
+    let read = r#"{"session_id":"lead-1","tool_name":"Read","tool_input":{"file_path":"/x"}}"#;
+    let build =
+        r#"{"session_id":"lead-1","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#;
+    let elsewhere = build.replace("lead-1", "other-session");
+    for (env, input) in [
+        (&[][..], read),
+        (&[("TEAMWIRE_ROLE", "api")][..], build),
+        (&[][..], elsewhere.as_str()),
+        (&[][..], "not json"),
+    ] {
+        let run = run_hook(fx.home.path(), &args, env, input);
+        assert_eq!((run.code, run.out.as_str()), (0, ""), "{input}");
+    }
 }
