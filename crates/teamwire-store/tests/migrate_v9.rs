@@ -148,9 +148,11 @@ const RAW_PLAN_REVIEWER: &str = "INSERT INTO members (role, title, kind, mode, h
     VALUES ('plan', 'Review the plan', 'plan_reviewer', 'pane', 'pi', 'herdr', '/r', 1200,
     'started', 1, '2026-10-01T00:00:05.000Z')";
 
+/// Version 10 adds ticket refs after this step, so a store opened here ends
+/// at version 10.
 #[test]
-fn this_build_is_at_schema_version_9() {
-    assert_eq!(SCHEMA_VERSION, 9);
+fn this_build_is_at_schema_version_10() {
+    assert_eq!(SCHEMA_VERSION, 10);
 }
 
 #[test]
@@ -299,16 +301,17 @@ fn a_step_that_fails_midway_leaves_the_version_8_database_whole() {
     assert_eq!(leftovers(&path), 0);
 }
 
-/// An open that finds the database already at version 9 runs no step, so
-/// it never turns foreign key checks off. Its writes must be checked too.
+/// An open that finds the database already at the current version runs no
+/// step, so it never turns foreign key checks off. Its writes must be
+/// checked too.
 #[test]
-fn a_store_opened_on_a_version_9_database_enforces_foreign_keys() {
+fn a_store_opened_on_a_current_database_enforces_foreign_keys() {
     let home = TestHome::new().unwrap();
     version_8_database(&home);
     drop(Store::open(home.path(), &team()).unwrap());
 
     let mut store = Store::open(home.path(), &team()).unwrap();
-    assert_eq!(store.schema_version().unwrap(), 9);
+    assert_eq!(store.schema_version().unwrap(), SCHEMA_VERSION);
     let waiver = Waiver {
         role: Role::parse("ghost").unwrap(),
         flag_id: "outside-owns:x".to_owned(),
