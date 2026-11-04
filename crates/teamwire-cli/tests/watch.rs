@@ -109,12 +109,21 @@ impl Watching {
             .map(|lease| lease.heartbeat_at)
     }
 
-    /// Waits for one more poll than the one that wrote `since`.
-    fn wait_for_a_poll_after(bed: &Bed, since: Option<Timestamp>) {
-        let polled = wait_until(PATIENCE, || {
-            Self::heartbeat(bed).is_some_and(|now| Some(now) != since)
-        });
-        assert!(polled, "the watch stopped polling");
+    /// Waits for two polls to finish after the one that wrote `since`. One
+    /// poll reads the roster in one transaction and writes its heartbeat in
+    /// the next, so the first new heartbeat can come from a poll that read
+    /// the store before the test's own write landed. The second poll is sure
+    /// to have read it after, as `tests/e2e/tests/add.rs` waits twice for
+    /// the same reason.
+    fn wait_for_two_polls_after(bed: &Bed, since: Option<Timestamp>) {
+        let mut last = since;
+        for _ in 0..2 {
+            let polled = wait_until(PATIENCE, || {
+                Self::heartbeat(bed).is_some_and(|now| Some(now) != last)
+            });
+            assert!(polled, "the watch stopped polling");
+            last = Self::heartbeat(bed);
+        }
     }
 
     fn exit_code(&mut self) -> Option<i32> {
@@ -227,8 +236,9 @@ fn a_member_added_after_the_first_poll_is_watched_by_the_running_watch() {
     // `launch --add` writes the new member while the watch waits, as the
     // lead's launch did in `fb`.
     bed.add_with_deadline("web", 100_000_000);
-    // The watch has polled again, so it has read the new member.
-    Watching::wait_for_a_poll_after(&bed, first_poll);
+    // Two polls have finished, so one of them read the roster after the new
+    // member's row was written.
+    Watching::wait_for_two_polls_after(&bed, first_poll);
     assert!(
         !watch.output().contains("TEAM-COMPLETE"),
         "the team waits for the added member: {}",
