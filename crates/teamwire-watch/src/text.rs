@@ -120,14 +120,86 @@ fn printed_at(at: Timestamp) -> String {
     format!("{:02}:{:02}:{:02}Z", at.hour(), at.minute(), at.second())
 }
 
+/// What an event that points the lead at a file ends with. `COMPLETED`,
+/// `UNDELIVERED` and `UNCONFIRMED` all end this way, and the path is the
+/// part the lead opens, so it is not the part a long event loses.
+const RESULT_MARK: &str = " Result: ";
+
 /// One event with its `[teamwire:<team> HH:MM:SSZ]` prefix, cut to
 /// `EVENT_MAX`. The time is the poll's own, so a lead can tell a line
 /// printed before its last `launch --add` or reprompt from a current one
 /// (WAT-21).
+///
+/// An event that ends `Result: <path>` keeps the whole path: the summary or
+/// reason before it gives way first, because a cut path names no file the
+/// lead can open. Only a path that alone fills the cap is cut.
 pub(crate) fn event(team: &str, at: Timestamp, text: &str) -> String {
-    one_line(
-        &format!("[teamwire:{team} {}] {text}", printed_at(at)),
-        EVENT_MAX,
-    )
-    .into_string()
+    let head = format!("[teamwire:{team} {}] ", printed_at(at));
+    let Some((said, path)) = text.rsplit_once(RESULT_MARK) else {
+        return one_line(&format!("{head}{text}"), EVENT_MAX).into_string();
+    };
+    // The mark is rebuilt around the sanitised path, because `one_line`
+    // trims the space a leading mark would start with.
+    let tail = format!("{RESULT_MARK}{}", one_line(path, EVENT_MAX));
+    let room = EVENT_MAX.saturating_sub(head.chars().count() + tail.chars().count());
+    let said = one_line(said, room);
+    one_line(&format!("{head}{said}{tail}"), EVENT_MAX).into_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 2026-09-29T12:00:00Z, the fake clock's start.
+    fn at() -> Timestamp {
+        Timestamp::from_unix_millis(1_790_596_800_000).expect("a valid time")
+    }
+
+    /// WAT-1: the path is what the lead opens, so a summary at its cap
+    /// gives way to it instead of pushing it out of the event.
+    #[test]
+    fn a_long_summary_gives_way_to_the_result_path() {
+        let path = "/Users/someone/.teamwire/teams/alpha/outbox/api.md";
+        let text = format!("COMPLETED api (done) {} Result: {path}", "y".repeat(200));
+        let got = event("alpha", at(), &text);
+        assert_eq!(got.chars().count(), EVENT_MAX);
+        assert!(got.ends_with(&format!(" Result: {path}")), "{got}");
+        assert!(
+            got.starts_with("[teamwire:alpha 12:00:00Z] COMPLETED api (done) yyy"),
+            "{got}"
+        );
+        assert!(got.contains('…'), "the summary was cut: {got}");
+    }
+
+    /// A reason and a path that fit are left alone, mark and spacing too.
+    #[test]
+    fn an_event_that_fits_is_unchanged() {
+        let got = event("alpha", at(), "UNDELIVERED api no_host Result: /t/api.md");
+        assert_eq!(
+            got,
+            "[teamwire:alpha 12:00:00Z] UNDELIVERED api no_host Result: /t/api.md"
+        );
+    }
+
+    /// An event that names no file is cut at its end, as before.
+    #[test]
+    fn an_event_without_a_result_path_is_cut_at_its_end() {
+        let got = event("alpha", at(), &format!("SILENT {}", "x".repeat(400)));
+        assert_eq!(got.chars().count(), EVENT_MAX);
+        assert!(got.ends_with('…'), "{got}");
+    }
+
+    /// A path that alone fills the cap leaves the summary nothing, and the
+    /// cap still holds: nothing a poll prints is longer than `EVENT_MAX`.
+    #[test]
+    fn a_path_longer_than_the_cap_is_still_cut() {
+        let path = "/x".repeat(200);
+        let text = format!("COMPLETED api (done) summary Result: {path}");
+        let got = event("alpha", at(), &text);
+        assert_eq!(got.chars().count(), EVENT_MAX);
+        assert!(
+            got.starts_with("[teamwire:alpha 12:00:00Z] Result: /x"),
+            "{got}"
+        );
+    }
 }

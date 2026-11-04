@@ -156,7 +156,10 @@ events joined by ` | `, each starting `[teamwire:<team> HH:MM:SSZ]` (WAT-1).
 The time is the poll's own, in UTC to the second, so a lead can tell a line
 printed before its last `launch --add` or reprompt from a current one
 (WAT-21). `date -u +%T` prints the current UTC time. A line holds
-at most 2000 characters. Events that do not fit are not announced yet and a
+at most 2000 characters, and one event at most 300. An event that names a
+file ends `Result: <path>`; a summary or reason too long for the event's cap
+is cut before that path, so the path the lead opens is never the part that
+goes. Events that do not fit in the line are not announced yet and a
 later poll prints them, and `TEAM-COMPLETE` waits until every earlier event was
 printed. Default interval 20 s, at most 300 s (half the 600 s after which a
 watch lease looks dead); a larger interval, or 0, exits 3. `--once` runs one

@@ -874,6 +874,32 @@ fn a_harness_without_a_turn_end_hook_reports_through_the_watch() {
     assert!(bed.ticks(4).is_empty());
 }
 
+/// WAT-1: the lead opens the path a `COMPLETED` line names, so a summary
+/// at its 200-character cap must not push that path out of the event. The
+/// path here is a real temporary home, as long as a real one.
+#[test]
+fn a_long_summary_never_cuts_the_result_path_off_a_completed_line() {
+    let mut bed = Bed::with_route(LeadRoute::Watch);
+    bed.add("api");
+    bed.add("web");
+    bed.working("web");
+    bed.poll();
+    bed.complete_with("api", CompletionStatus::Done, &"summary ".repeat(40));
+    write_result(&bed, "api").unwrap();
+    let line = bed.tick().unwrap();
+    let want = format!(" Result: {}", result_file(&bed, "api").display());
+    assert!(line.ends_with(&want), "{line}");
+    assert!(
+        line.chars().count() <= 300,
+        "{}: {line}",
+        line.chars().count()
+    );
+    assert!(
+        line.contains('…'),
+        "the summary gave way to the path: {line}"
+    );
+}
+
 /// `done` stores a result the watch reports, then writes its result file. A
 /// poll between the two waits for the file, so the line names the file and
 /// not the member's report (REP-9).

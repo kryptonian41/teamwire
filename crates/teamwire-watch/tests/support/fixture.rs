@@ -383,13 +383,19 @@ impl Bed {
 
     /// Stores a completion for the member's current generation.
     pub fn complete(&mut self, name: &str, status: CompletionStatus) -> Ulid {
+        self.complete_with(name, status, &format!("{name} finished"))
+    }
+
+    /// `complete` with a chosen summary, as a member's own `done` would
+    /// record it.
+    pub fn complete_with(&mut self, name: &str, status: CompletionStatus, summary: &str) -> Ulid {
         let member = self.member(name);
         let now = self.clock.now();
         let new = NewCompletion {
             role: member.role.clone(),
             generation: member.generation,
             status,
-            summary: format!("{name} finished"),
+            summary: summary.to_owned(),
             final_message: None,
             final_source: FinalSource::Hook,
         };
