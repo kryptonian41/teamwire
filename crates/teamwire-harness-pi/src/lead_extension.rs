@@ -189,7 +189,8 @@ export default function (pi: ExtensionAPI) {
       label: "teamwire watch",
       description:
         "Start `teamwire watch <team>` for a team you lead. Each line the watch prints " +
-        "reaches you as a message, and starts a turn when you are idle, so do not poll. " +
+        "reaches you as a message once your current turn's tool calls have finished, and " +
+        "starts a turn when you are idle, so do not poll. " +
         "Call it right after `teamwire launch`, and again when the watch stopped or " +
         "printed TEAM-COMPLETE before an `--add`.",
       promptSnippet: "Start the watch of a teamwire team you lead; its lines reach you as messages",

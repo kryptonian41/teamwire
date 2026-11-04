@@ -12,7 +12,8 @@ hold for every section below.
   loaded. There is no ToolSearch step.
 - **The watch.** pi has no Monitor tool. Start the watch with the
   `teamwire_watch` tool and the team's name, right after launch. Each line
-  the watch prints reaches you as a message from teamwire, and starts a turn
+  the watch prints reaches you as a message from teamwire. A line arrives
+  once the tool calls of your current turn have finished, and starts a turn
   when you are idle, so you never poll. Wherever this skill says to start
   `teamwire watch <team>` with Monitor, call `teamwire_watch` instead. Never
   run `teamwire watch` through bash: the call would hold until it timed out,
