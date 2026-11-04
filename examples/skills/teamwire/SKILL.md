@@ -27,8 +27,9 @@ carries on while they are away. For one standalone task, split a pane and
 prompt a fresh agent there.
 
 teamwire keeps its state in `$TEAMWIRE_HOME` (default `~/.teamwire`). Agent
-names are `tw_<team>_<role>` and never contain a hyphen. Wake-up and watch
-lines start with `[teamwire:<team>]`. This file follows your order of work,
+names are `tw_<team>_<role>` and never contain a hyphen. A watch line starts
+with `[teamwire:<team> HH:MM:SSZ]`, and every other teamwire line, a wake-up
+among them, with `[teamwire:<team>]`. This file follows your order of work,
 with machine setup and the reference tables in `reference.md`.
 
 For a run the user will not be present for, use `/teamwire:afk`. Only a Claude Code lead can run it.
@@ -502,13 +503,28 @@ for a result typed into your pane. It still prints `DECLARED`, `UNDELIVERED`
 or `UNCONFIRMED` when delivery lags or fails. "Watch lines" in `reference.md`
 explains each line.
 
+Every watch line carries the time it was printed, in UTC:
+`[teamwire:<team> 17:24:07Z] WATCHING 3 members`. Read that time before you
+act on the line. A line printed before your last `launch --add` or reprompt
+describes the team as it was then, not as it is now, so check it against
+`teamwire status` instead of acting on it. `date -u +%T` gives the current
+UTC time. The lines for a member's result, a message, and your own hooks
+carry no time.
+
 `Monitor` stops a command after 5 minutes by default and 30 at most. When it
 reports that the watch expired, restart it at once, unless it printed
 `TEAM-COMPLETE` and no wave is due. A running watch picks up members added
 with `--add`, but a watch that printed `TEAM-COMPLETE` has exited, so start a
-new one after a later `--add`. If you end a turn while a member works and no
-watch runs, your Stop hook holds your stop once with the line below. While no
-watch runs, a member's result line also ends with
+new one after a later `--add`. A watch started in the same turn as a
+`launch --add` keeps running, because the poll that prints `WATCHING` never
+prints `TEAM-COMPLETE`. That poll reads the roster a moment before it
+prints, so a member whose row is written inside that moment is still missed
+(ADR 0037). Run `teamwire status` when you need to be sure the member you
+have just added is watched.
+
+If you end a turn while a member works and no watch runs, your Stop hook
+holds your stop once with the line below. While no watch runs, a member's
+result line also ends with
 `(no watch is running: teamwire watch <team>)`.
 
 ```

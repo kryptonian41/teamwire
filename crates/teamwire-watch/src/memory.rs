@@ -26,9 +26,16 @@ pub enum WatchEnd {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WatchMemory {
     pub polls: u64,
+    /// This watch polls once (`--once`) and is read by a script or a test,
+    /// so its single poll prints `TEAM-COMPLETE` for a finished team.
+    pub single_poll: bool,
     /// A poll has printed `WATCHING`. A poll that failed did not, so the
     /// count of polls cannot say this.
     pub(crate) said_watching: bool,
+    /// A poll has read a roster with at least one live member. Only then is
+    /// an empty roster the end of the team's work rather than a team whose
+    /// first member has not been launched yet (WAT-20).
+    pub(crate) watched_a_member: bool,
     pub last_poll: Option<Timestamp>,
     /// The monotonic clock at `last_poll`. It stops while the machine
     /// sleeps and the wall clock does not, so the two differ by the sleep.
@@ -57,6 +64,18 @@ impl WatchMemory {
             team: Some(team.to_owned()),
             ..Self::default()
         }
+    }
+
+    /// True on the poll that says `WATCHING`, for a watch that will poll
+    /// again: that poll decides nothing about `TEAM-COMPLETE` and leaves it
+    /// to the next poll (WAT-20). A watch can read the roster a moment
+    /// before `launch --add` writes the member the lead is adding, and a
+    /// watch that printed `TEAM-COMPLETE` has exited, so that member would
+    /// run unwatched. The poll that failed to read the store held no
+    /// roster, so the hold belongs to the poll that reads one and not to
+    /// the first poll of the process.
+    pub(crate) fn holds_complete(&self) -> bool {
+        !self.said_watching && !self.single_poll
     }
 }
 
