@@ -539,7 +539,12 @@ fn session_doc(env: &FakeHerdrEnv) -> Value {
 #[test]
 fn session_file_status_values_are_the_ones_claude_code_writes() {
     let mut env = FakeHerdrEnv::new().unwrap();
-    env.set_script(&script(vec![Step::SleepMs(1500)])).unwrap();
+    // The turn stays busy until the test has seen it busy, so a test thread
+    // that runs late cannot miss the busy stretch.
+    env.set_script(&script(vec![Step::Run(
+        r#"while [ ! -e "$TMPDIR/seen-busy" ]; do sleep 0.05; done"#.into(),
+    )]))
+    .unwrap();
     let settings = settings_with(&env, LOGGING_HOOK, &identity());
     start(&env, &settings, "sess-status");
     assert_eq!(session_doc(&env).get("status").unwrap(), "idle");
@@ -550,6 +555,7 @@ fn session_file_status_values_are_the_ones_claude_code_writes() {
         assert!(begun.elapsed() < Duration::from_secs(5), "never busy");
         std::thread::sleep(Duration::from_millis(20));
     }
+    env.write_file("tmp/seen-busy", "").unwrap();
     while session_doc(&env).get("status").unwrap() != "idle" {
         assert!(
             begun.elapsed() < Duration::from_secs(10),
@@ -559,10 +565,27 @@ fn session_file_status_values_are_the_ones_claude_code_writes() {
     }
 }
 
+/// The session file once it shows `status`, or as it is after 30 s.
+/// fake-claude records a state in the pane's status file first and in the
+/// session file just after, so a test that saw `fake-herdr` report the new
+/// state can read the session file a moment too early.
+fn session_doc_showing(env: &FakeHerdrEnv, status: &str) -> Value {
+    let begun = Instant::now();
+    loop {
+        let doc = session_doc(env);
+        if doc.get("status").and_then(Value::as_str) == Some(status)
+            || begun.elapsed() > Duration::from_secs(30)
+        {
+            return doc;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn a_dialog_shows_as_waiting_with_waiting_for() {
     let env = blocked_at_dialog(Startup::Trust);
-    let doc = session_doc(&env);
+    let doc = session_doc_showing(&env, "waiting");
     assert_eq!(doc.get("status").unwrap(), "waiting");
     assert_eq!(doc.get("waitingFor").unwrap(), "input needed");
 }
@@ -669,6 +692,23 @@ fn agents_json_lists_both_row_shapes_and_starts_no_session() {
         before,
         "listing must start no session"
     );
+}
+
+/// fake-claude writes each session file through a hidden temp file that
+/// already holds the whole document, so a listing taken mid-write must still
+/// show each session once.
+#[test]
+fn agents_json_skips_a_session_file_still_being_written() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let doc = json!({"pid": 4242, "sessionId": "bg-1", "cwd": "/tmp", "startedAt": 1,
+                     "kind": "bg", "name": "background job", "status": "blocked"});
+    env.add_session_file(4242, &doc).unwrap();
+    env.write_file("claude/sessions/.4242.json.77.tmp", &doc.to_string())
+        .unwrap();
+    let out = env.run_claude(&["agents", "--json"]).unwrap();
+    assert_eq!(out.code, Some(0), "{out:?}");
+    let rows: Vec<Value> = serde_json::from_str(out.stdout.trim()).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
 }
 
 #[test]

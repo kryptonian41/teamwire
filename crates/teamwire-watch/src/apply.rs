@@ -14,7 +14,8 @@ use teamwire_store::{Ctx, StoreError, Tx};
 use crate::plan::{Action, Plan};
 use crate::text::{LINE_MAX, SEP, STALLS_ENDED, event};
 
-/// One event that goes into the line, with its `[teamwire:<team>]` prefix.
+/// One event that goes into the line, with its
+/// `[teamwire:<team> HH:MM:SSZ]` prefix.
 pub(crate) struct Emitted {
     pub name: &'static str,
     pub text: String,
@@ -58,7 +59,7 @@ fn apply_one(
             if tx.announce_once(at, &key)? {
                 out.push(Emitted {
                     name,
-                    text: event(team, &text),
+                    text: event(team, at, &text),
                 });
             }
         }
@@ -71,7 +72,7 @@ fn apply_one(
                 tx.announce_once(at, &key)?;
                 out.push(Emitted {
                     name: "COMPLETED",
-                    text: event(team, &text),
+                    text: event(team, at, &text),
                 });
             }
         }
@@ -84,7 +85,7 @@ fn apply_one(
                 tx.announce_once(at, &key)?;
                 out.push(Emitted {
                     name: "UNDELIVERED",
-                    text: event(team, &text),
+                    text: event(team, at, &text),
                 });
             }
         }
@@ -122,7 +123,7 @@ pub(crate) fn apply(
                 lease_lost: true,
             });
         }
-        let complete = complete.map(|text| event(team, &text));
+        let complete = complete.map(|text| event(team, at, &text));
         let room = LINE_MAX
             - complete
                 .as_ref()
@@ -131,13 +132,13 @@ pub(crate) fn apply(
         if let Some(n) = watching {
             emitted.push(Emitted {
                 name: "WATCHING",
-                text: event(team, &format!("WATCHING {n} members")),
+                text: event(team, at, &format!("WATCHING {n} members")),
             });
         }
         let mut held = false;
         for action in actions {
             if let Some(text) = printed(&action) {
-                held = held || joined_len(&emitted, &event(team, text)) > room;
+                held = held || joined_len(&emitted, &event(team, at, text)) > room;
                 if held {
                     continue;
                 }

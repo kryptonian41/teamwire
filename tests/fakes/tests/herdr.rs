@@ -493,6 +493,39 @@ fn a_prompt_with_wait_stalls_when_the_agent_shows_no_activity() {
     );
 }
 
+/// A prompt waits in the agent's inbox until the agent takes it, and the
+/// agent shows its old status until then; `untaken_prompts` tells the two
+/// apart.
+#[test]
+fn a_prompt_the_agent_has_not_taken_yet_is_counted() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    assert_eq!(start(&env, "tw_demo_api", &pane_id, "s").code, Some(0));
+    assert_eq!(env.untaken_prompts(), 0);
+    let session_file = env.session_files().pop().unwrap();
+    let pid = session_file
+        .file_stem()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    // A stopped process takes no prompt. It runs again before any assert,
+    // so a failure leaves no stopped process behind.
+    signal("-STOP", &pid);
+    let out = env.run(&["agent", "prompt", "tw_demo_api", "hi"]).unwrap();
+    let while_stopped = env.untaken_prompts();
+    signal("-CONT", &pid);
+    assert_eq!(out.code, Some(0), "{out:?}");
+    assert_eq!(while_stopped, 1);
+    let began = std::time::Instant::now();
+    while env.untaken_prompts() != 0 {
+        assert!(
+            began.elapsed().as_secs() < 30,
+            "the agent never took the prompt"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn a_hang_runs_past_the_callers_timeout_and_garbage_is_not_json() {
     let mut env = FakeHerdrEnv::new().unwrap();
@@ -1009,31 +1042,73 @@ fn agent_not_found_fault_answers_prompt_and_get_on_a_live_agent() {
     assert_eq!(env.run(&["agent", "get", &pane_id]).unwrap().code, Some(0));
 }
 
-/// A program for `FAKE_CLAUDE_BIN` that never reports ready, so `agent start`
-/// waits for it until its own limit.
-fn slow_claude(env: &FakeHerdrEnv) -> String {
+/// A program for `FAKE_CLAUDE_BIN` that reports ready once the file `ready`
+/// exists, so `agent start` waits for it until then. With no file it never
+/// reports ready, and `agent start` waits until its own limit.
+fn slow_claude(env: &FakeHerdrEnv, ready: Option<&std::path::Path>) -> String {
     use std::os::unix::fs::PermissionsExt;
-    let path = env
-        .write_file("slow-claude", "#!/bin/sh\nexec sleep 60\n")
-        .unwrap();
+    let script = match ready {
+        Some(ready) => format!(
+            "#!/bin/sh\nwhile [ ! -e '{}' ]; do sleep 0.05; done\n\
+             printf '{{\"status\":\"idle\",\"seq\":1}}' > \"$FAKE_PANE_DIR/status.json\"\n\
+             exec sleep 60\n",
+            ready.display()
+        ),
+        None => "#!/bin/sh\nexec sleep 60\n".to_owned(),
+    };
+    let path = env.write_file("slow-claude", &script).unwrap();
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
     path.display().to_string()
+}
+
+#[test]
+fn agent_start_times_out_when_the_agent_never_reports_ready() {
+    let env = FakeHerdrEnv::new().unwrap();
+    let pane_id = pane(&env, "/tmp");
+    let slow = slow_claude(&env, None);
+    let started = env
+        .run_with(
+            &[
+                "agent", "start", "slow", "--kind", "claude", "--pane", &pane_id,
+            ],
+            &[
+                ("FAKE_CLAUDE_BIN", &slow),
+                ("FAKE_HERDR_START_WAIT_MS", "300"),
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        started.error_code().as_deref(),
+        Some("timeout"),
+        "{started:?}"
+    );
 }
 
 #[test]
 fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
     let env = FakeHerdrEnv::new().unwrap();
     let pane_id = pane(&env, "/tmp");
-    let slow = slow_claude(&env);
+    let ready = env.root().join("ready");
+    let slow = slow_claude(&env, Some(&ready));
     std::thread::scope(|scope| {
+        // The start's own limit matches the 60 s hang guard below, so only
+        // the test, by making the agent ready, can end the wait in time.
         let starting = scope.spawn(|| {
             env.run_with(
                 &[
-                    "agent", "start", "slow", "--kind", "claude", "--pane", &pane_id,
+                    "agent",
+                    "start",
+                    "slow",
+                    "--kind",
+                    "claude",
+                    "--pane",
+                    &pane_id,
+                    "--timeout",
+                    "60000",
                 ],
                 &[
                     ("FAKE_CLAUDE_BIN", &slow),
-                    ("FAKE_HERDR_START_WAIT_MS", "5000"),
+                    ("FAKE_HERDR_START_WAIT_MS", "60000"),
                 ],
             )
             .unwrap()
@@ -1054,15 +1129,13 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
             assert!(began.elapsed().as_secs() < 60, "the agent was never listed");
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        // The start waits 5 s for readiness, so a list that waited for the
-        // start could only answer after it.
+        // The start waits until the agent is ready, which happens only once
+        // the file exists, so a list that waited for the start could only
+        // answer after the file is made.
         assert!(!starting.is_finished(), "agent list waited for agent start");
+        env.write_file("ready", "").unwrap();
         let started = starting.join().unwrap();
-        assert_eq!(
-            started.error_code().as_deref(),
-            Some("timeout"),
-            "{started:?}"
-        );
+        assert_eq!(started.code, Some(0), "{started:?}");
     });
 }
 

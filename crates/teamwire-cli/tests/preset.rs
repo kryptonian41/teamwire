@@ -27,13 +27,14 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 7] = [
+const NAMES: [&str; 8] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
     "dependent-tickets",
     "contract-split",
     "plan-review",
+    "integrator",
     "closer",
 ];
 
@@ -204,7 +205,7 @@ fn no_preset_holds_a_machine_specific_path() {
     assert_eq!(
         seen,
         NAMES.len(),
-        "the directory holds exactly the seven presets"
+        "the directory holds exactly the listed presets"
     );
 }
 
@@ -231,7 +232,7 @@ fn teamwire(args: &[&str]) -> Run {
 }
 
 #[test]
-fn without_a_name_the_seven_presets_are_listed() {
+fn without_a_name_every_preset_is_listed() {
     let run = teamwire(&["preset"]);
     assert_eq!(run.code, 0, "{}", run.err);
     let names: Vec<&str> = run
@@ -242,12 +243,14 @@ fn without_a_name_the_seven_presets_are_listed() {
     assert_eq!(names, NAMES);
 }
 
-/// The five team shapes come first. `plan-review` and `closer` are steps a
-/// lead adds to a team, so each says so at the start of its description.
+/// The five team shapes come first. `plan-review`, `integrator` and `closer`
+/// are steps a lead adds to a team, so each says so at the start of its
+/// description.
 #[test]
-fn the_two_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
+fn the_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
     for (name, start) in [
         ("plan-review", "FIRST STEP, not a team shape."),
+        ("integrator", "FINAL STEP, not a team shape."),
         ("closer", "FINAL STEP, not a team shape."),
     ] {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
@@ -549,6 +552,8 @@ fn every_member_names_a_task_class_and_no_model() {
                 .unwrap_or_else(|| unreachable!("{name}/{role} sets no task_class"));
             let class = TaskClass::parse(class).unwrap();
             let fits = match member["kind"].as_str() {
+                // The integrator only merges in a set order and runs the gate.
+                Some("implementer") if role == "integrator" => TaskClass::MechanicalEdit,
                 Some("implementer") => TaskClass::ContainedFeature,
                 Some("reviewer" | "plan_reviewer" | "closer") => TaskClass::Judgement,
                 Some("investigator") => TaskClass::ReadOnlySurvey,

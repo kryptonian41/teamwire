@@ -34,8 +34,8 @@ fn check_schema(ctx: &Ctx<'_>) -> Result<(), StoreError> {
     }
 }
 
-fn join(team: &str, texts: &[String]) -> OneLine {
-    let events: Vec<String> = texts.iter().map(|t| event(team, t)).collect();
+fn join(team: &str, at: Timestamp, texts: &[String]) -> OneLine {
+    let events: Vec<String> = texts.iter().map(|t| event(team, at, t)).collect();
     line(&events)
 }
 
@@ -47,10 +47,10 @@ fn line(events: &[String]) -> OneLine {
 /// The last line of a watch whose team was closed under it. The lead is
 /// woken when the watch exits, so the exit carries one line that says why.
 /// It is not stored: the team's state is closed or already gone.
-fn closed(memory: &mut WatchMemory) -> OneLine {
+fn closed(memory: &mut WatchMemory, now: Timestamp) -> OneLine {
     memory.end = Some(WatchEnd::TeamClosed);
     let team = memory.team.clone().unwrap_or_else(|| "unknown".to_owned());
-    join(&team, &["TEAM-CLOSED".to_owned()])
+    join(&team, now, &["TEAM-CLOSED".to_owned()])
 }
 
 fn step(
@@ -60,11 +60,11 @@ fn step(
 ) -> Result<Option<OneLine>, StoreError> {
     check_schema(ctx)?;
     let Some(snap) = snapshot::read(ctx)? else {
-        return Ok(Some(closed(memory)));
+        return Ok(Some(closed(memory, now)));
     };
     memory.team = Some(snap.team.name.to_string());
     if snap.team.state == TeamState::Closed {
-        return Ok(Some(closed(memory)));
+        return Ok(Some(closed(memory, now)));
     }
     let decided = plan(ctx, &snap, memory, now);
     let watching = (!memory.said_watching).then_some(snap.members.len());
@@ -113,7 +113,7 @@ pub fn poll(ctx: &mut Ctx<'_>, memory: &mut WatchMemory) -> Option<OneLine> {
                 return None;
             }
             let team = memory.team.clone().unwrap_or_else(|| "unknown".to_owned());
-            Some(join(&team, &[format!("STORE-ERROR {code}")]))
+            Some(join(&team, now, &[format!("STORE-ERROR {code}")]))
         }
     }
 }

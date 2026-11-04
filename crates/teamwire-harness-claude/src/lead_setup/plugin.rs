@@ -19,9 +19,14 @@ use crate::ClaudeConfig;
 pub(crate) const MARKETPLACE: &str = "teamwire";
 pub(crate) use crate::launch::LEAD_PLUGIN_ID as PLUGIN_ID;
 
-/// The hook timeout in seconds. The hook only reads local files, so it stays
+/// The hook timeout in seconds. The hooks only read local files, so they stay
 /// well under the time a person waits for a turn to end.
-const STOP_HOOK_TIMEOUT_S: u64 = 10;
+const HOOK_TIMEOUT_S: u64 = 10;
+
+/// The tools whose calls can be a member's work (ADR 0035). Claude Code runs
+/// the lead's tool hook for these only, so a read or a search starts no
+/// process.
+const TOOL_HOOK_MATCHER: &str = "Edit|Write|MultiEdit|NotebookEdit|Bash";
 
 /// The plugin's directory inside the marketplace.
 const PLUGIN_DIR: &str = "teamwire";
@@ -60,9 +65,13 @@ impl PluginFiles {
             .ok_or_else(|| "the compiled-in afk skill has no frontmatter".to_owned())?;
         let promptwire = skill::stamp(PROMPTWIRE_TEXT)
             .ok_or_else(|| "the compiled-in promptwire skill has no frontmatter".to_owned())?;
-        let mut hook_words = vec![LaunchSpec::shell_word(&want.command)];
-        hook_words.extend(want.home_args().iter().map(|a| LaunchSpec::shell_word(a)));
-        hook_words.extend(["hook".to_owned(), "claude-lead-stop".to_owned()]);
+        let mut binary = vec![LaunchSpec::shell_word(&want.command)];
+        binary.extend(want.home_args().iter().map(|a| LaunchSpec::shell_word(a)));
+        let hook = |words: &[&str]| {
+            let mut line = binary.clone();
+            line.extend(words.iter().map(|w| (*w).to_owned()));
+            line.join(" ")
+        };
         let body = [
             (
                 format!("{PLUGIN_DIR}/.mcp.json"),
@@ -73,11 +82,21 @@ impl PluginFiles {
             ),
             (
                 format!("{PLUGIN_DIR}/hooks/hooks.json"),
-                pretty(&json!({"hooks": {"Stop": [{"hooks": [{
-                    "type": "command",
-                    "command": hook_words.join(" "),
-                    "timeout": STOP_HOOK_TIMEOUT_S,
-                }]}]}})),
+                pretty(&json!({"hooks": {
+                    "Stop": [{"hooks": [{
+                        "type": "command",
+                        "command": hook(&["hook", "claude-lead-stop"]),
+                        "timeout": HOOK_TIMEOUT_S,
+                    }]}],
+                    "PostToolUse": [{
+                        "matcher": TOOL_HOOK_MATCHER,
+                        "hooks": [{
+                            "type": "command",
+                            "command": hook(&["hook", "lead-tool", "--harness", "claude-code"]),
+                            "timeout": HOOK_TIMEOUT_S,
+                        }],
+                    }],
+                }})),
             ),
             (format!("{PLUGIN_DIR}/skills/teamwire/SKILL.md"), skill),
             (
@@ -105,7 +124,7 @@ impl PluginFiles {
             pretty(&json!({
                 "name": MARKETPLACE,
                 "version": version,
-                "description": "Lead tools, skill and Stop hook for teamwire teams",
+                "description": "Lead tools, skill and hooks for teamwire teams",
             })),
         );
         let marketplace = (
@@ -116,7 +135,7 @@ impl PluginFiles {
                 "plugins": [{
                     "name": MARKETPLACE,
                     "source": format!("./{PLUGIN_DIR}"),
-                    "description": "Lead tools, skill and Stop hook for teamwire teams",
+                    "description": "Lead tools, skill and hooks for teamwire teams",
                 }],
             })),
         );
@@ -314,10 +333,17 @@ mod tests {
         );
         assert_eq!(
             json_of(&files, "teamwire/hooks/hooks.json"),
-            json!({"hooks": {"Stop": [{"hooks": [{
-                "type": "command",
-                "command": "/opt/bin/teamwire hook claude-lead-stop",
-                "timeout": 10}]}]}})
+            json!({"hooks": {
+                "Stop": [{"hooks": [{
+                    "type": "command",
+                    "command": "/opt/bin/teamwire hook claude-lead-stop",
+                    "timeout": 10}]}],
+                "PostToolUse": [{
+                    "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
+                    "hooks": [{
+                        "type": "command",
+                        "command": "/opt/bin/teamwire hook lead-tool --harness claude-code",
+                        "timeout": 10}]}]}})
         );
         assert!(file(&files, "teamwire/skills/teamwire/SKILL.md").contains("teamwire-sha256: "));
         let afk = file(&files, "teamwire/skills/afk/SKILL.md");
@@ -354,6 +380,10 @@ mod tests {
         assert_eq!(
             json_of(&files, "teamwire/hooks/hooks.json")["hooks"]["Stop"][0]["hooks"][0]["command"],
             "/opt/bin/teamwire --home '/scratch tw' hook claude-lead-stop"
+        );
+        assert_eq!(
+            json_of(&files, "teamwire/hooks/hooks.json")["hooks"]["PostToolUse"][0]["hooks"][0]["command"],
+            "/opt/bin/teamwire --home '/scratch tw' hook lead-tool --harness claude-code"
         );
     }
 

@@ -3,6 +3,12 @@ the tests that prove it, and the commits, in your own worktree.
 - Read the files you will change, and the code that calls them, before
   changing anything. Follow the repository's agent instruction
   file (CLAUDE.md or AGENTS.md); its rules are CI gates.
+- Before your first change, run your check once. Your worktree is fresh,
+  so this run shows whether the check works there at all. When it fails
+  before you changed anything, for a reason your brief does not ask you
+  to fix, such as a missing dependency or a test that already fails,
+  change nothing: record the command and its output in your report file,
+  set status 'blocked', and finish.
 - Edit only the files you own (listed under YOUR SCOPE below, or in
   your brief). If the work needs a change anywhere else, do not make
   it: another engineer owns that file. Ask the lead for the change

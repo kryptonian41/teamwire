@@ -1,11 +1,12 @@
 //! The extension of teamwire's lead package for pi (ADR 0030). pi loads it in
 //! every session, members included, so it acts only in a session that is
 //! not a member's. There it registers the lead's MCP server, keeps the
-//! session's state file, runs the lead Stop hook at the end of each run, and
-//! runs `teamwire watch` itself: each line the watch prints reaches the
-//! model as a message, which starts a turn when pi is idle. pi has no tool
-//! like Claude's Monitor, and a watch run through the bash tool would hold
-//! that call until it timed out.
+//! session's state file, runs the lead Stop hook at the end of each run and
+//! the lead's tool hook on each tool call (ADR 0035), and runs
+//! `teamwire watch` itself: each line the watch prints reaches the
+//! model as a steered message after the current turn's tool calls, and starts
+//! a turn when pi is idle. pi has no tool like Claude's Monitor, and a watch
+//! run through the bash tool would hold that call until it timed out.
 //!
 //! The text is the shared code of `extension.rs` with one JSON value spliced
 //! in, so no path can break out of the literal. It holds no secret.
@@ -86,6 +87,15 @@ export default function (pi: ExtensionAPI) {
   const watches = new Map<string, any>();
   const stopping = new Set<any>();
 
+  // Steered, never a follow-up. pi hands the model a follow-up only once the
+  // lead's whole run has stopped, so a line printed during a long run waits
+  // for that run and then describes a roster that has already changed. pi's
+  // agent loop reads the steering queue after each turn's tool calls have
+  // finished and their results are in the context, so a steered line reaches
+  // the model within the run and never between a call and its result.
+  // `triggerTurn` starts a turn when the lead is idle; without it an idle
+  // lead would store the line and never read it.
+  //
   // A line can still be in a watch's pipe when pi replaces this runtime on
   // /new, /fork, /resume or /reload. A throw from a stream listener is
   // uncaught, and pi's terminal UI exits on one, so this never throws.
@@ -94,7 +104,7 @@ export default function (pi: ExtensionAPI) {
     try {
       pi.sendMessage(
         { customType: TW.watchMessage, content: text, display: true },
-        { triggerTurn: true, deliverAs: "followUp" },
+        { triggerTurn: true, deliverAs: "steer" },
       );
     } catch {
       // The runtime went stale: the line has nobody to reach.
@@ -179,7 +189,8 @@ export default function (pi: ExtensionAPI) {
       label: "teamwire watch",
       description:
         "Start `teamwire watch <team>` for a team you lead. Each line the watch prints " +
-        "reaches you as a message, and starts a turn when you are idle, so do not poll. " +
+        "reaches you as a message once your current turn's tool calls have finished, and " +
+        "starts a turn when you are idle, so do not poll. " +
         "Call it right after `teamwire launch`, and again when the watch stopped or " +
         "printed TEAM-COMPLETE before an `--add`.",
       promptSnippet: "Start the watch of a teamwire team you lead; its lines reach you as messages",
@@ -233,18 +244,49 @@ export default function (pi: ExtensionAPI) {
     watches.clear();
   });
 
-  // A watch run through bash holds that call until it times out, and its
-  // lines would wake nobody.
+  // The note of the lead's tool hook, which starts with the call and reaches
+  // the model beside the next tool result.
+  // shortcut: one pending note; when pi runs a turn's calls side by side, a
+  // note can land beside another call of that turn, or the next call's note
+  // replaces it. Key the notes by call id if a lead misses notes that way.
+  let toolNote: Promise<string | undefined> | undefined;
+
   pi.on("tool_call", (event) => {
-    if (!lead || event.toolName !== "bash") return;
-    const command = String((event.input as any)?.command ?? "");
-    const found = WATCH_IN_BASH.exec(command);
-    if (!found || /\s--once\b/.test(command)) return;
+    if (!lead) return;
+    // A watch run through bash holds that call until it times out, and its
+    // lines would wake nobody.
+    if (event.toolName === "bash") {
+      const command = String((event.input as any)?.command ?? "");
+      const found = WATCH_IN_BASH.exec(command);
+      if (found && !/\s--once\b/.test(command)) {
+        return {
+          block: true,
+          reason:
+            `In pi, start the watch with the ${TW.watchTool} tool (team "${found[1]}"). ` +
+            "A watch run through bash holds the call until it times out, and its lines would not reach you.",
+        };
+      }
+    }
+    toolNote = runHook([...TW.homeArgs, "hook", "lead-tool", "--harness", "pi"], {
+      session_id: serverFor,
+      tool_name: event.toolName,
+      tool_input: event.input,
+      cwd: process.cwd(),
+    }).then((reply) => {
+      const note = reply?.hookSpecificOutput?.additionalContext;
+      return typeof note === "string" && note ? note : undefined;
+    });
+  });
+
+  pi.on("tool_result", async (event) => {
+    // A call another tool made is not one of the lead's own.
+    if (!lead || event.parentToolCallId || !toolNote) return;
+    const note = await toolNote;
+    toolNote = undefined;
+    if (!note) return;
     return {
-      block: true,
-      reason:
-        `In pi, start the watch with the ${TW.watchTool} tool (team "${found[1]}"). ` +
-        "A watch run through bash holds the call until it times out, and its lines would not reach you.",
+      content: [...event.content, { type: "text", text: note }],
+      structuredContent: event.structuredContent,
     };
   });
 }
@@ -304,6 +346,7 @@ mod tests {
     fn the_lead_runs_the_lead_hook_and_server_and_never_a_member_hook() {
         let text = render(&values());
         assert!(text.contains(r#""hook", "lead-stop", "--harness", "pi""#));
+        assert!(text.contains(r#""hook", "lead-tool", "--harness", "pi""#));
         assert!(text.contains(r#""mcp", "--lead""#));
         assert!(!text.contains(r#"args("hook", "turn-end")"#));
         assert!(!text.contains(r#""post-tool""#));

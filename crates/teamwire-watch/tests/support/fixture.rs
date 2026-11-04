@@ -270,6 +270,21 @@ impl Bed {
         self.store.read(|tx| tx.member(&role)).unwrap().unwrap()
     }
 
+    /// When the member's current run started, as the store holds the text.
+    pub fn started_at(&self, name: &str) -> String {
+        self.store
+            .read(|tx| {
+                tx.connection()
+                    .query_row(
+                        "SELECT gen_started_at FROM members WHERE role = ?1",
+                        [name],
+                        |row| row.get(0),
+                    )
+                    .map_err(teamwire_store::StoreError::from)
+            })
+            .unwrap()
+    }
+
     /// What the member's harness and host both report from now on.
     pub fn show(&self, name: &str, state: PlaceState) {
         self.harness
@@ -368,13 +383,19 @@ impl Bed {
 
     /// Stores a completion for the member's current generation.
     pub fn complete(&mut self, name: &str, status: CompletionStatus) -> Ulid {
+        self.complete_with(name, status, &format!("{name} finished"))
+    }
+
+    /// `complete` with a chosen summary, as a member's own `done` would
+    /// record it.
+    pub fn complete_with(&mut self, name: &str, status: CompletionStatus, summary: &str) -> Ulid {
         let member = self.member(name);
         let now = self.clock.now();
         let new = NewCompletion {
             role: member.role.clone(),
             generation: member.generation,
             status,
-            summary: format!("{name} finished"),
+            summary: summary.to_owned(),
             final_message: None,
             final_source: FinalSource::Hook,
         };
@@ -515,17 +536,38 @@ impl Default for Bed {
     }
 }
 
-/// The event names in a line, in order: `LATE`, `TEAM-STALLED`, ...
-pub fn names(line: &str) -> Vec<String> {
+/// `17:24:07Z`: two digits, a colon, twice over, then `Z`.
+fn is_utc_time(text: &str) -> bool {
+    text.len() == 9
+        && text.bytes().enumerate().all(|(i, b)| match i {
+            2 | 5 => b == b':',
+            8 => b == b'Z',
+            _ => b.is_ascii_digit(),
+        })
+}
+
+/// The events in a line, in order, each with its
+/// `[teamwire:<team> HH:MM:SSZ] ` prefix taken off:
+/// `["WATCHING 2 members", "TEAM-COMPLETE 2/2 done"]`. A part whose prefix
+/// is missing, names another team or holds no time is returned whole, so a
+/// test that compares the wording pins the prefix's shape as well.
+pub fn events(line: &str) -> Vec<String> {
     line.split(" | ")
         .map(|part| {
-            part.strip_prefix(&format!("[teamwire:{TEAM}] "))
-                .unwrap_or(part)
-                .split(' ')
-                .next()
-                .unwrap_or("")
+            part.strip_prefix(&format!("[teamwire:{TEAM} "))
+                .and_then(|rest| rest.split_once("] "))
+                .filter(|(time, _)| is_utc_time(time))
+                .map_or(part, |(_, text)| text)
                 .to_owned()
         })
+        .collect()
+}
+
+/// The event names in a line, in order: `LATE`, `TEAM-STALLED`, ...
+pub fn names(line: &str) -> Vec<String> {
+    events(line)
+        .iter()
+        .map(|event| event.split(' ').next().unwrap_or("").to_owned())
         .collect()
 }
 

@@ -15,14 +15,15 @@
 
 use std::process::Command;
 
+/// `teamwire <args>` with a cleared environment, so no identity variable of
+/// the session that runs the tests reaches the binary.
 fn run(home: &std::path::Path, args: &[&str]) -> std::process::Output {
     Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")
         .arg(home)
         .args(args)
-        .env_remove("TEAMWIRE_TOKEN")
-        .env_remove("TEAMWIRE_TEAM")
-        .env_remove("TEAMWIRE_ROLE")
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
         .output()
         .unwrap()
 }

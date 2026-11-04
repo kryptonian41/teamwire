@@ -58,6 +58,11 @@ const RULES: &[(&str, &str, bool)] = &[
         false,
     ),
     (
+        "run the check once before the first change; blocked when it already fails",
+        "Before your first change, run your check once",
+        false,
+    ),
+    (
         "never weaken a check",
         "Never make a check pass by weakening it",
         false,

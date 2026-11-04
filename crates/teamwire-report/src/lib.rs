@@ -1,6 +1,6 @@
 //! Completions: `done`, the report check, result files, delivering a result
-//! to the lead, and the harness-neutral part of the turn-end and in-turn
-//! hooks (ADR 0007).
+//! to the lead, the harness-neutral part of the turn-end and in-turn hooks
+//! (ADR 0007), and the lead's Stop and tool hooks (ADR 0018, ADR 0035).
 //!
 //! Never: fail a hook (every hook path returns a reply, never an error);
 //! hold a member twice in one generation for the same report gaps; type a
@@ -19,6 +19,7 @@ mod done;
 mod final_message;
 mod handoff;
 mod lead_stop;
+mod lead_tool;
 mod note;
 mod paths;
 mod received;
@@ -30,6 +31,7 @@ mod usage;
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use handoff::handoff_note;
 pub use lead_stop::{afk_hold_notes, teams_without_watch, watch_missing_note};
+pub use lead_tool::lead_tool_note;
 pub use received::{Received, mark_received};
 pub use reminder::on_tool_use;
 pub use turn_end::on_turn_end;

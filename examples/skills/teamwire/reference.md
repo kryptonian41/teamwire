@@ -9,7 +9,7 @@ teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
 through `claude plugin`, plus `claude mcp remove` and deleting an older
 install's skill folder. Install writes one plugin, `teamwire@teamwire`, to
 `$TEAMWIRE_HOME/claude-plugin/` and registers it at user scope. It carries
-this skill, the lead's MCP server and the lead's Stop hook.
+this skill, the lead's MCP server and the lead's Stop and tool hooks.
 
 1. Install the binary (`cargo install --locked --path crates/teamwire-cli`)
    and run `teamwire doctor`, which changes nothing. Until step 3 it prints a
@@ -74,9 +74,15 @@ a dialog), `LATE <role> <age>` (past its deadline with nothing recorded),
 on. `STORE-ERROR <code>` means the watch could not read or write the team's
 database, so run `teamwire doctor`. The other lines:
 
+Every watch line says when it was printed, in UTC to the second:
+`[teamwire:<team> 17:24:07Z] WATCHING 3 members`. A line printed before your
+last `launch --add` or reprompt is out of date, so run `teamwire status`
+rather than acting on it. `date -u +%T` gives the current UTC time. Only
+watch lines carry a time; a result, a message and a hook note do not.
+
 | Line | Meaning |
 | --- | --- |
-| `WATCHING n members` | The watch started. |
+| `WATCHING n members` | The watch started. This line never comes with `TEAM-COMPLETE`, so a watch you start beside a `launch --add` stays alive and picks the new member up. The poll reads the roster a moment before it prints, so a member whose row is written inside that moment is still missed (ADR 0037): run `teamwire status` when you need to be sure. |
 | `DECLARED <role>` | A completion is recorded while its turn still runs. The report lands at turn end. |
 | `UNREPORTED <role>: ...` | The member recorded done and its turn ended, but its turn-end hook never reported. Run `teamwire doctor`, then read the member's report. The team keeps waiting. |
 | `COMPLETED <role> (<status>) <summary> Result: <path>` | Your host cannot type results into your pane, so the watch reports them. Read the path. When the result file is missing or out of date, the path is the report, `reports/<role>.md`. |
@@ -87,7 +93,7 @@ database, so run `teamwire doctor`. The other lines:
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
-| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. A later wave, a reviewer or the closer may still be due. |
+| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A later wave, a reviewer or the closer may still be due. |
 
 ## Other commands
 
