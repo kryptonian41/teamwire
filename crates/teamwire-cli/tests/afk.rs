@@ -409,6 +409,27 @@ fn a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task() {
 }
 
 #[test]
+fn a_start_whose_lead_folder_is_known_keeps_refs_beside_lead_cwd() {
+    let bed = Bed::new(true);
+    // The harness reads the lead's folder from the session's transcript.
+    let project = bed.claude.path().join("projects/p");
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(
+        project.join(format!("{SESSION}.jsonl")),
+        "{\"cwd\":\"/lead/folder\"}\n",
+    )
+    .unwrap();
+    let out = bed.start_run("run", &[]);
+    assert_eq!(out.status.code(), Some(0), "{}", err(&out));
+    let created = bed
+        .store("run")
+        .read(|tx| tx.events_of_type(EventType::TeamCreated)?.all_or_corrupt())
+        .unwrap();
+    assert_eq!(created[0].data["lead_cwd"], "/lead/folder");
+    assert_eq!(created[0].data["refs"], serde_json::json!([]));
+}
+
+#[test]
 fn the_budget_option_sets_the_end() {
     let bed = Bed::new(true);
     let out = bed.start_run("run", &["--budget", "90m"]);
