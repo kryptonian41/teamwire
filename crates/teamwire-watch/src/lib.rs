@@ -7,12 +7,12 @@
 //! Never: call a writing host method; print more than one line per poll;
 //! announce the same key twice (a restarted watch says `WATCHING` again,
 //! and `TEAM-COMPLETE` again for a finished team); print `TEAM-COMPLETE`
-//! in the line that said `WATCHING`, unless the watch polls once only
-//! (WAT-20); write anything from `status` (WAT-11).
+//! in the line that said `WATCHING`, unless the watch polls once (WAT-20);
+//! write anything from `status` (WAT-11).
 //!
 //! Invariants: an announcement is stored before it is printed, with its
-//! generation or episode in its key; `TEAM-COMPLETE` comes once per watch,
-//! after the poll that said `WATCHING`; a line carries the poll's UTC time.
+//! generation or episode in its key; a line carries the poll's UTC time;
+//! `TEAM-COMPLETE` comes once per watch, when nothing is left to watch.
 
 mod afk;
 mod apply;
