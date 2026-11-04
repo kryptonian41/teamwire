@@ -268,8 +268,8 @@ fn create(ctx: &mut Ctx<'_>, new: &New<'_>) -> Result<Vec<String>, Failed> {
         })
         .map(|p| p.display().to_string());
     let extra = cwd.map_or(
-        serde_json::json!({}),
-        |cwd| serde_json::json!({ "lead_cwd": cwd }),
+        serde_json::json!({ "refs": [] }),
+        |cwd| serde_json::json!({ "refs": [], "lead_cwd": cwd }),
     );
     // The team row has a fixed primary key, so of two runs with one name the
     // insert of the loser breaks a constraint, and the winner's files stay.

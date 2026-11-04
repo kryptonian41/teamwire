@@ -400,6 +400,8 @@ fn a_start_makes_the_team_with_its_budget_and_a_copy_of_the_task() {
         .read(|tx| tx.events_of_type(EventType::TeamCreated)?.all_or_corrupt())
         .unwrap();
     assert_eq!(created[0].data["afk_budget_ends_at"], ends.to_string());
+    // A missing key would read as a team made by an older build (ADR 0038).
+    assert_eq!(created[0].data["refs"], serde_json::json!([]));
 
     // The same session cannot start a second run, and a second run by
     // another session cannot reuse the name.
