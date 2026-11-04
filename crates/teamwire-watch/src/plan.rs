@@ -16,7 +16,8 @@ use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
     STALLED_PREFIX, age, agent_text, blocked_key, context_key, died_key, late_key, question_key,
-    result_key, result_path, silent_key, stalled_key, unanswered_key, unread_key, unreported_key,
+    result_key, result_path, result_written, silent_key, stalled_key, unanswered_key, unread_key,
+    unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -309,6 +310,17 @@ fn judge_completion(
             c.status.as_str()
         }),
         ReportState::Pending if env.reports_through_watch(role) => {
+            // `done` stores the completion and writes the result file just
+            // after, and the file must exist before the line that delivers
+            // it (REP-9). A poll between the two waits one poll for the
+            // file, then reports anyway, so a `done` that died after storing
+            // still reaches the lead, pointing at the member's report.
+            mm.declared_polls += 1;
+            if mm.declared_polls < 2
+                && !result_written(&env.snap.team_dir, role, record.result_sha256.as_ref())
+            {
+                return Verdict::waiting();
+            }
             env.actions.push(Action::ViaWatch {
                 completion: c.ulid,
                 key: result_key("COMPLETED", &c.ulid),

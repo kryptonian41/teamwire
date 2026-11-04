@@ -177,7 +177,7 @@ Events, each announced once per occurrence:
 | `LATE <role> <age>` | Past its deadline, once per generation |
 | `DECLARED <role>` | A completion recorded but not reported for 2 polls |
 | `UNREPORTED <role>: done is recorded but its turn-end hook did not report it; run teamwire doctor` | A completion stays pending while the member's harness reports it alive and idle for longer than the hook budget (40 s) plus one poll. Once per generation. The member is not settled: the team keeps waiting |
-| `COMPLETED <role> (<status>) <summary> Result: <path>` | Watch route only (ADR 0007). `<path>` is the member's result file `outbox/<role>.md`, or its report `reports/<role>.md` when the result file is missing or its SHA-256 differs from the one the completion recorded; the same holds for the other `Result:` lines |
+| `COMPLETED <role> (<status>) <summary> Result: <path>` | Watch route only (ADR 0007). `<path>` is the member's result file `outbox/<role>.md`, or its report `reports/<role>.md` when the result file is missing or its SHA-256 differs from the one the completion recorded; the same holds for the other `Result:` lines. `done` writes the result file just after it stores the result, so a poll that finds the file missing waits one poll for it before it prints this line |
 | `UNDELIVERED <role> <reason> Result: <path>` | A result the lead could not be reached with, including `delivery_interrupted` (left in `delivering` for over 90 s, ADR 0007 point 6a) |
 | `UNCONFIRMED <role> Result: <path>` | A result whose typing stalled or timed out; it may or may not be on the lead's screen |
 | `QUESTION-UNDELIVERED <id> from <role>` | A question to the lead that could not be typed |

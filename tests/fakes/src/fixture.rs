@@ -341,6 +341,43 @@ impl FakeHerdrEnv {
             })
             .unwrap_or_default()
     }
+
+    /// How many prompts typed to live agents they have not taken yet. An
+    /// agent goes on showing its old status for a moment after a prompt
+    /// reaches its inbox, so a test that waits for idle agents waits for
+    /// this to be zero first.
+    pub fn untaken_prompts(&self) -> usize {
+        let state_path = self.state_path();
+        self.agent_panes()
+            .iter()
+            .map(|(pane, pid)| crate::herdr_bin::untaken_prompts(&state_path, pane, *pid))
+            .sum()
+    }
+
+    /// Each pane the state file gives an agent process, with that process.
+    fn agent_panes(&self) -> Vec<(String, u32)> {
+        let Some(doc) = fsutil::read_text(&self.state_path())
+            .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        else {
+            return Vec::new();
+        };
+        let panes = doc.get("panes").and_then(Value::as_array);
+        panes
+            .into_iter()
+            .flatten()
+            .filter_map(|pane| {
+                let pid = pane
+                    .pointer("/agent/pid")
+                    .and_then(Value::as_u64)
+                    .and_then(|p| u32::try_from(p).ok())?;
+                let id = pane
+                    .get("pane_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                Some((id.to_owned(), pid))
+            })
+            .collect()
+    }
 }
 
 /// The file whose lock `FakeHerdrEnv` holds, under the world's root.
@@ -352,25 +389,8 @@ impl Drop for FakeHerdrEnv {
     /// Ends every agent process still running, so a test that ends early
     /// (or a `never_stop` fault) leaves nothing behind.
     fn drop(&mut self) {
-        let Some(text) = fsutil::read_text(&self.state_path()) else {
-            return;
-        };
-        let Ok(doc) = serde_json::from_str::<Value>(&text) else {
-            return;
-        };
-        let panes = doc.get("panes").and_then(Value::as_array);
-        for pane in panes.into_iter().flatten() {
-            let pid = pane
-                .pointer("/agent/pid")
-                .and_then(Value::as_u64)
-                .and_then(|p| u32::try_from(p).ok());
-            let id = pane
-                .get("pane_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default();
-            if let Some(pid) = pid {
-                crate::herdr_bin::end_agent(&self.state_path(), id, pid);
-            }
+        for (pane, pid) in self.agent_panes() {
+            crate::herdr_bin::end_agent(&self.state_path(), &pane, pid);
         }
     }
 }

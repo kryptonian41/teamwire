@@ -335,7 +335,12 @@ names a directory, so it can never write into the real `~/.claude`.
   step and every hook it runs, as Claude Code does; `hooks.Stop[].hooks[].command`
   entries are the Stop hooks.
 - Prompts arrive in `$FAKE_PANE_DIR/inbox` (when `fake-herdr` started it) or as
-  lines on standard input. Each prompt is one turn: it echoes `> <prompt>`,
+  lines on standard input. Until the agent takes a prompt from the inbox it
+  shows its old status. Each status it writes to `status.json` carries
+  `prompts`, the count it has taken, and the turn's first status already
+  counts the new one. `FakeHerdrEnv::untaken_prompts()` compares that count
+  with the inbox, so a test that waits for an idle agent can tell "idle"
+  from "not started on its prompt yet". Each prompt is one turn: it echoes `> <prompt>`,
   runs the turn's steps, then runs each Stop hook with this JSON on stdin:
   `{"session_id","transcript_path","cwd","permission_mode":"bypassPermissions","hook_event_name":"Stop","stop_hook_active","prompt_id","background_tasks","last_assistant_message"}`.
   `background_tasks` is `[]` unless a script step sets tasks (see below). The
@@ -347,9 +352,11 @@ names a directory, so it can never write into the real `~/.claude`.
   Claude Code).
 - `fake-claude agents --json` (also reached as `claude agents --json` through
   the installed `claude` link) prints a JSON array of the session files in
-  `<dir>/sessions` and starts no session. An interactive row carries its state
-  under `status`, a background row (`"kind": "bg"` in its file) under `state`;
-  add a background row with `FakeHerdrEnv::add_session_file`.
+  `<dir>/sessions` and starts no session. It reads only `<pid>.json` files,
+  never the hidden temporary file of a session file being written. An
+  interactive row carries its state under `status`, a background row
+  (`"kind": "bg"` in its file) under `state`; add a background row with
+  `FakeHerdrEnv::add_session_file`.
 - `claude --version` prints one line and starts no session. `claude --help`
   lists the flags teamwire passes to start a member; `FAKE_CLAUDE_HELP_WITHOUT=--effort`
   leaves one out. `herdr --version` prints one line.
@@ -381,7 +388,12 @@ names a directory, so it can never write into the real `~/.claude`.
   process group of its own, and the agent ends that group.
 - `FakeHerdrEnv`'s `Drop` and `pane close` end an agent and the shell step it
   is running, except when the pane's `status.json` says `exited`: the pid may
-  belong to another process by then.
+  belong to another process by then. They find the step's group in the pane's
+  `step.pgid`, and a step's command starts only after the agent has written
+  that file: the shell first waits for a go-ahead line on its standard input.
+  An agent ended before it sent the go-ahead closes the pipe, and its shell
+  exits without running the command. So an agent ended at any moment leaves
+  no step running.
 
 The script (`FAKE_CLAUDE_SCRIPT` names a JSON file; `ClaudeScript` builds it):
 

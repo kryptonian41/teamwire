@@ -44,6 +44,13 @@ pub(super) fn read_status(dir: &Path) -> (String, u64) {
     (status, seq)
 }
 
+/// How many prompts the agent has taken from its inbox, as `fake-claude`
+/// records them with each status. `None` when the status file does not say.
+pub(super) fn prompts_taken(dir: &Path) -> Option<usize> {
+    let doc: Value = serde_json::from_str(&fsutil::read_text(&dir.join("status.json"))?).ok()?;
+    usize::try_from(doc.get("prompts")?.as_u64()?).ok()
+}
+
 pub(super) fn claude_dir() -> Option<PathBuf> {
     ["TEAMWIRE_CLAUDE_DIR", "FAKE_CLAUDE_DIR"]
         .iter()

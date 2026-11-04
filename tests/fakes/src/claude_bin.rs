@@ -123,6 +123,9 @@ struct Session {
     file: PathBuf,
     pane_dir: Option<PathBuf>,
     seq: u64,
+    /// Prompts taken from the inbox, recorded with every status, so a
+    /// reader can tell a prompt still waiting in the inbox from one taken.
+    prompts: u64,
     settings: Settings,
     script: Script,
     transcript: PathBuf,
@@ -196,7 +199,7 @@ impl Session {
     fn set_status(&mut self, status: &str) {
         self.seq += 1;
         if let Some(dir) = &self.pane_dir {
-            let doc = json!({ "status": status, "seq": self.seq });
+            let doc = json!({ "status": status, "seq": self.seq, "prompts": self.prompts });
             fsutil::write_atomic(&dir.join("status.json"), doc.to_string().as_bytes()).ok();
         }
         self.write_session_file(status);
@@ -285,6 +288,9 @@ impl Session {
 
     /// One prompt: its steps, then the end of the turn.
     fn turn(&mut self, n: usize, prompt: &str) -> Option<ExitCode> {
+        // Counted before the turn's first status, which carries it, so no
+        // reader sees the prompt taken while the old status still shows.
+        self.prompts += 1;
         say(&format!("{PROMPT_TEXT}{prompt}"));
         fsutil::append(
             &self.transcript,
@@ -456,6 +462,7 @@ pub fn run(argv: &[String]) -> ExitCode {
         owner: Owner::from_env(),
         pane_dir,
         seq: 0,
+        prompts: 0,
         settings,
         script,
         id,
