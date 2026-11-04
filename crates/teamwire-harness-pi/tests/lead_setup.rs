@@ -75,6 +75,12 @@ impl Bed {
             .collect()
     }
 
+    /// The extension text `install` writes, read the way pi reads it.
+    fn extension(&self) -> String {
+        let files = self.pi().package_files(&want(), SHARED).unwrap();
+        file(&files, "extensions/teamwire-lead.ts").to_owned()
+    }
+
     fn write_files(&self) {
         let changes = self
             .pi()
@@ -139,6 +145,27 @@ fn the_package_holds_the_extension_the_skills_and_a_manifest() {
         skill.starts_with("---\nname: teamwire\ndescription: d\n---\n\n## You are leading from pi")
     );
     assert!(skill.find("teamwire_watch").unwrap() < skill.find("# Body").unwrap());
+}
+
+#[test]
+fn a_watch_line_is_steered_so_it_waits_only_for_the_turns_tool_calls() {
+    let bed = Bed::new();
+    let extension = bed.extension();
+    // One `sendMessage` call carries every watch line and the extension's own
+    // "the watch stopped" line, so one mode decides when all of them arrive.
+    assert_eq!(
+        extension.matches("pi.sendMessage(").count(),
+        1,
+        "{extension}"
+    );
+    assert!(
+        extension.contains(r#"{ triggerTurn: true, deliverAs: "steer" }"#),
+        "{extension}"
+    );
+    // A follow-up reaches the model only when the lead's whole run stops.
+    assert!(!extension.contains("followUp"), "{extension}");
+    // An idle lead needs the turn, or the line sits unread until it acts.
+    assert!(extension.contains("triggerTurn: true"), "{extension}");
 }
 
 #[test]

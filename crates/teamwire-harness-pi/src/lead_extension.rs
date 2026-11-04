@@ -4,9 +4,9 @@
 //! session's state file, runs the lead Stop hook at the end of each run and
 //! the lead's tool hook on each tool call (ADR 0035), and runs
 //! `teamwire watch` itself: each line the watch prints reaches the
-//! model as a message, which starts a turn when pi is idle. pi has no tool
-//! like Claude's Monitor, and a watch run through the bash tool would hold
-//! that call until it timed out.
+//! model as a steered message after the current turn's tool calls, and starts
+//! a turn when pi is idle. pi has no tool like Claude's Monitor, and a watch
+//! run through the bash tool would hold that call until it timed out.
 //!
 //! The text is the shared code of `extension.rs` with one JSON value spliced
 //! in, so no path can break out of the literal. It holds no secret.
@@ -87,6 +87,15 @@ export default function (pi: ExtensionAPI) {
   const watches = new Map<string, any>();
   const stopping = new Set<any>();
 
+  // Steered, never a follow-up. pi hands the model a follow-up only once the
+  // lead's whole run has stopped, so a line printed during a long run waits
+  // for that run and then describes a roster that has already changed. pi's
+  // agent loop reads the steering queue after each turn's tool calls have
+  // finished and their results are in the context, so a steered line reaches
+  // the model within the run and never between a call and its result.
+  // `triggerTurn` starts a turn when the lead is idle; without it an idle
+  // lead would store the line and never read it.
+  //
   // A line can still be in a watch's pipe when pi replaces this runtime on
   // /new, /fork, /resume or /reload. A throw from a stream listener is
   // uncaught, and pi's terminal UI exits on one, so this never throws.
@@ -95,7 +104,7 @@ export default function (pi: ExtensionAPI) {
     try {
       pi.sendMessage(
         { customType: TW.watchMessage, content: text, display: true },
-        { triggerTurn: true, deliverAs: "followUp" },
+        { triggerTurn: true, deliverAs: "steer" },
       );
     } catch {
       // The runtime went stale: the line has nobody to reach.
