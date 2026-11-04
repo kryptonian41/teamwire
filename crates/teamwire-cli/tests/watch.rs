@@ -17,13 +17,126 @@
 #[path = "../../teamwire-watch/tests/support/fixture.rs"]
 pub mod fixture;
 
-use fixture::Bed;
-use teamwire_core::{Clock, CompletionStatus, Pid};
+use std::io::BufRead;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use fixture::{Bed, events};
+use teamwire_core::{Clock, CompletionStatus, Pid, Timestamp};
 
 struct Run {
     code: i32,
     out: String,
     err: String,
+}
+
+/// How long a test waits for a watch to print something or to exit.
+const PATIENCE: Duration = Duration::from_secs(30);
+
+/// Every event the watch printed, line by line, with the prefix of each
+/// taken off: `[["WATCHING 1 members"], ["TEAM-COMPLETE 1/1 done"]]`.
+fn printed(output: &str) -> Vec<Vec<String>> {
+    output.lines().map(events).collect()
+}
+
+/// Calls `ready` every 20 ms until it is true or `within` runs out.
+fn wait_until(within: Duration, mut ready: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + within;
+    while Instant::now() < deadline {
+        if ready() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    ready()
+}
+
+/// A `teamwire watch` still running, its output read by a thread as the
+/// watch prints it. Dropping it kills the process, so a test that fails
+/// half way leaves nothing running.
+struct Watching {
+    child: std::process::Child,
+    out: Arc<Mutex<String>>,
+}
+
+impl Watching {
+    /// Starts `teamwire watch alpha <args>` against the bed's home, with the
+    /// same cleared environment `teamwire` uses.
+    fn start(bed: &Bed, args: &[&str]) -> Self {
+        let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .arg("--home")
+            .arg(bed.home.path())
+            .args(["watch", "alpha"])
+            .args(args)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
+            .env("TEAMWIRE_HOME", bed.home.path())
+            .env("TEAMWIRE_CLAUDE_DIR", bed.home.path().join("claude"))
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let out = Arc::new(Mutex::new(String::new()));
+        let stdout = child.stdout.take().unwrap();
+        let into = Arc::clone(&out);
+        std::thread::spawn(move || {
+            for line in std::io::BufReader::new(stdout)
+                .lines()
+                .map_while(Result::ok)
+            {
+                into.lock().unwrap().push_str(&line);
+                into.lock().unwrap().push('\n');
+            }
+        });
+        Self { child, out }
+    }
+
+    /// Everything the watch has printed so far.
+    fn output(&self) -> String {
+        self.out.lock().unwrap().clone()
+    }
+
+    fn wait_for(&self, needle: &str) {
+        let seen = wait_until(PATIENCE, || self.output().contains(needle));
+        assert!(seen, "never printed {needle:?}: {}", self.output());
+    }
+
+    /// The time of the watch lease's last heartbeat: one poll writes one.
+    fn heartbeat(bed: &Bed) -> Option<Timestamp> {
+        bed.store
+            .read(|tx| tx.watch_lease())
+            .ok()
+            .flatten()
+            .map(|lease| lease.heartbeat_at)
+    }
+
+    /// Waits for one more poll than the one that wrote `since`.
+    fn wait_for_a_poll_after(bed: &Bed, since: Option<Timestamp>) {
+        let polled = wait_until(PATIENCE, || {
+            Self::heartbeat(bed).is_some_and(|now| Some(now) != since)
+        });
+        assert!(polled, "the watch stopped polling");
+    }
+
+    fn exit_code(&mut self) -> Option<i32> {
+        let mut code = None;
+        let done = wait_until(PATIENCE, || match self.child.try_wait() {
+            Ok(Some(status)) => {
+                code = status.code();
+                true
+            }
+            _ => false,
+        });
+        assert!(done, "the watch did not exit: {}", self.output());
+        code
+    }
+}
+
+impl Drop for Watching {
+    fn drop(&mut self) {
+        // A watch that already exited makes both calls fail; that is fine.
+        self.child.kill().ok();
+        self.child.wait().ok();
+    }
 }
 
 /// Runs `teamwire <args>` with a cleared environment: no host, no export
@@ -61,8 +174,10 @@ fn once_prints_one_line_and_exits_zero() {
     assert!(bed.store.read(|tx| tx.watch_lease()).unwrap().is_none());
 }
 
+/// WAT-20: the first poll says `WATCHING` and holds `TEAM-COMPLETE` back,
+/// so a finished team takes two polls and two lines to end the watch.
 #[test]
-fn a_finished_team_ends_the_watch_without_once() {
+fn a_finished_team_ends_the_watch_on_its_second_poll_without_once() {
     let mut bed = Bed::new();
     bed.add("api");
     bed.add("web");
@@ -71,9 +186,57 @@ fn a_finished_team_ends_the_watch_without_once() {
     let run = teamwire(&bed, &["watch", "alpha", "--interval", "1"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert_eq!(
-        run.out,
-        "[teamwire:alpha] WATCHING 2 members | [teamwire:alpha] TEAM-COMPLETE 1/2 done; not done: web failed\n"
+        printed(&run.out),
+        [
+            vec!["WATCHING 2 members"],
+            vec!["TEAM-COMPLETE 1/2 done; not done: web failed"],
+        ]
     );
+}
+
+/// WAT-20: `--once` reads the team's state in a single poll and prints what
+/// it found, for the scripts and tests that read it that way.
+#[test]
+fn once_on_a_finished_team_prints_team_complete_in_its_one_poll() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    let run = teamwire(&bed, &["watch", "alpha", "--once"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(
+        printed(&run.out),
+        [["WATCHING 1 members", "TEAM-COMPLETE 1/1 done"]]
+    );
+}
+
+/// WAT-20, the failure of team `fb-2026-11-03`: a watch read a settled
+/// roster 235 ms before `launch --add` wrote a new member's row, printed
+/// `TEAM-COMPLETE`, exited, and that member ran unwatched for 3.5 minutes.
+/// The first poll now holds `TEAM-COMPLETE` back, which leaves a whole
+/// interval for the row to be written, and the running watch picks it up.
+#[test]
+fn a_member_added_after_the_first_poll_is_watched_by_the_running_watch() {
+    let mut bed = Bed::new();
+    // The binary reads the real clock and the fake clock stands in 2026, so
+    // give the members a deadline that has not passed.
+    bed.add_with_deadline("api", 100_000_000);
+    bed.delivered("api", CompletionStatus::Done);
+    let mut watch = Watching::start(&bed, &["--interval", "2"]);
+    watch.wait_for("WATCHING 1 members");
+    let first_poll = Watching::heartbeat(&bed);
+    // `launch --add` writes the new member while the watch waits, as the
+    // lead's launch did in `fb`.
+    bed.add_with_deadline("web", 100_000_000);
+    // The watch has polled again, so it has read the new member.
+    Watching::wait_for_a_poll_after(&bed, first_poll);
+    assert!(
+        !watch.output().contains("TEAM-COMPLETE"),
+        "the team waits for the added member: {}",
+        watch.output()
+    );
+    bed.delivered("web", CompletionStatus::Done);
+    watch.wait_for("TEAM-COMPLETE 2/2 done");
+    assert_eq!(watch.exit_code(), Some(0), "{}", watch.output());
 }
 
 #[test]
@@ -196,8 +359,8 @@ fn an_export_endpoint_does_not_change_the_output() {
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
     assert_eq!(
-        String::from_utf8(out.stdout).unwrap(),
-        "[teamwire:alpha] WATCHING 1 members | [teamwire:alpha] TEAM-COMPLETE 1/1 done\n"
+        printed(&String::from_utf8(out.stdout).unwrap()),
+        [vec!["WATCHING 1 members"], vec!["TEAM-COMPLETE 1/1 done"]]
     );
 }
 

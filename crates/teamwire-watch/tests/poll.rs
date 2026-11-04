@@ -402,7 +402,7 @@ fn the_poll_that_says_watching_after_a_failed_one_also_holds_team_complete() {
     let mut bed = Bed::new();
     bed.add("api");
     bed.delivered("api", CompletionStatus::Done);
-    let started = started_at(&bed);
+    let started = bed.started_at("api");
     set_started_at(&mut bed, "api", "not a time");
     assert!(bed.poll().unwrap().contains("STORE-ERROR"));
     set_started_at(&mut bed, "api", &started);
@@ -1405,22 +1405,6 @@ fn events_past_the_line_limit_wait_for_a_later_poll_and_team_complete_comes_last
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
-/// One member's `gen_started_at` as the store holds it.
-#[expect(clippy::unwrap_used, reason = "a failure fails the test")]
-fn started_at(bed: &Bed) -> String {
-    bed.store
-        .read(|tx| {
-            tx.connection()
-                .query_row(
-                    "SELECT gen_started_at FROM members WHERE role = 'api'",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(teamwire_store::StoreError::from)
-        })
-        .unwrap()
-}
-
 /// Sets one member's `gen_started_at` to `value`, past the store's checks.
 #[expect(clippy::unwrap_used, reason = "a failure fails the test")]
 fn set_started_at(bed: &mut Bed, name: &str, value: &str) {
@@ -1442,7 +1426,7 @@ fn the_first_good_poll_says_watching_after_a_failed_one() {
     let mut bed = Bed::new();
     bed.add("api");
     bed.working("api");
-    let started = started_at(&bed);
+    let started = bed.started_at("api");
     set_started_at(&mut bed, "api", "not a time");
     let failed = bed.poll().unwrap();
     assert!(failed.contains("STORE-ERROR"), "{failed}");

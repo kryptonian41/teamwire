@@ -5,15 +5,14 @@
 //! measures the machine's sleeps.
 //!
 //! Never: call a writing host method; print more than one line per poll;
-//! announce the same key twice (a restarted watch prints its `WATCHING`
-//! line again, and `TEAM-COMPLETE` for a finished team, one poll later);
-//! print `TEAM-COMPLETE` in the line that says `WATCHING`, unless the
-//! watch polls only once (WAT-20); write anything from `status` (WAT-11).
+//! announce the same key twice (a restarted watch says `WATCHING` again,
+//! and `TEAM-COMPLETE` again for a finished team); print `TEAM-COMPLETE`
+//! in the line that said `WATCHING`, unless the watch polls once only
+//! (WAT-20); write anything from `status` (WAT-11).
 //!
-//! Invariants: announcements are stored before they are printed, and each
-//! key carries its generation or episode number; `TEAM-COMPLETE` is printed
-//! once per watch, when every live member is settled and the watch has
-//! already said `WATCHING` in an earlier poll.
+//! Invariants: an announcement is stored before it is printed, with its
+//! generation or episode in its key; `TEAM-COMPLETE` comes once per watch,
+//! on a poll after the one that said `WATCHING`.
 
 mod afk;
 mod apply;

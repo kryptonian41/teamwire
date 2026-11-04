@@ -270,6 +270,21 @@ impl Bed {
         self.store.read(|tx| tx.member(&role)).unwrap().unwrap()
     }
 
+    /// When the member's current run started, as the store holds the text.
+    pub fn started_at(&self, name: &str) -> String {
+        self.store
+            .read(|tx| {
+                tx.connection()
+                    .query_row(
+                        "SELECT gen_started_at FROM members WHERE role = ?1",
+                        [name],
+                        |row| row.get(0),
+                    )
+                    .map_err(teamwire_store::StoreError::from)
+            })
+            .unwrap()
+    }
+
     /// What the member's harness and host both report from now on.
     pub fn show(&self, name: &str, state: PlaceState) {
         self.harness
@@ -515,17 +530,25 @@ impl Default for Bed {
     }
 }
 
-/// The event names in a line, in order: `LATE`, `TEAM-STALLED`, ...
-pub fn names(line: &str) -> Vec<String> {
+/// The events in a line, in order, each with its `[teamwire:<team>] `
+/// prefix taken off: `["WATCHING 2 members", "TEAM-COMPLETE 2/2 done"]`. A
+/// part carrying no such prefix is returned whole, so a test that compares
+/// the wording pins the prefix as well.
+pub fn events(line: &str) -> Vec<String> {
     line.split(" | ")
         .map(|part| {
             part.strip_prefix(&format!("[teamwire:{TEAM}] "))
                 .unwrap_or(part)
-                .split(' ')
-                .next()
-                .unwrap_or("")
                 .to_owned()
         })
+        .collect()
+}
+
+/// The event names in a line, in order: `LATE`, `TEAM-STALLED`, ...
+pub fn names(line: &str) -> Vec<String> {
+    events(line)
+        .iter()
+        .map(|event| event.split(' ').next().unwrap_or("").to_owned())
         .collect()
 }
 
