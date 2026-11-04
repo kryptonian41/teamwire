@@ -62,6 +62,10 @@ struct Run {
     seen_once: HashMap<String, u32>,
     /// `TEAM-COMPLETE` was printed by the current process.
     complete: bool,
+    /// The current process has said `WATCHING` over a roster that held at
+    /// least one live member, so an empty roster later means the lead has
+    /// removed them all and the watch must complete (WAT-20).
+    watched_a_member: bool,
 }
 
 impl Run {
@@ -89,6 +93,12 @@ impl Run {
             }
         }
         let says = |name: &str| texts.iter().any(|t| t.split(' ').next() == Some(name));
+        if texts
+            .iter()
+            .any(|t| t.starts_with("WATCHING ") && !t.starts_with("WATCHING 0 "))
+        {
+            self.watched_a_member = true;
+        }
         // WAT-20: the poll that says `WATCHING` leaves `TEAM-COMPLETE` to
         // the next poll, so a member written by a `launch --add` a moment
         // after that poll read the roster is still watched.
@@ -194,9 +204,12 @@ fn run(steps: &[Step]) {
             }
             Step::Restart => {
                 // A new process is a new run: it may end with its own
-                // `TEAM-COMPLETE`, but repeats nothing else.
+                // `TEAM-COMPLETE`, but repeats nothing else. It has watched
+                // no member of its own yet, so an empty roster leaves it
+                // waiting, as for a team whose first wave is still coming.
                 bed.memory = teamwire_watch::WatchMemory::default();
                 state.complete = false;
+                state.watched_a_member = false;
             }
             // A step for a member that is not there, or is gone, does nothing.
             Step::Work(_)
@@ -229,10 +242,13 @@ fn run(steps: &[Step]) {
             state.record(&line);
         }
     }
-    if !live_members.is_empty() {
+    // A watch that has watched a live member must end: either every live
+    // member is settled, or the lead has removed them all and nothing is
+    // left to watch. Only a watch that never saw one keeps polling.
+    if !live_members.is_empty() || state.watched_a_member {
         assert!(
             state.complete,
-            "every live member is settled but the watch never completed: {:?}",
+            "the watch never completed: {:?}",
             state.lines
         );
         assert!(bed.memory.end.is_some());

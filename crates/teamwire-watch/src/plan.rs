@@ -140,6 +140,7 @@ pub(crate) fn plan(
     memory
         .members
         .retain(|role, _| snap.members.iter().any(|m| &m.member.role == role));
+    memory.watched_a_member |= !snap.members.is_empty();
 
     let mut env = Env {
         ctx,
@@ -240,7 +241,12 @@ pub(crate) fn plan(
     // before `launch --add` wrote a new member, and a watch that prints
     // `TEAM-COMPLETE` exits, so that member would run unwatched. That poll
     // leaves `TEAM-COMPLETE` to the next one (WAT-20).
-    let complete = (outstanding == 0 && !settled.is_empty() && !memory.holds_complete())
+    //
+    // An empty roster completes the team only once this watch has seen a
+    // live member: the lead has removed the last one, and nothing is left
+    // to watch. Before that, the lead is still launching the first wave.
+    let anything_to_report = !settled.is_empty() || memory.watched_a_member;
+    let complete = (outstanding == 0 && anything_to_report && !memory.holds_complete())
         .then(|| complete_text(&settled));
     Plan {
         actions: env.actions,
@@ -249,6 +255,8 @@ pub(crate) fn plan(
 }
 
 /// `TEAM-COMPLETE 2/3 done; not done: c died`. Only status `done` counts.
+/// `TEAM-COMPLETE 0/0 done` for a team whose members the lead has all
+/// removed: no live member is left to count.
 fn complete_text(settled: &[(Role, String)]) -> String {
     let done = settled.iter().filter(|(_, label)| label == "done").count();
     let mut text = format!("TEAM-COMPLETE {done}/{} done", settled.len());

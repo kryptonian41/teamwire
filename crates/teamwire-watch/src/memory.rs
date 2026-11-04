@@ -32,6 +32,10 @@ pub struct WatchMemory {
     /// A poll has printed `WATCHING`. A poll that failed did not, so the
     /// count of polls cannot say this.
     pub(crate) said_watching: bool,
+    /// A poll has read a roster with at least one live member. Only then is
+    /// an empty roster the end of the team's work rather than a team whose
+    /// first member has not been launched yet (WAT-20).
+    pub(crate) watched_a_member: bool,
     pub last_poll: Option<Timestamp>,
     /// The monotonic clock at `last_poll`. It stops while the machine
     /// sleeps and the wall clock does not, so the two differ by the sleep.

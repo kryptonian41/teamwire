@@ -434,6 +434,39 @@ fn a_member_added_right_after_the_first_poll_is_watched() {
     assert!(line.ends_with("TEAM-COMPLETE 2/2 done"), "{line}");
 }
 
+/// WAT-20: the lead removes the last live member between two polls, so the
+/// second poll finds a roster with nobody in it. The watch has already
+/// watched a live member, so there is nothing left to watch: it completes
+/// with the count it has and exits, rather than polling for ever.
+#[test]
+fn a_watch_whose_last_live_member_was_removed_completes_and_exits() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    assert_eq!(events(&bed.poll().unwrap()), ["WATCHING 1 members"]);
+    // `close --role api` sets the member's row to `removed`, which takes it
+    // out of the roster the next poll reads.
+    bed.remove("api");
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 0/0 done"]);
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+    assert!(bed.ticks(3).is_empty(), "printed once");
+}
+
+/// WAT-20: a watch over a team that never had a live member keeps polling,
+/// as it does on `develop`. The lead may still be launching the first wave,
+/// and a watch that completed here would have nothing to report.
+#[test]
+fn a_team_that_never_had_a_live_member_keeps_the_watch_polling() {
+    let mut bed = Bed::new();
+    assert_eq!(events(&bed.poll().unwrap()), ["WATCHING 0 members"]);
+    assert!(bed.ticks(30).is_empty());
+    assert_eq!(bed.memory.end, None, "the watch waits for the first member");
+    // Once a member joins and finishes, the watch completes as usual.
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
+}
+
 /// WAT-20: a member the lead reprompted in the same gap is watched too. Its
 /// old result belongs to the generation before the reprompt.
 #[test]
