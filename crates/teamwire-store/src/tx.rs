@@ -17,8 +17,8 @@ use crate::error::StoreError;
 ///
 /// The methods, by the file that holds them. Each writes its event row in the
 /// same transaction, except the bookkeeping writes named below.
-/// - team: `create_team`, `create_team_with`, `create_afk_team`, `begin_close`,
-///   `finish_close`, `clear_stale_close_lock`, `adopt_lead`, `adopt_lead_in`.
+/// - team: `create_team`, `create_team_with`, `create_afk_team`, `add_refs`,
+///   `begin_close`, `finish_close`, `clear_stale_close_lock`, `adopt_lead`, `adopt_lead_in`.
 /// - member: `insert_member`, `insert_member_with`, `relaunch_failed_member`,
 ///   `relaunch_failed_member_with`, `set_member_state`, `remove_member`,
 ///   `bump_generation`, `restore_generation`, `hold_member`,

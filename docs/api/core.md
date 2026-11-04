@@ -658,7 +658,7 @@ id, body and hash rows, with no hash refusal).
 Every `Tx` method that makes a lifecycle or message change also records the
 matching event. A few bookkeeping writes record none, because the closed event
 list has no type for them: `set_sleep_hold`, `set_member_place`,
-`set_member_session`, `set_member_token_hash`, `set_gate_told_generation`,
+`set_member_session`, `set_member_token_hash`, `set_refs`, `set_gate_told_generation`,
 `set_completion_final`, `clear_member_branch`, `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
