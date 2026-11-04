@@ -27,12 +27,13 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 6] = [
+const NAMES: [&str; 7] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
     "dependent-tickets",
     "contract-split",
+    "integrator",
     "closer",
 ];
 
@@ -203,7 +204,7 @@ fn no_preset_holds_a_machine_specific_path() {
     assert_eq!(
         seen,
         NAMES.len(),
-        "the directory holds exactly the six shapes"
+        "the directory holds exactly the listed presets"
     );
 }
 
@@ -230,7 +231,7 @@ fn teamwire(args: &[&str]) -> Run {
 }
 
 #[test]
-fn without_a_name_the_six_shapes_are_listed() {
+fn without_a_name_every_preset_is_listed() {
     let run = teamwire(&["preset"]);
     assert_eq!(run.code, 0, "{}", run.err);
     let names: Vec<&str> = run
@@ -504,6 +505,8 @@ fn every_member_names_a_task_class_and_no_model() {
                 .unwrap_or_else(|| unreachable!("{name}/{role} sets no task_class"));
             let class = TaskClass::parse(class).unwrap();
             let fits = match member["kind"].as_str() {
+                // The integrator only merges in a set order and runs the gate.
+                Some("implementer") if role == "integrator" => TaskClass::MechanicalEdit,
                 Some("implementer") => TaskClass::ContainedFeature,
                 Some("reviewer" | "closer") => TaskClass::Judgement,
                 Some("investigator") => TaskClass::ReadOnlySurvey,

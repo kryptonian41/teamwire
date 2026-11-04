@@ -9,7 +9,7 @@ teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
 through `claude plugin`, plus `claude mcp remove` and deleting an older
 install's skill folder. Install writes one plugin, `teamwire@teamwire`, to
 `$TEAMWIRE_HOME/claude-plugin/` and registers it at user scope. It carries
-this skill, the lead's MCP server and the lead's Stop hook.
+this skill, the lead's MCP server and the lead's Stop and tool hooks.
 
 1. Install the binary (`cargo install --locked --path crates/teamwire-cli`)
    and run `teamwire doctor`, which changes nothing. Until step 3 it prints a

@@ -11,9 +11,9 @@
     "Settle open questions before wave 1. Every question you answer yourself later becomes a guess made in several fresh contexts at once.",
     "Run one wave at a time. Let a wave finish, then recompute what is unblocked. A member that finished may have changed what its dependents need.",
     "Later waves join the SAME team with `teamwire launch --add` and new role names. One team, one archive, one report path. Never run wave 1 and wave 2 as separate teams.",
-    "A dependent member's base is its blocker's branch, not main, so it starts on the code it depends on. Launch it only after the blocker reported and `teamwire verify` passed. Merge blockers first, so each merge lands on the code it was written against.",
-    "On the merged result run the full gate once and review the whole change. Each member reviewed its own slice alone, so the merge is still unreviewed.",
-    "Give every implementer a \"check\" (the targeted command that proves its work, which you run once first) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
+    "A dependent member's base is its blocker's branch, not main, so it starts on the code it depends on. Launch it only after the blocker reported and `teamwire verify` passed. The integrator merges blockers first, so each merge lands on the code it was written against.",
+    "The integrator runs the full gate once on the merged result, and one fresh reviewer reads the whole change. Each member saw only its own slice, so nobody has read the merge.",
+    "Give every implementer a \"check\" (the targeted command that proves its work, which the member runs once before its first change) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest.",
     "One coherent change per branch. A ticket that touches more than one module is two members, or one member with two units. Size each task by its reference fix: in SWE-bench Live, a task whose fix was one file under five lines was solved 48% of the time, and one needing three or more files or over 100 lines under 10%. Devin does best on \"clear, upfront requirements and verifiable outcomes that would take a junior engineer 4-8 hrs of work\". Anthropic's agent-teams docs advise 3-5 teammates with 5-6 tasks each (items on a teammate's shared task list, not units in one brief)."
   ],
@@ -65,7 +65,7 @@
       "_blocked_by": [
         "ticket_a"
       ],
-      "_launch": "teamwire launch --add, once ticket_a has reported AND passed `teamwire verify`. Its base is ticket_a's branch, so it starts on the code it depends on. Merge ticket_a before this branch at the end.",
+      "_launch": "teamwire launch --add, once ticket_a has reported AND passed `teamwire verify`. Its base is ticket_a's branch, so it starts on the code it depends on. The integrator merges ticket_a before this branch at the end.",
       "role": "ticket_c",
       "title": "TICKET-C: CHANGEME",
       "kind": "implementer",

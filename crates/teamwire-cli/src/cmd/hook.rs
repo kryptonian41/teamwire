@@ -1,5 +1,5 @@
-//! `teamwire hook`: the per-member Stop and `PostToolUse` hooks and the lead's
-//! Stop hook; always exits 0.
+//! `teamwire hook`: the per-member Stop and `PostToolUse` hooks, and the lead's
+//! Stop and tool hooks (`hook/lead.rs`); always exits 0.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -8,20 +8,16 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use serde_json::json;
-use teamwire_core::{
-    Config, Harness, HarnessId, MemberState, Role, TeamName, TurnEnd, TurnEndReply,
-};
+use teamwire_core::{Config, Harness, MemberState, Role, TeamName, TurnEnd, TurnEndReply};
 use teamwire_msg::CallerEnv;
 use teamwire_store::{Ctx, Store};
 
-use crate::cmd::shared::{caller_env, carries_member_identity, state_home, warn};
+use crate::cmd::shared::{caller_env, state_home, warn};
 use crate::recorded::Recorded;
-use crate::wiring::{Wiring, claude_harness_id};
+use crate::wiring::Wiring;
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
-/// The lead's Stop hook runs on every stop of every Claude session where the
-/// plugin is on, so a slow disk or a locked store must not hold the session.
-const LEAD_STOP_BUDGET: Duration = Duration::from_secs(5);
+mod lead;
 
 /// More hook input than this is not read; Claude Code's is a few kilobytes.
 const STDIN_LIMIT: u64 = 1 << 20;
@@ -36,8 +32,9 @@ pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode
             member_hook(t, MemberHook::PostTool, global, wiring)
         }
         HookCommand::SessionStart(t) => member_hook(t, MemberHook::SessionStart, global, wiring),
-        HookCommand::ClaudeLeadStop => lead_stop_hook(None, global, wiring),
-        HookCommand::LeadStop(a) => lead_stop_hook(a.harness.as_deref(), global, wiring),
+        HookCommand::ClaudeLeadStop => lead::lead_stop_hook(None, global, wiring),
+        HookCommand::LeadStop(a) => lead::lead_stop_hook(a.harness.as_deref(), global, wiring),
+        HookCommand::LeadTool(a) => lead::lead_tool_hook(a.harness.as_deref(), global, wiring),
     };
     if let Some(reply) = reply {
         write_stdout(&reply);
@@ -211,91 +208,6 @@ fn said<T, E: std::fmt::Display>(result: Result<T, E>, what: &str) -> Option<T> 
     }
 }
 
-/// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
-/// team that has working members and no running watch, and each AFK team that
-/// nothing will wake. It reads stores and writes nothing.
-fn lead_stop_hook(harness: Option<&str>, global: &Global, wiring: &Wiring) -> Option<Vec<u8>> {
-    // A member never runs this hook; the plugin is also switched off for it.
-    if carries_member_identity() {
-        return None;
-    }
-    let home = state_home(global)?;
-    lead_stop_in(
-        harness,
-        &home,
-        wiring,
-        &mut std::io::stdin().lock().take(STDIN_LIMIT),
-    )
-}
-
-fn lead_stop_in(
-    harness: Option<&str>,
-    home: &Path,
-    wiring: &Wiring,
-    stdin: &mut dyn Read,
-) -> Option<Vec<u8>> {
-    let mut input = Vec::new();
-    stdin.read_to_end(&mut input).ok()?;
-    let id = match harness {
-        Some(id) => HarnessId::parse(id).ok()?,
-        None => claude_harness_id(),
-    };
-    let harness = wiring.registry.harness(&id).ok()?;
-    let turn = harness.parse_turn_end(&input).ok()?;
-    if turn.subagent || turn.hold_already_active {
-        return None;
-    }
-    let platform = wiring.platform.clone();
-    let clock = wiring.clock;
-    let at = home.to_path_buf();
-    // Every store read, the lead harness's included, stays inside the bound.
-    let (teams, afk_notes) = within(LEAD_STOP_BUDGET, move || {
-        let teams: Vec<_> =
-            teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
-                .into_iter()
-                .map(|team| {
-                    let lead = lead_harness_of(&at, &team);
-                    (team, lead)
-                })
-                .collect();
-        (
-            teams,
-            teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
-        )
-    })?;
-    let mut note: Vec<String> = teams
-        .iter()
-        .map(|(team, lead)| {
-            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(lead.as_ref(), wiring))
-        })
-        .collect();
-    note.extend(afk_notes);
-    if note.is_empty() {
-        return None;
-    }
-    Some(harness.hold_reply(&note.join("\n")))
-}
-
-/// The team's recorded lead harness, or `None` when the team cannot be read.
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
-fn lead_harness_of(home: &Path, team: &TeamName) -> Option<HarnessId> {
-    Store::open_read_only(home, team)
-        .ok()
-        .and_then(|store| store.read(|tx| tx.team()).ok().flatten())
-        .map(|row| row.lead_harness)
-}
-
-/// Whether the lead harness reads a command's output as it is printed. A
-/// team that could not be read, or a harness this binary does not have, gets
-/// the Monitor wording, which is the older one.
-fn lead_reads_watch_lines(lead: Option<&HarnessId>, wiring: &Wiring) -> bool {
-    lead.and_then(|id| wiring.registry.harness(id).ok())
-        .is_none_or(|harness| harness.capabilities().reads_watch_lines)
-}
-
 /// Runs `work` on a thread and gives up after `budget`. The thread is left
 /// behind when the budget runs out; the process exits right after, which ends
 /// it.
@@ -341,7 +253,13 @@ fn post_tool_reply(
     if note.is_empty() {
         return None;
     }
-    let note = note.join("\n");
+    tool_note_reply(&note.join("\n"))
+}
+
+/// The in-turn reply that hands `note` to the model beside a tool's result.
+/// Every harness's in-turn hook reads this shape (ADR 0023 point 6), and so
+/// do teamwire's pi extensions.
+fn tool_note_reply(note: &str) -> Option<Vec<u8>> {
     serde_json::to_vec(&json!({
         "hookSpecificOutput": { "hookEventName": "PostToolUse", "additionalContext": note }
     }))

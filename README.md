@@ -156,7 +156,7 @@ teamwire install    # registers the teamwire plugin with `claude plugin`
 
 `teamwire install` writes one plugin to `$TEAMWIRE_HOME/claude-plugin/`. The
 plugin holds the lead's skill (`/teamwire:teamwire`), the lead's MCP server
-and the lead's Stop hook. Start a new Claude Code session afterwards, because
+and the lead's Stop and tool hooks. Start a new Claude Code session afterwards, because
 an open session does not load a new plugin. Run `teamwire install` again
 after every `cargo install`. `teamwire uninstall` removes the plugin.
 `teamwire install --harness codex` installs the Codex plugin from
@@ -232,11 +232,12 @@ The specs also live in [examples/presets/](examples/presets/).
 | Preset | Use it when |
 | --- | --- |
 | `parallel-tickets` | Several tickets touch different modules. No integration needed. |
-| `dependent-tickets` | Tickets block each other. Members start in waves, and blockers merge first. |
+| `dependent-tickets` | Tickets block each other. Members start in waves, and the integrator merges blockers first. |
 | `survey` | You need a read-only investigation across several areas. |
 | `implement-then-review` | One implementer builds, then one fresh reviewer reads the finished diff. |
 | `contract-split` | One feature must be split across implementers. Use it only as a last resort. |
-| `closer` | A finished team needs one agent to check every claim and write one report. It is a final step, not a shape. |
+| `integrator` | A finished team's branches must join into one. One implementer merges them in the plan's order and runs the full gate. It is a final step, not a shape. |
+| `closer` | A finished team that wrote code needs one agent to check every claim and write one report. It is a final step, not a shape. |
 
 Most coding work should not be a team. Parallel agents cost far more tokens
 than one chat, so a team pays off only when its parts are truly independent.
