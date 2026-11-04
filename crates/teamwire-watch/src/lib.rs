@@ -1,4 +1,4 @@
-//! The watch loop's single poll (WAT-1..WAT-16) and the read-only status
+//! The watch loop's single poll (WAT-1..WAT-21) and the read-only status
 //! view. Both derive each member's state the same way, with two intended
 //! differences: status reads an idle `"dispatch": false` member `quiet` at
 //! once (WAT-3), and status ages are wall time, since only a running watch
@@ -6,12 +6,14 @@
 //!
 //! Never: call a writing host method; print more than one line per poll;
 //! announce the same key twice (a restarted watch prints its `WATCHING`
-//! line again, and `TEAM-COMPLETE` for a finished team); write anything
-//! from `status` (WAT-11).
+//! line again, and `TEAM-COMPLETE` for a finished team, one poll later);
+//! print `TEAM-COMPLETE` in the line that says `WATCHING`, unless the
+//! watch polls only once (WAT-20); write anything from `status` (WAT-11).
 //!
 //! Invariants: announcements are stored before they are printed, and each
 //! key carries its generation or episode number; `TEAM-COMPLETE` is printed
-//! once per watch, when every live member is settled.
+//! once per watch, when every live member is settled and the watch has
+//! already said `WATCHING` in an earlier poll.
 
 mod afk;
 mod apply;

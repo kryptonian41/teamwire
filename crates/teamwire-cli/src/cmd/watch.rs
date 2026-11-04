@@ -162,6 +162,10 @@ fn watch(
 ) -> ExitCode {
     let (home, config) = (ctx.home, ctx.config);
     let mut memory = WatchMemory::for_team(team.as_str());
+    // A single poll reads the team's state and prints what it finds, for a
+    // script or a test. A watch that keeps polling holds `TEAM-COMPLETE`
+    // back on its first poll instead (WAT-20).
+    memory.single_poll = once;
     match teamwire_watch::start(ctx, &mut memory, Pid::new(std::process::id()), &host_name()) {
         Ok(()) => {}
         Err(e @ WatchError::Held { .. }) => return fail("watch", &e.to_string(), REFUSED),

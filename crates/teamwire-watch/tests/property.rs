@@ -1,7 +1,8 @@
 //! The watch property of `docs/test-strategy.md`: whatever the members, the
 //! host and the clock do, a poll prints at most one line, every announcement
 //! key is printed exactly once, and `TEAM-COMPLETE` ends a run exactly once
-//! when every live member is settled.
+//! when every live member is settled. No line says both `WATCHING` and
+//! `TEAM-COMPLETE`, so a watch always polls at least twice (WAT-20).
 
 #[path = "support/fixture.rs"]
 pub mod fixture;
@@ -82,7 +83,16 @@ impl Run {
                 );
             }
         }
-        if names(line).iter().any(|n| n == "TEAM-COMPLETE") {
+        let events = names(line);
+        let says = |name: &str| events.iter().any(|e| e == name);
+        // WAT-20: the poll that says `WATCHING` leaves `TEAM-COMPLETE` to
+        // the next poll, so a member written by a `launch --add` a moment
+        // after that poll read the roster is still watched.
+        assert!(
+            !(says("WATCHING") && says("TEAM-COMPLETE")),
+            "the poll that said WATCHING also completed the team: {line}"
+        );
+        if says("TEAM-COMPLETE") {
             assert!(!self.complete, "TEAM-COMPLETE twice");
             self.complete = true;
         } else {

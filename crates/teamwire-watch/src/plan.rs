@@ -236,7 +236,12 @@ pub(crate) fn plan(
         env.actions.push(Action::EndStall);
     }
 
-    let complete = (outstanding == 0 && !settled.is_empty()).then(|| complete_text(&settled));
+    // The poll that says `WATCHING` may have read the roster a moment
+    // before `launch --add` wrote a new member, and a watch that prints
+    // `TEAM-COMPLETE` exits, so that member would run unwatched. That poll
+    // leaves `TEAM-COMPLETE` to the next one (WAT-20).
+    let complete = (outstanding == 0 && !settled.is_empty() && !memory.holds_complete())
+        .then(|| complete_text(&settled));
     Plan {
         actions: env.actions,
         complete,

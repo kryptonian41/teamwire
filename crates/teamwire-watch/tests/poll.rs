@@ -343,6 +343,89 @@ fn a_clean_team_is_complete_once_and_completions_are_silent() {
     );
 }
 
+/// WAT-20: a watch can start a moment before `launch --add` writes the
+/// member the lead is adding. In team `fb-2026-11-03` a watch read a
+/// settled roster 235 ms before the new member's row was written, printed
+/// `TEAM-COMPLETE`, exited, and that member ran unwatched for 3.5 minutes.
+/// So the poll that says `WATCHING` leaves `TEAM-COMPLETE` to the next one.
+#[test]
+fn the_first_poll_of_a_settled_team_says_watching_and_the_next_says_team_complete() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    let first = bed.poll().unwrap();
+    assert_eq!(names(&first), ["WATCHING"]);
+    assert_eq!(bed.memory.end, None, "the watch keeps polling");
+    let second = bed.tick().unwrap();
+    assert_eq!(second, "[teamwire:alpha] TEAM-COMPLETE 1/1 done");
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
+
+/// WAT-20: the member written just after the first poll read the roster is
+/// watched, and the team waits for it as for any unsettled member.
+#[test]
+fn a_member_added_right_after_the_first_poll_is_watched() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    assert_eq!(names(&bed.poll().unwrap()), ["WATCHING"]);
+    bed.add("web");
+    bed.working("web");
+    assert!(bed.tick().is_none(), "the team waits for the new member");
+    assert_eq!(bed.memory.end, None);
+    bed.delivered("web", CompletionStatus::Done);
+    let line = bed.tick().unwrap();
+    assert!(line.ends_with("TEAM-COMPLETE 2/2 done"), "{line}");
+}
+
+/// WAT-20: a member the lead reprompted in the same gap is watched too. Its
+/// old result belongs to the generation before the reprompt.
+#[test]
+fn a_member_reprompted_right_after_the_first_poll_is_watched() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    assert_eq!(names(&bed.poll().unwrap()), ["WATCHING"]);
+    bed.reprompt("api");
+    bed.working("api");
+    assert!(bed.tick().is_none(), "the reprompted member is unsettled");
+    assert_eq!(bed.memory.end, None);
+    bed.delivered("api", CompletionStatus::Done);
+    let line = bed.tick().unwrap();
+    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+}
+
+/// WAT-20: a poll that failed read no roster, so it cannot have raced a
+/// `launch --add`. The hold belongs to the poll that says `WATCHING`.
+#[test]
+fn the_poll_that_says_watching_after_a_failed_one_also_holds_team_complete() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    let started = started_at(&bed);
+    set_started_at(&mut bed, "api", "not a time");
+    assert!(bed.poll().unwrap().contains("STORE-ERROR"));
+    set_started_at(&mut bed, "api", &started);
+    assert_eq!(names(&bed.tick().unwrap()), ["WATCHING"]);
+    assert_eq!(bed.memory.end, None);
+    let line = bed.tick().unwrap();
+    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+}
+
+/// WAT-20: `--once` reads the team's state in a single poll, so that poll
+/// prints `TEAM-COMPLETE` for a team that is already finished.
+#[test]
+fn a_single_poll_watch_prints_team_complete_on_its_one_poll() {
+    let mut bed = Bed::new();
+    bed.memory.single_poll = true;
+    bed.add("api");
+    bed.delivered("api", CompletionStatus::Done);
+    let line = bed.poll().unwrap();
+    assert_eq!(names(&line), ["WATCHING", "TEAM-COMPLETE"]);
+    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+    assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
+}
+
 #[test]
 fn dead_member_settles_team_complete() {
     let mut bed = Bed::new();
@@ -1322,6 +1405,22 @@ fn events_past_the_line_limit_wait_for_a_later_poll_and_team_complete_comes_last
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
+/// One member's `gen_started_at` as the store holds it.
+#[expect(clippy::unwrap_used, reason = "a failure fails the test")]
+fn started_at(bed: &Bed) -> String {
+    bed.store
+        .read(|tx| {
+            tx.connection()
+                .query_row(
+                    "SELECT gen_started_at FROM members WHERE role = 'api'",
+                    [],
+                    |row| row.get(0),
+                )
+                .map_err(teamwire_store::StoreError::from)
+        })
+        .unwrap()
+}
+
 /// Sets one member's `gen_started_at` to `value`, past the store's checks.
 #[expect(clippy::unwrap_used, reason = "a failure fails the test")]
 fn set_started_at(bed: &mut Bed, name: &str, value: &str) {
@@ -1343,18 +1442,7 @@ fn the_first_good_poll_says_watching_after_a_failed_one() {
     let mut bed = Bed::new();
     bed.add("api");
     bed.working("api");
-    let started: String = bed
-        .store
-        .read(|tx| {
-            tx.connection()
-                .query_row(
-                    "SELECT gen_started_at FROM members WHERE role = 'api'",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(teamwire_store::StoreError::from)
-        })
-        .unwrap();
+    let started = started_at(&bed);
     set_started_at(&mut bed, "api", "not a time");
     let failed = bed.poll().unwrap();
     assert!(failed.contains("STORE-ERROR"), "{failed}");
