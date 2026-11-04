@@ -152,14 +152,17 @@ not recorded after the team exists: `the sleep hold could not be taken:
 ### `teamwire watch <team> [--interval SECONDS] [--once] [--deliver]`
 
 Runs until the team completes or closes. Prints at most one line per poll,
-events joined by ` | `, each starting `[teamwire:<team>]` (WAT-1). A line holds
+events joined by ` | `, each starting `[teamwire:<team> HH:MM:SSZ]` (WAT-1).
+The time is the poll's own, in UTC to the second, so a lead can tell a line
+printed before its last `launch --add` or reprompt from a current one
+(WAT-21). `date -u +%T` prints the current UTC time. A line holds
 at most 2000 characters. Events that do not fit are not announced yet and a
 later poll prints them, and `TEAM-COMPLETE` waits until every earlier event was
 printed. Default interval 20 s, at most 300 s (half the 600 s after which a
 watch lease looks dead); a larger interval, or 0, exits 3. `--once` runs one
 poll and exits (for tests and scripts).
 Refuses to start when another live watch holds the team's lease, and names
-its pid. `--deliver` also types each printed line, with its `[teamwire:<team>]`
+its pid. `--deliver` also types each printed line, with the same dated
 prefix, into the lead's place, for a lead whose harness cannot read the
 watch's output as it is printed (a Codex lead, ADR 0023). Each delivery ends
 within 15 s. A line that cannot be delivered is still printed, and the watch
@@ -170,7 +173,7 @@ Events, each announced once per occurrence:
 
 | Event | When |
 | --- | --- |
-| `WATCHING n members` | First poll that reads the store (a poll that fails with `STORE-ERROR` does not count) |
+| `WATCHING n members` | First poll that reads the store (a poll that fails with `STORE-ERROR` does not count). That poll never also prints `TEAM-COMPLETE`, unless `--once` was given (WAT-20) |
 | `SILENT <role>` | 3 quiet polls, no completion, after the 90 s grace. Once per episode: a new episode starts when the member is seen working again |
 | `DIED <role>` | 3 consecutive polls absent from a non-empty liveness listing, with no completion or with a completion still pending (recorded, never reported by its turn-end hook). Printed after that member's `DECLARED` line |
 | `BLOCKED <role>` | The host reports a dialog. Once per episode: a new episode starts when the dialog is gone |
@@ -188,7 +191,7 @@ Events, each announced once per occurrence:
 | `STORE-ERROR <code>` | The store could not be read or written; once per code. `<code>` is `StoreError::code()` (`busy`, `full`, `schema_newer`, ...) |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done, and every member not done is stuck: quiet (`SILENT`), at a dialog, overdue and idle, or still creating past its limits. A member whose completion is recorded but not yet reported (`DECLARED` or `UNREPORTED`) is waited on and never counted as stuck, so a team whose only unsettled member is `UNREPORTED` prints no `TEAM-STALLED`. Re-armed when something moves |
 | `TEAM-CLOSED` | The team was closed, or its row is gone, before the watch printed `TEAM-COMPLETE`. The watch exits 0 after it. It is never printed after `TEAM-COMPLETE`, because the watch has already exited |
-| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`, including a member that died with its completion still pending. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
+| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. Never on the poll that printed `WATCHING`: `launch --add` can write a member a moment after that poll read the roster, and a watch that printed `TEAM-COMPLETE` has exited, so that member would run unwatched. A watch that keeps polling leaves `TEAM-COMPLETE` to its next poll, and prints it if the team is still complete then; `--once` prints it in its single poll (WAT-20). A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`, including a member that died with its completion still pending. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
 
 ### `teamwire status [<team>] [--role R] [--json]`
 
