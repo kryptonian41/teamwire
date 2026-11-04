@@ -664,7 +664,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 9: `crates/teamwire-store/src/schema/v1.sql` to `v9.sql`,
+The schema is version 10: `crates/teamwire-store/src/schema/v1.sql` to `v10.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).

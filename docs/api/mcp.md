@@ -224,6 +224,7 @@ own team, in which they are proven. Output:
 ```json
 {"teams": [
   {"name": "billing", "title": "Billing", "state": "open",
+   "refs": [{"provider": "linear", "id": "GKA-580"}],
    "members": [ /* each as in team_members */ ]}
 ]}
 ```
