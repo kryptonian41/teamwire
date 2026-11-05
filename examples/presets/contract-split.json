@@ -17,7 +17,27 @@
   "setup": "./scripts/setup-worktree.sh \"$1\"",
   "children": [
     {
-      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_wave": 1,
+      "_note": "Launch alone first. Add the others with --add once it has reported and `teamwire verify` passed. Keep it open until the team closes, to fix holes in the contract.",
+      "role": "contract",
+      "title": "Contract: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "task_class": "contained_feature",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/contract-base",
+      "base": "main",
+      "deadline_s": 1800,
+      "check": "CHANGEME command that builds the contract without running the new tests",
+      "owns": [
+        "CHANGEME/contract/"
+      ],
+      "task_file": "/abs/path/briefs/contract.md"
+    },
+    {
+      "_note": "For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_wave": 2,
+      "_launch": "teamwire launch --add, once contract has reported AND passed `teamwire verify`. Its base is the contract's branch, so the contract is in its worktree from the start.",
       "role": "logic",
       "title": "Logic: CHANGEME",
       "kind": "implementer",
@@ -34,7 +54,9 @@
       "task_file": "/abs/path/briefs/logic.md"
     },
     {
-      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_note": "For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_wave": 2,
+      "_launch": "teamwire launch --add, once contract has reported AND passed `teamwire verify`. Its base is the contract's branch, so the contract is in its worktree from the start.",
       "role": "ui",
       "title": "UI: CHANGEME",
       "kind": "implementer",

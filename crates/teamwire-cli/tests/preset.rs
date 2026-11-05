@@ -668,3 +668,149 @@ fn preset_rules_and_harness_notes_name_only_commands_and_classes_that_exist() {
     assert!(shown >= 10, "the notes show {shown} commands");
     assert!(classes >= 4, "the notes name {classes} classes after --for");
 }
+
+fn preset_doc(name: &str) -> Value {
+    serde_json::from_str(&preset_text(name)).unwrap()
+}
+
+fn task_of<'a>(doc: &'a Value, role: &str) -> &'a str {
+    doc["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == role)
+        .and_then(|m| m["task"].as_str())
+        .unwrap_or_else(|| unreachable!("no task for {role}"))
+}
+
+/// The lead reads only the top of a report, so every inline task asks for
+/// the summary there. A member with a `task_file` gets the rule from its
+/// prompt instead.
+#[test]
+fn every_inline_task_asks_for_a_summary_at_the_top_of_the_report() {
+    let mut seen = 0;
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            if let Some(task) = member["task"].as_str() {
+                assert!(
+                    task.contains("Start your report file with a summary of at most ten lines"),
+                    "{name}/{}",
+                    member["role"]
+                );
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen >= 6, "{seen} inline tasks");
+}
+
+/// A read-only member that keeps claude-mem reads other members' findings
+/// back, so each one carries a note that points at the plugins map.
+#[test]
+fn every_read_only_member_carries_the_plugins_note() {
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            let read_only = matches!(
+                member["kind"].as_str(),
+                Some("reviewer" | "plan_reviewer" | "closer" | "investigator")
+            );
+            if read_only {
+                let note = member["_note"].as_str().unwrap_or_default();
+                assert!(
+                    note.contains("plugins map") && note.contains("Skills and plugins in members"),
+                    "{name}/{}: {note}",
+                    member["role"]
+                );
+            }
+        }
+    }
+}
+
+/// The contract member makes the branch the feature members start from, in
+/// a wave of its own, and the feature members join later with `--add`.
+#[test]
+fn the_contract_split_starts_with_the_contract_member() {
+    let doc = preset_doc("contract-split");
+    let members = doc["children"].as_array().unwrap();
+    let contract = &members[0];
+    assert_eq!(contract["role"], "contract");
+    assert_eq!(contract["kind"], "implementer");
+    assert_eq!(contract["_wave"], 1);
+    assert_eq!(contract["base"], "main");
+    let base = contract["branch"].as_str().unwrap();
+    assert!(contract["check"].as_str().is_some());
+    for member in &members[1..] {
+        assert_eq!(member["base"], base, "{}", member["role"]);
+        assert_eq!(member["_wave"], 2, "{}", member["role"]);
+        assert!(member.get("_launch").is_some(), "{}", member["role"]);
+    }
+}
+
+/// A gate that fails on the base before any merge is the base's result, not
+/// a reason for the integrator to stop as blocked.
+#[test]
+fn the_integrator_records_a_failing_base_and_carries_on() {
+    let doc = preset_doc("integrator");
+    let task = task_of(&doc, "integrator");
+    assert!(task.contains("as the base's result"), "{task}");
+    assert!(task.contains("do not stop as blocked"), "{task}");
+    assert!(!preset_text("integrator").contains("426"));
+}
+
+/// One fresh review per branch, and none of the merged change.
+#[test]
+fn the_dependent_tickets_ask_for_no_second_review_of_the_merge() {
+    let text = preset_text("dependent-tickets");
+    assert!(!text.contains("one fresh reviewer reads the whole change"));
+    assert!(text.contains("no second review of the merged change"));
+}
+
+/// The reviewer checks the diff against the implementer's brief, so its task
+/// names where launch keeps that brief.
+#[test]
+fn the_reviewer_task_names_the_implementers_brief() {
+    let doc = preset_doc("implement-then-review");
+    let task = task_of(&doc, "review");
+    assert!(
+        task.contains("$TEAMWIRE_HOME/teams/myteam/briefs/impl.md"),
+        "{task}"
+    );
+    assert!(task.contains("quoting the brief line"), "{task}");
+}
+
+/// teamwire stores no member's setup command where the closer can read it,
+/// so the task lists them. The reset stays first, with a named-file restore
+/// when a repository hook refuses it.
+#[test]
+fn the_closer_task_lists_setups_and_has_a_restore_fallback() {
+    let doc = preset_doc("closer");
+    let task = task_of(&doc, "closer");
+    assert!(task.contains("Members' setup commands: CHANGEME"), "{task}");
+    assert!(task.contains("git reset --hard"), "{task}");
+    assert!(
+        task.contains("git restore --source=HEAD --staged --worktree -- <files>"),
+        "{task}"
+    );
+    assert!(task.contains("-e <path>"), "{task}");
+}
+
+/// The tdd and diagnosing-bugs skills are Claude Code plugins, so every note
+/// that names them says which members it is for.
+#[test]
+fn the_skill_notes_name_the_members_they_are_for() {
+    let mut seen = 0;
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            let note = member["_note"].as_str().unwrap_or_default();
+            if note.contains("tdd") {
+                assert!(
+                    note.contains("For a Claude Code member with mattpocock-skills on"),
+                    "{name}/{}: {note}",
+                    member["role"]
+                );
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen >= 6, "{seen} notes name the tdd skill");
+}
