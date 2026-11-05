@@ -814,3 +814,43 @@ fn the_skill_notes_name_the_members_they_are_for() {
     }
     assert!(seen >= 6, "{seen} notes name the tdd skill");
 }
+
+/// A Codex or pi lead reads its own lead file where the skill quotes a line
+/// that names Monitor. The lines are the ones the program prints for that
+/// harness (plan D7 and D17), and the pull-request watch is the one each
+/// harness can run (D12, D13).
+#[test]
+fn the_codex_and_pi_lead_files_quote_their_own_watch_lines() {
+    let codex = example("skills/codex-lead.md");
+    let bg = "nohup teamwire watch <team> --deliver >/dev/null 2>&1 &";
+    for line in [
+        format!("watch: {bg}"),
+        format!(
+            "[teamwire:<team>] no watch is running; start it in the background with `{bg}` before you stop."
+        ),
+        format!("(no watch is running: {bg})"),
+        format!("no watch is running: start one with `{bg}`"),
+        "nohup teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454 >/dev/null 2>&1 &"
+            .to_owned(),
+        "teamwire lead --adopt <team>".to_owned(),
+        "teamwire install --harness codex".to_owned(),
+    ] {
+        assert!(codex.contains(&line), "codex-lead.md lacks {line}");
+    }
+    let pi = example("skills/pi-lead.md");
+    for line in [
+        "watch: call the teamwire_watch tool with team <team>",
+        "[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team \"<team>\") before you stop.",
+        "(no watch is running: call the teamwire_watch tool with team <team>)",
+        "no watch is running: start one with the teamwire_watch tool (team <team>)",
+        "`teamwire_pr_watch`",
+        "`repo`",
+        "`prs`",
+        "`interval`",
+        "refuses `teamwire pr-watch` through bash",
+        "/skill:promptwire",
+        "teamwire install --harness pi",
+    ] {
+        assert!(pi.contains(line), "pi-lead.md lacks {line}");
+    }
+}
