@@ -2,7 +2,7 @@
 // worked example in the brief is a test.
 
 import { AFK_FILE_NAMES, type AfkFileName, type FileRef } from "../../shared/api.ts";
-import type { AfkView, LogDelivery, LogMessage, MemberView, RosterMember, StatusView } from "../../shared/teamwire.ts";
+import type { AfkView, LogDelivery, LogMessage, MemberView, RosterMember, StatusView, TicketRef } from "../../shared/teamwire.ts";
 
 /** Seconds as `4 s`, `12 min` or `1 h 12 min`. */
 export function spanText(seconds: number): string {
@@ -40,6 +40,9 @@ export function afkLine(afk: AfkView, timeZone?: string): string {
 export function afkChip(afk: AfkView): string {
   return afk.spent ? "AFK budget spent" : `AFK ${spanText(afk.seconds_left)} left`;
 }
+
+/** A ticket ref as plain text, such as `linear:GKA-580`. No link: teamwire stores no tracker URL. */
+export const refText = (r: Pick<TicketRef, "provider" | "id">): string => `${r.provider}:${r.id}`;
 
 export function unreadLines(s: Pick<StatusView, "unread_deliveries">): string[] {
   return s.unread_deliveries.map((d) => `${d.display_id} to ${d.to}: handed over ${spanText(d.age_s)} ago, not read yet`);

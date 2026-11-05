@@ -246,9 +246,9 @@ export const MetricsView = z.object({
  * fails the parse like every other enum here.
  */
 export const EventType = z.enum([
-  "team.created", "team.closing", "team.closed", "team.lead_adopted",
+  "team.created", "team.closing", "team.closed", "team.lead_adopted", "team.refs_added",
   "member.creating", "member.started", "member.failed", "member.refused", "member.replaced",
-  "member.removed", "member.reprompted", "member.completed", "member.completion_refused", "member.held",
+  "member.removed", "member.reprompted", "member.handoff", "member.completed", "member.completion_refused", "member.held",
   "message.sent", "message.refused",
   "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
   "delivery.reminded", "delivery.resent", "delivery.reentered", "delivery.recipient_stopped",
@@ -296,6 +296,7 @@ export type MessageType = z.infer<typeof MessageType>;
 export type MemberKind = z.infer<typeof MemberKind>;
 export type Lifecycle = z.infer<typeof Lifecycle>;
 export type Liveness = z.infer<typeof Liveness>;
+export type TicketRef = z.infer<typeof TicketRef>;
 export type ContextView = z.infer<typeof ContextView>;
 export type MemberView = z.infer<typeof MemberView>;
 export type LeadView = z.infer<typeof LeadView>;

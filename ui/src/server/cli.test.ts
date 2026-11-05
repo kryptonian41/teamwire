@@ -125,7 +125,7 @@ describe("runner", () => {
   test("parses events output for both call forms", async () => {
     const r = make();
     const live = await r({ cmd: "events", team: "payments", after: 3 });
-    expect(live.ok && live.data.last_seq).toBe(53);
+    expect(live.ok && live.data.last_seq).toBe(55);
     const arch = await r({ cmd: "eventsArchive", team: "payments", archive: "payments-2026-10-07" });
     expect(arch.ok).toBe(true);
   });

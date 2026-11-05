@@ -26,6 +26,8 @@ test("each example in the label table", () => {
     [47, "fraud's result #1 not delivered", "session_blocked"],
     [48, "watch told the lead: UNDELIVERED, SILENT", null],
     [15, "oldapi removed without a passing verify", "oldapi has no passing verify at HEAD 1a2b3c4: it never ran"],
+    [54, "team ticket refs added", "linear:GKA-581, github:#3772"],
+    [55, "api got a fresh session", "generation 2 · 11111111 → 22222222"],
     [53, "close refused", "web is busy: its current turn is lost if its place closes. api's verify at HEAD 9d8e7f6 is FAIL, not PASS"],
   ];
   for (const [seq, label, details] of cases) {
@@ -123,7 +125,7 @@ test("filters pick rows and routine rows hide unless asked", () => {
   expect(seqs("messages", true)).toContain(25);
   expect(seqs("members", false)).toContain(35);
   // Newest first.
-  expect(seqs("all", true)[0]).toBe(53);
+  expect(seqs("all", true)[0]).toBe(55);
 });
 
 test("merging keeps held rows, adds new ones once, in order", () => {

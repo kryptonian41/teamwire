@@ -27,6 +27,17 @@ describe("log and events additions", () => {
     const old = { messages: [{ ...log.messages[0]!, re: undefined, commit: undefined, deliveries: [{ to: "ledger", state: "acked", attempts: 1 }] }] };
     expect(LogView.safeParse(old).success).toBe(true);
   });
+  test("team.refs_added and member.handoff rows parse and keep their data", () => {
+    const parsed = EventsView.parse(events);
+    const added = parsed.events.find((e) => e.type === "team.refs_added")!;
+    expect(added.data["added"]).toEqual([
+      { provider: "linear", id: "GKA-581" },
+      { provider: "github", id: "#3772" },
+    ]);
+    const handoff = parsed.events.find((e) => e.type === "member.handoff")!;
+    expect(handoff.role).toBe("api");
+    expect(handoff.data["generation"]).toBe(2);
+  });
   test("an unknown event type fails the parse", () => {
     const changed = structuredClone(events);
     changed.events[0]!.type = "member.teleported";
