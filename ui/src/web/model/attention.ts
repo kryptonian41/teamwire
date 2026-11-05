@@ -38,12 +38,13 @@ export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
     }
     for (const m of t.members) {
       const age = formatAge(m.age_s, m.deadline_s);
-      if (m.state === "working" && age.overdue) rows.push(row("deadline", m.role, `working past its deadline: ${age.label}`));
+      // teamwire prints `late` for a live member past its deadline, before it checks for `working`.
+      if (m.state === "late") rows.push(row("deadline", m.role, `past its deadline: ${age.label}`));
       if (m.category !== "done" && m.context && pastHandoff(m.context)) {
         rows.push(row("handoff", m.role, `context ${countText(m.context.tokens)} tokens (${m.context.pct}%), past its handoff point at ${countText(m.context.handoff_at)}`));
       }
     }
-    const working = t.members.filter((m) => m.state === "working").length;
+    const working = t.members.filter((m) => m.state === "working" || m.state === "late").length;
     if (s.state === "open" && working > 0 && s.watch.state !== "running") {
       rows.push(row("nowatch", null, `${plural(working, "member")} ${working === 1 ? "is" : "are"} working and ${s.watch.state === "stale" ? "the watch is stale" : "no watch is running"}`));
     }

@@ -24,14 +24,20 @@ test("a question to the lead is listed at any age, one to another party is not",
   expect(items({ unanswered_questions: [q(["web"], 9000)] })).toEqual([]);
 });
 
-test("a working member past its deadline is listed, a member inside it or in another state is not", () => {
+test("a late member is listed as past its deadline, a member inside it or in another state is not", () => {
+  // `teamwire status` prints `late` for a live member past its deadline, never `working` (crates/teamwire-watch/src/status.rs).
   const w = (state: string, age_s: number, deadline_s = 3600) => ({ ...member, state, age_s, deadline_s });
-  expect(items({ members: [w("working", 3900)] })).toEqual([
-    { kind: "deadline", team: "alpha", teamTitle: "Alpha", member: "api", text: "working past its deadline: 1h5m / 1h" },
+  expect(items({ members: [w("late", 3900)] }).filter((i) => i.kind !== "nowatch")).toEqual([
+    { kind: "deadline", team: "alpha", teamTitle: "Alpha", member: "api", text: "past its deadline: 1h5m / 1h" },
   ]);
   expect(items({ members: [w("working", 3600)] }).filter((i) => i.kind === "deadline")).toEqual([]);
   expect(items({ members: [w("quiet", 9000)] })).toEqual([]);
   expect(items({ members: [w("done(done)", 9000)] })).toEqual([]);
+});
+
+test("the fixture's own late member, web, gets a deadline row", () => {
+  const rows = attentionItems(joinAll(S, T)).filter((r) => r.kind === "deadline");
+  expect(rows).toEqual([{ kind: "deadline", team: "payments", teamTitle: "Refund flow rewrite", member: "web", text: "past its deadline: 1h5m / 1h" }]);
 });
 
 test("a member past its handoff point is listed, unless it has finished", () => {
@@ -52,13 +58,14 @@ test("a stuck delivery and an undelivered result are listed against the recipien
   ]);
 });
 
-test("working members with no running watch give one row for the team", () => {
+test("running members, working or late, with no running watch give one row for the team", () => {
   const none = { state: "none" as const, pid: null, heartbeat_age_s: null };
   const stale = { state: "stale" as const, pid: 9, heartbeat_age_s: 900 };
   const running = { state: "running" as const, pid: 9, heartbeat_age_s: 1 };
   expect(items({ members: [member, { ...member, role: "web" }], watch: none })).toEqual([
     { kind: "nowatch", team: "alpha", teamTitle: "Alpha", member: null, text: "2 members are working and no watch is running" },
   ]);
+  expect(items({ members: [{ ...member, state: "late", age_s: 9000 }], watch: none }).find((i) => i.kind === "nowatch")?.text).toBe("1 member is working and no watch is running");
   expect(items({ members: [member], watch: stale })[0]!.text).toBe("1 member is working and the watch is stale");
   expect(items({ members: [member], watch: running })).toEqual([]);
   expect(items({ members: [{ ...member, state: "quiet" }], watch: none })).toEqual([]);
