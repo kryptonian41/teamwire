@@ -121,3 +121,5 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_findings;

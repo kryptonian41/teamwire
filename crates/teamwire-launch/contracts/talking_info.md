@@ -1,7 +1,7 @@
-- notice: after you COMMIT a change that another agent depends on
-  (a renamed function, a changed signature, a moved file), tell
-  that agent in one short message. Add --commit <sha>. Say what
-  changed, not what you plan: plans and promises are not notices.
+- notice: only after you COMMIT a change that another agent depends
+  on (a renamed function, a changed signature, a moved file). Add
+  --commit <sha>; send refuses a notice without one. Say what changed,
+  not what you plan. Send any other fact as a finding.
 - finding: when you verify something that changes another agent's
   work, send it to that agent, with file:line or the command and
   its output. One finding per message.
