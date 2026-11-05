@@ -75,6 +75,7 @@ fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
     let (mut rig, api) = finished_member();
     rig.harness.set_caps(teamwire_core::HarnessCaps {
         reads_watch_lines: false,
+        watch_start: teamwire_core::harness::WatchStart::BackgroundCommand,
         ..teamwire_fakes::FakeHarness::caps()
     });
     rig.complete_now(&api);
@@ -83,6 +84,23 @@ fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
         rig.typed_to_lead()[0].ends_with(
             " (no watch is running: nohup teamwire watch alpha --deliver >/dev/null 2>&1 &)"
         ),
+        "{}",
+        rig.typed_to_lead()[0]
+    );
+}
+
+#[test]
+fn a_lead_that_starts_the_watch_with_a_tool_is_told_the_tool() {
+    let (mut rig, api) = finished_member();
+    rig.harness.set_caps(teamwire_core::HarnessCaps {
+        watch_start: teamwire_core::harness::WatchStart::ExtensionTool,
+        ..teamwire_fakes::FakeHarness::caps()
+    });
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert!(
+        rig.typed_to_lead()[0]
+            .ends_with(" (no watch is running: call the teamwire_watch tool with team alpha)"),
         "{}",
         rig.typed_to_lead()[0]
     );

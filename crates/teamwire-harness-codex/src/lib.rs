@@ -99,6 +99,7 @@ impl Harness for CodexCli {
             session_env_via_config: true,
             // Codex has no tool that streams a command's output to the model.
             reads_watch_lines: false,
+            watch_start: teamwire_core::harness::WatchStart::BackgroundCommand,
             reads_input_box: false,
             runs_afk: false,
         }

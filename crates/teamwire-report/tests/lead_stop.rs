@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{
     Clock, CompletionStatus, FinalSource, HarnessId, HostId, LeadRoute, MemberKind, MemberState,
     Mode, Pid, Role, SessionId, SessionKind, TeamName,
@@ -239,7 +240,10 @@ fn only_the_teams_that_need_a_watch_are_named() {
 
 #[test]
 fn the_note_names_the_team_and_the_command() {
-    let note = watch_missing_note(&TeamName::parse("alpha").unwrap(), true);
+    let note = watch_missing_note(
+        &TeamName::parse("alpha").unwrap(),
+        WatchStart::MonitoredCommand,
+    );
     assert_eq!(
         note,
         "[teamwire:alpha] no watch is running; start `teamwire watch alpha` with Monitor before you stop."
@@ -248,10 +252,25 @@ fn the_note_names_the_team_and_the_command() {
 
 #[test]
 fn a_lead_that_cannot_read_watch_lines_is_told_the_background_watch() {
-    let note = watch_missing_note(&TeamName::parse("alpha").unwrap(), false);
+    let note = watch_missing_note(
+        &TeamName::parse("alpha").unwrap(),
+        WatchStart::BackgroundCommand,
+    );
     assert_eq!(
         note,
         "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop."
+    );
+}
+
+#[test]
+fn a_lead_that_starts_the_watch_with_a_tool_is_told_the_tool() {
+    let note = watch_missing_note(
+        &TeamName::parse("alpha").unwrap(),
+        WatchStart::ExtensionTool,
+    );
+    assert_eq!(
+        note,
+        "[teamwire:alpha] no watch is running; start it with the teamwire_watch tool (team \"alpha\") before you stop."
     );
 }
 

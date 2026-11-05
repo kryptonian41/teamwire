@@ -117,6 +117,7 @@ impl Harness for Pi {
             // The lead's extension runs the watch and hands each line to the
             // model as a message (ADR 0030).
             reads_watch_lines: true,
+            watch_start: teamwire_core::harness::WatchStart::ExtensionTool,
             reads_input_box: true,
             // AFK-2 still refuses a pi lead (ADR 0030 point 8).
             runs_afk: false,

@@ -6,6 +6,7 @@ use std::io::Read;
 use std::path::Path;
 use std::time::Duration;
 
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{Harness, HarnessId, TeamName};
 use teamwire_store::Store;
 
@@ -74,7 +75,7 @@ pub(super) fn lead_stop_in(
     let mut note: Vec<String> = teams
         .iter()
         .map(|(team, lead)| {
-            teamwire_report::watch_missing_note(team, lead_reads_watch_lines(lead.as_ref(), wiring))
+            teamwire_report::watch_missing_note(team, lead_watch_start(lead.as_ref(), wiring))
         })
         .collect();
     note.extend(afk_notes);
@@ -144,10 +145,12 @@ pub(super) fn lead_harness_of(home: &Path, team: &TeamName) -> Option<HarnessId>
         .map(|row| row.lead_harness)
 }
 
-/// Whether the lead harness reads a command's output as it is printed. A
-/// team that could not be read, or a harness this binary does not have, gets
-/// the Monitor wording, which is the older one.
-pub(super) fn lead_reads_watch_lines(lead: Option<&HarnessId>, wiring: &Wiring) -> bool {
+/// How the lead harness starts a watch. A team that could not be read, or a
+/// harness this binary does not have, gets the Monitor wording, which is the
+/// older one.
+pub(super) fn lead_watch_start(lead: Option<&HarnessId>, wiring: &Wiring) -> WatchStart {
     lead.and_then(|id| wiring.registry.harness(id).ok())
-        .is_none_or(|harness| harness.capabilities().reads_watch_lines)
+        .map_or(WatchStart::MonitoredCommand, |harness| {
+            harness.capabilities().watch_start
+        })
 }

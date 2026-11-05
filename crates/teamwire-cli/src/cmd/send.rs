@@ -4,7 +4,9 @@
 
 use std::process::ExitCode;
 
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{DisplayId, MessageType, Recipient, SendRequest, TeamName};
+use teamwire_deliver::{WatchText, watch_text};
 use teamwire_msg::{
     RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged, send_with,
     watch_running,
@@ -93,10 +95,12 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         match sent {
             Ok(report) => {
                 let watching = (kind == MessageType::Reprompt).then(|| {
-                    let reads = ctx
+                    let start = ctx
                         .adapters(&Party::Lead)
-                        .map_or(true, |(h, _)| h.capabilities().reads_watch_lines);
-                    (watch_state(watch_running(ctx)), reads)
+                        .map_or(WatchStart::MonitoredCommand, |(h, _)| {
+                            h.capabilities().watch_start
+                        });
+                    (watch_state(watch_running(ctx)), start)
                 });
                 Outcome::Sent(Box::new(report), watching)
             }
@@ -111,8 +115,8 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         Ok(Outcome::Failed(e)) => fail("send", &e.to_string(), error_code(&e)),
         Ok(Outcome::Sent(report, watching)) => {
             print_report(&team, &report);
-            if let Some((watching, reads)) = watching {
-                say(&watch_line(&team, &watching, reads));
+            if let Some((watching, start)) = watching {
+                say(&watch_line(&team, &watching, start));
             }
             ExitCode::from(exit_of(&report))
         }
@@ -137,25 +141,17 @@ fn watch_state(lease: Result<Option<teamwire_core::Pid>, SendError>) -> Watch {
     }
 }
 
-/// `reads_watch_lines` is the lead's harness capability of that name: a lead
-/// without it runs the watch in the background (ADR 0023).
-fn watch_line(team: &TeamName, watching: &Watch, reads_watch_lines: bool) -> String {
+/// `start` is how the lead's harness starts a watch.
+fn watch_line(team: &TeamName, watching: &Watch, start: WatchStart) -> String {
     match watching {
         Watch::Running(pid) => format!("a watch is running (pid {pid})\n"),
-        Watch::NotRunning => {
-            let command = if reads_watch_lines {
-                format!("teamwire watch {team}")
-            } else {
-                format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
-            };
-            format!("no watch is running: start one with `{command}`\n")
-        }
+        Watch::NotRunning => format!("{}\n", watch_text(start, WatchText::AfterReprompt, team)),
         Watch::Unknown(why) => format!("could not tell whether a watch is running: {why}\n"),
     }
 }
 
 enum Outcome {
-    Sent(Box<SendReport>, Option<(Watch, bool)>),
+    Sent(Box<SendReport>, Option<(Watch, WatchStart)>),
     Failed(SendError),
     Unknown(String),
 }
@@ -344,24 +340,41 @@ mod tests {
         let unreadable = watch_state(Err(SendError::Store(StoreError::Corrupt(
             "bad lease row".to_owned(),
         ))));
-        let line = watch_line(&team(), &unreadable, true);
+        let line = watch_line(&team(), &unreadable, WatchStart::MonitoredCommand);
         assert!(
             line.starts_with("could not tell whether a watch is running:"),
             "{line}"
         );
         assert!(line.contains("bad lease row"), "{line}");
         assert!(!line.contains("no watch is running"), "{line}");
-        let none = watch_line(&team(), &watch_state(Ok(None)), true);
+        let none = watch_line(
+            &team(),
+            &watch_state(Ok(None)),
+            WatchStart::MonitoredCommand,
+        );
         assert!(none.starts_with("no watch is running"), "{none}");
         assert!(none.contains("`teamwire watch "), "{none}");
     }
 
     #[test]
     fn a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background() {
-        let line = watch_line(&team(), &watch_state(Ok(None)), false);
+        let line = watch_line(
+            &team(),
+            &watch_state(Ok(None)),
+            WatchStart::BackgroundCommand,
+        );
         assert!(
             line.contains("`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`"),
             "{line}"
+        );
+    }
+
+    #[test]
+    fn a_lead_that_starts_the_watch_with_a_tool_is_told_the_tool() {
+        let line = watch_line(&team(), &watch_state(Ok(None)), WatchStart::ExtensionTool);
+        assert_eq!(
+            line,
+            "no watch is running: start one with the teamwire_watch tool (team alpha)\n"
         );
     }
 }

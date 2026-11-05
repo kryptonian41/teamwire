@@ -5,14 +5,16 @@
 use std::sync::Arc;
 
 use serde_json::json;
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{
     Clock, CompletionStatus, Harness, HarnessId, HostId, LeadRoute, MemberKind, MemberState, Mode,
     Registry, SessionId,
 };
+use teamwire_deliver::{WatchText, watch_text};
 use teamwire_fakes::{FakeClock, FakeHarness, TestHome};
 use teamwire_store::{NewMember, NewTeam};
 
-use super::lead::{lead_harness_of, lead_reads_watch_lines, lead_stop_in, lead_tool_in};
+use super::lead::{lead_harness_of, lead_stop_in, lead_tool_in, lead_watch_start};
 use super::*;
 use crate::wiring::{WiringEnv, wire};
 use teamwire_core::SessionKind;
@@ -260,12 +262,29 @@ fn the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines(
     // The team's recorded lead harness is `fake-a`.
     let mut caps = bed.a.capabilities();
     caps.reads_watch_lines = false;
+    caps.watch_start = WatchStart::BackgroundCommand;
     bed.a.set_caps(caps);
     let reply = lead_stop(&bed, Some("fake-a")).unwrap();
     let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
     let note = doc.get("reason").and_then(|n| n.as_str()).unwrap();
     assert!(
         note.contains("nohup teamwire watch alpha --deliver"),
+        "{note}"
+    );
+}
+
+#[test]
+fn the_lead_stop_hook_names_the_watch_tool_for_a_lead_that_calls_one() {
+    let bed = bed(None);
+    // The team's recorded lead harness is `fake-a`.
+    let mut caps = bed.a.capabilities();
+    caps.watch_start = WatchStart::ExtensionTool;
+    bed.a.set_caps(caps);
+    let reply = lead_stop(&bed, Some("fake-a")).unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
+    let note = doc.get("reason").and_then(|n| n.as_str()).unwrap();
+    assert!(
+        note.contains("start it with the teamwire_watch tool (team \"alpha\")"),
         "{note}"
     );
 }
@@ -282,11 +301,70 @@ fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
     let lead = lead_harness_of(bed.home.path(), &bed.team);
     assert_eq!(lead.as_ref().map(HarnessId::as_str), Some("fake-a"));
     bed.wiring.registry = Registry::new();
-    assert!(lead_reads_watch_lines(lead.as_ref(), &bed.wiring));
+    assert_eq!(
+        lead_watch_start(lead.as_ref(), &bed.wiring),
+        WatchStart::MonitoredCommand
+    );
     // A team that could not be read gives no harness, and the same wording.
     let gone = TeamName::parse("gone").unwrap();
     assert_eq!(lead_harness_of(bed.home.path(), &gone), None);
-    assert!(lead_reads_watch_lines(None, &bed.wiring));
+    assert_eq!(
+        lead_watch_start(None, &bed.wiring),
+        WatchStart::MonitoredCommand
+    );
+}
+
+/// The four texts that tell a lead how to start its watch, for the lead
+/// harness `id` of this binary: the Stop hold, the end of a result line, the
+/// line after a reprompt, and launch's `watch:` value.
+fn watch_texts_of(id: &str) -> [String; 4] {
+    let start = lead_watch_start(Some(&HarnessId::parse(id).unwrap()), &real_wiring());
+    let team = TeamName::parse("alpha").unwrap();
+    [
+        teamwire_report::watch_missing_note(&team, start),
+        watch_text(start, WatchText::ResultSuffix, &team),
+        watch_text(start, WatchText::AfterReprompt, &team),
+        watch_text(start, WatchText::Launch, &team),
+    ]
+}
+
+#[test]
+fn a_claude_code_lead_is_told_to_run_the_watch_under_monitor() {
+    assert_eq!(
+        watch_texts_of("claude-code"),
+        [
+            "[teamwire:alpha] no watch is running; start `teamwire watch alpha` with Monitor before you stop.",
+            "(no watch is running: teamwire watch alpha)",
+            "no watch is running: start one with `teamwire watch alpha`",
+            "teamwire watch alpha",
+        ]
+    );
+}
+
+#[test]
+fn a_codex_lead_is_told_to_run_the_watch_in_the_background() {
+    assert_eq!(
+        watch_texts_of("codex"),
+        [
+            "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop.",
+            "(no watch is running: nohup teamwire watch alpha --deliver >/dev/null 2>&1 &)",
+            "no watch is running: start one with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`",
+            "nohup teamwire watch alpha --deliver >/dev/null 2>&1 &",
+        ]
+    );
+}
+
+#[test]
+fn a_pi_lead_is_told_to_call_the_watch_tool() {
+    assert_eq!(
+        watch_texts_of("pi"),
+        [
+            "[teamwire:alpha] no watch is running; start it with the teamwire_watch tool (team \"alpha\") before you stop.",
+            "(no watch is running: call the teamwire_watch tool with team alpha)",
+            "no watch is running: start one with the teamwire_watch tool (team alpha)",
+            "call the teamwire_watch tool with team alpha",
+        ]
+    );
 }
 
 fn lead_tool(

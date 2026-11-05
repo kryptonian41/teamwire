@@ -271,3 +271,11 @@ fn a_lead_session_without_the_package_is_refused_with_the_install_command() {
 fn a_pi_lead_reads_watch_lines() {
     assert!(Rig::new().pi().capabilities().reads_watch_lines);
 }
+
+#[test]
+fn a_pi_lead_starts_the_watch_with_the_extension_tool() {
+    assert_eq!(
+        Rig::new().pi().capabilities().watch_start,
+        teamwire_core::harness::WatchStart::ExtensionTool
+    );
+}
