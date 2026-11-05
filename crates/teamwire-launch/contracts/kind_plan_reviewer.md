@@ -17,7 +17,9 @@ commit.
   - a design choice the brief leaves to the member, such as a name, a
     signature, an error or an edge case;
   - a file the work must change that no member owns, such as a test
-    that pins a count, an exhaustive match, a mock or a config;
+    that pins a count, an exhaustive match, a mock or a config. Grep the
+    whole repository for each name or value the brief changes, not only
+    the member's module;
   - two briefs, or a brief and the plan, that contradict each other;
   - a claim about the code that the code does not bear out: a file,
     function or type that does not exist or does not do what the brief

@@ -31,3 +31,5 @@ HOW TO WORK
   state: one member that removes a worktree can delete a teammate's
   checkout mid-run. If you need a second worktree, report blocked to the
   lead and carry on with what does not need it.
+- Do not end a turn while a background job you still need is running.
+  Closing a member ends its background jobs with its tab.

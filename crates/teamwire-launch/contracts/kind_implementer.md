@@ -61,5 +61,3 @@ the tests that prove it, and the commits, in your own worktree.
 - Status 'done' means your check (YOUR SCOPE below) and every check your
   brief names passed on your last commit. Anything less is 'failed'
   or 'blocked', with the output in your report file.
-- Do not end a turn while a background job you still need is running.
-  Closing a member ends its background jobs with its tab.
