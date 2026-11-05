@@ -154,7 +154,7 @@ fn afk_note_for(
             )
         } else if now >= ends {
             format!(
-                "[teamwire:{team}] budget spent at {ends}: finish what is running, write {dir}/afk/REPORT.md, then run `teamwire close {team}`. Start no new implementer. If a command you started will wake you, stop again."
+                "[teamwire:{team}] budget spent at {ends}: start no new implementer. Finish what is running, add the reporter if it has not run, then run `teamwire close {team}` once {dir}/afk/REPORT.md has every heading. If a command you started will wake you, stop again."
             )
         } else {
             format!(

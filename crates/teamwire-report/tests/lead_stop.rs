@@ -401,12 +401,18 @@ fn past_the_budget_the_note_says_so_and_asks_for_the_report() {
     let note = notes.first().unwrap();
     assert!(
         note.starts_with(&format!(
-            "[teamwire:alpha] budget spent at {ends}: finish what is running"
+            "[teamwire:alpha] budget spent at {ends}: start no new implementer. Finish what is running"
         )),
         "{}",
         note
     );
     assert!(note.contains(&format!("{}/afk/REPORT.md", rig.dir())));
+    // The reporter writes the report; the lead's context is the run's scarcest resource.
+    assert!(
+        note.contains("add the reporter if it has not run"),
+        "{note}"
+    );
+    assert!(!note.contains("write "), "{note}");
 }
 
 #[test]
