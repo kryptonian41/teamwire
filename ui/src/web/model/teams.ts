@@ -8,6 +8,9 @@ export function contextLabel(context: MemberView["context"]): string | null {
   return context ? `${context.pct}%` : null;
 }
 
+/** True when the member's context has reached the token count at which it is told to hand off. No reading is not past. */
+export const pastHandoff = (context: MemberView["context"]): boolean => context != null && context.tokens >= context.handoff_at;
+
 export interface JoinedMember extends MemberView {
   /** From the roster. Null when the roster has no entry for this role. */
   kind: MemberKind | null;
@@ -68,6 +71,8 @@ export function problemReasons(t: TeamModel): string[] {
     if (s.watch.state === "stale") out.push("watch stale");
     if (s.afk?.spent) out.push("AFK spent");
   }
+  const past = t.members.filter((m) => pastHandoff(m.context)).length;
+  if (past > 0) out.push(`${past} past handoff`);
   if (s.unread_deliveries.length > 0) out.push(`${s.unread_deliveries.length} unread`);
   const waiting = s.unanswered_questions.filter((q) => q.to.includes("lead") && q.age_s >= QUESTION_WAIT_S);
   if (waiting.length > 0) out.push(`${waiting.length} question waiting`);

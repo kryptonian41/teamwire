@@ -7,7 +7,7 @@
     "watch": { "state": "running", "pid": 4242, "heartbeat_age_s": 12 },
     "members": [
       { "role": "api", "title": "Build refund endpoint", "state": "working", "generation": 1, "age_s": 1240, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": null, "branch": "payments/api", "resume_command": null },
-      { "role": "ledger", "title": "Write ledger entries", "state": "done(done)", "generation": 2, "age_s": 610, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": "payments/ledger", "resume_command": null },
+      { "role": "ledger", "title": "Write ledger entries", "state": "done(done)", "generation": 2, "age_s": 610, "started_by": "0.4.0", "older_build": false, "deadline_s": 3600, "result": "delivered", "branch": "payments/ledger", "resume_command": null, "context": { "tokens": 450000, "window": 1000000, "pct": 45, "handoff_at": 400000 } },
       { "role": "web", "title": "Build refund screen", "state": "late", "generation": 1, "age_s": 3900, "started_by": "0.3.2", "older_build": true, "deadline_s": 3600, "result": null, "branch": "payments/web", "resume_command": null },
       { "role": "emails", "title": "Send refund emails", "state": "blocked", "generation": 1, "age_s": 800, "started_by": "0.4.0", "older_build": false, "deadline_s": 1800, "result": null, "branch": "payments/emails", "resume_command": null },
       { "role": "audit", "title": "Trace refund audit log", "state": "quiet", "generation": 1, "age_s": 400, "started_by": "0.4.0", "older_build": false, "deadline_s": 1800, "result": null, "branch": null, "resume_command": null },

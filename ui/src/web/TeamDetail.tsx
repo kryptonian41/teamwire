@@ -10,7 +10,7 @@ import { useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
 import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
-import { contextLabel, countByCategory, formatAge, leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
+import { contextLabel, countByCategory, formatAge, leadCategory, livenessInfo, pastHandoff, refreshKey, type TeamModel } from "./model/teams.ts";
 import { removalText } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { CATEGORY_ORDER } from "../shared/state.ts";
@@ -269,6 +269,11 @@ function MemberTable({ team, rows }: { team: TeamModel; rows: readonly EventRow[
                     <span className="ctx" title={`context: ${m.context?.tokens} of ${m.context?.window} tokens`}>
                       {" "}
                       {contextLabel(m.context)}
+                    </span>
+                  )}
+                  {pastHandoff(m.context) && (
+                    <span className="flag badge" title={`context ${m.context?.tokens} is at or past the handoff point ${m.context?.handoff_at}`}>
+                      past handoff
                     </span>
                   )}
                 </td>
