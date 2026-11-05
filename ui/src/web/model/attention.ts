@@ -23,8 +23,8 @@ const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /**
  * Rows for every team, in the order the teams are given. A question to the lead counts at any age,
- * unlike the overview card's flag, which waits 10 minutes. A member that has finished is not asked
- * to hand off, so a finished member past its handoff point gets no row.
+ * unlike the overview card's flag, which waits 10 minutes. A finished member past its handoff point
+ * is listed too, because the card flags its team for it.
  */
 export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
   return teams.flatMap((t) => {
@@ -40,8 +40,12 @@ export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
       const age = formatAge(m.age_s, m.deadline_s);
       // teamwire prints `late` for a live member past its deadline, before it checks for `working`.
       if (m.state === "late") rows.push(row("deadline", m.role, `past its deadline: ${age.label}`));
-      if (m.category !== "done" && m.context && pastHandoff(m.context)) {
-        rows.push(row("handoff", m.role, `context ${countText(m.context.tokens)} tokens (${m.context.pct}%), past its handoff point at ${countText(m.context.handoff_at)}`));
+      if (m.context && pastHandoff(m.context)) {
+        const text =
+          m.category === "done"
+            ? "past its handoff point: hand it off before you reprompt it"
+            : `context ${countText(m.context.tokens)} tokens (${m.context.pct}%), past its handoff point at ${countText(m.context.handoff_at)}`;
+        rows.push(row("handoff", m.role, text));
       }
     }
     const working = t.members.filter((m) => m.state === "working" || m.state === "late").length;

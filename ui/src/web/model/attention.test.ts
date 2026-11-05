@@ -40,13 +40,15 @@ test("the fixture's own late member, web, gets a deadline row", () => {
   expect(rows).toEqual([{ kind: "deadline", team: "payments", teamTitle: "Refund flow rewrite", member: "web", text: "past its deadline: 1h5m / 1h" }]);
 });
 
-test("a member past its handoff point is listed, unless it has finished", () => {
+test("a member past its handoff point is listed, with its own text once it has finished", () => {
   const ctx = { tokens: 450_000, window: 1_000_000, pct: 45, handoff_at: 400_000 };
   expect(items({ members: [{ ...member, context: ctx }] })).toEqual([
     { kind: "handoff", team: "alpha", teamTitle: "Alpha", member: "api", text: "context 450k tokens (45%), past its handoff point at 400k" },
   ]);
   expect(items({ members: [{ ...member, context: { ...ctx, tokens: 399_999 } }] })).toEqual([]);
-  expect(items({ members: [{ ...member, state: "done(done)", context: ctx }] })).toEqual([]);
+  expect(items({ members: [{ ...member, state: "done(done)", context: ctx }] })).toEqual([
+    { kind: "handoff", team: "alpha", teamTitle: "Alpha", member: "api", text: "past its handoff point: hand it off before you reprompt it" },
+  ]);
 });
 
 test("a stuck delivery and an undelivered result are listed against the recipient and the member", () => {
@@ -81,6 +83,6 @@ test("rows keep the team order, and kinds run from the worst down inside a team"
 test("the fixtures give rows for the stuck delivery and the undelivered result", () => {
   const rows = attentionItems(joinAll(S, T));
   expect(rows.map((r) => r.kind)).toContain("stuck");
-  // The finished ledger member is past its handoff point but is not listed.
-  expect(rows.some((r) => r.member === "ledger")).toBe(false);
+  // The finished ledger member is past its handoff point, and its team is flagged for it, so it is listed.
+  expect(rows.find((r) => r.member === "ledger")?.kind).toBe("handoff");
 });
