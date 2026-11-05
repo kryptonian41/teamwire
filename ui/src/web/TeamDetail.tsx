@@ -14,6 +14,7 @@ import { contextLabel, countByCategory, formatAge, leadCategory, livenessInfo, p
 import { removalText } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { Decisions } from "./Decisions.tsx";
+import { Tokens } from "./Tokens.tsx";
 import type { DecisionQuery } from "../shared/api.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
@@ -178,6 +179,8 @@ export function TeamDetail({
       <MessageSection team={team} pick={pick} />
 
       <Decisions team={name} refresh={refresh} query={query} onQuery={setQuery} />
+
+      <Tokens team={name} refresh={refresh} />
 
       <h2>Timeline</h2>
       <Timeline
