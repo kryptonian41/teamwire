@@ -193,12 +193,7 @@ fn plan_with<'r>(
         }
     };
     if unread > 0 {
-        write!(
-            first_line,
-            " You have {unread} unread message(s): read them with the team_inbox tool or \
-             `teamwire inbox`."
-        )
-        .ok();
+        write!(first_line, " {}", unread_note(unread)).ok();
     }
     let request = SpawnRequest {
         name: Address::of(&team.name, role),
@@ -283,6 +278,16 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
 /// Why the handoff document at `path` cannot be trusted, if it cannot: it is
 /// missing, or older than the generation it should describe, such as one a
 /// member that handed off before left behind.
+/// The sentence that tells a fresh session about its unread messages. The
+/// member tool comes first: a member's shell may have no `teamwire` on its
+/// PATH, so the command it can run is the one its contract names.
+fn unread_note(unread: usize) -> String {
+    format!(
+        "You have {unread} unread message(s): read them with the team_inbox tool, or with the \
+         `teamwire inbox` command your contract names."
+    )
+}
+
 fn stale_document(path: &Path, generation_started: Timestamp) -> Option<String> {
     let written = match std::fs::metadata(path).and_then(|m| m.modified()) {
         Ok(written) => written,
@@ -348,5 +353,19 @@ fn failed(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>, why: &str) -> String {
             "{role}: {why}. The old session {old} could not be recorded again ({e}), so the \
              member may hold a new, empty session; reopen would resume that one"
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::unread_note;
+
+    #[test]
+    fn the_unread_note_names_the_tool_first_and_the_contracts_command() {
+        assert_eq!(
+            unread_note(2),
+            "You have 2 unread message(s): read them with the team_inbox tool, or with the \
+             `teamwire inbox` command your contract names."
+        );
     }
 }
