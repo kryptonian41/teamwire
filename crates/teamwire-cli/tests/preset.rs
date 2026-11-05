@@ -911,3 +911,15 @@ fn the_skill_states_the_rules_the_audit_found_missing() {
         "the timestamp paragraph lives in SKILL.md only"
     );
 }
+
+/// The AFK skill numbers its sections and the steps of section 1, so each
+/// pointer says which it means, and only the lead sends a member more work.
+#[test]
+fn the_afk_skill_points_at_sections_and_allows_fix_rounds() {
+    let skill = example("skills/afk/SKILL.md");
+    assert!(!skill.contains("start step 2"), "{skill}");
+    assert!(!skill.contains("runs once and finishes"), "{skill}");
+    assert!(skill.contains("Section 1 is the only place"));
+    assert!(skill.contains("write roster entry D1 (section 5)"));
+    assert!(skill.contains("Only you send it more work"));
+}

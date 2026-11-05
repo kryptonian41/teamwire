@@ -14,8 +14,8 @@ and where the two disagree, this file wins.
 Never wait for a person. When you would ask the user something, answer it
 yourself with the answer you would have recommended, write it into the
 decision log, and carry on. A turn that ends on a question to the user ends
-the run, because nothing will wake you again. Step 1 is the only place you
-may stop for the user.
+the run, because nothing will wake you again. Section 1 is the only place
+you may stop for the user.
 
 ## 1. Preflight, while the user may still be at the keyboard
 
@@ -30,8 +30,9 @@ may stop for the user.
 3. Reply once with the team name, the report path and the time the budget
    ends. Then tell the user, in these words: "Keep the lid open and the
    machine on power." Only the user can do that: a closed lid sleeps the Mac
-   even with the sleep hold. Then start step 2 in the same turn. Do not wait
-   for an answer.
+   even with the sleep hold. Then, in the same turn, pick the members
+   (section 4), write roster entry D1 (section 5) and add the first ones. Do
+   not wait for an answer.
 
 The run is this one team. Every member you add later joins it with
 `teamwire launch --add`. Never start a second team for this run.
@@ -68,8 +69,9 @@ and plan too, and you read less:
 - A planner reads the investigators' reports, and a plan reviewer reads the
   plan.
 
-Each member you add runs once and finishes. None of them sends work to
-another member. You make every call that changes the plan.
+Each member you add has one job. Only you send it more work: a fix round on
+its own branch, or a merge for the integrator. Members never send work to
+each other. You make every call that changes the plan.
 
 ## 4. Members you can add
 
