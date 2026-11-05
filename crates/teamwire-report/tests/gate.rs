@@ -219,6 +219,13 @@ fn unread_messages_hold_once_and_do_not_use_up_the_report_hold() {
         note.contains(&id) && note.contains("teamwire inbox"),
         "{note}"
     );
+    assert!(
+        note.contains(
+            "Read them with the team_inbox tool, or with the `teamwire inbox` command your contract names. \
+             If one changes your result, update your report and record done again; otherwise stop"
+        ),
+        "{note}"
+    );
     assert_eq!(
         reply(&mut rig, &api),
         TurnEndReply::Continue,

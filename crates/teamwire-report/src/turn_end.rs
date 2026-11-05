@@ -15,7 +15,7 @@ use teamwire_deliver::{
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
-use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
+use crate::note::{FIX_THEN_STOP, READ_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::{mark_stopped, unread};
 use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
@@ -215,7 +215,7 @@ fn hold(
         ));
     }
     if !ids.is_empty() {
-        parts.push(unread_note(&ids));
+        parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
     }
     let at = ctx.clock.now();
     let mut data = json!({

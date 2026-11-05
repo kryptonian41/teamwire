@@ -42,10 +42,17 @@ pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path, next: &str) -> String {
     format!("Team report check: {}. {next}", facts.join("; "))
 }
 
-/// The reminder of unread messages, with the command that reads them.
+/// What a member held at its stop for unread messages does next. A message
+/// can change a result the member already recorded, and only a new `done`
+/// carries the change to the lead.
+pub(crate) const READ_THEN_STOP: &str = "If one changes your result, update your report and record done again; otherwise stop, and a result you already recorded goes to the lead.";
+
+/// The reminder of unread messages, with the tool and the command that read
+/// them. The tool comes first: a member's shell may have no `teamwire` on its
+/// PATH, so the command it can run is the one its contract names.
 pub(crate) fn unread_note(ids: &[String]) -> String {
     format!(
-        "You have unread teamwire message(s): {}. Read them with: teamwire inbox",
+        "You have unread teamwire message(s): {}. Read them with the team_inbox tool, or with the `teamwire inbox` command your contract names.",
         ids.join(", ")
     )
 }
