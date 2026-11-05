@@ -4,6 +4,7 @@
 import type { z } from "zod";
 import type { Problem } from "../shared/api.ts";
 import {
+  DecisionsView,
   EventsView,
   LogView,
   MetricsView,
@@ -21,6 +22,12 @@ export type CliCall =
   | { cmd: "events"; team: string; after?: number }
   | { cmd: "eventsArchive"; team: string; archive: string }
   | { cmd: "metrics" }
+  | { cmd: "metricsTeam"; team: string }
+  | { cmd: "decisionsTeam"; team: string }
+  /** Searches every team and archive. `text` is 1 to 200 characters and never starts with `-`. */
+  | { cmd: "decisionsGrep"; text: string }
+  /** `ref` is `<provider>:<id>`. It reaches the CLI as one `--ref=` item. */
+  | { cmd: "decisionsRef"; ref: string }
   | { cmd: "version" };
 
 export interface CliConfig {
@@ -37,6 +44,11 @@ export type CliResult<T> =
 /** `status` asks Claude Code and herdr about every member, so it is slow. */
 export const STATUS_TIMEOUT_MS = 30_000;
 export const DEFAULT_TIMEOUT_MS = 10_000;
+
+/** The plan's ticket-ref rule, the same one launch uses: a lowercase provider, then an id without white space or control characters. */
+const REF_RE = /^[a-z][a-z0-9_]{0,15}:[^\s\p{Cc}]{1,200}$/u;
+/** A search text is one printable line, so it cannot hold a newline or a NUL (which `spawn` would refuse). */
+const GREP_RE = /^[^\p{Cc}]{1,200}$/u;
 
 const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
 
@@ -72,13 +84,34 @@ export function buildArgs(call: CliCall, home?: string): string[] {
     }
     case "metrics":
       return [...prefix, "metrics", "--json"];
+    case "metricsTeam":
+      return [...prefix, "metrics", name("team", call.team), "--json"];
+    case "decisionsTeam":
+      return [...prefix, "decisions", name("team", call.team), "--json"];
+    case "decisionsGrep":
+      // A leading dash would read as a flag, so it is refused.
+      if (!GREP_RE.test(call.text) || call.text.startsWith("-")) throw new Error("bad search text");
+      return [...prefix, "decisions", "--grep", call.text, "--json"];
+    case "decisionsRef":
+      // `--ref=` keeps an id that starts with a dash from reading as a flag.
+      if (!REF_RE.test(call.ref)) throw new Error("bad ref");
+      return [...prefix, "decisions", `--ref=${call.ref}`, "--json"];
     case "version":
       return [...prefix, "version"];
   }
 }
 
+/** A search reads every team and archive, so it gets the long limit. */
 export function timeoutFor(call: CliCall): number {
-  return call.cmd === "status" || call.cmd === "statusRole" ? STATUS_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+  switch (call.cmd) {
+    case "status":
+    case "statusRole":
+    case "decisionsGrep":
+    case "decisionsRef":
+      return STATUS_TIMEOUT_MS;
+    default:
+      return DEFAULT_TIMEOUT_MS;
+  }
 }
 
 function schemaFor(call: CliCall): z.ZodType | null {
@@ -95,7 +128,12 @@ function schemaFor(call: CliCall): z.ZodType | null {
     case "eventsArchive":
       return EventsView;
     case "metrics":
+    case "metricsTeam":
       return MetricsView;
+    case "decisionsTeam":
+    case "decisionsGrep":
+    case "decisionsRef":
+      return DecisionsView;
     case "version":
       return null;
   }
@@ -110,6 +148,10 @@ export interface CliOutput {
   events: z.infer<typeof EventsView>;
   eventsArchive: z.infer<typeof EventsView>;
   metrics: z.infer<typeof MetricsView>;
+  metricsTeam: z.infer<typeof MetricsView>;
+  decisionsTeam: z.infer<typeof DecisionsView>;
+  decisionsGrep: z.infer<typeof DecisionsView>;
+  decisionsRef: z.infer<typeof DecisionsView>;
   version: string;
 }
 
@@ -155,9 +197,13 @@ function cleanEnv(): Record<string, string> {
   return env;
 }
 
+/** The `teamwire` command a call runs, for messages. */
+const commandName = (call: CliCall): string =>
+  call.cmd === "eventsArchive" ? "events" : call.cmd === "metricsTeam" ? "metrics" : call.cmd.startsWith("decisions") ? "decisions" : call.cmd;
+
 export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {}): Runner {
   return (async (call: CliCall) => {
-    const name = call.cmd === "eventsArchive" ? "events" : call.cmd;
+    const name = commandName(call);
     let args: string[];
     try {
       args = buildArgs(call, config.home);

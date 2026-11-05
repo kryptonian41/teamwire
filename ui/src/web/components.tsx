@@ -13,16 +13,22 @@ export function StateChip({ word, category }: { word: string; category: StateCat
   return <span className={`chip cat-${category}`}>{word}</span>;
 }
 
-/** A team's ticket refs as text chips such as `linear:GKA-580`. No link: teamwire stores no tracker URL. Renders nothing for none. */
-export function RefChips({ refs }: { refs: readonly TicketRef[] }) {
+/** A team's ticket refs as text chips such as `linear:GKA-580`. No link: teamwire stores no tracker URL. With `onPick` a chip is a button. Renders nothing for none. */
+export function RefChips({ refs, onPick }: { refs: readonly TicketRef[]; onPick?: (ref: TicketRef) => void }) {
   if (refs.length === 0) return null;
   return (
     <p className="chips" aria-label="Ticket refs">
-      {refs.map((r) => (
-        <span key={refText(r)} className="chip cat-idle ref">
-          {refText(r)}
-        </span>
-      ))}
+      {refs.map((r) =>
+        onPick ? (
+          <button key={refText(r)} className="chip cat-idle ref" title="Find decisions of teams with this ref" onClick={() => onPick(r)}>
+            {refText(r)}
+          </button>
+        ) : (
+          <span key={refText(r)} className="chip cat-idle ref">
+            {refText(r)}
+          </span>
+        ),
+      )}
     </p>
   );
 }

@@ -27,6 +27,7 @@ case "$FAKE_MODE" in
   args) echo "$@" > ${dir}/args.out; echo '{"teams":[]}'; exit 0 ;;
 esac
 case "$*" in
+  *"decisions"*) cat ${root}decisions.json ;;
   *"status"*"--role"*) echo '{"team":null,"title":null,"state":null,"lead":null,"members":[],"messages":[],"stuck_deliveries":[],"undelivered_results":[],"errors":[]}' ;;
   *"status"*) cat ${root}status.json ;;
   *"teams"*) cat ${root}teams.json ;;
@@ -61,6 +62,11 @@ describe("buildArgs", () => {
     [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012", "--json"]],
     [{ cmd: "eventsArchive", team: "alpha", archive: "alpha-2026-10-07-153012-2" }, ["events", "alpha", "--archive", "alpha-2026-10-07-153012-2", "--json"]],
     [{ cmd: "metrics" }, ["metrics", "--json"]],
+    [{ cmd: "metricsTeam", team: "alpha" }, ["metrics", "alpha", "--json"]],
+    [{ cmd: "decisionsTeam", team: "alpha" }, ["decisions", "alpha", "--json"]],
+    [{ cmd: "decisionsGrep", text: "rounding rule" }, ["decisions", "--grep", "rounding rule", "--json"]],
+    [{ cmd: "decisionsRef", ref: "linear:GKA-580" }, ["decisions", "--ref=linear:GKA-580", "--json"]],
+    [{ cmd: "decisionsRef", ref: "github:#3772" }, ["decisions", "--ref=github:#3772", "--json"]],
     [{ cmd: "version" }, ["version"]],
   ];
   for (const [call, args] of cases) {
@@ -71,6 +77,49 @@ describe("buildArgs", () => {
     expect(() => buildArgs({ cmd: "log", team: "../x" })).toThrow();
     expect(() => buildArgs({ cmd: "statusRole", team: "ok", role: "-x" })).toThrow();
     expect(() => buildArgs({ cmd: "log", team: "a-b" })).toThrow();
+  });
+});
+
+describe("buildArgs for decisions and team metrics", () => {
+  test("refuses a bad team name", () => {
+    for (const team of ["../x", "a-b", "Alpha", "", "-x"]) {
+      expect(() => buildArgs({ cmd: "decisionsTeam", team })).toThrow();
+      expect(() => buildArgs({ cmd: "metricsTeam", team })).toThrow();
+    }
+  });
+  test("a grep text is 1 to 200 characters, never starts with a dash, has no control character", () => {
+    expect(buildArgs({ cmd: "decisionsGrep", text: "x".repeat(200) })).toEqual(["decisions", "--grep", "x".repeat(200), "--json"]);
+    // Text that looks like another option stays one array item after --grep.
+    expect(buildArgs({ cmd: "decisionsGrep", text: "a --json" })).toEqual(["decisions", "--grep", "a --json", "--json"]);
+    for (const text of ["", "x".repeat(201), "-x", "--json", "-", "a\nb", "a\0b", "a\u007fb"]) {
+      expect(() => buildArgs({ cmd: "decisionsGrep", text })).toThrow();
+    }
+  });
+  test("a ref is provider:id, with the plan's provider and id rules, in one --ref= item", () => {
+    expect(buildArgs({ cmd: "decisionsRef", ref: "a:b" })).toEqual(["decisions", "--ref=a:b", "--json"]);
+    expect(buildArgs({ cmd: "decisionsRef", ref: `p23456789012345:${"i".repeat(200)}` }).at(1)).toBe(`--ref=p23456789012345:${"i".repeat(200)}`);
+    // An id that starts with a dash cannot read as a flag: it sits after the equals sign.
+    expect(buildArgs({ cmd: "decisionsRef", ref: "linear:-5" })).toEqual(["decisions", "--ref=linear:-5", "--json"]);
+    expect(buildArgs({ cmd: "decisionsRef", ref: "gh:a:b" }).at(1)).toBe("--ref=gh:a:b");
+    const bad = [
+      "",
+      "GKA-580", // A bare id is not a form the dashboard builds.
+      "Linear:GKA-1",
+      "1linear:GKA-1",
+      "_x:1",
+      "p234567890123456x:1", // Provider of 17 characters.
+      "linear:",
+      "linear:a b",
+      "linear:a\tb",
+      "linear:a\nb",
+      "linear:a\0b",
+      "linear:a\u00a0b",
+      `linear:${"i".repeat(201)}`,
+      "-linear:1",
+      "--ref=x:1",
+      ":1",
+    ];
+    for (const ref of bad) expect(() => buildArgs({ cmd: "decisionsRef", ref })).toThrow();
   });
 });
 
@@ -121,6 +170,19 @@ describe("runner", () => {
     const v = await r({ cmd: "version" });
     expect(v.ok && v.data).toBe("teamwire 0.0.0");
   }, 20_000);
+
+  test("parses decisions output for the three forms, and team metrics", async () => {
+    const r = make();
+    for (const call of [
+      { cmd: "decisionsTeam", team: "payments" },
+      { cmd: "decisionsGrep", text: "status" },
+      { cmd: "decisionsRef", ref: "linear:GKA-580" },
+    ] as const) {
+      const res = await r(call);
+      expect(res.ok && res.data.teams[0]?.team).toBe("payments");
+    }
+    expect((await r({ cmd: "metricsTeam", team: "payments" })).ok).toBe(true);
+  });
 
   test("parses events output for both call forms", async () => {
     const r = make();

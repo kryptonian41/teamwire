@@ -6,7 +6,7 @@
 // and it never will: teamwire accepts lead actions only from the lead's own
 // Claude Code session (teamwire ADR 0008).
 
-import type { EventsView, LogView, MetricsView, StatusView, TeamEntry } from "./teamwire.ts";
+import type { DecisionsView, EventsView, LogView, MetricsView, StatusView, TeamEntry } from "./teamwire.ts";
 
 /** Default port. The server binds 127.0.0.1 only. */
 export const DEFAULT_PORT = 7878;
@@ -166,7 +166,10 @@ export interface ArchiveEntry {
   files: FileRef[];
 }
 
-export type { EventsView, LogView, MetricsView };
+export type { DecisionsView, EventsView, LogView, MetricsView };
+
+/** A decisions search across every team and archive: report text, or a ticket ref as `provider:id`. */
+export type DecisionQuery = { grep: string } | { ref: string };
 
 /**
  * Every route. The page builds URLs only through these functions, and the
@@ -186,6 +189,10 @@ export type { EventsView, LogView, MetricsView };
  * | `GET /api/metrics` | `MetricsView` for every live team and archive |
  * | `GET /api/teams/:team/timeline?after=SEQ` | `EventsView` from `teamwire events <team> [--after SEQ] --json`. `after` is optional, a non-negative integer |
  * | `GET /api/archives/:dir/timeline` | `EventsView` from `teamwire events <team> --archive <dir> --json`, the team taken from the archive entry |
+ * | `GET /api/teams/:team/decisions` | `DecisionsView` from `teamwire decisions <team> --json` |
+ * | `GET /api/decisions?grep=TEXT` | `DecisionsView` from `teamwire decisions --grep TEXT --json`, across all teams. TEXT is 1 to 200 characters and does not start with `-` |
+ * | `GET /api/decisions?ref=PROVIDER:ID` | `DecisionsView` from `teamwire decisions --ref=PROVIDER:ID --json`. Exactly one of `grep` and `ref` |
+ * | `GET /api/teams/:team/metrics` | `MetricsView` from `teamwire metrics <team> --json`, cached 60 s per team |
  *
  * Any other status than 200 carries a `Problem` as JSON.
  */
@@ -203,4 +210,8 @@ export const api = {
   teamTimeline: (team: string, after?: number) =>
     after === undefined ? `/api/teams/${team}/timeline` : `/api/teams/${team}/timeline?after=${after}`,
   archiveTimeline: (dir: string) => `/api/archives/${dir}/timeline`,
+  teamDecisions: (team: string) => `/api/teams/${team}/decisions`,
+  decisions: (q: DecisionQuery) =>
+    "grep" in q ? `/api/decisions?grep=${encodeURIComponent(q.grep)}` : `/api/decisions?ref=${encodeURIComponent(q.ref)}`,
+  teamMetrics: (team: string) => `/api/teams/${team}/metrics`,
 } as const;

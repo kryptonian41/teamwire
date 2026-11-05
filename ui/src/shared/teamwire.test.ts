@@ -4,8 +4,9 @@ import teams from "../../fixtures/teams.json";
 import log from "../../fixtures/log.json";
 import metrics from "../../fixtures/metrics.json";
 import events from "../../fixtures/events.json";
+import decisions from "../../fixtures/decisions.json";
 import { createRunner } from "../server/cli.ts";
-import { EventsView, LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
+import { DecisionsView, EventsView, LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
 
 describe("fixtures match the teamwire schemas", () => {
   test("status", () => expect(StatusAll.safeParse(status).success).toBe(true));
@@ -13,6 +14,35 @@ describe("fixtures match the teamwire schemas", () => {
   test("log", () => expect(LogView.safeParse(log).success).toBe(true));
   test("metrics", () => expect(MetricsView.safeParse(metrics).success).toBe(true));
   test("events", () => expect(EventsView.safeParse(events).success).toBe(true));
+  test("decisions", () => expect(DecisionsView.safeParse(decisions).success).toBe(true));
+});
+
+describe("decisions output", () => {
+  test("keeps each member's blocks and the team refs, and drops the paths it does not need", () => {
+    const team = DecisionsView.parse(decisions).teams[0]!;
+    expect(team.team).toBe("payments");
+    expect(team.refs.map((r) => `${r.provider}:${r.id}`)).toEqual(["linear:GKA-580", "github:#3772"]);
+    expect(team.members.map((m) => [m.role, m.blocks.length, m.report === null])).toEqual([
+      ["api", 1, false],
+      ["ledger", 2, false],
+      ["web", 0, true],
+      ["audit", 0, false],
+    ]);
+    expect(team.members[0]!.blocks[0]).toEqual({ heading: "## Decisions I made", line: 41, text: expect.stringContaining("422") });
+    expect("path" in team).toBe(false);
+    expect("ulid" in team).toBe(false);
+  });
+  test("a team from an archive, with no refs key, still parses", () => {
+    const old = structuredClone(decisions);
+    delete (old.teams[0] as { refs?: unknown }).refs;
+    old.teams[0]!.live = false;
+    expect(DecisionsView.parse(old).teams[0]!.refs).toEqual([]);
+  });
+  test("a block with a text line number fails the parse", () => {
+    const bad = structuredClone(decisions);
+    (bad.teams[0]!.members[0]!.blocks[0] as { line: unknown }).line = "41";
+    expect(DecisionsView.safeParse(bad).success).toBe(false);
+  });
 });
 
 describe("log and events additions", () => {
@@ -134,6 +164,15 @@ describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {
   test("status --json", async () => expect((await run({ cmd: "status" })).ok).toBe(true));
   test("teams --json", async () => expect((await run({ cmd: "teams" })).ok).toBe(true));
   test("metrics --json", async () => expect((await run({ cmd: "metrics" })).ok).toBe(true));
+  test("decisions --json, for a team, a search text and a ref", async () => {
+    const list = await run({ cmd: "teams" });
+    const team = list.ok ? list.data.teams[0]?.name : undefined;
+    if (team === undefined) return; // No team to read.
+    expect((await run({ cmd: "decisionsTeam", team })).ok).toBe(true);
+    expect((await run({ cmd: "metricsTeam", team })).ok).toBe(true);
+    expect((await run({ cmd: "decisionsGrep", text: "decisions" })).ok).toBe(true);
+    expect((await run({ cmd: "decisionsRef", ref: "linear:ZZZ-0" })).ok).toBe(true);
+  });
   test("log --json", async () => {
     const list = await run({ cmd: "teams" });
     const team = list.ok ? list.data.teams[0]?.name : undefined;

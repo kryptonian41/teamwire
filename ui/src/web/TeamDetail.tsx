@@ -9,10 +9,12 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { href } from "./model/route.ts";
-import { afkLine, answersLink, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
+import { afkLine, answersLink, refText, startedByLine, unansweredLines, unreadLines, watchLine } from "./model/status.ts";
 import { contextLabel, countByCategory, formatAge, leadCategory, livenessInfo, pastHandoff, refreshKey, type TeamModel } from "./model/teams.ts";
 import { removalText } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
+import { Decisions } from "./Decisions.tsx";
+import type { DecisionQuery } from "../shared/api.ts";
 import { CATEGORY_ORDER } from "../shared/state.ts";
 
 /** The longest the files and the log go without a reload. */
@@ -34,6 +36,7 @@ export function TeamDetail({
   const files = useLoad(() => client.teamFiles(name), name, refresh);
   const timeline = useTimeline((after) => client.teamTimeline(name, after), name, refresh);
   const [pick, setPick] = useState<{ id: string; n: number } | null>(null);
+  const [query, setQuery] = useState<DecisionQuery | null>(null);
   if (!snapshot) return <Empty title="Waiting for the first poll…" />;
   if (!team || team.name === null) {
     return (
@@ -74,7 +77,13 @@ export function TeamDetail({
           <span>{watchLine(s.watch)}</span>
           {s.afk && <span className={s.afk.spent ? "flag bad" : undefined}>{afkLine(s.afk)}</span>}
         </p>
-        <RefChips refs={s.refs} />
+        <RefChips
+          refs={s.refs}
+          onPick={(r) => {
+            setQuery({ ref: refText(r) });
+            document.getElementById("decisions")?.scrollIntoView({ block: "start" });
+          }}
+        />
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
@@ -167,6 +176,8 @@ export function TeamDetail({
       )}
 
       <MessageSection team={team} pick={pick} />
+
+      <Decisions team={name} refresh={refresh} query={query} onQuery={setQuery} />
 
       <h2>Timeline</h2>
       <Timeline
