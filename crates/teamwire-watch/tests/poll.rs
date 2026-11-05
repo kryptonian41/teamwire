@@ -12,6 +12,10 @@ use teamwire_core::{
 use teamwire_fakes::CallKind;
 use teamwire_watch::WatchEnd;
 
+/// What `TEAM-COMPLETE` adds while the team has an implementer and no closer
+/// has reported. Every fixture member is an implementer.
+const NO_CLOSER: &str = ". If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).";
+
 fn secs(n: u64) -> Duration {
     Duration::from_secs(n)
 }
@@ -102,7 +106,8 @@ fn every_event_in_a_line_carries_the_polls_time_in_utc() {
             "[teamwire:alpha 17:34:28Z] UNREAD m001 -> a 10m | \
              [teamwire:alpha 17:34:28Z] UNREAD m002 -> b 10m | \
              [teamwire:alpha 17:34:28Z] UNREAD m003 -> c 10m | \
-             [teamwire:alpha 17:34:28Z] TEAM-COMPLETE 3/3 done"
+             [teamwire:alpha 17:34:28Z] TEAM-COMPLETE 3/3 done. If no wave is due: add the \
+             integrator when branches join, then the closer (teamwire preset closer)."
         )
     );
 }
@@ -380,10 +385,64 @@ fn team_complete_counts_only_done() {
     let line = bed.tick().unwrap();
     assert_eq!(
         events(&line),
-        ["TEAM-COMPLETE 0/3 done; not done: a failed, b failed, c blocked"]
+        [format!(
+            "TEAM-COMPLETE 0/3 done; not done: a failed, b failed, c blocked{NO_CLOSER}"
+        )]
     );
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
     assert!(bed.tick().is_none());
+}
+
+/// A team with implementers and no closer report is told the steps after
+/// the last wave: leads read `TEAM-COMPLETE` alone as the end of the run.
+#[test]
+fn team_complete_names_the_integrator_and_the_closer_while_no_closer_reported() {
+    let mut bed = Bed::new();
+    for name in ["a", "b", "c"] {
+        bed.add(name);
+    }
+    bed.poll();
+    for name in ["a", "b", "c"] {
+        bed.delivered(name, CompletionStatus::Done);
+    }
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [
+            "TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches join, \
+             then the closer (teamwire preset closer)."
+        ]
+    );
+}
+
+/// A closer's report, even one whose member is removed since, ends the
+/// reminder; a team that wrote no code never gets it.
+#[test]
+fn team_complete_names_no_step_once_a_closer_reported_or_without_an_implementer() {
+    let mut bed = Bed::new();
+    bed.add("a");
+    bed.add_kind("closer", teamwire_core::MemberKind::Closer);
+    bed.poll();
+    bed.delivered("a", CompletionStatus::Done);
+    bed.delivered("closer", CompletionStatus::Failed);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        ["TEAM-COMPLETE 1/2 done; not done: closer failed"]
+    );
+
+    let mut bed = Bed::new();
+    bed.add("a");
+    bed.add_kind("closer", teamwire_core::MemberKind::Closer);
+    bed.poll();
+    bed.delivered("closer", CompletionStatus::Done);
+    bed.remove("closer");
+    bed.delivered("a", CompletionStatus::Done);
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
+
+    let mut bed = Bed::new();
+    bed.add_kind("survey", teamwire_core::MemberKind::Investigator);
+    bed.poll();
+    bed.delivered("survey", CompletionStatus::Done);
+    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
 }
 
 #[test]
@@ -396,7 +455,10 @@ fn a_clean_team_is_complete_once_and_completions_are_silent() {
     bed.delivered("api", CompletionStatus::Done);
     assert!(bed.tick().is_none(), "a delivered result adds no line");
     bed.delivered("web", CompletionStatus::Done);
-    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 2/2 done"]);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [format!("TEAM-COMPLETE 2/2 done{NO_CLOSER}")]
+    );
 }
 
 /// WAT-20: a watch can start a moment before `launch --add` writes the
@@ -413,7 +475,10 @@ fn the_first_poll_of_a_settled_team_says_watching_and_the_next_says_team_complet
     assert_eq!(names(&first), ["WATCHING"]);
     assert_eq!(bed.memory.end, None, "the watch keeps polling");
     let second = bed.tick().unwrap();
-    assert_eq!(events(&second), ["TEAM-COMPLETE 1/1 done"]);
+    assert_eq!(
+        events(&second),
+        [format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")]
+    );
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
@@ -431,7 +496,10 @@ fn a_member_added_right_after_the_first_poll_is_watched() {
     assert_eq!(bed.memory.end, None);
     bed.delivered("web", CompletionStatus::Done);
     let line = bed.tick().unwrap();
-    assert!(line.ends_with("TEAM-COMPLETE 2/2 done"), "{line}");
+    assert!(
+        line.ends_with(&format!("TEAM-COMPLETE 2/2 done{NO_CLOSER}")),
+        "{line}"
+    );
 }
 
 /// WAT-20: the lead removes the last live member between two polls, so the
@@ -464,7 +532,10 @@ fn a_team_that_never_had_a_live_member_keeps_the_watch_polling() {
     // Once a member joins and finishes, the watch completes as usual.
     bed.add("api");
     bed.delivered("api", CompletionStatus::Done);
-    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")]
+    );
 }
 
 /// WAT-20: a member the lead reprompted in the same gap is watched too. Its
@@ -481,7 +552,10 @@ fn a_member_reprompted_right_after_the_first_poll_is_watched() {
     assert_eq!(bed.memory.end, None);
     bed.delivered("api", CompletionStatus::Done);
     let line = bed.tick().unwrap();
-    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+    assert!(
+        line.ends_with(&format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")),
+        "{line}"
+    );
 }
 
 /// WAT-20: a poll that failed read no roster, so it cannot have raced a
@@ -498,7 +572,10 @@ fn the_poll_that_says_watching_after_a_failed_one_also_holds_team_complete() {
     assert_eq!(names(&bed.tick().unwrap()), ["WATCHING"]);
     assert_eq!(bed.memory.end, None);
     let line = bed.tick().unwrap();
-    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+    assert!(
+        line.ends_with(&format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")),
+        "{line}"
+    );
 }
 
 /// WAT-20: `--once` reads the team's state in a single poll, so that poll
@@ -511,7 +588,10 @@ fn a_single_poll_watch_prints_team_complete_on_its_one_poll() {
     bed.delivered("api", CompletionStatus::Done);
     let line = bed.poll().unwrap();
     assert_eq!(names(&line), ["WATCHING", "TEAM-COMPLETE"]);
-    assert!(line.ends_with("TEAM-COMPLETE 1/1 done"), "{line}");
+    assert!(
+        line.ends_with(&format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")),
+        "{line}"
+    );
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));
 }
 
@@ -530,7 +610,9 @@ fn dead_member_settles_team_complete() {
     assert_eq!(count(&lines, "DIED"), 1, "{lines:?}");
     let last = lines.last().unwrap();
     assert!(
-        last.ends_with("TEAM-COMPLETE 2/3 done; not done: c died"),
+        last.ends_with(&format!(
+            "TEAM-COMPLETE 2/3 done; not done: c died{NO_CLOSER}"
+        )),
         "{last}"
     );
     assert_eq!(count(&lines, "TEAM-STALLED"), 0);
@@ -591,7 +673,10 @@ fn added_member_is_watched() {
     bed.delivered("alpha_one", CompletionStatus::Done);
     assert!(bed.tick().is_none(), "the new member is still working");
     bed.delivered("beta", CompletionStatus::Done);
-    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 2/2 done"]);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [format!("TEAM-COMPLETE 2/2 done{NO_CLOSER}")]
+    );
 }
 
 #[test]
@@ -606,7 +691,10 @@ fn removed_member_not_died() {
     bed.vanish("web");
     assert!(bed.ticks(4).is_empty(), "a removed member is not reported");
     bed.delivered("api", CompletionStatus::Done);
-    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")]
+    );
 }
 
 #[test]
@@ -634,7 +722,10 @@ fn a_team_closed_after_team_complete_prints_no_team_closed() {
     bed.add("api");
     bed.poll();
     bed.delivered("api", CompletionStatus::Done);
-    assert_eq!(events(&bed.tick().unwrap()), ["TEAM-COMPLETE 1/1 done"]);
+    assert_eq!(
+        events(&bed.tick().unwrap()),
+        [format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}")]
+    );
     let now = teamwire_core::Clock::now(&bed.clock);
     bed.store
         .write(|tx| {
@@ -670,7 +761,10 @@ fn reprompt_rearms_member() {
     // Its next completion is a new result.
     bed.delivered("api", CompletionStatus::Done);
     let end = bed.tick().unwrap();
-    assert!(end.ends_with("TEAM-COMPLETE 2/2 done"), "{end}");
+    assert!(
+        end.ends_with(&format!("TEAM-COMPLETE 2/2 done{NO_CLOSER}")),
+        "{end}"
+    );
 }
 
 #[test]
@@ -1317,7 +1411,9 @@ fn a_member_that_dies_after_done_before_its_hook_is_announced_dead() {
     assert!(at("DECLARED") < at("DIED"), "{order:?}");
     let last = lines.last().unwrap();
     assert!(
-        last.ends_with("TEAM-COMPLETE 1/2 done; not done: api died"),
+        last.ends_with(&format!(
+            "TEAM-COMPLETE 1/2 done; not done: api died{NO_CLOSER}"
+        )),
         "{last}"
     );
     assert_eq!(bed.memory.end, Some(WatchEnd::TeamComplete));

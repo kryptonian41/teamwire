@@ -33,7 +33,8 @@ const EXPORT_SLICE: Duration = Duration::from_millis(200);
 const WATCH_EXPORT_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// How long one `--deliver` delivery may take. The poll waits for it, so a
-/// stuck host must not hold the next poll for longer than this.
+/// stuck host must not hold the next poll for longer than this. `pr-watch
+/// --deliver` shares it.
 const DELIVER_BUDGET: Duration = Duration::from_secs(15);
 
 /// The exporter's target: `OTEL_EXPORTER_OTLP_*` from the environment, else
@@ -194,8 +195,9 @@ fn watch(
 
 /// Types a printed line into the lead's place, for a lead that cannot read the
 /// watch's output (ADR 0023). The line is already printed, so a line that
-/// cannot be delivered is only logged and the next poll goes on.
-fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
+/// cannot be delivered is only logged and the next poll goes on. `watch
+/// --deliver` and `pr-watch --deliver` both type through here (ADR 0039).
+pub(crate) fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
     let outcome = match ctx.clock.monotonic().checked_add(DELIVER_BUDGET) {
         Some(deadline) => deliver_line_within(ctx, &Party::Lead, line, deadline),
         None => deliver_line(ctx, &Party::Lead, line),
@@ -203,7 +205,7 @@ fn deliver_to_lead(ctx: &mut Ctx<'_>, line: &OneLine) {
     match outcome {
         DeliveryOutcome::HandedOff => {}
         DeliveryOutcome::Unconfirmed(e) | DeliveryOutcome::Undelivered(e) => {
-            tracing::warn!(error = %e, "a watch line was not delivered to the lead");
+            tracing::warn!(error = %e, "a printed line was not delivered to the lead");
         }
     }
 }

@@ -19,6 +19,7 @@ use teamwire_store::Ctx;
 
 mod afk;
 mod archive;
+mod closer;
 mod delete;
 mod empty;
 mod exclude;
@@ -76,6 +77,9 @@ pub struct CloseStep {
 pub struct ClosePlan {
     pub steps: Vec<CloseStep>,
     pub refusals: Vec<String>,
+    /// A whole-team close while no closer has reported and an implementer
+    /// branch has commits. The close still goes on.
+    pub closer_warning: Option<String>,
 }
 
 /// How one step went.
@@ -98,6 +102,8 @@ pub struct CloseReport {
     pub branches_kept: Vec<String>,
     /// Commits on kept branches that are not pushed anywhere.
     pub unpushed: Vec<String>,
+    /// The plan's `closer_warning`, judged before the close ran.
+    pub closer_warning: Option<String>,
 }
 
 /// The plan for `--dry-run`, with no flag given. Changes nothing.
@@ -141,7 +147,10 @@ pub fn close_observed(
         };
     }
     match target {
-        CloseTarget::Team => team_close::run(ctx, opts, observer),
+        CloseTarget::Team => CloseReport {
+            closer_warning: plan.closer_warning,
+            ..team_close::run(ctx, opts, observer)
+        },
         CloseTarget::Member(role) => remove::run(ctx, &role, &opts, observer),
     }
 }

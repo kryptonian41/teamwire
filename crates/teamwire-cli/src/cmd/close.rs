@@ -147,7 +147,16 @@ fn removal_stopped_message(
     }
 }
 
+/// A whole-team close while no closer has reported. It is said first, and
+/// the close goes on.
+fn show_closer_warning(warning: Option<&String>) {
+    if let Some(text) = warning {
+        warn(&format!("warning: {text}"));
+    }
+}
+
 fn show_plan(plan: &ClosePlan) -> ExitCode {
+    show_closer_warning(plan.closer_warning.as_ref());
     for CloseStep { step, detail } in &plan.steps {
         say_line(&format!("[dry-run] {step}: {detail}"));
     }
@@ -161,6 +170,7 @@ fn show_plan(plan: &ClosePlan) -> ExitCode {
 }
 
 fn show_report(report: &CloseReport, target: &CloseTarget, team: &TeamName) -> ExitCode {
+    show_closer_warning(report.closer_warning.as_ref());
     for StepOutcome { step, ok, detail } in &report.steps {
         if *ok {
             say_line(&format!("{step}: {detail}"));

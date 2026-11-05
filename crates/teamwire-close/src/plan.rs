@@ -22,15 +22,15 @@ pub fn plan_close_with(ctx: &Ctx<'_>, target: CloseTarget, opts: &CloseOpts) -> 
     {
         return ClosePlan {
             steps: vec![crate::empty::plan(&team, &dir)],
-            refusals: Vec::new(),
+            ..ClosePlan::default()
         };
     }
     let (team, members) = match read(ctx) {
         Ok(pair) => pair,
         Err(why) => {
             return ClosePlan {
-                steps: Vec::new(),
                 refusals: vec![why],
+                ..ClosePlan::default()
             };
         }
     };
@@ -70,6 +70,7 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         return plan;
     }
     if team.state == TeamState::Open {
+        plan.closer_warning = crate::closer::warning(ctx, &team.name, members);
         plan.refusals
             .extend(facts::member_refusals(ctx, &team.name, members));
         plan.refusals.extend(crate::afk::report_refusal(ctx, team));

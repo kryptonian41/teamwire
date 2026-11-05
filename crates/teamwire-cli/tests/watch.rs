@@ -30,6 +30,10 @@ struct Run {
     err: String,
 }
 
+/// What `TEAM-COMPLETE` adds while the team has an implementer and no closer
+/// has reported. Every fixture member is an implementer.
+const NO_CLOSER: &str = ". If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).";
+
 /// How long a test waits for a watch to print something or to exit.
 const PATIENCE: Duration = Duration::from_secs(30);
 
@@ -194,12 +198,10 @@ fn a_finished_team_ends_the_watch_on_its_second_poll_without_once() {
     bed.delivered("web", CompletionStatus::Failed);
     let run = teamwire(&bed, &["watch", "alpha", "--interval", "1"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let complete = format!("TEAM-COMPLETE 1/2 done; not done: web failed{NO_CLOSER}");
     assert_eq!(
         printed(&run.out),
-        [
-            vec!["WATCHING 2 members"],
-            vec!["TEAM-COMPLETE 1/2 done; not done: web failed"],
-        ]
+        [vec!["WATCHING 2 members"], vec![complete.as_str()]]
     );
 }
 
@@ -212,9 +214,10 @@ fn once_on_a_finished_team_prints_team_complete_in_its_one_poll() {
     bed.delivered("api", CompletionStatus::Done);
     let run = teamwire(&bed, &["watch", "alpha", "--once"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let complete = format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}");
     assert_eq!(
         printed(&run.out),
-        [["WATCHING 1 members", "TEAM-COMPLETE 1/1 done"]]
+        [["WATCHING 1 members", complete.as_str()]]
     );
 }
 
@@ -363,9 +366,10 @@ fn an_export_endpoint_does_not_change_the_output() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
+    let complete = format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}");
     assert_eq!(
         printed(&String::from_utf8(out.stdout).unwrap()),
-        [vec!["WATCHING 1 members"], vec!["TEAM-COMPLETE 1/1 done"]]
+        [vec!["WATCHING 1 members"], vec![complete.as_str()]]
     );
 }
 
@@ -490,6 +494,45 @@ impl LeadRig {
         }
     }
 
+    /// `teamwire pr-watch -R o/r -i 1 7 <args>` with a fake `gh` first on
+    /// `PATH`. The fake says pull request 7 is merged, so the watch prints
+    /// two lines and exits. `extra` is set on top of the cleared environment.
+    fn pr_watch(&self, args: &[&str], extra: &[(&str, &str)]) -> Run {
+        use std::os::unix::fs::PermissionsExt as _;
+        let bin = self.home.path().join("gh-bin");
+        std::fs::create_dir_all(&bin).unwrap();
+        let gh = bin.join("gh");
+        std::fs::write(
+            &gh,
+            "#!/bin/sh\ncase \"$2\" in\n  checks) echo '[]' ;;\n  view) echo \
+             '{\"state\":\"MERGED\",\"baseRefName\":\"main\"}' ;;\nesac\n",
+        )
+        .unwrap();
+        std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let mut env = self.herdr.env();
+        for (key, value) in &mut env {
+            if key == "PATH" {
+                *value = format!("{}:{value}", bin.display());
+            }
+        }
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+            .args(["pr-watch", "-R", "o/r", "-i", "1"])
+            .args(args)
+            .arg("7")
+            .env_clear()
+            .envs(env)
+            .env("TEAMWIRE_HOME", self.home.path())
+            .env("HERDR_ENV", "1")
+            .envs(extra.iter().copied())
+            .output()
+            .unwrap();
+        Run {
+            code: out.status.code().unwrap(),
+            out: String::from_utf8(out.stdout).unwrap(),
+            err: String::from_utf8(out.stderr).unwrap(),
+        }
+    }
+
     /// The arguments of every `agent prompt` call, joined.
     fn typed(&self) -> Vec<String> {
         self.herdr
@@ -528,6 +571,58 @@ fn a_line_that_cannot_be_delivered_is_still_printed() {
     let run = rig.watch(&["--deliver"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert_eq!(printed(&run.out), [["WATCHING 1 members"]]);
+    assert!(rig.typed().is_empty());
+}
+
+/// ADR 0039: `pr-watch --deliver <team>` types each line it prints into
+/// that team's lead pane through the same delivery as `watch --deliver`,
+/// and marks it with `[teamwire:<team>]`.
+#[test]
+fn pr_watch_deliver_types_each_printed_line_into_the_leads_pane() {
+    let rig = LeadRig::new(true);
+    let run = rig.pr_watch(&["--deliver", "alpha"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let lines: Vec<&str> = run.out.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            "[teamwire:alpha] WATCHING o/r#7 (poll 1s)",
+            "[teamwire:alpha] o/r#7 MERGED"
+        ]
+    );
+    let typed = rig.typed();
+    assert_eq!(typed.len(), 2, "{typed:?}");
+    for (line, typed) in lines.iter().zip(&typed) {
+        assert!(typed.contains(line), "{line}: {typed}");
+    }
+}
+
+/// Without `--deliver`, pr-watch prints as before and types nothing; a
+/// lead it cannot reach still gets every line printed.
+#[test]
+fn pr_watch_types_nothing_without_deliver_and_prints_what_it_cannot_deliver() {
+    let rig = LeadRig::new(true);
+    let run = rig.pr_watch(&[], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out, "WATCHING o/r#7 (poll 1s)\no/r#7 MERGED\n");
+    assert!(rig.typed().is_empty());
+
+    let rig = LeadRig::new(false);
+    let run = rig.pr_watch(&["--deliver", "alpha"], &[]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out.lines().count(), 2, "{}", run.out);
+    assert!(rig.typed().is_empty());
+}
+
+/// Only a lead types into its own pane: a member's `--deliver` is refused
+/// before it polls, as a member's `watch` is.
+#[test]
+fn a_member_session_cannot_deliver_pr_watch_lines() {
+    let rig = LeadRig::new(true);
+    let run = rig.pr_watch(&["--deliver", "alpha"], &[("TEAMWIRE_ROLE", "api")]);
+    assert_eq!(run.code, 1, "{}{}", run.out, run.err);
+    assert!(run.err.contains("refused.identity"), "{}", run.err);
+    assert!(run.out.is_empty(), "{}", run.out);
     assert!(rig.typed().is_empty());
 }
 

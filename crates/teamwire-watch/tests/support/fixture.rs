@@ -179,35 +179,62 @@ impl Bed {
     }
 
     pub fn add_with_deadline(&mut self, name: &str, deadline_s: u64) -> Member {
-        self.insert(name, deadline_s, true, None, &json!({}))
+        self.insert(
+            name,
+            MemberKind::Implementer,
+            deadline_s,
+            true,
+            None,
+            &json!({}),
+        )
     }
 
     /// Adds a started member whose `member.started` event was written by
     /// teamwire `version`.
     pub fn add_started_by(&mut self, name: &str, version: &str) -> Member {
-        self.insert(name, 1800, true, Some(version), &json!({}))
+        self.insert(
+            name,
+            MemberKind::Implementer,
+            1800,
+            true,
+            Some(version),
+            &json!({}),
+        )
     }
 
     /// Adds a started member whose `member.started` event carries `data`.
     pub fn add_started_with(&mut self, name: &str, data: &serde_json::Value) -> Member {
-        self.insert(name, 1800, true, None, data)
+        self.insert(name, MemberKind::Implementer, 1800, true, None, data)
+    }
+
+    /// Adds a started member of `kind`; `add` adds an implementer.
+    pub fn add_kind(&mut self, name: &str, kind: MemberKind) -> Member {
+        self.insert(name, kind, 1800, true, None, &json!({}))
     }
 
     /// Adds a member whose launch stopped in `creating`: no place, no
     /// session, never started.
     pub fn add_creating(&mut self, name: &str) {
-        self.insert(name, 1800, false, None, &json!({}));
+        self.insert(name, MemberKind::Implementer, 1800, false, None, &json!({}));
     }
 
     /// Adds a started member whose `member.started` event says it got no
     /// first prompt (`"dispatch": false`).
     pub fn add_undispatched(&mut self, name: &str) -> Member {
-        self.insert(name, 1800, true, None, &json!({ "dispatch": false }))
+        self.insert(
+            name,
+            MemberKind::Implementer,
+            1800,
+            true,
+            None,
+            &json!({ "dispatch": false }),
+        )
     }
 
     fn insert(
         &mut self,
         name: &str,
+        kind: MemberKind,
         deadline_s: u64,
         start: bool,
         by: Option<&str>,
@@ -229,7 +256,7 @@ impl Bed {
         let new = NewMember {
             role: role.clone(),
             title: format!("the {name}"),
-            kind: MemberKind::Implementer,
+            kind,
             mode: Mode::Pane,
             harness: HarnessId::from_static(FakeHarness::ID),
             host: HostId::from_static(FakeHost::ID),

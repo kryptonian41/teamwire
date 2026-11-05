@@ -86,7 +86,10 @@ fn three_members_run_the_whole_lifecycle() {
     );
     assert_eq!(
         lines.get(1).and_then(dated).as_deref(),
-        Some("TEAM-COMPLETE 3/3 done"),
+        Some(
+            "TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches \
+             join, then the closer (teamwire preset closer)."
+        ),
         "{lines:?}"
     );
 
@@ -125,8 +128,18 @@ fn three_members_run_the_whole_lifecycle() {
     assert!(verify.out.contains("a            PASS"), "{}", verify.out);
     assert!(verify.out.contains("b            PASS"), "{}", verify.out);
 
+    // No closer reported and both implementers committed: close says so,
+    // in the dry run and in the close itself, and closes anyway.
+    let warning = "warning: no closer reported on team demo, and 2 implementer branch(es) \
+                   have commits; add one from teamwire preset closer, or close anyway if the \
+                   user said so.";
+    let dry = w.teamwire(&["close", "demo", "--dry-run"], None);
+    assert_eq!(dry.code, 0, "{}", dry.all());
+    assert_eq!(dry.err.lines().next(), Some(warning), "{}", dry.all());
+
     let close = w.teamwire(&["close", "demo"], None);
     assert_eq!(close.code, 0, "{}", close.all());
+    assert_eq!(close.err.lines().next(), Some(warning), "{}", close.all());
     assert!(
         close.out.contains("closed team demo. Archive: "),
         "{}",
