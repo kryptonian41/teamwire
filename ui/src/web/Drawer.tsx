@@ -197,11 +197,16 @@ function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string 
               <span className="chips">
                 <StateChip word={r.verdict ?? "unknown"} category={verdictCategory(r.verdict)} />
                 <span className="sub">
-                  {[r.exit === null ? null : `exit ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
+                  {[r.exit === null ? null : `exit code ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
                     .filter((p) => p !== null)
                     .join(" · ")}
                 </span>
               </span>
+              {r.headSha && (
+                <p className="sub">
+                  Checked commit <code>{r.headSha}</code>
+                </p>
+              )}
               {r.flags.length > 0 && (
                 <ul className="flags">
                   {r.flags.map((f) => (

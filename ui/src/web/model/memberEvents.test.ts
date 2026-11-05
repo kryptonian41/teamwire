@@ -36,6 +36,13 @@ test("verify history is newest first, with each run's waivers", () => {
     { seq: 41, time: "2026-10-13T07:01:00.000Z", flags: ["outside-owns:src/shared/money.ts"], headSha: "4f1c2ab" },
   ]);
   expect(h[1]!.waivers).toEqual([]);
+  // Each run keeps its exit code and the whole commit hash; a run without one has null.
+  expect(h.map((r) => [r.exit, r.headSha])).toEqual([
+    [0, "4f1c2ab9d8e7f6a5b4c3d2e1f00112233445566a"],
+    [0, "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567"],
+  ]);
+  expect(verifyHistory(rows, "api")[0]).toMatchObject({ verdict: "FAIL", exit: 1, headSha: "9d8e7f6a5b4c3d2e1f00112233445566778899aa" });
+  expect(verifyHistory([ev("verify.recorded", "x", { verdict: "PASS" })], "x")[0]).toMatchObject({ exit: null, headSha: null });
   expect(verifyHistory(rows, "web")).toEqual([]);
   // A waiver before any run is dropped, not attached to a later one.
   const early = [ev("verify.waived", "x", { flags: ["f"] }, 1), ev("verify.recorded", "x", { verdict: "PASS" }, 2)];

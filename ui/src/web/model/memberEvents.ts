@@ -36,6 +36,8 @@ export interface VerifyRun {
   verdict: string | null;
   exit: number | null;
   seconds: number | null;
+  /** The full commit the run checked; waivers keep the short form. */
+  headSha: string | null;
   flags: string[];
   /** Waivers recorded after this run and before the member's next run. */
   waivers: Waiver[];
@@ -55,6 +57,7 @@ export function verifyHistory(rows: readonly EventRow[], role: string): VerifyRu
         verdict: str(r.data, "verdict"),
         exit: num(r.data, "exit"),
         seconds: num(r.data, "seconds"),
+        headSha: str(r.data, "head_sha"),
         flags: strs(r.data, "flags"),
         waivers: [],
         flagsWaived: str(r.data, "verdict") === "PASS" && strs(r.data, "flags").length > 0,
