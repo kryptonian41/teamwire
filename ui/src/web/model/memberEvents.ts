@@ -79,6 +79,24 @@ export function verifyChip(rows: readonly EventRow[], role: string): { text: str
   };
 }
 
+export interface Handoff {
+  seq: number;
+  time: string;
+  /** The generation the member has after the handoff. */
+  generation: number | null;
+  oldSession: string | null;
+  /** Null when the harness picks its own id. */
+  newSession: string | null;
+}
+
+/** The member's handoffs, newest first. */
+export function handoffHistory(rows: readonly EventRow[], role: string): Handoff[] {
+  return rows
+    .filter((r) => r.role === role && r.type === "member.handoff")
+    .map((r) => ({ seq: r.seq, time: r.time, generation: num(r.data, "generation"), oldSession: str(r.data, "old_session"), newSession: str(r.data, "new_session") }))
+    .reverse();
+}
+
 export interface Usage {
   input: number;
   output: number;

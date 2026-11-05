@@ -153,7 +153,7 @@ export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
 
 function mockText(kind: FileKind, name: string, where: string): FileText {
   const modifiedAt = new Date().toISOString();
-  if (FILE_KINDS[kind].ext !== ".md") {
+  if (!FILE_KINDS[kind].ext.endsWith(".md")) {
     const text = `${kind} log for ${name} (${where}): invented text from mock mode.\n`;
     return { kind, name, bytes: text.length, modifiedAt, text, truncated: false, doc: null };
   }
@@ -181,6 +181,7 @@ export const mockClient: ApiClient = {
       for (const kind of ["brief", "contract", "outbox", "report"] as const) {
         files.push({ kind, name: m.role, bytes: 400, modifiedAt: now });
       }
+      if (m.role === "api") files.push({ kind: "handoff", name: m.role, bytes: 700, modifiedAt: now });
       if (m.role === "api") files.push({ kind: "verify", name: m.role, bytes: 90, modifiedAt: now });
       if (m.role === "ledger") files.push({ kind: "setup", name: m.role, bytes: 90, modifiedAt: now });
     }

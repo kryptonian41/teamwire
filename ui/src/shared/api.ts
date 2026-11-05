@@ -84,6 +84,8 @@ export const FILE_KINDS = {
   contract: { dir: "contract", ext: ".md", name: "role" },
   outbox: { dir: "outbox", ext: ".md", name: "role" },
   report: { dir: "reports", ext: ".md", name: "role" },
+  /** A member's handoff document. The role pattern refuses a dot, so the dotted name is never a name here: only the extension carries it. */
+  handoff: { dir: "reports", ext: ".handoff.md", name: "role" },
   verify: { dir: "verify", ext: ".log", name: "role" },
   setup: { dir: "setup", ext: ".log", name: "role" },
   comms: { dir: "comms", ext: ".md", name: "display_id" },
