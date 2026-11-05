@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildArgs, createRunner, type CliCall } from "./cli.ts";
+import { buildArgs, createRunner, DEFAULT_TIMEOUT_MS, STATUS_TIMEOUT_MS, timeoutFor, type CliCall } from "./cli.ts";
 
 const root = new URL("../../fixtures/", import.meta.url).pathname;
 let dir: string;
@@ -120,6 +120,20 @@ describe("buildArgs for decisions and team metrics", () => {
       ":1",
     ];
     for (const ref of bad) expect(() => buildArgs({ cmd: "decisionsRef", ref })).toThrow();
+  });
+});
+
+describe("timeoutFor", () => {
+  test("a decisions search reads every team and archive, so it gets the long limit", () => {
+    expect(STATUS_TIMEOUT_MS).toBe(30_000);
+    expect(timeoutFor({ cmd: "decisionsGrep", text: "x" })).toBe(STATUS_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "decisionsRef", ref: "linear:A-1" })).toBe(STATUS_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "status" })).toBe(STATUS_TIMEOUT_MS);
+  });
+  test("the other forms keep the short limit", () => {
+    for (const call of [{ cmd: "decisionsTeam", team: "a" }, { cmd: "metricsTeam", team: "a" }, { cmd: "metrics" }, { cmd: "teams" }] as const) {
+      expect(timeoutFor(call)).toBe(DEFAULT_TIMEOUT_MS);
+    }
   });
 });
 
