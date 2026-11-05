@@ -854,3 +854,60 @@ fn the_codex_and_pi_lead_files_quote_their_own_watch_lines() {
         assert!(pi.contains(line), "pi-lead.md lacks {line}");
     }
 }
+
+/// The lead skill and its reference file state each rule the instruction
+/// audit of 2026-11-05 found missing or wrong. One phrase per rule.
+#[test]
+fn the_skill_states_the_rules_the_audit_found_missing() {
+    let skill = example("skills/teamwire/SKILL.md");
+    let reference = example("skills/teamwire/reference.md");
+    let both = format!("{skill}\n{reference}");
+    for phrase in [
+        "## The run in order",
+        "`TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).`",
+        "warning: no closer",
+        "a report that starts with\n    a summary of at most ten lines",
+        "`Questions for the parent`, right after its\n  summary",
+        "grep the whole repository for the name and for its old value",
+        "has\n   one owner. Name that owner in both briefs.",
+        "apps that comment on the pull request",
+        "git restore --source=HEAD --staged --worktree -- <files>",
+        "List each member's `setup` in the closer's\n   task",
+        "teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454",
+        "`teamwire_pr_watch`",
+        "brought in by merge <sha> of <branch>",
+        "A brief never offers it a worktree. It runs tests in its own clone.",
+        "gets a waiver per flag",
+        "teamwire turns\non auto-compact for every Claude Code member",
+        "teamwire sets no compaction for Codex and pi",
+        "Put the whole brief, the shared parts too, in each `task_file`.",
+        "Each `--add` spec stands alone",
+        "A login, update or trust dialog needs the user",
+        "comes once more\n   on top of these",
+        "command still hands off",
+        "Launch counts every implementer not\n  yet removed",
+        "This section describes Claude Code.",
+        "For a Codex or pi member, write the tdd",
+        "**A turn that died.**",
+        "Verify runs `check` with `sh -c`",
+        "AFK runs are the one exception",
+        "`[teamwire:<team> msg <id> <type> from <sender>]`",
+    ] {
+        assert!(both.contains(phrase), "the skill lacks: {phrase}");
+    }
+    for gone in [
+        "With auto-compact\noff",
+        "426 outside-owns",
+        "No table in teamwire names",
+        "and nothing else. Other failures",
+    ] {
+        assert!(!both.contains(gone), "the skill still says: {gone}");
+    }
+    assert_eq!(
+        reference
+            .matches("Every watch line says when it was printed")
+            .count(),
+        0,
+        "the timestamp paragraph lives in SKILL.md only"
+    );
+}

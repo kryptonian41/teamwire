@@ -4,6 +4,9 @@ This file holds the machine setup, the architecture notes, the watch lines and t
 
 ## Setting up a machine
 
+This section describes Claude Code. A Codex or pi lead finds its own setup
+in its part at the top of the skill.
+
 teamwire never edits `~/.claude/settings.json` or `~/.claude.json`. Only
 `teamwire install` and `teamwire uninstall` change Claude Code's setup,
 through `claude plugin`, plus `claude mcp remove` and deleting an older
@@ -74,12 +77,6 @@ a dialog), `LATE <role> <age>` (past its deadline with nothing recorded),
 on. `STORE-ERROR <code>` means the watch could not read or write the team's
 database, so run `teamwire doctor`. The other lines:
 
-Every watch line says when it was printed, in UTC to the second:
-`[teamwire:<team> 17:24:07Z] WATCHING 3 members`. A line printed before your
-last `launch --add` or reprompt is out of date, so run `teamwire status`
-rather than acting on it. `date -u +%T` gives the current UTC time. Only
-watch lines carry a time; a result, a message and a hook note do not.
-
 | Line | Meaning |
 | --- | --- |
 | `WATCHING n members` | The watch started. This line never comes with `TEAM-COMPLETE`, so a watch you start beside a `launch --add` stays alive and picks the new member up. The poll reads the roster a moment before it prints, so a member whose row is written inside that moment is still missed (ADR 0037): run `teamwire status` when you need to be sure. |
@@ -93,7 +90,7 @@ watch lines carry a time; a result, a message and a hook note do not.
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
-| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A later wave, a reviewer or the closer may still be due. |
+| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
 
 ## Other commands
 
@@ -113,8 +110,11 @@ Claude). The member writes `reports/<role>.handoff.md` and records `done` with
 a summary that starts with `handoff:`. Then run `teamwire handoff <team> --role
 <role>`. A failed handoff is recovered with `teamwire reopen <team> --role <role>`.
 
-When a member sits at a dialog the launcher does not answer, read its pane
-with the host's own tools, and do not retry in a loop. When a member is idle
+When a member sits at a dialog the launcher does not answer (`BLOCKED`),
+read its pane with the host's own tools, and do not retry in a loop. A
+permission prompt that the harness denies on its own after a timeout needs
+nothing. A login, update or trust dialog needs the user: tell the user which
+member and which tab, even before `TEAM-STALLED`. When a member is idle
 for 30 minutes with no completion, run `teamwire status` and read its pane:
 it may be running the full suite, or stuck on a failing command from its
 brief. On a database problem, such as damage or a newer schema, run
