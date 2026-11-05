@@ -30,6 +30,10 @@ struct Run {
     err: String,
 }
 
+/// What `TEAM-COMPLETE` adds while the team has an implementer and no closer
+/// has reported. Every fixture member is an implementer.
+const NO_CLOSER: &str = ". If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).";
+
 /// How long a test waits for a watch to print something or to exit.
 const PATIENCE: Duration = Duration::from_secs(30);
 
@@ -194,12 +198,10 @@ fn a_finished_team_ends_the_watch_on_its_second_poll_without_once() {
     bed.delivered("web", CompletionStatus::Failed);
     let run = teamwire(&bed, &["watch", "alpha", "--interval", "1"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let complete = format!("TEAM-COMPLETE 1/2 done; not done: web failed{NO_CLOSER}");
     assert_eq!(
         printed(&run.out),
-        [
-            vec!["WATCHING 2 members"],
-            vec!["TEAM-COMPLETE 1/2 done; not done: web failed"],
-        ]
+        [vec!["WATCHING 2 members"], vec![complete.as_str()]]
     );
 }
 
@@ -212,9 +214,10 @@ fn once_on_a_finished_team_prints_team_complete_in_its_one_poll() {
     bed.delivered("api", CompletionStatus::Done);
     let run = teamwire(&bed, &["watch", "alpha", "--once"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    let complete = format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}");
     assert_eq!(
         printed(&run.out),
-        [["WATCHING 1 members", "TEAM-COMPLETE 1/1 done"]]
+        [["WATCHING 1 members", complete.as_str()]]
     );
 }
 
@@ -363,9 +366,10 @@ fn an_export_endpoint_does_not_change_the_output() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(0));
+    let complete = format!("TEAM-COMPLETE 1/1 done{NO_CLOSER}");
     assert_eq!(
         printed(&String::from_utf8(out.stdout).unwrap()),
-        [vec!["WATCHING 1 members"], vec!["TEAM-COMPLETE 1/1 done"]]
+        [vec!["WATCHING 1 members"], vec![complete.as_str()]]
     );
 }
 

@@ -86,7 +86,10 @@ fn three_members_run_the_whole_lifecycle() {
     );
     assert_eq!(
         lines.get(1).and_then(dated).as_deref(),
-        Some("TEAM-COMPLETE 3/3 done"),
+        Some(
+            "TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches \
+             join, then the closer (teamwire preset closer)."
+        ),
         "{lines:?}"
     );
 
