@@ -1,6 +1,9 @@
 import { expect, test } from "bun:test";
 import type { FileRef } from "../../shared/api.ts";
-import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, spanText, startedByLine, unansweredLines, unreadLines, watchChip, watchLine } from "./status.ts";
+import { StatusAll, TeamsList } from "../../shared/teamwire.ts";
+import status from "../../../fixtures/status.json";
+import teams from "../../../fixtures/teams.json";
+import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, refText, spanText, startedByLine, unansweredLines, unreadLines, watchChip, watchLine } from "./status.ts";
 
 test("watch line for each state", () => {
   expect(watchLine({ state: "running", pid: 40211, heartbeat_age_s: 4 })).toBe("Watch running · pid 40211 · heartbeat 4 s ago");
@@ -79,4 +82,15 @@ test("only a missing watch gets a card chip", () => {
   expect(watchChip({ state: "none", pid: null, heartbeat_age_s: null })).toBe("no watch");
   expect(watchChip({ state: "running", pid: 1, heartbeat_age_s: 1 })).toBeNull();
   expect(watchChip({ state: "stale", pid: 1, heartbeat_age_s: 900 })).toBeNull();
+});
+
+test("a ref is plain text, with any id", () => {
+  expect(refText({ provider: "linear", id: "GKA-580" })).toBe("linear:GKA-580");
+  expect(refText({ provider: "github", id: "#3772" })).toBe("github:#3772");
+});
+
+test("the fixtures hold refs for the docs team in status and in the roster", () => {
+  const texts = (refs: { provider: string; id: string }[]) => refs.map(refText);
+  expect(texts(StatusAll.parse(status)[1]!.refs)).toEqual(["linear:GKA-580", "github:#3772"]);
+  expect(texts(TeamsList.parse(teams).teams[1]!.refs)).toEqual(["linear:GKA-580", "github:#3772"]);
 });

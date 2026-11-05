@@ -40,6 +40,7 @@
     "team": "docs",
     "title": "Survey API docs gaps",
     "state": "open",
+    "refs": [{ "provider": "linear", "id": "GKA-580" }, { "provider": "github", "id": "#3772" }],
     "lead": { "session_id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", "liveness": { "alive": "idle" } },
     "watch": { "state": "stale", "pid": 4300, "heartbeat_age_s": 900 },
     "afk": { "budget_ends_at": "2026-10-21T18:18:00Z", "seconds_left": 0, "spent": true, "decisions": 3 },

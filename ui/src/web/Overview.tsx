@@ -1,5 +1,5 @@
 import { CATEGORY_ORDER } from "../shared/state.ts";
-import { Empty, StateChip } from "./components.tsx";
+import { Empty, RefChips, StateChip } from "./components.tsx";
 import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
 import { afkChip, watchChip } from "./model/status.ts";
@@ -66,6 +66,7 @@ function TeamRow({ team }: { team: TeamModel }) {
             {live.label}
           </span>
         </p>
+        <RefChips refs={s.refs} />
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (

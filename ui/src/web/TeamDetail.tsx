@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import type { StateCategory } from "../shared/state.ts";
 import type { EventRow, LogMessage } from "../shared/teamwire.ts";
-import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, MemberEventCells, StateChip } from "./components.tsx";
+import { AfkFiles, DeliveryChip, Empty, ErrorNote, Loading, MemberEventCells, RefChips, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
@@ -74,6 +74,7 @@ export function TeamDetail({
           <span>{watchLine(s.watch)}</span>
           {s.afk && <span className={s.afk.spent ? "flag bad" : undefined}>{afkLine(s.afk)}</span>}
         </p>
+        <RefChips refs={s.refs} />
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
