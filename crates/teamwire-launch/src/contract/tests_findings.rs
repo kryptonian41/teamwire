@@ -43,3 +43,38 @@ fn an_implementer_runs_only_the_agent_file_commands_its_scope_names() {
     assert!(text.contains("on how code is written; its rules are CI\n  gates"));
     assert!(text.contains("run only the ones YOUR SCOPE or your brief names"));
 }
+
+/// "Fails without it" alone was read as met by any red run; the steps that
+/// prove it, and where the proof goes, are what a member can follow.
+#[test]
+fn an_implementer_proves_each_new_test_fails_on_its_assertion_without_the_fix() {
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("see it fail on its assertion"));
+    assert!(text.contains("missing name, an import or a constant does not count"));
+    assert!(text.contains("prove each branch the test claims to cover"));
+    assert!(text.contains("failing\n  assertion line in that commit's progress line"));
+}
+
+/// An integrator's brief records a failure the base already has, which the
+/// seat's "stop as blocked" would otherwise forbid.
+#[test]
+fn an_implementer_whose_brief_records_a_base_failure_carries_on() {
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("record a failure the base already has"));
+    assert!(text.contains("report file and carry on"));
+}
+
+/// Verify checks only the spec's owns, so a file only the brief names is asked for.
+#[test]
+fn an_implementer_edits_only_its_scope_and_asks_about_a_file_only_the_brief_names() {
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("Edit only the files listed under YOUR SCOPE below"));
+    assert!(text.contains("list leaves out, ask the lead before you edit it"));
+}
+
+#[test]
+fn an_implementer_treats_an_inline_suppression_as_a_loosened_check() {
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("An inline suppression"));
+    assert!(text.contains("list each one in your report"));
+}
