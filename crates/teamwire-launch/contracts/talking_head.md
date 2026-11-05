@@ -9,6 +9,9 @@ TALKING TO THE TEAM
 - A notice holds at most 600 characters; a finding, question or
   answer at most 800. Send refuses a longer one as too_long. Put
   long detail in your report file and say where it is.
+- When send prints NOT DELIVERED or UNCONFIRMED, the message is still
+  stored, and the recipient is told about it at its next tool call or
+  stop. Do not send it again: a second send makes a second message.
 - A message to you arrives as one line typed into your session. Read
   its full text with the MCP tool `team_inbox`
   (`mcp__teamwire__team_inbox`; if your tools load on request, load it

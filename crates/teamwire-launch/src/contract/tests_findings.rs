@@ -6,6 +6,13 @@ use std::path::Path;
 
 use super::*;
 
+/// The kinds that send and receive no messages.
+const QUIET_KINDS: [MemberKind; 3] = [
+    MemberKind::Reviewer,
+    MemberKind::Closer,
+    MemberKind::PlanReviewer,
+];
+
 fn render(kind: MemberKind) -> String {
     render_contract(&ContractParts {
         team: &TeamName::parse("demo").unwrap(),
@@ -147,4 +154,76 @@ fn a_talking_member_sends_other_facts_and_replies_as_findings() {
             "{kind}"
         );
     }
+}
+
+/// The lead reads the summary first, so a quiet kind's question sits right
+/// after it and the completion summary counts it.
+#[test]
+fn a_quiet_kind_puts_its_questions_after_the_summary_and_counts_them() {
+    for kind in QUIET_KINDS {
+        let text = render(kind);
+        assert!(text.contains("parent', right after your summary"), "{kind}");
+        assert!(
+            text.contains("with 'N questions for the parent.'"),
+            "{kind}"
+        );
+    }
+}
+
+/// Leads answer within minutes, so a member reads its inbox before it
+/// decides an open question itself.
+#[test]
+fn a_talking_member_reads_its_inbox_once_before_finishing_without_an_answer() {
+    for kind in [MemberKind::Implementer, MemberKind::Investigator] {
+        let text = render(kind);
+        assert!(text.contains("Ask as soon as you see the need"), "{kind}");
+        assert!(text.contains("finish, read your inbox once"), "{kind}");
+    }
+}
+
+/// A second send after a failed delivery makes a second message.
+#[test]
+fn a_talking_member_does_not_resend_a_message_that_was_not_delivered() {
+    for kind in [MemberKind::Implementer, MemberKind::Investigator] {
+        let text = render(kind);
+        assert!(text.contains("NOT DELIVERED or UNCONFIRMED"), "{kind}");
+        assert!(text.contains("Do not send it again"), "{kind}");
+    }
+}
+
+#[test]
+fn every_kind_may_read_teammates_branches_and_reports_by_path() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("read their\nbranches and reports by path"),
+            "{kind}"
+        );
+        assert!(!text.contains("You will not see their work"), "{kind}");
+    }
+}
+
+#[test]
+fn every_kind_records_nothing_to_do_as_done_with_a_prefix() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(text.contains("'When to do nothing' case holds"), "{kind}");
+        assert!(text.contains("starts with 'nothing to do:'"), "{kind}");
+    }
+}
+
+/// The lead may reprompt any kind, and a long message arrives as an excerpt.
+#[test]
+fn a_quiet_kind_reads_the_full_text_of_a_lead_message() {
+    for kind in QUIET_KINDS {
+        let text = render(kind);
+        assert!(text.contains("Only the parent may write to you"), "{kind}");
+        assert!(text.contains("`/opt/x/teamwire inbox` before"), "{kind}");
+    }
+}
+
+#[test]
+fn a_talking_member_knows_plan_reviewers_of_other_teams_take_no_messages() {
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("Reviewers, plan reviewers and closers of any team take no messages"));
 }
