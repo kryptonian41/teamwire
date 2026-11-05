@@ -27,7 +27,7 @@ Point at the brief, the report, commits and diffs by path or commit id; do
 not copy them. Redact secrets: tokens, keys, passwords and personal data.
 
 After you write, record your completion with status `done` and a summary that
-starts with `handoff:`, then end your turn. This one `done` does not mean your
+starts with `handoff:`, then end your turn. A handoff `done` does not mean your
 check passed: the `handoff:` prefix tells the lead to run the handoff. Use the
 team_done tool, or the `done` command your contract names, with `--status done`.
 
