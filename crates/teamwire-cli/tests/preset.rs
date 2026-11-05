@@ -668,3 +668,257 @@ fn preset_rules_and_harness_notes_name_only_commands_and_classes_that_exist() {
     assert!(shown >= 10, "the notes show {shown} commands");
     assert!(classes >= 4, "the notes name {classes} classes after --for");
 }
+
+fn preset_doc(name: &str) -> Value {
+    serde_json::from_str(&preset_text(name)).unwrap()
+}
+
+fn task_of<'a>(doc: &'a Value, role: &str) -> &'a str {
+    doc["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["role"] == role)
+        .and_then(|m| m["task"].as_str())
+        .unwrap_or_else(|| unreachable!("no task for {role}"))
+}
+
+/// The lead reads only the top of a report, so every inline task asks for
+/// the summary there. A member with a `task_file` gets the rule from its
+/// prompt instead.
+#[test]
+fn every_inline_task_asks_for_a_summary_at_the_top_of_the_report() {
+    let mut seen = 0;
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            if let Some(task) = member["task"].as_str() {
+                assert!(
+                    task.contains("Start your report file with a summary of at most ten lines"),
+                    "{name}/{}",
+                    member["role"]
+                );
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen >= 6, "{seen} inline tasks");
+}
+
+/// A read-only member that keeps claude-mem reads other members' findings
+/// back, so each one carries a note that points at the plugins map.
+#[test]
+fn every_read_only_member_carries_the_plugins_note() {
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            let read_only = matches!(
+                member["kind"].as_str(),
+                Some("reviewer" | "plan_reviewer" | "closer" | "investigator")
+            );
+            if read_only {
+                let note = member["_note"].as_str().unwrap_or_default();
+                assert!(
+                    note.contains("plugins map") && note.contains("Skills and plugins in members"),
+                    "{name}/{}: {note}",
+                    member["role"]
+                );
+            }
+        }
+    }
+}
+
+/// The contract member makes the branch the feature members start from, in
+/// a wave of its own, and the feature members join later with `--add`.
+#[test]
+fn the_contract_split_starts_with_the_contract_member() {
+    let doc = preset_doc("contract-split");
+    let members = doc["children"].as_array().unwrap();
+    let contract = &members[0];
+    assert_eq!(contract["role"], "contract");
+    assert_eq!(contract["kind"], "implementer");
+    assert_eq!(contract["_wave"], 1);
+    assert_eq!(contract["base"], "main");
+    let base = contract["branch"].as_str().unwrap();
+    assert!(contract["check"].as_str().is_some());
+    for member in &members[1..] {
+        assert_eq!(member["base"], base, "{}", member["role"]);
+        assert_eq!(member["_wave"], 2, "{}", member["role"]);
+        assert!(member.get("_launch").is_some(), "{}", member["role"]);
+    }
+}
+
+/// A gate that fails on the base before any merge is the base's result, not
+/// a reason for the integrator to stop as blocked.
+#[test]
+fn the_integrator_records_a_failing_base_and_carries_on() {
+    let doc = preset_doc("integrator");
+    let task = task_of(&doc, "integrator");
+    assert!(task.contains("as the base's result"), "{task}");
+    assert!(task.contains("do not stop as blocked"), "{task}");
+    assert!(!preset_text("integrator").contains("426"));
+}
+
+/// One fresh review per branch, and none of the merged change.
+#[test]
+fn the_dependent_tickets_ask_for_no_second_review_of_the_merge() {
+    let text = preset_text("dependent-tickets");
+    assert!(!text.contains("one fresh reviewer reads the whole change"));
+    assert!(text.contains("no second review of the merged change"));
+}
+
+/// The reviewer checks the diff against the implementer's brief, so its task
+/// names where launch keeps that brief.
+#[test]
+fn the_reviewer_task_names_the_implementers_brief() {
+    let doc = preset_doc("implement-then-review");
+    let task = task_of(&doc, "review");
+    assert!(
+        task.contains("$TEAMWIRE_HOME/teams/myteam/briefs/impl.md"),
+        "{task}"
+    );
+    assert!(task.contains("quoting the brief line"), "{task}");
+}
+
+/// teamwire stores no member's setup command where the closer can read it,
+/// so the task lists them. The reset stays first, with a named-file restore
+/// when a repository hook refuses it.
+#[test]
+fn the_closer_task_lists_setups_and_has_a_restore_fallback() {
+    let doc = preset_doc("closer");
+    let task = task_of(&doc, "closer");
+    assert!(task.contains("Members' setup commands: CHANGEME"), "{task}");
+    assert!(task.contains("git reset --hard"), "{task}");
+    assert!(
+        task.contains("git restore --source=HEAD --staged --worktree -- <files>"),
+        "{task}"
+    );
+    assert!(task.contains("-e <path>"), "{task}");
+}
+
+/// The tdd and diagnosing-bugs skills are Claude Code plugins, so every note
+/// that names them says which members it is for.
+#[test]
+fn the_skill_notes_name_the_members_they_are_for() {
+    let mut seen = 0;
+    for name in NAMES {
+        for member in preset_doc(name)["children"].as_array().unwrap() {
+            let note = member["_note"].as_str().unwrap_or_default();
+            if note.contains("tdd") {
+                assert!(
+                    note.contains("For a Claude Code member with mattpocock-skills on"),
+                    "{name}/{}: {note}",
+                    member["role"]
+                );
+                seen += 1;
+            }
+        }
+    }
+    assert!(seen >= 6, "{seen} notes name the tdd skill");
+}
+
+/// A Codex or pi lead reads its own lead file where the skill quotes a line
+/// that names Monitor. The lines are the ones the program prints for that
+/// harness (plan D7 and D17), and the pull-request watch is the one each
+/// harness can run (D12, D13).
+#[test]
+fn the_codex_and_pi_lead_files_quote_their_own_watch_lines() {
+    let codex = example("skills/codex-lead.md");
+    let bg = "nohup teamwire watch <team> --deliver >/dev/null 2>&1 &";
+    for line in [
+        format!("watch: {bg}"),
+        format!(
+            "[teamwire:<team>] no watch is running; start it in the background with `{bg}` before you stop."
+        ),
+        format!("(no watch is running: {bg})"),
+        format!("no watch is running: start one with `{bg}`"),
+        "nohup teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454 >/dev/null 2>&1 &"
+            .to_owned(),
+        "teamwire lead --adopt <team>".to_owned(),
+        "teamwire install --harness codex".to_owned(),
+    ] {
+        assert!(codex.contains(&line), "codex-lead.md lacks {line}");
+    }
+    let pi = example("skills/pi-lead.md");
+    for line in [
+        "watch: call the teamwire_watch tool with team <team>",
+        "[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team \"<team>\") before you stop.",
+        "(no watch is running: call the teamwire_watch tool with team <team>)",
+        "no watch is running: start one with the teamwire_watch tool (team <team>)",
+        "`teamwire_pr_watch`",
+        "`repo`",
+        "`prs`",
+        "`interval`",
+        "refuses `teamwire pr-watch` through bash",
+        "/skill:promptwire",
+        "teamwire install --harness pi",
+    ] {
+        assert!(pi.contains(line), "pi-lead.md lacks {line}");
+    }
+}
+
+/// The lead skill and its reference file state each rule the instruction
+/// audit of 2026-11-05 found missing or wrong. One phrase per rule.
+#[test]
+fn the_skill_states_the_rules_the_audit_found_missing() {
+    let skill = example("skills/teamwire/SKILL.md");
+    let reference = example("skills/teamwire/reference.md");
+    let both = format!("{skill}\n{reference}");
+    for phrase in [
+        "## The run in order",
+        "`TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).`",
+        "warning: no closer",
+        "a report that starts with\n    a summary of at most ten lines",
+        "`Questions for the parent`, right after its\n  summary",
+        "grep the whole repository for the name and for its old value",
+        "has\n   one owner. Name that owner in both briefs.",
+        "apps that comment on the pull request",
+        "list each member's `setup` in the\n   closer's task",
+        "teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454",
+        "`teamwire_pr_watch`",
+        "brought in by merge <sha> of <branch>",
+        "A brief never offers it a worktree. It runs tests in its own clone.",
+        "gets a waiver per flag",
+        "teamwire turns\non auto-compact for every Claude Code member",
+        "teamwire sets no compaction for Codex and pi",
+        "Put the whole brief, the shared parts too, in each `task_file`.",
+        "Each `--add` spec stands alone",
+        "A login, update or trust dialog needs the user",
+        "comes once more\n   on top of these",
+        "command still hands off",
+        "Launch counts every implementer not\n  yet removed",
+        "This section describes Claude Code.",
+        "For a Codex or pi member, write the tdd",
+        "**A turn that died.**",
+        "Verify runs `check` with `sh -c`",
+        "AFK runs are the one exception",
+        "`[teamwire:<team> msg <id> <type> from <sender>]`",
+    ] {
+        assert!(both.contains(phrase), "the skill lacks: {phrase}");
+    }
+    for gone in [
+        "With auto-compact\noff",
+        "426 outside-owns",
+        "No table in teamwire names",
+        "and nothing else. Other failures",
+    ] {
+        assert!(!both.contains(gone), "the skill still says: {gone}");
+    }
+    assert_eq!(
+        reference
+            .matches("Every watch line says when it was printed")
+            .count(),
+        0,
+        "the timestamp paragraph lives in SKILL.md only"
+    );
+}
+
+/// The AFK skill numbers its sections and the steps of section 1, so each
+/// pointer says which it means, and only the lead sends a member more work.
+#[test]
+fn the_afk_skill_points_at_sections_and_allows_fix_rounds() {
+    let skill = example("skills/afk/SKILL.md");
+    assert!(!skill.contains("start step 2"), "{skill}");
+    assert!(!skill.contains("runs once and finishes"), "{skill}");
+    assert!(skill.contains("Section 1 is the only place"));
+    assert!(skill.contains("write roster entry D1 (section 5)"));
+    assert!(skill.contains("Only you send it more work"));
+}

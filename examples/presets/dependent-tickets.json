@@ -12,7 +12,7 @@
     "Run one wave at a time. Let a wave finish, then recompute what is unblocked. A member that finished may have changed what its dependents need.",
     "Later waves join the SAME team with `teamwire launch --add` and new role names. One team, one archive, one report path. Never run wave 1 and wave 2 as separate teams.",
     "A dependent member's base is its blocker's branch, not main, so it starts on the code it depends on. Launch it only after the blocker reported and `teamwire verify` passed. The integrator merges blockers first, so each merge lands on the code it was written against.",
-    "The integrator runs the full gate once on the merged result, and one fresh reviewer reads the whole change. Each member saw only its own slice, so nobody has read the merge.",
+    "The integrator runs the full gate once on the merged result. Give each branch one fresh reviewer when it finishes, and no second review of the merged change: the closer checks where the parts meet.",
     "Give every implementer a \"check\" (the targeted command that proves its work, which the member runs once before its first change) and an \"owns\" list. `teamwire verify <team>` runs every check itself and flags edits outside owns, deleted or skipped tests and changed check configuration. It is the step before any merge; a member's done report is a claim.",
     "PILOT FIRST from about four members up. Launch ONE member, read its result, run `teamwire verify <team>` on it, fix the brief, then add the rest.",
     "One coherent change per branch. A ticket that touches more than one module is two members, or one member with two units. Size each task by its reference fix: in SWE-bench Live, a task whose fix was one file under five lines was solved 48% of the time, and one needing three or more files or over 100 lines under 10%. Devin does best on \"clear, upfront requirements and verifiable outcomes that would take a junior engineer 4-8 hrs of work\". Anthropic's agent-teams docs advise 3-5 teammates with 5-6 tasks each (items on a teammate's shared task list, not units in one brief)."
@@ -22,7 +22,7 @@
   "setup": "./scripts/setup-worktree.sh \"$1\"",
   "children": [
     {
-      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_note": "For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 1,
       "_blocked_by": [],
       "role": "ticket_a",
@@ -41,7 +41,7 @@
       "task_file": "/abs/path/briefs/ticket_a.md"
     },
     {
-      "_note": "No file overlap with ticket_a. Check this by reading the code, not the tickets. Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_note": "No file overlap with ticket_a. Check this by reading the code, not the tickets. For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 1,
       "_blocked_by": [],
       "role": "ticket_b",
@@ -60,7 +60,7 @@
       "task_file": "/abs/path/briefs/ticket_b.md"
     },
     {
-      "_note": "Put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "_note": "For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
       "_wave": 2,
       "_blocked_by": [
         "ticket_a"

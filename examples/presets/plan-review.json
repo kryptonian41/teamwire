@@ -14,6 +14,7 @@
   "title": "Plan review for CHANGEME",
   "children": [
     {
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory.",
       "role": "planreview",
       "title": "Review the CHANGEME plan",
       "kind": "plan_reviewer",
@@ -21,7 +22,7 @@
       "task_class": "judgement",
       "cwd": "/abs/path/repo",
       "deadline_s": 1200,
-      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings."
+      "task": "Review the plan for team myteam before any implementer starts. Read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/, then the code in /abs/path/repo that they point at. For each brief, write what it asks the member to build. Then report each place where a member would have to decide, guess or ask, ranked by harm, each with the brief's file and line. Findings only, no fixes. Do NOT edit any file in the repository. If every brief is ready, say so plainly rather than inventing findings. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
     }
   ]
 }
