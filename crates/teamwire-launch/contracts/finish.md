@@ -2,6 +2,7 @@
 WHEN YOU ARE FINISHED, do these two steps in this order. They apply
 even when your task lists its own steps and does not mention them.
 1. Complete your report file:
+   - it starts with a summary of at most ten lines;
    - an implementer has one progress line for every commit it made
      (a merge the parent asked you to run needs no line);
    - every role ends with a 'Decisions I made' list. Write

@@ -12,8 +12,12 @@ or your task, means the repository, never these two files. Writing
 both is always required, whatever else your task says.
 - Report file, yours alone, always required:
     {report_file}
-  Your progress lines, your 'Decisions I made' list, and any long
-  result go here. Keep your final chat message short and point at it.
+  Start it with a summary of at most ten lines: your outcome, then
+  anything the parent must decide. The parent reads that summary
+  first and the rest only where it points, so a conclusion further
+  down may never be read. Your progress lines, your 'Decisions I
+  made' list, and any long result go below it. Keep your final chat
+  message short and point at the report.
 - Your completion, recorded LAST, once everything else is finished, by
   running `{teamwire} done` (see WHEN YOU ARE FINISHED below).
 
