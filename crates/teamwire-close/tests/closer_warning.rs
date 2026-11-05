@@ -1,14 +1,5 @@
 //! The warning of a whole-team close while the team's code has had no
 //! closer. Leads closed teams with no closer when nothing said so.
-#![expect(
-    clippy::disallowed_methods,
-    reason = "a test stands in for a member that writes files in its worktree"
-)]
-#![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
-
 #[path = "support/rig.rs"]
 pub mod rig;
 
@@ -21,31 +12,10 @@ const WARNING: &str = "no closer reported on team alpha, and 1 implementer branc
                        commits; add one from teamwire preset closer, or close anyway if the \
                        user said so.";
 
+/// A commit on the member's branch that its base does not have.
 fn commit(rig: &Rig, role: &str) {
     let cwd = rig.member(role).cwd;
-    std::fs::write(cwd.join(format!("{role}.rs")), "fn a() {}\n").unwrap();
-    git(&cwd, &["add", "-A"]);
-    git(&cwd, &["commit", "-q", "-m", "work"]);
-}
-
-fn report_done(rig: &mut Rig, role: &str) {
-    let now = rig.clock.now();
-    let generation = rig.member(role).generation;
-    rig.store
-        .write(|tx| {
-            tx.insert_completion(
-                now,
-                &NewCompletion {
-                    role: Role::parse(role).unwrap(),
-                    generation,
-                    status: CompletionStatus::Done,
-                    summary: "checked".to_owned(),
-                    final_message: None,
-                    final_source: FinalSource::None,
-                },
-            )
-        })
-        .unwrap();
+    git(&cwd, &["commit", "-q", "--allow-empty", "-m", "work"]);
 }
 
 #[test]
@@ -75,7 +45,22 @@ fn a_closer_report_or_no_committed_implementer_means_no_warning() {
     rig.add_worktree_member("api", MemberKind::Implementer);
     commit(&rig, "api");
     rig.add_pane_member("closer", MemberKind::Closer);
-    report_done(&mut rig, "closer");
+    let (now, generation) = (rig.clock.now(), rig.member("closer").generation);
+    rig.store
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &NewCompletion {
+                    role: Role::parse("closer").unwrap(),
+                    generation,
+                    status: CompletionStatus::Done,
+                    summary: "checked".to_owned(),
+                    final_message: None,
+                    final_source: FinalSource::None,
+                },
+            )
+        })
+        .unwrap();
     assert_eq!(
         plan_close(&rig.ctx(), CloseTarget::Team).closer_warning,
         None
