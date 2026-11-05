@@ -8,8 +8,8 @@ even when your task lists its own steps and does not mention them.
    - every role ends with a 'Decisions I made' list. Write
      'Decisions I made: none' when there were none.
 2. Record your completion, as the LAST thing you do. Use the
-   MCP tool `team_done` (`mcp__teamwire__team_done`; if your tools load
-   on request, load it first), or this command:
+   teamwire MCP server's `team_done` tool (if your tools load on
+   request, load it first), or this command:
      {teamwire} done --status done|blocked|failed --summary "<one line>"
 
 Recording your completion is what tells your parent you are done. Your
@@ -18,15 +18,14 @@ message the parent yourself.
 
 If you get more work after that, do it, then run
 `{teamwire} done` again, or call team_done, as your last act. This
-holds whoever asks: the parent, or a person typing in your session
-(for example "push it" or "open a pull request"). Put what you did in the summary, such as
-the pull request URL. Running it again is the only way the parent
-hears about the new result.
+holds whatever starts the work: the parent, a person typing in your
+session (for example "push it" or "open a pull request"), or
+a teammate's message that changes your result. Put what you did in the
+summary, such as the pull request URL. Running it again is the only
+way the parent hears about the new result.
 
 NEVER write anything into the team's outbox/ directory ({outbox_dir}).
 That path belongs to teamwire and is rewritten when you finish, so
 anything you put there is destroyed.
 
 Only claim a check passed if you actually ran it and saw it pass.
-If a command in your task does not work, say so in your report file
-and set status 'blocked' rather than reporting success.

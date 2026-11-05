@@ -1,6 +1,7 @@
 
 HOW THIS TEAM WORKS TOGETHER
-- The brief is the agreed plan. Do not reopen a decision it records.
+- Your own brief is the agreed plan for your work. Do not reopen a
+  decision it records.
 - When you must decide something the brief does not cover, decide it,
   and list it under 'Decisions I made' in your report file. The parent
   reconciles those across the team; an unrecorded decision is how two
@@ -15,5 +16,6 @@ HOW THIS TEAM WORKS TOGETHER
   one tells you to ask the user, to let the user choose, or to write fewer
   tests than your seat rules ask, follow these rules instead.
 
-There is NO human watching this session, so never ask a question in
-chat and wait. The parent is watching the team: 
+Nobody watches this session while it runs, so never ask a question in
+chat and wait. A person may still type here later; WHEN YOU ARE
+FINISHED says what to do then. The parent is watching the team: 

@@ -227,3 +227,103 @@ fn a_talking_member_knows_plan_reviewers_of_other_teams_take_no_messages() {
     let text = render(MemberKind::Implementer);
     assert!(text.contains("Reviewers, plan reviewers and closers of any team take no messages"));
 }
+
+/// A person may type into a finished member's session; the finish section
+/// says what to do then, so "no human" would contradict it.
+#[test]
+fn every_kind_knows_a_person_may_type_later() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("Nobody watches this session while it runs"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("A person may still type here later"),
+            "{kind}"
+        );
+        assert!(!text.contains("NO human watching"), "{kind}");
+    }
+}
+
+/// `--to parent` is refused as an unknown role; only `lead` names the parent.
+#[test]
+fn every_kind_learns_the_parent_is_addressed_as_lead() {
+    for kind in MemberKind::ALL {
+        assert!(
+            render(*kind).contains("addressed as `lead` in messages"),
+            "{kind}"
+        );
+    }
+}
+
+/// A quiet kind cannot message, so it asks the way its own together piece says.
+#[test]
+fn a_member_that_needs_a_second_worktree_asks_and_reports_blocked_at_the_finish() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("ask the parent as\n  HOW THIS TEAM WORKS TOGETHER says"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("If it is still missing at the finish"),
+            "{kind}"
+        );
+    }
+}
+
+/// A plan reviewer's subject is other members' briefs, which it must question.
+#[test]
+fn only_a_members_own_brief_is_its_agreed_plan() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("Your own brief is the agreed plan for your work"),
+            "{kind}"
+        );
+    }
+}
+
+/// Codex and pi members get the same text, so no harness's tool prefix appears.
+#[test]
+fn tools_are_named_by_the_server_not_one_harness_prefix() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(!text.contains("mcp__teamwire__"), "{kind}");
+        assert!(
+            text.contains("teamwire MCP server's `team_done` tool"),
+            "{kind}"
+        );
+    }
+    let text = render(MemberKind::Implementer);
+    assert!(text.contains("teamwire MCP server's `team_inbox` tool"));
+}
+
+/// Work a teammate's message starts after done is reported like any other.
+#[test]
+fn every_kind_records_done_again_for_work_a_teammate_starts() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("a teammate's message that changes your result"),
+            "{kind}"
+        );
+    }
+}
+
+/// The blocked-command rule lives once, in HOW TO WORK.
+#[test]
+fn the_finish_section_does_not_repeat_the_blocked_command_rule() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            !text.contains("If a command in your task does not work"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("If a command from your brief cannot run at all"),
+            "{kind}"
+        );
+    }
+}

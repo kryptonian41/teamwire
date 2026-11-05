@@ -13,9 +13,8 @@ TALKING TO THE TEAM
   stored, and the recipient is told about it at its next tool call or
   stop. Do not send it again: a second send makes a second message.
 - A message to you arrives as one line typed into your session. Read
-  its full text with the MCP tool `team_inbox`
-  (`mcp__teamwire__team_inbox`; if your tools load on request, load it
-  first), or with `{teamwire} inbox`.
+  its full text with the teamwire MCP server's `team_inbox` tool (if
+  your tools load on request, load it first), or with `{teamwire} inbox`.
   A line that holds "... Full text: teamwire inbox" is only the
   start of the message. Read the inbox before you act on it. Reading it
   marks the message read; until then the parent sees it as unread.
