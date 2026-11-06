@@ -178,6 +178,7 @@ impl Tx<'_> {
         let (sender_role, sender_kind) = match &new.sender {
             Actor::Lead => (None, "lead"),
             Actor::Member(role) => (Some(role), "member"),
+            Actor::User => (None, "user"),
             Actor::Other(_) => (None, "other_team"),
         };
         self.record_event(

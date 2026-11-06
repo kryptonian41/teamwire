@@ -78,11 +78,16 @@ impl Remote {
     }
 }
 
-/// Who is acting. Proven before any rule runs (ADR 0008). Its string form is
-/// `lead` or the role; a role can never be `lead`, so the form is unambiguous.
+/// Who is acting. Proven before any rule runs (ADR 0008, ADR 0040). Its
+/// string form is `lead`, `user` or the role. A role can never be `lead`,
+/// and launch refuses a role named `user`, so the form is unambiguous.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Actor {
     Lead,
+    /// The human user, proven by the user key (ADR 0040). It sends only in
+    /// its own team, and nobody sends to it, so `Recipient` has no such
+    /// variant.
+    User,
     Member(Role),
     /// A sender in another team. It appears only on a message stored in the
     /// recipient's team; a proof never yields it, because a caller is always
@@ -90,7 +95,8 @@ pub enum Actor {
     Other(Remote),
 }
 
-/// Who a message is for. The same string form as `Actor`.
+/// Who a message is for. The same string form as `Actor`, without `user`:
+/// the text `user` reads as a member's role here.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Recipient {
     Lead,
@@ -100,17 +106,57 @@ pub enum Recipient {
 
 impl Actor {
     /// This actor as another team's store names it, when `own` is the team
-    /// it acts in. A sender that is already remote keeps its name.
-    pub fn seen_from_outside(&self, own: &TeamName) -> Remote {
+    /// it acts in. A sender that is already remote keeps its name. `None`
+    /// for the user, who sends only in its own team.
+    pub fn seen_from_outside(&self, own: &TeamName) -> Option<Remote> {
         match self {
-            Self::Lead => Remote::lead_of(own),
-            Self::Member(role) => Remote::member_of(own, role),
-            Self::Other(remote) => remote.clone(),
+            Self::Lead => Some(Remote::lead_of(own)),
+            Self::User => None,
+            Self::Member(role) => Some(Remote::member_of(own, role)),
+            Self::Other(remote) => Some(remote.clone()),
+        }
+    }
+
+    pub fn parse(text: &str) -> Result<Self, NameError> {
+        if text == "user" {
+            return Ok(Self::User);
+        }
+        Recipient::parse(text).map(|r| match r {
+            Recipient::Lead => Self::Lead,
+            Recipient::Member(role) => Self::Member(role),
+            Recipient::Other(remote) => Self::Other(remote),
+        })
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Lead => "lead",
+            Self::User => "user",
+            Self::Member(role) => role.as_str(),
+            Self::Other(remote) => remote.as_str(),
         }
     }
 }
 
 impl Recipient {
+    pub fn parse(text: &str) -> Result<Self, NameError> {
+        if text == "lead" {
+            Ok(Self::Lead)
+        } else if text.contains('@') {
+            Remote::parse(text).map(Self::Other)
+        } else {
+            Role::parse(text).map(Self::Member)
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Lead => "lead",
+            Self::Member(role) => role.as_str(),
+            Self::Other(remote) => remote.as_str(),
+        }
+    }
+
     /// The team the recipient sits in, or `None` for the sender's own team.
     pub fn other_team(&self) -> Option<&TeamName> {
         match self {
@@ -132,26 +178,6 @@ impl Recipient {
 
 macro_rules! party {
     ($name:ident) => {
-        impl $name {
-            pub fn parse(text: &str) -> Result<$name, NameError> {
-                if text == "lead" {
-                    Ok($name::Lead)
-                } else if text.contains('@') {
-                    Remote::parse(text).map($name::Other)
-                } else {
-                    Role::parse(text).map($name::Member)
-                }
-            }
-
-            pub fn as_str(&self) -> &str {
-                match self {
-                    $name::Lead => "lead",
-                    $name::Member(role) => role.as_str(),
-                    $name::Other(remote) => remote.as_str(),
-                }
-            }
-        }
-
         impl fmt::Display for $name {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str(self.as_str())
@@ -192,8 +218,26 @@ mod tests {
     #[test]
     fn an_actor_seen_from_outside_carries_its_team() {
         let tw = TeamName::parse("tw").unwrap();
-        assert_eq!(Actor::Lead.seen_from_outside(&tw).as_str(), "lead@tw");
+        assert_eq!(
+            Actor::Lead.seen_from_outside(&tw).unwrap().as_str(),
+            "lead@tw"
+        );
         let api = Actor::parse("api").unwrap();
-        assert_eq!(api.seen_from_outside(&tw).as_str(), "api@tw");
+        assert_eq!(api.seen_from_outside(&tw).unwrap().as_str(), "api@tw");
+        assert_eq!(Actor::User.seen_from_outside(&tw), None);
+    }
+
+    #[test]
+    fn user_is_the_user_as_a_sender_and_a_role_as_a_recipient() {
+        let user = Actor::parse("user").unwrap();
+        assert_eq!(user, Actor::User);
+        assert_eq!(user.as_str(), "user");
+        let json = serde_json::to_string(&user).unwrap();
+        assert_eq!(json, "\"user\"");
+        assert_eq!(serde_json::from_str::<Actor>(&json).unwrap(), Actor::User);
+        assert!(matches!(
+            Recipient::parse("user").unwrap(),
+            Recipient::Member(_)
+        ));
     }
 }

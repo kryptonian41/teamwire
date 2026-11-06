@@ -222,6 +222,7 @@ fn member_only<'a>(actor: &'a Actor, what: &str) -> Result<&'a Role, ToolFailure
     match actor {
         Actor::Member(role) => Ok(role),
         Actor::Lead => Err(ToolFailure::invalid(format!("the lead has no {what}"))),
+        Actor::User => Err(ToolFailure::identity("the user does not use the MCP tools")),
         Actor::Other(_) => Err(ToolFailure::identity("a caller acts only in its own team")),
     }
 }

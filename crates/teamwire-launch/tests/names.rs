@@ -64,3 +64,20 @@ fn a_name_taken_answer_from_the_host_at_spawn_refuses_only_that_member() {
     assert!(matches!(outcomes.first(), Some(LaunchOutcome::Refused(_))));
     assert_eq!(outcomes.get(1).copied(), Some(&LaunchOutcome::Started));
 }
+
+#[test]
+fn a_member_named_user_is_refused_because_the_name_is_the_human_users() {
+    let rig = Rig::new();
+    let spec = team_spec(
+        "demo",
+        &[
+            pane_member("user", "User", rig.work.path()),
+            pane_member("b", "Beta", rig.work.path()),
+        ],
+    );
+    let errors = rig.validate(&spec, false).unwrap_err();
+    assert_eq!(codes(&errors), ["reserved_role"]);
+    assert_eq!(errors.first().and_then(|e| e.role.as_deref()), Some("user"));
+    assert!(rig.home_is_empty());
+    assert_eq!(rig.host.log().count_named("spawn"), 0);
+}

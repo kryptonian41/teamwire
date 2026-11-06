@@ -17,7 +17,7 @@ pub fn log_party(text: &str, own: &TeamName) -> Result<Actor, NameError> {
 }
 
 /// The messages the viewer may see, oldest first. A member sees only
-/// messages it sent or received; the lead sees all. `role` keeps only
+/// messages it sent or received; the lead and the user see all. `role` keeps only
 /// messages to or from that party. `limit` keeps the newest rows.
 ///
 /// A message whose body fails its hash cannot be shown as it is stored. It
@@ -29,7 +29,7 @@ pub fn log(ctx: &Ctx<'_>, filter: LogFilter) -> Result<Vec<LogRow>, SendError> {
         limit,
     } = filter;
     let viewer_scope = match viewer {
-        Actor::Lead => None,
+        Actor::Lead | Actor::User => None,
         other @ (Actor::Member(_) | Actor::Other(_)) => Some(other),
     };
     let query = MessageFilter {

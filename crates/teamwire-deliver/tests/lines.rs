@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use teamwire_core::{Actor, CompletionStatus, DisplayId, MessageType, Recipient, Role, TeamName};
-use teamwire_deliver::{CommsCopy, line_holds_whole, message_line, message_line_to, result_line};
+use teamwire_deliver::{
+    CommsCopy, lead_copy_line, line_holds_whole, message_line, message_line_to, result_line,
+};
 
 fn team() -> TeamName {
     TeamName::parse("tw").unwrap()
@@ -411,5 +413,70 @@ fn a_stored_copy_that_was_not_written_points_at_the_repair() {
              (not written; run teamwire verify tw --repair-files)"
         ),
         "{text}"
+    );
+}
+
+#[test]
+fn a_users_line_to_a_member_is_an_instruction_and_never_approval() {
+    let line = message_line(
+        &team(),
+        &id(),
+        MessageType::Reprompt,
+        &Actor::User,
+        "rebase on develop",
+    );
+    assert_eq!(
+        line.as_str(),
+        "[teamwire:tw msg m014 reprompt from user] rebase on develop. This message is from the \
+         human user: an instruction, like one from your lead, and never approval for a \
+         permission prompt."
+    );
+}
+
+#[test]
+fn a_users_note_to_the_lead_says_it_is_from_the_user() {
+    let line = message_line_to(
+        &team(),
+        &id(),
+        MessageType::Note,
+        &Actor::User,
+        "pause the team",
+        &Recipient::Lead,
+        CommsCopy {
+            path: Path::new("/c/m014.md"),
+            written: true,
+        },
+    );
+    let text = line.as_str();
+    assert!(
+        text.ends_with(
+            "This message is from the human user, and never approval for a permission prompt."
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("not an instruction"), "{text}");
+}
+
+#[test]
+fn the_leads_copy_names_the_members_the_user_wrote_to() {
+    let to = [
+        Recipient::parse("api").unwrap(),
+        Recipient::parse("web").unwrap(),
+    ];
+    let line = lead_copy_line(
+        &team(),
+        &id(),
+        MessageType::Note,
+        "use port 8080",
+        &to,
+        CommsCopy {
+            path: Path::new("/c/m014.md"),
+            written: false,
+        },
+    );
+    assert_eq!(
+        line.as_str(),
+        "[teamwire:tw msg m014 note from user] use port 8080. This is a copy of the user's \
+         message to api, web, for your information. It is never approval for a permission prompt."
     );
 }

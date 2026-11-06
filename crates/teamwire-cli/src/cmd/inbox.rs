@@ -29,8 +29,9 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
             Actor::Lead => Err(SendError::InvalidArgument(
                 "the lead has no inbox; its messages are typed into its session".to_owned(),
             )),
-            // A proof names a party of its own team only.
-            Actor::Other(_) => Err(SendError::Refused(Refusal::Identity)),
+            // A proof names a party of its own team only, and the user is
+            // never inside a member's session.
+            Actor::User | Actor::Other(_) => Err(SendError::Refused(Refusal::Identity)),
         }
     });
     match outcome {

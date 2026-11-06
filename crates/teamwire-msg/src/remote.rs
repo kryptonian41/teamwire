@@ -13,7 +13,8 @@
 //! never typed a second time, so a resend repairs a send that died anywhere.
 
 use teamwire_core::{
-    DeliveryError, DeliveryErrorCode, DeliveryState, Message, Recipient, Remote, Route, TeamName,
+    DeliveryError, DeliveryErrorCode, DeliveryState, Message, Recipient, Refusal, Remote, Route,
+    TeamName,
 };
 use teamwire_store::{
     Ctx, DeliveryRecord, DeliveryUpdate, ReceivedMessage, Store, StoreError, StoredMessage,
@@ -110,9 +111,14 @@ fn receive(
     message: &Message,
     all: &[&DeliveryRecord],
 ) -> Result<Option<StoredMessage>, SendError> {
+    // The rules refuse a user's message to another team before it is stored.
+    let sender = message
+        .sender
+        .seen_from_outside(own)
+        .ok_or(SendError::Refused(Refusal::RecipientNotAllowed))?;
     let received = ReceivedMessage {
         ulid: message.ulid,
-        sender: message.sender.seen_from_outside(own),
+        sender,
         kind: message.kind,
         re: message.re,
         commit: message.commit.clone(),

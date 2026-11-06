@@ -32,8 +32,9 @@ pub(crate) fn run(args: &AckArgs, global: &Global, wiring: &Wiring) -> ExitCode 
             Actor::Lead => Err(SendError::InvalidArgument(
                 "the lead has no inbox to acknowledge".to_owned(),
             )),
-            // A proof names a party of its own team only.
-            Actor::Other(_) => Err(SendError::Refused(Refusal::Identity)),
+            // A proof names a party of its own team only, and the user is
+            // never inside a member's session.
+            Actor::User | Actor::Other(_) => Err(SendError::Refused(Refusal::Identity)),
         }
     });
     match outcome {

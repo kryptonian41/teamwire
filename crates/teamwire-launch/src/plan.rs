@@ -125,6 +125,15 @@ pub(crate) fn plan_member(
             format!("role {role}: context_handoff_tokens must be a positive integer"),
         );
     }
+    // `Role::parse` keeps reading `user` so stored rows still load, but in a
+    // sender field `user` is the human user (ADR 0040).
+    if role == "user" {
+        bad(
+            "role",
+            "reserved_role",
+            "role user: \"user\" is reserved for the human user; pick another role".to_owned(),
+        );
+    }
     if !cx.roles.insert(role.to_owned()) {
         bad(
             "role",

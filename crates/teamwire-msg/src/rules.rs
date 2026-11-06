@@ -129,6 +129,8 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
     }
     match actor {
         Actor::Lead => Ok(None),
+        // Nothing proves the user yet.
+        Actor::User => Err(Refusal::Identity.into()),
         // A caller is proven in its own team, never as another team's agent.
         Actor::Other(_) => Err(Refusal::Identity.into()),
         Actor::Member(role) => {
