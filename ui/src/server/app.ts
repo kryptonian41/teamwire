@@ -204,7 +204,13 @@ export function createApp(deps: AppDeps): App {
         const body = await readBody(req, CloseMemberBody);
         if (!body.ok) return body.res;
         if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
-        return notFound("close-member is not built yet");
+        const { role, stop, unverified, dryRun } = body.data;
+        const closed = await runAction({ cmd: "closeMember", team, role, stop, unverified, dryRun });
+        if (!closed.ok) return closed.res;
+        // Plan D3: the lead hears about a member close only once it has worked.
+        const flags = [stop && "--stop", unverified && "--unverified"].filter(Boolean).join(" ");
+        const notes = !dryRun && closed.out?.exit === 0 ? [await tellLead(team, `user closed member ${role} from the dashboard${flags ? ` (${flags})` : ""}`)] : [];
+        return json(result(closed.out, notes));
       }
       case "close-team": {
         const body = await readBody(req, CloseTeamBody);
@@ -222,6 +228,14 @@ export function createApp(deps: AppDeps): App {
     if (res.ok) return { ok: true, out: res.data };
     if (res.problems[0]?.code === "cli_timeout") return { ok: true, out: null };
     return { ok: false, res: cliResponse(res) };
+  }
+
+  /** A `note` from the user to the lead (plan D3). Its failure is reported, never thrown: the action's own result still shows. */
+  async function tellLead(team: string, text: string): Promise<LeadNote> {
+    const res = await deps.run({ cmd: "send", team, to: "lead", type: "note", text });
+    if (res.ok && res.data.exit === 0) return { text, told: true, detail: "" };
+    const detail = res.ok ? `teamwire send exited ${res.data.exit}: ${firstLine(res.data.stderr || res.data.stdout)}` : (res.problems[0]?.detail ?? "teamwire send failed");
+    return { text, told: false, detail };
   }
 
   return {
@@ -258,6 +272,10 @@ export function createApp(deps: AppDeps): App {
       return notFound("no such route");
     },
   };
+}
+
+function firstLine(text: string): string {
+  return text.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
 }
 
 function result(out: ActionOutput | null, leadNotes: LeadNote[]): ActionResult {

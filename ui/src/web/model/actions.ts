@@ -59,3 +59,47 @@ export function replyTarget(asker: string, members: readonly { role: string; kin
 export function leadNoteLines(notes: readonly LeadNote[]): string[] {
   return notes.map((n) => (n.told ? `The lead was told: ${n.text}` : `The lead was not told (${n.detail}): ${n.text}`));
 }
+
+/** The page text for a close or its dry run, by exit code. */
+export function closeOutcome(r: ActionResult, team: string, dryRun: boolean): Outcome {
+  const cli = cliText(r);
+  switch (r.exit) {
+    case null:
+      return { ok: false, text: `outcome unknown: ${statusHint(team)}` };
+    case 0:
+      return { ok: true, text: dryRun ? "preview: nothing has changed yet" : "closed" };
+    case 1:
+      return { ok: false, text: `refused: ${cli}` };
+    case 2:
+      return { ok: false, text: `the close stopped part way: ${cli}` };
+    case 3:
+      return { ok: false, text: `teamwire refused the arguments (a bug in the dashboard): ${cli}` };
+    case 6:
+      return { ok: false, text: `store error: ${cli}` };
+    default:
+      return { ok: false, text: `teamwire close exited ${r.exit}: ${cli}` };
+  }
+}
+
+export interface CloseFlags {
+  stop: boolean;
+  unverified: boolean;
+}
+export type CloseFlag = keyof CloseFlags;
+
+const RISKS: Record<CloseFlag, string> = {
+  stop: "--stop ends a running turn and loses that turn's work.",
+  unverified: "--unverified removes a member whose work no verify has passed.",
+};
+
+/** One second confirm per ticked flag, naming what it risks. */
+export function closeRisks(flags: CloseFlags): { flag: CloseFlag; text: string }[] {
+  return (["stop", "unverified"] as const).filter((f) => flags[f]).map((flag) => ({ flag, text: RISKS[flag] }));
+}
+
+/** The real close runs only after a dry run that worked with exactly these flags, and a confirm for each risky flag. */
+export function canClose(preview: { flags: CloseFlags; result: ActionResult } | null, flags: CloseFlags, confirmed: readonly CloseFlag[]): boolean {
+  if (preview === null || preview.result.exit !== 0) return false;
+  if (preview.flags.stop !== flags.stop || preview.flags.unverified !== flags.unverified) return false;
+  return closeRisks(flags).every((r) => confirmed.includes(r.flag));
+}

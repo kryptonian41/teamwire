@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ActionResult } from "../../shared/api.ts";
-import { canMessage, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
+import { canClose, canMessage, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
 
 const r = (exit: number | null, stderr = "", stdout = ""): ActionResult => ({ exit, stdout, stderr, leadNotes: [] });
 
@@ -64,5 +64,41 @@ describe("leadNoteLines", () => {
         { text: "user's close of team alpha was refused: busy", told: false, detail: "teamwire send exited 1: team is closing" },
       ]),
     ).toEqual(["The lead was told: user is closing team alpha from the dashboard", "The lead was not told (teamwire send exited 1: team is closing): user's close of team alpha was refused: busy"]);
+  });
+});
+
+describe("closeOutcome", () => {
+  test("each exit code of a close has its own text", () => {
+    expect(closeOutcome(r(0, "", "[dry-run] remove impl"), "alpha", true)).toEqual({ ok: true, text: "preview: nothing has changed yet" });
+    expect(closeOutcome(r(0), "alpha", false)).toEqual({ ok: true, text: "closed" });
+    expect(closeOutcome(r(1, "REFUSED: impl is busy; add --stop"), "alpha", false)).toEqual({ ok: false, text: "refused: REFUSED: impl is busy; add --stop" });
+    expect(closeOutcome(r(2, "remove_worktree: kept"), "alpha", false)).toEqual({ ok: false, text: "the close stopped part way: remove_worktree: kept" });
+    expect(closeOutcome(r(3, "error: unexpected"), "alpha", true).text).toBe("teamwire refused the arguments (a bug in the dashboard): error: unexpected");
+    expect(closeOutcome(r(6, "store busy"), "alpha", true).text).toBe("store error: store busy");
+    expect(closeOutcome(r(null), "alpha", false)).toEqual({ ok: false, text: "outcome unknown: check `teamwire status alpha`" });
+  });
+});
+
+describe("closing one member", () => {
+  const none = { stop: false, unverified: false };
+  test("each ticked flag names its risk", () => {
+    expect(closeRisks(none)).toEqual([]);
+    expect(closeRisks({ stop: true, unverified: true })).toEqual([
+      { flag: "stop", text: "--stop ends a running turn and loses that turn's work." },
+      { flag: "unverified", text: "--unverified removes a member whose work no verify has passed." },
+    ]);
+  });
+  const preview = (exit: number, flags = none) => ({ flags, result: r(exit) });
+  test("the real close needs a preview that worked, with the same flags", () => {
+    expect(canClose(null, none, [])).toBe(false);
+    expect(canClose(preview(1), none, [])).toBe(false);
+    expect(canClose(preview(0), none, [])).toBe(true);
+    expect(canClose(preview(0), { stop: true, unverified: false }, ["stop"])).toBe(false);
+  });
+  test("and a second confirm for each ticked flag", () => {
+    const both = { stop: true, unverified: true };
+    expect(canClose(preview(0, both), both, [])).toBe(false);
+    expect(canClose(preview(0, both), both, ["stop"])).toBe(false);
+    expect(canClose(preview(0, both), both, ["stop", "unverified"])).toBe(true);
   });
 });

@@ -256,6 +256,56 @@ describe("send action", () => {
   });
 });
 
+/** Answers each write call from a script, by command. */
+const script = (byCmd: Partial<Record<CliCall["cmd"], (call: CliCall) => unknown>>): Act => (call) => byCmd[call.cmd]?.(call) ?? { ok: false, problems: [] };
+const note = (team: string, text: string): CliCall => ({ cmd: "send", team, to: "lead", type: "note", text });
+
+describe("close-member action", () => {
+  const path = "/api/teams/alpha/actions/close-member";
+  const body = (over: Record<string, boolean> = {}) => ({ role: "impl", stop: false, unverified: false, dryRun: true, ...over });
+  test("a dry run runs only the dry-run form and tells nobody", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(0, "[dry-run] would remove impl") }) });
+    const res = await post(app, path, body({ stop: true }));
+    expect(await res.json()).toEqual({ exit: 0, stdout: "[dry-run] would remove impl", stderr: "", leadNotes: [] });
+    expect(calls).toEqual([{ cmd: "closeMember", team: "alpha", role: "impl", stop: true, unverified: false, dryRun: true }]);
+  });
+  test("a successful real close is followed by one note to the lead that names the flags", async () => {
+    for (const [flags, suffix] of [
+      [{}, ""],
+      [{ stop: true }, " (--stop)"],
+      [{ unverified: true }, " (--unverified)"],
+      [{ stop: true, unverified: true }, " (--stop --unverified)"],
+    ] as const) {
+      const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(0, "removed impl"), send: () => out(0, "m010") }) });
+      const res = await post(app, path, body({ ...flags, dryRun: false }));
+      const text = `user closed member impl from the dashboard${suffix}`;
+      expect(await res.json()).toEqual({ exit: 0, stdout: "removed impl", stderr: "", leadNotes: [{ text, told: true, detail: "" }] });
+      expect(calls).toEqual([{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: false, ...flags }, note("alpha", text)]);
+    }
+  });
+  test("a refused or timed-out real close sends no note", async () => {
+    for (const close of [() => out(1, "", "REFUSED: impl is busy"), () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "passed" }] })]) {
+      const { app, calls } = setup({ actions: true, act: script({ closeMember: close, send: () => out(0) }) });
+      const res = (await (await post(app, path, body({ dryRun: false }))).json()) as { leadNotes: unknown[] };
+      expect(res.leadNotes).toEqual([]);
+      expect(calls.map((c) => c.cmd)).toEqual(["closeMember"]);
+    }
+  });
+  test("a note that fails still returns the close's own result, and says why the lead was not told", async () => {
+    const { app } = setup({ actions: true, act: script({ closeMember: () => out(0, "removed impl"), send: () => out(4, "", "NOT DELIVERED to lead: gone") }) });
+    expect(await (await post(app, path, body({ dryRun: false }))).json()).toEqual({
+      exit: 0,
+      stdout: "removed impl",
+      stderr: "",
+      leadNotes: [{ text: "user closed member impl from the dashboard", told: false, detail: "teamwire send exited 4: NOT DELIVERED to lead: gone" }],
+    });
+    const timedOut = setup({ actions: true, act: script({ closeMember: () => out(0), send: () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "teamwire send passed 60000 ms and was killed" }] }) }) });
+    expect(((await (await post(timedOut.app, path, body({ dryRun: false }))).json()) as { leadNotes: unknown[] }).leadNotes).toEqual([
+      { text: "user closed member impl from the dashboard", told: false, detail: "teamwire send passed 60000 ms and was killed" },
+    ]);
+  });
+});
+
 describe("snapshot", () => {
   test("200 after a poll, 503 before", async () => {
     const { get, poller } = setup();

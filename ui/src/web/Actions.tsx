@@ -4,10 +4,10 @@
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { MAX_TEXT_CHARS } from "../shared/api.ts";
+import { MAX_TEXT_CHARS, type ActionResult } from "../shared/api.ts";
 import { ApiError } from "./api.ts";
 import { useClient } from "./hooks.ts";
-import { sendOutcome, type Outcome } from "./model/actions.ts";
+import { canClose, closeOutcome, closeRisks, leadNoteLines, sendOutcome, type CloseFlag, type CloseFlags, type Outcome } from "./model/actions.ts";
 
 /**
  * A modal `<dialog>`: the browser keeps focus inside it and the page behind
@@ -143,6 +143,143 @@ function MessageDialog({ team, to, type, title, prefix = "", onClose }: { team: 
           </div>
         </>
       )}
+    </ActionDialog>
+  );
+}
+
+/** What the CLI printed, both streams, for the user to read. */
+function CliOutput({ result }: { result: ActionResult }) {
+  const text = [result.stdout, result.stderr].filter((t) => t !== "").join("\n");
+  return text === "" ? null : <pre className="text">{text}</pre>;
+}
+
+function LeadNotes({ result }: { result: ActionResult }) {
+  const lines = leadNoteLines(result.leadNotes);
+  if (lines.length === 0) return null;
+  return (
+    <ul className="results">
+      {result.leadNotes.map((n, i) => (
+        <li key={i} className={n.told ? undefined : "note error"}>
+          {lines[i]}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const FLAG_LABEL: Record<CloseFlag, string> = {
+  stop: "--stop: also close it while it is working",
+  unverified: "--unverified: also close it when no verify has passed",
+};
+
+/**
+ * Closes one member: a dry run first, then the real close with the flags the
+ * dry run used. The parent keeps it open after the member leaves the page.
+ */
+export function CloseMemberDialog({ team, role, onClose }: { team: string; role: string; onClose: () => void }) {
+  const client = useClient();
+  const [flags, setFlags] = useState<CloseFlags>({ stop: false, unverified: false });
+  const [preview, setPreview] = useState<{ flags: CloseFlags; result: ActionResult } | null>(null);
+  const [confirmed, setConfirmed] = useState<CloseFlag[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<ActionResult | null>(null);
+  const [error, setError] = useState<Outcome | null>(null);
+
+  const runPreview = async (f: CloseFlags) => {
+    setBusy(true);
+    setError(null);
+    try {
+      setPreview({ flags: f, result: await client.closeMember(team, { role, ...f, dryRun: true }) });
+    } catch (e) {
+      setError(errorOutcome(e));
+    }
+    setBusy(false);
+  };
+  useEffect(() => {
+    void runPreview({ stop: false, unverified: false });
+  }, []);
+
+  const toggle = (f: CloseFlag) => {
+    // A changed flag needs a new dry run before the real close.
+    setFlags({ ...flags, [f]: !flags[f] });
+    setPreview(null);
+    setConfirmed((c) => c.filter((x) => x !== f));
+  };
+  const close = async () => {
+    if (preview === null || !canClose(preview, flags, confirmed)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setDone(await client.closeMember(team, { role, ...preview.flags, dryRun: false }));
+    } catch (e) {
+      setError(errorOutcome(e));
+    }
+    setBusy(false);
+  };
+
+  if (done) {
+    return (
+      <ActionDialog title={`Close member ${role}`} busy={false} onClose={onClose}>
+        <OutcomeLine outcome={closeOutcome(done, team, false)} />
+        <CliOutput result={done} />
+        <LeadNotes result={done} />
+        <div className="dialog-buttons">
+          <button className="btn" onClick={onClose} autoFocus>
+            Close
+          </button>
+        </div>
+      </ActionDialog>
+    );
+  }
+  const risks = preview?.result.exit === 0 ? closeRisks(flags) : [];
+  return (
+    <ActionDialog title={`Close member ${role}`} busy={busy} onClose={onClose}>
+      <p className="sub">
+        Removes <code>{role}</code> from team <code>{team}</code>: its tab, its worktree and its background jobs. Its branch is kept.
+      </p>
+      {(["stop", "unverified"] as const).map((f) => (
+        <label key={f} className="check">
+          <input type="checkbox" checked={flags[f]} disabled={busy} onChange={() => toggle(f)} />
+          <span>{FLAG_LABEL[f]}</span>
+        </label>
+      ))}
+      {preview === null && !busy && (
+        <div className="dialog-buttons">
+          <button className="btn" onClick={() => void runPreview(flags)}>
+            Preview with these flags
+          </button>
+        </div>
+      )}
+      {busy && <p className="note">Running…</p>}
+      {preview && (
+        <>
+          <h3>Dry run</h3>
+          <OutcomeLine outcome={closeOutcome(preview.result, team, true)} />
+          <CliOutput result={preview.result} />
+        </>
+      )}
+      {risks.map((r) => (
+        <label key={r.flag} className="check">
+          <input
+            type="checkbox"
+            checked={confirmed.includes(r.flag)}
+            disabled={busy}
+            onChange={(e) => setConfirmed((c) => (e.target.checked ? [...c, r.flag] : c.filter((x) => x !== r.flag)))}
+          />
+          <span>
+            I understand: {r.text}
+          </span>
+        </label>
+      ))}
+      {error && <OutcomeLine outcome={error} />}
+      <div className="dialog-buttons">
+        <button className="btn danger" disabled={busy || preview === null || !canClose(preview, flags, confirmed)} onClick={() => void close()}>
+          Close {role}
+        </button>
+        <button className="btn" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+      </div>
     </ActionDialog>
   );
 }

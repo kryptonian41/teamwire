@@ -20,6 +20,7 @@ export function Drawer({
   files,
   rows,
   actions,
+  onCloseMember,
   onClose,
 }: {
   team: string;
@@ -29,6 +30,8 @@ export function Drawer({
   rows: readonly EventRow[];
   /** Write actions are on: show the member's action buttons. */
   actions: boolean;
+  /** Opens the close dialog, which the team page keeps after the member is gone. */
+  onCloseMember: () => void;
   onClose: () => void;
 }) {
   const client = useClient();
@@ -95,6 +98,11 @@ export function Drawer({
                   <MessageButton team={team} to={member.role} type="reprompt" label="Reprompt" title={`Reprompt ${member.role}`} />
                   <MessageButton team={team} to={member.role} type="note" label="Note" title={`Note to ${member.role}`} />
                 </>
+              )}
+              {actions && (
+                <button className="btn" onClick={onCloseMember}>
+                  Close member
+                </button>
               )}
             </div>
             <button ref={closeRef} className="btn" onClick={onClose} aria-label="Close">
