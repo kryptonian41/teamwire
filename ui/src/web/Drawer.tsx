@@ -38,8 +38,8 @@ export function Drawer({
   /** The live team, for the action buttons and the resume command; null on an archive. */
   team: string | null;
   loadFile: (tab: FileTab) => Promise<FileText>;
-  /** Opens the close dialog, which the team page keeps after the member is gone. */
-  onCloseMember: () => void;
+  /** Opens the close dialog, which the team page keeps after the member is gone. Unused where no action is offered. */
+  onCloseMember?: () => void;
   onClose: () => void;
 }) {
   const closeRef = useRef<HTMLButtonElement>(null);

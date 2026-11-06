@@ -1,12 +1,14 @@
 import { useState } from "react";
 import type { ArchiveEntry, FileRef } from "../shared/api.ts";
 import { AfkFiles, Empty, ErrorNote, Loading, MemberEventCells } from "./components.tsx";
+import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad, useTimeline } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
 import { removalText, rolesIn } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { href } from "./model/route.ts";
+import { buildDetail, type DetailSource } from "./model/detail.ts";
 import { formatDuration, summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
 
 export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
@@ -82,13 +84,17 @@ function SummaryLine({ m, live }: { m: TeamMetrics | undefined; live: boolean })
   );
 }
 
-export function Archive({ dir }: { dir: string }) {
+export function Archive({ dir, member }: { dir: string; member: string | null }) {
   const client = useClient();
   const archives = useLoad(() => client.archives(), "archives");
   const [picked, setPicked] = useState<FileRef | null>(null);
   const entry: ArchiveEntry | undefined = archives.data?.find((a) => a.dir === dir);
   const timeline = useTimeline(() => client.archiveTimeline(dir), dir);
   const roles = rolesIn(timeline.rows);
+  const source: DetailSource = { page: "archive", rows: timeline.rows, files: entry?.files ?? [] };
+  const go = (role: string) => {
+    location.hash = href.archiveMember(dir, role);
+  };
 
   return (
     <>
@@ -112,39 +118,45 @@ export function Archive({ dir }: { dir: string }) {
       )}
       {entry && (
         <>
-          {roles.length > 0 && (
-            <>
-              <h2>Members</h2>
-              <div className="table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Role</th>
-                      <th>Verify</th>
-                      <th className="num">Tokens</th>
-                      <th>Model</th>
-                      <th>Why removed</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roles.map((role) => (
-                      <tr key={role}>
-                        <td>
-                          <code>{role}</code>
-                        </td>
-                        <MemberEventCells rows={timeline.rows} role={role} />
-                        <td>{removalText(timeline.rows, role)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+          <h2>Members</h2>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Verify</th>
+                  <th className="num">Tokens</th>
+                  <th>Model</th>
+                  <th>Why removed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roles.map((role) => (
+                  <tr key={role} className="clickable" tabIndex={0} onClick={() => go(role)} onKeyDown={(e) => e.key === "Enter" && go(role)}>
+                    <td className="member">
+                      <a href={href.archiveMember(dir, role)}>{role}</a>
+                    </td>
+                    <MemberEventCells rows={timeline.rows} role={role} />
+                    <td>{removalText(timeline.rows, role)}</td>
+                  </tr>
+                ))}
+                <tr className="clickable" tabIndex={0} onClick={() => go("lead")} onKeyDown={(e) => e.key === "Enter" && go("lead")}>
+                  <td className="member">
+                    <a href={href.archiveMember(dir, "lead")}>lead</a>
+                  </td>
+                  <td>—</td>
+                  <td className="num">—</td>
+                  <td>—</td>
+                  <td>—</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <h2>Files</h2>
           {entry.files.length === 0 && <Empty title="This archive has no files" />}
           <AfkFiles id={dir} files={entry.files} load={(n) => client.archiveFile(dir, "afk", n)} />
-          {groupFilesByRole(entry.files.filter((f) => f.kind !== "afk")).map((g) => (
+          {/* Each member's own files are in its drawer; message files belong to no member. */}
+          {groupFilesByRole(entry.files.filter((f) => f.kind === "comms")).map((g) => (
             <div key={g.role} className="file-group">
               <h3>
                 <code>{g.role}</code>
@@ -174,6 +186,19 @@ export function Archive({ dir }: { dir: string }) {
           <h2>Timeline</h2>
           <Timeline rows={timeline.rows} loading={timeline.loading} error={timeline.error} />
         </>
+      )}
+      {member !== null && (
+        <Drawer
+          role={member}
+          detail={buildDetail(member, source)}
+          loading={timeline.loading || archives.loading}
+          scope={dir}
+          team={null}
+          loadFile={(f) => client.archiveFile(dir, f.kind, f.name)}
+          onClose={() => {
+            location.hash = href.archive(dir);
+          }}
+        />
       )}
     </>
   );
