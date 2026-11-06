@@ -185,3 +185,54 @@ export function removalText(rows: readonly EventRow[], role: string): string {
   if (!r) return "—";
   return r.reasons[0] ?? (r.unverified ? "removed without a passing verify" : "removed");
 }
+
+/** The kind the member's first `member.creating` row recorded, or null. */
+export function createdKind(rows: readonly EventRow[], role: string): string | null {
+  const r = rows.find((x) => x.role === role && x.type === "member.creating");
+  return r ? str(r.data, "kind") : null;
+}
+
+/** The highest `generation` any of the member's rows carries. A member starts at generation 1, so 1 when no row carries one. */
+export function highestGeneration(rows: readonly EventRow[], role: string): number {
+  let g = 1;
+  for (const r of rows) if (r.role === role) g = Math.max(g, num(r.data, "generation") ?? 1);
+  return g;
+}
+
+/** The rows that involve the lead: its own deliveries, messages it sent or got, and its sessions. */
+export function leadRows(rows: readonly EventRow[]): EventRow[] {
+  return rows.filter(
+    (r) =>
+      r.role === "lead" ||
+      r.type === "team.created" ||
+      r.type === "team.lead_adopted" ||
+      (r.type === "message.sent" && (r.data["sender_kind"] === "lead" || strs(r.data, "recipients").includes("lead"))),
+  );
+}
+
+export interface LeadSession {
+  seq: number;
+  time: string;
+  event: "created" | "adopted";
+  harness: string | null;
+  host: string | null;
+  oldSession: string | null;
+  newSession: string | null;
+  folder: string | null;
+}
+
+/** The team's start and every `teamwire lead --adopt`, oldest first. */
+export function leadSessions(rows: readonly EventRow[]): LeadSession[] {
+  return rows
+    .filter((r) => r.type === "team.created" || r.type === "team.lead_adopted")
+    .map((r) => ({
+      seq: r.seq,
+      time: r.time,
+      event: r.type === "team.created" ? "created" : "adopted",
+      harness: str(r.data, "harness"),
+      host: str(r.data, "host"),
+      oldSession: str(r.data, "old_session"),
+      newSession: str(r.data, "new_session"),
+      folder: str(r.data, "lead_cwd"),
+    }));
+}
