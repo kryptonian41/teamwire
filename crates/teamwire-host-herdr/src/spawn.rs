@@ -25,13 +25,6 @@ const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 /// program name starts `claude`.
 const KINDS: [&str; 5] = ["claude", "codex", "gemini", "opencode", "pi"];
 
-/// The team part of `tw_<team>_<role>`. A team name has no underscore.
-fn team_of(name: &str) -> &str {
-    name.strip_prefix("tw_")
-        .and_then(|rest| rest.split('_').next())
-        .unwrap_or(name)
-}
-
 /// `argv[0]` is the program; herdr picks the program by `--kind`, so only
 /// the arguments after it are passed on.
 fn kind_and_args(argv: &[String]) -> (&'static str, &[String]) {
@@ -91,12 +84,12 @@ fn team_workspace(
 }
 
 /// The tab for a new member: a new workspace labelled with the team when no
-/// member of the team is live, a new tab labelled with the member's title
-/// after that. Labels are set here and never changed.
+/// member of the team is live, a new tab after that. Every tab gets the
+/// request's tab label. Labels are set here and never changed.
 fn make_tab(host: &Herdr, req: &SpawnRequest, deadline: Instant) -> Result<NewTab, HostError> {
-    let team = team_of(req.name.as_str());
     let cwd = req.cwd.display().to_string();
-    if let Some(ws) = team_workspace(host, team, deadline)? {
+    let tab_label = req.tab_label();
+    if let Some(ws) = team_workspace(host, req.name.team(), deadline)? {
         let result = host.call(
             &[
                 "tab",
@@ -106,7 +99,7 @@ fn make_tab(host: &Herdr, req: &SpawnRequest, deadline: Instant) -> Result<NewTa
                 "--cwd",
                 &cwd,
                 "--label",
-                &req.title,
+                &tab_label,
                 "--no-focus",
             ],
             budget(host, deadline, LAYOUT_TIMEOUT)?,
@@ -120,14 +113,14 @@ fn make_tab(host: &Herdr, req: &SpawnRequest, deadline: Instant) -> Result<NewTa
             "--cwd",
             &cwd,
             "--label",
-            team,
+            &req.workspace_label(),
             "--no-focus",
         ],
         budget(host, deadline, LAYOUT_TIMEOUT)?,
     )?;
     let tab = new_tab(result)?;
     host.call(
-        &["tab", "rename", &tab.tab, &req.title],
+        &["tab", "rename", &tab.tab, &tab_label],
         budget(host, deadline, LAYOUT_TIMEOUT)?,
     )?;
     Ok(tab)
