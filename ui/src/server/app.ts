@@ -17,12 +17,18 @@ export interface AppDeps {
   /** How long `metrics` output is reused. It reads every archive. */
   metricsTtlMs?: number;
   keepaliveMs?: number;
+  /** Write actions are on (`TW_UI_ACTIONS=1` and the user key read). Off, every action route is 404. */
+  actions?: boolean;
 }
 
 export interface App {
   /** Handles `/auth` and every `/api/*` route. */
   handle(req: Request): Promise<Response>;
 }
+
+/** `/api/teams/:team/actions/:name`, the only routes that change teamwire state. */
+const ACTION_ROUTE = /^\/api\/teams\/([^/]+)\/actions\/(send|close-member|close-team)$/;
+type ActionName = "send" | "close-member" | "close-team";
 
 const notFound = (detail: string) => problem(404, { code: "not_found", detail });
 
@@ -159,6 +165,11 @@ export function createApp(deps: AppDeps): App {
     return cliResponse(await deps.run(grep !== null ? { cmd: "decisionsGrep", text: grep } : { cmd: "decisionsRef", ref: ref! }));
   }
 
+  async function actionRoute(req: Request, team: string, name: ActionName): Promise<Response> {
+    if (!deps.actions) return notFound("actions are off: start the server with TW_UI_ACTIONS=1");
+    return notFound(`no action ${name} for team ${team}`);
+  }
+
   return {
     async handle(req) {
       const url = new URL(req.url);
@@ -166,6 +177,8 @@ export function createApp(deps: AppDeps): App {
       if (!url.pathname.startsWith("/api/")) return notFound("no such route");
       const denied = deps.security.checkApi(req);
       if (denied) return denied;
+      const action = ACTION_ROUTE.exec(url.pathname);
+      if (action) return await actionRoute(req, action[1]!, action[2] as ActionName);
       if (req.method !== "GET") return methodNotAllowed();
 
       let segments: string[];

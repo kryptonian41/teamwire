@@ -108,6 +108,27 @@ describe("access", () => {
   });
 });
 
+const ACTION_PATHS = ["/api/teams/alpha/actions/send", "/api/teams/alpha/actions/close-member", "/api/teams/alpha/actions/close-team"];
+
+describe("actions off (the default)", () => {
+  test("every action route is 404 for every method, and no command runs", async () => {
+    const { app, calls } = setup();
+    for (const path of ACTION_PATHS) {
+      for (const method of ["GET", "POST", "PUT", "DELETE"]) {
+        const res = await app.handle(
+          new Request(`http://127.0.0.1:${port}${path}`, {
+            method,
+            headers: { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, cookie: `tw_ui_7878=${token}`, "content-type": "application/json" },
+            body: method === "GET" ? null : JSON.stringify({ to: "lead", type: "note", text: "hi", dryRun: true, confirmName: "alpha", role: "impl", stop: false, unverified: false }),
+          }),
+        );
+        expect(res.status).toBe(404);
+      }
+    }
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("snapshot", () => {
   test("200 after a poll, 503 before", async () => {
     const { get, poller } = setup();

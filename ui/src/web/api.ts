@@ -161,6 +161,8 @@ export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
     })),
     teams: baseTeams,
     problems: [],
+    // Mock mode never runs an action, so it shows none.
+    actions: false,
   };
 }
 

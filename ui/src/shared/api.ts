@@ -69,6 +69,8 @@ export interface Snapshot {
   /** `teamwire teams --json`: the rosters, including removed members. */
   teams: TeamEntry[];
   problems: Problem[];
+  /** True when the server started with `TW_UI_ACTIONS=1` and read the user key. The page shows no action control otherwise. */
+  actions: boolean;
 }
 
 /**

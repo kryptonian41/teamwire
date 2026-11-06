@@ -9,6 +9,8 @@ export interface Options {
   intervalMs: number;
   home: string;
   bin: string;
+  /** Write actions, only with `TW_UI_ACTIONS=1` (plan D8): a plain `bun run start` stays read-only. */
+  actions: boolean;
 }
 
 export function parseFlags(argv: string[], env: Record<string, string | undefined>): Options {
@@ -17,6 +19,7 @@ export function parseFlags(argv: string[], env: Record<string, string | undefine
     intervalMs: DEFAULT_INTERVAL_MS,
     home: env.TEAMWIRE_HOME || join(homedir(), ".teamwire"),
     bin: "teamwire",
+    actions: env.TW_UI_ACTIONS === "1",
   };
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i];

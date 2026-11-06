@@ -15,8 +15,9 @@ if (import.meta.main) {
   }
   const token = makeToken();
   const run = createRunner({ bin: opts.bin, home: opts.home });
-  const poller = createPoller({ run, intervalMs: opts.intervalMs });
-  const app = createApp({ security: createSecurity({ token, port: opts.port }), poller, run, home: opts.home });
+  const actions = opts.actions;
+  const poller = createPoller({ run, intervalMs: opts.intervalMs, actions });
+  const app = createApp({ security: createSecurity({ token, port: opts.port }), poller, run, home: opts.home, actions });
   const handle = (req: Request) => app.handle(req);
 
   Bun.serve({

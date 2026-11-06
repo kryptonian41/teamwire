@@ -10,6 +10,7 @@ const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   intervalMs: 5000,
   stale: false,
   lastGoodAt: at,
+  actions: false,
   status: [],
   teams: [],
   problems: [],

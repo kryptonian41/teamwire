@@ -18,6 +18,11 @@ describe("parseFlags", () => {
       bin: "/b/tw",
     });
   });
+  test("actions are on only with TW_UI_ACTIONS=1", () => {
+    expect(parseFlags([], {}).actions).toBe(false);
+    for (const v of ["0", "true", "yes", " 1", ""]) expect(parseFlags([], { TW_UI_ACTIONS: v }).actions).toBe(false);
+    expect(parseFlags([], { TW_UI_ACTIONS: "1" }).actions).toBe(true);
+  });
   test("rejects bad values", () => {
     for (const argv of [["--interval", "1999"], ["--port", "0"], ["--port", "x"], ["--port"], ["--host", "0.0.0.0"]]) {
       expect(() => parseFlags(argv, {})).toThrow();

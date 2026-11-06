@@ -28,6 +28,12 @@ describe("poller", () => {
     expect(p.latest()).toBe(s);
   });
 
+  test("the snapshot says whether actions are on, and off by default", async () => {
+    const run = fakeRunner({ status: () => ok([]), teams: () => ok({ teams: [] }) });
+    expect((await createPoller({ run, intervalMs: 5000 }).poll())?.actions).toBe(false);
+    expect((await createPoller({ run, intervalMs: 5000, actions: true }).poll())?.actions).toBe(true);
+  });
+
   test("skips a poll while another runs", async () => {
     let release!: () => void;
     let calls = 0;

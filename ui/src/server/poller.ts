@@ -4,6 +4,8 @@ import type { Runner } from "./cli.ts";
 export interface PollerDeps {
   run: Runner;
   intervalMs: number;
+  /** Copied into every snapshot, so the page knows whether to show action controls. */
+  actions?: boolean;
   /** Milliseconds since the epoch. Injected so tests need no real time. */
   now?: () => number;
 }
@@ -46,6 +48,7 @@ export function createPoller(deps: PollerDeps): Poller {
         status: status.ok ? status.data : (latest?.status ?? []),
         teams: teams.ok ? teams.data.teams : (latest?.teams ?? []),
         problems,
+        actions: deps.actions ?? false,
       };
       latest = snapshot;
       for (const fn of subscribers) {
