@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { FileText } from "../shared/api.ts";
-import { StateChip } from "./components.tsx";
+import { ErrorNote, StateChip } from "./components.tsx";
 import { MessageButton } from "./Actions.tsx";
 import { DrawerEvents, Missing } from "./DrawerSections.tsx";
 import { FileView } from "./FileView.tsx";
@@ -22,6 +22,7 @@ export function Drawer({
   role,
   detail,
   loading,
+  error,
   scope,
   team,
   loadFile,
@@ -33,6 +34,8 @@ export function Drawer({
   detail: Detail | null;
   /** The sources are still loading, so a null record may be filled in soon. */
   loading: boolean;
+  /** Why the event log failed to load, if it did: facts from it may be missing. */
+  error: string | null;
   /** The team or archive the files belong to, for the file view's cache key. */
   scope: string;
   /** The live team, for the action buttons and the resume command; null on an archive. */
@@ -97,6 +100,7 @@ export function Drawer({
             </button>
           </div>
         </header>
+        {error && <ErrorNote>The events could not be loaded, so facts from them may be missing: {error}</ErrorNote>}
         {detail ? (
           <Body detail={detail} scope={scope} team={team} loadFile={loadFile} />
         ) : loading ? (
@@ -104,7 +108,7 @@ export function Drawer({
             Loading…
           </p>
         ) : (
-          <p className="quiet">Nothing here knows a member named {role}. It may belong to another team, or its events may be gone.</p>
+          !error && <p className="quiet">Nothing here knows a member named {role}. It may belong to another team, or its events may be gone.</p>
         )}
       </aside>
     </>,

@@ -199,6 +199,7 @@ export function TeamDetail({
           role={member}
           detail={buildDetail(member, source)}
           loading={timeline.loading}
+          error={timeline.error}
           scope={name}
           team={name}
           loadFile={(f) => client.teamFile(name, f.kind, f.name)}

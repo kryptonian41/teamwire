@@ -31,6 +31,7 @@ import { formatAge, livenessInfo, type AgeView, type TeamModel } from "./teams.t
 export const WHY = {
   removed: "not available: removed",
   archived: "not available: archived",
+  noEvents: "not available: no events for this role",
   lead: "not applicable to the lead",
   noRoster: "not in the roster",
   leadTokens: "teamwire records no token use for the lead",
@@ -91,15 +92,19 @@ export type DetailSource =
   | { page: "team"; team: TeamModel; rows: readonly EventRow[]; files: readonly FileRef[]; actions: boolean }
   | { page: "archive"; rows: readonly EventRow[]; files: readonly FileRef[] };
 
-/** The roles the source knows besides `lead`: live and removed members on the team page, created roles in an archive. */
+/**
+ * The roles the source knows besides `lead`: live and removed members on the
+ * team page; in an archive, the roles its events created, then the roles its
+ * files name, so the files stay reachable when the events fail to load.
+ */
 export function knownRoles(src: DetailSource): Set<string> {
-  if (src.page === "archive") return new Set(rolesIn(src.rows));
+  if (src.page === "archive") return new Set([...rolesIn(src.rows), ...src.files.filter((f) => f.kind !== "comms" && f.kind !== "afk").map((f) => f.name)]);
   return new Set([...src.team.members.map((m) => m.role), ...src.team.removed.map((m) => m.role)]);
 }
 
 const memberFiles = (files: readonly FileRef[], role: string): FileTab[] => tabsFor(files, role).map((t) => ({ ...t, name: role }));
 
-/** The event-log facts every member shares; `why` replaces the ones a closed source no longer has. */
+/** The event-log facts every member shares. */
 function fromLog(rows: readonly EventRow[], role: string) {
   return {
     model: has(modelText(rows, role)),
@@ -118,6 +123,21 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
   const { rows, files } = src;
   if (src.page === "archive") {
     if (!knownRoles(src).has(role)) return null;
+    // A role only its files name: the events failed to load, or hold nothing for it.
+    const logged = rolesIn(rows).includes(role);
+    const log = logged
+      ? { kind: has(createdKind(rows, role) ?? "unknown"), generation: has(highestGeneration(rows, role)), ...fromLog(rows, role) }
+      : {
+          kind: not<string>(WHY.noEvents),
+          generation: not<number>(WHY.noEvents),
+          model: not<string | null>(WHY.noEvents),
+          handoffs: not<Handoff[]>(WHY.noEvents),
+          verify: not<VerifyRun[]>(WHY.noEvents),
+          tokens: not<[string, Usage][]>(WHY.noEvents),
+          events: [],
+          sessions: null,
+          session: null,
+        };
     return {
       role,
       subject: "archived",
@@ -125,12 +145,10 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
       state: { word: "archived", category: "idle" },
       age: not(WHY.archived),
       roster: not(WHY.archived),
-      kind: has(createdKind(rows, role) ?? "unknown"),
-      generation: has(highestGeneration(rows, role)),
       branch: not(WHY.archived),
       build: null,
       removal: removal(rows, role) ? removalText(rows, role) : null,
-      ...fromLog(rows, role),
+      ...log,
       files: has(memberFiles(files, role)),
       resume: not(WHY.archived),
       actions: null,

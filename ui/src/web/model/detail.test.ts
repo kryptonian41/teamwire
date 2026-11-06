@@ -134,3 +134,21 @@ test("the subtitle: status title for a live member, roster title when status has
   expect(buildDetail("ledger", inArchive)!.title).toBeNull();
   expect(buildDetail("lead", inArchive)!.title).toBe("The team's lead");
 });
+
+test("an archive role with files but no events is known, shows its files and marks the event facts missing", () => {
+  // The events failed to load or hold no rows; the file list still names impl and review.
+  const noEvents: DetailSource = { page: "archive", rows: [], files: archive.files };
+  expect([...knownRoles(noEvents)]).toEqual(["impl", "review"]);
+  // Event roles come first, then roles that only have files; message and AFK files name no role.
+  const withAfk: DetailSource = { page: "archive", rows, files: [...archive.files, file("afk", "decisions")] };
+  expect([...knownRoles(withAfk)]).toEqual(["oldapi", "ledger", "web", "emails", "audit", "fraud", "api", "review", "impl"]);
+  const d = buildDetail("impl", noEvents)!;
+  expect(d.subject).toBe("archived");
+  expect(value(d.files)?.map((f) => f.label)).toEqual(["Brief", "Result", "Report", "Check log"]);
+  for (const f of [d.kind, d.generation, d.model, d.handoffs, d.verify, d.tokens]) expect(why(f)).toBe(WHY.noEvents);
+  for (const f of [d.age, d.roster, d.branch, d.resume]) expect(why(f)).toBe(WHY.archived);
+  expect(d.events).toEqual([]);
+  expect(d.removal).toBeNull();
+  expect(buildDetail("m001", noEvents)).toBeNull();
+  expect(buildDetail("decisions", { ...withAfk, rows: [] })).toBeNull();
+});

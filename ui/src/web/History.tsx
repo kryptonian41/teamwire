@@ -5,7 +5,7 @@ import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad, useTimeline } from "./hooks.ts";
 import { groupArchives, groupFilesByRole } from "./model/history.ts";
-import { removalText, rolesIn } from "./model/memberEvents.ts";
+import { removalText } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { href } from "./model/route.ts";
 import { buildDetail, knownRoles, type DetailSource } from "./model/detail.ts";
@@ -90,14 +90,14 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
   const [picked, setPicked] = useState<FileRef | null>(null);
   const entry: ArchiveEntry | undefined = archives.data?.find((a) => a.dir === dir);
   const timeline = useTimeline(() => client.archiveTimeline(dir), dir);
-  const roles = rolesIn(timeline.rows);
   const source: DetailSource = { page: "archive", rows: timeline.rows, files: entry?.files ?? [] };
+  const roles = knownRoles(source);
   const go = (role: string) => {
     location.hash = href.archiveMember(dir, role);
   };
 
   return (
-    <RolePlaceContext.Provider value={{ page: "archive", dir, roles: knownRoles(source) }}>
+    <RolePlaceContext.Provider value={{ page: "archive", dir, roles }}>
       <p className="crumbs">
         <a href={href.history()}>← History</a>
       </p>
@@ -131,7 +131,7 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
                 </tr>
               </thead>
               <tbody>
-                {roles.map((role) => (
+                {[...roles].map((role) => (
                   <tr key={role} className="clickable" tabIndex={0} onClick={() => go(role)} onKeyDown={(e) => e.key === "Enter" && go(role)}>
                     <td className="member">
                       <a href={href.archiveMember(dir, role)}>{role}</a>
@@ -192,6 +192,7 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
           role={member}
           detail={buildDetail(member, source)}
           loading={timeline.loading || archives.loading}
+          error={timeline.error}
           scope={dir}
           team={null}
           loadFile={(f) => client.archiveFile(dir, f.kind, f.name)}
