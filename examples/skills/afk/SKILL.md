@@ -168,13 +168,15 @@ this wording, in this order:
    flagged that is still open.
 8. **Cost**: wall time, and tokens per member.
 
+When no closer reported, such as when the budget ran out first, have the
+reporter list the missing closer under **Not done, and why**. Then run close
+and expect a `warning: no closer reported` line. Close anyway, because
+nobody can answer it.
+
 Run `teamwire close <team>`. Close refuses until the report has every
 heading, archives the team with the `afk/` files, keeps the branches and
 releases the sleep hold. When close refuses, reprompt the reporter with the
-missing headings. When no closer ran, such as when the budget ran out
-first, `teamwire close` prints a `warning: no closer reported` line. Close
-anyway, because nobody can answer it, and have the reporter list the missing
-closer under **Not done, and why** before you close. Then call
+missing headings. Then call
 `PushNotification` with the archived report's
 path if you have that tool.
 

@@ -979,3 +979,15 @@ fn the_skill_reads_every_summary_prefix_and_agrees_with_itself() {
     assert!(afk.contains("warning: no closer reported"), "{afk}");
     assert!(afk.contains("Close anyway"), "{afk}");
 }
+
+/// Fix round 2. `teamwire close` archives the team in the same command, so
+/// an AFK lead has the reporter list a missing closer before it closes.
+#[test]
+fn the_afk_skill_lists_a_missing_closer_before_the_close() {
+    let afk = example("skills/afk/SKILL.md");
+    let (_, section) = afk.split_once("## 7. Report and close").unwrap();
+    let listed = section.find("list the missing closer").unwrap();
+    let close = section.find("Run `teamwire close <team>`").unwrap();
+    assert!(listed < close, "{section}");
+    assert!(!section.contains("before you close."), "{section}");
+}
