@@ -17,7 +17,7 @@ export function Tokens({ team, refresh }: { team: string; refresh: string }) {
       {table && table.byRole.length === 0 && <p className="quiet">No token use recorded for this team.</p>}
       {table && table.byRole.length > 0 && (
         <>
-          <TokenTable heading="Role" rows={table.byRole} />
+          <TokenTable heading="Role" rows={table.byRole} links />
           <TokenTable heading="Model" rows={table.byModel} />
           <p className="sub">
             All members: {countText(usageTotal(table.total))} tokens. Cache reads are counted again on every request, so they dominate the total.
@@ -28,7 +28,8 @@ export function Tokens({ team, refresh }: { team: string; refresh: string }) {
   );
 }
 
-function TokenTable({ heading, rows }: { heading: string; rows: TokenRow[] }) {
+/** `links` makes each row key a role link to its drawer. */
+function TokenTable({ heading, rows, links = false }: { heading: string; rows: TokenRow[]; links?: boolean }) {
   return (
     <div className="table-wrap">
       <table>
@@ -45,7 +46,7 @@ function TokenTable({ heading, rows }: { heading: string; rows: TokenRow[] }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
-              <td>{heading === "Role" ? <RoleLink role={r.key} /> : r.key}</td>
+              <td>{links ? <RoleLink role={r.key} /> : r.key}</td>
               <td className="num">{countText(r.usage.input)}</td>
               <td className="num">{countText(r.usage.output)}</td>
               <td className="num">{countText(r.usage.cacheRead)}</td>
