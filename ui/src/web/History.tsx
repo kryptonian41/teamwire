@@ -169,7 +169,7 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
                     aria-pressed={picked?.kind === f.kind && picked.name === f.name}
                     onClick={() => setPicked(f)}
                   >
-                    {f.kind === "comms" ? f.name : f.kind} <span className="num">{f.bytes} B</span>
+                    {f.name} <span className="num">{f.bytes} B</span>
                   </button>
                 ))}
               </div>
