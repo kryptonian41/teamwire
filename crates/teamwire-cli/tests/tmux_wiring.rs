@@ -129,6 +129,8 @@ impl Rig {
                 &SpawnRequest {
                     name: teamwire_core::Address::parse("tw_demo_a").unwrap(),
                     title: "lead".to_owned(),
+                    team_title: "Demo team".to_owned(),
+                    generation: 1,
                     cwd: work.path().to_path_buf(),
                     argv: ["sh", "-c", script, "sh", screen, input.to_str().unwrap()]
                         .iter()

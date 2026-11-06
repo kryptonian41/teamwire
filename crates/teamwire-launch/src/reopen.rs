@@ -278,6 +278,9 @@ fn reopen_member<'r>(
     let request = SpawnRequest {
         name: Address::of(&team.name, &member.role),
         title: member.title.clone(),
+        team_title: team.title.clone(),
+        // Reopen resumes the same session, so the same generation.
+        generation: member.generation,
         cwd: member.cwd.clone(),
         argv: spec.argv,
         env: Vec::new(),

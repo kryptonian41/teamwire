@@ -68,8 +68,11 @@ program does not run (`<program> --version` fails), as `refused: member <role>:
 harness <id> is not on PATH`, even with `--dry-run`. `--add` checks only the
 members it adds.
 
-With the `tmux` host and no running tmux server, launch and reopen open the tabs
-in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
+With the `tmux` host, launch and reopen open each tab as a window named
+`<team>/<role>` (`<team>/<role>#2` from a member's second generation on).
+Inside a tmux client the windows open in that client's session. Outside one, or
+with no running tmux server, they open in the team's own detached session
+`tw_<team>`. Attach with `tmux attach -t tw_<team>`.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
 `children`, `context_handoff_tokens`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,
@@ -231,7 +234,7 @@ five messages, message ids that are `pending` over 60 s, `unconfirmed` or
 `undelivered`, and results the lead has not received: a member's newest
 completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `reports/<role>.md` when the result file is missing or out of date. It also shows the team's watch
 (`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
-`handed_off` after 10 minutes, every question with no answer, and per member
+`handed_off` to a member after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
 binary. When the team has refs, the team's first line ends with `(refs linear:GKA-580, github:#1)`;
@@ -262,10 +265,12 @@ session is gone (`Harness::is_alive` says `Dead`), whether or not that member
 reported done. `--role R` reopens only that member and leaves the lead alone.
 It checks every session before it opens any tab. Tabs then open one at a time
 until one is up, the lead's first, so a host that groups a team's tabs puts
-the others beside it. The anchor differs by host. On tmux, `new-window` is called
-with no `-t` target, so each window opens in the tmux session of the caller,
-which need not be the lead's. On herdr, a tab opens in the workspace of a live
-agent of the team, and a new workspace labelled with the team is made when none is live. The remaining tabs open at the same time, because each
+the others beside it. The anchor differs by host. On tmux, inside a tmux client
+`new-window` is called with no `-t` target, so each window opens in the tmux
+session of the caller, which need not be the lead's. Outside one, each window
+opens in the team's detached session `tw_<team>`. On herdr, a tab opens in the
+workspace of a live agent of the team, and a new workspace labelled with the
+team is made when none is live. The remaining tabs open at the same time, because each
 waits several seconds for its session to load. The store records each new tab
 after all of them are up.
 Each session is resumed in a new tab named `tw_<team>_lead` or

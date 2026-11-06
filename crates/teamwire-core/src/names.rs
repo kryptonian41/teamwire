@@ -166,6 +166,22 @@ impl Address {
     pub fn lead(team: &TeamName) -> Self {
         Self(format!("{}{}_lead", Self::PREFIX, team.as_str()))
     }
+
+    /// The team part of `tw_<team>_<role>`. A team name has no underscore,
+    /// so the first `_` after `tw_` ends it.
+    pub fn team(&self) -> &str {
+        self.parts().0
+    }
+
+    /// The role part of `tw_<team>_<role>`: `lead` for `Address::lead`.
+    pub fn role(&self) -> &str {
+        self.parts().1
+    }
+
+    fn parts(&self) -> (&str, &str) {
+        let rest = self.0.strip_prefix(Self::PREFIX).unwrap_or(&self.0);
+        rest.split_once('_').unwrap_or((rest, ""))
+    }
 }
 
 checked_name! {
@@ -303,6 +319,14 @@ mod tests {
         let team = TeamName::parse("alpha").unwrap();
         assert_eq!(Address::lead(&team).as_str(), "tw_alpha_lead");
         assert!(Address::parse("tw_alpha_lead").is_err());
+    }
+
+    #[test]
+    fn an_address_splits_at_the_first_underscore_after_tw() {
+        let member = Address::parse("tw_instr_plan_rev").unwrap();
+        assert_eq!((member.team(), member.role()), ("instr", "plan_rev"));
+        let lead = Address::lead(&TeamName::parse("instr").unwrap());
+        assert_eq!((lead.team(), lead.role()), ("instr", "lead"));
     }
 
     #[test]

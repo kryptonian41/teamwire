@@ -19,6 +19,8 @@ fn req(name: &str) -> SpawnRequest {
     SpawnRequest {
         name: Address::parse(name).unwrap(),
         title: "title".into(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: "/work".into(),
         argv: vec!["claude".into()],
         env: vec![],
@@ -30,6 +32,17 @@ fn occ(session: &str, pid: u32) -> Occupant {
         session: Some(SessionId::parse(session).unwrap()),
         pids: vec![Pid::new(pid)],
     }
+}
+
+#[test]
+fn spawn_request_of_returns_the_whole_request_spawn_got() {
+    let h = FakeHost::new();
+    let mut want = req("tw_demo_api");
+    want.generation = 3;
+    let p = h.spawn(&want, T).unwrap();
+    assert_eq!(h.spawn_request_of(&p), Some(want));
+    let added = h.add_place("tw_demo_web", PlaceState::Idle, occ("s1", 1));
+    assert_eq!(h.spawn_request_of(&added), None);
 }
 
 #[test]

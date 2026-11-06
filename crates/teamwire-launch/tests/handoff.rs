@@ -118,6 +118,12 @@ fn a_handoff_starts_a_new_session_with_the_old_files_and_records_it() {
     assert_eq!(done.generation, after.generation);
     let (title, argv, env) = rig.host.spawned_with(&done.place).unwrap();
     assert_eq!(title, "Api");
+    let req = rig.host.spawn_request_of(&done.place).unwrap();
+    assert_eq!(
+        (req.team_title.as_str(), req.generation),
+        ("Demo team", after.generation),
+        "the new tab shows the new generation"
+    );
     assert_eq!(&argv[..3], ["fake-claude", "--session-id", new.as_str()]);
     assert!(
         argv.iter()

@@ -164,6 +164,11 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         .all_or_corrupt()?
     {
         let d = record.delivery;
+        // Only a member can ack. The lead has no inbox, and another team's
+        // copy never shows `acked`, so their `handed_off` is final.
+        if !matches!(d.recipient, Recipient::Member(_)) {
+            continue;
+        }
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
