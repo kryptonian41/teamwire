@@ -59,7 +59,7 @@ function TeamRow({ team, flag }: { team: TeamModel; flag: string }) {
         <RefChips refs={s.refs} />
       </div>
       <div className="strip">
-        {n === 0 ? <span className="quiet">No members reported.</span> : membersByCategory(team.members).map((m) => <StateChip key={m.role} word={m.role} category={m.category} title={m.state} />)}
+        {n === 0 ? <span className="quiet">No members reported.</span> : membersByCategory(team.members).map((m) => <StateChip key={m.role} word={`${m.role} · ${m.state}`} category={m.category} />)}
       </div>
       <span className="tflag">{flag}</span>
     </>
