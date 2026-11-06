@@ -14,6 +14,8 @@ the data model in `ARCHITECTURE.md`.
 /// `^[a-z][a-z0-9]{0,11}$`: no hyphen, no underscore. Checked by `TeamName::parse`.
 pub struct TeamName(String);
 /// `^[a-z][a-z0-9_]{0,15}$`: no hyphen. `"lead"` is reserved and refused.
+/// `"user"` parses, so stored rows still read, but launch refuses a spec
+/// role named `user` with `reserved_role` (ADR 0040).
 pub struct Role(String);
 /// `tw_<team>_<role>`, at most 32 characters: the member's name in hosts and
 /// harnesses. It never contains a hyphen, so it never equals a `<team>-<role>`
@@ -34,10 +36,11 @@ pub struct Pid(u32);
 pub struct HarnessId(String);
 pub struct HostId(String);
 
-/// Who is acting. Proven before any rule runs (ADR 0008). `Other` is a
-/// sender in another team, `role@team` or `lead@team`; it appears only on a
-/// stored message, never from a proof (ADR 0016).
-pub enum Actor { Lead, Member(Role), Other(Remote) }
+/// Who is acting. Proven before any rule runs (ADR 0008). `User` is the
+/// human user, proven by the user key, string form `user` (ADR 0040).
+/// `Other` is a sender in another team, `role@team` or `lead@team`; it
+/// appears only on a stored message, never from a proof (ADR 0016).
+pub enum Actor { Lead, User, Member(Role), Other(Remote) }
 
 /// An agent of another team: `lead@<team>` or `<role>@<team>`.
 pub struct Remote { /* team, role (None for the lead) */ }
@@ -524,7 +527,7 @@ The shapes T01 must write, so that T06 (which produces `LaunchSpec`) and T08
 shown are defined above.
 
 ```rust
-pub enum Recipient { Lead, Member(Role), Other(Remote) }
+pub enum Recipient { Lead, Member(Role), Other(Remote) }   // no User: nobody sends to the user
 pub enum SessionKind { Interactive, Background }
 pub struct CallerSession { pub id: SessionId, pub kind: SessionKind }
 pub enum SubmitAck { None, Submitted, StateChange }   // what Ok(()) from submit proves
@@ -646,7 +649,9 @@ pub fn open_teams(home: &Path, lead: Option<&SessionId>) -> Result<Vec<(TeamName
 
 A command treats `NoDatabase` as "no such team", not as a broken store.
 `team_names(home)` lists every team that has a database, sorted by name; it
-is the one scan of `<home>/teams` every command uses.
+is the one scan of `<home>/teams` every command uses. `user_key_path(home)`
+is `<home>/user.key`, the human user's key (ADR 0040), which belongs to no
+team.
 `open_teams(home, lead)` builds on it: the open teams, with `lead` only those
 that session leads, each with its store and row or the error that reading it
 gave. A team whose database went away after the scan is left out. The AFK
@@ -739,6 +744,10 @@ pub fn deliver_line_within(ctx: &mut Ctx, party: &Party, line: &OneLine, deadlin
 
 // teamwire-msg
 pub fn prove_actor(ctx: &Ctx, env: &CallerEnv) -> Result<Actor, Refusal>;
+// A member by its token, the lead by its harness session (ADR 0008), the
+// user by `CallerEnv::user_key` against `<home>/user.key`, with no member
+// variable set, `token_file` included (ADR 0040).
+pub fn adds_lead_copy(actor: &Actor, to: &[Recipient]) -> bool;   // the user's message to a member also goes to the lead
 pub fn send(ctx: &mut Ctx, req: SendRequest) -> Result<SendReport, SendError>;
 pub fn inbox(ctx: &mut Ctx, me: &Role, all: bool) -> Result<Vec<InboxItem>, SendError>;
 pub fn ack(ctx: &mut Ctx, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckResult>, SendError>;
@@ -756,6 +765,7 @@ pub fn on_tool_use(ctx: &mut Ctx, me: &Role) -> Option<String>;            // re
 // store, so a refused launch creates nothing (INV-3; T08).
 pub fn validate(spec: &TeamSpec, add: bool, env: &ValidateEnv) -> Result<ValidPlan, Vec<SpecError>>;
 pub fn launch(ctx: &mut Ctx, plan: ValidPlan) -> LaunchReport;          // per-member outcomes
+pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, String>; // `teamwire user-key` (ADR 0040)
 
 // teamwire-verify
 pub fn run(ctx: &mut Ctx, role: Option<&Role>, opts: VerifyOpts) -> Result<VerifyReport, VerifyError>;

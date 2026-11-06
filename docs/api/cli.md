@@ -497,7 +497,7 @@ text, so `## 1. What you asked` counts: What you asked; What I understood; The
 result; Verified; Decisions made for you; Not done, and why; Risks; Cost.
 Removing one member with `--role` skips this check. An AFK team whose store has no member row (removed members count) closes without a report; any member row still needs it.
 
-### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead]`
+### `teamwire send <team> --to ROLES --type TYPE (--text TEXT | --file PATH) [--commit SHA] [--re ID] [--key KEY] [--from ROLE|lead|user]`
 
 Sends one message (ADR 0003). `--to` takes roles separated by commas, or
 `lead`; an agent of another team is `role@team`, and its lead `lead@team`
@@ -505,7 +505,19 @@ Sends one message (ADR 0003). `--to` takes roles separated by commas, or
 other team's store types the line. `<team>` is a positional argument. For a member, `<team>` and `--from`
 default to `TEAMWIRE_TEAM` and `TEAMWIRE_ROLE`. With no `--from`, no
 `TEAMWIRE_ROLE` and no `TEAMWIRE_TOKEN`, `--from` defaults to `lead`, as
-`resend` does; the harness session then decides (ADR 0008). Prints the display id and one line per recipient. On
+`resend` does; the harness session then decides (ADR 0008). `--from user` is
+the human user (ADR 0040). It is accepted only from a process where none of
+`TEAMWIRE_TOKEN`, `TEAMWIRE_TOKEN_FILE`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM` is
+set to a non-empty value, and whose `TEAMWIRE_USER_KEY` equals the key in
+`<home>/user.key` (see `teamwire user-key`). Anything else is
+`refused.identity`, exit 1. The user sends `reprompt` or `note` to an
+implementer or investigator, and `note` to `lead`; every other type is
+`refused.type_not_allowed`, and a reviewer, closer, plan reviewer, a reprompt
+to the lead or `role@team` is `refused.recipient_not_allowed`. Each message
+from the user to a member also goes to the lead as a copy: the report has a
+`lead` line, the exit code ignores it, and a copy that was not delivered
+prints `lead copy not delivered: <id>; run teamwire resend <team> <id> --to
+lead` on stderr. Prints the display id and one line per recipient. On
 `undelivered` it also prints `NOT DELIVERED to <role>: <reason>` on stderr and
 exits 4. A team that starts closing part way through a send or resend makes
 each recipient not yet tried `undelivered (team_closed)`, and one an earlier
@@ -532,9 +544,22 @@ a second time. That is the one duplicate ADR 0003 allows.
 Retries one stored message, by display id, to its `undelivered`,
 `unconfirmed` or stale `pending` recipients (ADR 0003 point 2a). Same message
 id, a new delivery attempt, no burst or repeat check. The sender or the lead
-only. For a recipient in another team it writes that team's copy if it is
+only. A caller with no member token that holds `TEAMWIRE_USER_KEY` is proven
+as the user, as for `send --from user` (ADR 0040), and resends only the
+user's own messages, the lead's copy included. For a recipient in another team it writes that team's copy if it is
 missing, and never types a line that team already handed off. Exit codes as
 for `send`.
+
+### `teamwire user-key`
+
+Makes the human user's key when it is missing, and prints the key file's
+absolute path and `\n` on stdout, nothing else, never the key (ADR 0040).
+The file is `<home>/user.key`, where `<home>` is `--home`, else
+`$TEAMWIRE_HOME`, else `~/.teamwire`. It holds 64 lowercase hex characters
+and one `\n`, with mode 0600. An existing key is kept; an empty file gets a
+key. A symlink or other non-regular file at the path is refused. Exit 0, or
+6 when the file cannot be written or read. `teamwire send --from user` needs
+the file's text in `TEAMWIRE_USER_KEY`.
 
 ### `teamwire received <team> <ROLE>...`
 

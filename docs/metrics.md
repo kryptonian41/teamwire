@@ -21,7 +21,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |
 | `member.held` | the report check or unread messages hold a member | `gaps`, `unread` |
 | `member.removed` | removal | `unverified`, `stopped` |
-| `message.sent`, `message.refused` | send stores or refuses | `type`, `sender_kind`, `recipients`, `chars`; `reason` |
+| `message.sent`, `message.refused` | send stores or refuses | `type`, `sender_kind` (`lead`, `member`, `user`, `other_team`), `recipients`, `chars`; `reason` |
 | `delivery.handed_off`, `.unconfirmed`, `.undelivered` | outcome per recipient | `route`, `attempts`, `code`, `seconds` since `message.sent` |
 | `delivery.acked`, `delivery.reminded` | the recipient reads; a hook reminds | `seconds` since `message.sent` |
 | `delivery.resent` | an explicit resend, or a send resumed by its key, starts a new attempt | `attempt`, `previous_state` |

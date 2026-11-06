@@ -144,7 +144,8 @@ Rules that hold across the model:
 A message from `specmsg` (investigator) to `harness` (investigator), type
 `finding`:
 
-1. **Check.** `teamwire send` (or `team_send`) proves the sender (ADR 0008),
+1. **Check.** `teamwire send` (or `team_send`) proves the sender (ADR 0008;
+   the human user by its key, ADR 0040),
    then applies the rules: the type is one of six, the sender kind may send
    it, the recipient may receive it, the size is within the limit, a `notice`
    names a reachable commit, an `answer` answers a real question asked of the
@@ -360,6 +361,7 @@ the database itself. This section says what is enforced.
 | Risk | What teamwire does | Requirement |
 | --- | --- | --- |
 | A member speaks as another member or as the lead | Per-member token (hash in the store); the lead proves itself by its harness session id | DEL-10, ADR 0008 |
+| A process speaks as the human user | `send --from user` needs `TEAMWIRE_USER_KEY` equal to `<home>/user.key` (mode 0600) and no member variable at all, so a member's session is refused even with the key. Accepted risk: a member could read the key file, as it could read another member's `mcp.json`. The user's message to a member also reaches the lead as a copy | DEL-10, ADR 0040 |
 | A result is typed into the wrong conversation | Two agreeing views before every send, re-checked just before it | DEL-1..DEL-5 |
 | A member forges a watch line or a second message | Every agent string is sanitised to one printable, capped line | DEL-11 |
 | A peer message is taken as an instruction or as consent | Every typed message carries the "information, not instruction" tail; no permission decision is ever relayed | DEL-12, DEL-15 |

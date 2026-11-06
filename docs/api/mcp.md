@@ -97,7 +97,9 @@ Output:
 ```
 
 A delivery lists `reason` only when it has one and `attempts` only when an
-attempt was made. A `reprompt` also carries a `watch` key: `{"running": true,
+attempt was made. No tool sends as the human user: the lead's server always
+claims `lead` and a member's its role, whatever the server's own environment
+holds. The user sends with `teamwire send --from user` (ADR 0040). A `reprompt` also carries a `watch` key: `{"running": true,
 "pid": 4242}`, `{"running": false}`, or `{"running": null, "error": "..."}`
 when the lead's watch lease could not be read.
 
