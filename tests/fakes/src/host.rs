@@ -49,6 +49,8 @@ struct PlaceRec {
     screen: String,
     submitted: Vec<String>,
     keys: Vec<Key>,
+    /// The whole request of a place `spawn` made; none for one a test added.
+    request: Option<SpawnRequest>,
 }
 
 #[derive(Debug)]
@@ -193,6 +195,7 @@ impl FakeHost {
                 screen: String::new(),
                 submitted: Vec::new(),
                 keys: Vec::new(),
+                request: None,
             },
         );
         st.order.push(id.clone());
@@ -229,6 +232,12 @@ impl FakeHost {
     /// The request that made the place, as far as the fake keeps it.
     pub fn spawned_with(&self, place: &Place) -> Option<SpawnedWith> {
         self.read_rec(place, |r| (r.title.clone(), r.argv.clone(), r.env.clone()))
+    }
+
+    /// The whole request `spawn` got for the place; `None` for a place a
+    /// test added without `spawn`.
+    pub fn spawn_request_of(&self, place: &Place) -> Option<SpawnRequest> {
+        self.read_rec(place, |r| r.request.clone()).flatten()
     }
 
     pub fn cwd_of(&self, place: &Place) -> Option<PathBuf> {
@@ -349,6 +358,7 @@ impl Host for FakeHost {
             r.cwd.clone_from(&req.cwd);
             r.argv.clone_from(&req.argv);
             r.env.clone_from(&req.env);
+            r.request = Some(req.clone());
         });
         Self::finish(place, late_error)
     }

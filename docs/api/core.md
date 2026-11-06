@@ -581,8 +581,16 @@ pub struct LaunchSpec { pub argv: Vec<String>,
                         pub identity_channel: IdentityChannel }
 pub struct LaunchFile { pub path: PathBuf, pub bytes: Vec<u8>, pub mode: u32 }
 pub enum IdentityChannel { HarnessConfig, HostEnv }
-pub struct SpawnRequest { pub name: Address, pub title: String, pub cwd: PathBuf,
+pub struct SpawnRequest { pub name: Address, pub title: String,
+                          pub team_title: String,   // the team row's title
+                          pub generation: u32,      // the generation the new session runs as
+                          pub cwd: PathBuf,
                           pub argv: Vec<String>, pub env: Vec<(String, String)> }
+/// Every host label, so herdr and tmux show one format (team instr, role planrev):
+impl SpawnRequest { pub fn workspace_label(&self) -> String;  // "instr · <team title>"
+                    pub fn tab_label(&self) -> String;        // "planrev#2 · <title>"; "lead · <team title>"
+                    pub fn window_name(&self) -> String;      // "instr/planrev#2"; "instr/lead"
+                    pub fn session_name(&self) -> String; }   // "tw_instr"
 
 pub enum TurnEndReply { Continue, Hold(String) }   // Hold carries the note
 pub struct Config { pub poll_s: u64, pub silent_polls: u32, pub startup_grace_s: u64,

@@ -56,11 +56,13 @@ fn first_member_makes_the_team_workspace_and_labels_its_tab() {
         .find(|c| c[..2] == ["workspace", "create"])
         .unwrap();
     assert!(
-        create.windows(2).any(|w| w == ["--label", "demo"]),
+        create
+            .windows(2)
+            .any(|w| w == ["--label", "demo \u{b7} Demo team"]),
         "{create:?}"
     );
     let rename = all.iter().find(|c| c[..2] == ["tab", "rename"]).unwrap();
-    assert_eq!(rename.last().map(String::as_str), Some("API"));
+    assert_eq!(rename.last().map(String::as_str), Some("api \u{b7} API"));
 }
 
 #[test]
@@ -74,7 +76,25 @@ fn second_member_gets_a_tab_in_the_same_workspace() {
     assert_eq!(world.calls_of("tab rename").len(), 1);
     let all = calls(&world);
     let tab = all.iter().find(|c| c[..2] == ["tab", "create"]).unwrap();
-    assert!(tab.windows(2).any(|w| w == ["--label", "Web"]), "{tab:?}");
+    assert!(
+        tab.windows(2).any(|w| w == ["--label", "web \u{b7} Web"]),
+        "{tab:?}"
+    );
+}
+
+#[test]
+fn a_later_generation_tab_carries_its_number() {
+    let world = World::new();
+    started(&world, "tw_demo_api", "API");
+    let mut req = world.request("tw_demo_web", "Web");
+    req.generation = 2;
+    world.herdr.spawn(&req, T).expect("spawn");
+    let all = calls(&world);
+    let tab = all.iter().find(|c| c[..2] == ["tab", "create"]).unwrap();
+    assert!(
+        tab.windows(2).any(|w| w == ["--label", "web#2 \u{b7} Web"]),
+        "{tab:?}"
+    );
 }
 
 #[test]
@@ -266,7 +286,7 @@ fn a_foreign_workspace_with_the_team_label_gets_no_tabs() {
     let world = World::new();
     let out = world
         .env
-        .run(&["workspace", "create", "--label", "demo"])
+        .run(&["workspace", "create", "--label", "demo \u{b7} Demo team"])
         .unwrap();
     let foreign = out.result().unwrap()["workspace"]["workspace_id"]
         .as_str()

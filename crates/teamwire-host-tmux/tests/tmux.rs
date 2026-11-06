@@ -36,6 +36,8 @@ fn passes_host_contract_on_a_private_socket() {
     let make = |name: &Address| SpawnRequest {
         name: name.clone(),
         title: "contract".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: dir.path().to_path_buf(),
         argv: vec!["cat".to_owned()],
         env: Vec::new(),
@@ -175,10 +177,10 @@ fn a_session_or_window_name_is_never_a_place() {
     let dir = tempfile::tempdir().unwrap();
     tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
         .unwrap();
-    // `teamwire` is the session `spawn` made: tmux would resolve it to a pane.
+    // `tw_t` is the session `spawn` made: tmux would resolve it to a pane.
     let by_name = Place {
         host: tmux.id(),
-        id: "teamwire".to_owned(),
+        id: "tw_t".to_owned(),
     };
     assert_eq!(
         tmux.occupant(&by_name, OCCUPANT).unwrap_err().code,
@@ -410,15 +412,80 @@ fn close_leaves_a_pane_that_holds_another_members_name() {
 }
 
 #[test]
-fn a_title_ending_in_a_semicolon_still_spawns() {
+fn a_word_ending_in_a_semicolon_still_spawns() {
     let server = PrivateServer::new();
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
-    let mut req = request("tw_t_a", dir.path(), &["cat"]);
-    req.title = "x;".to_owned();
-    tmux.spawn(&req, SPAWN).unwrap();
-    let names = server.raw(&["list-windows", "-a", "-F", "#{window_name}"]);
-    assert!(names.lines().any(|n| n == "x;"), "{names}");
+    // tmux ends a command at a word ending in `;`, so without the escape the
+    // word after it would run as a second tmux command and the spawn fails.
+    let req = request(
+        "tw_t_a",
+        dir.path(),
+        &["sh", "-c", "echo ran $0; sleep 30;", "last"],
+    );
+    let place = tmux.spawn(&req, SPAWN).unwrap();
+    assert!(screen_shows(&tmux, &place, "ran last"));
+}
+
+/// `<session> <window>` for every window on the server, sorted.
+fn windows(server: &PrivateServer) -> Vec<String> {
+    let text = server.raw(&["list-windows", "-a", "-F", "#{session_name} #{window_name}"]);
+    let mut all: Vec<String> = text.lines().map(str::to_owned).collect();
+    all.sort();
+    all
+}
+
+#[test]
+fn a_window_is_named_team_and_role_with_a_later_generation_numbered() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    let mut second = request("tw_t_b", dir.path(), &["cat"]);
+    second.generation = 2;
+    tmux.spawn(&second, SPAWN).unwrap();
+    assert_eq!(windows(&server), ["tw_t t/a", "tw_t t/b#2"]);
+}
+
+#[test]
+fn two_teams_outside_a_client_get_a_session_each() {
+    let server = PrivateServer::new();
+    let tmux = server.tmux();
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["tw_one_a", "tw_two_a", "tw_one_b"] {
+        tmux.spawn(&request(name, dir.path(), &["cat"]), SPAWN)
+            .unwrap();
+    }
+    assert_eq!(
+        windows(&server),
+        ["tw_one one/a", "tw_one one/b", "tw_two two/a"]
+    );
+}
+
+#[test]
+fn a_team_whose_session_name_is_a_prefix_of_another_gets_its_own() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    // tmux matches a bare session name by prefix, so `tw_in` would find this.
+    server.raw(&["new-session", "-d", "-s", "tw_instr", "-n", "other", "cat"]);
+    server
+        .tmux()
+        .spawn(&request("tw_in_a", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    assert_eq!(windows(&server), ["tw_in in/a", "tw_instr other"]);
+}
+
+#[test]
+fn a_window_inside_a_client_opens_in_the_clients_session() {
+    let server = PrivateServer::new();
+    let dir = tempfile::tempdir().unwrap();
+    server.raw(&["new-session", "-d", "-s", "mine", "-n", "shell", "cat"]);
+    let socket = server.raw(&["display-message", "-p", "#{socket_path}"]);
+    let tmux = Tmux::new(server.platform.clone()).with_client(&format!("{},1,0", socket.trim()));
+    tmux.spawn(&request("tw_t_a", dir.path(), &["cat"]), SPAWN)
+        .unwrap();
+    assert_eq!(windows(&server), ["mine shell", "mine t/a"]);
 }
 
 /// Records the argv of every command, then runs it on the wrapped platform.

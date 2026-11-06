@@ -109,6 +109,8 @@ pub(crate) fn reopen_lead<'r>(
     let request = SpawnRequest {
         name: Address::lead(&team.name),
         title: "lead".to_owned(),
+        team_title: team.title.clone(),
+        generation: 1,
         cwd: cwd.clone(),
         argv: argv.clone(),
         env: Vec::new(),

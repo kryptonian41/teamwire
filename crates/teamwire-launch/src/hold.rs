@@ -125,6 +125,6 @@ fn another_team_owns(ctx: &Ctx<'_>, this: &TeamName, session: &SessionId, hold: 
     clippy::redundant_closure_for_method_calls,
     reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
 )]
-fn team_of(store: &Store) -> Option<teamwire_store::TeamRow> {
+pub(crate) fn team_of(store: &Store) -> Option<teamwire_store::TeamRow> {
     store.read(|tx| tx.team()).ok().flatten()
 }
