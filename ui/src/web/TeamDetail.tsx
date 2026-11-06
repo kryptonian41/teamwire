@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import { AfkFiles, Empty, RefChips, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
@@ -37,6 +37,21 @@ export function TeamDetail({
   const [pick, setPick] = useState<{ id: string; n: number } | null>(null);
   // The decision search lives above the tabs, so it is kept across tab changes.
   const [query, setQuery] = useState<DecisionQuery | null>(null);
+  const head = useRef<HTMLDivElement>(null);
+  // Focus scrolls the page only until the element is in the viewport, where the sticky header would cover it.
+  useEffect(() => {
+    const el = head.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // Rounded up plus a hair, so a sub-pixel header height never leaves a focused edge under it.
+      document.documentElement.style.scrollPaddingTop = `${Math.ceil(el.getBoundingClientRect().height) + 2}px`;
+    });
+    ro.observe(el);
+    return () => {
+      ro.disconnect();
+      document.documentElement.style.scrollPaddingTop = "";
+    };
+  }, [name, snapshot !== null]);
   if (!snapshot) return <Empty title="Waiting for the first poll…" />;
   if (!team || team.name === null) {
     return (
@@ -56,7 +71,7 @@ export function TeamDetail({
 
   return (
     <>
-      <div className="team-head">
+      <div className="team-head" ref={head}>
         <p className="crumbs">
           <a href={href.overview()}>← Teams</a>
         </p>
