@@ -36,7 +36,12 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
                   <li key={q.id} className="question">
                     <code>{q.id}</code>
                     <span className="sub">
-                      <RoleLink role={q.from} /> → <Roles names={q.to} /> · asked {q.age} ago
+                      <RoleLink role={q.from} /> → {q.recipients.map((n, i) => (
+                        <span key={n}>
+                          {i > 0 && ", "}
+                          <RoleLink role={n} />
+                        </span>
+                      ))} · asked {q.age} ago
                     </span>
                     <span className="qtext">{q.text ?? "question text not in the latest messages"}</span>
                     {/* Empty while no reply is offered, and then it takes no space. The question stays unanswered. */}
@@ -118,14 +123,4 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
       )}
     </>
   );
-}
-
-/** `questionRows` joins the recipients with ", "; a role name holds no comma or space, so the split is exact. */
-function Roles({ names }: { names: string }) {
-  return names.split(", ").map((n, i) => (
-    <span key={n}>
-      {i > 0 && ", "}
-      <RoleLink role={n} />
-    </span>
-  ));
 }

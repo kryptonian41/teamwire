@@ -60,6 +60,8 @@ export interface QuestionRow {
   from: string;
   /** The recipients, joined. */
   to: string;
+  /** The recipients one by one, for a link on each. */
+  recipients: string[];
   age: string;
   /** The question's excerpt when the status messages still hold it, else null. */
   text: string | null;
@@ -73,6 +75,7 @@ export function questionRows(s: Pick<StatusView, "unanswered_questions" | "messa
     id: q.display_id,
     from: q.from,
     to: q.to.join(", "),
+    recipients: q.to,
     age: spanText(q.age_s),
     text: s.messages.find((m) => m.display_id === q.display_id)?.excerpt ?? null,
     toLead: q.to.includes("lead"),
