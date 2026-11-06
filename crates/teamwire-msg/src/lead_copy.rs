@@ -21,13 +21,15 @@ pub(crate) fn with_lead_copy(actor: &Actor, to: &[Recipient]) -> Vec<Recipient> 
 
 /// Whether a message from `actor` to `to`, each named as its own team names
 /// it, also goes to the lead as a copy. The lead's row is then not one the
-/// sender addressed, so `send`'s exit code leaves it out.
+/// sender addressed, so `send`'s exit code leaves it out. The rules refuse a
+/// user's message that names the lead together with a member.
 pub fn adds_lead_copy(actor: &Actor, to: &[Recipient]) -> bool {
-    *actor == Actor::User && to.iter().any(is_member) && !to.contains(&Recipient::Lead)
+    *actor == Actor::User && to.iter().any(is_member)
 }
 
 /// Whether a stored message's lead row is a copy: the message is the
-/// user's and also went to a member.
+/// user's and also went to a member. The user's note to the lead goes as
+/// its own message, so such a lead row is never one the user addressed.
 pub(crate) fn is_lead_copy(message: &Message, recipients: &[Recipient]) -> bool {
     message.sender == Actor::User && recipients.iter().any(is_member)
 }

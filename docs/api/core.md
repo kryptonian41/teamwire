@@ -123,6 +123,7 @@ pub enum DeliveryErrorCode {
 /// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15, MSG-20).
 pub enum Refusal {
     Identity, TypeNotAllowed, RecipientNotAllowed, UnknownRecipient,
+    UserLeadWithMember,  // code recipient_not_allowed: the user named lead with a member (ADR 0040)
     UnknownTeam, RecipientTeamClosed,  // role@team names no team, or a team not open
     RemovedRecipient, SelfMessage, EmptyBody, TooLong { limit: usize, got: usize },
     NoCommit, CommitNotReachable, NotAQuestion, NotAskedOfYou, TeamClosed,

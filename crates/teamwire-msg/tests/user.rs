@@ -280,9 +280,24 @@ fn the_user_notes_the_lead_and_the_lead_gets_no_second_copy() {
         ),
         "{typed:?}"
     );
-    // The lead named with a member is that member's message and the lead's.
-    user_send(&mut rig, &["api", "lead"], MessageType::Note, "and you").unwrap();
-    assert_eq!(stored_recipients(&rig), [to("api"), Recipient::Lead]);
+    // The lead named with a member is refused, in either order. The user's
+    // note to the lead goes as its own message, so a lead row next to a
+    // member's is always the lead's copy (ADR 0040).
+    for targets in [["api", "lead"], ["lead", "api"]] {
+        let got = user_send(&mut rig, &targets, MessageType::Note, "and you")
+            .map(|_| ())
+            .map_err(|e| e.to_string());
+        assert_eq!(
+            got,
+            Err(
+                "refused.recipient_not_allowed: the user's note to the lead goes as its own \
+                 message: send it with --to lead alone"
+                    .to_owned()
+            ),
+            "{targets:?}"
+        );
+    }
+    assert_eq!(stored_recipients(&rig), [Recipient::Lead]);
 }
 
 #[test]

@@ -70,8 +70,13 @@ asked instead for a sender that is plainly the user.
    `recipient_not_allowed`. The user writes only in the team named on the
    command line. `role@otherteam` is `recipient_not_allowed`, by the
    cross-team rule that already refuses every `reprompt` and `note` (ADR
-   0016). The repeat and burst rules apply to the user as to any sender. A
-   user reprompt starts the member's next generation, as the lead's does.
+   0016). The user's note to the lead goes as its own message: a message
+   that names `lead` together with a member is `recipient_not_allowed`, and
+   its text says to send the note with `--to lead` alone. So a lead row
+   next to a member's row is always the lead's copy, and the store needs no
+   mark to tell the two apart. The repeat and burst rules apply to the user
+   as to any sender. A user reprompt starts the member's next generation, as
+   the lead's does.
 5. **The lead's copy.** Every message from the user to a member also gets a
    delivery row for `lead` on the same message, so the lead never misses an
    instruction. The copy is added after every rule has passed. The repeat
@@ -79,9 +84,7 @@ asked instead for a sender that is plainly the user.
    user's message that also went to a member is a copy and is skipped. The
    exit code of `send` comes from the addressed recipients only. When the
    copy is not delivered, `send` prints `lead copy not delivered: <id>; run
-   teamwire resend <team> <id> --to lead` on stderr. A user's message that
-   names the lead and a member together makes no second lead row, and that
-   row counts toward the exit code, because the user chose it.
+   teamwire resend <team> <id> --to lead` on stderr.
 6. **The typed lines.** A member's line from the user says the human user
    wrote it, that it is an instruction like one from the lead, and that it
    is never approval for a permission prompt. The lead's copy says it is a

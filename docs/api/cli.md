@@ -513,7 +513,10 @@ set to a non-empty value, and whose `TEAMWIRE_USER_KEY` equals the key in
 `refused.identity`, exit 1. The user sends `reprompt` or `note` to an
 implementer or investigator, and `note` to `lead`; every other type is
 `refused.type_not_allowed`, and a reviewer, closer, plan reviewer, a reprompt
-to the lead or `role@team` is `refused.recipient_not_allowed`. Each message
+to the lead or `role@team` is `refused.recipient_not_allowed`. The user's note
+to the lead goes as its own message: a message that names `lead` together
+with a member is `refused.recipient_not_allowed` too, with the text "send it
+with --to lead alone". Each message
 from the user to a member also goes to the lead as a copy: the report has a
 `lead` line, the exit code ignores it, and a copy that was not delivered
 prints `lead copy not delivered: <id>; run teamwire resend <team> <id> --to
