@@ -7,7 +7,7 @@ import { Flow, type Selected } from "./Flow.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow } from "./hooks.ts";
 import { buildFlow, filterByPair } from "./model/flow.ts";
 import { answersLink } from "./model/status.ts";
-import { leadCategory, refreshKey, type TeamModel } from "./model/teams.ts";
+import { leadCategory, livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 
 export function MessageSection({ team, pick }: { team: TeamModel; pick: { id: string; n: number } | null }) {
   const client = useClient();
@@ -31,6 +31,8 @@ export function MessageSection({ team, pick }: { team: TeamModel; pick: { id: st
 
   const categories = new Map<string, StateCategory>(team.members.map((m) => [m.role, m.category]));
   categories.set("lead", leadCategory(team.status.lead));
+  const states = new Map<string, string>(team.members.map((m) => [m.role, m.state]));
+  states.set("lead", livenessInfo(team.status.lead).label.replace(/^lead /, ""));
 
   return (
     <>
@@ -42,6 +44,7 @@ export function MessageSection({ team, pick }: { team: TeamModel; pick: { id: st
           <Flow
             graph={buildFlow(log.data, team.members.map((m) => m.role))}
             categories={categories}
+            states={states}
             selected={selected}
             onSelect={setSelected}
           />
