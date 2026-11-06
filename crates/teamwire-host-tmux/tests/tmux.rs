@@ -416,9 +416,15 @@ fn a_word_ending_in_a_semicolon_still_spawns() {
     let server = PrivateServer::new();
     let tmux = server.tmux();
     let dir = tempfile::tempdir().unwrap();
-    let req = request("tw_t_a", dir.path(), &["sh", "-c", "echo ran; sleep 30;"]);
+    // tmux ends a command at a word ending in `;`, so without the escape the
+    // word after it would run as a second tmux command and the spawn fails.
+    let req = request(
+        "tw_t_a",
+        dir.path(),
+        &["sh", "-c", "echo ran $0; sleep 30;", "last"],
+    );
     let place = tmux.spawn(&req, SPAWN).unwrap();
-    assert!(screen_shows(&tmux, &place, "ran"));
+    assert!(screen_shows(&tmux, &place, "ran last"));
 }
 
 /// `<session> <window>` for every window on the server, sorted.
