@@ -43,6 +43,13 @@ function cookieValue(header: string | null, name: string): string | null {
 export interface Security {
   /** Null when the request may use the API, else the 403 response. */
   checkApi(req: Request): Response | null;
+  /**
+   * Null when a write action may run, else the 403 or 400 response. On top of
+   * `checkApi`, the Origin must be present and ours, and the body must be
+   * JSON: a cross-site form post can send neither without a CORS preflight,
+   * which this server never answers.
+   */
+  checkWrite(req: Request): Response | null;
   /** `GET /auth?token=T`. */
   auth(req: Request): Response;
 }
@@ -67,6 +74,15 @@ export function createSecurity(opts: { token: string; port: number }): Security 
       if (bad) return bad;
       const cookie = cookieValue(req.headers.get("cookie"), cookieName);
       if (cookie === null || !sameToken(cookie, opts.token)) return forbidden("missing or wrong token cookie");
+      return null;
+    },
+    checkWrite(req) {
+      const bad = this.checkApi(req);
+      if (bad) return bad;
+      const origin = req.headers.get("origin");
+      if (origin === null || !origins.has(origin)) return forbidden("a write needs our Origin header");
+      const type = req.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+      if (type !== "application/json") return problem(400, { code: "bad_request", detail: "a write needs content-type: application/json" });
       return null;
     },
     auth(req) {

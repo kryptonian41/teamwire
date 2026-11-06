@@ -48,6 +48,40 @@ describe("checkApi", () => {
   test("refuses an https Origin", () => refuse({ ...cookie, origin: "https://127.0.0.1:7878" }));
 });
 
+describe("checkWrite", () => {
+  const write = (headers: Record<string, string>) =>
+    sec.checkWrite(new Request("http://127.0.0.1:7878/api/teams/a/actions/send", { method: "POST", headers: { host: "127.0.0.1:7878", ...headers } }));
+  const good = { ...cookie, origin: "http://127.0.0.1:7878", "content-type": "application/json" };
+  const refuse = async (headers: Record<string, string>, status: number) => {
+    const res = write(headers);
+    expect(res?.status).toBe(status);
+    expect(await res?.json()).toMatchObject({ code: status === 403 ? "forbidden" : "bad_request" });
+  };
+  test("accepts our cookie, either own Origin and a JSON content type", () => {
+    expect(write(good)).toBeNull();
+    expect(write({ ...good, host: "localhost:7878", origin: "http://localhost:7878" })).toBeNull();
+    expect(write({ ...good, "content-type": "application/json; charset=utf-8" })).toBeNull();
+  });
+  test("refuses a missing Origin", () => {
+    const { origin: _, ...rest } = good;
+    return refuse(rest, 403);
+  });
+  test("refuses a foreign Origin", () => refuse({ ...good, origin: "http://evil.example" }, 403));
+  test("refuses Origin null", () => refuse({ ...good, origin: "null" }, 403));
+  test("refuses our Origin on another port", () => refuse({ ...good, origin: "http://127.0.0.1:7879" }, 403));
+  test("refuses a missing cookie", () => refuse({ origin: good.origin, "content-type": "application/json" }, 403));
+  test("refuses a wrong host", () => refuse({ ...good, host: "evil.example:7878" }, 403));
+  test("refuses a missing content type", () => {
+    const { "content-type": _, ...rest } = good;
+    return refuse(rest, 400);
+  });
+  test("refuses a form or text content type", async () => {
+    for (const ct of ["text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x", "application/jsonx"]) {
+      await refuse({ ...good, "content-type": ct }, 400);
+    }
+  });
+});
+
 describe("auth", () => {
   test("a matching token sets the cookie and redirects with 303", () => {
     const res = sec.auth(req(`/auth?token=${token}`));

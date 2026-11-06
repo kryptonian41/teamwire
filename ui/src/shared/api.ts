@@ -2,11 +2,15 @@
 // (src/web/). Both sides import these types and path builders; neither side
 // changes them alone. Ask the lead for a change.
 //
-// Every route is GET. The server has no route that changes teamwire state,
-// and it never will: teamwire accepts lead actions only from the lead's own
-// Claude Code session (teamwire ADR 0008).
+// Every route is GET, except the three write actions under
+// `/api/teams/:team/actions/`. Those exist only while the server runs with
+// `TW_UI_ACTIONS=1`; otherwise they answer 404. They send as the human user
+// (`teamwire send --from user`, teamwire ADR 0040) and close members or
+// teams. They never speak as the lead: teamwire accepts lead actions only
+// from the lead's own Claude Code session (teamwire ADR 0008).
 
-import type { DecisionsView, EventsView, LogView, MetricsView, StatusView, TeamEntry } from "./teamwire.ts";
+import { z } from "zod";
+import { ROLE_NAME_RE, type DecisionsView, type EventsView, type LogView, type MetricsView, type StatusView, type TeamEntry } from "./teamwire.ts";
 
 /** Default port. The server binds 127.0.0.1 only. */
 export const DEFAULT_PORT = 7878;
@@ -169,6 +173,40 @@ export interface ArchiveEntry {
 }
 
 export type { DecisionsView, EventsView, LogView, MetricsView };
+
+/** The dashboard's cap on a message. The CLI sets none for `reprompt` and `note`. */
+export const MAX_TEXT_CHARS = 4000;
+
+/** 1 to 4000 characters, counted as code points. A NUL cannot travel in a process argument. */
+const MessageText = z.string().refine((t) => {
+  const n = [...t].length;
+  return n >= 1 && n <= MAX_TEXT_CHARS && !t.includes("\0");
+}, `1 to ${MAX_TEXT_CHARS} characters, no NUL`);
+
+/** `POST /api/teams/:team/actions/send`. The CLI enforces who may get which type (plan D4). */
+export const SendBody = z.strictObject({
+  to: z.string().regex(ROLE_NAME_RE),
+  type: z.enum(["reprompt", "note"]),
+  text: MessageText,
+});
+
+/** `POST /api/teams/:team/actions/close-member`. */
+export const CloseMemberBody = z.strictObject({
+  role: z.string().regex(ROLE_NAME_RE),
+  stop: z.boolean(),
+  unverified: z.boolean(),
+  dryRun: z.boolean(),
+});
+
+/** `POST /api/teams/:team/actions/close-team`. A real close needs `confirmName` equal to the team. */
+export const CloseTeamBody = z.strictObject({
+  dryRun: z.boolean(),
+  confirmName: z.string(),
+});
+
+export type SendBody = z.infer<typeof SendBody>;
+export type CloseMemberBody = z.infer<typeof CloseMemberBody>;
+export type CloseTeamBody = z.infer<typeof CloseTeamBody>;
 
 /** A decisions search across every team and archive: report text, or a ticket ref as `provider:id`. */
 export type DecisionQuery = { grep: string } | { ref: string };

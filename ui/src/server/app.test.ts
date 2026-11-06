@@ -26,7 +26,7 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 const ok = (data: unknown, problems: unknown[] = []) => ({ ok: true, data, problems });
 const emptyStatus = { team: "alpha", title: null, state: null, lead: null, messages: [], stuck_deliveries: [], undelivered_results: [] };
 
-function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean } = {}) {
+function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean; actions?: boolean } = {}) {
   const { failEvents, ...appOpts } = opts;
   const calls: CliCall[] = [];
   const run = (async (call: CliCall) => {
@@ -126,6 +126,94 @@ describe("actions off (the default)", () => {
       }
     }
     expect(calls).toHaveLength(0);
+  });
+});
+
+const writeHeaders = { host: `127.0.0.1:${port}`, origin: `http://127.0.0.1:${port}`, cookie: `tw_ui_7878=${token}`, "content-type": "application/json" };
+function post(app: { handle(r: Request): Promise<Response> }, path: string, body: unknown, headers: Record<string, string> = writeHeaders, method = "POST") {
+  return app.handle(new Request(`http://127.0.0.1:${port}${path}`, { method, headers, body: typeof body === "string" ? body : JSON.stringify(body) }));
+}
+const without = (key: string) => Object.fromEntries(Object.entries(writeHeaders).filter(([k]) => k !== key));
+
+describe("the write check on action routes", () => {
+  const sendPath = "/api/teams/alpha/actions/send";
+  const goodSend = { to: "impl", type: "note", text: "hello" };
+  const refused = async (res: Promise<Response>, status: number, calls: CliCall[]) => {
+    const r = await res;
+    expect(r.status).toBe(status);
+    expect(calls).toHaveLength(0);
+  };
+  test("GET is 405 on every action route", async () => {
+    const { app, calls } = setup({ actions: true });
+    for (const path of ACTION_PATHS) {
+      const res = await app.handle(new Request(`http://127.0.0.1:${port}${path}`, { headers: writeHeaders }));
+      expect(res.status).toBe(405);
+    }
+    expect(calls).toHaveLength(0);
+  });
+  test("PUT, PATCH and DELETE are 405", async () => {
+    const { app, calls } = setup({ actions: true });
+    for (const method of ["PUT", "PATCH", "DELETE"]) await refused(post(app, sendPath, goodSend, writeHeaders, method), 405, calls);
+  });
+  test("a non-action route still refuses POST with 405", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, "/api/teams/alpha/log", {}), 405, calls);
+  });
+  test("403 without the token cookie", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, goodSend, without("cookie")), 403, calls);
+  });
+  test("403 with a wrong Host", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, goodSend, { ...writeHeaders, host: "evil.example:7878" }), 403, calls);
+  });
+  test("403 without an Origin", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, goodSend, without("origin")), 403, calls);
+  });
+  test("403 with a foreign Origin", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, goodSend, { ...writeHeaders, origin: "http://evil.example" }), 403, calls);
+  });
+  test("400 without a JSON content type", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, goodSend, { ...writeHeaders, "content-type": "text/plain" }), 400, calls);
+  });
+  test("400 for a body that is not JSON", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, sendPath, "{to: impl"), 400, calls);
+  });
+  test("400 for a send body the schema refuses", async () => {
+    const { app, calls } = setup({ actions: true });
+    for (const body of [
+      {},
+      { ...goodSend, extra: 1 },
+      { ...goodSend, to: "Bad-Role" },
+      { ...goodSend, to: "api@other" },
+      { ...goodSend, type: "answer" },
+      { ...goodSend, text: "" },
+      { ...goodSend, text: "x".repeat(4001) },
+      { ...goodSend, text: "a\u0000b" },
+    ]) {
+      await refused(post(app, sendPath, body), 400, calls);
+    }
+  });
+  test("400 for a close-member body the schema refuses", async () => {
+    const { app, calls } = setup({ actions: true });
+    const good = { role: "impl", stop: false, unverified: false, dryRun: true };
+    for (const body of [{ ...good, role: "-x" }, { ...good, stop: "yes" }, { role: "impl" }]) {
+      await refused(post(app, "/api/teams/alpha/actions/close-member", body), 400, calls);
+    }
+  });
+  test("400 for a real team close whose confirm name is not the team", async () => {
+    const { app, calls } = setup({ actions: true });
+    for (const body of [{ dryRun: false, confirmName: "alph" }, { dryRun: false, confirmName: "" }, { dryRun: false }]) {
+      await refused(post(app, "/api/teams/alpha/actions/close-team", body), 400, calls);
+    }
+  });
+  test("404 for a team that does not exist", async () => {
+    const { app, calls } = setup({ actions: true });
+    await refused(post(app, "/api/teams/nope/actions/send", goodSend), 404, calls);
   });
 });
 

@@ -23,6 +23,10 @@ export const Lifecycle = z.enum(["creating", "started", "failed", "removed"]);
 /** Team and role names: `^[a-z][a-z0-9_]*$`, never a hyphen. */
 export const NAME_RE = /^[a-z][a-z0-9_]*$/;
 /** Message display ids, such as `m014`. */
+/** Teamwire's own launch patterns, stricter than `NAME_RE`. The write actions use these. */
+export const TEAM_NAME_RE = /^[a-z][a-z0-9]{0,11}$/;
+export const ROLE_NAME_RE = /^[a-z][a-z0-9_]{0,15}$/;
+
 export const DISPLAY_ID_RE = /^m[0-9]+$/;
 
 /**

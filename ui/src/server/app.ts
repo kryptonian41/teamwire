@@ -2,7 +2,8 @@
 // dependencies as arguments, so tests call it without a socket or a CLI.
 
 import { NAME_RE, type MetricsView } from "../shared/teamwire.ts";
-import type { Problem } from "../shared/api.ts";
+import { CloseMemberBody, CloseTeamBody, SendBody, type Problem } from "../shared/api.ts";
+import type { z } from "zod";
 import type { Runner } from "./cli.ts";
 import { archiveDir, listArchives, listFiles, parseArchiveName, readKindFile, teamDir } from "./files.ts";
 import type { Poller } from "./poller.ts";
@@ -31,6 +32,27 @@ const ACTION_ROUTE = /^\/api\/teams\/([^/]+)\/actions\/(send|close-member|close-
 type ActionName = "send" | "close-member" | "close-team";
 
 const notFound = (detail: string) => problem(404, { code: "not_found", detail });
+const badRequest = (detail: string) => problem(400, { code: "bad_request", detail });
+
+/** A real body is a few KiB at most; 4000 characters of text is under 16 KiB as JSON. */
+const MAX_BODY_CHARS = 64 * 1024;
+
+async function readBody<S extends z.ZodType>(req: Request, schema: S): Promise<{ ok: true; data: z.infer<S> } | { ok: false; res: Response }> {
+  const text = await req.text();
+  if (text.length > MAX_BODY_CHARS) return { ok: false, res: badRequest("body too large") };
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return { ok: false, res: badRequest("body is not JSON") };
+  }
+  const parsed = schema.safeParse(raw);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    return { ok: false, res: badRequest(`bad body at ${issue?.path.join(".") || "(root)"}: ${issue?.message ?? "invalid"}`) };
+  }
+  return { ok: true, data: parsed.data };
+}
 
 /** The status for a CLI failure: the server is fine, the program behind it is not. */
 function cliFailure(problems: Problem[]): Response {
@@ -167,7 +189,30 @@ export function createApp(deps: AppDeps): App {
 
   async function actionRoute(req: Request, team: string, name: ActionName): Promise<Response> {
     if (!deps.actions) return notFound("actions are off: start the server with TW_UI_ACTIONS=1");
-    return notFound(`no action ${name} for team ${team}`);
+    if (req.method !== "POST") return json({ code: "bad_request", detail: "only POST is allowed" } satisfies Problem, 405, { allow: "POST" });
+    const denied = deps.security.checkWrite(req);
+    if (denied) return denied;
+    switch (name) {
+      case "send": {
+        const body = await readBody(req, SendBody);
+        if (!body.ok) return body.res;
+        if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
+        return notFound("send is not built yet");
+      }
+      case "close-member": {
+        const body = await readBody(req, CloseMemberBody);
+        if (!body.ok) return body.res;
+        if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
+        return notFound("close-member is not built yet");
+      }
+      case "close-team": {
+        const body = await readBody(req, CloseTeamBody);
+        if (!body.ok) return body.res;
+        if (!body.data.dryRun && body.data.confirmName !== team) return badRequest("type the team's name to confirm the close");
+        if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
+        return notFound("close-team is not built yet");
+      }
+    }
   }
 
   return {
