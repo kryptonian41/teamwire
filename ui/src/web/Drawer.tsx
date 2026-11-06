@@ -8,7 +8,7 @@ import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
 import { countText, handoffHistory, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
-import { acceptsLine, ownsLine, spanText, startedByLine } from "./model/status.ts";
+import { spanText, startedByLine } from "./model/status.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
 export function Drawer({
@@ -79,25 +79,49 @@ export function Drawer({
         <header>
           <div>
             <h2>{member.role}</h2>
-            <p className="sub">
-              {member.title} · {member.kind ?? "kind unknown"} · generation {member.generation}
-            </p>
+            <p className="sub">{member.title}</p>
           </div>
-          <button ref={closeRef} className="btn" onClick={onClose} aria-label="Close">
-            Close
-          </button>
+          <div className="drawer-controls">
+            <StateChip word={member.state} category={member.category} />
+            {/* Reserved for team uiplus's member action buttons. Empty, it takes no space. */}
+            <div className="member-actions" />
+            <button ref={closeRef} className="btn" onClick={onClose} aria-label="Close">
+              Close
+            </button>
+          </div>
         </header>
-        <p className="chips">
-          <StateChip word={member.state} category={member.category} />
-          {age.overdue ? <StateChip word={`${age.label} · past its deadline`} category="attention" /> : <span className="sub num">{age.label}</span>}
-          {member.branch && <code>{member.branch}</code>}
-        </p>
 
-        <ul className="facts">
-          {startedByLine(member) && <li>{startedByLine(member)}</li>}
-          {roster && <li>{ownsLine(roster)}</li>}
-          {roster && <li>{acceptsLine(roster)}</li>}
-        </ul>
+        <dl className="facts">
+          <dt>Kind</dt>
+          <dd>{member.kind ?? "unknown"}</dd>
+          <dt>Generation</dt>
+          <dd>{member.generation}</dd>
+          <dt>Branch</dt>
+          <dd>{member.branch ? <code>{member.branch}</code> : "—"}</dd>
+          <dt>Model</dt>
+          <dd>{modelText(rows, member.role) ?? "—"}</dd>
+          <dt>Deadline</dt>
+          <dd>
+            <span className="num">{age.label}</span>
+            {age.overdue && <StateChip word="past its deadline" category="attention" />}
+          </dd>
+          {roster && (
+            <>
+              <dt>May change</dt>
+              <dd>{roster.owns.length === 0 ? "nothing (read-only)" : roster.owns.map((o) => <code key={o}>{o}</code>)}</dd>
+              <dt>Accepts from members</dt>
+              <dd>{roster.accepts_from_members.length === 0 ? "nothing" : roster.accepts_from_members.join(", ")}</dd>
+              <dt>Lead can type to it</dt>
+              <dd>{roster.can_be_typed_to ? "yes" : "no"}</dd>
+            </>
+          )}
+          {startedByLine(member) && (
+            <>
+              <dt>Build</dt>
+              <dd>{startedByLine(member)}</dd>
+            </>
+          )}
+        </dl>
 
         <MemberEvents rows={rows} role={member.role} />
 
@@ -155,11 +179,9 @@ export function Drawer({
 function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string }) {
   const runs = verifyHistory(rows, role);
   const tokens = [...tokensByModel(rows, role)];
-  const model = modelText(rows, role);
   const handoffs = handoffHistory(rows, role);
   return (
     <>
-      {model && <p className="sub">Model: {model}</p>}
       {handoffs.length > 0 && (
         <>
           <h3>Handoffs</h3>

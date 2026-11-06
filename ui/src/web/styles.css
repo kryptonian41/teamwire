@@ -371,8 +371,10 @@ pre.text {
   box-shadow: var(--shadow); /* taste-skill-ignore: the drawer is a dialog that floats over the page */
 }
 .drawer header { display: flex; justify-content: space-between; align-items: start; gap: var(--s3); }
-.drawer h2 { margin: 0; font-size: var(--t-head); letter-spacing: -0.02em; }
+.drawer h2 { margin: 0; font-size: var(--t-head); letter-spacing: -0.02em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } /* taste-skill-ignore */
 .drawer header .sub { margin: var(--s1) 0 0; font-size: var(--t-body); }
+.drawer-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
+.drawer h3 { margin-top: var(--s3); }
 .drawer code { overflow-wrap: anywhere; }
 .tabs { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .tabs button {
@@ -447,7 +449,10 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .commit-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); background: var(--surface-2); padding: 0 6px; border-radius: var(--r-sm); } /* taste-skill-ignore */
 .msgs tr.picked td { background: var(--bg-active); }
 .afk-files { margin-top: var(--s2); }
-.facts { margin: var(--s2) 0 var(--s3); padding: 0; list-style: none; color: var(--muted); font-size: var(--t-small); }
+/* The member's facts: a label column and a value column, no gaps between. */
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: baseline; margin: 0; padding: var(--s3); border-radius: var(--r-lg); background: var(--surface); }
+.facts dt { color: var(--muted); font-size: var(--t-small); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; }
 
 /* Event timeline: one row per event, newest first. A problem row gets a bar
    as well as its hidden "Problem:" text, so colour is never the only cue. */
