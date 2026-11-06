@@ -171,7 +171,11 @@ this wording, in this order:
 Run `teamwire close <team>`. Close refuses until the report has every
 heading, archives the team with the `afk/` files, keeps the branches and
 releases the sleep hold. When close refuses, reprompt the reporter with the
-missing headings. Then call `PushNotification` with the archived report's
+missing headings. When no closer ran, such as when the budget ran out
+first, `teamwire close` prints a `warning: no closer reported` line. Close
+anyway, because nobody can answer it, and have the reporter list the missing
+closer under **Not done, and why** before you close. Then call
+`PushNotification` with the archived report's
 path if you have that tool.
 
 A team that never had a member has nothing to report, so close accepts it

@@ -155,9 +155,11 @@ in absolute tokens, so on a 1M window set the number yourself if 400k is too
 high for the task.
 
 Past its point, the member gets a note after its next tool call. The note tells
-it to finish its step, commit, run `teamwire handoff --guide`, write a handoff
-document at `reports/<role>.handoff.md` and record `done` with a summary that
-starts with `handoff:`. When that `done` arrives, run:
+it to finish its step and, if its role writes code, to commit it. A role that
+does not write code commits nothing. Then the member runs
+`teamwire handoff --guide`, writes a handoff document at
+`reports/<role>.handoff.md` and records `done` with a summary that starts
+with `handoff:`. When that `done` arrives, run:
 
 ```bash
 teamwire handoff <team> --role <role>

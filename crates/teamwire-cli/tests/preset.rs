@@ -922,3 +922,60 @@ fn the_afk_skill_points_at_sections_and_allows_fix_rounds() {
     assert!(skill.contains("write roster entry D1 (section 5)"));
     assert!(skill.contains("Only you send it more work"));
 }
+
+/// Fix round 1 (the consist review). The closer preset says what the
+/// closer's seat says: which fixes it reverts, and a restore check that a
+/// setup-made untracked link cannot break.
+#[test]
+fn the_closer_preset_matches_the_closer_seat() {
+    let doc = preset_doc("closer");
+    let task = task_of(&doc, "closer");
+    let rules = doc["_rules"].as_array().unwrap();
+    let rule = rules
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|r| r.starts_with("It proves tests can fail."))
+        .unwrap();
+    for text in [task, rule] {
+        assert!(!text.contains("graded wrong conclusion"), "{text}");
+        assert!(!text.contains("prints nothing"), "{text}");
+        assert!(
+            text.contains("a finding that a reviewer reported and an owner fixed"),
+            "{text}"
+        );
+        assert!(text.contains("shows none of those files"), "{text}");
+        assert!(text.contains("-e <path>"), "{text}");
+    }
+    let skill = example("skills/teamwire/SKILL.md");
+    assert!(!skill.contains("graded wrong conclusion"));
+}
+
+/// Fix round 1. The lead knows each summary prefix a member may write
+/// (plan D26, D27), and the run list, the handoff note and the pull-request
+/// step agree with the rest of the skill.
+#[test]
+fn the_skill_reads_every_summary_prefix_and_agrees_with_itself() {
+    // Line breaks fall anywhere in prose, so compare the words only.
+    let flat = |text: String| text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let skill = flat(example("skills/teamwire/SKILL.md"));
+    let reference = flat(example("skills/teamwire/reference.md"));
+    for phrase in [
+        "starts with `nothing to do:`",
+        "waive it with the member's report as the reason",
+        "A handoff summary always starts with `handoff:`",
+        "at most two fix rounds per owner, then `teamwire verify`",
+        "steered into its session",
+    ] {
+        assert!(skill.contains(phrase), "the skill lacks: {phrase}");
+    }
+    assert!(!skill.contains("one fix round per owner"));
+    assert!(!skill.contains("has the lines typed into its pane instead"));
+    assert!(
+        reference.contains("A role that does not write code commits nothing."),
+        "{reference}"
+    );
+    assert!(!reference.contains("finish its step, commit, run"));
+    let afk = flat(example("skills/afk/SKILL.md"));
+    assert!(afk.contains("warning: no closer reported"), "{afk}");
+    assert!(afk.contains("Close anyway"), "{afk}");
+}

@@ -74,7 +74,7 @@ stopped.
 4. Waves, each through the planning check, until the last planned member reports.
 5. Integrator, when branches join (`teamwire preset integrator`).
 6. Closer, always once code exists (`teamwire preset closer`), with a new watch.
-7. Triage the closer's findings, one fix round per owner, then `teamwire verify`.
+7. Triage the closer's findings, at most two fix rounds per owner, then `teamwire verify`.
 8. Pull requests once the user agrees, then one round on their comments.
 9. `teamwire metrics`, then `teamwire close`.
 
@@ -267,7 +267,7 @@ needs `mode`, as the last column shows.
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. A brief never offers it a worktree. It runs tests in its own clone. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
 | `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for, then reports ranked findings, each with the brief's file and line. Start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. | `pane` (launch refuses `worktree`) |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
-| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists, in a clone of its own. Reverts the fix behind each claimed new test and each finding graded wrong conclusion, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
+| `closer` | Runs every check the team claimed, on each member's branch and again on the joined head when one exists, in a clone of its own. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode and a plan
@@ -639,6 +639,11 @@ unread, the hook holds delivery once and tells the member what to fix. The
 second stop delivers anyway, and `teamwire verify` flags what is still
 missing. A member's "tests pass" is a claim, not evidence.
 
+A summary that starts with `nothing to do:` means the brief's "When to do
+nothing" case held, so the member changed nothing on purpose and recorded
+`done`. Verify then flags `no-commits`, which is expected: waive it with the
+member's report as the reason.
+
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
@@ -801,7 +806,9 @@ yours:
 
 - When a member records `done` with a summary that starts with `handoff:`,
   run `teamwire handoff <team> --role <role>`. It gives the member a fresh
-  session in the same seat. Read any `warning:` line it prints.
+  session in the same seat. Read any `warning:` line it prints. A handoff
+  summary always starts with `handoff:`. Any other prefix, such as
+  `nothing to do:` or `2 questions for the parent.`, comes after it.
 - Hand off a member that is past its handoff point before you send it a
   reprompt with findings, so the fixes run in a fresh context.
 
@@ -893,11 +900,11 @@ members merge, build, test and push, and you judge what they report.
    teamwire pr-watch -R OWNER/REPO -i 45 3453 3454
    ```
 
-   A lead with no Monitor tool has the lines typed into its pane instead.
-   A Codex lead runs
+   A lead with no Monitor tool gets the lines another way. A Codex lead runs
    `teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454` in
-   the background, and a pi lead calls the `teamwire_pr_watch` tool. Their
-   lead files give the exact form.
+   the background, and each line is typed into its pane. A pi lead calls
+   the `teamwire_pr_watch` tool, and each line is steered into its session
+   as a message. Their lead files give the exact form.
 
    "Pull request lines" in `reference.md` explains each line it prints and
    its exit codes. Read a `DONE` line's merge state before anyone merges.
