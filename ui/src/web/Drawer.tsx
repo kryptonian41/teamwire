@@ -7,7 +7,6 @@ import { Timeline } from "./Timeline.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
-import { href } from "./model/route.ts";
 import { countText, handoffHistory, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
 import { acceptsLine, ownsLine, spanText, startedByLine } from "./model/status.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
@@ -47,7 +46,8 @@ export function Drawer({
     closeRef.current?.focus();
     return () => {
       if (page) page.inert = false;
-      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href="${href.member(team, member.role)}"]`);
+      // The link's hash also names the tab, so match on its tail.
+      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href$="/member/${member.role}"]`);
       back?.focus();
     };
   }, [team, member.role]);

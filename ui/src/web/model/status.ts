@@ -55,6 +55,30 @@ export function unansweredLines(s: Pick<StatusView, "unanswered_questions">): st
   );
 }
 
+export interface QuestionRow {
+  id: string;
+  from: string;
+  /** The recipients, joined. */
+  to: string;
+  age: string;
+  /** The question's excerpt when the status messages still hold it, else null. */
+  text: string | null;
+  /** True when this team's lead is among the recipients. A lead of another team does not count. */
+  toLead: boolean;
+}
+
+/** Every unanswered question as one row, for the team page's "Needs a look" list. */
+export function questionRows(s: Pick<StatusView, "unanswered_questions" | "messages">): QuestionRow[] {
+  return s.unanswered_questions.map((q) => ({
+    id: q.display_id,
+    from: q.from,
+    to: q.to.join(", "),
+    age: spanText(q.age_s),
+    text: s.messages.find((m) => m.display_id === q.display_id)?.excerpt ?? null,
+    toLead: q.to.includes("lead"),
+  }));
+}
+
 export function startedByLine(m: Pick<MemberView, "started_by" | "older_build">): string | null {
   if (m.started_by === null) return null;
   return `Started by teamwire ${m.started_by}${m.older_build ? " (older than this teamwire)" : ""}`;

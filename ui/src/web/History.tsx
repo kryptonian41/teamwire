@@ -137,9 +137,9 @@ export function Archive({ dir }: { dir: string }) {
                   <thead>
                     <tr>
                       <th>Role</th>
-                      <th>Model</th>
                       <th>Verify</th>
-                      <th>Tokens</th>
+                      <th className="num">Tokens</th>
+                      <th>Model</th>
                       <th>Why removed</th>
                     </tr>
                   </thead>

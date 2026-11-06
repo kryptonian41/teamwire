@@ -101,16 +101,14 @@ export function Loading({ what }: { what: string }) {
   );
 }
 
-/** The Model, Verify and Tokens cells of a members table row, from the event log. */
+/** The Verify, Tokens and Model cells of a members table row, from the event log. */
 export function MemberEventCells({ rows, role }: { rows: readonly EventRow[]; role: string }) {
   const verify = verifyChip(rows, role);
   return (
     <>
-      <td>{modelText(rows, role) ?? "—"}</td>
-      <td>
-        <StateChip word={verify.text} category={verify.category} />
-      </td>
+      <td>{verify.text === "—" ? "—" : <StateChip word={verify.text} category={verify.category} />}</td>
       <td className="num">{tokensText(rows, role)}</td>
+      <td>{modelText(rows, role) ?? "—"}</td>
     </>
   );
 }

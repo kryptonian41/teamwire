@@ -12,5 +12,11 @@ test("drawer children do not shrink inside the flex column", () => {
 
 test("the members table keeps its width and its one-line columns", () => {
   expect(css).toMatch(/\.members\s*\{[^}]*min-width:\s*1100px/);
-  expect(css).toMatch(/\.members td:nth-child\(n\+9\)[^{]*\{[^}]*white-space:\s*nowrap/);
+  expect(css).toMatch(/\.members td:nth-child\(n\+2\)[^{]*\{[^}]*white-space:\s*nowrap/);
+});
+
+// The three places team uiplus will fill with buttons must take no space while empty,
+// or the header, the drawer header and every question row carry a blank gap.
+test("an empty action place takes no space", () => {
+  expect(css).toMatch(/\.team-actions:empty,\s*\.member-actions:empty,\s*\.question-actions:empty\s*\{[^}]*display:\s*none/);
 });

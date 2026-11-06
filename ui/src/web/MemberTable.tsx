@@ -1,36 +1,34 @@
 import type { EventRow } from "../shared/teamwire.ts";
 import { MemberEventCells, StateChip } from "./components.tsx";
-import { href } from "./model/route.ts";
+import { href, type Tab } from "./model/route.ts";
 import { startedByLine } from "./model/status.ts";
 import { contextLabel, formatAge, pastHandoff, type TeamModel } from "./model/teams.ts";
 
-export function MemberTable({ team, rows }: { team: TeamModel; rows: readonly EventRow[] }) {
+/** Seven columns, so the table fits the page at 1280 px. The branch is in the drawer. */
+export function MemberTable({ team, tab, rows }: { team: TeamModel; tab: Tab; rows: readonly EventRow[] }) {
   if (team.members.length === 0) return <p className="quiet">No members reported.</p>;
   const name = team.name ?? "";
   const go = (role: string) => {
-    location.hash = href.member(name, role);
+    location.hash = href.member(name, role, tab);
   };
   return (
     <div className="table-wrap">
       <table className="members">
         <thead>
           <tr>
-            <th>Role</th>
-            <th>Title</th>
-            <th>Kind</th>
+            <th>Member</th>
             <th>State</th>
-            <th>Gen</th>
             <th>Age / deadline</th>
             <th>Result</th>
-            <th>Branch</th>
-            <th>Model</th>
             <th>Verify</th>
-            <th>Tokens</th>
+            <th className="num">Tokens</th>
+            <th>Model</th>
           </tr>
         </thead>
         <tbody>
           {team.members.map((m) => {
             const age = formatAge(m.age_s, m.deadline_s);
+            const ctx = contextLabel(m.context);
             return (
               <tr
                 key={m.role}
@@ -39,27 +37,19 @@ export function MemberTable({ team, rows }: { team: TeamModel; rows: readonly Ev
                 onClick={() => go(m.role)}
                 onKeyDown={(e) => e.key === "Enter" && go(m.role)}
               >
-                <td>
-                  <a href={href.member(name, m.role)}>{m.role}</a>
-                  {m.older_build && <span className="chip cat-attention badge" title={startedByLine(m) ?? undefined}>older build</span>}
+                <td className="member">
+                  <a href={href.member(name, m.role, tab)}>{m.role}</a>
+                  {m.older_build && <StateChip word="older build" category="attention" title={startedByLine(m) ?? undefined} />}
+                  {pastHandoff(m.context) && (
+                    <StateChip word="past handoff" category="attention" title={`context ${m.context?.tokens} is at or past the handoff point ${m.context?.handoff_at}`} />
+                  )}
+                  <small>
+                    {[m.title, m.kind ?? "kind unknown", `gen ${m.generation}`, ctx === null ? null : `context ${ctx}`].filter((p) => p !== null).join(" · ")}
+                  </small>
                 </td>
-                <td className="title">{m.title}</td>
-                <td>{m.kind ?? "?"}</td>
                 <td>
                   <StateChip word={m.state} category={m.category} />
-                  {contextLabel(m.context) && (
-                    <span className="ctx" title={`context: ${m.context?.tokens} of ${m.context?.window} tokens`}>
-                      {" "}
-                      {contextLabel(m.context)}
-                    </span>
-                  )}
-                  {pastHandoff(m.context) && (
-                    <span className="flag badge" title={`context ${m.context?.tokens} is at or past the handoff point ${m.context?.handoff_at}`}>
-                      past handoff
-                    </span>
-                  )}
                 </td>
-                <td>{m.generation}</td>
                 <td>
                   <div className={`age${age.overdue ? " overdue" : ""}`} title={age.overdue ? "Past its deadline" : undefined}>
                     <span className="bar" aria-hidden="true">
@@ -72,7 +62,6 @@ export function MemberTable({ team, rows }: { team: TeamModel; rows: readonly Ev
                   </div>
                 </td>
                 <td>{m.result ?? "–"}</td>
-                <td>{m.branch ? <code>{m.branch}</code> : "–"}</td>
                 <MemberEventCells rows={rows} role={m.role} />
               </tr>
             );
