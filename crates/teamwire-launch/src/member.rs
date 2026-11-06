@@ -430,12 +430,19 @@ fn run_member(
     // The team row's title: an `--add` spec may name another one.
     let team_title =
         hold::team_of(ctx.store).map_or_else(|| crate::plan::clean(&plan.spec.title), |t| t.title);
+    // The row's generation: a reprompt while the member was starting, kept
+    // by `relaunch_failed_member`, can have raised it past 1.
+    let generation = ctx
+        .store
+        .read(|tx| tx.member(role))
+        .ok()
+        .flatten()
+        .map_or(1, |row| row.generation);
     let request = teamwire_core::SpawnRequest {
         name: m.address.clone(),
         title: m.spec.title.clone(),
         team_title,
-        // `insert_member` starts every member at generation 1.
-        generation: 1,
+        generation,
         cwd: m.cwd.clone(),
         argv: spec.argv,
         env,
