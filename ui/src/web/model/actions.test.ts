@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ActionResult } from "../../shared/api.ts";
-import { canClose, canCloseTeam, canMessage, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
+import { canClose, canCloseTeam, canMessage, canReprompt, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
 
 const r = (exit: number | null, stderr = "", stdout = ""): ActionResult => ({ exit, stdout, stderr, leadNotes: [] });
 
@@ -110,5 +110,16 @@ describe("closing the team", () => {
     expect(canCloseTeam(r(0), "alph", "alpha")).toBe(false);
     expect(canCloseTeam(r(0), " alpha", "alpha")).toBe(false);
     expect(canCloseTeam(r(0), "alpha", "alpha")).toBe(true);
+  });
+});
+
+describe("canReprompt", () => {
+  test("a reprompt is offered only to a running implementer or investigator, as the CLI's rule says", () => {
+    expect(canReprompt("implementer", "started")).toBe(true);
+    expect(canReprompt("investigator", "creating")).toBe(true);
+    expect(canReprompt("implementer", "failed")).toBe(false);
+    expect(canReprompt("implementer", "removed")).toBe(false);
+    expect(canReprompt("implementer", null)).toBe(false);
+    expect(canReprompt("reviewer", "started")).toBe(false);
   });
 });

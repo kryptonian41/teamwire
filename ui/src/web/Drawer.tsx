@@ -4,7 +4,7 @@ import type { FileRef } from "../shared/api.ts";
 import type { EventRow, RosterMember } from "../shared/teamwire.ts";
 import { StateChip } from "./components.tsx";
 import { MessageButton } from "./Actions.tsx";
-import { canMessage } from "./model/actions.ts";
+import { canMessage, canReprompt } from "./model/actions.ts";
 import { Timeline } from "./Timeline.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
@@ -93,12 +93,10 @@ export function Drawer({
             <StateChip word={member.state} category={member.category} />
             {/* Empty while actions are off, and then it takes no space. Plan D4: reviewers, closers and plan reviewers get no message control. */}
             <div className="member-actions">
-              {actions && canMessage(member.kind) && (
-                <>
-                  <MessageButton team={team} to={member.role} type="reprompt" label="Reprompt" title={`Reprompt ${member.role}`} />
-                  <MessageButton team={team} to={member.role} type="note" label="Note" title={`Note to ${member.role}`} />
-                </>
+              {actions && canReprompt(member.kind, roster?.lifecycle ?? null) && (
+                <MessageButton team={team} to={member.role} type="reprompt" label="Reprompt" title={`Reprompt ${member.role}`} />
               )}
+              {actions && canMessage(member.kind) && <MessageButton team={team} to={member.role} type="note" label="Note" title={`Note to ${member.role}`} />}
               {actions && (
                 <button className="btn" onClick={onCloseMember}>
                   Close member

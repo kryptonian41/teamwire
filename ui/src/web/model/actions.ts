@@ -3,7 +3,7 @@
 // functions only keep the page from offering what the CLI would refuse.
 
 import type { ActionResult, LeadNote } from "../../shared/api.ts";
-import type { MemberKind } from "../../shared/teamwire.ts";
+import type { Lifecycle, MemberKind } from "../../shared/teamwire.ts";
 
 export interface Outcome {
   ok: boolean;
@@ -13,6 +13,11 @@ export interface Outcome {
 /** Plan D4: the user messages implementers and investigators. Reviewers, closers and plan reviewers stay lead-only. */
 export function canMessage(kind: MemberKind | null): boolean {
   return kind === "implementer" || kind === "investigator";
+}
+
+/** The CLI starts a new generation only for a member that is running (`creating` or `started` in the roster). Null: no roster entry. */
+export function canReprompt(kind: MemberKind | null, lifecycle: Lifecycle | null): boolean {
+  return canMessage(kind) && (lifecycle === "creating" || lifecycle === "started");
 }
 
 /** The CLI's own words: stderr, or stdout when stderr is empty. */
