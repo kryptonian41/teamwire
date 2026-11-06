@@ -27,6 +27,18 @@ export interface AttentionItem {
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const capital = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
+/** What a member's attention or failed state means, in plain words; the mark keeps the raw word. */
+const STATE_TEXT: Record<string, string> = {
+  "done(failed)": "finished as failed",
+  "failed to start": "never started",
+  blocked: "reported that it is blocked",
+  "died?": "shows no sign of life",
+  "done(blocked)": "finished blocked",
+  unreported: "finished without a report",
+  "prompted outside teamwire": "was prompted outside teamwire",
+};
+const stateText = (state: string): string => STATE_TEXT[state] ?? `is in state ${state}`;
+
 /**
  * Rows for every team, in the order the teams are given. A question to the lead counts at any age,
  * unlike the overview card's flag, which waits 10 minutes. A finished member past its handoff point
@@ -39,9 +51,7 @@ export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
     const rows: AttentionItem[] = [];
     for (const e of s.errors) rows.push(row("error", null, e, "failed", "Read error"));
     for (const m of t.members) {
-      if (m.category !== "failed") continue;
-      const text = m.state === "done(failed)" ? "finished as failed" : m.state === "failed to start" ? "never started" : `is ${m.state}`;
-      rows.push(row("failed", m.role, text, "failed", m.state));
+      if (m.category === "failed") rows.push(row("failed", m.role, stateText(m.state), "failed", m.state));
     }
     const undelivered = new Set(s.undelivered_results.map((r) => r.role));
     for (const r of s.undelivered_results) rows.push(row("undelivered", r.role, `result ${r.n} is ${r.report_state}`, "failed", "Undelivered"));
@@ -61,7 +71,7 @@ export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
     }
     for (const m of t.members) {
       // teamwire prints `late` for a live member past its deadline, before it checks for `working`.
-      if (m.category === "attention" && m.state !== "late" && !undelivered.has(m.role)) rows.push(row("member", m.role, `is ${m.state}`, "attention", m.state));
+      if (m.category === "attention" && m.state !== "late" && !undelivered.has(m.role)) rows.push(row("member", m.role, stateText(m.state), "attention", m.state));
       const age = formatAge(m.age_s, m.deadline_s);
       if (m.state === "late") rows.push(row("deadline", m.role, `past its deadline: ${age.label}`, "attention", "Late"));
       if (m.context && pastHandoff(m.context)) {
@@ -74,9 +84,13 @@ export function attentionItems(teams: readonly TeamModel[]): AttentionItem[] {
     }
     if (s.state === "open" && s.afk?.spent) rows.push(row("afk", null, `AFK budget spent, ${plural(s.afk.decisions, "decision")} recorded`, "attention", "AFK spent"));
     const working = t.members.filter((m) => m.state === "working" || m.state === "late").length;
+    const stale = s.watch.state === "stale";
+    // No watch matters while someone works; a stale watch is a left-behind lease, so it matters at any time.
     if (s.state === "open" && working > 0 && s.watch.state !== "running") {
-      const stale = s.watch.state === "stale";
       rows.push(row("nowatch", null, `${plural(working, "member")} ${working === 1 ? "is" : "are"} working and ${stale ? "the watch is stale" : "no watch is running"}`, "unknown", stale ? "Watch stale" : "No watch"));
+    } else if (s.state === "open" && stale) {
+      const beat = s.watch.heartbeat_age_s === null ? "no heartbeat recorded" : `last heartbeat ${spanText(s.watch.heartbeat_age_s)} ago`;
+      rows.push(row("nowatch", null, `the watch is stale, ${beat}`, "unknown", "Watch stale"));
     }
     return rows.sort((a, b) => ATTENTION_KINDS.indexOf(a.kind) - ATTENTION_KINDS.indexOf(b.kind));
   });

@@ -122,14 +122,17 @@ test("a dead or blocked lead of an open team is an attention row; a working or i
 
 test("a member needing attention gets a row with its state word, unless a late, undelivered or unknown state already covers it", () => {
   const m = (role: string, state: string) => ({ ...member, role, state });
-  expect(mark({ members: [m("a", "blocked"), m("b", "died?"), m("c", "done(blocked)"), m("d", "snoozing")] })).toEqual([
-    ["member", "a", "attention", "blocked", "is blocked"],
-    ["member", "b", "attention", "died?", "is died?"],
-    ["member", "c", "attention", "done(blocked)", "is done(blocked)"],
+  expect(mark({ members: [m("a", "blocked"), m("b", "died?"), m("c", "done(blocked)"), m("d", "snoozing"), m("e", "unreported"), m("f", "prompted outside teamwire"), m("g", "unconfirmed")] })).toEqual([
+    ["member", "a", "attention", "blocked", "reported that it is blocked"],
+    ["member", "b", "attention", "died?", "shows no sign of life"],
+    ["member", "c", "attention", "done(blocked)", "finished blocked"],
+    ["member", "e", "attention", "unreported", "finished without a report"],
+    ["member", "f", "attention", "prompted outside teamwire", "was prompted outside teamwire"],
+    ["member", "g", "attention", "unconfirmed", "is in state unconfirmed"],
   ]);
   // A late member has its deadline row; a member with an undelivered result has that row.
   expect(mark({ members: [m("a", "late"), m("f", "undelivered")], undelivered_results: [{ role: "f", n: 1, report_state: "undelivered", path: "/x" }] }).map((r) => r[0])).toEqual(["undelivered", "deadline"]);
-  expect(mark({ members: [m("f", "undelivered")] })).toEqual([["member", "f", "attention", "undelivered", "is undelivered"]]);
+  expect(mark({ members: [m("f", "undelivered")] })).toEqual([["member", "f", "attention", "undelivered", "is in state undelivered"]]);
 });
 
 test("a spent AFK budget of an open team is an attention row", () => {
@@ -139,8 +142,27 @@ test("a spent AFK budget of an open team is an attention row", () => {
   expect(mark({ state: "closed", afk })).toEqual([]);
 });
 
-test("a stale watch's row says so in its word", () => {
-  expect(mark({ members: [member], watch: { state: "stale", pid: 9, heartbeat_age_s: 900 } })[0]!.slice(2, 4)).toEqual(["unknown", "Watch stale"]);
+test("a stale watch on an open team gets a row whether or not anyone works, and says so in its word", () => {
+  const stale = { state: "stale" as const, pid: 9, heartbeat_age_s: 900 };
+  expect(mark({ members: [member], watch: stale })).toEqual([["nowatch", null, "unknown", "Watch stale", "1 member is working and the watch is stale"]]);
+  expect(mark({ members: [{ ...member, state: "quiet" }], watch: stale })).toEqual([["nowatch", null, "unknown", "Watch stale", "the watch is stale, last heartbeat 15 min ago"]]);
+  expect(mark({ members: [], watch: { ...stale, heartbeat_age_s: null } })).toEqual([["nowatch", null, "unknown", "Watch stale", "the watch is stale, no heartbeat recorded"]]);
+  expect(mark({ state: "closed", members: [], watch: stale })).toEqual([]);
+  // The docs fixture: a stale watch, nobody working.
+  const docs = attentionItems(joinAll(S, T)).filter((r) => r.team === "docs" && r.kind === "nowatch");
+  expect(docs.map((r) => [r.word, r.text])).toEqual([["Watch stale", "the watch is stale, last heartbeat 15 min ago"]]);
+});
+
+test("rows pushed out of table order are sorted back, inside a team and in the ranking", () => {
+  // A member past its handoff point comes before a blocked member in the roster, but handoff ranks after member.
+  const ctx = { tokens: 5, window: 9, pct: 1, handoff_at: 5 };
+  const rows = items({ members: [{ ...member, context: ctx }, { ...member, role: "z", state: "blocked" }], errors: ["e"] });
+  expect(rows.map((r) => `${r.kind}:${r.member}`)).toEqual(["error:null", "member:z", "handoff:api"]);
+  // rankAttention on its own puts a team's rows back in the table's order too.
+  const given = attentionItems([joinTeam({ ...quiet, members: [{ ...member, context: ctx }, { ...member, role: "z", state: "blocked" }] }, T)]);
+  const shuffled = [given[1]!, given[0]!];
+  expect(shuffled.map((r) => r.kind)).toEqual(["handoff", "member"]);
+  expect(rankAttention(shuffled).map((r) => r.kind)).toEqual(["member", "handoff"]);
 });
 
 test("rows of one team run in the table's order", () => {
