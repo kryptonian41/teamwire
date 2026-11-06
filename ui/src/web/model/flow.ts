@@ -6,7 +6,8 @@ import type { DeliveryState, LogView } from "../../shared/teamwire.ts";
 /** From worst to best. The worst state seen on an edge colours the edge. */
 export const DELIVERY_ORDER: readonly DeliveryState[] = ["undelivered", "unconfirmed", "pending", "handed_off", "acked"];
 
-export type NodeKind = "lead" | "member" | "external";
+/** `user` is the human user (`teamwire send --from user`, ADR 0040): a sender, never a member. */
+export type NodeKind = "lead" | "member" | "external" | "user";
 
 export interface FlowNode {
   id: string;
@@ -30,6 +31,7 @@ export const worseOf = (a: DeliveryState, b: DeliveryState): DeliveryState =>
 
 function kindOf(id: string): NodeKind {
   if (id.includes("@")) return "external";
+  if (id === "user") return "user";
   return id === "lead" ? "lead" : "member";
 }
 
@@ -85,12 +87,12 @@ const LABEL_GAP = 11;
 
 /**
  * The lead sits in the centre, members on a circle around it, and external
- * parties on an arc outside that circle, across the top. The circle grows
+ * parties and the user on an arc outside that circle, across the top. The circle grows
  * and the nodes shrink as members are added, so that neighbours stay apart.
  */
 export function layoutFlow(graph: FlowGraph, minWidth = 640, minHeight = 520): Layout {
   const members = graph.nodes.filter((n) => n.kind === "member");
-  const externals = graph.nodes.filter((n) => n.kind === "external");
+  const externals = graph.nodes.filter((n) => n.kind === "external" || n.kind === "user");
   const r = members.length > 10 ? 12 : 22;
   // Each member needs room for its circle and the label beside it.
   const inner = Math.max(minHeight * 0.27, (members.length * (2 * r + 42)) / (2 * Math.PI));

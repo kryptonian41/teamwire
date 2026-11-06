@@ -204,6 +204,28 @@ export const CloseTeamBody = z.strictObject({
   confirmName: z.string(),
 });
 
+/** A note the server sent to the team's lead about an action (plan D3). */
+export interface LeadNote {
+  text: string;
+  /** True when `teamwire send` exited 0. */
+  told: boolean;
+  /** Why the lead was not told, empty when it was. */
+  detail: string;
+}
+
+/**
+ * The answer to an action that ran its command: HTTP 200 for every exit
+ * code, because each code means something different to the user.
+ */
+export interface ActionResult {
+  /** The command's exit code, or null when it passed its time limit and was killed: the outcome is unknown (plan D12). */
+  exit: number | null;
+  stdout: string;
+  stderr: string;
+  /** In the order sent. Empty for a message: the CLI's lead copy covers those. */
+  leadNotes: LeadNote[];
+}
+
 export type SendBody = z.infer<typeof SendBody>;
 export type CloseMemberBody = z.infer<typeof CloseMemberBody>;
 export type CloseTeamBody = z.infer<typeof CloseTeamBody>;
@@ -233,6 +255,9 @@ export type DecisionQuery = { grep: string } | { ref: string };
  * | `GET /api/decisions?grep=TEXT` | `DecisionsView` from `teamwire decisions --grep TEXT --json`, across all teams. TEXT is 1 to 200 characters and does not start with `-` |
  * | `GET /api/decisions?ref=PROVIDER:ID` | `DecisionsView` from `teamwire decisions --ref=PROVIDER:ID --json`. Exactly one of `grep` and `ref` |
  * | `GET /api/teams/:team/metrics` | `MetricsView` from `teamwire metrics <team> --json`, cached 60 s per team |
+ * | `POST /api/teams/:team/actions/send` | `ActionResult`. Body `SendBody`. Only with actions on |
+ * | `POST /api/teams/:team/actions/close-member` | `ActionResult`. Body `CloseMemberBody`. Only with actions on |
+ * | `POST /api/teams/:team/actions/close-team` | `ActionResult`. Body `CloseTeamBody`. Only with actions on |
  *
  * Any other status than 200 carries a `Problem` as JSON.
  */
@@ -254,4 +279,5 @@ export const api = {
   decisions: (q: DecisionQuery) =>
     "grep" in q ? `/api/decisions?grep=${encodeURIComponent(q.grep)}` : `/api/decisions?ref=${encodeURIComponent(q.ref)}`,
   teamMetrics: (team: string) => `/api/teams/${team}/metrics`,
+  action: (team: string, name: "send" | "close-member" | "close-team") => `/api/teams/${team}/actions/${name}`,
 } as const;

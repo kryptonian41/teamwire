@@ -56,6 +56,11 @@ describe("log and events additions", () => {
     expect(byId.get("m004")!.commit).toBe("4f1c2ab");
     expect(byId.get("m005")!.deliveries[0]!.reason).toBe("not_at_input_prompt");
   });
+  test("a message from the user parses, with the lead's copy as one more recipient and delivery", () => {
+    const m = LogView.parse(log).messages.find((x) => x.from === "user")!;
+    expect(m.to).toEqual(["ledger", "lead"]);
+    expect(m.deliveries.map((d) => d.to)).toEqual(["ledger", "lead"]);
+  });
   test("log from an older teamwire without the new keys still parses", () => {
     const old = { messages: [{ ...log.messages[0]!, re: undefined, commit: undefined, deliveries: [{ to: "ledger", state: "acked", attempts: 1 }] }] };
     expect(LogView.safeParse(old).success).toBe(true);

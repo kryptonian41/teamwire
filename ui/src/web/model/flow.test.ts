@@ -12,6 +12,7 @@ test("nodes are the lead, each role and every external party", () => {
   expect(ids).toContain("external:api@billing");
   expect(ids).toContain("external:db@billing");
   expect(ids).toContain("member:fraud");
+  expect(ids).toContain("user:user");
 });
 
 test("an edge counts messages and keeps the worst delivery state", () => {
@@ -82,4 +83,20 @@ test("a label never lands on another node", () => {
       if (o !== n) expect(Math.hypot(n.label.x - o.x, n.label.y - o.y)).toBeGreaterThan(lay.r);
     }
   }
+});
+
+test("the user is its own kind of party, placed on the outer arc with other teams, not among the members", () => {
+  const msg = (from: string, to: string[]) => ({ display_id: "m1", time: "t", type: "note" as const, from, to, excerpt: "", deliveries: [] });
+  const g = buildFlow({ messages: [msg("user", ["impl", "lead"]), msg("user", ["lead"])] }, ["impl"]);
+  expect(g.nodes.find((n) => n.id === "user")?.kind).toBe("user");
+  expect(g.nodes.find((n) => n.id === "impl")?.kind).toBe("member");
+  expect(g.edges.find((e) => e.from === "user" && e.to === "lead")?.count).toBe(2);
+  const lay = layoutFlow(g);
+  expect(lay.nodes.map((n) => n.id).sort()).toEqual(["impl", "lead", "user"]);
+  const at = (id: string) => lay.nodes.find((n) => n.id === id)!;
+  const lead = at("lead");
+  const dist = (id: string) => Math.hypot(at(id).x - lead.x, at(id).y - lead.y);
+  expect(dist("user")).toBeGreaterThan(dist("impl") + 1);
+  // The outer arc runs across the top.
+  expect(at("user").y).toBeLessThan(lead.y);
 });

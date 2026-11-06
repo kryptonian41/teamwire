@@ -5,6 +5,10 @@
 import {
   api,
   AFK_FILE_NAMES,
+  type ActionResult,
+  type CloseMemberBody,
+  type CloseTeamBody,
+  type SendBody,
   FILE_KINDS,
   type ArchiveEntry,
   type DecisionQuery,
@@ -69,10 +73,14 @@ export interface ApiClient {
   searchDecisions(query: DecisionQuery): Promise<DecisionsView>;
   /** `teamwire metrics <team>`, including `teamwire.member.tokens`. */
   teamMetrics(team: string): Promise<MetricsView>;
+  /** The write actions. The server answers 404 unless it runs with actions on. */
+  send(team: string, body: SendBody): Promise<ActionResult>;
+  closeMember(team: string, body: CloseMemberBody): Promise<ActionResult>;
+  closeTeam(team: string, body: CloseTeamBody): Promise<ActionResult>;
 }
 
-async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
-  const res = await fetch(url, { credentials: "same-origin", signal });
+async function getJson(url: string, signal?: AbortSignal, init: RequestInit = {}): Promise<unknown> {
+  const res = await fetch(url, { credentials: "same-origin", signal, ...init });
   const body: unknown = await res.json().catch(() => null);
   if (!res.ok) {
     const p = body as Partial<Problem> | null;
@@ -134,7 +142,15 @@ export const httpClient: ApiClient = {
   teamDecisions: async (team) => DecisionsViewSchema.parse(await getJson(api.teamDecisions(team))),
   searchDecisions: async (q) => DecisionsViewSchema.parse(await getJson(api.decisions(q))),
   teamMetrics: async (team) => MetricsViewSchema.parse(await getJson(api.teamMetrics(team))),
+  send: (team, body) => postJson(api.action(team, "send"), body),
+  closeMember: (team, body) => postJson(api.action(team, "close-member"), body),
+  closeTeam: (team, body) => postJson(api.action(team, "close-team"), body),
 };
+
+/** The browser adds our Origin to a POST; the server refuses a write without it. */
+async function postJson(url: string, body: unknown): Promise<ActionResult> {
+  return (await getJson(url, undefined, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })) as ActionResult;
+}
 
 /** The mock moves on every 5 s, like the server's poll. */
 export const MOCK_INTERVAL_MS = 5000;
@@ -225,7 +241,15 @@ export const mockClient: ApiClient = {
   teamDecisions: async (team) => ({ ...baseDecisions, teams: baseDecisions.teams.filter((t) => t.team === team) }),
   searchDecisions: mockSearchDecisions,
   teamMetrics: async (team) => ({ ...baseMetrics, metrics: baseMetrics.metrics.filter((m) => m.labels.some(([k, v]) => k === "team" && v === team)) }),
+  send: mockAction,
+  closeMember: mockAction,
+  closeTeam: mockAction,
 };
+
+/** Mock mode shows no action control, so this answers only a hand-made call. */
+async function mockAction(): Promise<ActionResult> {
+  return { exit: 1, stdout: "", stderr: "mock mode runs no action", leadNotes: [] };
+}
 
 /** The fixture team matches when the text is in a block, or the ref is one of its refs. */
 async function mockSearchDecisions(q: DecisionQuery): Promise<DecisionsView> {

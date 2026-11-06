@@ -70,9 +70,9 @@ export function Flow({
           );
         })}
         {layout.nodes.map((n) => (
-          <g key={n.id} className={`node cat-${categories.get(n.id) ?? "idle"}${n.kind === "external" ? " external" : ""}`}>
+          <g key={n.id} className={`node cat-${categories.get(n.id) ?? "idle"}${n.kind === "external" || n.kind === "user" ? ` ${n.kind}` : ""}`}>
             <title>
-              {n.id} ({n.kind === "external" ? "other team" : n.kind}
+              {n.id} ({n.kind === "external" ? "other team" : n.kind === "user" ? "the human user" : n.kind}
               {categories.has(n.id) ? `, ${categories.get(n.id)}` : ""})
             </title>
             <circle cx={n.x} cy={n.y} r={layout.r} />

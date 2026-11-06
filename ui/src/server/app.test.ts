@@ -26,8 +26,9 @@ afterAll(() => rmSync(home, { recursive: true, force: true }));
 const ok = (data: unknown, problems: unknown[] = []) => ({ ok: true, data, problems });
 const emptyStatus = { team: "alpha", title: null, state: null, lead: null, messages: [], stuck_deliveries: [], undelivered_results: [] };
 
-function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean; actions?: boolean } = {}) {
-  const { failEvents, ...appOpts } = opts;
+type Act = (call: CliCall) => unknown;
+function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean; actions?: boolean; act?: Act } = {}) {
+  const { failEvents, act, ...appOpts } = opts;
   const calls: CliCall[] = [];
   const run = (async (call: CliCall) => {
     calls.push(call);
@@ -64,7 +65,7 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
           errors: ["herdr unreachable"],
         });
       default:
-        return { ok: false, problems: [] };
+        return act ? act(call) : { ok: false, problems: [] };
     }
   }) as unknown as Runner;
   const poller = createPoller({ run, intervalMs: 5000 });
@@ -214,6 +215,44 @@ describe("the write check on action routes", () => {
   test("404 for a team that does not exist", async () => {
     const { app, calls } = setup({ actions: true });
     await refused(post(app, "/api/teams/nope/actions/send", goodSend), 404, calls);
+  });
+});
+
+const out = (exit: number, stdout = "", stderr = "") => ok({ exit, stdout, stderr });
+
+describe("send action", () => {
+  const path = "/api/teams/alpha/actions/send";
+  test("runs one send as the user and returns its exit code and streams; no extra lead note", async () => {
+    const { app, calls } = setup({ actions: true, act: () => out(0, "m009\n  impl: handed_off\n  lead: handed_off", "") });
+    const res = await post(app, path, { to: "impl", type: "reprompt", text: "- stop and commit" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ exit: 0, stdout: "m009\n  impl: handed_off\n  lead: handed_off", stderr: "", leadNotes: [] });
+    expect(calls).toEqual([{ cmd: "send", team: "alpha", to: "impl", type: "reprompt", text: "- stop and commit" }]);
+  });
+  test("a note to the lead is one send to lead", async () => {
+    const { app, calls } = setup({ actions: true, act: () => out(0) });
+    expect((await post(app, path, { to: "lead", type: "note", text: "hi" })).status).toBe(200);
+    expect(calls).toEqual([{ cmd: "send", team: "alpha", to: "lead", type: "note", text: "hi" }]);
+  });
+  test("a non-zero exit is still 200, with the CLI's text", async () => {
+    for (const exit of [1, 3, 4, 5, 6]) {
+      const { app } = setup({ actions: true, act: () => out(exit, "", "REFUSED: recipient_not_allowed") });
+      const res = await post(app, path, { to: "rev", type: "note", text: "hi" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ exit, stderr: "REFUSED: recipient_not_allowed" });
+    }
+  });
+  test("a send past its time limit is 200 with exit null: the outcome is unknown", async () => {
+    const { app } = setup({ actions: true, act: () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "teamwire send passed 60000 ms and was killed" }] }) });
+    const res = await post(app, path, { to: "impl", type: "note", text: "hi" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ exit: null, stdout: "", stderr: "", leadNotes: [] });
+  });
+  test("a form the runner refuses is 400, and a CLI that cannot start is 502", async () => {
+    const refused = setup({ actions: true, act: () => ({ ok: false, problems: [{ code: "bad_request", detail: "bad team name" }] }) });
+    expect((await post(refused.app, path, { to: "impl", type: "note", text: "hi" })).status).toBe(400);
+    const broken = setup({ actions: true, act: () => ({ ok: false, problems: [{ code: "cli_failed", detail: "could not start teamwire" }] }) });
+    expect((await post(broken.app, path, { to: "impl", type: "note", text: "hi" })).status).toBe(502);
   });
 });
 

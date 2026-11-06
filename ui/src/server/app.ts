@@ -2,9 +2,9 @@
 // dependencies as arguments, so tests call it without a socket or a CLI.
 
 import { NAME_RE, type MetricsView } from "../shared/teamwire.ts";
-import { CloseMemberBody, CloseTeamBody, SendBody, type Problem } from "../shared/api.ts";
+import { CloseMemberBody, CloseTeamBody, SendBody, type ActionResult, type LeadNote, type Problem } from "../shared/api.ts";
 import type { z } from "zod";
-import type { Runner } from "./cli.ts";
+import type { ActionOutput, CliCall, Runner } from "./cli.ts";
 import { archiveDir, listArchives, listFiles, parseArchiveName, readKindFile, teamDir } from "./files.ts";
 import type { Poller } from "./poller.ts";
 import { json, problem, type Security } from "./security.ts";
@@ -197,7 +197,8 @@ export function createApp(deps: AppDeps): App {
         const body = await readBody(req, SendBody);
         if (!body.ok) return body.res;
         if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
-        return notFound("send is not built yet");
+        const sent = await runAction({ cmd: "send", team, ...body.data });
+        return sent.ok ? json(result(sent.out, [])) : sent.res;
       }
       case "close-member": {
         const body = await readBody(req, CloseMemberBody);
@@ -213,6 +214,14 @@ export function createApp(deps: AppDeps): App {
         return notFound("close-team is not built yet");
       }
     }
+  }
+
+  /** A timeout is a result (outcome unknown), not an error: the command may have done its work. */
+  async function runAction(call: Extract<CliCall, { cmd: "send" | "closeMember" | "closeTeam" }>): Promise<{ ok: true; out: ActionOutput | null } | { ok: false; res: Response }> {
+    const res = await deps.run(call);
+    if (res.ok) return { ok: true, out: res.data };
+    if (res.problems[0]?.code === "cli_timeout") return { ok: true, out: null };
+    return { ok: false, res: cliResponse(res) };
   }
 
   return {
@@ -249,6 +258,10 @@ export function createApp(deps: AppDeps): App {
       return notFound("no such route");
     },
   };
+}
+
+function result(out: ActionOutput | null, leadNotes: LeadNote[]): ActionResult {
+  return { exit: out?.exit ?? null, stdout: out?.stdout ?? "", stderr: out?.stderr ?? "", leadNotes };
 }
 
 function methodNotAllowed(): Response {

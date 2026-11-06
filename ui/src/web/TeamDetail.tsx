@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import { AfkFiles, Empty, RefChips, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
+import { MessageButton } from "./Actions.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
 import { MemberTable } from "./MemberTable.tsx";
 import { MessageSection } from "./Messages.tsx";
@@ -77,8 +78,10 @@ export function TeamDetail({
         </p>
         <div className="team-title">
           <h1>{team.title}</h1>
-          {/* Reserved for team uiplus's team action buttons. Empty, it takes no space. */}
-          <div className="team-actions" />
+          {/* Empty while actions are off, and then it takes no space. */}
+          <div className="team-actions">
+            {snapshot.actions && <MessageButton team={name} to="lead" type="note" label="Message lead" title={`Note to the lead of ${name}`} />}
+          </div>
         </div>
         <div className="meta">
           <code>{team.name}</code>
@@ -115,7 +118,7 @@ export function TeamDetail({
           {s.afk && <AfkFiles id={name} files={files.data ?? []} load={(n) => client.teamFile(name, "afk", n)} />}
           <h2>Members</h2>
           <MemberTable team={team} tab={tab} rows={timeline.rows} />
-          <NeedsLook team={team} />
+          <NeedsLook team={team} actions={snapshot.actions} />
           {team.removed.length > 0 && (
             <details>
               <summary>Removed members ({team.removed.length})</summary>
@@ -178,6 +181,7 @@ export function TeamDetail({
           roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
           files={files.data ?? []}
           rows={timeline.rows}
+          actions={snapshot.actions}
           onClose={() => {
             location.hash = href.team(team.name ?? "", tab);
           }}

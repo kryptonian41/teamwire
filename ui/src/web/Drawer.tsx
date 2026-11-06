@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 import type { FileRef } from "../shared/api.ts";
 import type { EventRow, RosterMember } from "../shared/teamwire.ts";
 import { StateChip } from "./components.tsx";
+import { MessageButton } from "./Actions.tsx";
+import { canMessage } from "./model/actions.ts";
 import { Timeline } from "./Timeline.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
@@ -17,6 +19,7 @@ export function Drawer({
   roster,
   files,
   rows,
+  actions,
   onClose,
 }: {
   team: string;
@@ -24,6 +27,8 @@ export function Drawer({
   roster: RosterMember | null;
   files: FileRef[];
   rows: readonly EventRow[];
+  /** Write actions are on: show the member's action buttons. */
+  actions: boolean;
   onClose: () => void;
 }) {
   const client = useClient();
@@ -83,8 +88,15 @@ export function Drawer({
           </div>
           <div className="drawer-controls">
             <StateChip word={member.state} category={member.category} />
-            {/* Reserved for team uiplus's member action buttons. Empty, it takes no space. */}
-            <div className="member-actions" />
+            {/* Empty while actions are off, and then it takes no space. Plan D4: reviewers, closers and plan reviewers get no message control. */}
+            <div className="member-actions">
+              {actions && canMessage(member.kind) && (
+                <>
+                  <MessageButton team={team} to={member.role} type="reprompt" label="Reprompt" title={`Reprompt ${member.role}`} />
+                  <MessageButton team={team} to={member.role} type="note" label="Note" title={`Note to ${member.role}`} />
+                </>
+              )}
+            </div>
             <button ref={closeRef} className="btn" onClick={onClose} aria-label="Close">
               Close
             </button>

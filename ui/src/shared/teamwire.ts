@@ -31,7 +31,10 @@ export const DISPLAY_ID_RE = /^m[0-9]+$/;
 
 /**
  * A sender or recipient: `lead`, a role, or `<role>@<team>` / `lead@<team>`
- * for an agent of another team (teamwire ADR 0016).
+ * for an agent of another team (teamwire ADR 0016). As a sender, `user` is
+ * the human user (ADR 0040), never a member; nobody sends to `user`. A
+ * user's message to a member also lists `lead` in `to` and in `deliveries`:
+ * that row is the lead's copy.
  */
 export const Party = z.string().regex(/^[a-z][a-z0-9_]*(@[a-z][a-z0-9_]*)?$/);
 
@@ -305,6 +308,8 @@ export const EventType = z.enum([
  * and are not part of this schema: the page reads each key it needs with
  * its own check and shows the row plainly when a key is missing, because
  * older rows carry fewer keys (for example `usage` on `result.delivering`).
+ * A `message.sent` row's `sender_kind` is `lead`, `member` or `user`, and its
+ * `role` is null for the user; a `message.refused` row's `sender` may be `user`.
  */
 export const EventRow = z.object({
   seq: z.number().int().positive(),

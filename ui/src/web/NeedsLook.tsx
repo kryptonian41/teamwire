@@ -1,4 +1,6 @@
 import { DeliveryChip } from "./components.tsx";
+import { MessageButton } from "./Actions.tsx";
+import { replyPrefix, replyTarget } from "./model/actions.ts";
 import { questionRows, startedByLine, unreadLines } from "./model/status.ts";
 import type { TeamModel } from "./model/teams.ts";
 
@@ -6,7 +8,7 @@ import type { TeamModel } from "./model/teams.ts";
  * The team's own "Needs a look" section, from `status --json`: unread deliveries, every unanswered
  * question, older builds, stuck deliveries and undelivered results. Not the cross-team queue.
  */
-export function NeedsLook({ team }: { team: TeamModel }) {
+export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean }) {
   const s = team.status;
   const unread = unreadLines(s);
   const questions = questionRows(s);
@@ -27,17 +29,25 @@ export function NeedsLook({ team }: { team: TeamModel }) {
           )}
           {questions.length > 0 && (
             <ul className="questions">
-              {questions.map((q) => (
-                <li key={q.id} className="question">
-                  <code>{q.id}</code>
-                  <span className="sub">
-                    {q.from} → {q.to} · asked {q.age} ago
-                  </span>
-                  <span className="qtext">{q.text ?? "question text not in the latest messages"}</span>
-                  {/* Reserved for team uiplus's "Reply with a note" control. Empty, it takes no space. */}
-                  {q.toLead && <span className="question-actions" />}
-                </li>
-              ))}
+              {questions.map((q) => {
+                // Plan D11: a reply goes to an asker who is an implementer or investigator of this team.
+                const to = actions && team.name !== null ? replyTarget(q.from, team.members) : null;
+                return (
+                  <li key={q.id} className="question">
+                    <code>{q.id}</code>
+                    <span className="sub">
+                      {q.from} → {q.to} · asked {q.age} ago
+                    </span>
+                    <span className="qtext">{q.text ?? "question text not in the latest messages"}</span>
+                    {/* Empty while no reply is offered, and then it takes no space. The question stays unanswered. */}
+                    <span className="question-actions">
+                      {to !== null && team.name !== null && (
+                        <MessageButton team={team.name} to={to} type="note" label="Reply with a note" title={`Reply to ${q.id} with a note to ${to}`} prefix={replyPrefix(q.id)} />
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </>
