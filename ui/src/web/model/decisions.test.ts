@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import decisions from "../../../fixtures/decisions.json";
 import { DecisionsView } from "../../shared/teamwire.ts";
-import { blockItems, decisionColumns, type Part, queryFromText, queryLabel } from "./decisions.ts";
+import { blockItems, decisionColumns, type Part, pickColumn, queryFromText, queryLabel } from "./decisions.ts";
 
 const team = DecisionsView.parse(decisions).teams[0]!;
 
@@ -87,4 +87,22 @@ test("each member counts the items of all its blocks, and says why it has none",
 test("a block that holds no item is reported as empty, not as missing", () => {
   const t = { ...team, members: [{ ...team.members[0]!, blocks: [{ heading: "## Decisions I made", line: 1, text: "\n\n" }] }] };
   expect(decisionColumns(t)[0]).toMatchObject({ count: 0, empty: "empty Decisions block", note: null });
+});
+
+test("the picked member is kept by role, and the default is the first member with a decision", () => {
+  const cols = decisionColumns(team);
+  expect(pickColumn(cols, null)?.role).toBe("api");
+  expect(pickColumn(cols, "ledger")?.role).toBe("ledger");
+  expect(pickColumn(cols, "audit")?.role).toBe("audit");
+  // A role that is gone falls back to the default.
+  expect(pickColumn(cols, "gone")?.role).toBe("api");
+  // The first member has none, so the default skips it.
+  const web = cols.find((c) => c.role === "web")!;
+  expect(pickColumn([web, ...cols.filter((c) => c !== web)], null)?.role).toBe("api");
+});
+
+test("with no decision anywhere the first member is the default, and no member gives nothing", () => {
+  const cols = decisionColumns(team).filter((c) => c.count === 0);
+  expect(pickColumn(cols, null)?.role).toBe("web");
+  expect(pickColumn([], "api")).toBeUndefined();
 });

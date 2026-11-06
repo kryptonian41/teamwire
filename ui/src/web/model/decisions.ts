@@ -70,6 +70,11 @@ export function blockItems(text: string): Part[][] {
   return raw.filter((r) => r !== "").map(inlineParts);
 }
 
+/** The member to show: the one with the picked role, else the first with a decision, else the first. */
+export function pickColumn(cols: DecisionColumn[], role: string | null): DecisionColumn | undefined {
+  return cols.find((c) => c.role === role) ?? cols.find((c) => c.count > 0) ?? cols[0];
+}
+
 /** The longest search text the server accepts. */
 export const GREP_MAX = 200;
 

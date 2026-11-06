@@ -3,7 +3,7 @@ import type { DecisionQuery } from "../shared/api.ts";
 import type { DecisionTeam } from "../shared/teamwire.ts";
 import { ErrorNote, Loading, RefChips } from "./components.tsx";
 import { useClient, useLoad } from "./hooks.ts";
-import { decisionColumns, queryFromText, queryLabel } from "./model/decisions.ts";
+import { decisionColumns, pickColumn, queryFromText, queryLabel } from "./model/decisions.ts";
 import { href } from "./model/route.ts";
 
 /**
@@ -24,6 +24,8 @@ export function Decisions({
   const client = useClient();
   const own = useLoad(() => client.teamDecisions(team), team, refresh);
   const [text, setText] = useState("");
+  // Kept here, not in `Members`: a failed load clears the data and unmounts `Members`, and the choice must outlive that.
+  const [picks, pick] = usePicks();
   const parsed = queryFromText(text);
   return (
     <section id="decisions" aria-labelledby="decisions-h">
@@ -54,17 +56,24 @@ export function Decisions({
       {own.data && (
         <>
           {own.data.errors.length > 0 && <ErrorNote>{own.data.errors.join("; ")}</ErrorNote>}
-          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Members key={t.team} team={t} />)}
+          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Members key={t.team} team={t} role={picks[t.team] ?? null} onPick={(r) => pick(t.team, r)} />)}
         </>
       )}
     </section>
   );
 }
 
+/** The picked member's role for each team, by key. */
+function usePicks(): [Record<string, string>, (key: string, role: string) => void] {
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  return [picks, (key, role) => setPicks((p) => ({ ...p, [key]: role }))];
+}
+
 function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void }) {
   const client = useClient();
   const key = "grep" in query ? `grep:${query.grep}` : `ref:${query.ref}`;
   const found = useLoad(() => client.searchDecisions(query), key);
+  const [picks, pick] = usePicks();
   return (
     <div className="decision-results">
       <div className="filter" role="status">
@@ -87,7 +96,7 @@ function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void
                 {t.live ? <a href={href.team(t.team)}>{t.title}</a> : t.title} <span className="sub">{t.team}{t.live ? "" : " (archived)"}</span>
               </h3>
               <RefChips refs={t.refs} />
-              <Members team={t} />
+              <Members team={t} role={picks[`${t.team}-${t.created_at}`] ?? null} onPick={(r) => pick(`${t.team}-${t.created_at}`, r)} />
             </div>
           ))}
         </>
@@ -97,18 +106,17 @@ function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void
 }
 
 /** A list of the team's members and, beside it, the selected member's decisions as one numbered list. */
-function Members({ team }: { team: DecisionTeam }) {
+function Members({ team, role, onPick }: { team: DecisionTeam; role: string | null; onPick: (role: string) => void }) {
   const cols = decisionColumns(team);
   // The role is kept, not the column, so a refresh keeps the choice; a role that is gone falls back to the default.
-  const [role, setRole] = useState<string | null>(null);
-  if (cols.length === 0) return <p className="quiet">No members.</p>;
-  const sel = cols.find((c) => c.role === role) ?? cols.find((c) => c.count > 0) ?? cols[0]!;
+  const sel = pickColumn(cols, role);
+  if (!sel) return <p className="quiet">No members.</p>;
   return (
     <div className="dec-split">
       <ul className="dec-members" aria-label="Members">
         {cols.map((c) => (
           <li key={c.role}>
-            <button type="button" aria-pressed={c === sel} onClick={() => setRole(c.role)}>
+            <button type="button" aria-pressed={c === sel} onClick={() => onPick(c.role)}>
               <span className="role">{c.role}</span>
               <span className="sub">{c.empty ?? `${c.count} ${c.count === 1 ? "decision" : "decisions"}`}</span>
             </button>
