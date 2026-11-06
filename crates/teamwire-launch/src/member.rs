@@ -264,7 +264,8 @@ fn put(data: &mut Value, key: &str, value: Value) {
     }
 }
 
-fn new_token() -> Result<String, String> {
+/// 256 random bits as 64 lowercase hex characters.
+pub(crate) fn new_token() -> Result<String, String> {
     let mut bytes = [0u8; 32];
     getrandom::fill(&mut bytes).map_err(|e| format!("no random bytes for the token: {e}"))?;
     Ok(hex::encode(bytes))

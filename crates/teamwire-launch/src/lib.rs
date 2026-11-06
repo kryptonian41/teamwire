@@ -29,6 +29,7 @@ mod plan_worktree;
 mod reopen;
 mod reopen_lead;
 mod spec;
+mod user_key;
 mod validate;
 mod worktree;
 
@@ -48,6 +49,7 @@ pub use handoff_order::{PlaceCloser, Said, hand_off};
 pub use hold::{ensure_hold, lead_process};
 pub use reopen::{ReopenError, ReopenOpts, ReopenOutcome, ReopenReport, reopen};
 pub use spec::{parse_spec, unknown_key_warnings};
+pub use user_key::ensure_user_key;
 pub use validate::{check_title, new_team_lead, validate};
 
 /// The lead of the team a launch belongs to, as validation resolved it.

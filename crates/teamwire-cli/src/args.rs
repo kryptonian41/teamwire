@@ -98,6 +98,10 @@ pub(crate) enum Command {
     Events(EventsArgs),
     /// Local metrics from the event rows, or the OpenTelemetry export.
     Metrics(MetricsArgs),
+    /// Make the user key when it is missing and print its path. The key
+    /// proves `teamwire send --from user` (ADR 0040).
+    #[command(name = "user-key")]
+    UserKey,
     /// The binary's version and the schema version it writes.
     Version,
 }
@@ -302,9 +306,9 @@ pub(crate) struct SendArgs {
     pub(crate) key: Option<String>,
     #[arg(
         long,
-        value_name = "ROLE|lead",
+        value_name = "ROLE|lead|user",
         env = "TEAMWIRE_ROLE",
-        help = "The sender: your role, or lead. A member's defaults to $TEAMWIRE_ROLE."
+        help = "The sender: your role, lead, or user (with $TEAMWIRE_USER_KEY). A member's defaults to $TEAMWIRE_ROLE."
     )]
     pub(crate) from: Option<String>,
 }

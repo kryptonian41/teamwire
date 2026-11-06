@@ -45,6 +45,7 @@ mod cmd {
     pub(crate) mod shared;
     pub(crate) mod status;
     pub(crate) mod teams;
+    pub(crate) mod user_key;
     pub(crate) mod verify;
     pub(crate) mod version;
     pub(crate) mod watch;
@@ -108,6 +109,7 @@ fn main() -> ExitCode {
         Command::Export(a) => cmd::export::run(a, global, &wiring),
         Command::Events(a) => cmd::events::run(a, global, &wiring),
         Command::Metrics(a) => cmd::metrics::run(a, global, &wiring),
+        Command::UserKey => cmd::user_key::run(global, &wiring),
         Command::Version => cmd::version::run(global, &wiring),
     }
 }

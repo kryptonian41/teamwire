@@ -118,6 +118,12 @@ pub fn database_path(home: &Path, team: &TeamName) -> PathBuf {
     home.join("teams").join(team.as_str()).join("team.db")
 }
 
+/// The human user's key, `<home>/user.key` (ADR 0040). `teamwire send
+/// --from user` is proven by it; the file is not part of any team.
+pub fn user_key_path(home: &Path) -> PathBuf {
+    home.join("user.key")
+}
+
 /// Every team under `home`: each directory of `<home>/teams` that names a
 /// valid team and holds a database, sorted by name. No `teams` directory is
 /// no teams; an entry that cannot be read is an error, and the caller
