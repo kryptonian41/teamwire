@@ -427,10 +427,14 @@ fn run_member(
     } else {
         Vec::new()
     };
+    // The team row's title: an `--add` spec may name another one.
+    let team_title =
+        hold::team_of(ctx.store).map_or_else(|| crate::plan::clean(&plan.spec.title), |t| t.title);
     let request = teamwire_core::SpawnRequest {
         name: m.address.clone(),
         title: m.spec.title.clone(),
-        team_title: String::new(),
+        team_title,
+        // `insert_member` starts every member at generation 1.
         generation: 1,
         cwd: m.cwd.clone(),
         argv: spec.argv,

@@ -198,8 +198,9 @@ fn plan_with<'r>(
     let request = SpawnRequest {
         name: Address::of(&team.name, role),
         title: member.title.clone(),
-        team_title: String::new(),
-        generation: 1,
+        team_title: team.title.clone(),
+        // `record_handoff` starts this generation once the new tab is open.
+        generation: member.generation + 1,
         cwd: member.cwd.clone(),
         argv: spec.argv.clone(),
         env: Vec::new(),

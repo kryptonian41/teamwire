@@ -35,6 +35,17 @@ fn occ(session: &str, pid: u32) -> Occupant {
 }
 
 #[test]
+fn spawn_request_of_returns_the_whole_request_spawn_got() {
+    let h = FakeHost::new();
+    let mut want = req("tw_demo_api");
+    want.generation = 3;
+    let p = h.spawn(&want, T).unwrap();
+    assert_eq!(h.spawn_request_of(&p), Some(want));
+    let added = h.add_place("tw_demo_web", PlaceState::Idle, occ("s1", 1));
+    assert_eq!(h.spawn_request_of(&added), None);
+}
+
+#[test]
 fn spawn_list_state_close_round_trip() {
     let h = FakeHost::new();
     let p = h.spawn(&req("tw_demo_api"), T).unwrap();
