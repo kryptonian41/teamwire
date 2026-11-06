@@ -222,6 +222,8 @@ p.note.error {
   padding: 7px var(--s3); border-top: 1px solid var(--line); color: inherit; text-decoration: none;
 }
 a.qrow:hover { background: var(--surface-2); }
+/* The queue panel clips overflow, so the ring sits inside the row. */
+a.qrow:focus-visible { outline-offset: -2px; }
 .qrow .role { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* taste-skill-ignore */
 .qrow .qtext { min-width: 0; overflow-wrap: anywhere; }
 .teams { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--r-lg); }
