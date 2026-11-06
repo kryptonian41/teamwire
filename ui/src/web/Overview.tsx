@@ -1,9 +1,9 @@
-import { CATEGORY_ORDER } from "../shared/state.ts";
 import { Attention } from "./Attention.tsx";
 import { Empty, RefChips, StateChip } from "./components.tsx";
-import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
+import { attentionItems, rankAttention, teamKey } from "./model/attention.ts";
+import { membersByCategory, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
-import { afkChip, watchChip } from "./model/status.ts";
+import { afkChip } from "./model/status.ts";
 
 export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; loaded: boolean; neverPolled: boolean }) {
   if (!loaded) return <Empty title="Waiting for the first poll…" />;
@@ -15,111 +15,55 @@ export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; l
     return <Empty title="No teams under this teamwire home">A team shows up here once its lead launches it.</Empty>;
   }
   const sorted = sortTeams(teams);
-  const trouble = sorted.filter(hasProblem);
-  const fine = sorted.filter((t) => !hasProblem(t));
+  const queue = rankAttention(attentionItems(sorted));
+  const roles = new Map(sorted.flatMap((t) => (t.name === null ? [] : [[t.name, new Set(t.members.map((m) => m.role))] as const])));
+  // The first row of a team in the ranked queue is its worst.
+  const worst = new Map<string, string>();
+  for (const i of queue) if (!worst.has(teamKey(i))) worst.set(teamKey(i), i.word);
+  const n = queue.length;
   return (
     <>
       <div className="page-head">
-        <h1>Teams</h1>
+        <h1>{n === 0 ? "Nothing needs you" : `${n} ${n === 1 ? "thing needs" : "things need"} you`}</h1>
         <p className="lede">
-          {teams.length} {teams.length === 1 ? "team" : "teams"}.{" "}
-          {trouble.length === 0 ? "None needs a look." : `${trouble.length} ${trouble.length === 1 ? "needs" : "need"} a look.`}
+          Across {teams.length} {teams.length === 1 ? "team" : "teams"}.{n > 0 && " Worst first."}
         </p>
       </div>
-      <Attention teams={sorted} />
-      {trouble.length > 0 && <TeamGroup id="trouble" title="Needs a look" teams={trouble} />}
-      {fine.length > 0 && <TeamGroup id="fine" title="Running fine" teams={fine} />}
+      {n > 0 && <Attention items={queue} roles={roles} />}
+      <section aria-labelledby="teams-h">
+        <h2 id="teams-h">
+          Teams <span className="count">{teams.length}</span>
+        </h2>
+        <ul className="teams">
+          {sorted.map((t) => (
+            <li key={t.key}>
+              <TeamRow team={t} flag={worst.get(teamKey({ team: t.name, teamTitle: t.title })) ?? "Fine"} />
+            </li>
+          ))}
+        </ul>
+      </section>
     </>
   );
 }
 
-function TeamGroup({ id, title, teams }: { id: string; title: string; teams: TeamModel[] }) {
-  return (
-    <section aria-labelledby={id}>
-      <h2 id={id}>
-        {title} <span className="count">{teams.length}</span>
-      </h2>
-      <ul className="teams">
-        {teams.map((t) => (
-          <li key={t.key}>
-            <TeamRow team={t} />
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
-
-function TeamRow({ team }: { team: TeamModel }) {
+/** One row: the title and facts, the member strip worst first, and the team's worst queue word. */
+function TeamRow({ team, flag }: { team: TeamModel; flag: string }) {
   const s = team.status;
-  const counts = countByCategory(team.members);
-  const live = livenessInfo(s.lead);
-  const problem = hasProblem(team);
-  const reasons = problemReasons(team);
+  const n = team.members.length;
+  const facts = [team.name ?? "no name", `${n} ${n === 1 ? "member" : "members"}`, s.watch.state === "none" ? "no watch" : `watch ${s.watch.state}`, s.afk ? afkChip(s.afk) : null].filter((f) => f !== null);
   const body = (
     <>
-      <div className="team-id">
+      <div className="tname">
         <h3>{team.title}</h3>
-        <p className="meta">
-          <span>{team.name ?? "no name"}</span>
-          <span className="chip">{s.state ?? "state unknown"}</span>
-          <span className="live">
-            <span className={`dot cat-${live.category}`} aria-hidden="true" />
-            {live.label}
-          </span>
-        </p>
+        <p className="sub">{facts.join(" · ")}</p>
         <RefChips refs={s.refs} />
-        {team.members.length > 0 && (
-          <p className="chips">
-            {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (
-              <span key={c} className={`chip cat-${c}`}>
-                {counts[c]} {c}
-              </span>
-            ))}
-          </p>
-        )}
       </div>
-      <div className="team-body">
-        {team.members.length === 0 ? (
-          <p className="quiet">No members reported.</p>
-        ) : (
-          <p className="chips">
-            {team.members.map((m) => (
-              <StateChip key={m.role} word={`${m.role} · ${m.state}`} category={m.category} />
-            ))}
-          </p>
-        )}
-        {(s.afk || watchChip(s.watch)) && (
-          <p className="chips">
-            {s.afk && <span className="chip cat-active">{afkChip(s.afk)}</span>}
-            {watchChip(s.watch) && <span className="chip">{watchChip(s.watch)}</span>}
-          </p>
-        )}
-        {(reasons.length > 0 || s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (
-          <p className="chips">
-            {reasons.map((r) => (
-              <span key={r} className="flag bad">
-                {r}
-              </span>
-            ))}
-            {s.stuck_deliveries.length > 0 && <span className="flag">{s.stuck_deliveries.length} stuck deliveries</span>}
-            {s.undelivered_results.length > 0 && (
-              <span className="flag bad">{s.undelivered_results.length} undelivered results</span>
-            )}
-            {s.errors.length > 0 && <span className="flag bad">{s.errors.length} read errors</span>}
-          </p>
-        )}
-        {s.errors.length > 0 && (
-          <ul className="errors">
-            {s.errors.map((e, i) => (
-              <li key={i}>{e}</li>
-            ))}
-          </ul>
-        )}
+      <div className="strip">
+        {n === 0 ? <span className="quiet">No members reported.</span> : membersByCategory(team.members).map((m) => <StateChip key={m.role} word={m.role} category={m.category} title={m.state} />)}
       </div>
+      <span className="tflag">{flag}</span>
     </>
   );
-  const cls = `team${problem ? " problem" : ""}`;
   // A team with no name has no detail page to open.
-  return team.name === null ? <div className={cls}>{body}</div> : <a className={cls} href={href.team(team.name)}>{body}</a>;
+  return team.name === null ? <div className="trow">{body}</div> : <a className="trow" href={href.team(team.name)}>{body}</a>;
 }

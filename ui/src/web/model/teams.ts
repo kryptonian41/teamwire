@@ -59,6 +59,11 @@ export function countByCategory(members: readonly { category: StateCategory }[])
   return counts;
 }
 
+/** Worst category first, as `CATEGORY_ORDER` ranks them; the given order inside one category. */
+export function membersByCategory<M extends { category: StateCategory }>(members: readonly M[]): M[] {
+  return [...members].sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
+}
+
 const QUESTION_WAIT_S = 600;
 
 /** The signals of D18 as card flags. Lead, watch and AFK count only while the team is open. */

@@ -89,7 +89,7 @@ export function Drawer({
         </header>
         <p className="chips">
           <StateChip word={member.state} category={member.category} />
-          {age.overdue ? <span className="flag bad">{age.label} · past its deadline</span> : <span className="sub num">{age.label}</span>}
+          {age.overdue ? <StateChip word={`${age.label} · past its deadline`} category="attention" /> : <span className="sub num">{age.label}</span>}
           {member.branch && <code>{member.branch}</code>}
         </p>
 
