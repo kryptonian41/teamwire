@@ -11,6 +11,7 @@ import { href, TABS, type Tab } from "./model/route.ts";
 import { afkLine, refText, watchLine } from "./model/status.ts";
 import { livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { removalText } from "./model/memberEvents.ts";
+import { buildDetail, type DetailSource } from "./model/detail.ts";
 import { Timeline } from "./Timeline.tsx";
 import { Decisions } from "./Decisions.tsx";
 import { Tokens } from "./Tokens.tsx";
@@ -78,7 +79,7 @@ export function TeamDetail({
   }
   const s = team.status;
   const live = livenessInfo(s.lead);
-  const open = member === null ? null : team.members.find((m) => m.role === member);
+  const source: DetailSource = { page: "team", team, rows: timeline.rows, files: files.data ?? [], actions: snapshot.actions };
 
   return (
     <>
@@ -191,17 +192,17 @@ export function TeamDetail({
         </>
       )}
 
-      {open && (
+      {member !== null && (
         <Drawer
-          team={team.name}
-          member={open}
-          roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
-          files={files.data ?? []}
-          rows={timeline.rows}
-          actions={snapshot.actions}
-          onCloseMember={() => setClosing({ team: name, role: open.role })}
+          role={member}
+          detail={buildDetail(member, source)}
+          loading={timeline.loading}
+          scope={name}
+          team={name}
+          loadFile={(f) => client.teamFile(name, f.kind, f.name)}
+          onCloseMember={() => setClosing({ team: name, role: member })}
           onClose={() => {
-            location.hash = href.team(team.name ?? "", tab);
+            location.hash = href.team(name, tab);
           }}
         />
       )}
