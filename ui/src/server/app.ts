@@ -34,6 +34,9 @@ type ActionName = "send" | "close-member" | "close-team";
 const notFound = (detail: string) => problem(404, { code: "not_found", detail });
 const badRequest = (detail: string) => problem(400, { code: "bad_request", detail });
 
+/** The refusal line in a lead note is cut here, so the note stays under the 4000-character cap. */
+const MAX_REASON_CHARS = 300;
+
 /** A real body is a few KiB at most; 4000 characters of text is under 16 KiB as JSON. */
 const MAX_BODY_CHARS = 64 * 1024;
 
@@ -217,7 +220,20 @@ export function createApp(deps: AppDeps): App {
         if (!body.ok) return body.res;
         if (!body.data.dryRun && body.data.confirmName !== team) return badRequest("type the team's name to confirm the close");
         if (!(await teamDir(deps.home, team))) return notFound(`no team named ${team}`);
-        return notFound("close-team is not built yet");
+        if (body.data.dryRun) {
+          const preview = await runAction({ cmd: "closeTeam", team, dryRun: true });
+          return preview.ok ? json(result(preview.out, [])) : preview.res;
+        }
+        // Plan D3: the note goes first, because a closing team refuses messages.
+        const notes = [await tellLead(team, `user is closing team ${team} from the dashboard`)];
+        const closed = await runAction({ cmd: "closeTeam", team, dryRun: false });
+        if (!closed.ok) return closed.res;
+        // Exit 1 is a refusal: nothing changed, so the team still takes the note.
+        if (closed.out?.exit === 1) {
+          const why = [...firstLine(closed.out.stderr || closed.out.stdout)].slice(0, MAX_REASON_CHARS).join("");
+          notes.push(await tellLead(team, `user's close of team ${team} was refused: ${why}`));
+        }
+        return json(result(closed.out, notes));
       }
     }
   }

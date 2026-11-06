@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { MAX_TEXT_CHARS, type ActionResult } from "../shared/api.ts";
 import { ApiError } from "./api.ts";
 import { useClient } from "./hooks.ts";
-import { canClose, closeOutcome, closeRisks, leadNoteLines, sendOutcome, type CloseFlag, type CloseFlags, type Outcome } from "./model/actions.ts";
+import { canClose, canCloseTeam, closeOutcome, closeRisks, leadNoteLines, sendOutcome, type CloseFlag, type CloseFlags, type Outcome } from "./model/actions.ts";
 
 /**
  * A modal `<dialog>`: the browser keeps focus inside it and the page behind
@@ -275,6 +275,82 @@ export function CloseMemberDialog({ team, role, onClose }: { team: string; role:
       <div className="dialog-buttons">
         <button className="btn danger" disabled={busy || preview === null || !canClose(preview, flags, confirmed)} onClick={() => void close()}>
           Close {role}
+        </button>
+        <button className="btn" onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+      </div>
+    </ActionDialog>
+  );
+}
+
+/**
+ * Closes the whole team: a dry run first, then the real close once the user
+ * types the team's name. The server tells the lead before it closes. A
+ * whole-team close has no --stop or --unverified, so a busy or unverified
+ * member shows as the CLI's refusal.
+ */
+export function CloseTeamDialog({ team, onClose }: { team: string; onClose: () => void }) {
+  const client = useClient();
+  const [preview, setPreview] = useState<ActionResult | null>(null);
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(true);
+  const [done, setDone] = useState<ActionResult | null>(null);
+  const [error, setError] = useState<Outcome | null>(null);
+
+  useEffect(() => {
+    client.closeTeam(team, { dryRun: true, confirmName: "" }).then(setPreview, (e: unknown) => setError(errorOutcome(e))).finally(() => setBusy(false));
+  }, [client, team]);
+
+  const close = async () => {
+    if (!canCloseTeam(preview, typed, team)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      setDone(await client.closeTeam(team, { dryRun: false, confirmName: typed }));
+    } catch (e) {
+      setError(errorOutcome(e));
+    }
+    setBusy(false);
+  };
+
+  if (done) {
+    return (
+      <ActionDialog title={`Close team ${team}`} busy={false} onClose={onClose}>
+        <OutcomeLine outcome={closeOutcome(done, team, false)} />
+        <CliOutput result={done} />
+        <LeadNotes result={done} />
+        <div className="dialog-buttons">
+          <button className="btn" onClick={onClose} autoFocus>
+            Close
+          </button>
+        </div>
+      </ActionDialog>
+    );
+  }
+  return (
+    <ActionDialog title={`Close team ${team}`} busy={busy} onClose={onClose}>
+      <p className="sub">
+        Closes every member of <code>{team}</code>, archives the team and deletes its state. Branches are kept.
+      </p>
+      <h3>Dry run</h3>
+      {preview === null && busy && <p className="note">Running…</p>}
+      {preview && (
+        <>
+          <OutcomeLine outcome={closeOutcome(preview, team, true)} />
+          <CliOutput result={preview} />
+        </>
+      )}
+      {preview?.exit === 0 && (
+        <label className="field">
+          Type the team's name, {team}, to confirm
+          <input type="text" value={typed} disabled={busy} autoComplete="off" spellCheck={false} onChange={(e) => setTyped(e.target.value)} />
+        </label>
+      )}
+      {error && <OutcomeLine outcome={error} />}
+      <div className="dialog-buttons">
+        <button className="btn danger" disabled={busy || !canCloseTeam(preview, typed, team)} onClick={() => void close()}>
+          {busy && preview !== null ? "Closing…" : `Close team ${team}`}
         </button>
         <button className="btn" onClick={onClose} disabled={busy}>
           Cancel

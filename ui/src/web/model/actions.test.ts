@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ActionResult } from "../../shared/api.ts";
-import { canClose, canMessage, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
+import { canClose, canCloseTeam, canMessage, closeOutcome, closeRisks, leadNoteLines, replyPrefix, replyTarget, sendOutcome } from "./actions.ts";
 
 const r = (exit: number | null, stderr = "", stdout = ""): ActionResult => ({ exit, stdout, stderr, leadNotes: [] });
 
@@ -100,5 +100,15 @@ describe("closing one member", () => {
     expect(canClose(preview(0, both), both, [])).toBe(false);
     expect(canClose(preview(0, both), both, ["stop"])).toBe(false);
     expect(canClose(preview(0, both), both, ["stop", "unverified"])).toBe(true);
+  });
+});
+
+describe("closing the team", () => {
+  test("needs a dry run that worked and the team's name typed exactly", () => {
+    expect(canCloseTeam(null, "alpha", "alpha")).toBe(false);
+    expect(canCloseTeam(r(1), "alpha", "alpha")).toBe(false);
+    expect(canCloseTeam(r(0), "alph", "alpha")).toBe(false);
+    expect(canCloseTeam(r(0), " alpha", "alpha")).toBe(false);
+    expect(canCloseTeam(r(0), "alpha", "alpha")).toBe(true);
   });
 });

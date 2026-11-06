@@ -103,3 +103,8 @@ export function canClose(preview: { flags: CloseFlags; result: ActionResult } | 
   if (preview.flags.stop !== flags.stop || preview.flags.unverified !== flags.unverified) return false;
   return closeRisks(flags).every((r) => confirmed.includes(r.flag));
 }
+
+/** The real team close needs a dry run that worked and the team's name typed exactly; the server checks the name again. */
+export function canCloseTeam(preview: ActionResult | null, typed: string, team: string): boolean {
+  return preview !== null && preview.exit === 0 && typed === team;
+}

@@ -306,6 +306,59 @@ describe("close-member action", () => {
   });
 });
 
+describe("close-team action", () => {
+  const path = "/api/teams/alpha/actions/close-team";
+  const closing = "user is closing team alpha from the dashboard";
+  const real: CliCall = { cmd: "closeTeam", team: "alpha", dryRun: false };
+  test("a dry run runs only the dry-run form and tells nobody; its confirm name is not needed", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(0, "[dry-run] close_places") }) });
+    expect(await (await post(app, path, { dryRun: true, confirmName: "" })).json()).toEqual({ exit: 0, stdout: "[dry-run] close_places", stderr: "", leadNotes: [] });
+    expect(calls).toEqual([{ cmd: "closeTeam", team: "alpha", dryRun: true }]);
+  });
+  test("a real close tells the lead first, then closes", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(0, "team alpha: done"), send: () => out(0) }) });
+    expect(await (await post(app, path, { dryRun: false, confirmName: "alpha" })).json()).toEqual({
+      exit: 0,
+      stdout: "team alpha: done",
+      stderr: "",
+      leadNotes: [{ text: closing, told: true, detail: "" }],
+    });
+    expect(calls).toEqual([note("alpha", closing), real]);
+  });
+  test("a refused close sends a second note with the first line of the CLI's error", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(1, "", "\nREFUSED: api is busy; close it with --role api --stop\nnothing was changed"), send: () => out(0) }) });
+    const res = (await (await post(app, path, { dryRun: false, confirmName: "alpha" })).json()) as { exit: number; leadNotes: unknown[] };
+    const refused = "user's close of team alpha was refused: REFUSED: api is busy; close it with --role api --stop";
+    expect(res.exit).toBe(1);
+    expect(res.leadNotes).toEqual([
+      { text: closing, told: true, detail: "" },
+      { text: refused, told: true, detail: "" },
+    ]);
+    expect(calls).toEqual([note("alpha", closing), real, note("alpha", refused)]);
+  });
+  test("a refusal line too long for a note is cut, so the note can still be sent", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(1, "", `REFUSED: ${"x".repeat(5000)}`), send: () => out(0) }) });
+    await post(app, path, { dryRun: false, confirmName: "alpha" });
+    const second = calls[2] as Extract<CliCall, { cmd: "send" }>;
+    expect(second.text.startsWith("user's close of team alpha was refused: REFUSED: xxx")).toBe(true);
+    expect([...second.text].length).toBeLessThanOrEqual(4000);
+  });
+  test("a close that stops part way or times out sends no second note", async () => {
+    for (const close of [() => out(2, "", "remove_worktrees: kept"), () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "passed" }] })]) {
+      const { app, calls } = setup({ actions: true, act: script({ closeTeam: close, send: () => out(0) }) });
+      await post(app, path, { dryRun: false, confirmName: "alpha" });
+      expect(calls).toEqual([note("alpha", closing), real]);
+    }
+  });
+  test("the close still runs when the first note fails, and the page learns the lead was not told", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(0, "team alpha: done"), send: () => out(1, "", "REFUSED: team_closing") }) });
+    const res = (await (await post(app, path, { dryRun: false, confirmName: "alpha" })).json()) as { exit: number; leadNotes: unknown[] };
+    expect(res.exit).toBe(0);
+    expect(res.leadNotes).toEqual([{ text: closing, told: false, detail: "teamwire send exited 1: REFUSED: team_closing" }]);
+    expect(calls).toEqual([note("alpha", closing), real]);
+  });
+});
+
 describe("snapshot", () => {
   test("200 after a poll, 503 before", async () => {
     const { get, poller } = setup();

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
 import { AfkFiles, Empty, RefChips, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
-import { CloseMemberDialog, MessageButton } from "./Actions.tsx";
+import { CloseMemberDialog, CloseTeamDialog, MessageButton } from "./Actions.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
 import { MemberTable } from "./MemberTable.tsx";
 import { MessageSection } from "./Messages.tsx";
@@ -39,8 +39,14 @@ export function TeamDetail({
   // The decision search lives above the tabs, so it is kept across tab changes.
   const [query, setQuery] = useState<DecisionQuery | null>(null);
   // Kept here, not in the drawer, so the result stays on screen after the member is gone.
-  const [closing, setClosing] = useState<{ team: string; role: string } | null>(null);
-  const closeDialog = closing && <CloseMemberDialog team={closing.team} role={closing.role} onClose={() => setClosing(null)} />;
+  const [closing, setClosing] = useState<{ team: string; role: string | null } | null>(null);
+  const closeDialog =
+    closing &&
+    (closing.role === null ? (
+      <CloseTeamDialog team={closing.team} onClose={() => setClosing(null)} />
+    ) : (
+      <CloseMemberDialog team={closing.team} role={closing.role} onClose={() => setClosing(null)} />
+    ));
   const head = useRef<HTMLDivElement>(null);
   // Focus scrolls the page only until the element is in the viewport, where the sticky header would cover it.
   useEffect(() => {
@@ -84,7 +90,14 @@ export function TeamDetail({
           <h1>{team.title}</h1>
           {/* Empty while actions are off, and then it takes no space. */}
           <div className="team-actions">
-            {snapshot.actions && <MessageButton team={name} to="lead" type="note" label="Message lead" title={`Note to the lead of ${name}`} />}
+            {snapshot.actions && (
+              <>
+                <MessageButton team={name} to="lead" type="note" label="Message lead" title={`Note to the lead of ${name}`} />
+                <button className="btn" onClick={() => setClosing({ team: name, role: null })}>
+                  Close team
+                </button>
+              </>
+            )}
           </div>
         </div>
         <div className="meta">
