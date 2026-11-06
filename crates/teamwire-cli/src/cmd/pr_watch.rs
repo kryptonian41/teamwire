@@ -1,7 +1,9 @@
 //! `teamwire pr-watch`: watch GitHub pull-request checks (EXT-1).
 //!
 //! The rules: silence while nothing changed, one line per poll at most, and
-//! no line for a check that passes.
+//! no line for a check that passes. With `--deliver <team>` each line also
+//! carries `[teamwire:<team>]` and is typed into that team's lead pane, the
+//! way `watch --deliver` types its lines (ADR 0039).
 //! `gh pr checks` exits 8 while checks are pending and 1 when one failed, yet
 //! still prints its JSON, so the exit code of `gh` is never a signal here. A
 //! call that prints nothing or prints text that is not JSON is skipped and
@@ -12,9 +14,10 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use serde_json::Value;
-use teamwire_core::{Command, Platform};
+use teamwire_core::{Command, Platform, TeamName, sanitize::one_line};
 
-use crate::cmd::shared::{fail, say_line};
+use crate::cmd::shared::{Opening, fail, refuse_member, say_line, with_ctx_using};
+use crate::cmd::watch::deliver_to_lead;
 use crate::wiring::Wiring;
 use crate::{Global, PrWatchArgs, USAGE};
 use required::Required;
@@ -23,6 +26,8 @@ mod required;
 
 const DEFAULT_INTERVAL_S: u64 = 45;
 const GH_TIMEOUT: Duration = Duration::from_secs(60);
+/// The longest line `--deliver` types, the same cap as a watch line's.
+const LINE_MAX: usize = 2000;
 
 /// How many polls in a row must find no checks before a pull request with
 /// none is done. Right after a push GitHub has no check runs yet, and `gh`
@@ -308,18 +313,54 @@ fn recheck_wait(interval: Duration) -> Duration {
     (interval / 2).min(Duration::from_secs(5))
 }
 
-pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> ExitCode {
+pub(crate) fn run(args: &PrWatchArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     let PrWatchArgs {
         repo,
         interval,
+        deliver,
         prs,
     } = args;
     if *interval == Some(0) {
         return fail("pr-watch", "--interval must be at least 1 second", USAGE);
     }
     let interval = Duration::from_secs(interval.unwrap_or(DEFAULT_INTERVAL_S));
+    let Some(team) = deliver else {
+        return watch(repo, prs, interval, wiring, &mut say_line);
+    };
+    let team = match TeamName::parse(team) {
+        Ok(team) => team,
+        Err(e) => return fail("pr-watch", &e.to_string(), USAGE),
+    };
+    // Only a lead types into its own pane, as for `watch --deliver`.
+    if let Some(code) = refuse_member("pr-watch") {
+        return code;
+    }
+    let opening = Opening {
+        command: "pr-watch",
+        ..Opening::default()
+    };
+    with_ctx_using(global, wiring, &team, "pr-watch", opening, |ctx| {
+        // The prefix marks a typed line as teamwire's, as on every other
+        // line teamwire types into a lead's pane.
+        watch(repo, prs, interval, wiring, &mut |text| {
+            let line = one_line(&format!("[teamwire:{team}] {text}"), LINE_MAX);
+            say_line(line.as_str());
+            deliver_to_lead(ctx, &line);
+        })
+    })
+    .unwrap_or_else(|code| code)
+}
+
+/// Polls until every pull request is done, handing each line to `say`.
+fn watch(
+    repo: &str,
+    prs: &[u64],
+    interval: Duration,
+    wiring: &Wiring,
+    say: &mut dyn FnMut(&str),
+) -> ExitCode {
     let names: Vec<String> = prs.iter().map(|pr| label(repo, *pr)).collect();
-    say_line(&format!(
+    say(&format!(
         "WATCHING {} (poll {}s)",
         names.join(", "),
         interval.as_secs()
@@ -360,7 +401,7 @@ pub(crate) fn run(args: &PrWatchArgs, _global: &Global, wiring: &Wiring) -> Exit
             events.extend(memory.poll_one(&mut reread, repo, *pr, checks.as_ref(), view.as_ref()));
         }
         if !events.is_empty() {
-            say_line(&events.join(" | "));
+            say(&events.join(" | "));
         }
         if memory.finished(prs) {
             return ExitCode::from(u8::from(memory.any_failed()));

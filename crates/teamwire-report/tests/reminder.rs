@@ -32,6 +32,12 @@ fn reminds_once_per_message_id() {
         note.contains(&first) && note.contains("teamwire inbox"),
         "{note}"
     );
+    assert!(
+        note.contains("Read them with the team_inbox tool"),
+        "{note}"
+    );
+    // A member in the middle of its turn is not told to stop.
+    assert!(!note.contains("otherwise stop"), "{note}");
     assert_eq!(on_tool_use(&mut rig.ctx(), &api), None, "each id once");
 
     let second = rig.unread_from_lead(&api, "two");

@@ -3,18 +3,19 @@
 use std::time::Duration;
 
 use serde_json::json;
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{
     HarnessId, LeadRoute, Member, MemberState, Registry, ReportState, Role, Route, TeamName,
     TurnEnd, TurnEndReply, one_line,
 };
 use teamwire_deliver::{
-    DeliveryOutcome, deliver_line, deliver_line_within, result_line, watch_lease_is_dead,
+    DeliveryOutcome, WatchText, deliver_line, deliver_line_within, result_line,
+    watch_lease_is_dead, watch_text,
 };
 use teamwire_store::{CompletionRecord, Ctx, Party, ResultOutcome, StoreError};
 
 use crate::final_message;
-use crate::lead_stop::watch_command;
-use crate::note::{FIX_THEN_STOP, gap_note, unread_note};
+use crate::note::{FIX_THEN_STOP, READ_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::{mark_stopped, unread};
 use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
@@ -135,13 +136,16 @@ fn run(
     Ok(TurnEndReply::Continue)
 }
 
-/// The command that starts the watch for this team's lead. A lead harness
-/// that cannot be found gets the Monitor wording, as the lead Stop hook does.
-fn lead_watch_command(registry: &Registry, harness: &HarnessId, team: &TeamName) -> String {
-    let reads = registry
+/// The note that ends a result line while no watch runs, worded for this
+/// team's lead harness. A lead harness that cannot be found gets the Monitor
+/// wording, as the lead Stop hook does.
+fn no_watch_suffix(registry: &Registry, harness: &HarnessId, team: &TeamName) -> String {
+    let start = registry
         .harness(harness)
-        .map_or(true, |h| h.capabilities().reads_watch_lines);
-    watch_command(team, reads)
+        .map_or(WatchStart::MonitoredCommand, |h| {
+            h.capabilities().watch_start
+        });
+    watch_text(start, WatchText::ResultSuffix, team)
 }
 
 /// True when no live watch holds the lease: none was ever taken, its process
@@ -211,7 +215,7 @@ fn hold(
         ));
     }
     if !ids.is_empty() {
-        parts.push(unread_note(&ids));
+        parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
     }
     let at = ctx.clock.now();
     let mut data = json!({
@@ -348,11 +352,8 @@ fn deliver(
     // itself says that nothing is watching (ADR 0018 point 6). The note is
     // advice: a lease that cannot be read skips it and never stops delivery.
     if watch_is_dead(ctx).unwrap_or(false) {
-        let command = lead_watch_command(ctx.registry, &team.lead_harness, &team.name);
-        line = one_line(
-            &format!("{line} (no watch is running: {command})"),
-            NOTE_LINE_CHARS,
-        );
+        let suffix = no_watch_suffix(ctx.registry, &team.lead_harness, &team.name);
+        line = one_line(&format!("{line} {suffix}"), NOTE_LINE_CHARS);
     }
     let outcome = match deadline {
         Some(deadline) => deliver_line_within(ctx, &Party::Lead, &line, deadline),
@@ -425,12 +426,12 @@ mod tests {
 
     #[test]
     fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
-        let command = lead_watch_command(
+        let suffix = no_watch_suffix(
             &Registry::new(),
             &HarnessId::from_static("unknown"),
             &TeamName::parse("alpha").unwrap(),
         );
-        assert_eq!(command, "teamwire watch alpha");
+        assert_eq!(suffix, "(no watch is running: teamwire watch alpha)");
     }
 
     #[test]

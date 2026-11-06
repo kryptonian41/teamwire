@@ -29,5 +29,9 @@ HOW TO WORK
 - Never run `git worktree add`, `remove`, `move` or `prune`, and never
   write into another member's directory. Every member's checkout is shared
   state: one member that removes a worktree can delete a teammate's
-  checkout mid-run. If you need a second worktree, report blocked to the
-  lead and carry on with what does not need it.
+  checkout mid-run. If you need a second worktree, ask the parent as
+  HOW THIS TEAM WORKS TOGETHER says, and carry on with what does not
+  need it. If it is still missing at the finish, report blocked to the
+  lead: set status 'blocked' in your completion.
+- Do not end a turn while a background job you still need is running.
+  Closing a member ends its background jobs with its tab.

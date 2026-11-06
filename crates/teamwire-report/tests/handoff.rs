@@ -150,6 +150,14 @@ fn past_the_point_one_note_with_the_numbers_and_the_path() {
         "{text}"
     );
     assert!(text.contains("`teamwire handoff --guide`"), "{text}");
+    // A pane member shares its folder, so the changes in it may not be its own.
+    assert!(
+        text.contains(
+            "Finish the step you are on. If your role writes code, commit it. \
+             If your role does not write code, commit nothing. Then run `teamwire handoff --guide`"
+        ),
+        "{text}"
+    );
     assert!(text.contains(&path.display().to_string()), "{text}");
     assert!(text.contains("starts with \"handoff:\""), "{text}");
     assert_eq!(note(&mut rig, &api, &stub), None, "once per generation");

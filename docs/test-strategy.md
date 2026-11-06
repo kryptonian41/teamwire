@@ -104,7 +104,7 @@ temporary `TEAMWIRE_HOME` and temporary repository. Scenarios:
 
 | Scenario | Proves |
 | --- | --- |
-| Launch two implementers and an investigator; each sends one message, commits, calls `done`; the watch prints `WATCHING` then `TEAM-COMPLETE 3/3 done`; verify passes; close archives and cleans up | The whole lifecycle, and "a healthy team wakes the lead with exactly two watch lines plus one line per result" |
+| Launch two implementers and an investigator; each sends one message, commits, calls `done`; the watch prints `WATCHING` then `TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).`; verify passes; close archives and cleans up | The whole lifecycle, and "a healthy team wakes the lead with exactly two watch lines plus one line per result" |
 | A member started by `fake-herdr` (cleared environment) runs `teamwire send` and `teamwire done` from a shell step, and its Stop hook delivers | Identity reaches the member only through `settings.json` `env`; this test fails if launch forgets it |
 | A member's report lacks a progress line | Held once with the facts, then delivered on the next stop |
 | The lead's pane is taken over by another fake session before a member finishes | Nothing typed into it; `UNDELIVERED` printed once; `status` shows the result path |

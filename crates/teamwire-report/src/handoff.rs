@@ -68,7 +68,9 @@ pub fn handoff_note(
 fn note(fill: Fill, point: u64, report: &Path) -> String {
     format!(
         "[teamwire] Your context holds {}k tokens, {}% of a {}k window. Your handoff point is {}k. \
-         Finish the step you are on and commit it. Then run `teamwire handoff --guide` and follow it. \
+         Finish the step you are on. If your role writes code, commit it. \
+         If your role does not write code, commit nothing. \
+         Then run `teamwire handoff --guide` and follow it. \
          It has you write {} and record done with a summary that starts with \"handoff:\". \
          The lead then starts a fresh session of you that reads that file.",
         fill.tokens / 1000,

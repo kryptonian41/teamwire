@@ -247,17 +247,23 @@ pub(crate) fn plan(
     // to watch. Before that, the lead is still launching the first wave.
     let anything_to_report = !settled.is_empty() || memory.watched_a_member;
     let complete = (outstanding == 0 && anything_to_report && !memory.holds_complete())
-        .then(|| complete_text(&settled));
+        .then(|| complete_text(&settled, snap.closer_missing));
     Plan {
         actions: env.actions,
         complete,
     }
 }
 
+/// What `TEAM-COMPLETE` adds while the team's code has had no closer. Leads
+/// took the line as the end of the run and closed teams with no closer.
+// shortcut: a "not done" list past about 150 characters pushes this past
+// the event cap, which cuts it; cut the list instead if a big team needs it.
+const NO_CLOSER_YET: &str = ". If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).";
+
 /// `TEAM-COMPLETE 2/3 done; not done: c died`. Only status `done` counts.
 /// `TEAM-COMPLETE 0/0 done` for a team whose members the lead has all
-/// removed: no live member is left to count.
-fn complete_text(settled: &[(Role, String)]) -> String {
+/// removed: no live member is left to count, and nothing is added to it.
+fn complete_text(settled: &[(Role, String)], closer_missing: bool) -> String {
     let done = settled.iter().filter(|(_, label)| label == "done").count();
     let mut text = format!("TEAM-COMPLETE {done}/{} done", settled.len());
     let rest: Vec<String> = settled
@@ -268,6 +274,9 @@ fn complete_text(settled: &[(Role, String)]) -> String {
     if !rest.is_empty() {
         text.push_str("; not done: ");
         text.push_str(&rest.join(", "));
+    }
+    if closer_missing && !settled.is_empty() {
+        text.push_str(NO_CLOSER_YET);
     }
     text
 }

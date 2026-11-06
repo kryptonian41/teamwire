@@ -284,7 +284,7 @@ fn bad_input_and_a_missing_home_exit_zero_with_no_output() {
 /// up the hook lets the stop through and nothing runs after it. Catching
 /// that needs a lock that starts between the bounded reads and the later
 /// ones, which a test cannot time reliably. The signature of
-/// `lead_reads_watch_lines`, which takes no path, guards it instead.
+/// `lead_watch_start`, which takes no path, guards it instead.
 #[test]
 fn locked_stores_let_the_stop_through_at_the_bound() {
     let fx = team();

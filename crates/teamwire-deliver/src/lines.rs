@@ -2,9 +2,12 @@
 //! result wake-up. Every part that an agent chose goes through `one_line`, so
 //! a summary or message text can never carry a second line, an escape
 //! sequence or a forged event line into another agent's input (DEL-11).
+//! Also the texts that tell a lead how to start its team's watch, worded for
+//! the lead's harness.
 
 use std::path::Path;
 
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{
     Actor, CompletionStatus, DisplayId, MessageType, OneLine, Recipient, Role, TeamName, one_line,
 };
@@ -167,6 +170,61 @@ pub fn result_line(
         ),
         LINE_CHARS,
     )
+}
+
+/// Where a lead is told how to start its team's watch. Each place words it
+/// its own way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchText {
+    /// The lead's Stop hold, for a team that works with nobody watching it.
+    StopHold,
+    /// The end of a result line typed to a lead while no watch runs.
+    ResultSuffix,
+    /// What `teamwire send` prints after a reprompt while no watch runs.
+    AfterReprompt,
+    /// The value of the `watch:` line that launch and reopen print.
+    Launch,
+}
+
+/// The text at `place` that tells the lead of `team` how to start its watch,
+/// worded for how the lead's harness starts one.
+pub fn watch_text(start: WatchStart, place: WatchText, team: &TeamName) -> String {
+    let command = match start {
+        WatchStart::MonitoredCommand => format!("teamwire watch {team}"),
+        WatchStart::BackgroundCommand => {
+            format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
+        }
+        // The lead extension refuses `teamwire watch` in its shell, so this
+        // lead is never given the command.
+        WatchStart::ExtensionTool => return watch_tool_text(place, team),
+    };
+    match place {
+        WatchText::StopHold if start == WatchStart::MonitoredCommand => format!(
+            "[teamwire:{team}] no watch is running; start `{command}` with Monitor before you stop."
+        ),
+        WatchText::StopHold => format!(
+            "[teamwire:{team}] no watch is running; start it in the background with `{command}` before you stop."
+        ),
+        WatchText::ResultSuffix => format!("(no watch is running: {command})"),
+        WatchText::AfterReprompt => format!("no watch is running: start one with `{command}`"),
+        WatchText::Launch => command,
+    }
+}
+
+/// `watch_text` for a lead that starts the watch with the extension's tool.
+fn watch_tool_text(place: WatchText, team: &TeamName) -> String {
+    match place {
+        WatchText::StopHold => format!(
+            "[teamwire:{team}] no watch is running; start it with the teamwire_watch tool (team \"{team}\") before you stop."
+        ),
+        WatchText::ResultSuffix => {
+            format!("(no watch is running: call the teamwire_watch tool with team {team})")
+        }
+        WatchText::AfterReprompt => {
+            format!("no watch is running: start one with the teamwire_watch tool (team {team})")
+        }
+        WatchText::Launch => format!("call the teamwire_watch tool with team {team}"),
+    }
 }
 
 /// Text an agent wrote, cut to `max` characters on one line and made unable to

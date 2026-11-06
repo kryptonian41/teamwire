@@ -165,23 +165,20 @@ pub struct LaunchReport {
     pub watch_command: String,
 }
 
-/// The team's watch command, printed after a launch. A lead that cannot read
-/// a command's output as it is printed (ADR 0023) starts it in the
-/// background, and the watch types each line into the lead's pane. A lead
-/// whose harness is unknown to the registry gets the plain command.
+/// How the lead starts the team's watch, printed after a launch, worded for
+/// the lead's harness. A lead whose harness is unknown to the registry gets
+/// the plain command.
 pub(crate) fn watch_command(
     registry: &teamwire_core::Registry,
     lead: &HarnessId,
     team: &TeamName,
 ) -> String {
-    let reads = registry
+    let start = registry
         .harness(lead)
-        .map_or(true, |h| h.capabilities().reads_watch_lines);
-    if reads {
-        format!("teamwire watch {team}")
-    } else {
-        format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
-    }
+        .map_or(teamwire_core::harness::WatchStart::MonitoredCommand, |h| {
+            h.capabilities().watch_start
+        });
+    teamwire_deliver::watch_text(start, teamwire_deliver::WatchText::Launch, team)
 }
 
 /// Launches every member of `plan`, then starts or reuses the sleep hold.

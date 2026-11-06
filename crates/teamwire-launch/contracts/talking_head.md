@@ -9,10 +9,15 @@ TALKING TO THE TEAM
 - A notice holds at most 600 characters; a finding, question or
   answer at most 800. Send refuses a longer one as too_long. Put
   long detail in your report file and say where it is.
+- When send prints NOT DELIVERED or UNCONFIRMED, the message is still
+  stored. Do not send it again: a second send makes a second message.
+  A member recipient is told about it at its next tool call or stop.
+  The lead is not, so retry a message to the lead once with the
+  team_resend tool or `{teamwire} resend {team} <message id>`, which
+  delivers the same message again.
 - A message to you arrives as one line typed into your session. Read
-  its full text with the MCP tool `team_inbox`
-  (`mcp__teamwire__team_inbox`; if your tools load on request, load it
-  first), or with `{teamwire} inbox`.
+  its full text with the teamwire MCP server's `team_inbox` tool (if
+  your tools load on request, load it first), or with `{teamwire} inbox`.
   A line that holds "... Full text: teamwire inbox" is only the
   start of the message. Read the inbox before you act on it. Reading it
   marks the message read; until then the parent sees it as unread.

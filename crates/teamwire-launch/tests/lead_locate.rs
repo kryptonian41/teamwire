@@ -15,6 +15,7 @@
 mod common;
 
 use common::{Rig, codes, pane_member, team_spec};
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{Liveness, Occupant, Pid, PlaceState, SessionId};
 use teamwire_fakes::FakeHarness;
 use teamwire_launch::new_team_lead;
@@ -23,6 +24,7 @@ fn rig_without_watch_reading() -> Rig {
     let rig = Rig::new();
     let mut caps = FakeHarness::caps();
     caps.reads_watch_lines = false;
+    caps.watch_start = WatchStart::BackgroundCommand;
     rig.harness.set_caps(caps);
     rig
 }
@@ -89,6 +91,18 @@ fn the_watch_command_follows_what_the_leads_harness_reads() {
     assert_eq!(
         launched_watch_command(&rig),
         "nohup teamwire watch demo --deliver >/dev/null 2>&1 &"
+    );
+}
+
+#[test]
+fn a_lead_that_starts_the_watch_with_a_tool_is_told_the_tool() {
+    let rig = Rig::new();
+    let mut caps = FakeHarness::caps();
+    caps.watch_start = WatchStart::ExtensionTool;
+    rig.harness.set_caps(caps);
+    assert_eq!(
+        launched_watch_command(&rig),
+        "call the teamwire_watch tool with team demo"
     );
 }
 

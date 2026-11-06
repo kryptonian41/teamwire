@@ -11,6 +11,7 @@
   "title": "Survey: CHANGEME",
   "children": [
     {
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory.",
       "role": "area1",
       "title": "Map CHANGEME",
       "kind": "investigator",
@@ -18,7 +19,7 @@
       "task_class": "read_only_survey",
       "cwd": "/abs/path/repo",
       "deadline_s": 900,
-      "task": "Investigate <question> in <area>. Do NOT modify any file in the repository. Give file:line evidence for every claim. Say plainly when something is NOT the cause, because ruling things out is as useful as finding the cause. End with the three findings most worth acting on."
+      "task": "Investigate <question> in <area>. Do NOT modify any file in the repository. Give file:line evidence for every claim. Say plainly when something is NOT the cause, because ruling things out is as useful as finding the cause. End with the three findings most worth acting on. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
     }
   ]
 }

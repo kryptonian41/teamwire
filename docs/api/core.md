@@ -329,12 +329,21 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// config file (Claude Code `settings.json` `env`).
                          pub session_env_via_config: bool,
                          pub reads_watch_lines: bool,    // lead can read `teamwire watch` lines (ADR 0023)
+                         /// How a lead starts `teamwire watch`; every text that tells a
+                         /// lead to start one (Stop hold, result line, reprompt, launch)
+                         /// is worded from it by `teamwire_deliver::watch_text`
+                         pub watch_start: WatchStart,
                          /// `box_holds_text` can tell anything: delivery on a host that
                          /// guards dialogs reads the screen only then, and gives such a
                          /// harness screens from `Host::read_tail_styled` (ADR 0031)
                          pub reads_input_box: bool,
                          /// A lead on this harness can start an AFK run (AFK-2, ADR 0031)
                          pub runs_afk: bool }
+/// MonitoredCommand: the lead runs the command under a tool that hands it each
+/// line (Claude Code's Monitor). BackgroundCommand: the lead runs it with
+/// `--deliver` in the background (Codex, ADR 0023). ExtensionTool: the lead
+/// calls teamwire's lead extension tool `teamwire_watch` (pi, ADR 0036).
+pub enum WatchStart { MonitoredCommand, BackgroundCommand, ExtensionTool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      // read only when it is a regular file of at most 64 MiB,

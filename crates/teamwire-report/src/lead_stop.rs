@@ -3,8 +3,9 @@
 
 use std::path::Path;
 
+use teamwire_core::harness::WatchStart;
 use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, Timestamp};
-use teamwire_deliver::watch_lease_is_dead;
+use teamwire_deliver::{WatchText, watch_lease_is_dead, watch_text};
 use teamwire_store::{OpenTeam, ReadTx, StoreError, TeamRead, open_teams};
 
 /// The teams under `home` that the lead of `session` should be watching and
@@ -153,7 +154,7 @@ fn afk_note_for(
             )
         } else if now >= ends {
             format!(
-                "[teamwire:{team}] budget spent at {ends}: finish what is running, write {dir}/afk/REPORT.md, then run `teamwire close {team}`. Start no new implementer. If a command you started will wake you, stop again."
+                "[teamwire:{team}] budget spent at {ends}: start no new implementer. Finish what is running, add the reporter if it has not run, then run `teamwire close {team}` once {dir}/afk/REPORT.md has every heading. If a command you started will wake you, stop again."
             )
         } else {
             format!(
@@ -163,29 +164,9 @@ fn afk_note_for(
     })
 }
 
-/// How the lead starts the watch. A lead that cannot read a command's output
-/// as it is printed (ADR 0023) runs it in the background, and the watch types
-/// each line into the lead's pane.
-pub(crate) fn watch_command(team: &TeamName, reads_watch_lines: bool) -> String {
-    if reads_watch_lines {
-        format!("teamwire watch {team}")
-    } else {
-        format!("nohup teamwire watch {team} --deliver >/dev/null 2>&1 &")
-    }
-}
-
-/// The line the hold carries for one team. `reads_watch_lines` is the lead's
-/// harness capability of the same name.
+/// The line the hold carries for one team. `start` is how the lead's harness
+/// starts a watch.
 #[must_use]
-pub fn watch_missing_note(team: &TeamName, reads_watch_lines: bool) -> String {
-    let command = watch_command(team, reads_watch_lines);
-    if reads_watch_lines {
-        format!(
-            "[teamwire:{team}] no watch is running; start `{command}` with Monitor before you stop."
-        )
-    } else {
-        format!(
-            "[teamwire:{team}] no watch is running; start it in the background with `{command}` before you stop."
-        )
-    }
+pub fn watch_missing_note(team: &TeamName, start: WatchStart) -> String {
+    watch_text(start, WatchText::StopHold, team)
 }

@@ -3,10 +3,11 @@
 //! not a member's. There it registers the lead's MCP server, keeps the
 //! session's state file, runs the lead Stop hook at the end of each run and
 //! the lead's tool hook on each tool call (ADR 0035), and runs
-//! `teamwire watch` itself: each line the watch prints reaches the
-//! model as a steered message after the current turn's tool calls, and starts
-//! a turn when pi is idle. pi has no tool like Claude's Monitor, and a watch
-//! run through the bash tool would hold that call until it timed out.
+//! `teamwire watch` and `teamwire pr-watch` itself (ADR 0039): each line
+//! either prints reaches the model as a steered message after the current
+//! turn's tool calls, and starts a turn when pi is idle. pi has no tool like
+//! Claude's Monitor, and either run through the bash tool would hold that
+//! call until it timed out.
 //!
 //! The text is the shared code of `extension.rs` with one JSON value spliced
 //! in, so no path can break out of the literal. It holds no secret.
@@ -17,6 +18,8 @@ use crate::extension::{CONFIG_SLOT, IMPORTS, SHARED, STATE_SUFFIX, home_args};
 
 /// The tool that starts a watch.
 pub(crate) const WATCH_TOOL: &str = "teamwire_watch";
+/// The tool that starts a pull-request watch.
+pub(crate) const PR_WATCH_TOOL: &str = "teamwire_pr_watch";
 /// The variable that names the lead's session to its MCP server. pi gives
 /// a server no session variable and no `_meta` (ADR 0030 point 4).
 pub(crate) const LEAD_SESSION_VAR: &str = "TEAMWIRE_PI_LEAD_SESSION";
@@ -45,6 +48,7 @@ pub(crate) fn render(v: &LeadValues<'_>) -> String {
         "stateDir": v.state_dir,
         "stateSuffix": STATE_SUFFIX,
         "watchTool": WATCH_TOOL,
+        "prWatchTool": PR_WATCH_TOOL,
         "watchMessage": WATCH_MESSAGE,
         "watchStartMs": WATCH_START_MS,
         "leadSessionVar": LEAD_SESSION_VAR,
@@ -69,9 +73,10 @@ function inMember(): boolean {
   return Boolean(process.env.TEAMWIRE_ROLE || process.env.TEAMWIRE_TOKEN_FILE);
 }
 
-// A bash command that runs `teamwire watch <team>`, with the team's name.
+// A bash command that runs `teamwire watch <team>`, with the team's name, or
+// `teamwire pr-watch`, with no name.
 const WATCH_IN_BASH =
-  /(?:^|[\s;&|(`])(?:\S*\/)?teamwire\s+(?:--home\s+(?:'[^']*'|"[^"]*"|\S+)\s+)?watch\s+([a-z][a-z0-9]{0,11})\b/;
+  /(?:^|[\s;&|(`])(?:\S*\/)?teamwire\s+(?:--home\s+(?:'[^']*'|"[^"]*"|\S+)\s+)?(?:watch\s+([a-z][a-z0-9]{0,11})\b|pr-watch\b)/;
 
 export default function (pi: ExtensionAPI) {
   // Whether this session is a lead's: decided when each session starts.
@@ -83,7 +88,8 @@ export default function (pi: ExtensionAPI) {
   // False from `session_shutdown` on. pi then marks this runtime stale, and
   // `sendMessage` throws.
   let live = true;
-  // The watches this process runs, by team, and the ones it is stopping.
+  // The watches this process runs, by team or by pull requests, and the ones
+  // it is stopping.
   const watches = new Map<string, any>();
   const stopping = new Set<any>();
 
@@ -111,20 +117,27 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
-  // Starts `teamwire watch <team>`. Resolves to undefined once it runs, or
-  // to what went wrong when it ends within `watchStartMs`.
-  function startWatch(team: string): Promise<string | undefined> {
+  // Starts `teamwire <args>` as the watch `key`. Resolves to undefined once
+  // it runs, or to what went wrong when it ends within `watchStartMs`. An
+  // exit code `fine` accepts is an ordinary end; a later other end is said
+  // with `stopped`.
+  function startWatch(
+    key: string,
+    args: string[],
+    fine: (code: number | null) => boolean,
+    stopped: (why: string) => string,
+  ): Promise<string | undefined> {
     return new Promise((resolve) => {
       let child: any;
       try {
-        child = spawn(TW.bin, [...TW.homeArgs, "watch", team], {
+        child = spawn(TW.bin, [...TW.homeArgs, ...args], {
           stdio: ["ignore", "pipe", "pipe"],
         });
       } catch (e) {
         resolve(String(e));
         return;
       }
-      watches.set(team, child);
+      watches.set(key, child);
       let settled = false;
       let failed = false;
       let pending = "";
@@ -137,7 +150,7 @@ export default function (pi: ExtensionAPI) {
       };
       const timer = setTimeout(() => done(undefined), TW.watchStartMs);
       const forget = () => {
-        if (watches.get(team) === child) watches.delete(team);
+        if (watches.get(key) === child) watches.delete(key);
       };
       child.stdout.on("data", (chunk: Buffer) => {
         pending += chunk.toString("utf8");
@@ -162,9 +175,9 @@ export default function (pi: ExtensionAPI) {
         if (pending.trim()) say(pending.trim());
         const why = err.trim().split("\n").pop() || `exit ${code ?? signal}`;
         if (!settled) {
-          done(code === 0 ? undefined : why);
-        } else if (code !== 0) {
-          say(`[teamwire:${team}] the watch stopped: ${why}. Start it again with the ${TW.watchTool} tool.`);
+          done(fine(code) ? undefined : why);
+        } else if (!fine(code)) {
+          say(stopped(why));
         }
       });
     });
@@ -205,7 +218,8 @@ export default function (pi: ExtensionAPI) {
             details: undefined,
           };
         }
-        const failed = await startWatch(team);
+        const failed = await startWatch(team, ["watch", team], (code) => code === 0, (why) =>
+          `[teamwire:${team}] the watch stopped: ${why}. Start it again with the ${TW.watchTool} tool.`);
         if (failed) throw new Error(`teamwire watch ${team} did not start: ${failed}`);
         return {
           content: [
@@ -214,6 +228,47 @@ export default function (pi: ExtensionAPI) {
               text: `watching ${team}: each watch line reaches you as a message from teamwire`,
             },
           ],
+          details: undefined,
+        };
+      },
+    });
+    pi.registerTool({
+      name: TW.prWatchTool,
+      label: "teamwire pr-watch",
+      description:
+        "Start `teamwire pr-watch` on GitHub pull requests. Each line it prints (a failed " +
+        "check, a merge state, DONE, MERGED) reaches you as a message once your current turn's " +
+        "tool calls have finished, and starts a turn when you are idle, so do not poll. " +
+        "It ends once every pull request is done.",
+      promptSnippet: "Watch the checks of GitHub pull requests; their lines reach you as messages",
+      parameters: Type.Object({
+        repo: Type.String({ description: "The repository, as OWNER/REPO" }),
+        prs: Type.Array(Type.Integer({ minimum: 1 }), {
+          minItems: 1,
+          description: "The pull request numbers",
+        }),
+        interval: Type.Optional(
+          Type.Integer({ minimum: 1, description: "Seconds between polls; pr-watch's default when left out" }),
+        ),
+      }),
+      async execute(_toolCallId: string, params: { repo: string; prs: number[]; interval?: number }) {
+        const repo = String(params.repo ?? "").trim();
+        const prs = (params.prs ?? []).map(String);
+        const key = `pr-watch ${repo} ${prs.join(" ")}`;
+        if (watches.has(key)) {
+          return {
+            content: [{ type: "text", text: `a watch of ${repo} ${prs.join(", ")} already runs in this session` }],
+            details: undefined,
+          };
+        }
+        const every = params.interval ? ["-i", String(params.interval)] : [];
+        // Exit 1 means a check failed, which the last line already said.
+        const failed = await startWatch(key, ["pr-watch", "-R", repo, ...every, ...prs],
+          (code) => code === 0 || code === 1, (why) =>
+          `[teamwire] the pull-request watch of ${repo} stopped: ${why}. Start it again with the ${TW.prWatchTool} tool.`);
+        if (failed) throw new Error(`teamwire pr-watch ${repo} did not start: ${failed}`);
+        return {
+          content: [{ type: "text", text: `watching ${repo} ${prs.join(", ")}: each line reaches you as a message from teamwire` }],
           details: undefined,
         };
       },
@@ -258,6 +313,14 @@ export default function (pi: ExtensionAPI) {
     if (event.toolName === "bash") {
       const command = String((event.input as any)?.command ?? "");
       const found = WATCH_IN_BASH.exec(command);
+      if (found && !found[1]) {
+        return {
+          block: true,
+          reason:
+            `In pi, watch pull requests with the ${TW.prWatchTool} tool (repo, prs, interval). ` +
+            "A pull-request watch run through bash holds the call until every pull request is done, and its lines would not reach you.",
+        };
+      }
       if (found && !/\s--once\b/.test(command)) {
         return {
           block: true,

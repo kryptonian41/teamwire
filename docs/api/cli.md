@@ -185,7 +185,11 @@ prefix, into the lead's place, for a lead whose harness cannot read the
 watch's output as it is printed (a Codex lead, ADR 0023). Each delivery ends
 within 15 s. A line that cannot be delivered is still printed, and the watch
 keeps polling. A lead with that limit, one that cannot read watch lines, starts it as
-`nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`.
+`nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`. A pi lead calls the
+`teamwire_watch` tool of teamwire's lead package instead, which runs the watch
+and steers each line into the session (ADR 0036); the package refuses
+`teamwire watch` through bash. `teamwire pr-watch --deliver` types its lines
+through the same delivery.
 
 Events, each announced once per occurrence:
 
@@ -209,7 +213,7 @@ Events, each announced once per occurrence:
 | `STORE-ERROR <code>` | The store could not be read or written; once per code. `<code>` is `StoreError::code()` (`busy`, `full`, `schema_newer`, ...) |
 | `TEAM-STALLED <roles>` | No member is working and at least one is not done, and every member not done is stuck: quiet (`SILENT`), at a dialog, overdue and idle, or still creating past its limits. A member whose completion is recorded but not yet reported (`DECLARED` or `UNREPORTED`) is waited on and never counted as stuck, so a team whose only unsettled member is `UNREPORTED` prints no `TEAM-STALLED`. Re-armed when something moves |
 | `TEAM-CLOSED` | The team was closed, or its row is gone, before the watch printed `TEAM-COMPLETE`. The watch exits 0 after it. It is never printed after `TEAM-COMPLETE`, because the watch has already exited |
-| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. A watch that has watched a live member and then finds no live member at all, because the lead removed the last one, prints `TEAM-COMPLETE 0/0 done` and exits: nothing is left to watch. A watch over a team that never had a live member keeps polling instead, because the lead may still be launching the first wave. Never on the poll that printed `WATCHING`: `launch --add` can write a member a moment after that poll read the roster, and a watch that printed `TEAM-COMPLETE` has exited, so that member would run unwatched. A watch that keeps polling leaves `TEAM-COMPLETE` to its next poll, and prints it if the team is still complete then; `--once` prints it in its single poll (WAT-20). A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`, including a member that died with its completion still pending. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
+| `TEAM-COMPLETE n/m done; not done: <role> <state> ...` | Every live (not removed) member is settled, and the watch exits. When the team has an implementer, in any state, and no closer has reported (a removed closer's report counts), the line ends `. If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).`, as in `TEAM-COMPLETE 3/3 done. If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` `TEAM-COMPLETE 0/0 done` never ends that way. A watch that has watched a live member and then finds no live member at all, because the lead removed the last one, prints `TEAM-COMPLETE 0/0 done` and exits: nothing is left to watch. A watch over a team that never had a live member keeps polling instead, because the lead may still be launching the first wave. Never on the poll that printed `WATCHING`: `launch --add` can write a member a moment after that poll read the roster, and a watch that printed `TEAM-COMPLETE` has exited, so that member would run unwatched. A watch that keeps polling leaves `TEAM-COMPLETE` to its next poll, and prints it if the team is still complete then; `--once` prints it in its single poll (WAT-20). A member is settled when its newest completion in its current generation was delivered, or was announced as `UNDELIVERED` or `UNCONFIRMED`, or when the member was announced `DIED`, including a member that died with its completion still pending. `n` counts only status `done`; every other member is named with its state (`failed`, `blocked`, `invalid`, `died`, `undelivered`, `unconfirmed`) |
 
 ### `teamwire status [<team>] [--role R] [--json]`
 
@@ -304,8 +308,12 @@ After the sessions, the command lists the results the lead has not received,
 in the form `status` uses, with a line telling the lead to read those files,
 because teamwire never sends a result again by itself. The sleep hold is
 started or reused as launch does; a hold that cannot be taken is a warning.
-Then come the line `watch: teamwire watch <team>` and a line that says a
-member killed mid-turn needs a `reprompt` or a `note`. When the caller is not
+Then come the line `watch: <how to start it>` and a line that says a
+member killed mid-turn needs a `reprompt` or a `note`. The `watch:` line, the
+same one launch prints, reads `watch: teamwire watch <team>` for a Claude
+Code lead, `watch: nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`
+for a Codex lead, and `watch: call the teamwire_watch tool with team <team>`
+for a pi lead. When the caller is not
 the team's lead session, a last line says that results go to the reopened lead
 and that `teamwire lead --adopt <team>` makes the caller the lead instead.
 
@@ -410,7 +418,13 @@ hash, not its bytes (STO-10).
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
 same checks plus CLS-5; `--stop` allows removing a busy member;
-`--unverified` overrides CLS-5 and prints why. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
+`--unverified` overrides CLS-5 and prints why. A whole-team close, and its
+`--dry-run`, first print on stderr `warning: no closer reported on team
+<team>, and <n> implementer branch(es) have commits; add one from teamwire
+preset closer, or close anyway if the user said so.` when no closer of the
+team has reported (a removed closer's report counts) and `n`, the number of
+implementers whose branch has a commit its base does not, is at least 1. The
+close still goes on, and the exit code does not change. Closing a member ends its background jobs with its tab. A member that ended its turn while its own background job ran looks idle to the host, so `close --role` removes it without `--stop`, and the job is lost. `--dry-run` prints the plan.
 A worktree whose HEAD is detached, with commits that no branch, tag or remote
 ref holds, first gets the branch `teamwire/rescue/<team>-<role>-<sha7>` (reused
 when it already points there; otherwise `-2` to `-99`; close refuses only when
@@ -614,7 +628,7 @@ binary, prints the error and exits 6.
 Run from a new lead session. Records that session as the team's lead and
 prints the old and new session ids (ADR 0008).
 
-### `teamwire pr-watch -R OWNER/REPO [-i SECONDS] PR...`
+### `teamwire pr-watch [--deliver TEAM] -R OWNER/REPO [-i SECONDS] PR...`
 
 EXT-1. One line per poll at most: a check's first failure, a mergeability
 change (a first `CONFLICTING`, `BLOCKED` or `DRAFT` merge state is said once),
@@ -639,6 +653,20 @@ as `MERGED` or `CLOSED`, the command prints `<repo>#<pr> MERGED` or `<repo>#<pr>
 CLOSED` once and counts the PR done. A check failure already announced for it
 still counts, so the command exits 1 in that case. A PR with no checks is done only after three polls in a row
 find none, because GitHub has no check runs for a few seconds after a push.
+
+`--deliver TEAM` (ADR 0039) puts `[teamwire:<team>] ` before each line,
+prints it, and types it into that team's lead pane through the delivery of
+`watch --deliver`, for a lead that cannot read the output as it is printed:
+`[teamwire:alpha] o/r#7 MERGED`. Each delivery ends within 15 s; a line that
+cannot be delivered is still printed, and the watch goes on. A Codex lead
+starts it as `nohup teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45
+<prs> >/dev/null 2>&1 &`. A member session is refused (`refused.identity`,
+exit 1), and a team with no database exits 1. Without `--deliver` the lines
+carry no prefix and nothing is typed. A pi lead calls the `teamwire_pr_watch`
+tool of teamwire's lead package instead, with `repo`, `prs` and an optional
+`interval`: it runs `teamwire pr-watch` without `--deliver` and steers each
+line into the session, as `teamwire_watch` does. The package refuses
+`teamwire pr-watch` through bash.
 
 ### `teamwire preset [NAME]`
 
@@ -810,10 +838,10 @@ and still exits 0.
 | `teamwire hook post-tool [--team T --role R]` | a member's PostToolUse hook | Like `claude-post-tool`, on the member's harness. A harness without an in-turn hook gets no reply. |
 | `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing on stdout and always exits 0. |
 | `teamwire hook lead-tool [--harness ID]` | the lead's tool hook (ADR 0035), after each of the lead's tool calls | Parses the call with the named harness (`claude-code` when absent). When the session leads an open team and the call is a member's work, prints the in-turn reply `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<note>}}`. A member's work is an edit to a file under a member's `repo` or `cwd` and outside `$TEAMWIRE_HOME`, a build or test run (`cargo`, `npm`, `pnpm`, `yarn`, `bun`, `go`, `pytest`, `make` and the like, and a `.sh` script whose name holds `test`, `gate`, `build` or `check`), `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `pull`, `push` or `worktree add`, and `gh pr create` or `merge`. The note is `[teamwire:<team>] You lead team <team>, so leave <this edit to PATH, this build or test run, this git merge, ...> to its members: reprompt the member that owns the work, or brief a new one. If the user asked you to do it yourself, carry on.` It names every team the session leads that the call concerns. It never blocks the call. Returns nothing in a member session, for a subagent's call, for a harness with no tool parser, or on any error. Opens stores read-only, only after the call matched, and writes nothing, inside a bound of about 5 s. Always exits 0. |
-| `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. |
+| `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. For a pi lead, which starts the watch with the lead package's tool, the note is `[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team "<team>") before you stop.` |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |
 | `teamwire hook claude-post-tool` | a member's per-run PostToolUse hook | Returns a reminder of unread message ids as `additionalContext`, once per id. When the member's context fill has reached its handoff point, it adds one note per generation (key `handoff-note:<role>:<generation>`) that names `teamwire handoff --guide` and `reports/<role>.handoff.md`, after the reminder. A `handed_off` message whose whole body fit in the typed line is not unread. Always exits 0. |
-| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. When the session leads an open AFK team and nothing will wake the lead (no open team this session leads has a working member and a live watch lease), it holds once more with `[teamwire:<team>] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to <team dir>/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close <team>` once <team dir>/afk/REPORT.md exists. If a command you started will wake you, stop again.` (`<team dir>` is the absolute `$TEAMWIRE_HOME/teams/<team>`). For an AFK team that has never had a member, the part after `carry on.` reads `The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close <team>`, which needs no report for a team that never had a member.`, because close accepts such a team without a report. Past the budget that note is `[teamwire:<team>] budget spent at <RFC 3339 ms Z>: finish what is running, write <team dir>/afk/REPORT.md, then run `teamwire close <team>`. Start no new implementer. If a command you started will wake you, stop again.` When the no-watch note also applies, both come back in one reply, joined by a newline. Returns nothing in a member session (any non-empty `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` or token), for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; every store read, the lead harness's included, happens inside a bound of about 5 s. Always exits 0. |
+| `teamwire hook claude-lead-stop` | the lead's Stop hook, from the teamwire plugin (ADR 0018) | Holds the lead's stop once when the session leads an open team with a started member that has no completion for its current generation and no live watch lease, with one line per team naming `teamwire watch <team>`. When the session leads an open AFK team and nothing will wake the lead (no open team this session leads has a working member and a live watch lease), it holds once more with `[teamwire:<team>] AFK run: nobody will answer you. If you were about to ask the user, decide it yourself, add it to <team dir>/afk/decisions.md, and carry on. If the work is finished, add the reporter, then run `teamwire close <team>` once <team dir>/afk/REPORT.md exists. If a command you started will wake you, stop again.` (`<team dir>` is the absolute `$TEAMWIRE_HOME/teams/<team>`). For an AFK team that has never had a member, the part after `carry on.` reads `The team has no members yet: add the ones the task needs, or, if the run is over, run `teamwire close <team>`, which needs no report for a team that never had a member.`, because close accepts such a team without a report. Past the budget that note is `[teamwire:<team>] budget spent at <RFC 3339 ms Z>: start no new implementer. Finish what is running, add the reporter if it has not run, then run `teamwire close <team>` once <team dir>/afk/REPORT.md has every heading. If a command you started will wake you, stop again.` When the no-watch note also applies, both come back in one reply, joined by a newline. Returns nothing in a member session (any non-empty `TEAMWIRE_TEAM`, `TEAMWIRE_ROLE` or token), for a subagent, on a continued stop, or on any error. Opens stores read-only and writes nothing; every store read, the lead harness's included, happens inside a bound of about 5 s. Always exits 0. |
 | `teamwire --home H mcp [--team T --role R [--token K] \| --lead]` | the harness, from `mcp.json` | The stdio MCP server (`docs/api/mcp.md`). A member's token comes from `TEAMWIRE_TOKEN` when `--token` is absent (ADR 0011). |
 
 ## Maintenance

@@ -191,6 +191,9 @@ pub struct HarnessCaps {
     /// `teamwire watch --deliver`, which types the lines into its pane, so
     /// launch refuses such a lead when it cannot be located (ADR 0023).
     pub reads_watch_lines: bool,
+    /// How a lead on this harness starts `teamwire watch`. Every text that
+    /// tells a lead to start a watch is worded from it.
+    pub watch_start: WatchStart,
     /// `Harness::box_holds_text` can tell anything. Delivery on a host that
     /// guards dialogs reads the screen only when it can, so a harness that
     /// cannot costs no extra read. Delivery gives a harness that reads the
@@ -218,6 +221,21 @@ pub enum Liveness {
     Alive(PlaceState),
     Dead,
     Unknown,
+}
+
+string_enum! {
+    /// How a lead starts `teamwire watch` and gets its lines.
+    pub enum WatchStart {
+        /// The lead runs the command under a tool that hands it each line
+        /// as the command prints it.
+        MonitoredCommand => "monitored_command",
+        /// The lead runs the command in the background with `--deliver`, and
+        /// the watch types each line into the lead's pane (ADR 0023).
+        BackgroundCommand => "background_command",
+        /// The lead calls a tool of teamwire's lead extension, which runs the
+        /// watch and hands the lead each line (ADR 0036).
+        ExtensionTool => "extension_tool",
+    }
 }
 
 string_enum! {

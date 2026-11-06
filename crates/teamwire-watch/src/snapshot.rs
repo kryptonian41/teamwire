@@ -5,8 +5,8 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use teamwire_core::{
-    Actor, DeliveryState, EventType, Member, MemberState, MessageType, Recipient, Role, Timestamp,
-    Ulid,
+    Actor, DeliveryState, EventType, Member, MemberKind, MemberState, MessageType, Recipient, Role,
+    Timestamp, Ulid,
 };
 use teamwire_deliver::AttemptHistory;
 use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
@@ -18,6 +18,9 @@ pub(crate) struct Snapshot {
     pub team_dir: PathBuf,
     /// Members still to be waited for: launching or running.
     pub members: Vec<MemberInfo>,
+    /// The team has an implementer, in any state, and no closer has ever
+    /// reported, so the code it wrote has had no closing check yet.
+    pub closer_missing: bool,
     pub questions: Vec<Question>,
     /// Deliveries to a member that the host took and nobody acknowledged,
     /// leaving out a message whose whole text the typed line carried.
@@ -200,8 +203,14 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_default();
+        let all = tx.members()?.all_or_corrupt()?;
+        let mut closer_missing = all.iter().any(|m| m.kind == MemberKind::Implementer);
         let mut members = Vec::new();
-        for member in tx.members()?.all_or_corrupt()? {
+        for member in all {
+            // A removed closer's report still counts: the lead read it.
+            if member.kind == MemberKind::Closer && tx.latest_completion(&member.role)?.is_some() {
+                closer_missing = false;
+            }
             if matches!(member.state, MemberState::Creating | MemberState::Started) {
                 members.push(member_info(tx, member)?);
             }
@@ -216,6 +225,7 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
             team,
             team_dir,
             members,
+            closer_missing,
             questions: questions(tx)?,
             unread: unread(tx)?,
             unanswered: unanswered(tx)?,

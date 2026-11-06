@@ -180,6 +180,8 @@ fn the_guide_needs_no_team_and_carries_the_document_path_the_summary_and_the_lic
         "Copyright (c) 2026 Matt Pocock",
         "Permission is hereby granted",
         "THE SOFTWARE IS PROVIDED \"AS IS\"",
+        "If your role does not write code, commit nothing.",
+        "Use the\nteam_done tool",
     ] {
         assert!(run.out.contains(wanted), "{wanted}: {}", run.out);
     }
