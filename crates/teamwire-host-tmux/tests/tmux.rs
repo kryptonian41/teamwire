@@ -36,6 +36,8 @@ fn passes_host_contract_on_a_private_socket() {
     let make = |name: &Address| SpawnRequest {
         name: name.clone(),
         title: "contract".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: dir.path().to_path_buf(),
         argv: vec!["cat".to_owned()],
         env: Vec::new(),

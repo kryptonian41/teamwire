@@ -291,6 +291,8 @@ mod tests {
         let req = SpawnRequest {
             name: teamwire_core::Address::parse("tw_demo_api").unwrap(),
             title: "api".to_owned(),
+            team_title: "Demo team".to_owned(),
+            generation: 1,
             cwd: std::env::temp_dir(),
             argv: vec!["claude".to_owned()],
             env: Vec::new(),

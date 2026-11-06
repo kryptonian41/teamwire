@@ -68,6 +68,8 @@ fn debug_output_hides_the_token() {
     let spawn = SpawnRequest {
         name: launch.address.clone(),
         title: "api".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: "/w".into(),
         argv: Vec::new(),
         env: env(),

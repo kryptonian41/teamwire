@@ -19,6 +19,8 @@ fn req(name: &str) -> SpawnRequest {
     SpawnRequest {
         name: Address::parse(name).unwrap(),
         title: "title".into(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: "/work".into(),
         argv: vec!["claude".into()],
         env: vec![],

@@ -198,6 +198,8 @@ fn plan_with<'r>(
     let request = SpawnRequest {
         name: Address::of(&team.name, role),
         title: member.title.clone(),
+        team_title: String::new(),
+        generation: 1,
         cwd: member.cwd.clone(),
         argv: spec.argv.clone(),
         env: Vec::new(),

@@ -678,6 +678,8 @@ mod tests {
         SpawnRequest {
             name: Address::parse("tw_demo_api").unwrap(),
             title: "api".to_owned(),
+            team_title: "Demo team".to_owned(),
+            generation: 1,
             cwd: std::env::temp_dir(),
             argv: vec!["cat".to_owned()],
             env,

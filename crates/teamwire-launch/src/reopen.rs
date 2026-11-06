@@ -278,6 +278,8 @@ fn reopen_member<'r>(
     let request = SpawnRequest {
         name: Address::of(&team.name, &member.role),
         title: member.title.clone(),
+        team_title: String::new(),
+        generation: 1,
         cwd: member.cwd.clone(),
         argv: spec.argv,
         env: Vec::new(),

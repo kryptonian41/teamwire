@@ -430,6 +430,8 @@ fn run_member(
     let request = teamwire_core::SpawnRequest {
         name: m.address.clone(),
         title: m.spec.title.clone(),
+        team_title: String::new(),
+        generation: 1,
         cwd: m.cwd.clone(),
         argv: spec.argv,
         env,

@@ -99,6 +99,8 @@ fn run(tmux: &Tmux, platform: &Arc<dyn Platform>, report: &mut Report) {
     let req = SpawnRequest {
         name,
         title: "tmux live check".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: std::env::temp_dir(),
         // `cat` echoes each submitted line, so a submitted line shows twice.
         argv: vec![
