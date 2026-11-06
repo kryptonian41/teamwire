@@ -1,5 +1,5 @@
 import type { StateCategory } from "../shared/state.ts";
-import { DELIVERY_CATEGORY } from "./components.tsx";
+import { DELIVERY_CATEGORY, StateChip } from "./components.tsx";
 import { layoutFlow, type FlowGraph, type Layout, type Placed } from "./model/flow.ts";
 import { DELIVERY_ORDER } from "./model/flow.ts";
 
@@ -12,12 +12,15 @@ export interface Selected {
 export function Flow({
   graph,
   categories,
+  states,
   selected,
   onSelect,
 }: {
   graph: FlowGraph;
   /** Category of each node id. Missing ids are drawn as neutral. */
   categories: ReadonlyMap<string, StateCategory>;
+  /** State word of each node id, shown in its label so colour is never the only sign. */
+  states: ReadonlyMap<string, string>;
   selected: Selected | null;
   onSelect: (s: Selected | null) => void;
 }) {
@@ -25,7 +28,8 @@ export function Flow({
   const at = new Map(layout.nodes.map((n) => [n.id, n] as const));
   const pairs = new Set(graph.edges.map((e) => `${e.from}>${e.to}`));
   const maxCount = Math.max(1, ...graph.edges.map((e) => e.count));
-  const view = fitView(layout);
+  const label = (id: string) => (states.has(id) ? `${id} · ${states.get(id)}` : id);
+  const view = fitView(layout, label);
 
   return (
     <div className="flow-panel">
@@ -73,16 +77,14 @@ export function Flow({
             </title>
             <circle cx={n.x} cy={n.y} r={layout.r} />
             <text x={n.label.x} y={n.label.y} textAnchor={n.label.anchor}>
-              {n.id.length > 18 ? `${n.id.slice(0, 17)}…` : n.id}
+              {label(n.id).length > LABEL_MAX ? `${label(n.id).slice(0, LABEL_MAX - 1)}…` : label(n.id)}
             </text>
           </g>
         ))}
       </svg>
       <div className="legend" role="group" aria-label="Edge colours, worst delivery state">
         {DELIVERY_ORDER.map((s) => (
-          <span key={s} className={`chip cat-${DELIVERY_CATEGORY[s]}`}>
-            {s}
-          </span>
+          <StateChip key={s} word={s} category={DELIVERY_CATEGORY[s]} />
         ))}
         <span className="sub">Wider line = more messages. Click a line to filter the log.</span>
       </div>
@@ -92,7 +94,7 @@ export function Flow({
 
 /** Label text is 13px; this is a generous average glyph width for the system face. */
 const CHAR_W = 7.5;
-const LABEL_MAX = 18;
+const LABEL_MAX = 30;
 const PAD = 16;
 
 /**
@@ -100,14 +102,14 @@ const PAD = 16;
  * room for nodes that may not exist, so drawing its full size leaves wide
  * empty bands; the fitted box keeps the diagram at its natural scale.
  */
-export function fitView(layout: Layout): { x: number; y: number; width: number; height: number } {
+export function fitView(layout: Layout, label: (id: string) => string = (id) => id): { x: number; y: number; width: number; height: number } {
   if (layout.nodes.length === 0) return { x: 0, y: 0, width: layout.width, height: layout.height };
   let x0 = Infinity;
   let y0 = Infinity;
   let x1 = -Infinity;
   let y1 = -Infinity;
   for (const n of layout.nodes) {
-    const w = Math.min(n.id.length, LABEL_MAX) * CHAR_W;
+    const w = Math.min(label(n.id).length, LABEL_MAX) * CHAR_W;
     const lx = n.label.anchor === "start" ? n.label.x : n.label.anchor === "end" ? n.label.x - w : n.label.x - w / 2;
     x0 = Math.min(x0, n.x - layout.r, lx);
     x1 = Math.max(x1, n.x + layout.r, lx + w);

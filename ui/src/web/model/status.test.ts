@@ -3,7 +3,7 @@ import type { FileRef } from "../../shared/api.ts";
 import { StatusAll, TeamsList } from "../../shared/teamwire.ts";
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
-import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, refText, spanText, startedByLine, unansweredLines, unreadLines, watchChip, watchLine } from "./status.ts";
+import { acceptsLine, afkChip, afkLine, afkLinks, answersLink, deliveryText, ownsLine, questionRows, refText, spanText, startedByLine, unansweredLines, unreadLines, watchChip, watchLine } from "./status.ts";
 
 test("watch line for each state", () => {
   expect(watchLine({ state: "running", pid: 40211, heartbeat_age_s: 4 })).toBe("Watch running · pid 40211 · heartbeat 4 s ago");
@@ -93,4 +93,23 @@ test("the fixtures hold refs for the docs team in status and in the roster", () 
   const texts = (refs: { provider: string; id: string }[]) => refs.map(refText);
   expect(texts(StatusAll.parse(status)[1]!.refs)).toEqual(["linear:GKA-580", "github:#3772"]);
   expect(texts(TeamsList.parse(teams).teams[1]!.refs)).toEqual(["linear:GKA-580", "github:#3772"]);
+});
+
+test("question rows carry the id, the parties, the age and the excerpt the status messages hold", () => {
+  const messages = [{ display_id: "m006", time: "2026-10-13T07:12:09.120Z", type: "question" as const, from: "web", to: ["lead"], excerpt: "Partial refunds as a separate row?" }];
+  expect(
+    questionRows({
+      messages,
+      unanswered_questions: [
+        { display_id: "m006", from: "web", to: ["lead"], age_s: 180 },
+        { display_id: "m007", from: "api", to: ["db@billing", "lead@uiplus"], age_s: 45 },
+      ],
+    }),
+  ).toEqual([
+    { id: "m006", from: "web", to: "lead", age: "3 min", text: "Partial refunds as a separate row?", toLead: true },
+    { id: "m007", from: "api", to: "db@billing, lead@uiplus", age: "45 s", text: null, toLead: false },
+  ]);
+  // The payments fixture's one question, to the lead, carries its excerpt.
+  const rows = questionRows(StatusAll.parse(status)[0]!);
+  expect(rows.map((r) => [r.id, r.toLead, r.text !== null])).toEqual([["m006", true, true]]);
 });

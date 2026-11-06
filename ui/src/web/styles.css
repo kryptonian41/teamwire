@@ -176,12 +176,15 @@ p.note.error {
 .empty p { margin: 0; }
 .empty-title { font-size: var(--t-lead); font-weight: 600; color: var(--ink); margin-bottom: var(--s1) !important; }
 
-/* Chips: the colour comes from the category, the text is the raw state word. */
+/* Chips. A plain chip is neutral (a ref, the team state, the watch): a surface
+   tone and muted text, no shape. A state chip adds its category's colour pair
+   and a shape glyph, so colour only repeats what the shape and the word say. */
 .chip {
-  display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm);
-  font-size: var(--t-small); font-weight: 500; line-height: 1.5;
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px var(--s2); border-radius: var(--r-sm);
+  font-size: var(--t-small); font-weight: 500; line-height: 1.5; color: var(--muted); background: var(--surface-2);
   white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
 }
+.chip .g { font-weight: 700; font-family: var(--sans); width: 1em; text-align: center; flex: none; }
 .cat-done { color: var(--c-done); background: var(--bg-done); }
 .cat-active { color: var(--c-active); background: var(--bg-active); }
 .cat-idle { color: var(--c-idle); background: var(--bg-idle); }
@@ -195,12 +198,6 @@ p.note.error {
 .dot.cat-attention { background: var(--c-attention); }
 .dot.cat-failed { background: var(--c-failed); }
 .dot.cat-unknown { background: var(--c-unknown); }
-/* A flag names a problem count; it reads stronger than a state chip. */
-.flag {
-  display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm); font-size: var(--t-small);
-  font-weight: 600; background: var(--c-attention); color: var(--surface);
-}
-.flag.bad { background: var(--c-failed); }
 .chips { display: flex; flex-wrap: wrap; gap: var(--s1) 6px; align-items: center; margin: 0; }
 .sub { color: var(--muted); font-size: var(--t-small); }
 .live { display: inline-flex; align-items: center; gap: 6px; }
@@ -213,44 +210,80 @@ p.note.error {
 .lede { margin: var(--s2) 0 0; color: var(--muted); font-size: var(--t-lead); max-width: 62ch; }
 .page-head + section > h2:first-child { margin-top: var(--s4); }
 
-/* Overview: one full-width row per team. A team with a problem sits on a
-   raised surface under "Needs a look"; a healthy team sits on the ground. */
-.teams { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s2); }
-.team {
-  display: grid; grid-template-columns: minmax(220px, 1fr) 2fr; gap: var(--s3) var(--s4);
-  padding: var(--s3) var(--s4) 20px; border-radius: var(--r-lg);
-  color: inherit; text-decoration: none;
+/* Overview. The queue: one surface, a title line per team, then one row per
+   thing that needs the person. Under it, one row per team. */
+.queue { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--r-lg); overflow: hidden; }
+.queue > li + li { border-top: 1px solid var(--line); }
+.queue h3 { margin: 0; padding: 10px var(--s3) 6px; font-size: var(--t-body); }
+.queue h3 .sub { margin-left: var(--s1); font-weight: 400; }
+.queue ul { list-style: none; margin: 0; padding: 0; }
+.qrow {
+  display: grid; grid-template-columns: 11rem 7rem 1fr; gap: var(--s1) var(--s3); align-items: center;
+  padding: 7px var(--s3); border-top: 1px solid var(--line); color: inherit; text-decoration: none;
 }
-.team-id, .team-body { display: grid; gap: var(--s2); align-content: start; min-width: 0; }
-.team h3 { margin: 0; font-size: var(--t-lead); letter-spacing: -0.01em; }
-.team .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: 0; color: var(--muted); font-size: var(--t-small); }
-.team.problem { background: var(--surface); }
-a.team:hover { background: var(--surface-2); }
+a.qrow:hover { background: var(--surface-2); }
+/* The queue panel clips overflow, so the ring sits inside the row. */
+a.qrow:focus-visible { outline-offset: -2px; }
+.qrow .role { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } /* taste-skill-ignore */
+.qrow .qtext { min-width: 0; overflow-wrap: anywhere; }
+.teams { list-style: none; margin: 0; padding: 0; background: var(--surface); border-radius: var(--r-lg); }
+.teams > li + li { border-top: 1px solid var(--line); }
+.trow {
+  display: grid; grid-template-columns: minmax(200px, 1.2fr) 2fr 9rem; gap: var(--s2) var(--s4); align-items: center;
+  padding: 12px var(--s3); color: inherit; text-decoration: none;
+}
+a.trow:hover { background: var(--surface-2); }
+.trow:focus-visible { outline-offset: -2px; }
+.tname { min-width: 0; display: grid; gap: var(--s1); }
+.tname h3 { margin: 0; font-size: var(--t-body); font-weight: 600; }
+.tname .sub { margin: 0; }
+.strip { display: flex; flex-wrap: wrap; gap: var(--s1); min-width: 0; }
+.strip .chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } /* taste-skill-ignore */
+.tflag { text-align: right; color: var(--muted); font-size: var(--t-small); }
 @media (max-width: 720px) {
-  .team { grid-template-columns: 1fr; padding: var(--s3); }
+  .qrow { grid-template-columns: auto 1fr; }
+  .qrow .qtext { grid-column: 1 / -1; }
+  .trow { grid-template-columns: 1fr; gap: var(--s2); }
+  .tflag { text-align: left; }
 }
 
-/* Team page head */
+/* Team page head: stays at the top of the screen, the tabs under it. */
+.team-head { position: sticky; top: 0; z-index: 5; background: var(--bg); padding-top: var(--s2); margin-bottom: var(--s4); }
+.team-head .crumbs { margin-bottom: var(--s2); }
+.team-title { display: flex; align-items: center; justify-content: space-between; gap: var(--s3); }
+.team-head .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: var(--s2) 0 0; color: var(--muted); font-size: var(--t-small); }
+.team-head .meta > code { font-size: var(--t-body); color: var(--ink); }
+.tabnav { display: flex; gap: var(--s1); margin-top: var(--s3); border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tabnav a {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--s3); margin-bottom: -1px;
+  border-bottom: 2px solid transparent; text-decoration: none; color: var(--muted); font-weight: 500; white-space: nowrap;
+}
+.tabnav a:hover { color: var(--ink); }
+.tabnav a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+/* The ring sits inside the link, so the scroll box never clips it. */
+.tabnav a:focus-visible { outline-offset: -2px; }
+/* Reserved places for team uiplus's action buttons. Empty, they take no space. */
+.team-actions, .member-actions, .question-actions { display: flex; flex-wrap: wrap; gap: var(--s2); }
+.team-actions:empty, .member-actions:empty, .question-actions:empty { display: none; }
+/* One unanswered question per row: id, the parties and age, the text, then the action place. */
+.questions { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
+.question { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); padding: var(--s2) var(--s3); border-radius: var(--r-lg); background: var(--surface); }
+.question .qtext { flex: 1 1 24ch; min-width: 0; overflow-wrap: anywhere; }
+.page-errors { margin-bottom: var(--s4); }
+
 .crumbs { margin: 0 0 var(--s3); font-size: var(--t-small); }
 .crumbs a { display: inline-block; text-decoration: none; font-weight: 500; }
 .crumbs a:hover { text-decoration: underline; }
 .page-head { display: grid; gap: var(--s2); }
 .page-head .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: 0; color: var(--muted); }
-.page-errors { margin-bottom: var(--s4); font-size: var(--t-body); }
-button.chip { border: 0; font-family: inherit; cursor: pointer; }
-button.chip:hover { filter: brightness(.95); }
+button.chip { border: 0; font-family: inherit; cursor: pointer; min-height: 28px; }
+button.chip:hover { color: var(--ink); }
+button.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .filter input[type="search"] { flex: 1; min-width: 0; max-width: 40ch; font: inherit; padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
 .decision-cols { display: grid; gap: var(--s3); overflow-x: auto; padding-bottom: var(--s2); margin-bottom: var(--s3); }
 .decision-col { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s2) var(--s3); background: var(--surface); }
 .decision-col h4 { margin: 0 0 var(--s2); }
 .decision-text { margin: 0 0 var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: var(--t-small); }
-.attention { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s1); }
-.attention a, .attention li > span {
-  display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); padding: var(--s2) var(--s3);
-  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); color: inherit; text-decoration: none;
-}
-.attention a:hover { background: var(--surface-2); }
-.attention .who { color: var(--muted); font-size: var(--t-small); align-self: center; }
 .results { margin: 0; padding-left: var(--s4); display: grid; gap: var(--s1); }
 .results code { overflow-wrap: anywhere; }
 
@@ -341,8 +374,10 @@ pre.text {
   box-shadow: var(--shadow); /* taste-skill-ignore: the drawer is a dialog that floats over the page */
 }
 .drawer header { display: flex; justify-content: space-between; align-items: start; gap: var(--s3); }
-.drawer h2 { margin: 0; font-size: var(--t-head); letter-spacing: -0.02em; }
+.drawer h2 { margin: 0; font-size: var(--t-head); letter-spacing: -0.02em; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; } /* taste-skill-ignore */
 .drawer header .sub { margin: var(--s1) 0 0; font-size: var(--t-body); }
+.drawer-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--s2); }
+.drawer h3 { margin-top: var(--s3); }
 .drawer code { overflow-wrap: anywhere; }
 .tabs { display: flex; flex-wrap: wrap; gap: var(--s1); }
 .tabs button {
@@ -379,8 +414,11 @@ pre.text {
 
 /* History and archive */
 .history-team h2 { margin-bottom: var(--s1); }
+.history-team h2 code { font-size: inherit; }
 .summary { margin: 0 0 var(--s3); color: var(--muted); max-width: 60ch; font-variant-numeric: tabular-nums; }
-.file-group h3 { margin-top: var(--s4); }
+.file-group h3 { margin: var(--s3) 0 var(--s1); }
+.file-group h3 code { font-size: inherit; }
+.file-group .chips { gap: var(--s1) var(--s2); }
 
 details { margin-top: var(--s5); }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-lead); margin-bottom: var(--s3); }
@@ -417,7 +455,10 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .commit-chip { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); background: var(--surface-2); padding: 0 6px; border-radius: var(--r-sm); } /* taste-skill-ignore */
 .msgs tr.picked td { background: var(--bg-active); }
 .afk-files { margin-top: var(--s2); }
-.facts { margin: var(--s2) 0 var(--s3); padding: 0; list-style: none; color: var(--muted); font-size: var(--t-small); }
+/* The member's facts: a label column and a value column, no gaps between. */
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--s1) var(--s3); align-items: baseline; margin: 0; padding: var(--s3); border-radius: var(--r-lg); background: var(--surface); }
+.facts dt { color: var(--muted); font-size: var(--t-small); }
+.facts dd { margin: 0; min-width: 0; overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: var(--s1) var(--s2); align-items: center; }
 
 /* Event timeline: one row per event, newest first. A problem row gets a bar
    as well as its hidden "Problem:" text, so colour is never the only cue. */
@@ -441,17 +482,20 @@ a:not(.team, .top nav a, .crumbs a, .skip):active, summary:active { opacity: .7;
 .verify-runs .flags { margin: var(--s1) 0 0; padding-left: var(--s4); font-size: var(--t-small); }
 .verify-runs .flags code { overflow-wrap: anywhere; }
 .verify-runs p { margin: var(--s1) 0 0; }
-td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+th.num, td.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
-/* Members table: eleven columns have to fit the 1240px page, so the cells use
-   less padding. Below its minimum width the table scrolls inside its box. */
+/* Members table: seven columns. The member cell holds the role, then the title
+   and its facts on a second small line. Below its minimum width the table
+   scrolls inside its box. */
 .members { min-width: 1100px; }
-.members th, .members td { padding: 10px 6px; }
-.members .bar { width: 48px; }
-.members td.title { min-width: 10ch; }
-/* Kind, State, Gen, Age, Model, Verify and Tokens stay on one line. */
-.members td:nth-child(3), .members td:nth-child(4), .members td:nth-child(5), .members td:nth-child(6),
-.members td:nth-child(n+9) { white-space: nowrap; }
+.members th, .members td { padding: 6px 10px; vertical-align: middle; }
+.members td.member { min-width: 30ch; }
+.members td.member a { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); } /* taste-skill-ignore */
+.members td.member .chip { margin-left: var(--s2); }
+.members td.member small { display: block; color: var(--muted); font-size: var(--t-small); line-height: 1.35; }
+.members .bar { width: 64px; }
+/* The short columns, from the state to the model, never wrap. */
+.members td:nth-child(n+2) { white-space: nowrap; }
 /* The drawer is a flex column. A box with overflow (a table's scroll box) would
    otherwise shrink to no height once the content is taller than the screen. */
 .drawer > * { flex-shrink: 0; }

@@ -30,7 +30,9 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
       {archives.data &&
         groupArchives(archives.data).map((g) => (
           <section key={g.team} className="history-team">
-            <h2>{g.team}</h2>
+            <h2>
+              <code>{g.team}</code>
+            </h2>
             <SummaryLine m={summary.get(g.team)} live={liveTeams.has(g.team)} />
             <div className="table-wrap">
               <table>
@@ -38,7 +40,7 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
                   <tr>
                     <th>Date</th>
                     <th>Closed at</th>
-                    <th>Files</th>
+                    <th className="num">Files</th>
                     <th>Archive</th>
                   </tr>
                 </thead>
@@ -47,7 +49,7 @@ export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
                     <tr key={a.dir}>
                       <td>{a.date}</td>
                       <td>{a.closedAt ? new Date(a.closedAt).toLocaleString() : "unknown"}</td>
-                      <td>{a.files.length}</td>
+                      <td className="num">{a.files.length}</td>
                       <td>
                         <a href={href.archive(a.dir)}>
                           <code>{a.dir}</code>
@@ -110,25 +112,6 @@ export function Archive({ dir }: { dir: string }) {
       )}
       {entry && (
         <>
-          {entry.files.length === 0 && <Empty title="This archive has no files" />}
-          <AfkFiles id={dir} files={entry.files} load={(n) => client.archiveFile(dir, "afk", n)} />
-          {groupFilesByRole(entry.files.filter((f) => f.kind !== "afk")).map((g) => (
-            <div key={g.role} className="file-group">
-              <h3>{g.role}</h3>
-              <div className="chips">
-                {g.files.map((f) => (
-                  <button
-                    key={`${f.kind}/${f.name}`}
-                    className="btn"
-                    aria-pressed={picked?.kind === f.kind && picked.name === f.name}
-                    onClick={() => setPicked(f)}
-                  >
-                    {f.kind === "comms" ? f.name : f.kind} <span className="sub num">{f.bytes} B</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
           {roles.length > 0 && (
             <>
               <h2>Members</h2>
@@ -137,16 +120,18 @@ export function Archive({ dir }: { dir: string }) {
                   <thead>
                     <tr>
                       <th>Role</th>
-                      <th>Model</th>
                       <th>Verify</th>
-                      <th>Tokens</th>
+                      <th className="num">Tokens</th>
+                      <th>Model</th>
                       <th>Why removed</th>
                     </tr>
                   </thead>
                   <tbody>
                     {roles.map((role) => (
                       <tr key={role}>
-                        <td>{role}</td>
+                        <td>
+                          <code>{role}</code>
+                        </td>
                         <MemberEventCells rows={timeline.rows} role={role} />
                         <td>{removalText(timeline.rows, role)}</td>
                       </tr>
@@ -156,8 +141,28 @@ export function Archive({ dir }: { dir: string }) {
               </div>
             </>
           )}
-          <h2>Timeline</h2>
-          <Timeline rows={timeline.rows} loading={timeline.loading} error={timeline.error} />
+          <h2>Files</h2>
+          {entry.files.length === 0 && <Empty title="This archive has no files" />}
+          <AfkFiles id={dir} files={entry.files} load={(n) => client.archiveFile(dir, "afk", n)} />
+          {groupFilesByRole(entry.files.filter((f) => f.kind !== "afk")).map((g) => (
+            <div key={g.role} className="file-group">
+              <h3>
+                <code>{g.role}</code>
+              </h3>
+              <div className="chips">
+                {g.files.map((f) => (
+                  <button
+                    key={`${f.kind}/${f.name}`}
+                    className="chip"
+                    aria-pressed={picked?.kind === f.kind && picked.name === f.name}
+                    onClick={() => setPicked(f)}
+                  >
+                    {f.kind === "comms" ? f.name : f.kind} <span className="num">{f.bytes} B</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
           {picked && (
             <>
               <h2>
@@ -166,6 +171,8 @@ export function Archive({ dir }: { dir: string }) {
               <FileView id={`${dir}/${picked.kind}/${picked.name}`} load={() => client.archiveFile(dir, picked.kind, picked.name)} />
             </>
           )}
+          <h2>Timeline</h2>
+          <Timeline rows={timeline.rows} loading={timeline.loading} error={timeline.error} />
         </>
       )}
     </>

@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } fro
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, pastHandoff, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
+import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, membersByCategory, pastHandoff, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -167,4 +167,12 @@ test("the overview card counts the members past their handoff", () => {
   expect(problemReasons(team(100, null))).toEqual([]);
   expect(problemReasons(team(400_000, 500_000, 100, null))).toEqual(["2 past handoff"]);
   expect(hasProblem(team(400_000))).toBe(true);
+});
+
+test("members order worst category first, and keep the roster order inside a category", () => {
+  const docs = joinTeam(S[1]!, T);
+  expect(membersByCategory(docs.members).map((m) => m.role)).toEqual(["search", "extra", "ingest", "oddone", "closer", "auth"]);
+  const payments = joinTeam(S[0]!, T);
+  expect(membersByCategory(payments.members).map((m) => m.role)).toEqual(["web", "emails", "fraud", "review", "api", "audit", "ledger"]);
+  expect(membersByCategory([])).toEqual([]);
 });

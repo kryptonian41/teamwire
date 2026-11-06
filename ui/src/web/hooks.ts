@@ -7,6 +7,9 @@ import { lastSeq, mergeRows, storeRestarted } from "./model/timeline.ts";
 
 export const ClientContext = createContext<ApiClient | null>(null);
 
+/** The longest a team page's files and log go without a reload. */
+export const REFRESH_MS = 60_000;
+
 export function useClient(): ApiClient {
   const c = useContext(ClientContext);
   if (!c) throw new Error("ClientContext is missing");

@@ -89,7 +89,7 @@ function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; 
     case "overview":
       return <Overview teams={teams} loaded={snapshot !== null} neverPolled={snapshot?.lastGoodAt === null} />;
     case "team":
-      return <TeamDetail team={teams.find((t) => t.name === route.team)} member={route.member} snapshot={snapshot} />;
+      return <TeamDetail team={teams.find((t) => t.name === route.team)} tab={route.tab} member={route.member} snapshot={snapshot} />;
     case "history":
       return <History liveTeams={liveTeams} />;
     case "archive":
