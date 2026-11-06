@@ -11,11 +11,13 @@ use teamwire_store::user_key_path;
 /// already holds a key is kept, so every process that read it keeps
 /// working. Anything at the path that is not a regular file, a symlink
 /// included, is refused rather than followed. Returns the file's path; the
-/// key itself is never returned.
+/// key itself is never returned. Two runs at once agree on one key: each
+/// holds the user-key lock from its first look at the file to its write.
 pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, String> {
     use std::os::unix::fs::PermissionsExt as _;
     let path = user_key_path(home);
     let shown = path.display();
+    let _lock = lock_user_key(home)?;
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() => {
             let text =
@@ -28,11 +30,7 @@ pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, 
                 .map_err(|e| format!("cannot make {shown} private: {e}"))?;
         }
         Ok(_) => return Err(format!("{shown} is not a regular file")),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            std::fs::create_dir_all(home)
-                .map_err(|e| format!("cannot make {}: {e}", home.display()))?;
-            create_private(&path)?;
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => create_private(&path)?,
         Err(e) => return Err(format!("cannot read {shown}: {e}")),
     }
     let key = crate::member::new_token()?;
@@ -40,6 +38,29 @@ pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, 
         .write_atomic(&path, format!("{key}\n").as_bytes())
         .map_err(|e| format!("cannot write {shown}: {e}"))?;
     Ok(path)
+}
+
+/// The kernel's `flock` on `<home>/locks/user-key.lock`, a file made if
+/// missing and never deleted. Without it a second run could find the first
+/// run's empty file and write a key over the one the first run then wrote.
+/// The lock ends with the open file, so a run that is killed holds nothing.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the user-key lock file is only ever locked, never written"
+)]
+fn lock_user_key(home: &Path) -> Result<std::fs::File, String> {
+    let locks = home.join("locks");
+    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
+    let path = locks.join("user-key.lock");
+    let lock = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
+    lock.lock()
+        .map_err(|e| format!("cannot take the lock {}: {e}", path.display()))?;
+    Ok(lock)
 }
 
 /// A new empty file with mode 0600 at `path`. `write_atomic` keeps the mode

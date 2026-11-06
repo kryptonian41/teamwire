@@ -204,6 +204,12 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
             Recipient::Lead if from_user && req.kind != MessageType::Note => {
                 return Err(Refusal::RecipientNotAllowed.into());
             }
+            // So a lead row next to a member's is always the lead's copy.
+            Recipient::Lead
+                if from_user && req.to.iter().any(|r| matches!(r, Recipient::Member(_))) =>
+            {
+                return Err(Refusal::UserLeadWithMember.into());
+            }
             Recipient::Lead => None,
             // Checked against its own team's store in `foreign`, which
             // refuses every reprompt and note, so every message of the user.

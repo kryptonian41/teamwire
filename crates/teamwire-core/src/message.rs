@@ -171,6 +171,10 @@ pub enum Refusal {
     TypeNotAllowed,
     #[error("this recipient may not receive this type from you")]
     RecipientNotAllowed,
+    /// The user named the lead together with a member (ADR 0040). The code
+    /// is `recipient_not_allowed`; only the text differs.
+    #[error("the user's note to the lead goes as its own message: send it with --to lead alone")]
+    UserLeadWithMember,
     #[error("no such member")]
     UnknownRecipient,
     #[error("no such team")]
@@ -211,7 +215,7 @@ impl Refusal {
         match self {
             Self::Identity => "identity",
             Self::TypeNotAllowed => "type_not_allowed",
-            Self::RecipientNotAllowed => "recipient_not_allowed",
+            Self::RecipientNotAllowed | Self::UserLeadWithMember => "recipient_not_allowed",
             Self::UnknownRecipient => "unknown_recipient",
             Self::UnknownTeam => "unknown_team",
             Self::RecipientTeamClosed => "recipient_team_closed",
