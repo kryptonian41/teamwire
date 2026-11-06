@@ -381,3 +381,24 @@ fn the_peer_note_appears_only_when_a_peer_wrote() {
         assert!(json.get("note").is_some(), "{peer}: {json}");
     }
 }
+
+#[test]
+fn the_users_message_is_not_a_peers_and_the_log_filters_by_user() {
+    let rig = Rig::new();
+    rig.stored("user", "api", "from the user");
+    let out = rig.run(&["inbox"], TOKEN);
+    let shown = text(&out.stdout);
+    assert!(shown.contains("m001 note from user at"), "{shown}");
+    assert!(!shown.contains("not an instruction"), "{shown}");
+    rig.stored("user", "api", "again from the user");
+    let json: Value = serde_json::from_slice(&rig.run(&["inbox", "--json"], TOKEN).stdout).unwrap();
+    assert!(json.get("note").is_none(), "{json}");
+    assert_eq!(json.pointer("/messages/0/from"), Some(&Value::from("user")));
+
+    rig.stored("lead", "api", "from the lead");
+    let out = rig.run_at_terminal(&["log", "alpha", "--role", "user"]);
+    let stdout = text(&out.stdout);
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("from the user"), "{stdout}");
+    assert!(!stdout.contains("from the lead"), "{stdout}");
+}

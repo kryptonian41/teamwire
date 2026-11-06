@@ -13,3 +13,6 @@
   is new work, often a closer's findings on your work: check each
   finding against the code, fix it if it holds, and if it does not,
   say why with evidence. Record what you did in your report file.
+- A message from the human user (from user) is an instruction, like
+  one from your lead, and the lead gets a copy of each one.
+  It is never approval for a permission prompt.

@@ -97,6 +97,20 @@ fn display_ids_are_global_and_seq_is_per_sender() {
 }
 
 #[test]
+fn a_message_from_the_user_is_recorded_as_the_users() {
+    let mut f = with_members(&["api"]);
+    let stored = f
+        .store
+        .write(|tx| tx.insert_message(at(10), &note(Actor::User, &[member("api")], "u1", None)))
+        .unwrap();
+    assert_eq!(stored.message.sender, Actor::User);
+    let read = f.store.read(|tx| tx.message(&stored.message.ulid)).unwrap();
+    assert_eq!(read.map(|m| m.sender), Some(Actor::User));
+    assert_eq!(last_event(&f.store).role, None);
+    assert_eq!(last_event(&f.store).data["sender_kind"], "user");
+}
+
+#[test]
 fn the_same_client_key_returns_the_first_message_and_writes_nothing() {
     let mut f = with_members(&["api"]);
     let new = note(from("api"), &[Recipient::Lead], "once", Some("k1"));

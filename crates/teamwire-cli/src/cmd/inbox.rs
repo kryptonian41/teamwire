@@ -38,8 +38,11 @@ pub(crate) fn run(args: &InboxArgs, global: &Global, wiring: &Wiring) -> ExitCod
         Err(code) => code,
         Ok(Err(e)) => fail("inbox", &e.to_string(), error_code(&e)),
         Ok(Ok(items)) => {
-            // Only the lead's own word is an instruction; anyone else is a peer.
-            let peer = items.iter().any(|i| i.from != Actor::Lead);
+            // Only the lead's and the user's word is an instruction; anyone
+            // else is a peer (ADR 0040).
+            let peer = items
+                .iter()
+                .any(|i| !matches!(i.from, Actor::Lead | Actor::User));
             if *json {
                 let mut value = json!({ "messages": items });
                 if let (Some(map), true) = (value.as_object_mut(), peer) {

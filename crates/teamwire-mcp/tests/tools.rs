@@ -597,3 +597,61 @@ async fn the_server_names_itself_teamwire() {
     assert_eq!(info.name, "teamwire");
     assert_eq!(info.version, env!("CARGO_PKG_VERSION"));
 }
+
+#[tokio::test]
+async fn no_tool_call_speaks_as_the_user_even_on_a_server_that_holds_the_user_key() {
+    let mut rig = Rig::new();
+    rig.add_member("api", MemberKind::Implementer);
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the test writes the key file `teamwire user-key` would have written"
+    )]
+    std::fs::write(rig.home.path().join("user.key"), "the-key\n").unwrap();
+    let holds_key = || ServerEnv {
+        process: CallerEnv {
+            from: Some("user".to_owned()),
+            user_key: Some("the-key".to_owned()),
+            ..CallerEnv::default()
+        },
+        ..rig.env()
+    };
+    let note =
+        json!({"team": "alpha", "to": ["api"], "type": "note", "text": "hi", "from": "user"});
+    // The lead's claim stays the lead's: with another session it is refused.
+    rig.harness.set_interactive_caller(sid("someone-else"));
+    let lead = rig.client_with(holds_key(), McpCaller::Lead).await;
+    assert_eq!(
+        refused(&call(&lead, "team_send", note.clone()).await),
+        "refused.identity"
+    );
+    // With the recorded session the note is the lead's, not the user's.
+    rig.harness.set_interactive_caller(sid("lead-1"));
+    let lead = rig.client_with(holds_key(), McpCaller::Lead).await;
+    ok(&call(&lead, "team_send", note).await);
+    // A member's call is the member's.
+    let api = rig
+        .client_with(
+            holds_key(),
+            McpCaller::Member {
+                team: teamwire_core::TeamName::parse("alpha").unwrap(),
+                role: teamwire_core::Role::parse("api").unwrap(),
+                token: token_of("api"),
+            },
+        )
+        .await;
+    ok(&call(
+        &api,
+        "team_send",
+        json!({"to": ["lead"], "type": "finding", "text": "from api", "from": "user"}),
+    )
+    .await);
+    let senders: Vec<String> = rig
+        .store
+        .read(|tx| tx.messages(&teamwire_store::MessageFilter::default()))
+        .unwrap()
+        .items
+        .into_iter()
+        .map(|m| m.sender.to_string())
+        .collect();
+    assert_eq!(senders, ["lead", "api"]);
+}

@@ -972,3 +972,52 @@ fn the_user_resends_its_own_lead_copy_and_nothing_else() {
     assert_eq!(theirs.status.code(), Some(1), "{stderr}");
     assert!(stderr.contains("refused.not_resendable"), "{stderr}");
 }
+
+#[test]
+fn status_events_and_export_name_the_user_as_the_sender() {
+    let rig = live_rig();
+    let out = rig.run(
+        &[
+            "send",
+            "alpha",
+            "--from",
+            "user",
+            "--to",
+            "api",
+            "--type",
+            "reprompt",
+            "--text",
+            "start over",
+        ],
+        &Identity::User,
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let status = rig.run(&["status", "alpha", "--json"], &Identity::Nobody);
+    let view: Value = serde_json::from_slice(&status.stdout).unwrap();
+    assert_eq!(view.pointer("/messages/0/from"), Some(&Value::from("user")));
+    let events = rig.run(&["events", "alpha", "--json"], &Identity::Nobody);
+    let events: Value = serde_json::from_slice(&events.stdout).unwrap();
+    let sent: Vec<&Value> = events
+        .get("events")
+        .and_then(Value::as_array)
+        .unwrap()
+        .iter()
+        .filter(|e| e.get("type") == Some(&Value::from("message.sent")))
+        .collect();
+    assert_eq!(sent.len(), 1, "{events}");
+    assert_eq!(
+        sent.first().and_then(|e| e.pointer("/data/sender_kind")),
+        Some(&Value::from("user"))
+    );
+    let export = rig.run(&["export", "alpha"], &Identity::Nobody);
+    let message = text(&export.stdout)
+        .lines()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .find(|r| r.get("type") == Some(&Value::from("teamwire.message")))
+        .unwrap();
+    assert_eq!(
+        message.pointer("/data/message/sender"),
+        Some(&Value::from("user")),
+        "{message}"
+    );
+}
