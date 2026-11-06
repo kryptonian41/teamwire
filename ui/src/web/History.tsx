@@ -171,6 +171,8 @@ export function Archive({ dir }: { dir: string }) {
               <FileView id={`${dir}/${picked.kind}/${picked.name}`} load={() => client.archiveFile(dir, picked.kind, picked.name)} />
             </>
           )}
+          <h2>Timeline</h2>
+          <Timeline rows={timeline.rows} loading={timeline.loading} error={timeline.error} />
         </>
       )}
     </>
