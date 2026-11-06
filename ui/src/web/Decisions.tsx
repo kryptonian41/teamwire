@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import type { DecisionQuery } from "../shared/api.ts";
 import type { DecisionTeam } from "../shared/teamwire.ts";
-import { ErrorNote, Loading, RefChips } from "./components.tsx";
+import { ErrorNote, Loading, RefChips, RolePlaceContext } from "./components.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { decisionColumns, pickColumn, queryFromText, queryLabel } from "./model/decisions.ts";
-import { href } from "./model/route.ts";
+import { href, roleHref } from "./model/route.ts";
 
 /**
  * The team's "Decisions I made" lists, a member list with a detail pane, and a search over every team.
@@ -56,7 +56,7 @@ export function Decisions({
       {own.data && (
         <>
           {own.data.errors.length > 0 && <ErrorNote>{own.data.errors.join("; ")}</ErrorNote>}
-          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Members key={t.team} team={t} role={picks[t.team] ?? null} onPick={(r) => pick(t.team, r)} />)}
+          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Members key={t.team} team={t} role={picks[t.team] ?? null} onPick={(r) => pick(t.team, r)} details={t.team === team} />)}
         </>
       )}
     </section>
@@ -105,12 +105,17 @@ function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void
   );
 }
 
-/** A list of the team's members and, beside it, the selected member's decisions as one numbered list. */
-function Members({ team, role, onPick }: { team: DecisionTeam; role: string | null; onPick: (role: string) => void }) {
+/**
+ * A list of the team's members and, beside it, the selected member's decisions as one numbered list.
+ * `details` adds a link to the picked member's drawer, beside the picker: HTML forbids a link inside a button.
+ */
+function Members({ team, role, onPick, details = false }: { team: DecisionTeam; role: string | null; onPick: (role: string) => void; details?: boolean }) {
+  const place = useContext(RolePlaceContext);
   const cols = decisionColumns(team);
   // The role is kept, not the column, so a refresh keeps the choice; a role that is gone falls back to the default.
   const sel = pickColumn(cols, role);
   if (!sel) return <p className="quiet">No members.</p>;
+  const to = details && place ? roleHref(sel.role, place) : null;
   return (
     <div className="dec-split">
       <ul className="dec-members" aria-label={`Members of ${team.title}`}>
@@ -126,6 +131,12 @@ function Members({ team, role, onPick }: { team: DecisionTeam; role: string | nu
       <div className="dec-pane">
         <p className="sub">
           {sel.kind} · {sel.title}
+          {to && (
+            <>
+              {" · "}
+              <a href={to}>details</a>
+            </>
+          )}
         </p>
         {sel.empty !== null ? (
           <p className="quiet">No decisions to show: {sel.empty}.</p>

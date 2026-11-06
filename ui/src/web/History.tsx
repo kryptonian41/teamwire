@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ArchiveEntry, FileRef } from "../shared/api.ts";
-import { AfkFiles, Empty, ErrorNote, Loading, MemberEventCells } from "./components.tsx";
+import { AfkFiles, Empty, ErrorNote, Loading, MemberEventCells, RolePlaceContext } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad, useTimeline } from "./hooks.ts";
@@ -8,7 +8,7 @@ import { groupArchives, groupFilesByRole } from "./model/history.ts";
 import { removalText, rolesIn } from "./model/memberEvents.ts";
 import { Timeline } from "./Timeline.tsx";
 import { href } from "./model/route.ts";
-import { buildDetail, type DetailSource } from "./model/detail.ts";
+import { buildDetail, knownRoles, type DetailSource } from "./model/detail.ts";
 import { formatDuration, summarizeMetrics, type TeamMetrics } from "./model/teams.ts";
 
 export function History({ liveTeams }: { liveTeams: ReadonlySet<string> }) {
@@ -97,7 +97,7 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
   };
 
   return (
-    <>
+    <RolePlaceContext.Provider value={{ page: "archive", dir, roles: knownRoles(source) }}>
       <p className="crumbs">
         <a href={href.history()}>← History</a>
       </p>
@@ -200,6 +200,6 @@ export function Archive({ dir, member }: { dir: string; member: string | null })
           }}
         />
       )}
-    </>
+    </RolePlaceContext.Provider>
   );
 }

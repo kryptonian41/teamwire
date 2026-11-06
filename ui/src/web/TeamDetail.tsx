@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
-import { AfkFiles, Empty, RefChips, StateChip } from "./components.tsx";
+import { AfkFiles, Empty, RefChips, RoleLink, RolePlaceContext, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { CloseMemberDialog, CloseTeamDialog, MessageButton } from "./Actions.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
@@ -11,7 +11,7 @@ import { href, TABS, type Tab } from "./model/route.ts";
 import { afkLine, refText, watchLine } from "./model/status.ts";
 import { livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { removalText } from "./model/memberEvents.ts";
-import { buildDetail, type DetailSource } from "./model/detail.ts";
+import { buildDetail, knownRoles, type DetailSource } from "./model/detail.ts";
 import { Timeline } from "./Timeline.tsx";
 import { Decisions } from "./Decisions.tsx";
 import { Tokens } from "./Tokens.tsx";
@@ -82,7 +82,7 @@ export function TeamDetail({
   const source: DetailSource = { page: "team", team, rows: timeline.rows, files: files.data ?? [], actions: snapshot.actions };
 
   return (
-    <>
+    <RolePlaceContext.Provider value={{ page: "team", team: name, tab, roles: knownRoles(source) }}>
       <div className="team-head" ref={head}>
         <p className="crumbs">
           <a href={href.overview()}>← Teams</a>
@@ -155,7 +155,9 @@ export function TeamDetail({
                     {team.removed.map((m) => (
                       <tr key={m.role}>
                         <td>
-                          <code>{m.role}</code>
+                          <RoleLink role={m.role}>
+                            <code>{m.role}</code>
+                          </RoleLink>
                         </td>
                         <td>{m.title}</td>
                         <td>{m.kind}</td>
@@ -207,6 +209,6 @@ export function TeamDetail({
         />
       )}
       {closeDialog}
-    </>
+    </RolePlaceContext.Provider>
   );
 }

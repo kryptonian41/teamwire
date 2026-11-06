@@ -1,4 +1,4 @@
-import { ErrorNote, Loading } from "./components.tsx";
+import { ErrorNote, Loading, RoleLink } from "./components.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { countText, usageTotal } from "./model/memberEvents.ts";
 import { tokenTable, type TokenRow } from "./model/tokens.ts";
@@ -45,7 +45,7 @@ function TokenTable({ heading, rows }: { heading: string; rows: TokenRow[] }) {
         <tbody>
           {rows.map((r) => (
             <tr key={r.key}>
-              <td>{r.key}</td>
+              <td>{heading === "Role" ? <RoleLink role={r.key} /> : r.key}</td>
               <td className="num">{countText(r.usage.input)}</td>
               <td className="num">{countText(r.usage.output)}</td>
               <td className="num">{countText(r.usage.cacheRead)}</td>

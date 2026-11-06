@@ -1,4 +1,4 @@
-import { DeliveryChip } from "./components.tsx";
+import { DeliveryChip, RoleLink } from "./components.tsx";
 import { MessageButton } from "./Actions.tsx";
 import { replyPrefix, replyTarget } from "./model/actions.ts";
 import { questionRows, startedByLine, unreadLines } from "./model/status.ts";
@@ -36,7 +36,7 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
                   <li key={q.id} className="question">
                     <code>{q.id}</code>
                     <span className="sub">
-                      {q.from} → {q.to} · asked {q.age} ago
+                      <RoleLink role={q.from} /> → <Roles names={q.to} /> · asked {q.age} ago
                     </span>
                     <span className="qtext">{q.text ?? "question text not in the latest messages"}</span>
                     {/* Empty while no reply is offered, and then it takes no space. The question stays unanswered. */}
@@ -58,7 +58,10 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
           <ul className="results">
             {older.map((m) => (
               <li key={m.role}>
-                <strong>{m.role}</strong>: {startedByLine(m)}
+                <strong>
+                  <RoleLink role={m.role} />
+                </strong>
+                : {startedByLine(m)}
               </li>
             ))}
           </ul>
@@ -83,7 +86,9 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
                     <td>
                       <code>{d.display_id}</code>
                     </td>
-                    <td>{d.to}</td>
+                    <td>
+                      <RoleLink role={d.to} />
+                    </td>
                     <td>
                       <DeliveryChip to={d.to} state={d.state} />
                     </td>
@@ -101,7 +106,11 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
           <ul className="results">
             {s.undelivered_results.map((r) => (
               <li key={`${r.role}-${r.n}`}>
-                Result {r.n} from <strong>{r.role}</strong>: {r.report_state} <code>{r.path}</code>
+                Result {r.n} from{" "}
+                <strong>
+                  <RoleLink role={r.role} />
+                </strong>
+                : {r.report_state} <code>{r.path}</code>
               </li>
             ))}
           </ul>
@@ -109,4 +118,14 @@ export function NeedsLook({ team, actions }: { team: TeamModel; actions: boolean
       )}
     </>
   );
+}
+
+/** `questionRows` joins the recipients with ", "; a role name holds no comma or space, so the split is exact. */
+function Roles({ names }: { names: string }) {
+  return names.split(", ").map((n, i) => (
+    <span key={n}>
+      {i > 0 && ", "}
+      <RoleLink role={n} />
+    </span>
+  ));
 }
