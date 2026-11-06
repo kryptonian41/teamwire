@@ -113,7 +113,7 @@ function Members({ team, role, onPick }: { team: DecisionTeam; role: string | nu
   if (!sel) return <p className="quiet">No members.</p>;
   return (
     <div className="dec-split">
-      <ul className="dec-members" aria-label="Members">
+      <ul className="dec-members" aria-label={`Members of ${team.title}`}>
         {cols.map((c) => (
           <li key={c.role}>
             <button type="button" aria-pressed={c === sel} onClick={() => onPick(c.role)}>
