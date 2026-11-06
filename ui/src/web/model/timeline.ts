@@ -21,6 +21,7 @@ export const FILTER_LABELS: Record<Filter, string> = {
 export interface TimelineLine {
   seq: number;
   time: string;
+  /** The party the row is about, from `whoOf`. */
   role: string | null;
   /** Display id of the message the row is about, such as `m014`. */
   message: string | null;
@@ -281,6 +282,10 @@ const fallbackLabel = (row: EventRow): string => (row.role ? `${row.type} · ${r
  * latest completion number, which only an earlier `member.completed` row
  * carries.
  */
+/** The party a row is about. The lead's own `message.sent` rows carry no role, so they name `lead` from `sender_kind`. */
+export const whoOf = (row: EventRow): string | null =>
+  row.role ?? (row.type === "message.sent" && row.data["sender_kind"] === "lead" ? "lead" : null);
+
 export function describeRows(rows: readonly EventRow[]): TimelineLine[] {
   const latest = new Map<string, number>();
   return rows.map((row) => {
@@ -292,7 +297,7 @@ export function describeRows(rows: readonly EventRow[]): TimelineLine[] {
     return {
       seq: row.seq,
       time: row.time,
-      role: row.role,
+      role: whoOf(row),
       message: row.message,
       label: label || fallbackLabel(row),
       details: label ? details || null : null,
