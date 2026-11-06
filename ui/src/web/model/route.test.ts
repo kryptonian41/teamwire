@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { href, parseRoute } from "./route.ts";
+import { href, parseRoute, TABS } from "./route.ts";
 
 test("parses every route", () => {
   expect(parseRoute("")).toEqual({ page: "overview" });
   expect(parseRoute("#/")).toEqual({ page: "overview" });
-  expect(parseRoute("#/team/payments")).toEqual({ page: "team", team: "payments", member: null });
-  expect(parseRoute("#/team/payments/member/api")).toEqual({ page: "team", team: "payments", member: "api" });
+  expect(parseRoute("#/team/payments")).toEqual({ page: "team", team: "payments", tab: "overview", member: null });
+  expect(parseRoute("#/team/payments/member/api")).toEqual({ page: "team", team: "payments", tab: "overview", member: "api" });
   expect(parseRoute("#/history")).toEqual({ page: "history" });
   expect(parseRoute("#/history/ads-2026-10-07-153012")).toEqual({ page: "archive", dir: "ads-2026-10-07-153012" });
   expect(parseRoute("#/history/ads-2026-10-07")).toEqual({ page: "archive", dir: "ads-2026-10-07" });
@@ -22,7 +22,27 @@ test("rejects names that could escape an API path", () => {
 });
 
 test("href builders round-trip through the parser", () => {
-  expect(parseRoute(href.member("payments", "api"))).toEqual({ page: "team", team: "payments", member: "api" });
+  expect(parseRoute(href.member("payments", "api"))).toEqual({ page: "team", team: "payments", tab: "overview", member: "api" });
+  expect(parseRoute(href.team("payments"))).toEqual({ page: "team", team: "payments", tab: "overview", member: null });
+  expect(parseRoute(href.team("payments", "tokens"))).toEqual({ page: "team", team: "payments", tab: "tokens", member: null });
+  expect(parseRoute(href.member("payments", "api", "timeline"))).toEqual({ page: "team", team: "payments", tab: "timeline", member: "api" });
   expect(parseRoute(href.archive("ads-2026-10-07"))).toEqual({ page: "archive", dir: "ads-2026-10-07" });
   expect(parseRoute(href.overview())).toEqual({ page: "overview" });
+});
+
+test("each of the five tabs has its own route, with or without a member", () => {
+  for (const tab of TABS) {
+    expect(parseRoute(`#/team/payments/${tab}`)).toEqual({ page: "team", team: "payments", tab, member: null });
+    expect(parseRoute(`#/team/payments/${tab}/member/api`)).toEqual({ page: "team", team: "payments", tab, member: "api" });
+  }
+  expect(TABS).toEqual(["overview", "messages", "decisions", "tokens", "timeline"]);
+});
+
+test("an unknown tab, a bad member under a tab, or extra parts are not found", () => {
+  expect(parseRoute("#/team/payments/flow").page).toBe("notfound");
+  expect(parseRoute("#/team/payments/Messages").page).toBe("notfound");
+  expect(parseRoute("#/team/payments/messages/member/..").page).toBe("notfound");
+  expect(parseRoute("#/team/payments/messages/api").page).toBe("notfound");
+  expect(parseRoute("#/team/payments/messages/member/api/x").page).toBe("notfound");
+  expect(parseRoute("#/team/payments/member").page).toBe("notfound");
 });
