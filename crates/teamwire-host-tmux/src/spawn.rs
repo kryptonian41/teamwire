@@ -1,6 +1,7 @@
 //! `Host::spawn`'s tmux calls: the `new-window` (or `new-session`) that
 //! makes the pane, and the private file that carries the member's
-//! environment instead of tmux's argv.
+//! environment instead of tmux's argv. Outside a tmux client each team's
+//! windows go to its own detached session `tw_<team>`.
 
 use std::fmt;
 use std::sync::atomic::Ordering;
@@ -11,8 +12,6 @@ use teamwire_core::{HostError, HostErrorCode, LaunchSpec, SpawnRequest};
 use crate::call::{self, Failure};
 use crate::{BUFFER_COUNTER, Tmux, keys, pane};
 
-/// The session `spawn` creates when the tmux server has none.
-const SESSION: &str = "teamwire";
 /// The size of a session `spawn` creates. A detached session has no client
 /// to size it, and Claude's dialogs read badly at 80 columns.
 const SESSION_SIZE: [&str; 4] = ["-x", "200", "-y", "50"];
@@ -32,13 +31,14 @@ impl Tmux {
             ));
         }
         let cwd = req.cwd.display().to_string();
+        let window_name = req.window_name();
         let mut shared: Vec<String> = [
             "-d",
             "-P",
             "-F",
             "#{pane_id} #{socket_path}",
             "-n",
-            &req.title,
+            &window_name,
             "-c",
             &cwd,
         ]
@@ -75,8 +75,18 @@ impl Tmux {
                 .chain(shared.iter().cloned())
                 .collect()
         };
-        let window = with(&["new-window"]);
-        let mut session = vec!["new-session", "-s", SESSION];
+        // Inside a tmux client (`with_client`), a window with no target opens
+        // in the client's session. Outside one, it goes to the team's own
+        // detached session. The `=` makes tmux match that name exactly: a bare
+        // name matches by prefix, which would put team `in` into `tw_instr`.
+        let session_name = req.session_name();
+        let target = format!("={session_name}:");
+        let window = if self.socket_path.is_some() {
+            with(&["new-window"])
+        } else {
+            with(&["new-window", "-t", &target])
+        };
+        let mut session = vec!["new-session", "-s", &session_name];
         session.extend(SESSION_SIZE);
         let session = with(&session);
         let run_owned = |args: &[String]| {
@@ -86,9 +96,10 @@ impl Tmux {
 
         let result = (|| {
             let mut out = run_owned(&window);
-            if matches!(out, Err(Failure::NoServer(_))) {
+            // No server, or no session of the team yet.
+            if matches!(out, Err(Failure::NoServer(_) | Failure::NoTarget(_))) {
                 out = run_owned(&session);
-                // A second spawn started the server between our two calls.
+                // A second spawn made the session between our two calls.
                 if matches!(&out, Err(Failure::Host(e)) if e.detail.contains("duplicate session")) {
                     out = run_owned(&window);
                 }
