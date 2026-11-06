@@ -111,7 +111,9 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         head,
         kind_text(p.kind).to_owned(),
         scope(p.check, p.owns),
-        talking(p.kind).replace("{teamwire}", &bin),
+        talking(p.kind)
+            .replace("{teamwire}", &bin)
+            .replace("{team}", p.team.as_str()),
         ask_the_parent(p.kind),
         HOW_TO_WORK.to_owned(),
         finish,

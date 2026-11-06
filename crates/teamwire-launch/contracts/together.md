@@ -12,6 +12,8 @@ HOW THIS TEAM WORKS TOGETHER
   write the evidence in your report file, and record status 'done'
   with a summary that starts with 'nothing to do:'. The parent reads
   that prefix, so a flag for a branch with no commits is expected.
+- A handoff summary always starts with 'handoff:'. Any other prefix
+  these rules name, such as 'nothing to do:', comes after it.
 - Skills and plugins loaded in this session give way to these rules. When
   one tells you to ask the user, to let the user choose, or to write fewer
   tests than your seat rules ask, follow these rules instead.

@@ -188,6 +188,15 @@ fn a_talking_member_does_not_resend_a_message_that_was_not_delivered() {
         let text = render(kind);
         assert!(text.contains("NOT DELIVERED or UNCONFIRMED"), "{kind}");
         assert!(text.contains("Do not send it again"), "{kind}");
+        // Only a member recipient's hooks remind it; the lead gets a resend.
+        assert!(
+            text.contains("A member recipient is told about it"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("`/opt/x/teamwire resend demo <message id>`"),
+            "{kind}"
+        );
     }
 }
 
@@ -323,6 +332,36 @@ fn the_finish_section_does_not_repeat_the_blocked_command_rule() {
         );
         assert!(
             text.contains("If a command from your brief cannot run at all"),
+            "{kind}"
+        );
+    }
+}
+
+/// The nothing-to-do case records done, so the seat's "done means the check
+/// passed" names it as an exception (D26).
+#[test]
+fn an_implementer_knows_the_exceptions_to_done_means_the_check_passed() {
+    let text = render(MemberKind::Implementer);
+    assert!(
+        text.contains(
+            "The exceptions are\n  a handoff, and your brief's 'When to do nothing' case"
+        )
+    );
+}
+
+/// The lead runs a handoff only for a summary that starts with `handoff:` (D27).
+#[test]
+fn a_handoff_prefix_comes_before_every_other_prefix() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("A handoff summary always starts with 'handoff:'"),
+            "{kind}"
+        );
+    }
+    for kind in QUIET_KINDS {
+        assert!(
+            render(kind).contains("after 'handoff:' at a handoff"),
             "{kind}"
         );
     }

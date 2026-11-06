@@ -60,4 +60,6 @@ the tests that prove it, and the commits, in your own worktree.
   from these lines.
 - Status 'done' means your check (YOUR SCOPE below) and every check your
   brief names passed on your last commit. Anything less is 'failed'
-  or 'blocked', with the output in your report file.
+  or 'blocked', with the output in your report file. The exceptions are
+  a handoff, and your brief's 'When to do nothing' case, which records
+  'done' as HOW THIS TEAM WORKS TOGETHER says.
