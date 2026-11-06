@@ -85,7 +85,7 @@ pub(crate) fn check(ctx: &Ctx<'_>, req: &SendRequest) -> Result<Checked, SendErr
         check_rate_and_repeat(ctx, req)?;
     }
     Ok(Checked {
-        recipients: req.to.clone(),
+        recipients: crate::lead_copy::with_lead_copy(&req.actor, &req.to),
         re,
         commit,
     })
@@ -120,17 +120,21 @@ fn snapshot(ctx: &Ctx<'_>, re: Option<&DisplayId>) -> Result<Snapshot, SendError
     })?)
 }
 
-/// Who is speaking: `None` for the lead.
-type SenderKind = Option<MemberKind>;
+/// Who is speaking.
+#[derive(Clone, Copy)]
+enum SenderKind {
+    Lead,
+    User,
+    Member(MemberKind),
+}
 
 fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError> {
     if snap.team_state != TeamState::Open {
         return Err(Refusal::TeamClosed.into());
     }
     match actor {
-        Actor::Lead => Ok(None),
-        // Nothing proves the user yet.
-        Actor::User => Err(Refusal::Identity.into()),
+        Actor::Lead => Ok(SenderKind::Lead),
+        Actor::User => Ok(SenderKind::User),
         // A caller is proven in its own team, never as another team's agent.
         Actor::Other(_) => Err(Refusal::Identity.into()),
         Actor::Member(role) => {
@@ -140,21 +144,23 @@ fn check_sender(snap: &Snapshot, actor: &Actor) -> Result<SenderKind, SendError>
                 .iter()
                 .find(|m| &m.role == role && m.state != MemberState::Removed)
                 .ok_or(Refusal::Identity)?;
-            Ok(Some(member.kind))
+            Ok(SenderKind::Member(member.kind))
         }
     }
 }
 
 /// Every agent that talks sends every kind of information; only the lead
-/// instructs (MSG-1).
+/// and the user instruct (MSG-1). The user only instructs and informs: the
+/// questions and answers between agents stay theirs (ADR 0040).
 fn check_type(sender: SenderKind, kind: MessageType) -> Result<(), SendError> {
     let allowed = match (sender, kind) {
-        (Some(k), _) => k.may_send(kind),
+        (SenderKind::Member(k), _) => k.may_send(kind),
+        (SenderKind::User, _) => matches!(kind, MessageType::Reprompt | MessageType::Note),
         // A notice names a commit in the sender's checkout, and the lead has
         // no checkout on record to look it up in (MSG-2).
-        (None, MessageType::Notice) => false,
+        (SenderKind::Lead, MessageType::Notice) => false,
         (
-            None,
+            SenderKind::Lead,
             MessageType::Finding
             | MessageType::Question
             | MessageType::Answer
@@ -187,13 +193,20 @@ fn check_recipients(snap: &Snapshot, actor: &Actor, req: &SendRequest) -> Result
         ));
     }
     let from_lead = *actor == Actor::Lead;
+    let from_user = *actor == Actor::User;
     for to in &req.to {
         if to.as_str() == actor.as_str() {
             return Err(Refusal::SelfMessage.into());
         }
         let member = match to {
+            // The user's word to the lead is a note: a reprompt starts a
+            // member's generation, and the lead has none (ADR 0040).
+            Recipient::Lead if from_user && req.kind != MessageType::Note => {
+                return Err(Refusal::RecipientNotAllowed.into());
+            }
             Recipient::Lead => None,
-            // Checked against its own team's store in `foreign`.
+            // Checked against its own team's store in `foreign`, which
+            // refuses every reprompt and note, so every message of the user.
             Recipient::Other(_) => continue,
             Recipient::Member(role) => {
                 let found = snap
@@ -323,7 +336,24 @@ fn check_rate_and_repeat(ctx: &Ctx<'_>, req: &SendRequest) -> Result<(), SendErr
         for bad in &found.bad {
             tracing::warn!(key = %bad.key, reason = %bad.reason, "skipped a damaged message in the burst check");
         }
-        let recent = found.items;
+        // The lead's copies of the user's messages to members are not
+        // messages to the lead: they neither count nor make a repeat.
+        let recent: Vec<_> = if req.actor == Actor::User && *to == Recipient::Lead {
+            let mut kept = Vec::new();
+            for r in found.items {
+                let rows = ctx
+                    .store
+                    .read(|tx| tx.deliveries_of(&r.message.ulid)?.all_or_corrupt())?;
+                let recipients: Vec<Recipient> =
+                    rows.into_iter().map(|d| d.delivery.recipient).collect();
+                if !crate::lead_copy::is_lead_copy(&r.message, &recipients) {
+                    kept.push(r);
+                }
+            }
+            kept
+        } else {
+            found.items
+        };
         let in_minute = recent
             .iter()
             .filter(|r| r.message.created_at >= earlier(now, BURST_WINDOW_MS))

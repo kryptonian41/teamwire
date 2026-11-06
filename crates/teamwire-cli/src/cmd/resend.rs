@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use teamwire_core::{DisplayId, Recipient, TeamName};
-use teamwire_msg::{SendError, prove_actor_logged, resend};
+use teamwire_msg::{CallerEnv, SendError, prove_actor_logged, resend};
 
 use crate::cmd::send::{error_code, exit_of, print_report};
 use crate::cmd::shared::{caller_env, fail, member_token, with_ctx};
@@ -33,9 +33,15 @@ pub(crate) fn run(args: &ResendArgs, global: &Global, wiring: &Wiring) -> ExitCo
     };
     let outcome = with_ctx(global, wiring, &team, "resend", |ctx| {
         // A member proves itself with its token. With no token the caller
-        // claims to be the lead, and the harness session decides.
-        let from = member_token().is_none().then(|| "lead".to_owned());
-        let actor = match prove_actor_logged(ctx, &caller_env(from)) {
+        // claims to be the user when it holds a user key (ADR 0040), else the
+        // lead, and the key or the harness session decides.
+        let env = caller_env(None);
+        let from = match (member_token(), &env.user_key) {
+            (Some(_), _) => None,
+            (None, Some(_)) => Some("user".to_owned()),
+            (None, None) => Some("lead".to_owned()),
+        };
+        let actor = match prove_actor_logged(ctx, &CallerEnv { from, ..env }) {
             Ok(actor) => actor,
             Err(refusal) => return Err(SendError::Refused(refusal)),
         };

@@ -8,8 +8,8 @@ use teamwire_core::harness::WatchStart;
 use teamwire_core::{DisplayId, MessageType, Recipient, SendRequest, TeamName};
 use teamwire_deliver::{WatchText, watch_text};
 use teamwire_msg::{
-    RecipientState, SendError, SendReport, parse_type_logged, prove_actor_logged, send_with,
-    watch_running,
+    RecipientState, SendError, SendReport, adds_lead_copy, parse_type_logged, prove_actor_logged,
+    send_with, watch_running,
 };
 use teamwire_store::Party;
 
@@ -69,6 +69,8 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
         let Ok(kind) = parse_type_logged(ctx, &actor, kind, &to) else {
             return Outcome::Unknown(format!("unknown type {kind:?}"));
         };
+        let local: Vec<Recipient> = to.iter().map(|r| r.clone().local_to(&team)).collect();
+        let lead_copy = adds_lead_copy(&actor, &local);
         let request = SendRequest {
             team: team.clone(),
             actor,
@@ -102,7 +104,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
                         });
                     (watch_state(watch_running(ctx)), start)
                 });
-                Outcome::Sent(Box::new(report), watching)
+                Outcome::Sent(Box::new(report), watching, lead_copy)
             }
             Err(e) => Outcome::Failed(e),
         }
@@ -113,12 +115,34 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
             fail("send", &format!("refused.type_not_allowed: {why}"), REFUSED)
         }
         Ok(Outcome::Failed(e)) => fail("send", &e.to_string(), error_code(&e)),
-        Ok(Outcome::Sent(report, watching)) => {
+        Ok(Outcome::Sent(report, watching, lead_copy)) => {
             print_report(&team, &report);
             if let Some((watching, start)) = watching {
                 say(&watch_line(&team, &watching, start));
             }
-            ExitCode::from(exit_of(&report))
+            let mut addressed = *report;
+            if lead_copy {
+                // The lead's copy is not a recipient the sender chose, so it
+                // does not decide the exit code (ADR 0040).
+                let copy = addressed
+                    .deliveries
+                    .iter()
+                    .position(|d| d.to == Recipient::Lead);
+                if let Some(copy) = copy.map(|i| addressed.deliveries.remove(i))
+                    && matches!(
+                        copy.state,
+                        RecipientState::Undelivered
+                            | RecipientState::Unconfirmed
+                            | RecipientState::Pending
+                    )
+                {
+                    warn(&format!(
+                        "lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead",
+                        id = addressed.display_id
+                    ));
+                }
+            }
+            ExitCode::from(exit_of(&addressed))
         }
     }
 }
@@ -151,7 +175,9 @@ fn watch_line(team: &TeamName, watching: &Watch, start: WatchStart) -> String {
 }
 
 enum Outcome {
-    Sent(Box<SendReport>, Option<(Watch, WatchStart)>),
+    /// The report, the watch state after a reprompt, and whether the lead's
+    /// row is a copy the sender did not address.
+    Sent(Box<SendReport>, Option<(Watch, WatchStart)>, bool),
     Failed(SendError),
     Unknown(String),
 }

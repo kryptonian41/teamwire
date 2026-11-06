@@ -7,7 +7,7 @@ use teamwire_core::{
     Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
     Refusal, Route, TeamName, TeamState, Timestamp,
 };
-use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line, message_line_to};
+use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
 
 use crate::send::record_refusal;
@@ -242,18 +242,11 @@ pub(crate) fn deliver_one(
     // the lead must not read either as this message.
     let comms_written = *recipient != Recipient::Lead
         || std::fs::read(&comms_path).is_ok_and(|b| b == message.body.as_bytes());
-    let line = message_line_to(
-        team,
-        &message.display_id,
-        message.kind,
-        &message.sender,
-        &message.body,
-        recipient,
-        CommsCopy {
-            path: &comms_path,
-            written: comms_written,
-        },
-    );
+    let comms = CommsCopy {
+        path: &comms_path,
+        written: comms_written,
+    };
+    let line = crate::lead_copy::line_for(ctx, team, message, recipient, comms)?;
     let party = match recipient {
         Recipient::Lead => Party::Lead,
         Recipient::Member(role) => Party::Member(role.clone()),

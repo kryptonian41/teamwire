@@ -194,6 +194,13 @@ impl Rig {
             Identity::Lead(session) => {
                 cmd.env("CLAUDE_CODE_SESSION_ID", session);
             }
+            Identity::User => {
+                cmd.env("TEAMWIRE_USER_KEY", self.user_key());
+            }
+            Identity::UserWith(name, value) => {
+                cmd.env("TEAMWIRE_USER_KEY", self.user_key())
+                    .env(name, value);
+            }
             Identity::Nobody => {}
         }
         cmd
@@ -201,6 +208,13 @@ impl Rig {
 
     fn run(&self, args: &[&str], identity: &Identity) -> Output {
         self.command(args, identity).output().unwrap()
+    }
+
+    /// The user key, made by `teamwire user-key` on first use.
+    fn user_key(&self) -> String {
+        let out = self.run(&["user-key"], &Identity::Nobody);
+        assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+        std::fs::read_to_string(text(&out.stdout).trim()).unwrap()
     }
 }
 
@@ -212,6 +226,10 @@ enum Identity {
     /// A member's session after `env -u TEAMWIRE_TOKEN`.
     TokenlessMember(&'static str),
     Lead(&'static str),
+    /// The human user, with the key `user-key` made (ADR 0040).
+    User,
+    /// The user's key, and one more variable set to a value.
+    UserWith(&'static str, &'static str),
     Nobody,
 }
 
@@ -845,4 +863,112 @@ fn lead_adopt_records_the_new_session_and_prints_both() {
         .unwrap()
         .unwrap();
     assert_eq!(team.lead_session.unwrap().as_str(), "lead-2");
+}
+
+#[test]
+fn a_users_note_exits_0_when_only_the_lead_copy_fails() {
+    let rig = live_rig();
+    // The lead has no live process in this rig, so its copy is not delivered.
+    let out = rig.run(
+        &[
+            "send", "alpha", "--from", "user", "--to", "api", "--type", "note", "--text", "hi",
+        ],
+        &Identity::User,
+    );
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert_eq!(out.status.code(), Some(0), "{stdout} / {stderr}");
+    assert!(stdout.contains("api: handed_off"), "{stdout}");
+    assert!(stdout.contains("lead: undelivered"), "{stdout}");
+    assert!(
+        stderr.lines().any(|l| l
+            == "lead copy not delivered: m001; run teamwire resend alpha m001 --to lead"),
+        "{stderr}"
+    );
+    let log = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);
+    let value: Value = serde_json::from_slice(&log.stdout).unwrap();
+    let row = value.pointer("/messages/0").unwrap();
+    assert_eq!(row.get("from"), Some(&Value::from("user")));
+    assert_eq!(row.get("to"), Some(&serde_json::json!(["api", "lead"])));
+}
+
+#[test]
+fn a_users_note_to_the_lead_counts_the_lead_in_the_exit_code() {
+    let rig = live_rig();
+    let out = rig.run(
+        &[
+            "send", "alpha", "--from", "user", "--to", "lead", "--type", "note", "--text", "hi",
+        ],
+        &Identity::User,
+    );
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert_eq!(out.status.code(), Some(4), "{stdout} / {stderr}");
+    assert!(!stderr.contains("lead copy"), "{stderr}");
+}
+
+#[test]
+fn any_member_variable_or_a_wrong_key_refuses_the_user() {
+    let rig = live_rig();
+    let send = [
+        "send", "alpha", "--from", "user", "--to", "api", "--type", "note", "--text", "hi",
+    ];
+    for identity in [
+        Identity::UserWith("TEAMWIRE_TOKEN", "token-of-api"),
+        // A token file that cannot be read still marks a member's session.
+        Identity::UserWith("TEAMWIRE_TOKEN_FILE", "/nonexistent/token"),
+        Identity::UserWith("TEAMWIRE_ROLE", "api"),
+        Identity::UserWith("TEAMWIRE_TEAM", "alpha"),
+        Identity::UserWith("TEAMWIRE_USER_KEY", "not-the-key"),
+    ] {
+        let out = rig.run(&send, &identity);
+        let stderr = text(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{stderr}");
+        assert!(stderr.contains("refused.identity"), "{stderr}");
+    }
+    // Without the key file nothing proves the user.
+    let mut no_file = rig.command(&send, &Identity::Nobody);
+    std::fs::remove_file(rig.home.path().join("user.key")).unwrap();
+    let out = no_file
+        .env("TEAMWIRE_USER_KEY", "anything")
+        .output()
+        .unwrap();
+    let stderr = text(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("refused.identity"), "{stderr}");
+}
+
+#[test]
+fn the_user_resends_its_own_lead_copy_and_nothing_else() {
+    let rig = live_rig();
+    rig.run(
+        &[
+            "send",
+            "alpha",
+            "--to",
+            "api",
+            "--type",
+            "finding",
+            "--text",
+            "from scout",
+        ],
+        &Identity::Member("scout"),
+    );
+    let out = rig.run(
+        &[
+            "send", "alpha", "--from", "user", "--to", "api", "--type", "note", "--text", "hi",
+        ],
+        &Identity::User,
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let retry = rig.run(
+        &["resend", "alpha", "m002", "--to", "lead"],
+        &Identity::User,
+    );
+    let (stdout, stderr) = (text(&retry.stdout), text(&retry.stderr));
+    // Proven and retried; the lead is still not live, so it exits 4.
+    assert_eq!(retry.status.code(), Some(4), "{stdout} / {stderr}");
+    assert!(stdout.contains("lead: undelivered"), "{stdout}");
+    let theirs = rig.run(&["resend", "alpha", "m001"], &Identity::User);
+    let stderr = text(&theirs.stderr);
+    assert_eq!(theirs.status.code(), Some(1), "{stderr}");
+    assert!(stderr.contains("refused.not_resendable"), "{stderr}");
 }
