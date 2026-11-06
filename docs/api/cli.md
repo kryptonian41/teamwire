@@ -234,7 +234,7 @@ five messages, message ids that are `pending` over 60 s, `unconfirmed` or
 `undelivered`, and results the lead has not received: a member's newest
 completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `reports/<role>.md` when the result file is missing or out of date. It also shows the team's watch
 (`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
-`handed_off` after 10 minutes, every question with no answer, and per member
+`handed_off` to a member after 10 minutes, every question with no answer, and per member
 the teamwire build that started it (`started_by`, from its `member.started`
 event's `writer_version`) with `older_build` when that differs from this
 binary. When the team has refs, the team's first line ends with `(refs linear:GKA-580, github:#1)`;

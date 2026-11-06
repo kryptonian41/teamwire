@@ -302,6 +302,32 @@ fn a_delivery_handed_off_and_not_read_is_listed_after_ten_minutes() {
 }
 
 #[test]
+fn a_delivery_no_inbox_can_ack_is_never_listed_as_unread() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    let long = "text ".repeat(80);
+    let api = Actor::Member(role("api"));
+    bed.send_from(
+        api.clone(),
+        MessageType::Finding,
+        &Recipient::Lead,
+        None,
+        &long,
+    );
+    let billing = teamwire_core::Remote::lead_of(&"billing".parse().unwrap());
+    bed.send_from(
+        api,
+        MessageType::Finding,
+        &Recipient::Other(billing),
+        None,
+        &long,
+    );
+    bed.age(secs(601));
+    let unread = status_of(&bed, None).unread_deliveries;
+    assert!(unread.is_empty(), "{unread:?}");
+}
+
+#[test]
 fn a_question_is_listed_until_an_answer_points_at_it() {
     let mut bed = Bed::new();
     bed.add("api");
