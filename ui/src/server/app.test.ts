@@ -27,6 +27,9 @@ const ok = (data: unknown, problems: unknown[] = []) => ({ ok: true, data, probl
 const emptyStatus = { team: "alpha", title: null, state: null, lead: null, messages: [], stuck_deliveries: [], undelivered_results: [] };
 
 type Act = (call: CliCall) => unknown;
+/** Action tests run at this time, so each lead note ends with the same stamp. */
+const T0 = Date.parse("2026-11-06T11:42:03.123Z");
+const AT = " at 2026-11-06T11:42:03.123Z";
 function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => number; failEvents?: boolean; actions?: boolean; act?: Act } = {}) {
   const { failEvents, act, ...appOpts } = opts;
   const calls: CliCall[] = [];
@@ -69,7 +72,7 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
     }
   }) as unknown as Runner;
   const poller = createPoller({ run, intervalMs: 5000 });
-  const app = createApp({ security: createSecurity({ token, port }), poller, run, home, ...appOpts });
+  const app = createApp({ security: createSecurity({ token, port }), poller, run, home, ...(opts.actions ? { now: () => T0 } : {}), ...appOpts });
   const get = (path: string, headers: Record<string, string> = { cookie: `tw_ui_7878=${token}` }) =>
     app.handle(new Request(`http://127.0.0.1:${port}${path}`, { headers: { host: `127.0.0.1:${port}`, ...headers } }));
   return { app, poller, get, calls };
@@ -278,7 +281,7 @@ describe("close-member action", () => {
     ] as const) {
       const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(0, "removed impl"), send: () => out(0, "m010") }) });
       const res = await post(app, path, body({ ...flags, dryRun: false }));
-      const text = `user closed member impl from the dashboard${suffix}`;
+      const text = `user closed member impl from the dashboard${suffix}${AT}`;
       expect(await res.json()).toEqual({ exit: 0, stdout: "removed impl", stderr: "", leadNotes: [{ text, told: true, detail: "" }] });
       expect(calls).toEqual([{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: false, ...flags }, note("alpha", text)]);
     }
@@ -293,13 +296,25 @@ describe("close-member action", () => {
   });
   test("a real close that stops part way (exit 2) tells the lead with the first line of the CLI's error", async () => {
     const stderr = "\nremove_worktree: place closed, worktree kept: vim (pid 4242) still runs\nrun close again";
-    const text = "user's close of member impl stopped part way: remove_worktree: place closed, worktree kept: vim (pid 4242) still runs";
+    const text = `user's close of member impl stopped part way: remove_worktree: place closed, worktree kept: vim (pid 4242) still runs${AT}`;
     const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(2, "", stderr), send: () => out(0) }) });
     expect(await (await post(app, path, body({ dryRun: false }))).json()).toEqual({ exit: 2, stdout: "", stderr, leadNotes: [{ text, told: true, detail: "" }] });
     expect(calls).toEqual([{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: false }, note("alpha", text)]);
     const failing = setup({ actions: true, act: script({ closeMember: () => out(2, "", stderr), send: () => out(1, "", "REFUSED: busy") }) });
     expect(((await (await post(failing.app, path, body({ dryRun: false }))).json()) as { leadNotes: unknown[] }).leadNotes).toEqual([
       { text, told: false, detail: "teamwire send exited 1: REFUSED: busy" },
+    ]);
+  });
+  test("a second member close that stops part way the same way still gets a new note text", async () => {
+    let t = T0;
+    const { app, calls } = setup({ actions: true, now: () => t, act: script({ closeMember: () => out(2, "", "remove_worktree: kept"), send: () => out(0) }) });
+    await post(app, path, body({ dryRun: false }));
+    t += 60_000;
+    await post(app, path, body({ dryRun: false }));
+    const texts = calls.flatMap((c) => (c.cmd === "send" ? [c.text] : []));
+    expect(texts).toEqual([
+      `user's close of member impl stopped part way: remove_worktree: kept${AT}`,
+      "user's close of member impl stopped part way: remove_worktree: kept at 2026-11-06T11:43:03.123Z",
     ]);
   });
   test("a dry run that exits 2 tells nobody", async () => {
@@ -313,18 +328,18 @@ describe("close-member action", () => {
       exit: 0,
       stdout: "removed impl",
       stderr: "",
-      leadNotes: [{ text: "user closed member impl from the dashboard", told: false, detail: "teamwire send exited 4: NOT DELIVERED to lead: gone" }],
+      leadNotes: [{ text: `user closed member impl from the dashboard${AT}`, told: false, detail: "teamwire send exited 4: NOT DELIVERED to lead: gone" }],
     });
     const timedOut = setup({ actions: true, act: script({ closeMember: () => out(0), send: () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "teamwire send passed 60000 ms and was killed" }] }) }) });
     expect(((await (await post(timedOut.app, path, body({ dryRun: false }))).json()) as { leadNotes: unknown[] }).leadNotes).toEqual([
-      { text: "user closed member impl from the dashboard", told: false, detail: "teamwire send passed 60000 ms and was killed" },
+      { text: `user closed member impl from the dashboard${AT}`, told: false, detail: "teamwire send passed 60000 ms and was killed" },
     ]);
   });
 });
 
 describe("close-team action", () => {
   const path = "/api/teams/alpha/actions/close-team";
-  const closing = "user is closing team alpha from the dashboard";
+  const closing = `user is closing team alpha from the dashboard${AT}`;
   const real: CliCall = { cmd: "closeTeam", team: "alpha", dryRun: false };
   test("a dry run runs only the dry-run form and tells nobody; its confirm name is not needed", async () => {
     const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(0, "[dry-run] close_places") }) });
@@ -344,7 +359,7 @@ describe("close-team action", () => {
   test("a refused close sends a second note with the first line of the CLI's error", async () => {
     const { app, calls } = setup({ actions: true, act: script({ closeTeam: () => out(1, "", "\nREFUSED: api is busy; close it with --role api --stop\nnothing was changed"), send: () => out(0) }) });
     const res = (await (await post(app, path, { dryRun: false, confirmName: "alpha" })).json()) as { exit: number; leadNotes: unknown[] };
-    const refused = "user's close of team alpha was refused: REFUSED: api is busy; close it with --role api --stop";
+    const refused = `user's close of team alpha was refused: REFUSED: api is busy; close it with --role api --stop${AT}`;
     expect(res.exit).toBe(1);
     expect(res.leadNotes).toEqual([
       { text: closing, told: true, detail: "" },
@@ -358,6 +373,21 @@ describe("close-team action", () => {
     const second = calls[2] as Extract<CliCall, { cmd: "send" }>;
     expect(second.text.startsWith("user's close of team alpha was refused: REFUSED: xxx")).toBe(true);
     expect([...second.text].length).toBeLessThanOrEqual(4000);
+    expect(second.text.endsWith(AT)).toBe(true);
+  });
+  test("a retried close gives every lead note a new text, so the CLI's 10-minute repeat rule cannot refuse it", async () => {
+    let t = T0;
+    const { app, calls } = setup({ actions: true, now: () => t, act: script({ closeTeam: () => out(1, "", "REFUSED: api is busy"), send: () => out(0) }) });
+    await post(app, path, { dryRun: false, confirmName: "alpha" });
+    t += 5 * 60_000;
+    await post(app, path, { dryRun: false, confirmName: "alpha" });
+    const texts = calls.flatMap((c) => (c.cmd === "send" ? [c.text] : []));
+    expect(texts).toEqual([
+      `user is closing team alpha from the dashboard${AT}`,
+      `user's close of team alpha was refused: REFUSED: api is busy${AT}`,
+      "user is closing team alpha from the dashboard at 2026-11-06T11:47:03.123Z",
+      "user's close of team alpha was refused: REFUSED: api is busy at 2026-11-06T11:47:03.123Z",
+    ]);
   });
   test("a close that stops part way or times out sends no second note", async () => {
     for (const close of [() => out(2, "", "remove_worktrees: kept"), () => ({ ok: false, problems: [{ code: "cli_timeout", detail: "passed" }] })]) {

@@ -195,6 +195,9 @@ export function createApp(deps: AppDeps): App {
     if (req.method !== "POST") return json({ code: "bad_request", detail: "only POST is allowed" } satisfies Problem, 405, { allow: "POST" });
     const denied = deps.security.checkWrite(req);
     if (denied) return denied;
+    // Every lead note ends with the UTC time it is sent. The CLI refuses the same text to the lead
+    // twice within 10 minutes, so a retried close would otherwise leave the lead uninformed.
+    const tellLead = (text: string) => tellLeadText(team, `${text} at ${new Date(now()).toISOString()}`);
     switch (name) {
       case "send": {
         const body = await readBody(req, SendBody);
@@ -214,8 +217,8 @@ export function createApp(deps: AppDeps): App {
         // (exit 2), because the member's place may already be closed then.
         const flags = [stop && "--stop", unverified && "--unverified"].filter(Boolean).join(" ");
         const notes: LeadNote[] = [];
-        if (!dryRun && closed.out?.exit === 0) notes.push(await tellLead(team, `user closed member ${role} from the dashboard${flags ? ` (${flags})` : ""}`));
-        if (!dryRun && closed.out?.exit === 2) notes.push(await tellLead(team, `user's close of member ${role} stopped part way: ${reason(closed.out)}`));
+        if (!dryRun && closed.out?.exit === 0) notes.push(await tellLead(`user closed member ${role} from the dashboard${flags ? ` (${flags})` : ""}`));
+        if (!dryRun && closed.out?.exit === 2) notes.push(await tellLead(`user's close of member ${role} stopped part way: ${reason(closed.out)}`));
         return json(result(closed.out, notes));
       }
       case "close-team": {
@@ -228,12 +231,12 @@ export function createApp(deps: AppDeps): App {
           return preview.ok ? json(result(preview.out, [])) : preview.res;
         }
         // Plan D3: the note goes first, because a closing team refuses messages.
-        const notes = [await tellLead(team, `user is closing team ${team} from the dashboard`)];
+        const notes = [await tellLead(`user is closing team ${team} from the dashboard`)];
         const closed = await runAction({ cmd: "closeTeam", team, dryRun: false });
         if (!closed.ok) return closed.res;
         // Exit 1 is a refusal: nothing changed, so the team still takes the note.
         if (closed.out?.exit === 1) {
-          notes.push(await tellLead(team, `user's close of team ${team} was refused: ${reason(closed.out)}`));
+          notes.push(await tellLead(`user's close of team ${team} was refused: ${reason(closed.out)}`));
         }
         return json(result(closed.out, notes));
       }
@@ -249,7 +252,7 @@ export function createApp(deps: AppDeps): App {
   }
 
   /** A `note` from the user to the lead (plan D3). Its failure is reported, never thrown: the action's own result still shows. */
-  async function tellLead(team: string, text: string): Promise<LeadNote> {
+  async function tellLeadText(team: string, text: string): Promise<LeadNote> {
     const res = await deps.run({ cmd: "send", team, to: "lead", type: "note", text });
     if (res.ok && res.data.exit === 0) return { text, told: true, detail: "" };
     const detail = res.ok ? `teamwire send exited ${res.data.exit}: ${firstLine(res.data.stderr || res.data.stdout)}` : (res.problems[0]?.detail ?? "teamwire send failed");
