@@ -265,10 +265,12 @@ session is gone (`Harness::is_alive` says `Dead`), whether or not that member
 reported done. `--role R` reopens only that member and leaves the lead alone.
 It checks every session before it opens any tab. Tabs then open one at a time
 until one is up, the lead's first, so a host that groups a team's tabs puts
-the others beside it. The anchor differs by host. On tmux, `new-window` is called
-with no `-t` target, so each window opens in the tmux session of the caller,
-which need not be the lead's. On herdr, a tab opens in the workspace of a live
-agent of the team, and a new workspace labelled with the team is made when none is live. The remaining tabs open at the same time, because each
+the others beside it. The anchor differs by host. On tmux, inside a tmux client
+`new-window` is called with no `-t` target, so each window opens in the tmux
+session of the caller, which need not be the lead's. Outside one, each window
+opens in the team's detached session `tw_<team>`. On herdr, a tab opens in the
+workspace of a live agent of the team, and a new workspace labelled with the
+team is made when none is live. The remaining tabs open at the same time, because each
 waits several seconds for its session to load. The store records each new tab
 after all of them are up.
 Each session is resumed in a new tab named `tw_<team>_lead` or
