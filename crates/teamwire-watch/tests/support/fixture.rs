@@ -507,10 +507,21 @@ impl Bed {
 
     /// `send` with a chosen body.
     pub fn send_body(&mut self, kind: MessageType, to: &str, re: Option<Ulid>, body: &str) -> Ulid {
+        self.send_from(Actor::Lead, kind, &Recipient::Member(role(to)), re, body)
+    }
+
+    /// A message from `sender` to `to`, which the host took (`handed_off`).
+    pub fn send_from(
+        &mut self,
+        sender: Actor,
+        kind: MessageType,
+        to: &Recipient,
+        re: Option<Ulid>,
+        body: &str,
+    ) -> Ulid {
         let now = self.clock.now();
-        let to = Recipient::Member(role(to));
         let new = NewMessage {
-            sender: Actor::Lead,
+            sender,
             kind,
             re,
             commit: None,
@@ -524,7 +535,7 @@ impl Bed {
                 tx.set_delivery_state(
                     now,
                     &stored.message.ulid,
-                    &to,
+                    to,
                     &teamwire_store::DeliveryUpdate {
                         state: teamwire_core::DeliveryState::HandedOff,
                         route: None,
