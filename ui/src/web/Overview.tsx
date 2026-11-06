@@ -62,7 +62,7 @@ function TeamRow({ team }: { team: TeamModel }) {
         <h3>{team.title}</h3>
         <p className="meta">
           <span>{team.name ?? "no name"}</span>
-          <span className="chip cat-idle">{s.state ?? "state unknown"}</span>
+          <span className="chip">{s.state ?? "state unknown"}</span>
           <span className="live">
             <span className={`dot cat-${live.category}`} aria-hidden="true" />
             {live.label}
@@ -92,7 +92,7 @@ function TeamRow({ team }: { team: TeamModel }) {
         {(s.afk || watchChip(s.watch)) && (
           <p className="chips">
             {s.afk && <span className="chip cat-active">{afkChip(s.afk)}</span>}
-            {watchChip(s.watch) && <span className="chip cat-idle">{watchChip(s.watch)}</span>}
+            {watchChip(s.watch) && <span className="chip">{watchChip(s.watch)}</span>}
           </p>
         )}
         {(reasons.length > 0 || s.stuck_deliveries.length > 0 || s.undelivered_results.length > 0 || s.errors.length > 0) && (

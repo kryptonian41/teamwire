@@ -176,12 +176,15 @@ p.note.error {
 .empty p { margin: 0; }
 .empty-title { font-size: var(--t-lead); font-weight: 600; color: var(--ink); margin-bottom: var(--s1) !important; }
 
-/* Chips: the colour comes from the category, the text is the raw state word. */
+/* Chips. A plain chip is neutral (a ref, the team state, the watch): a surface
+   tone and muted text, no shape. A state chip adds its category's colour pair
+   and a shape glyph, so colour only repeats what the shape and the word say. */
 .chip {
-  display: inline-block; padding: 1px var(--s2); border-radius: var(--r-sm);
-  font-size: var(--t-small); font-weight: 500; line-height: 1.5;
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px var(--s2); border-radius: var(--r-sm);
+  font-size: var(--t-small); font-weight: 500; line-height: 1.5; color: var(--muted); background: var(--surface-2);
   white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle;
 }
+.chip .g { font-weight: 700; font-family: var(--sans); width: 1em; text-align: center; flex: none; }
 .cat-done { color: var(--c-done); background: var(--bg-done); }
 .cat-active { color: var(--c-active); background: var(--bg-active); }
 .cat-idle { color: var(--c-idle); background: var(--bg-idle); }

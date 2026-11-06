@@ -62,7 +62,7 @@ export function TeamDetail({
         <h1>{team.title}</h1>
         <p className="meta">
           <span>{team.name}</span>
-          <span className="chip cat-idle">{s.state ?? "state unknown"}</span>
+          <span className="chip">{s.state ?? "state unknown"}</span>
           <span className="live">
             <span className={`dot cat-${live.category}`} aria-hidden="true" />
             {live.label}

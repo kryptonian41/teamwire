@@ -1,5 +1,5 @@
 import type { StateCategory } from "../shared/state.ts";
-import { DELIVERY_CATEGORY } from "./components.tsx";
+import { DELIVERY_CATEGORY, StateChip } from "./components.tsx";
 import { layoutFlow, type FlowGraph, type Layout, type Placed } from "./model/flow.ts";
 import { DELIVERY_ORDER } from "./model/flow.ts";
 
@@ -80,9 +80,7 @@ export function Flow({
       </svg>
       <div className="legend" role="group" aria-label="Edge colours, worst delivery state">
         {DELIVERY_ORDER.map((s) => (
-          <span key={s} className={`chip cat-${DELIVERY_CATEGORY[s]}`}>
-            {s}
-          </span>
+          <StateChip key={s} word={s} category={DELIVERY_CATEGORY[s]} />
         ))}
         <span className="sub">Wider line = more messages. Click a line to filter the log.</span>
       </div>

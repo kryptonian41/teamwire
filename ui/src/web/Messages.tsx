@@ -110,7 +110,7 @@ function MessageTable({ team, messages, picked, setPicked }: { team: string; mes
                 <div className="deliveries">
                   {m.to.map((to) => {
                     const d = m.deliveries.find((x) => x.to === to);
-                    return d ? <DeliveryChip key={to} to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span key={to} className="chip cat-idle">{to} · no delivery row</span>;
+                    return d ? <DeliveryChip key={to} to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span key={to} className="chip">{to} · no delivery row</span>;
                   })}
                 </div>
               </td>

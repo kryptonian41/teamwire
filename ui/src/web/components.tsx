@@ -8,9 +8,19 @@ import { FileView } from "./FileView.tsx";
 import { modelText, tokensText, verifyChip } from "./model/memberEvents.ts";
 import { afkLinks, deliveryText, refText } from "./model/status.ts";
 
-/** A state word, coloured by its category. The word is always shown as text. */
-export function StateChip({ word, category }: { word: string; category: StateCategory }) {
-  return <span className={`chip cat-${category}`}>{word}</span>;
+/** One shape per category, so a state is never told by colour alone. */
+export const SHAPE: Record<StateCategory, string> = { failed: "✕", attention: "!", unknown: "?", active: "▶", idle: "–", done: "✓" };
+
+/** A state mark: the category's shape, then the word, coloured by the category. The word is always shown as text. */
+export function StateChip({ word, category, title }: { word: string; category: StateCategory; title?: string }) {
+  return (
+    <span className={`chip cat-${category}`} title={title}>
+      <span className="g" aria-hidden="true">
+        {SHAPE[category]}
+      </span>
+      {word}
+    </span>
+  );
 }
 
 /** A team's ticket refs as text chips such as `linear:GKA-580`. No link: teamwire stores no tracker URL. With `onPick` a chip is a button. Renders nothing for none. */
@@ -20,11 +30,11 @@ export function RefChips({ refs, onPick }: { refs: readonly TicketRef[]; onPick?
     <p className="chips" aria-label="Ticket refs">
       {refs.map((r) =>
         onPick ? (
-          <button key={refText(r)} className="chip cat-idle ref" title="Find decisions of teams with this ref" onClick={() => onPick(r)}>
+          <button key={refText(r)} className="chip ref" title="Find decisions of teams with this ref" onClick={() => onPick(r)}>
             {refText(r)}
           </button>
         ) : (
-          <span key={refText(r)} className="chip cat-idle ref">
+          <span key={refText(r)} className="chip ref">
             {refText(r)}
           </span>
         ),
@@ -43,11 +53,7 @@ export const DELIVERY_CATEGORY: Record<DeliveryState, StateCategory> = {
 };
 
 export function DeliveryChip({ to, state, attempts = 0, reason = null }: { to: string; state: DeliveryState; attempts?: number; reason?: string | null }) {
-  return (
-    <span className={`chip cat-${DELIVERY_CATEGORY[state]}`} title={`${to}: ${state}`}>
-      {deliveryText({ to, state, attempts, reason })}
-    </span>
-  );
+  return <StateChip word={deliveryText({ to, state, attempts, reason })} category={DELIVERY_CATEGORY[state]} title={`${to}: ${state}`} />;
 }
 
 /** Links to an AFK run's files that exist; a click opens one in the file viewer below the links. */
