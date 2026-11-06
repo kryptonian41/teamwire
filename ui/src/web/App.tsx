@@ -93,7 +93,7 @@ function Routes({ route, teams, snapshot }: { route: Route; teams: TeamModel[]; 
     case "history":
       return <History liveTeams={liveTeams} />;
     case "archive":
-      return <Archive dir={route.dir} />;
+      return <Archive dir={route.dir} member={route.member} />;
     default:
       return (
         <Empty title="Nothing at this address">

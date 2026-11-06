@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { StateCategory } from "../shared/state.ts";
 import type { LogMessage } from "../shared/teamwire.ts";
-import { DeliveryChip, ErrorNote, Loading } from "./components.tsx";
+import { DeliveryChip, ErrorNote, Loading, RoleLink } from "./components.tsx";
 import { FileView } from "./FileView.tsx";
 import { Flow, type Selected } from "./Flow.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow } from "./hooks.ts";
@@ -108,12 +108,18 @@ function MessageTable({ team, messages, picked, setPicked }: { team: string; mes
                   );
                 })()}
               </td>
-              <td>{m.from}</td>
+              <td>
+                <RoleLink role={m.from} />
+              </td>
               <td>
                 <div className="deliveries">
                   {m.to.map((to) => {
                     const d = m.deliveries.find((x) => x.to === to);
-                    return d ? <DeliveryChip key={to} to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span key={to} className="chip">{to} · no delivery row</span>;
+                    return (
+                      <RoleLink key={to} role={to}>
+                        {d ? <DeliveryChip to={to} state={d.state} attempts={d.attempts} reason={d.reason} /> : <span className="chip">{to} · no delivery row</span>}
+                      </RoleLink>
+                    );
                   })}
                 </div>
               </td>

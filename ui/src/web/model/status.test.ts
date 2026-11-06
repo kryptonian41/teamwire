@@ -106,8 +106,8 @@ test("question rows carry the id, the parties, the age and the excerpt the statu
       ],
     }),
   ).toEqual([
-    { id: "m006", from: "web", to: "lead", age: "3 min", text: "Partial refunds as a separate row?", toLead: true },
-    { id: "m007", from: "api", to: "db@billing, lead@uiplus", age: "45 s", text: null, toLead: false },
+    { id: "m006", from: "web", to: "lead", recipients: ["lead"], age: "3 min", text: "Partial refunds as a separate row?", toLead: true },
+    { id: "m007", from: "api", to: "db@billing, lead@uiplus", recipients: ["db@billing", "lead@uiplus"], age: "45 s", text: null, toLead: false },
   ]);
   // The payments fixture's one question, to the lead, carries its excerpt.
   const rows = questionRows(StatusAll.parse(status)[0]!);

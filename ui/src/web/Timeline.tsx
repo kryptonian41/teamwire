@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { EventRow } from "../shared/teamwire.ts";
-import { ErrorNote, Loading } from "./components.tsx";
+import { ErrorNote, Loading, RoleLink } from "./components.tsx";
 import { useNow } from "./hooks.ts";
 import { agoText, describeRows, FILTER_LABELS, FILTERS, visibleLines, type Filter } from "./model/timeline.ts";
 
@@ -63,7 +63,7 @@ export function Timeline({
               <time dateTime={l.time} title={new Date(l.time).toLocaleString()}>
                 {agoText(l.time, now)}
               </time>
-              <span className="who">{l.role ?? "—"}</span>
+              <span className="who">{l.role === null ? "—" : <RoleLink role={l.role} />}</span>
               <span className="what">
                 {l.problem && <span className="visually-hidden">Problem: </span>}
                 {l.label}

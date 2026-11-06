@@ -147,3 +147,13 @@ test("oneLine and agoText", () => {
   expect(agoText(t, at + 180_000)).toBe("3 min ago");
   expect(agoText(t, at + 8 * 86_400_000)).toBe("8 days ago");
 });
+
+test("a message the lead sent names the lead in the who column; other rows keep their role", () => {
+  // seq 24, 28 and 52 are message.sent rows from the lead, with role null.
+  expect([24, 28, 52].map((s) => line(s).role)).toEqual(["lead", "lead", "lead"]);
+  expect(line(36).role).toBe("ledger");
+  expect(line(51).role).toBe("lead");
+  // A user's message and a row about no party stay without a who.
+  expect(describeRows([ev("message.sent", null, { sender_kind: "user", recipients: ["web"] })])[0]!.role).toBeNull();
+  expect(line(2).role).toBeNull();
+});

@@ -1,50 +1,55 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import type { FileRef } from "../shared/api.ts";
-import type { EventRow, RosterMember } from "../shared/teamwire.ts";
-import { StateChip } from "./components.tsx";
+import type { FileText } from "../shared/api.ts";
+import { ErrorNote, StateChip } from "./components.tsx";
 import { MessageButton } from "./Actions.tsx";
-import { canMessage, canReprompt } from "./model/actions.ts";
-import { Timeline } from "./Timeline.tsx";
+import { DrawerEvents, Missing } from "./DrawerSections.tsx";
 import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
-import { tabsFor } from "./model/files.ts";
-import { countText, handoffHistory, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
-import { spanText, startedByLine } from "./model/status.ts";
-import { formatAge, type JoinedMember } from "./model/teams.ts";
+import type { Detail, Fact, FileTab } from "./model/detail.ts";
 
+/** A fact's value through `render`, or the reason it is missing. */
+function show<T>(fact: Fact<T>, render: (v: T) => ReactNode): ReactNode {
+  return fact.ok ? render(fact.value) : <Missing why={fact.why} />;
+}
+
+/**
+ * The drawer for a live member, a removed member, an archived member or the
+ * lead. It only lays out the record that `buildDetail` made; the rules about
+ * what each subject has live in model/detail.ts.
+ */
 export function Drawer({
+  role,
+  detail,
+  loading,
+  error,
+  scope,
   team,
-  member,
-  roster,
-  files,
-  rows,
-  actions,
+  loadFile,
   onCloseMember,
   onClose,
 }: {
-  team: string;
-  member: JoinedMember;
-  roster: RosterMember | null;
-  files: FileRef[];
-  rows: readonly EventRow[];
-  /** Write actions are on: show the member's action buttons. */
-  actions: boolean;
-  /** Opens the close dialog, which the team page keeps after the member is gone. */
-  onCloseMember: () => void;
+  role: string;
+  /** Null when no source knows the role. */
+  detail: Detail | null;
+  /** The sources are still loading, so a null record may be filled in soon. */
+  loading: boolean;
+  /** Why the event log failed to load, if it did: facts from it may be missing. */
+  error: string | null;
+  /** The team or archive the files belong to, for the file view's cache key. */
+  scope: string;
+  /** The live team, for the action buttons and the resume command; null on an archive. */
+  team: string | null;
+  loadFile: (tab: FileTab) => Promise<FileText>;
+  /** Opens the close dialog, which the team page keeps after the member is gone. Unused where no action is offered. */
+  onCloseMember?: () => void;
   onClose: () => void;
 }) {
-  const client = useClient();
-  const tabs = tabsFor(files, member.role);
-  const [kind, setKind] = useState(tabs[0]?.kind ?? null);
-  const age = formatAge(member.age_s, member.deadline_s);
-  const resume = useLoad(() => client.resume(team, member.role), `${team}/${member.role}`);
-  const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Move focus into the dialog so the keyboard starts where the eye does, and
   // give it back on close. Opened from a URL there is no opener, so fall back
-  // to the member's link in the table. The page behind is inert while the
+  // to the role's link on the page. The page behind is inert while the
   // dialog is open, which keeps Tab inside it and backs up aria-modal; the
   // dialog is portalled out of #root so it is not inert itself.
   useEffect(() => {
@@ -55,10 +60,10 @@ export function Drawer({
     return () => {
       if (page) page.inert = false;
       // The link's hash also names the tab, so match on its tail.
-      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href$="/member/${member.role}"]`);
+      const back = opener?.isConnected ? opener : document.querySelector<HTMLElement>(`a[href$="/member/${role}"]`);
       back?.focus();
     };
-  }, [team, member.role]);
+  }, [scope, role]);
 
   useEffect(() => {
     const on = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -66,38 +71,25 @@ export function Drawer({
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
 
-  const active = tabs.find((t) => t.kind === kind) ?? tabs[0] ?? null;
-  const command = resume.data?.command ?? null;
-
-  const copy = async () => {
-    if (!command) return;
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Clipboard access can be refused; the command stays visible to copy by hand.
-    }
-  };
+  const title = detail?.title ?? null;
+  const actions = detail?.actions ?? null;
 
   return createPortal(
     <>
       <div className="scrim" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-label={`Member ${member.role}`}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={role === "lead" ? "Lead" : `Member ${role}`}>
         <header>
           <div>
-            <h2>{member.role}</h2>
-            <p className="sub">{member.title}</p>
+            <h2>{role}</h2>
+            {title && <p className="sub">{title}</p>}
           </div>
           <div className="drawer-controls">
-            <StateChip word={member.state} category={member.category} />
+            {detail && <StateChip word={detail.state.word} category={detail.state.category} />}
             {/* Empty while actions are off, and then it takes no space. Plan D4: reviewers, closers and plan reviewers get no message control. */}
             <div className="member-actions">
-              {actions && canReprompt(member.kind, roster?.lifecycle ?? null) && (
-                <MessageButton team={team} to={member.role} type="reprompt" label="Reprompt" title={`Reprompt ${member.role}`} />
-              )}
-              {actions && canMessage(member.kind) && <MessageButton team={team} to={member.role} type="note" label="Note" title={`Note to ${member.role}`} />}
-              {actions && (
+              {team && actions?.reprompt && <MessageButton team={team} to={role} type="reprompt" label="Reprompt" title={`Reprompt ${role}`} />}
+              {team && actions?.note && <MessageButton team={team} to={role} type="note" label="Note" title={`Note to ${role}`} />}
+              {team && actions?.close && (
                 <button className="btn" onClick={onCloseMember}>
                   Close member
                 </button>
@@ -108,84 +100,15 @@ export function Drawer({
             </button>
           </div>
         </header>
-
-        <dl className="facts">
-          <dt>Kind</dt>
-          <dd>{member.kind ?? "unknown"}</dd>
-          <dt>Generation</dt>
-          <dd>{member.generation}</dd>
-          <dt>Branch</dt>
-          <dd>{member.branch ? <code>{member.branch}</code> : "—"}</dd>
-          <dt>Model</dt>
-          <dd>{modelText(rows, member.role) ?? "—"}</dd>
-          <dt>Deadline</dt>
-          <dd>
-            <span className="num">{age.label}</span>
-            {age.overdue && <StateChip word="past its deadline" category="attention" />}
-          </dd>
-          {roster && (
-            <>
-              <dt>May change</dt>
-              <dd>{roster.owns.length === 0 ? "nothing (read-only)" : roster.owns.map((o) => <code key={o}>{o}</code>)}</dd>
-              <dt>Accepts from members</dt>
-              <dd>{roster.accepts_from_members.length === 0 ? "nothing" : roster.accepts_from_members.join(", ")}</dd>
-              <dt>Lead can type to it</dt>
-              <dd>{roster.can_be_typed_to ? "yes" : "no"}</dd>
-            </>
-          )}
-          {startedByLine(member) && (
-            <>
-              <dt>Build</dt>
-              <dd>{startedByLine(member)}</dd>
-            </>
-          )}
-        </dl>
-
-        <MemberEvents rows={rows} role={member.role} />
-
-        <div className="resume">
-          <h3>Resume</h3>
-          {resume.loading && <span className="note">Loading…</span>}
-          {resume.error && <span className="note error">{resume.error}</span>}
-          {resume.data && command && (
-            <>
-              <code>{command}</code>
-              <button className="btn" onClick={copy}>
-                {copied ? "Copied" : "Copy"}
-              </button>
-            </>
-          )}
-          {resume.data && !command && (
-            <span className="note">
-              No resume command.{" "}
-              {resume.data.problems.map((p) => p.detail).join(" ")}
-            </span>
-          )}
-        </div>
-
-        {tabs.length === 0 ? (
-          <p className="quiet">No files for this member yet.</p>
+        {error && <ErrorNote>The events could not be loaded, so facts from them may be missing: {error}</ErrorNote>}
+        {detail ? (
+          <Body detail={detail} scope={scope} team={team} loadFile={loadFile} />
+        ) : loading ? (
+          <p className="loading" role="status">
+            Loading…
+          </p>
         ) : (
-          <>
-            <div className="tabs" role="tablist">
-              {tabs.map((t) => (
-                <button
-                  key={t.kind}
-                  role="tab"
-                  aria-selected={t.kind === active?.kind}
-                  onClick={() => setKind(t.kind)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            {active && (
-              <FileView
-                id={`${team}/${active.kind}/${member.role}`}
-                load={() => client.teamFile(team, active.kind, member.role)}
-              />
-            )}
-          </>
+          !error && <p className="quiet">Nothing here knows a member named {role}. It may belong to another team, or its events may be gone.</p>
         )}
       </aside>
     </>,
@@ -193,112 +116,116 @@ export function Drawer({
   );
 }
 
-/** What the event log says about the member: verify history, token use and its own events. */
-function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string }) {
-  const runs = verifyHistory(rows, role);
-  const tokens = [...tokensByModel(rows, role)];
-  const handoffs = handoffHistory(rows, role);
+function Body({ detail: d, scope, team, loadFile }: { detail: Detail; scope: string; team: string | null; loadFile: (tab: FileTab) => Promise<FileText> }) {
+  const roster = d.roster;
   return (
     <>
-      {handoffs.length > 0 && (
+      <dl className="facts">
+        <dt>Kind</dt>
+        <dd>{show(d.kind, (k) => k)}</dd>
+        <dt>Generation</dt>
+        <dd>{show(d.generation, (g) => g)}</dd>
+        <dt>Branch</dt>
+        <dd>{show(d.branch, (b) => (b ? <code>{b}</code> : "—"))}</dd>
+        <dt>Model</dt>
+        <dd>{show(d.model, (m) => m ?? "—")}</dd>
+        <dt>Deadline</dt>
+        <dd>
+          {show(d.age, (age) => (
+            <>
+              <span className="num">{age.label}</span>
+              {age.overdue && <StateChip word="past its deadline" category="attention" />}
+            </>
+          ))}
+        </dd>
+        <dt>May change</dt>
+        <dd>{show(roster, (r) => (r.owns.length === 0 ? "nothing (read-only)" : r.owns.map((o) => <code key={o}>{o}</code>)))}</dd>
+        <dt>Accepts from members</dt>
+        <dd>{show(roster, (r) => (r.acceptsFromMembers.length === 0 ? "nothing" : r.acceptsFromMembers.join(", ")))}</dd>
+        <dt>Lead can type to it</dt>
+        <dd>{show(roster, (r) => (r.canBeTypedTo ? "yes" : "no"))}</dd>
+        {d.build && (
+          <>
+            <dt>Build</dt>
+            <dd>{d.build}</dd>
+          </>
+        )}
+        {d.removal && (
+          <>
+            <dt>Why removed</dt>
+            <dd>{d.removal}</dd>
+          </>
+        )}
+        {d.session && (
+          <>
+            <dt>Session</dt>
+            <dd>{show(d.session, (s) => (s ? <code>{s}</code> : "—"))}</dd>
+          </>
+        )}
+      </dl>
+
+      <DrawerEvents detail={d} />
+
+      <div className="resume">
+        <h3>Resume</h3>
+        {team && d.resume.ok ? <Resume team={team} role={d.role} /> : !d.resume.ok && <Missing why={d.resume.why} />}
+      </div>
+
+      {show(d.files, (tabs) => (tabs.length === 0 ? <p className="quiet">No files for this member yet.</p> : <Files tabs={tabs} scope={scope} loadFile={loadFile} />))}
+    </>
+  );
+}
+
+function Resume({ team, role }: { team: string; role: string }) {
+  const client = useClient();
+  const resume = useLoad(() => client.resume(team, role), `${team}/${role}`);
+  const [copied, setCopied] = useState(false);
+  const command = resume.data?.command ?? null;
+  const copy = async () => {
+    if (!command) return;
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard access can be refused; the command stays visible to copy by hand.
+    }
+  };
+  return (
+    <>
+      {resume.loading && <span className="note">Loading…</span>}
+      {resume.error && <span className="note error">{resume.error}</span>}
+      {resume.data && command && (
         <>
-          <h3>Handoffs</h3>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Generation</th>
-                  <th>Time</th>
-                  <th>Old session</th>
-                  <th>New session</th>
-                </tr>
-              </thead>
-              <tbody>
-                {handoffs.map((h) => (
-                  <tr key={h.seq}>
-                    <td>{h.generation ?? "?"}</td>
-                    <td title={h.time}>{new Date(h.time).toLocaleString()}</td>
-                    <td>{h.oldSession ? <code>{h.oldSession}</code> : "none"}</td>
-                    <td>{h.newSession ? <code>{h.newSession}</code> : "chosen by the harness"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <code>{command}</code>
+          <button className="btn" onClick={copy}>
+            {copied ? "Copied" : "Copy"}
+          </button>
         </>
       )}
-      <h3>Verify history</h3>
-      {runs.length === 0 ? (
-        <p className="quiet">No verify run recorded.</p>
-      ) : (
-        <ol className="verify-runs">
-          {runs.map((r) => (
-            <li key={r.seq}>
-              <span className="chips">
-                <StateChip word={r.verdict ?? "unknown"} category={verdictCategory(r.verdict)} />
-                <span className="sub">
-                  {[r.exit === null ? null : `exit code ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
-                    .filter((p) => p !== null)
-                    .join(" · ")}
-                </span>
-              </span>
-              {r.headSha && (
-                <p className="sub">
-                  Checked commit <code>{r.headSha}</code>
-                </p>
-              )}
-              {r.flags.length > 0 && (
-                <ul className="flags">
-                  {r.flags.map((f) => (
-                    <li key={f}>
-                      <code>{f}</code>
-                      {r.flagsWaived && <span className="sub"> · waived</span>}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {r.waivers.map((w) => (
-                <p key={w.seq} className="sub">
-                  Waived{w.headSha ? ` at ${w.headSha}` : ""}: {w.flags.length > 0 ? w.flags.join(", ") : "no flags listed"}
-                </p>
-              ))}
-            </li>
-          ))}
-        </ol>
+      {resume.data && !command && (
+        <span className="note">
+          No resume command. {resume.data.problems.map((p) => p.detail).join(" ")}
+        </span>
       )}
-      <h3>Token use</h3>
-      {tokens.length === 0 ? (
-        <p className="quiet">No token use recorded.</p>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Model</th>
-                <th>In</th>
-                <th>Out</th>
-                <th>Cache read</th>
-                <th>Cache written</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {tokens.map(([name, u]) => (
-                <tr key={name}>
-                  <td>{name}</td>
-                  <td className="num">{countText(u.input)}</td>
-                  <td className="num">{countText(u.output)}</td>
-                  <td className="num">{countText(u.cacheRead)}</td>
-                  <td className="num">{countText(u.cacheCreation)}</td>
-                  <td className="num">{countText(usageTotal(u))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <h3>Events</h3>
-      <Timeline rows={rowsForRole(rows, role)} loading={false} error={null} />
+    </>
+  );
+}
+
+function Files({ tabs, scope, loadFile }: { tabs: FileTab[]; scope: string; loadFile: (tab: FileTab) => Promise<FileText> }) {
+  const key = (t: FileTab) => `${t.kind}/${t.name}`;
+  const [picked, setPicked] = useState(key(tabs[0]!));
+  const active = tabs.find((t) => key(t) === picked) ?? tabs[0]!;
+  return (
+    <>
+      <div className="tabs" role="tablist">
+        {tabs.map((t) => (
+          <button key={key(t)} role="tab" aria-selected={key(t) === key(active)} onClick={() => setPicked(key(t))}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <FileView id={`${scope}/${key(active)}`} load={() => loadFile(active)} />
     </>
   );
 }

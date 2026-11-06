@@ -1,12 +1,24 @@
 // Small pieces that every view shares.
 
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import type { FileRef, FileText } from "../shared/api.ts";
 import type { DeliveryState, EventRow, TicketRef } from "../shared/teamwire.ts";
 import type { StateCategory } from "../shared/state.ts";
 import { FileView } from "./FileView.tsx";
 import { modelText, tokensText, verifyChip } from "./model/memberEvents.ts";
 import { afkLinks, deliveryText, refText } from "./model/status.ts";
+import { roleHref, type RolePlace } from "./model/route.ts";
+
+/** The page a role link opens its drawer on. The team page and the archive page set it; elsewhere a role stays text. */
+export const RolePlaceContext = createContext<RolePlace | null>(null);
+
+/** A role name, or `children`, as a link to the role's drawer on this page; plain when `roleHref` does not link it. */
+export function RoleLink({ role, children }: { role: string; children?: ReactNode }) {
+  const at = useContext(RolePlaceContext);
+  const to = at ? roleHref(role, at) : null;
+  const body = children ?? role;
+  return to ? <a href={to}>{body}</a> : <>{body}</>;
+}
 
 /** One shape per category, so a state is never told by colour alone. */
 export const SHAPE: Record<StateCategory, string> = { failed: "✕", attention: "!", unknown: "?", active: "▶", idle: "–", done: "✓" };

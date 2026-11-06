@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Snapshot } from "../shared/api.ts";
-import { AfkFiles, Empty, RefChips, StateChip } from "./components.tsx";
+import { AfkFiles, Empty, RefChips, RoleLink, RolePlaceContext, StateChip } from "./components.tsx";
 import { Drawer } from "./Drawer.tsx";
 import { CloseMemberDialog, CloseTeamDialog, MessageButton } from "./Actions.tsx";
 import { REFRESH_MS, useClient, useLoad, useNow, useTimeline } from "./hooks.ts";
@@ -11,6 +11,7 @@ import { href, TABS, type Tab } from "./model/route.ts";
 import { afkLine, refText, watchLine } from "./model/status.ts";
 import { livenessInfo, refreshKey, type TeamModel } from "./model/teams.ts";
 import { removalText } from "./model/memberEvents.ts";
+import { buildDetail, knownRoles, type DetailSource } from "./model/detail.ts";
 import { Timeline } from "./Timeline.tsx";
 import { Decisions } from "./Decisions.tsx";
 import { Tokens } from "./Tokens.tsx";
@@ -78,10 +79,10 @@ export function TeamDetail({
   }
   const s = team.status;
   const live = livenessInfo(s.lead);
-  const open = member === null ? null : team.members.find((m) => m.role === member);
+  const source: DetailSource = { page: "team", team, rows: timeline.rows, files: files.data ?? [], actions: snapshot.actions };
 
   return (
-    <>
+    <RolePlaceContext.Provider value={{ page: "team", team: name, tab, roles: knownRoles(source) }}>
       <div className="team-head" ref={head}>
         <p className="crumbs">
           <a href={href.overview()}>← Teams</a>
@@ -154,7 +155,9 @@ export function TeamDetail({
                     {team.removed.map((m) => (
                       <tr key={m.role}>
                         <td>
-                          <code>{m.role}</code>
+                          <RoleLink role={m.role}>
+                            <code>{m.role}</code>
+                          </RoleLink>
                         </td>
                         <td>{m.title}</td>
                         <td>{m.kind}</td>
@@ -191,21 +194,22 @@ export function TeamDetail({
         </>
       )}
 
-      {open && (
+      {member !== null && (
         <Drawer
-          team={team.name}
-          member={open}
-          roster={team.roster?.members.find((r) => r.role === open.role) ?? null}
-          files={files.data ?? []}
-          rows={timeline.rows}
-          actions={snapshot.actions}
-          onCloseMember={() => setClosing({ team: name, role: open.role })}
+          role={member}
+          detail={buildDetail(member, source)}
+          loading={timeline.loading}
+          error={timeline.error}
+          scope={name}
+          team={name}
+          loadFile={(f) => client.teamFile(name, f.kind, f.name)}
+          onCloseMember={() => setClosing({ team: name, role: member })}
           onClose={() => {
-            location.hash = href.team(team.name ?? "", tab);
+            location.hash = href.team(name, tab);
           }}
         />
       )}
       {closeDialog}
-    </>
+    </RolePlaceContext.Provider>
   );
 }
