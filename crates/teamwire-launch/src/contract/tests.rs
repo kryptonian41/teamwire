@@ -116,6 +116,11 @@ fn closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail() {
     let closer = render(MemberKind::Closer, None, &[]);
     assert!(closer.contains("revert the fix in a temporary clone and confirm"));
     assert!(closer.contains("joined head when one exists"));
+    // A verify PASS is evidence, so the closer runs each command once per commit.
+    assert!(closer.contains("do not run the same check again on the same"));
+    assert!(closer.contains("do not also\n  run member checks on the joined head"));
+    assert!(closer.contains("run only its failing tests on the base commit"));
+    assert!(closer.contains("one blocking call"));
     assert!(closer.contains("Editing files in that clone is not editing source"));
     assert!(closer.contains("as an exception to the no-installs rule"));
     assert!(closer.contains("cache/closer/"));
