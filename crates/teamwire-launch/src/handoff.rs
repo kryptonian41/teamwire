@@ -275,9 +275,6 @@ pub fn open_handoff(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>) -> Result<Handoff
     })
 }
 
-/// Why the handoff document at `path` cannot be trusted, if it cannot: it is
-/// missing, or older than the generation it should describe, such as one a
-/// member that handed off before left behind.
 /// The sentence that tells a fresh session about its unread messages. The
 /// member tool comes first: a member's shell may have no `teamwire` on its
 /// PATH, so the command it can run is the one its contract names.
@@ -288,6 +285,9 @@ fn unread_note(unread: usize) -> String {
     )
 }
 
+/// Why the handoff document at `path` cannot be trusted, if it cannot: it is
+/// missing, or older than the generation it should describe, such as one a
+/// member that handed off before left behind.
 fn stale_document(path: &Path, generation_started: Timestamp) -> Option<String> {
     let written = match std::fs::metadata(path).and_then(|m| m.modified()) {
         Ok(written) => written,
