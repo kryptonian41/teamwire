@@ -6,7 +6,7 @@ import archivesFixture from "../../../fixtures/archives.json";
 import type { ArchiveEntry, FileRef } from "../../shared/api.ts";
 import { EventsView, StatusAll, TeamsList, type EventRow } from "../../shared/teamwire.ts";
 import { buildDetail, knownRoles, WHY, type DetailSource, type Fact } from "./detail.ts";
-import { joinTeam } from "./teams.ts";
+import { joinTeam, type TeamModel } from "./teams.ts";
 
 const rows = EventsView.parse(eventsFixture).events;
 const payments = joinTeam(StatusAll.parse(status)[0]!, TeamsList.parse(teams).teams);
@@ -14,6 +14,7 @@ const archive = (archivesFixture as ArchiveEntry[])[0]!;
 const file = (kind: FileRef["kind"], name: string): FileRef => ({ kind, name, bytes: 10, modifiedAt: "2026-10-13T07:00:00.000Z" });
 const teamFiles = [file("brief", "api"), file("report", "api"), file("brief", "oldapi"), file("outbox", "oldapi")];
 const onTeam = (actions = false, files = teamFiles): DetailSource => ({ page: "team", team: payments, rows, files, actions });
+const withTeam = (team: TeamModel): DetailSource => ({ page: "team", team, rows, files: teamFiles, actions: false });
 const inArchive: DetailSource = { page: "archive", rows, files: archive.files };
 const why = (f: { ok: true } | { ok: false; why: string } | null | undefined) => (f && !f.ok ? f.why : null);
 const value = <T,>(f: Fact<T> | null | undefined) => (f && f.ok ? f.value : undefined);
@@ -120,4 +121,16 @@ test("a role no source knows has no record", () => {
   expect(buildDetail("api", { page: "archive", rows: [], files: [] })).toBeNull();
   expect([...knownRoles(onTeam())].sort()).toEqual(["api", "audit", "emails", "fraud", "ledger", "oldapi", "review", "web"]);
   expect(knownRoles(inArchive).has("oldapi")).toBe(true);
+});
+
+test("the subtitle: status title for a live member, roster title when status has none, the roster for a removed one", () => {
+  const renamed = { ...payments, members: payments.members.map((m) => (m.role === "api" ? { ...m, title: "Status says this" } : m)) };
+  expect(buildDetail("api", withTeam(renamed))!.title).toBe("Status says this");
+  // A live member the roster does not list keeps its status title.
+  expect(buildDetail("api", withTeam({ ...payments, roster: null }))!.title).toBe("Build refund endpoint");
+  const untitled = { ...payments, members: payments.members.map((m) => (m.role === "api" ? { ...m, title: "" } : m)) };
+  expect(buildDetail("api", withTeam(untitled))!.title).toBe("Build refund endpoint");
+  expect(buildDetail("oldapi", onTeam())!.title).toBe("First refund attempt");
+  expect(buildDetail("ledger", inArchive)!.title).toBeNull();
+  expect(buildDetail("lead", inArchive)!.title).toBe("The team's lead");
 });

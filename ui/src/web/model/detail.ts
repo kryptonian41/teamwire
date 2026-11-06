@@ -60,6 +60,8 @@ export interface FileTab {
 export interface Detail {
   role: string;
   subject: Subject;
+  /** The drawer's subtitle. */
+  title: string | null;
   state: { word: string; category: StateCategory };
   age: Fact<AgeView>;
   roster: Fact<RosterFacts>;
@@ -119,6 +121,7 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
     return {
       role,
       subject: "archived",
+      title: null,
       state: { word: "archived", category: "idle" },
       age: not(WHY.archived),
       roster: not(WHY.archived),
@@ -143,6 +146,7 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
     return {
       role,
       subject: "live",
+      title: live.title || entry?.title || null,
       state: { word: live.state, category: live.category },
       age: has(formatAge(live.age_s, live.deadline_s)),
       roster,
@@ -164,6 +168,7 @@ export function buildDetail(role: string, src: DetailSource): Detail | null {
   return {
     role,
     subject: "removed",
+    title: gone.title,
     state: { word: "removed", category: "idle" },
     age: not(WHY.removed),
     roster,
@@ -188,6 +193,7 @@ function leadDetail(src: DetailSource): Detail {
   return {
     role: "lead",
     subject: "lead",
+    title: "The team's lead",
     state: archived ? { word: "archived", category: "idle" } : { word: live.label, category: live.category },
     age: not(WHY.lead),
     roster: not(WHY.lead),

@@ -68,7 +68,7 @@ export function Drawer({
     return () => window.removeEventListener("keydown", on);
   }, [onClose]);
 
-  const title = detail?.subject === "lead" ? "The team's lead" : detail?.roster.ok ? detail.roster.value.title : null;
+  const title = detail?.title ?? null;
   const actions = detail?.actions ?? null;
 
   return createPortal(
