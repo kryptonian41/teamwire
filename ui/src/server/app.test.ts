@@ -291,6 +291,22 @@ describe("close-member action", () => {
       expect(calls.map((c) => c.cmd)).toEqual(["closeMember"]);
     }
   });
+  test("a real close that stops part way (exit 2) tells the lead with the first line of the CLI's error", async () => {
+    const stderr = "\nremove_worktree: place closed, worktree kept: vim (pid 4242) still runs\nrun close again";
+    const text = "user's close of member impl stopped part way: remove_worktree: place closed, worktree kept: vim (pid 4242) still runs";
+    const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(2, "", stderr), send: () => out(0) }) });
+    expect(await (await post(app, path, body({ dryRun: false }))).json()).toEqual({ exit: 2, stdout: "", stderr, leadNotes: [{ text, told: true, detail: "" }] });
+    expect(calls).toEqual([{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: false }, note("alpha", text)]);
+    const failing = setup({ actions: true, act: script({ closeMember: () => out(2, "", stderr), send: () => out(1, "", "REFUSED: busy") }) });
+    expect(((await (await post(failing.app, path, body({ dryRun: false }))).json()) as { leadNotes: unknown[] }).leadNotes).toEqual([
+      { text, told: false, detail: "teamwire send exited 1: REFUSED: busy" },
+    ]);
+  });
+  test("a dry run that exits 2 tells nobody", async () => {
+    const { app, calls } = setup({ actions: true, act: script({ closeMember: () => out(2, "", "odd"), send: () => out(0) }) });
+    await post(app, path, body());
+    expect(calls.map((c) => c.cmd)).toEqual(["closeMember"]);
+  });
   test("a note that fails still returns the close's own result, and says why the lead was not told", async () => {
     const { app } = setup({ actions: true, act: script({ closeMember: () => out(0, "removed impl"), send: () => out(4, "", "NOT DELIVERED to lead: gone") }) });
     expect(await (await post(app, path, body({ dryRun: false }))).json()).toEqual({

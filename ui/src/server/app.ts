@@ -210,9 +210,12 @@ export function createApp(deps: AppDeps): App {
         const { role, stop, unverified, dryRun } = body.data;
         const closed = await runAction({ cmd: "closeMember", team, role, stop, unverified, dryRun });
         if (!closed.ok) return closed.res;
-        // Plan D3: the lead hears about a member close only once it has worked.
+        // Plan D3: the lead hears about a member close that worked, and about one that stopped part way
+        // (exit 2), because the member's place may already be closed then.
         const flags = [stop && "--stop", unverified && "--unverified"].filter(Boolean).join(" ");
-        const notes = !dryRun && closed.out?.exit === 0 ? [await tellLead(team, `user closed member ${role} from the dashboard${flags ? ` (${flags})` : ""}`)] : [];
+        const notes: LeadNote[] = [];
+        if (!dryRun && closed.out?.exit === 0) notes.push(await tellLead(team, `user closed member ${role} from the dashboard${flags ? ` (${flags})` : ""}`));
+        if (!dryRun && closed.out?.exit === 2) notes.push(await tellLead(team, `user's close of member ${role} stopped part way: ${reason(closed.out)}`));
         return json(result(closed.out, notes));
       }
       case "close-team": {
@@ -230,8 +233,7 @@ export function createApp(deps: AppDeps): App {
         if (!closed.ok) return closed.res;
         // Exit 1 is a refusal: nothing changed, so the team still takes the note.
         if (closed.out?.exit === 1) {
-          const why = [...firstLine(closed.out.stderr || closed.out.stdout)].slice(0, MAX_REASON_CHARS).join("");
-          notes.push(await tellLead(team, `user's close of team ${team} was refused: ${why}`));
+          notes.push(await tellLead(team, `user's close of team ${team} was refused: ${reason(closed.out)}`));
         }
         return json(result(closed.out, notes));
       }
@@ -292,6 +294,11 @@ export function createApp(deps: AppDeps): App {
 
 function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
+}
+
+/** The CLI's first line of error for a lead note, cut so the note stays under the 4000-character cap. */
+function reason(out: ActionOutput): string {
+  return [...firstLine(out.stderr || out.stdout)].slice(0, MAX_REASON_CHARS).join("");
 }
 
 function result(out: ActionOutput | null, leadNotes: LeadNote[]): ActionResult {
