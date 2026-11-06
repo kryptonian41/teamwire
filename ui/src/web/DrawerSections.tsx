@@ -17,14 +17,8 @@ export function DrawerEvents({ detail: d }: { detail: Detail }) {
   return (
     <>
       {d.sessions && <LeadSessions sessions={d.sessions} />}
-      {d.handoffs.ok ? (
-        d.handoffs.value.length > 0 && <Handoffs handoffs={d.handoffs.value} />
-      ) : (
-        <>
-          <h3>Handoffs</h3>
-          <p className="quiet">{d.handoffs.why}</p>
-        </>
-      )}
+      <h3>Handoffs</h3>
+      {d.handoffs.ok ? <Handoffs handoffs={d.handoffs.value} /> : <p className="quiet">{d.handoffs.why}</p>}
       <h3>Verify history</h3>
       {d.verify.ok ? <VerifyRuns runs={d.verify.value} /> : <p className="quiet">{d.verify.why}</p>}
       <h3>Token use</h3>
@@ -76,32 +70,30 @@ function LeadSessions({ sessions }: { sessions: LeadSession[] }) {
 }
 
 function Handoffs({ handoffs }: { handoffs: Handoff[] }) {
+  if (handoffs.length === 0) return <p className="quiet">No handoff recorded.</p>;
   return (
-    <>
-      <h3>Handoffs</h3>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Generation</th>
-              <th>Time</th>
-              <th>Old session</th>
-              <th>New session</th>
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Generation</th>
+            <th>Time</th>
+            <th>Old session</th>
+            <th>New session</th>
+          </tr>
+        </thead>
+        <tbody>
+          {handoffs.map((h) => (
+            <tr key={h.seq}>
+              <td>{h.generation ?? "?"}</td>
+              <td>{when(h.time)}</td>
+              <td>{h.oldSession ? <code>{h.oldSession}</code> : "none"}</td>
+              <td>{h.newSession ? <code>{h.newSession}</code> : "chosen by the harness"}</td>
             </tr>
-          </thead>
-          <tbody>
-            {handoffs.map((h) => (
-              <tr key={h.seq}>
-                <td>{h.generation ?? "?"}</td>
-                <td>{when(h.time)}</td>
-                <td>{h.oldSession ? <code>{h.oldSession}</code> : "none"}</td>
-                <td>{h.newSession ? <code>{h.newSession}</code> : "chosen by the harness"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
