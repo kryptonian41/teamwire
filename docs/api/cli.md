@@ -557,7 +557,9 @@ absolute path and `\n` on stdout, nothing else, never the key (ADR 0040).
 The file is `<home>/user.key`, where `<home>` is `--home`, else
 `$TEAMWIRE_HOME`, else `~/.teamwire`. It holds 64 lowercase hex characters
 and one `\n`, with mode 0600. An existing key is kept; an empty file gets a
-key. A symlink or other non-regular file at the path is refused. Exit 0, or
+key. Two runs at once agree on one key: each holds a lock on
+`<home>/locks/user-key.lock` from its first look at the file to its write.
+A symlink or other non-regular file at the path is refused. Exit 0, or
 6 when the file cannot be written or read. `teamwire send --from user` needs
 the file's text in `TEAMWIRE_USER_KEY`.
 

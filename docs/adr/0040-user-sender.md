@@ -34,6 +34,9 @@ asked instead for a sender that is plainly the user.
    `teamwire user-key` makes the file when it is missing or empty. It
    creates an empty file with mode 0600, then writes the key into it through
    `Platform::write_atomic`, which keeps that mode. An existing key is kept.
+   Two runs at once agree on one key: each holds the kernel lock on
+   `<home>/locks/user-key.lock` from its first look at the file to its
+   write, so the second run finds and keeps the first run's key.
    A symlink or any other non-regular file at the path is refused, never
    followed. The command prints the file's absolute path and `\n`, never the
    key, and exits 0, or 6 when the file cannot be written or read.
