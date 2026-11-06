@@ -8,6 +8,7 @@ export const TAB_LABELS: Partial<Record<FileKind, string>> = {
   contract: "Contract",
   outbox: "Result",
   report: "Report",
+  handoff: "Handoff",
   verify: "Check log",
   setup: "Setup log",
 };

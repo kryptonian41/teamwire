@@ -8,7 +8,7 @@ import { FileView } from "./FileView.tsx";
 import { useClient, useLoad } from "./hooks.ts";
 import { tabsFor } from "./model/files.ts";
 import { href } from "./model/route.ts";
-import { countText, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
+import { countText, handoffHistory, modelText, rowsForRole, tokensByModel, usageTotal, verdictCategory, verifyHistory } from "./model/memberEvents.ts";
 import { acceptsLine, ownsLine, spanText, startedByLine } from "./model/status.ts";
 import { formatAge, type JoinedMember } from "./model/teams.ts";
 
@@ -156,9 +156,37 @@ function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string 
   const runs = verifyHistory(rows, role);
   const tokens = [...tokensByModel(rows, role)];
   const model = modelText(rows, role);
+  const handoffs = handoffHistory(rows, role);
   return (
     <>
       {model && <p className="sub">Model: {model}</p>}
+      {handoffs.length > 0 && (
+        <>
+          <h3>Handoffs</h3>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Generation</th>
+                  <th>Time</th>
+                  <th>Old session</th>
+                  <th>New session</th>
+                </tr>
+              </thead>
+              <tbody>
+                {handoffs.map((h) => (
+                  <tr key={h.seq}>
+                    <td>{h.generation ?? "?"}</td>
+                    <td title={h.time}>{new Date(h.time).toLocaleString()}</td>
+                    <td>{h.oldSession ? <code>{h.oldSession}</code> : "none"}</td>
+                    <td>{h.newSession ? <code>{h.newSession}</code> : "chosen by the harness"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
       <h3>Verify history</h3>
       {runs.length === 0 ? (
         <p className="quiet">No verify run recorded.</p>
@@ -169,11 +197,16 @@ function MemberEvents({ rows, role }: { rows: readonly EventRow[]; role: string 
               <span className="chips">
                 <StateChip word={r.verdict ?? "unknown"} category={verdictCategory(r.verdict)} />
                 <span className="sub">
-                  {[r.exit === null ? null : `exit ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
+                  {[r.exit === null ? null : `exit code ${r.exit}`, r.seconds === null ? null : spanText(r.seconds), new Date(r.time).toLocaleString()]
                     .filter((p) => p !== null)
                     .join(" · ")}
                 </span>
               </span>
+              {r.headSha && (
+                <p className="sub">
+                  Checked commit <code>{r.headSha}</code>
+                </p>
+              )}
               {r.flags.length > 0 && (
                 <ul className="flags">
                   {r.flags.map((f) => (

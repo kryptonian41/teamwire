@@ -240,15 +240,52 @@ export const MetricsView = z.object({
   errors: z.array(z.string()),
 });
 
+/** One "Decisions I made" block of a report. `text` is untrusted Markdown: the page shows it as plain text. */
+export const DecisionBlock = z.object({
+  /** The line that opened the block, such as `## Decisions I made`. */
+  heading: z.string(),
+  /** Line number in the report. */
+  line: count,
+  text: z.string(),
+});
+
+export const DecisionMember = z.object({
+  role: z.string(),
+  kind: MemberKind,
+  title: z.string(),
+  /** The report's path; null for a member with no report file. */
+  report: z.string().nullable(),
+  /** Empty for a member whose report holds no such block. */
+  blocks: z.array(DecisionBlock),
+});
+
+/** One team in `teamwire decisions --json`. The team's `path` and `ulid` are left out on purpose: the page needs neither. */
+export const DecisionTeam = z.object({
+  team: z.string(),
+  title: z.string(),
+  created_at: z.string(),
+  /** True for a running team, false for an archive. */
+  live: z.boolean(),
+  /** An archive from before schema 10 has none. */
+  refs: z.array(TicketRef).default([]),
+  members: z.array(DecisionMember),
+});
+
+/** `teamwire decisions [<team>] [--ref REF] [--grep TEXT] --json`, oldest team first. */
+export const DecisionsView = z.object({
+  teams: z.array(DecisionTeam),
+  errors: z.array(z.string()),
+});
+
 /**
  * The closed list of event types (teamwire `EventType`, docs/metrics.md
  * section 1). Adding one changes teamwire's store schema, so a new value
  * fails the parse like every other enum here.
  */
 export const EventType = z.enum([
-  "team.created", "team.closing", "team.closed", "team.lead_adopted",
+  "team.created", "team.closing", "team.closed", "team.lead_adopted", "team.refs_added",
   "member.creating", "member.started", "member.failed", "member.refused", "member.replaced",
-  "member.removed", "member.reprompted", "member.completed", "member.completion_refused", "member.held",
+  "member.removed", "member.reprompted", "member.handoff", "member.completed", "member.completion_refused", "member.held",
   "message.sent", "message.refused",
   "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
   "delivery.reminded", "delivery.resent", "delivery.reentered", "delivery.recipient_stopped",
@@ -296,6 +333,7 @@ export type MessageType = z.infer<typeof MessageType>;
 export type MemberKind = z.infer<typeof MemberKind>;
 export type Lifecycle = z.infer<typeof Lifecycle>;
 export type Liveness = z.infer<typeof Liveness>;
+export type TicketRef = z.infer<typeof TicketRef>;
 export type ContextView = z.infer<typeof ContextView>;
 export type MemberView = z.infer<typeof MemberView>;
 export type LeadView = z.infer<typeof LeadView>;
@@ -312,6 +350,10 @@ export type LogMessage = z.infer<typeof LogMessage>;
 export type LogView = z.infer<typeof LogView>;
 export type Metric = z.infer<typeof Metric>;
 export type MetricsView = z.infer<typeof MetricsView>;
+export type DecisionBlock = z.infer<typeof DecisionBlock>;
+export type DecisionMember = z.infer<typeof DecisionMember>;
+export type DecisionTeam = z.infer<typeof DecisionTeam>;
+export type DecisionsView = z.infer<typeof DecisionsView>;
 export type EventType = z.infer<typeof EventType>;
 export type EventRow = z.infer<typeof EventRow>;
 export type EventsView = z.infer<typeof EventsView>;

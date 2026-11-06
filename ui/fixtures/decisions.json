@@ -1,0 +1,49 @@
+{
+  "teams": [
+    {
+      "team": "payments",
+      "title": "Refund flow rewrite",
+      "ulid": "01M59A1ZK3AAAAAAAAAAAAAAAA",
+      "created_at": "2026-10-13T06:30:00.000Z",
+      "live": true,
+      "path": "/home/dev/.teamwire/teams/payments",
+      "refs": [{ "provider": "linear", "id": "GKA-580" }, { "provider": "github", "id": "#3772" }],
+      "members": [
+        {
+          "role": "api",
+          "kind": "implementer",
+          "title": "Build refund endpoint",
+          "report": "/home/dev/.teamwire/teams/payments/reports/api.md",
+          "blocks": [
+            { "heading": "## Decisions I made", "line": 41, "text": "- Refunds above the captured amount are refused with 422, not clamped.\n- The currency check runs before the amount check." }
+          ]
+        },
+        {
+          "role": "ledger",
+          "kind": "implementer",
+          "title": "Write ledger entries",
+          "report": "/home/dev/.teamwire/teams/payments/reports/ledger.md",
+          "blocks": [
+            { "heading": "## Decisions I made", "line": 30, "text": "- A partial refund writes one REFUND_PARTIAL entry per capture.\n- Amounts stay in minor units." },
+            { "heading": "**Decisions I made**", "line": 58, "text": "- Rounding goes to the larger side of the split." }
+          ]
+        },
+        {
+          "role": "web",
+          "kind": "implementer",
+          "title": "Build refund screen",
+          "report": null,
+          "blocks": []
+        },
+        {
+          "role": "audit",
+          "kind": "investigator",
+          "title": "Trace refund audit log",
+          "report": "/home/dev/.teamwire/teams/payments/reports/audit.md",
+          "blocks": []
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

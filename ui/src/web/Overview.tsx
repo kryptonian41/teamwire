@@ -1,5 +1,6 @@
 import { CATEGORY_ORDER } from "../shared/state.ts";
-import { Empty, StateChip } from "./components.tsx";
+import { Attention } from "./Attention.tsx";
+import { Empty, RefChips, StateChip } from "./components.tsx";
 import { countByCategory, hasProblem, livenessInfo, problemReasons, sortTeams, type TeamModel } from "./model/teams.ts";
 import { href } from "./model/route.ts";
 import { afkChip, watchChip } from "./model/status.ts";
@@ -25,6 +26,7 @@ export function Overview({ teams, loaded, neverPolled }: { teams: TeamModel[]; l
           {trouble.length === 0 ? "None needs a look." : `${trouble.length} ${trouble.length === 1 ? "needs" : "need"} a look.`}
         </p>
       </div>
+      <Attention teams={sorted} />
       {trouble.length > 0 && <TeamGroup id="trouble" title="Needs a look" teams={trouble} />}
       {fine.length > 0 && <TeamGroup id="fine" title="Running fine" teams={fine} />}
     </>
@@ -66,6 +68,7 @@ function TeamRow({ team }: { team: TeamModel }) {
             {live.label}
           </span>
         </p>
+        <RefChips refs={s.refs} />
         {team.members.length > 0 && (
           <p className="chips">
             {CATEGORY_ORDER.filter((c) => counts[c] > 0).map((c) => (

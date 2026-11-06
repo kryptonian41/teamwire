@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import eventsFixture from "../../../fixtures/events.json";
 import { EventsView, type EventRow } from "../../shared/teamwire.ts";
-import { countText, modelText, removal, removalText, rolesIn, rowsForRole, tokensByModel, tokensText, verifyChip, verifyHistory } from "./memberEvents.ts";
+import { countText, handoffHistory, modelText, removal, removalText, rolesIn, rowsForRole, tokensByModel, tokensText, verifyChip, verifyHistory } from "./memberEvents.ts";
 
 const rows = EventsView.parse(eventsFixture).events;
 const ev = (type: EventRow["type"], role: string, data: EventRow["data"] = {}, seq = 1): EventRow => ({
@@ -36,6 +36,13 @@ test("verify history is newest first, with each run's waivers", () => {
     { seq: 41, time: "2026-10-13T07:01:00.000Z", flags: ["outside-owns:src/shared/money.ts"], headSha: "4f1c2ab" },
   ]);
   expect(h[1]!.waivers).toEqual([]);
+  // Each run keeps its exit code and the whole commit hash; a run without one has null.
+  expect(h.map((r) => [r.exit, r.headSha])).toEqual([
+    [0, "4f1c2ab9d8e7f6a5b4c3d2e1f00112233445566a"],
+    [0, "0a1b2c3d4e5f60718293a4b5c6d7e8f901234567"],
+  ]);
+  expect(verifyHistory(rows, "api")[0]).toMatchObject({ verdict: "FAIL", exit: 1, headSha: "9d8e7f6a5b4c3d2e1f00112233445566778899aa" });
+  expect(verifyHistory([ev("verify.recorded", "x", { verdict: "PASS" })], "x")[0]).toMatchObject({ exit: null, headSha: null });
   expect(verifyHistory(rows, "web")).toEqual([]);
   // A waiver before any run is dropped, not attached to a later one.
   const early = [ev("verify.waived", "x", { flags: ["f"] }, 1), ev("verify.recorded", "x", { verdict: "PASS" }, 2)];
@@ -112,4 +119,18 @@ test("roles in order of first appearance, and the removal cell", () => {
   expect(removalText(rows, "ledger")).toBe("—");
   expect(removalText([ev("member.removed", "x", { unverified: true })], "x")).toBe("removed without a passing verify");
   expect(removalText([ev("member.removed", "x")], "x")).toBe("removed");
+});
+
+test("handoff history lists the member's handoffs, newest first, with both sessions", () => {
+  expect(handoffHistory(rows, "api")).toEqual([
+    { seq: 55, time: "2026-10-13T07:17:30.000Z", generation: 2, oldSession: "11111111-1111-1111-1111-111111111111", newSession: "22222222-2222-2222-2222-222222222222" },
+  ]);
+  expect(handoffHistory(rows, "web")).toEqual([]);
+  const more = [...rows, ev("member.handoff", "api", { generation: 3, old_session: "bbb", new_session: null }, 90)];
+  expect(handoffHistory(more, "api").map((h) => [h.generation, h.oldSession, h.newSession])).toEqual([
+    [3, "bbb", null],
+    [2, "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"],
+  ]);
+  // An older row with no keys still lists, with nulls.
+  expect(handoffHistory([ev("member.handoff", "api")], "api")[0]).toMatchObject({ generation: null, oldSession: null, newSession: null });
 });

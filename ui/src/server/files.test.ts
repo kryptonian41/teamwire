@@ -112,6 +112,34 @@ describe("readKindFile", () => {
     }
   });
 
+  test("handoff serves reports/<role>.handoff.md, and the dotted name is not a report name", async () => {
+    expect(FILE_KINDS.handoff).toMatchObject({ dir: "reports", ext: ".handoff.md" });
+    const r = await readKindFile(team, "handoff", "impl");
+    expect(r.ok && r.file.text).toBe("handoff text");
+    expect(r.ok && r.file.doc).not.toBeNull();
+    // The role pattern still refuses a dot, so no other kind can read the file by its dotted name.
+    for (const name of ["impl.handoff", "../reports/impl", "impl.handoff.md"]) {
+      expect((await readKindFile(team, "handoff", name)).ok).toBe(false);
+    }
+    expect((await readKindFile(team, "report", "impl.handoff")).ok).toBe(false);
+  });
+
+  test("a handoff listing names the role, and the report listing leaves the handoff file out", async () => {
+    const files = await listFiles(team);
+    expect(files.filter((f) => f.kind === "handoff").map((f) => f.name)).toEqual(["impl"]);
+    expect(files.filter((f) => f.kind === "report").some((f) => f.name.includes("."))).toBe(false);
+  });
+
+  test("a handoff symlink into members/ is refused", async () => {
+    symlinkSync(join(team, "members", "impl", "token"), join(team, "reports", "sneak.handoff.md"));
+    try {
+      expect(await readKindFile(team, "handoff", "sneak")).toMatchObject({ ok: false, problem: { code: "not_found" } });
+      expect((await listFiles(team)).some((f) => f.kind === "handoff" && f.name === "sneak")).toBe(false);
+    } finally {
+      rmSync(join(team, "reports", "sneak.handoff.md"));
+    }
+  });
+
   test("refuses a symlink that leaves the team directory", async () => {
     const r = await readKindFile(team, "brief", "evil");
     expect(r).toMatchObject({ ok: false, problem: { code: "not_found" } });

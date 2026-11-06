@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Snapshot } from "../shared/api.ts";
 import { createApp } from "./app.ts";
-import type { CliCall, Runner } from "./cli.ts";
+import { buildArgs, type CliCall, type Runner } from "./cli.ts";
 import { createPoller } from "./poller.ts";
 import { createSecurity } from "./security.ts";
 
@@ -38,6 +38,19 @@ function setup(opts: { keepaliveMs?: number; metricsTtlMs?: number; now?: () => 
         return ok({ teams: [] });
       case "metrics":
         return ok({ metrics: [], errors: [] });
+      case "metricsTeam":
+        return ok({ metrics: [{ name: "teamwire.member.tokens", unit: "{token}", labels: [["team", call.team]], value: 1 }], errors: [] });
+      case "decisionsTeam":
+        return ok({ teams: [{ team: call.team, title: "t", created_at: "x", live: true, members: [] }], errors: [] });
+      case "decisionsGrep":
+      case "decisionsRef":
+        // The real runner refuses a bad form before it starts a process; the fake uses the same check.
+        try {
+          buildArgs(call);
+        } catch (e) {
+          return { ok: false, problems: [{ code: "bad_request", detail: (e as Error).message }] };
+        }
+        return ok({ teams: [], errors: [] });
       case "log":
         return ok({ messages: [] });
       case "events":
@@ -78,7 +91,7 @@ describe("access", () => {
   });
   test("every API route is protected", async () => {
     const { get } = setup();
-    for (const p of ["/api/events", "/api/metrics", "/api/archives", "/api/teams/alpha/log", "/api/teams/alpha/files", "/api/nope"]) {
+    for (const p of ["/api/events", "/api/metrics", "/api/archives", "/api/teams/alpha/log", "/api/teams/alpha/files", "/api/teams/alpha/decisions", "/api/teams/alpha/metrics", "/api/decisions?grep=x", "/api/nope"]) {
       expect((await get(p, {})).status).toBe(403);
     }
   });
@@ -226,6 +239,83 @@ describe("metrics cache", () => {
     t = 61_000;
     await get("/api/metrics");
     expect(calls.filter((c) => c.cmd === "metrics")).toHaveLength(2);
+  });
+});
+
+describe("team metrics", () => {
+  test("200 with the runner's data for a known team, 404 for an unknown or bad name, with no CLI call", async () => {
+    const { get, calls } = setup();
+    const res = await get("/api/teams/alpha/metrics");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ metrics: [{ name: "teamwire.member.tokens" }] });
+    expect(calls).toEqual([{ cmd: "metricsTeam", team: "alpha" }]);
+    calls.length = 0;
+    for (const team of ["nope", "..%2Fx", "Alpha"]) expect((await get(`/api/teams/${team}/metrics`)).status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+  test("each team is cached for the ttl on its own, and the all-teams cache is a separate one", async () => {
+    let t = 0;
+    const { get, calls } = setup({ now: () => t, metricsTtlMs: 60_000 });
+    const count = (cmd: string) => calls.filter((c) => c.cmd === cmd).length;
+    await get("/api/teams/alpha/metrics");
+    t = 59_000;
+    await get("/api/teams/alpha/metrics");
+    expect(count("metricsTeam")).toBe(1);
+    await get("/api/metrics");
+    expect(count("metrics")).toBe(1);
+    t = 61_000;
+    await get("/api/teams/alpha/metrics");
+    expect(count("metricsTeam")).toBe(2);
+  });
+  test("a failure is not cached", async () => {
+    let fail = true;
+    const calls: CliCall[] = [];
+    const run = (async (call: CliCall) => {
+      calls.push(call);
+      return fail ? { ok: false, problems: [{ code: "cli_failed", detail: "teamwire metrics exited 6: boom" }] } : ok({ metrics: [], errors: [] });
+    }) as unknown as Runner;
+    const app = createApp({ security: createSecurity({ token, port }), poller: createPoller({ run, intervalMs: 5000 }), run, home });
+    const get = () => app.handle(new Request(`http://127.0.0.1:${port}/api/teams/alpha/metrics`, { headers: { host: `127.0.0.1:${port}`, cookie: `tw_ui_7878=${token}` } }));
+    expect((await get()).status).toBe(502);
+    fail = false;
+    expect((await get()).status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
+});
+
+describe("decisions routes", () => {
+  test("a team's decisions run the CLI for a known team only", async () => {
+    const { get, calls } = setup();
+    const res = await get("/api/teams/alpha/decisions");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ teams: [{ team: "alpha" }] });
+    expect(calls).toEqual([{ cmd: "decisionsTeam", team: "alpha" }]);
+    calls.length = 0;
+    expect((await get("/api/teams/nope/decisions")).status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
+  test("grep and ref searches pass their text to the runner as given", async () => {
+    const { get, calls } = setup();
+    expect((await get(`/api/decisions?grep=${encodeURIComponent("rounding & more")}`)).status).toBe(200);
+    expect((await get(`/api/decisions?ref=${encodeURIComponent("github:#3772")}`)).status).toBe(200);
+    expect(calls).toEqual([
+      { cmd: "decisionsGrep", text: "rounding & more" },
+      { cmd: "decisionsRef", ref: "github:#3772" },
+    ]);
+  });
+  test("400 for neither or both of grep and ref, and for text the CLI form refuses", async () => {
+    const { get } = setup();
+    for (const q of ["", "?grep=a&ref=b:c", "?grep=", `?grep=${"x".repeat(201)}`, "?grep=-x", "?grep=a%0Ab", "?ref=nocolon", "?ref=Linear:1", "?ref=linear:a%20b", "?other=1"]) {
+      const res = await get(`/api/decisions${q}`);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({ code: "bad_request" });
+    }
+  });
+  test("502 when the CLI fails", async () => {
+    const run = (async () => ({ ok: false, problems: [{ code: "cli_failed", detail: "teamwire decisions exited 1: boom" }] })) as unknown as Runner;
+    const app = createApp({ security: createSecurity({ token, port }), poller: createPoller({ run, intervalMs: 5000 }), run, home });
+    const res = await app.handle(new Request(`http://127.0.0.1:${port}/api/decisions?grep=x`, { headers: { host: `127.0.0.1:${port}`, cookie: `tw_ui_7878=${token}` } }));
+    expect(res.status).toBe(502);
   });
 });
 

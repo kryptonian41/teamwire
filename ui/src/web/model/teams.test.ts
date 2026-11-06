@@ -3,7 +3,7 @@ import { StatusAll, TeamsList, MetricsView, type Liveness, type StatusView } fro
 import status from "../../../fixtures/status.json";
 import teams from "../../../fixtures/teams.json";
 import metrics from "../../../fixtures/metrics.json";
-import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
+import { contextLabel, countByCategory, formatAge, formatDuration, hasProblem, joinAll, joinTeam, leadCategory, livenessInfo, pastHandoff, problemReasons, refreshKey, sortTeams, summarizeMetrics } from "./teams.ts";
 
 const S = StatusAll.parse(status);
 const T = TeamsList.parse(teams).teams;
@@ -144,4 +144,27 @@ test("the context label is the percentage, and nothing when unknown", () => {
   expect(contextLabel({ tokens: 720091, window: 1000000, pct: 72, handoff_at: 400000 })).toBe("72%");
   expect(contextLabel(null)).toBeNull();
   expect(contextLabel(undefined)).toBeNull();
+});
+
+test("a member is past its handoff at or beyond the handoff token count", () => {
+  const ctx = (tokens: number, handoff_at = 400_000) => ({ tokens, window: 1_000_000, pct: Math.floor(tokens / 10_000), handoff_at });
+  expect(pastHandoff(ctx(399_999))).toBe(false);
+  expect(pastHandoff(ctx(400_000))).toBe(true);
+  expect(pastHandoff(ctx(720_091))).toBe(true);
+  // No reading (null, or an older teamwire without the key) is not past anything.
+  expect(pastHandoff(null)).toBe(false);
+  expect(pastHandoff(undefined)).toBe(false);
+});
+
+test("the overview card counts the members past their handoff", () => {
+  const member = S[0]!.members[0]!;
+  const ctx = (tokens: number) => ({ tokens, window: 1_000_000, pct: 40, handoff_at: 400_000 });
+  const team = (...tokens: (number | null)[]) =>
+    joinTeam(
+      { ...S[0]!, members: tokens.map((t, i) => ({ ...member, role: `m${i}`, context: t === null ? null : ctx(t) })), stuck_deliveries: [], undelivered_results: [], unread_deliveries: [], unanswered_questions: [] },
+      T,
+    );
+  expect(problemReasons(team(100, null))).toEqual([]);
+  expect(problemReasons(team(400_000, 500_000, 100, null))).toEqual(["2 past handoff"]);
+  expect(hasProblem(team(400_000))).toBe(true);
 });

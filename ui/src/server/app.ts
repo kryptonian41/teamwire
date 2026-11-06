@@ -43,6 +43,8 @@ export function createApp(deps: AppDeps): App {
   const keepaliveMs = deps.keepaliveMs ?? 15_000;
   const encoder = new TextEncoder();
   let metricsCache: { at: number; data: MetricsView } | null = null;
+  // One entry per team that has a directory here, so the map is as small as the home.
+  const teamMetricsCache = new Map<string, { at: number; data: MetricsView }>();
 
   function events(req: Request): Response {
     let cleanup = () => {};
@@ -91,6 +93,8 @@ export function createApp(deps: AppDeps): App {
       }
       return cliResponse(await deps.run(raw === null ? { cmd: "events", team } : { cmd: "events", team, after: Number(raw) }));
     }
+    if (what === "decisions" && rest.length === 1) return cliResponse(await deps.run({ cmd: "decisionsTeam", team }));
+    if (what === "metrics" && rest.length === 1) return await teamMetrics(team);
     if (what === "files" && rest.length === 1) return json(await listFiles(dir));
     if (what === "file" && rest.length === 3 && a && b) return fileResponse(dir, a, b);
     if (what === "resume" && rest.length === 2 && a) {
@@ -136,6 +140,25 @@ export function createApp(deps: AppDeps): App {
     return json(res.data);
   }
 
+  async function teamMetrics(team: string): Promise<Response> {
+    const hit = teamMetricsCache.get(team);
+    if (hit && now() - hit.at < metricsTtl) return json(hit.data);
+    const res = await deps.run({ cmd: "metricsTeam", team });
+    if (!res.ok) return cliResponse(res);
+    teamMetricsCache.set(team, { at: now(), data: res.data });
+    return json(res.data);
+  }
+
+  /** `?grep=TEXT` or `?ref=provider:id`, exactly one. The CLI form checks the value. */
+  async function decisionsSearch(query: URLSearchParams): Promise<Response> {
+    const grep = query.get("grep");
+    const ref = query.get("ref");
+    if ((grep === null) === (ref === null)) {
+      return problem(400, { code: "bad_request", detail: "give exactly one of grep and ref" });
+    }
+    return cliResponse(await deps.run(grep !== null ? { cmd: "decisionsGrep", text: grep } : { cmd: "decisionsRef", ref: ref! }));
+  }
+
   return {
     async handle(req) {
       const url = new URL(req.url);
@@ -159,6 +182,7 @@ export function createApp(deps: AppDeps): App {
         }
         if (head === "events" && rest.length === 0) return events(req);
         if (head === "metrics" && rest.length === 0) return await metrics();
+        if (head === "decisions" && rest.length === 0) return await decisionsSearch(url.searchParams);
         if (head === "archives") return await archiveRoute(rest);
         if (head === "teams" && rest[0]) return await teamRoute(rest[0], rest.slice(1), url.searchParams);
       } catch (e) {

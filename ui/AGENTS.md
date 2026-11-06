@@ -32,10 +32,18 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
 
 - The app only reads. The server runs `teamwire` with exactly these
   argument forms and no others: `status --json`, `status <team> --role <role> --json`,
-  `teams --json`, `log <team> --json`, `metrics --json`,
+  `teams --json`, `log <team> --json`, `metrics --json`, `metrics <team> --json`,
   `events <team> [--after <seq>] --json`, `events <team> --archive <dir> --json`,
+  `decisions <team> --json`, `decisions --grep <text> --json`,
+  `decisions --ref=<provider>:<id> --json`,
   `version`, each with an optional `--home <dir>` first. `<dir>` is an
   archive directory name that `listArchives` returned, never a path.
+  - A `--grep` text is 1 to 200 characters, never starts with `-`, holds no
+    control character, and is one item of the argument array.
+  - A ref is valid when its provider matches `^[a-z][a-z0-9_]{0,15}$` and its
+    id is 1 to 200 characters with no white space or control character, so
+    `github:#3772` is valid. It is one array item, `--ref=<provider>:<id>`,
+    so an id that starts with `-` cannot read as a flag.
   - Never `watch`, not even `watch --once`. A watch poll takes the lead's
     watch lease and uses up its announcements.
   - Never `inbox`: it marks messages read.

@@ -7,6 +7,8 @@ import {
   AFK_FILE_NAMES,
   FILE_KINDS,
   type ArchiveEntry,
+  type DecisionQuery,
+  type DecisionsView,
   type FileKind,
   type FileRef,
   type FileText,
@@ -17,6 +19,7 @@ import {
   type Snapshot,
 } from "../shared/api.ts";
 import {
+  DecisionsView as DecisionsViewSchema,
   EventsView as EventsViewSchema,
   LogView as LogViewSchema,
   MetricsView as MetricsViewSchema,
@@ -30,6 +33,7 @@ import eventsFixture from "../../fixtures/events.json";
 import logFixture from "../../fixtures/log.json";
 import metricsFixture from "../../fixtures/metrics.json";
 import archivesFixture from "../../fixtures/archives.json";
+import decisionsFixture from "../../fixtures/decisions.json";
 import { mockMarkdown } from "./mockMarkdown.ts";
 
 export type Connection = "connecting" | "connected" | "reconnecting" | "forbidden";
@@ -60,6 +64,11 @@ export interface ApiClient {
   /** Rows after `after` when given, else every row, oldest first. */
   teamTimeline(team: string, after?: number): Promise<EventsView>;
   archiveTimeline(dir: string): Promise<EventsView>;
+  teamDecisions(team: string): Promise<DecisionsView>;
+  /** Across every team and archive. */
+  searchDecisions(query: DecisionQuery): Promise<DecisionsView>;
+  /** `teamwire metrics <team>`, including `teamwire.member.tokens`. */
+  teamMetrics(team: string): Promise<MetricsView>;
 }
 
 async function getJson(url: string, signal?: AbortSignal): Promise<unknown> {
@@ -122,6 +131,9 @@ export const httpClient: ApiClient = {
   metrics: async () => MetricsViewSchema.parse(await getJson(api.metrics())),
   teamTimeline: async (team, after) => EventsViewSchema.parse(await getJson(api.teamTimeline(team, after))),
   archiveTimeline: async (dir) => EventsViewSchema.parse(await getJson(api.archiveTimeline(dir))),
+  teamDecisions: async (team) => DecisionsViewSchema.parse(await getJson(api.teamDecisions(team))),
+  searchDecisions: async (q) => DecisionsViewSchema.parse(await getJson(api.decisions(q))),
+  teamMetrics: async (team) => MetricsViewSchema.parse(await getJson(api.teamMetrics(team))),
 };
 
 /** The mock moves on every 5 s, like the server's poll. */
@@ -133,6 +145,7 @@ const baseLog = LogViewSchema.parse(logFixture);
 const baseEvents = EventsViewSchema.parse(eventsFixture);
 const baseMetrics = MetricsViewSchema.parse(metricsFixture);
 const baseArchives = archivesFixture as ArchiveEntry[];
+const baseDecisions = DecisionsViewSchema.parse(decisionsFixture);
 
 /** A snapshot `elapsedS` seconds after the fixtures were taken. */
 export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
@@ -153,7 +166,7 @@ export function mockSnapshot(elapsedS: number, now = new Date()): Snapshot {
 
 function mockText(kind: FileKind, name: string, where: string): FileText {
   const modifiedAt = new Date().toISOString();
-  if (FILE_KINDS[kind].ext !== ".md") {
+  if (!FILE_KINDS[kind].ext.endsWith(".md")) {
     const text = `${kind} log for ${name} (${where}): invented text from mock mode.\n`;
     return { kind, name, bytes: text.length, modifiedAt, text, truncated: false, doc: null };
   }
@@ -181,6 +194,7 @@ export const mockClient: ApiClient = {
       for (const kind of ["brief", "contract", "outbox", "report"] as const) {
         files.push({ kind, name: m.role, bytes: 400, modifiedAt: now });
       }
+      if (m.role === "api") files.push({ kind: "handoff", name: m.role, bytes: 700, modifiedAt: now });
       if (m.role === "api") files.push({ kind: "verify", name: m.role, bytes: 90, modifiedAt: now });
       if (m.role === "ledger") files.push({ kind: "setup", name: m.role, bytes: 90, modifiedAt: now });
     }
@@ -206,7 +220,20 @@ export const mockClient: ApiClient = {
       : { team, source: "live", archive: null, last_seq: 0, events: [], errors: [] },
   // Every mock archive shows the one fixture timeline.
   archiveTimeline: async (dir) => ({ ...baseEvents, source: "archive", archive: dir }),
+  teamDecisions: async (team) => ({ ...baseDecisions, teams: baseDecisions.teams.filter((t) => t.team === team) }),
+  searchDecisions: mockSearchDecisions,
+  teamMetrics: async (team) => ({ ...baseMetrics, metrics: baseMetrics.metrics.filter((m) => m.labels.some(([k, v]) => k === "team" && v === team)) }),
 };
+
+/** The fixture team matches when the text is in a block, or the ref is one of its refs. */
+async function mockSearchDecisions(q: DecisionQuery): Promise<DecisionsView> {
+  const keep = baseDecisions.teams.filter((t) =>
+    "ref" in q
+      ? t.refs.some((r) => `${r.provider}:${r.id}`.toLowerCase() === q.ref.toLowerCase())
+      : t.members.some((m) => m.blocks.some((b) => b.text.toLowerCase().includes(q.grep.toLowerCase()))),
+  );
+  return { teams: keep, errors: [] };
+}
 
 /** `?mock=1` in the URL selects the mock client. */
 export function selectClient(search = location.search): ApiClient {

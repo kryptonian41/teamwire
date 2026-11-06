@@ -15,6 +15,7 @@
     },
     {
       "name": "docs", "title": "Survey API docs gaps", "state": "open", "afk_budget_ends_at": "2026-10-21T18:18:00Z",
+      "refs": [{ "provider": "linear", "id": "GKA-580" }, { "provider": "github", "id": "#3772" }],
       "members": [
         { "role": "auth", "title": "Survey auth docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },
         { "role": "search", "title": "Survey search docs", "kind": "investigator", "lifecycle": "started", "generation": 1, "owns": [], "accepts_from_members": ["notice", "finding", "question", "answer"], "can_be_typed_to": true },

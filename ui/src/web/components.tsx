@@ -2,15 +2,35 @@
 
 import { useState, type ReactNode } from "react";
 import type { FileRef, FileText } from "../shared/api.ts";
-import type { DeliveryState, EventRow } from "../shared/teamwire.ts";
+import type { DeliveryState, EventRow, TicketRef } from "../shared/teamwire.ts";
 import type { StateCategory } from "../shared/state.ts";
 import { FileView } from "./FileView.tsx";
 import { modelText, tokensText, verifyChip } from "./model/memberEvents.ts";
-import { afkLinks, deliveryText } from "./model/status.ts";
+import { afkLinks, deliveryText, refText } from "./model/status.ts";
 
 /** A state word, coloured by its category. The word is always shown as text. */
 export function StateChip({ word, category }: { word: string; category: StateCategory }) {
   return <span className={`chip cat-${category}`}>{word}</span>;
+}
+
+/** A team's ticket refs as text chips such as `linear:GKA-580`. No link: teamwire stores no tracker URL. With `onPick` a chip is a button. Renders nothing for none. */
+export function RefChips({ refs, onPick }: { refs: readonly TicketRef[]; onPick?: (ref: TicketRef) => void }) {
+  if (refs.length === 0) return null;
+  return (
+    <p className="chips" aria-label="Ticket refs">
+      {refs.map((r) =>
+        onPick ? (
+          <button key={refText(r)} className="chip cat-idle ref" title="Find decisions of teams with this ref" onClick={() => onPick(r)}>
+            {refText(r)}
+          </button>
+        ) : (
+          <span key={refText(r)} className="chip cat-idle ref">
+            {refText(r)}
+          </span>
+        ),
+      )}
+    </p>
+  );
 }
 
 /** Delivery states reuse the category colours: good, working, waiting, late, broken. */

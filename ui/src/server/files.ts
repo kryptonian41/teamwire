@@ -87,7 +87,7 @@ export async function readKindFile(base: string, kind: string, name: string): Pr
         modifiedAt: info.mtime.toISOString(),
         text,
         truncated: info.size > MAX_FILE_BYTES,
-        doc: FILE_KINDS[kind].ext === ".md" ? await parseMarkdownBounded(text) : null,
+        doc: FILE_KINDS[kind].ext.endsWith(".md") ? await parseMarkdownBounded(text) : null,
       },
     };
   } catch {

@@ -4,7 +4,7 @@
 // with a missing key shows its type and member with no details line.
 
 import type { EventRow } from "../../shared/teamwire.ts";
-import { spanText } from "./status.ts";
+import { refText, spanText } from "./status.ts";
 
 export const FILTERS = ["problems", "members", "messages", "verify", "watch", "all"] as const;
 export type Filter = (typeof FILTERS)[number];
@@ -38,6 +38,17 @@ const num = (d: Data, k: string): number | null => (typeof d[k] === "number" && 
 const strs = (d: Data, k: string): string[] => {
   const v = d[k];
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+};
+/** The `{provider, id}` objects in `d[k]`; anything else in the list is left out. */
+const refs = (d: Data, k: string): string[] => {
+  const v = d[k];
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((r: unknown) => {
+    const o = typeof r === "object" && r !== null ? (r as Data) : {};
+    const provider = str(o, "provider");
+    const id = str(o, "id");
+    return provider !== null && id !== null ? [refText({ provider, id })] : [];
+  });
 };
 const join = (parts: (string | null)[]): string | null => {
   const kept = parts.filter((p): p is string => p !== null);
@@ -113,6 +124,10 @@ export function describe(row: EventRow, resultN: number | null = null): { label:
       return { label: "team closed", details: str(d, "outcome") };
     case "team.lead_adopted":
       return { label: "lead adopted by a new session", details: null };
+    case "team.refs_added": {
+      const added = refs(d, "added");
+      return { label: added.length > 0 ? "team ticket refs added" : null, details: added.join(", ") };
+    }
     case "member.creating":
       return { label: who && `${who} being created`, details: join([str(d, "kind"), str(d, "mode")]) };
     case "member.started": {
@@ -140,6 +155,15 @@ export function describe(row: EventRow, resultN: number | null = null): { label:
     case "member.reprompted": {
       const g = num(d, "generation");
       return { label: who && `${who} reprompted`, details: g === null ? null : `generation ${g}` };
+    }
+    case "member.handoff": {
+      const g = num(d, "generation");
+      const was = str(d, "old_session")?.slice(0, 8) ?? null;
+      const now = str(d, "new_session")?.slice(0, 8) ?? null;
+      return {
+        label: who && `${who} got a fresh session`,
+        details: join([g === null ? null : `generation ${g}`, was === null && now === null ? null : `${was ?? "no session"} → ${now ?? "chosen by the harness"}`]),
+      };
     }
     case "member.completed": {
       const n = num(d, "n");
