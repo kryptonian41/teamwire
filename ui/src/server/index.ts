@@ -1,6 +1,6 @@
 import index from "../web/index.html";
 import { createApp } from "./app.ts";
-import { createRunner } from "./cli.ts";
+import { createRunner, loadUserKey } from "./cli.ts";
 import { parseFlags, type Options } from "./flags.ts";
 import { createPoller } from "./poller.ts";
 import { createSecurity, makeToken } from "./security.ts";
@@ -14,8 +14,15 @@ if (import.meta.main) {
     process.exit(2);
   }
   const token = makeToken();
-  const run = createRunner({ bin: opts.bin, home: opts.home });
-  const actions = opts.actions;
+  // Actions need the user key; without it the dashboard stays read-only and says why.
+  let userKey: string | undefined;
+  if (opts.actions) {
+    const key = await loadUserKey(createRunner({ bin: opts.bin, home: opts.home }));
+    if (key.ok) userKey = key.key;
+    else console.error(`actions are off: ${key.detail}`);
+  }
+  const actions = userKey !== undefined;
+  const run = createRunner({ bin: opts.bin, home: opts.home, userKey });
   const poller = createPoller({ run, intervalMs: opts.intervalMs, actions });
   const app = createApp({ security: createSecurity({ token, port: opts.port }), poller, run, home: opts.home, actions });
   const handle = (req: Request) => app.handle(req);
@@ -29,5 +36,6 @@ if (import.meta.main) {
     fetch: () => new Response("not found", { status: 404 }),
   });
   poller.start();
+  if (actions) console.log("actions are on: this dashboard can message members and close members and teams");
   console.log(`http://127.0.0.1:${opts.port}/auth?token=${token}`);
 }

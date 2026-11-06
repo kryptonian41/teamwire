@@ -178,7 +178,7 @@ export type { DecisionsView, EventsView, LogView, MetricsView };
 export const MAX_TEXT_CHARS = 4000;
 
 /** 1 to 4000 characters, counted as code points. A NUL cannot travel in a process argument. */
-const MessageText = z.string().refine((t) => {
+export const MessageText = z.string().refine((t) => {
   const n = [...t].length;
   return n >= 1 && n <= MAX_TEXT_CHARS && !t.includes("\0");
 }, `1 to ${MAX_TEXT_CHARS} characters, no NUL`);

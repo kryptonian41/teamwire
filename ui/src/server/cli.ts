@@ -1,15 +1,18 @@
 // The only place the server starts `teamwire`. The allow-list below is the
 // complete set of argument forms from AGENTS.md; nothing else can be built.
 
+import { isAbsolute } from "node:path";
 import type { z } from "zod";
-import type { Problem } from "../shared/api.ts";
+import { MessageText, type Problem } from "../shared/api.ts";
 import {
   DecisionsView,
   EventsView,
   LogView,
   MetricsView,
   NAME_RE,
+  ROLE_NAME_RE,
   StatusAll,
+  TEAM_NAME_RE,
   StatusView,
   TeamsList,
 } from "../shared/teamwire.ts";
@@ -28,13 +31,29 @@ export type CliCall =
   | { cmd: "decisionsGrep"; text: string }
   /** `ref` is `<provider>:<id>`. It reaches the CLI as one `--ref=` item. */
   | { cmd: "decisionsRef"; ref: string }
-  | { cmd: "version" };
+  | { cmd: "version" }
+  // The write forms, used only while actions are on (TW_UI_ACTIONS=1).
+  /** Sends as the human user (ADR 0040). `to` is a role or `lead`. */
+  | { cmd: "send"; team: string; to: string; type: "reprompt" | "note"; text: string }
+  | { cmd: "closeMember"; team: string; role: string; stop: boolean; unverified: boolean; dryRun: boolean }
+  | { cmd: "closeTeam"; team: string; dryRun: boolean }
+  /** Prints the path of the user key file, never the key. */
+  | { cmd: "userKey" };
+
+/** What a write form printed. Every exit code is data here: the page shows each one its own way. */
+export interface ActionOutput {
+  exit: number;
+  stdout: string;
+  stderr: string;
+}
 
 export interface CliConfig {
   /** The binary to run. */
   bin: string;
   /** Passed as `--home DIR` before the command when set. */
   home?: string | undefined;
+  /** The user key, passed as `TEAMWIRE_USER_KEY` to `send` and to nothing else. */
+  userKey?: string | undefined;
 }
 
 export type CliResult<T> =
@@ -44,13 +63,18 @@ export type CliResult<T> =
 /** `status` asks Claude Code and herdr about every member, so it is slow. */
 export const STATUS_TIMEOUT_MS = 30_000;
 export const DEFAULT_TIMEOUT_MS = 10_000;
+/** `send` and every `--dry-run` (plan D12). */
+export const ACTION_TIMEOUT_MS = 60_000;
+/** A real close waits for members and removes worktrees (plan D12). */
+export const CLOSE_TIMEOUT_MS = 15 * 60_000;
 
 /** The plan's ticket-ref rule, the same one launch uses: a lowercase provider, then an id without white space or control characters. */
 const REF_RE = /^[a-z][a-z0-9_]{0,15}:[^\s\p{Cc}]{1,200}$/u;
 /** A search text is one printable line, so it cannot hold a newline or a NUL (which `spawn` would refuse). */
 const GREP_RE = /^[^\p{Cc}]{1,200}$/u;
 
-const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM"];
+/** Removed from every call. The user key is added back for `send` only. */
+const IDENTITY_VARS = ["TEAMWIRE_TOKEN", "TEAMWIRE_TOKEN_FILE", "TEAMWIRE_ROLE", "TEAMWIRE_TEAM", "TEAMWIRE_USER_KEY"];
 
 /** The archive directory names `teamwire events --archive` accepts for `team`. */
 const archiveNameRe = (team: string) => new RegExp(`^${team}-\\d{4}-\\d{2}-\\d{2}(-\\d{6}(-[1-9]\\d*)?)?$`);
@@ -98,7 +122,33 @@ export function buildArgs(call: CliCall, home?: string): string[] {
       return [...prefix, "decisions", `--ref=${call.ref}`, "--json"];
     case "version":
       return [...prefix, "version"];
+    case "send": {
+      if (call.type !== "reprompt" && call.type !== "note") throw new Error("bad message type");
+      if (!MessageText.safeParse(call.text).success) throw new Error("bad message text");
+      // `--text=` keeps a text that starts with a dash, such as "- stop", from reading as a flag.
+      return [...prefix, "send", strict("team", TEAM_NAME_RE, call.team), "--from", "user", "--to", strict("role", ROLE_NAME_RE, call.to), "--type", call.type, `--text=${call.text}`];
+    }
+    case "closeMember":
+      return [
+        ...prefix,
+        "close",
+        strict("team", TEAM_NAME_RE, call.team),
+        "--role",
+        strict("role", ROLE_NAME_RE, call.role),
+        ...(call.stop === true ? ["--stop"] : []),
+        ...(call.unverified === true ? ["--unverified"] : []),
+        ...(call.dryRun === true ? ["--dry-run"] : []),
+      ];
+    case "closeTeam":
+      return [...prefix, "close", strict("team", TEAM_NAME_RE, call.team), ...(call.dryRun === true ? ["--dry-run"] : [])];
+    case "userKey":
+      return [...prefix, "user-key"];
   }
+}
+
+function strict(kind: string, re: RegExp, value: string): string {
+  if (!re.test(value)) throw new Error(`bad ${kind} name`);
+  return value;
 }
 
 /** A search reads every team and archive, so it gets the long limit. */
@@ -109,12 +159,17 @@ export function timeoutFor(call: CliCall): number {
     case "decisionsGrep":
     case "decisionsRef":
       return STATUS_TIMEOUT_MS;
+    case "send":
+      return ACTION_TIMEOUT_MS;
+    case "closeMember":
+    case "closeTeam":
+      return call.dryRun === true ? ACTION_TIMEOUT_MS : CLOSE_TIMEOUT_MS;
     default:
       return DEFAULT_TIMEOUT_MS;
   }
 }
 
-function schemaFor(call: CliCall): z.ZodType | null {
+function schemaFor(call: CliCall): z.ZodType | null | "action" {
   switch (call.cmd) {
     case "status":
       return StatusAll;
@@ -135,7 +190,12 @@ function schemaFor(call: CliCall): z.ZodType | null {
     case "decisionsRef":
       return DecisionsView;
     case "version":
+    case "userKey":
       return null;
+    case "send":
+    case "closeMember":
+    case "closeTeam":
+      return "action";
   }
 }
 
@@ -153,6 +213,10 @@ export interface CliOutput {
   decisionsGrep: z.infer<typeof DecisionsView>;
   decisionsRef: z.infer<typeof DecisionsView>;
   version: string;
+  userKey: string;
+  send: ActionOutput;
+  closeMember: ActionOutput;
+  closeTeam: ActionOutput;
 }
 
 export type Runner = <C extends CliCall>(call: C) => Promise<CliResult<CliOutput[C["cmd"]]>>;
@@ -189,17 +253,28 @@ function firstLine(text: string): string {
   return text.split("\n").find((l) => l.trim() !== "")?.trim() ?? "";
 }
 
-function cleanEnv(): Record<string, string> {
+function cleanEnv(userKey?: string): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (v !== undefined && !IDENTITY_VARS.includes(k)) env[k] = v;
   }
+  if (userKey !== undefined) env.TEAMWIRE_USER_KEY = userKey;
   return env;
 }
 
 /** The `teamwire` command a call runs, for messages. */
 const commandName = (call: CliCall): string =>
-  call.cmd === "eventsArchive" ? "events" : call.cmd === "metricsTeam" ? "metrics" : call.cmd.startsWith("decisions") ? "decisions" : call.cmd;
+  call.cmd === "eventsArchive"
+    ? "events"
+    : call.cmd === "metricsTeam"
+      ? "metrics"
+      : call.cmd.startsWith("decisions")
+        ? "decisions"
+        : call.cmd.startsWith("close")
+          ? "close"
+          : call.cmd === "userKey"
+            ? "user-key"
+            : call.cmd;
 
 export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {}): Runner {
   return (async (call: CliCall) => {
@@ -217,7 +292,7 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
         stdin: "ignore",
         stdout: "pipe",
         stderr: "pipe",
-        env: cleanEnv(),
+        env: cleanEnv(call.cmd === "send" ? config.userKey : undefined),
       });
     } catch (e) {
       return { ok: false, problems: [{ code: "cli_failed", detail: `could not start ${config.bin}: ${(e as Error).message}` }] };
@@ -252,6 +327,7 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     }
 
     const schema = schemaFor(call);
+    if (schema === "action") return { ok: true, data: { exit: exitCode, stdout: stdout.trim(), stderr: stderr.trim() } as never, problems: [] };
     const failure: Problem[] =
       exitCode === 0
         ? []
@@ -280,4 +356,28 @@ export function createRunner(config: CliConfig, opts: { timeoutMs?: number } = {
     }
     return { ok: true, data: parsed.data as never, problems: failure };
   }) as Runner;
+}
+
+/** ASCII white space as Rust's `trim_ascii` counts it, the trim plan D5 names. */
+const ASCII_TRIM = /^[ \t\n\f\r]+|[ \t\n\f\r]+$/g;
+const KEY_RE = /^[0-9a-f]{64}$/;
+
+/**
+ * Runs `teamwire user-key` and reads the key from the one path it prints.
+ * No message here holds the file's text, so a failure never shows the key.
+ */
+export async function loadUserKey(run: Runner): Promise<{ ok: true; key: string } | { ok: false; detail: string }> {
+  const res = await run({ cmd: "userKey" });
+  if (!res.ok) return { ok: false, detail: res.problems[0]?.detail ?? "teamwire user-key failed" };
+  const path = res.data;
+  if (path === "" || path.includes("\n") || !isAbsolute(path)) return { ok: false, detail: "teamwire user-key did not print one absolute path" };
+  let text: string;
+  try {
+    text = await Bun.file(path).text();
+  } catch (e) {
+    return { ok: false, detail: `could not read the user key file ${path}: ${(e as { code?: string }).code ?? "read failed"}` };
+  }
+  const key = text.replace(ASCII_TRIM, "");
+  if (!KEY_RE.test(key)) return { ok: false, detail: `${path} does not hold a user key (64 lowercase hex characters)` };
+  return { ok: true, key };
 }

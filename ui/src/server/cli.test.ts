@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { buildArgs, createRunner, DEFAULT_TIMEOUT_MS, STATUS_TIMEOUT_MS, timeoutFor, type CliCall } from "./cli.ts";
+import { join, relative } from "node:path";
+import { ACTION_TIMEOUT_MS, buildArgs, CLOSE_TIMEOUT_MS, createRunner, DEFAULT_TIMEOUT_MS, loadUserKey, STATUS_TIMEOUT_MS, timeoutFor, type CliCall, type Runner } from "./cli.ts";
 
 const root = new URL("../../fixtures/", import.meta.url).pathname;
 let dir: string;
@@ -25,6 +25,8 @@ case "$FAKE_MODE" in
   grandchild) sleep 100 & sleep 8 ;;
   env) echo "{\\"teams\\": [], \\"leak\\": \\"\${TEAMWIRE_TOKEN}\${TEAMWIRE_ROLE}\${TEAMWIRE_TEAM}\${TEAMWIRE_TOKEN_FILE}\\"}" > ${dir}/env.out; echo '{"teams":[]}'; exit 0 ;;
   args) echo "$@" > ${dir}/args.out; echo '{"teams":[]}'; exit 0 ;;
+  action) echo "out line"; echo "lead copy not delivered: m007; run teamwire resend" >&2; exit \${FAKE_EXIT:-0} ;;
+  keyenv) echo "[\${TEAMWIRE_USER_KEY}]" > ${dir}/key.out; exit 0 ;;
 esac
 case "$*" in
   *"decisions"*) cat ${root}decisions.json ;;
@@ -68,6 +70,15 @@ describe("buildArgs", () => {
     [{ cmd: "decisionsRef", ref: "linear:GKA-580" }, ["decisions", "--ref=linear:GKA-580", "--json"]],
     [{ cmd: "decisionsRef", ref: "github:#3772" }, ["decisions", "--ref=github:#3772", "--json"]],
     [{ cmd: "version" }, ["version"]],
+    [{ cmd: "send", team: "alpha", to: "impl", type: "note", text: "hi" }, ["send", "alpha", "--from", "user", "--to", "impl", "--type", "note", "--text=hi"]],
+    [{ cmd: "send", team: "alpha", to: "lead", type: "reprompt", text: "go" }, ["send", "alpha", "--from", "user", "--to", "lead", "--type", "reprompt", "--text=go"]],
+    [{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: true }, ["close", "alpha", "--role", "impl", "--dry-run"]],
+    [{ cmd: "closeMember", team: "alpha", role: "impl", stop: true, unverified: true, dryRun: true }, ["close", "alpha", "--role", "impl", "--stop", "--unverified", "--dry-run"]],
+    [{ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: true, dryRun: false }, ["close", "alpha", "--role", "impl", "--unverified"]],
+    [{ cmd: "closeMember", team: "alpha", role: "impl", stop: true, unverified: false, dryRun: false }, ["close", "alpha", "--role", "impl", "--stop"]],
+    [{ cmd: "closeTeam", team: "alpha", dryRun: true }, ["close", "alpha", "--dry-run"]],
+    [{ cmd: "closeTeam", team: "alpha", dryRun: false }, ["close", "alpha"]],
+    [{ cmd: "userKey" }, ["user-key"]],
   ];
   for (const [call, args] of cases) {
     test(`${call.cmd} without home`, () => expect(buildArgs(call)).toEqual(args));
@@ -77,6 +88,79 @@ describe("buildArgs", () => {
     expect(() => buildArgs({ cmd: "log", team: "../x" })).toThrow();
     expect(() => buildArgs({ cmd: "statusRole", team: "ok", role: "-x" })).toThrow();
     expect(() => buildArgs({ cmd: "log", team: "a-b" })).toThrow();
+  });
+});
+
+describe("buildArgs for the write forms", () => {
+  const send = (over: Partial<Extract<CliCall, { cmd: "send" }>>): CliCall => ({ cmd: "send", team: "alpha", to: "impl", type: "note", text: "hi", ...over });
+  test("a text that starts with a dash or looks like a flag stays in its one --text= item", () => {
+    for (const text of ["- stop and commit", "--stop", "--from lead", "a\nb", "x".repeat(4000), "é".repeat(4000)]) {
+      const args = buildArgs(send({ text }));
+      expect(args.at(-1)).toBe(`--text=${text}`);
+      expect(args).toHaveLength(9);
+    }
+  });
+  test("a text is 1 to 4000 characters with no NUL", () => {
+    for (const text of ["", "x".repeat(4001), "a\0b"]) expect(() => buildArgs(send({ text }))).toThrow();
+  });
+  test("a type other than reprompt or note is refused", () => {
+    for (const type of ["answer", "question", "finding", "notice", "--note"]) expect(() => buildArgs(send({ type: type as "note" }))).toThrow();
+  });
+  test("team names follow teamwire's team pattern", () => {
+    for (const team of ["a".repeat(13), "a_b", "Alpha", "1a", "-x", "", "a-b", "../x"]) {
+      expect(() => buildArgs(send({ team }))).toThrow();
+      expect(() => buildArgs({ cmd: "closeTeam", team, dryRun: true })).toThrow();
+      expect(() => buildArgs({ cmd: "closeMember", team, role: "impl", stop: false, unverified: false, dryRun: true })).toThrow();
+    }
+    expect(buildArgs({ cmd: "closeTeam", team: "a".repeat(12), dryRun: true })[1]).toBe("a".repeat(12));
+  });
+  test("role names follow teamwire's role pattern", () => {
+    for (const role of ["a".repeat(17), "Impl", "1a", "-x", "", "a-b", "api@other", "--stop"]) {
+      expect(() => buildArgs(send({ to: role }))).toThrow();
+      expect(() => buildArgs({ cmd: "closeMember", team: "alpha", role, stop: false, unverified: false, dryRun: true })).toThrow();
+    }
+    expect(buildArgs(send({ to: "a_b".padEnd(16, "c") }))[5]).toBe("a_bccccccccccccc");
+  });
+  test("a flag is added only for a real true", () => {
+    const truthy = "yes" as unknown as boolean;
+    expect(buildArgs({ cmd: "closeMember", team: "alpha", role: "impl", stop: truthy, unverified: truthy, dryRun: truthy })).toEqual(["close", "alpha", "--role", "impl"]);
+  });
+});
+
+describe("loadUserKey", () => {
+  const key = "0123456789abcdef".repeat(4);
+  const keyRunner = (res: unknown): Runner => (async () => res) as unknown as Runner;
+  const keyFile = (text: string, name = `user-${Math.random()}.key`) => {
+    const p = join(dir, name);
+    writeFileSync(p, text);
+    return p;
+  };
+  test("reads the path line, then the file, and trims ASCII white space", async () => {
+    expect(await loadUserKey(keyRunner({ ok: true, data: keyFile(`${key}\n`), problems: [] }))).toEqual({ ok: true, key });
+    expect(await loadUserKey(keyRunner({ ok: true, data: keyFile(` \t${key}\r\n\n`), problems: [] }))).toEqual({ ok: true, key });
+  });
+  const fails = async (res: unknown) => {
+    const out = await loadUserKey(keyRunner(res));
+    expect(out.ok).toBe(false);
+    expect(JSON.stringify(out)).not.toContain(key);
+    expect(JSON.stringify(out)).not.toContain("secretish");
+    return out;
+  };
+  test("a failed user-key is the CLI's reason", async () => {
+    const out = await fails({ ok: false, problems: [{ code: "cli_failed", detail: "teamwire user-key exited 6: disk full" }] });
+    expect(out).toEqual({ ok: false, detail: "teamwire user-key exited 6: disk full" });
+  });
+  test("stdout that is not one absolute path is refused", async () => {
+    // Both files exist and hold a good key, so only the path check refuses them.
+    await fails({ ok: true, data: relative(process.cwd(), keyFile(`${key}\n`)), problems: [] });
+    await fails({ ok: true, data: keyFile(`${key}\n`, "two\nlines.key"), problems: [] });
+    await fails({ ok: true, data: "", problems: [] });
+  });
+  test("a missing file is refused", () => fails({ ok: true, data: join(dir, "nope.key"), problems: [] }));
+  test("a file that is not 64 lowercase hex characters is refused, and its text is not repeated", async () => {
+    for (const text of ["", "secretish", key.toUpperCase(), `${key}0`, `${key}\n${key}`]) {
+      await fails({ ok: true, data: keyFile(text), problems: [] });
+    }
   });
 });
 
@@ -129,6 +213,16 @@ describe("timeoutFor", () => {
     expect(timeoutFor({ cmd: "decisionsGrep", text: "x" })).toBe(STATUS_TIMEOUT_MS);
     expect(timeoutFor({ cmd: "decisionsRef", ref: "linear:A-1" })).toBe(STATUS_TIMEOUT_MS);
     expect(timeoutFor({ cmd: "status" })).toBe(STATUS_TIMEOUT_MS);
+  });
+  test("send and every dry run get 60 s, a real close 15 minutes", () => {
+    expect(ACTION_TIMEOUT_MS).toBe(60_000);
+    expect(CLOSE_TIMEOUT_MS).toBe(15 * 60_000);
+    expect(timeoutFor({ cmd: "send", team: "a", to: "lead", type: "note", text: "x" })).toBe(ACTION_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "closeMember", team: "a", role: "b", stop: false, unverified: false, dryRun: true })).toBe(ACTION_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "closeTeam", team: "a", dryRun: true })).toBe(ACTION_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "closeMember", team: "a", role: "b", stop: false, unverified: false, dryRun: false })).toBe(CLOSE_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "closeTeam", team: "a", dryRun: false })).toBe(CLOSE_TIMEOUT_MS);
+    expect(timeoutFor({ cmd: "userKey" })).toBe(DEFAULT_TIMEOUT_MS);
   });
   test("the other forms keep the short limit", () => {
     for (const call of [{ cmd: "decisionsTeam", team: "a" }, { cmd: "metricsTeam", team: "a" }, { cmd: "metrics" }, { cmd: "teams" }] as const) {
@@ -293,6 +387,43 @@ describe("runner", () => {
     }
     const out = await Bun.file(join(dir, "env.out")).text();
     expect(out).toContain('"leak": ""');
+  });
+
+  test("only send gets the user key, and the server's own TEAMWIRE_USER_KEY never passes", async () => {
+    process.env.TEAMWIRE_USER_KEY = "from-the-server-env";
+    const withKey = createRunner({ bin: fake, userKey: "k1" });
+    const seen = async (call: CliCall, run = withKey) => {
+      await withMode("keyenv", () => run(call));
+      return (await Bun.file(join(dir, "key.out")).text()).trim();
+    };
+    try {
+      expect(await seen({ cmd: "send", team: "alpha", to: "impl", type: "note", text: "hi" })).toBe("[k1]");
+      expect(await seen({ cmd: "closeTeam", team: "alpha", dryRun: true })).toBe("[]");
+      expect(await seen({ cmd: "closeMember", team: "alpha", role: "impl", stop: false, unverified: false, dryRun: true })).toBe("[]");
+      expect(await seen({ cmd: "userKey" })).toBe("[]");
+      expect(await seen({ cmd: "teams" })).toBe("[]");
+      expect(await seen({ cmd: "send", team: "alpha", to: "impl", type: "note", text: "hi" }, make())).toBe("[]");
+    } finally {
+      delete process.env.TEAMWIRE_USER_KEY;
+    }
+  });
+
+  test("a write form returns its exit code and both streams for any exit", async () => {
+    for (const exit of [0, 1, 4, 5]) {
+      process.env.FAKE_EXIT = String(exit);
+      try {
+        const res = await withMode("action", () => make()({ cmd: "closeTeam", team: "alpha", dryRun: true }));
+        expect(res).toEqual({ ok: true, data: { exit, stdout: "out line", stderr: "lead copy not delivered: m007; run teamwire resend" }, problems: [] });
+      } finally {
+        delete process.env.FAKE_EXIT;
+      }
+    }
+  });
+
+  test("a write form past its limit is cli_timeout", async () => {
+    const res = await withMode("hang", () => make(200)({ cmd: "send", team: "alpha", to: "impl", type: "note", text: "hi" }));
+    expect(res.ok).toBe(false);
+    expect(res.problems[0]?.code).toBe("cli_timeout");
   });
 
   test("passes --home first", async () => {

@@ -1,6 +1,8 @@
 # teamwire-ui
 
-A read-only web dashboard for teamwire teams. A Bun server runs the
+A web dashboard for teamwire teams. It only reads, unless the server starts
+with `TW_UI_ACTIONS=1`: then it can also message members and the lead as the
+human user (teamwire ADR 0040), and close one member or a whole team. A Bun server runs the
 `teamwire` CLI with `--json`, and a React page shows every team, its
 members, their messages and closed teams' archives. This folder sits inside
 the teamwire repository, and teamwire's Rust code is in the parent folder.
@@ -30,14 +32,30 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
 
 ## Hard rules
 
-- The app only reads. The server runs `teamwire` with exactly these
-  argument forms and no others: `status --json`, `status <team> --role <role> --json`,
+- The app reads, and writes only while actions are on (`TW_UI_ACTIONS=1`
+  at start, and `teamwire user-key` worked). Off, every action route answers
+  404 and the page shows no action control. The server runs `teamwire` with
+  exactly these argument forms and no others: `status --json`, `status <team> --role <role> --json`,
   `teams --json`, `log <team> --json`, `metrics --json`, `metrics <team> --json`,
   `events <team> [--after <seq>] --json`, `events <team> --archive <dir> --json`,
   `decisions <team> --json`, `decisions --grep <text> --json`,
   `decisions --ref=<provider>:<id> --json`,
-  `version`, each with an optional `--home <dir>` first. `<dir>` is an
-  archive directory name that `listArchives` returned, never a path.
+  `version`, and, only while actions are on,
+  `send <team> --from user --to <role|lead> --type <reprompt|note> --text=<text>`,
+  `close <team> --role <role> [--stop] [--unverified] --dry-run`, the same
+  without `--dry-run`, `close <team> --dry-run`, `close <team>` and
+  `user-key`, each with an optional `--home <dir>` first. The `<dir>` after
+  `--archive` is an archive directory name that `listArchives` returned,
+  never a path.
+  - In the write forms a team matches `^[a-z][a-z0-9]{0,11}$` and a role
+    `^[a-z][a-z0-9_]{0,15}$`. A text is 1 to 4000 characters with no NUL,
+    in one item `--text=<text>`, so a text that starts with `-` cannot read
+    as a flag.
+  - Time limits: `send` and every `--dry-run` 60 s, a real close 15 minutes,
+    every other call 10 s (`status` and decisions searches 30 s).
+  - Every action route takes POST only and needs the token cookie, a
+    present `Origin` that is ours, `content-type: application/json` and a
+    body that its zod schema in `src/shared/api.ts` accepts.
   - A `--grep` text is 1 to 200 characters, never starts with `-`, holds no
     control character, and is one item of the argument array.
   - A ref is valid when its provider matches `^[a-z][a-z0-9_]{0,15}$` and its
@@ -47,13 +65,17 @@ covers the Rust code. Its cargo commands and gates do not cover this folder.
   - Never `watch`, not even `watch --once`. A watch poll takes the lead's
     watch lease and uses up its announcements.
   - Never `inbox`: it marks messages read.
-  - Never `send`, `close`, `launch`, `verify`, `resend`, `lead`, `done`,
-    `ack`, `install`, `hook`, `mcp` or `metrics export`.
+  - `send` and `close` only in the forms above. Never `launch`, `verify`,
+    `resend`, `lead`, `done`, `ack`, `install`, `hook`, `mcp`, `reopen`,
+    `handoff` or `metrics export`.
 - Start processes with an argument array (`Bun.spawn([...])`), never a shell
   string. Every call has a time limit and is killed when it passes it.
-- Remove `TEAMWIRE_TOKEN`, `TEAMWIRE_TOKEN_FILE`, `TEAMWIRE_ROLE` and `TEAMWIRE_TEAM` from the
-  environment of every `teamwire` call. With them set, teamwire treats the
-  caller as a member and hides the lead's details.
+- Remove `TEAMWIRE_TOKEN`, `TEAMWIRE_TOKEN_FILE`, `TEAMWIRE_ROLE`, `TEAMWIRE_TEAM`
+  and `TEAMWIRE_USER_KEY` from the environment of every `teamwire` call. With
+  the first four set, teamwire treats the caller as a member and hides the
+  lead's details. Only `send` gets `TEAMWIRE_USER_KEY` back, set to the key
+  the server read at start. The key never appears in a response, a log line
+  or an error.
 - Serve files only through `FILE_KINDS` in `src/shared/api.ts`. Never serve
   anything under a team's `members/` directory: it holds member tokens.
 - The server binds `127.0.0.1` only. API routes check the `Host` header and

@@ -5,7 +5,10 @@ import log from "../../fixtures/log.json";
 import metrics from "../../fixtures/metrics.json";
 import events from "../../fixtures/events.json";
 import decisions from "../../fixtures/decisions.json";
-import { createRunner } from "../server/cli.ts";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createRunner, loadUserKey } from "../server/cli.ts";
 import { DecisionsView, EventsView, LogView, MetricsView, StatusAll, TeamsList } from "./teamwire.ts";
 
 describe("fixtures match the teamwire schemas", () => {
@@ -172,6 +175,29 @@ describe.if(process.env.TW_UI_LIVE === "1")("real teamwire output", () => {
     expect((await run({ cmd: "metricsTeam", team })).ok).toBe(true);
     expect((await run({ cmd: "decisionsGrep", text: "decisions" })).ok).toBe(true);
     expect((await run({ cmd: "decisionsRef", ref: "linear:ZZZ-0" })).ok).toBe(true);
+  });
+  // The write forms run only in a throwaway home with no team, so nothing is sent or closed.
+  // Exit 3 would mean teamwire refused the arguments the dashboard builds.
+  test("user-key, and the send and dry-run close forms parse, in an empty throwaway home", async () => {
+    const home = mkdtempSync(join(tmpdir(), "twui-live-"));
+    try {
+      const key = await loadUserKey(createRunner({ bin: "teamwire", home }));
+      expect(key.ok).toBe(true);
+      const write = createRunner({ bin: "teamwire", home, userKey: key.ok ? key.key : undefined });
+      const send = await write({ cmd: "send", team: "nosuch", to: "lead", type: "note", text: "- stop and commit" });
+      expect(send.ok && send.data.exit).toBe(1);
+      expect(send.ok && send.data.stderr).toContain("no database for team nosuch");
+      for (const call of [
+        { cmd: "closeTeam", team: "nosuch", dryRun: true },
+        { cmd: "closeMember", team: "nosuch", role: "impl", stop: true, unverified: true, dryRun: true },
+      ] as const) {
+        const res = await write(call);
+        expect(res.ok && res.data.exit).not.toBe(3);
+        expect(res.ok && res.data.exit).not.toBe(0);
+      }
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
   test("log --json", async () => {
     const list = await run({ cmd: "teams" });
