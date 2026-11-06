@@ -56,7 +56,12 @@ pub struct CallerEnv {
     pub role: Option<String>,
     /// `TEAMWIRE_TOKEN`. Never printed.
     pub token: Option<String>,
-    /// The claimed sender: `--from`, a role or `lead`.
+    /// `TEAMWIRE_TOKEN_FILE` as set, whether or not the file can be read.
+    /// A set variable marks a member's session even when `token` is `None`.
+    pub token_file: Option<String>,
+    /// `TEAMWIRE_USER_KEY`: the human user's key (ADR 0040). Never printed.
+    pub user_key: Option<String>,
+    /// The claimed sender: `--from`, a role, `lead` or `user`.
     pub from: Option<String>,
     /// `MCP_META_<key>` values: the string fields of the MCP request's
     /// `_meta`. Only the lead's server fills them (ADR 0023 point 8).
@@ -87,6 +92,8 @@ impl fmt::Debug for CallerEnv {
             .field("team", &self.team)
             .field("role", &self.role)
             .field("token", &self.token.as_ref().map(|_| "<redacted>"))
+            .field("token_file", &self.token_file)
+            .field("user_key", &self.user_key.as_ref().map(|_| "<redacted>"))
             .field("from", &self.from)
             .field("hints", &self.hints)
             .finish()
@@ -222,9 +229,12 @@ mod tests {
     fn caller_env_debug_hides_the_token() {
         let env = CallerEnv {
             token: Some("tok-secret-1".to_owned()),
+            user_key: Some("user-secret-2".to_owned()),
             ..CallerEnv::default()
         };
-        assert!(!format!("{env:?}").contains("tok-secret-1"));
+        let shown = format!("{env:?}");
+        assert!(!shown.contains("tok-secret-1"));
+        assert!(!shown.contains("user-secret-2"));
     }
 
     #[test]

@@ -188,9 +188,13 @@ fn caller_env(
             token: Some(token.clone()),
             from: None,
             hints: Vec::new(),
+            ..CallerEnv::default()
         },
+        // A tool call never speaks as the user, whatever the server's own
+        // process holds (ADR 0040).
         McpCaller::Lead => CallerEnv {
             from: Some("lead".to_owned()),
+            user_key: None,
             hints: meta
                 .iter()
                 .filter_map(|(key, value)| {

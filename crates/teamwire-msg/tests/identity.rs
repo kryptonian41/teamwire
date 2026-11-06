@@ -24,6 +24,7 @@ fn member_env(name: &str, token: &str) -> CallerEnv {
         token: Some(token.to_owned()),
         from: None,
         hints: Vec::new(),
+        ..CallerEnv::default()
     }
 }
 
@@ -71,6 +72,7 @@ fn wrong_token_refused() {
             token,
             from: None,
             hints: Vec::new(),
+            ..CallerEnv::default()
         };
         assert_eq!(prove_actor(&rig.ctx(), &env), Err(Refusal::Identity));
     }
@@ -220,6 +222,7 @@ fn a_member_session_without_its_token_cannot_adopt() {
         token: None,
         from: Some("lead".to_owned()),
         hints: Vec::new(),
+        ..CallerEnv::default()
     };
     let refused = teamwire_msg::adopt_lead(&mut rig.ctx(), &env);
     assert_eq!(
