@@ -68,8 +68,11 @@ program does not run (`<program> --version` fails), as `refused: member <role>:
 harness <id> is not on PATH`, even with `--dry-run`. `--add` checks only the
 members it adds.
 
-With the `tmux` host and no running tmux server, launch and reopen open the tabs
-in a detached session named `teamwire`. Attach with `tmux attach -t teamwire`.
+With the `tmux` host, launch and reopen open each tab as a window named
+`<team>/<role>` (`<team>/<role>#2` from a member's second generation on).
+Inside a tmux client the windows open in that client's session. Outside one, or
+with no running tmux server, they open in the team's own detached session
+`tw_<team>`. Attach with `tmux attach -t tw_<team>`.
 
 Spec fields, per team: `team`, `title`, `setup`, `harness` (default: the lead's harness), `host` (default: detected; `herdr` when `HERDR_ENV=1`, else `tmux` when `TMUX` is set; when both are set, teamwire walks its own parent processes, own pid first and at most 64 steps, and the nearest program named `tmux` or `herdr` decides, with herdr first when neither is found),
 `children`, `context_handoff_tokens`, `plugins`, `refs`. Per member: `role`, `title`, `kind`, `mode`, `repo`, `branch`,

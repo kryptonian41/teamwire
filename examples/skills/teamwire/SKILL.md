@@ -511,7 +511,7 @@ Check three things first:
 
 - You run in a terminal pane of your own, in herdr (`HERDR_ENV=1`, picked
   first) or in tmux (`TMUX` set). Members open beside you, or, with no tmux
-  server running, in a detached session: `tmux attach -t teamwire`. Launch
+  server running, in the team's detached session: `tmux attach -t tw_<team>`. Launch
   refuses a background session, because reports would go to another session.
 - `teamwire doctor` shows no `FAIL` line. Run it from the target repository,
   inside the pane you lead from, because its `.worktrees/` and host checks
