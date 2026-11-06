@@ -274,8 +274,9 @@ a.trow:hover { background: var(--surface-2); }
 .crumbs a:hover { text-decoration: underline; }
 .page-head { display: grid; gap: var(--s2); }
 .page-head .meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) 10px; margin: 0; color: var(--muted); }
-button.chip { border: 0; font-family: inherit; cursor: pointer; }
-button.chip:hover { filter: brightness(.95); }
+button.chip { border: 0; font-family: inherit; cursor: pointer; min-height: 28px; }
+button.chip:hover { color: var(--ink); }
+button.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .filter input[type="search"] { flex: 1; min-width: 0; max-width: 40ch; font: inherit; padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
 .decision-cols { display: grid; gap: var(--s3); overflow-x: auto; padding-bottom: var(--s2); margin-bottom: var(--s3); }
 .decision-col { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s2) var(--s3); background: var(--surface); }
@@ -411,8 +412,11 @@ pre.text {
 
 /* History and archive */
 .history-team h2 { margin-bottom: var(--s1); }
+.history-team h2 code { font-size: inherit; }
 .summary { margin: 0 0 var(--s3); color: var(--muted); max-width: 60ch; font-variant-numeric: tabular-nums; }
-.file-group h3 { margin-top: var(--s4); }
+.file-group h3 { margin: var(--s3) 0 var(--s1); }
+.file-group h3 code { font-size: inherit; }
+.file-group .chips { gap: var(--s1) var(--s2); }
 
 details { margin-top: var(--s5); }
 summary { cursor: pointer; font-weight: 600; font-size: var(--t-lead); margin-bottom: var(--s3); }

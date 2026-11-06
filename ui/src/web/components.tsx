@@ -65,7 +65,7 @@ export function AfkFiles({ id, files, load }: { id: string; files: readonly File
     <div className="afk-files">
       <p className="chips">
         {links.map((l) => (
-          <button key={l.name} className="btn" aria-pressed={open === l.name} onClick={() => setOpen(open === l.name ? null : l.name)}>
+          <button key={l.name} className="chip" aria-pressed={open === l.name} onClick={() => setOpen(open === l.name ? null : l.name)}>
             {l.label}
           </button>
         ))}
