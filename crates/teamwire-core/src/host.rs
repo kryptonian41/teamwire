@@ -138,9 +138,64 @@ string_enum! {
 pub struct SpawnRequest {
     pub name: Address,
     pub title: String,
+    /// The team's title, shown in the herdr workspace label and in the
+    /// lead's tab label.
+    pub team_title: String,
+    /// The member's generation the new session runs as: 1 at launch, the
+    /// new number after a handoff, the stored one on reopen.
+    pub generation: u32,
     pub cwd: PathBuf,
     pub argv: Vec<String>,
     pub env: Vec<(String, String)>,
+}
+
+/// Between the name and the title in a herdr label.
+const LABEL_SEPARATOR: &str = " \u{b7} ";
+
+/// Every label a host gives a place is built here, so herdr and tmux cannot
+/// show a team or a member in two formats.
+impl SpawnRequest {
+    /// The herdr workspace of a team: `instr · Fix lead and member prompts`.
+    pub fn workspace_label(&self) -> String {
+        format!("{}{LABEL_SEPARATOR}{}", self.name.team(), self.team_title)
+    }
+
+    /// The herdr tab: `planrev · Review the fix plan`, `planrev#2 · ...`
+    /// after a handoff, and `lead · <team title>` for the lead.
+    pub fn tab_label(&self) -> String {
+        let title = if self.is_lead() {
+            &self.team_title
+        } else {
+            &self.title
+        };
+        format!("{}{LABEL_SEPARATOR}{title}", self.seat())
+    }
+
+    /// The tmux window: `instr/planrev`, `instr/planrev#2`, `instr/lead`. It
+    /// holds no title: the status bar has little room.
+    pub fn window_name(&self) -> String {
+        format!("{}/{}", self.name.team(), self.seat())
+    }
+
+    /// The detached tmux session of the team: `tw_instr`.
+    pub fn session_name(&self) -> String {
+        format!("tw_{}", self.name.team())
+    }
+
+    fn is_lead(&self) -> bool {
+        self.name.role() == "lead"
+    }
+
+    /// The role, with `#<generation>` from the second generation on. The
+    /// lead has no generations.
+    fn seat(&self) -> String {
+        let role = self.name.role();
+        if self.generation > 1 && !self.is_lead() {
+            format!("{role}#{}", self.generation)
+        } else {
+            role.to_owned()
+        }
+    }
 }
 
 impl fmt::Debug for SpawnRequest {
@@ -148,6 +203,8 @@ impl fmt::Debug for SpawnRequest {
         f.debug_struct("SpawnRequest")
             .field("name", &self.name)
             .field("title", &self.title)
+            .field("team_title", &self.team_title)
+            .field("generation", &self.generation)
             .field("cwd", &self.cwd)
             .field("argv", &self.argv)
             .field("env", &RedactedEnv(&self.env))
@@ -255,5 +312,61 @@ impl Host for NoHost {
 
     fn place_env_var(&self) -> Option<&'static str> {
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::names::TeamName;
+
+    fn request(name: Address, title: &str, generation: u32) -> SpawnRequest {
+        SpawnRequest {
+            name,
+            title: title.to_owned(),
+            team_title: "Fix lead and member prompts".to_owned(),
+            generation,
+            cwd: PathBuf::from("/w"),
+            argv: Vec::new(),
+            env: Vec::new(),
+        }
+    }
+
+    fn member(generation: u32) -> SpawnRequest {
+        let name = Address::parse("tw_instr_planrev").unwrap();
+        request(name, "Review the fix plan", generation)
+    }
+
+    #[test]
+    fn a_first_generation_member_is_labelled_role_then_title() {
+        let req = member(1);
+        assert_eq!(
+            req.workspace_label(),
+            "instr \u{b7} Fix lead and member prompts"
+        );
+        assert_eq!(req.tab_label(), "planrev \u{b7} Review the fix plan");
+        assert_eq!(req.window_name(), "instr/planrev");
+        assert_eq!(req.session_name(), "tw_instr");
+    }
+
+    #[test]
+    fn a_later_generation_carries_its_number() {
+        let req = member(2);
+        assert_eq!(req.tab_label(), "planrev#2 \u{b7} Review the fix plan");
+        assert_eq!(req.window_name(), "instr/planrev#2");
+        assert_eq!(
+            req.workspace_label(),
+            "instr \u{b7} Fix lead and member prompts"
+        );
+        assert_eq!(req.session_name(), "tw_instr");
+    }
+
+    #[test]
+    fn the_lead_is_labelled_with_the_team_title_and_no_number() {
+        let lead = Address::lead(&TeamName::parse("instr").unwrap());
+        let req = request(lead, "lead", 3);
+        assert_eq!(req.tab_label(), "lead \u{b7} Fix lead and member prompts");
+        assert_eq!(req.window_name(), "instr/lead");
+        assert_eq!(req.session_name(), "tw_instr");
     }
 }

@@ -25,6 +25,8 @@ fn request(name: &Address) -> SpawnRequest {
     SpawnRequest {
         name: name.clone(),
         title: "contract".into(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: "/work".into(),
         argv: vec!["cat".into()],
         env: Vec::new(),

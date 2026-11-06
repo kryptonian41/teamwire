@@ -137,6 +137,8 @@ fn no_host_does_nothing_and_says_not_found() {
     let spawn = SpawnRequest {
         name: teamwire_core::Address::parse("tw_tw_api").unwrap(),
         title: "api".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: "/tmp".into(),
         argv: vec!["true".to_owned()],
         env: Vec::new(),

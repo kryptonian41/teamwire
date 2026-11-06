@@ -66,7 +66,8 @@ env.set_script(&ClaudeScript::default())?;           // what the started fake-cl
 let settings = env.write_file("settings.json", r#"{"env":{},"hooks":{}}"#)?;
 let herdr = Herdr::new(platform_that_runs_with(env.env()), /* .. */);
 let request = |name: &Address| SpawnRequest {
-    name: name.clone(), title: "contract".into(), cwd: env.root().into(),
+    name: name.clone(), title: "contract".into(), team_title: "Demo team".into(), generation: 1,
+    cwd: env.root().into(),
     argv: vec!["-n".into(), name.as_str().into(), "--settings".into(), settings.display().to_string()],
     env: vec![],
 };
@@ -86,7 +87,8 @@ T16, the tmux adapter against a real tmux on a private socket:
 let socket = format!("teamwire-test-{}", std::process::id());
 let tmux = Tmux::new(platform).with_socket(&socket); // tmux -L <socket>
 let request = |name: &Address| SpawnRequest {
-    name: name.clone(), title: "contract".into(), cwd: dir.path().into(),
+    name: name.clone(), title: "contract".into(), team_title: "Demo team".into(), generation: 1,
+    cwd: dir.path().into(),
     argv: vec!["cat".into()], env: vec![],
 };
 let mut setup = HostSetup::new(&tmux, &request);

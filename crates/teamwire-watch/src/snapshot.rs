@@ -147,7 +147,8 @@ fn unread(tx: &ReadTx<'_>) -> Result<Vec<Unread>, StoreError> {
         .all_or_corrupt()?
     {
         let d = record.delivery;
-        // The lead reads its own inbox; only a member's silence is news.
+        // Only a member can ack: the lead has no inbox, and another team's
+        // copy never shows `acked`.
         let Recipient::Member(to) = d.recipient.clone() else {
             continue;
         };

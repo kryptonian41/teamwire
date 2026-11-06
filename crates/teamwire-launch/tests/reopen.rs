@@ -150,6 +150,30 @@ fn a_member_whose_session_runs_or_is_unknown_is_skipped() {
 }
 
 #[test]
+fn a_reopened_tab_carries_the_team_title_and_the_stored_generation() {
+    let rig = Rig::new();
+    let mut store = closed_team(&rig, &["api"]);
+    let at = rig.clock.now();
+    store
+        .write(|tx| tx.bump_generation(at, &role("api"), "m001"))
+        .unwrap();
+    run(&rig, &mut store, &all()).unwrap();
+    let place = member_row(&store, "api").unwrap().place.unwrap();
+    let req = rig.host.spawn_request_of(&place).unwrap();
+    assert_eq!((req.team_title.as_str(), req.generation), ("Demo team", 2));
+    let lead = rig
+        .host
+        .list(T)
+        .unwrap()
+        .iter()
+        .filter_map(|p| rig.host.spawn_request_of(p))
+        .find(|r| r.name.as_str() == "tw_demo_lead")
+        .unwrap();
+    assert_eq!(lead.team_title, "Demo team");
+    assert_eq!(lead.tab_label(), "lead \u{b7} Demo team");
+}
+
+#[test]
 fn removed_and_failed_members_are_skipped() {
     let rig = Rig::new();
     let mut store = closed_team(&rig, &["old", "new"]);

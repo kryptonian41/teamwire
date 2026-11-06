@@ -299,10 +299,22 @@ button.chip { border: 0; font-family: inherit; cursor: pointer; min-height: 28px
 button.chip:hover { color: var(--ink); }
 button.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .filter input[type="search"] { flex: 1; min-width: 0; max-width: 40ch; font: inherit; padding: var(--s1) var(--s2); border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink); }
-.decision-cols { display: grid; gap: var(--s3); overflow-x: auto; padding-bottom: var(--s2); margin-bottom: var(--s3); }
-.decision-col { min-width: 0; border: 1px solid var(--line); border-radius: var(--r-lg); padding: var(--s2) var(--s3); background: var(--surface); }
-.decision-col h4 { margin: 0 0 var(--s2); }
-.decision-text { margin: 0 0 var(--s2); white-space: pre-wrap; overflow-wrap: anywhere; font-family: inherit; font-size: var(--t-small); }
+.dec-split { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: var(--s3); align-items: start; margin: var(--s2) 0 var(--s3); }
+.dec-members { list-style: none; margin: 0; padding: var(--s1); background: var(--surface); border-radius: var(--r-lg); display: grid; gap: 2px; }
+.dec-members button { all: unset; box-sizing: border-box; display: block; width: 100%; padding: var(--s2) 10px; border-radius: var(--r-sm); cursor: pointer; overflow-wrap: anywhere; }
+.dec-members button:hover { background: var(--surface-2); }
+.dec-members button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* The bar repeats the tone, so the selected entry does not rest on colour alone. */
+.dec-members button[aria-pressed="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--accent); }
+.dec-members .role { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: var(--t-small); }
+.dec-pane { min-width: 0; background: var(--surface); border-radius: var(--r-lg); padding: var(--s3) var(--s4); }
+.dec-pane > .sub { margin: 0 0 var(--s2); }
+.dec-pane ol { margin: 0; padding-left: var(--s4); max-width: 78ch; }
+.dec-pane li { margin: var(--s2) 0; overflow-wrap: anywhere; }
+.dec-pane code { font-size: .92em; }
+@media (max-width: 720px) {
+  .dec-split { grid-template-columns: minmax(0, 1fr); }
+}
 .results { margin: 0; padding-left: var(--s4); display: grid; gap: var(--s1); }
 .results code { overflow-wrap: anywhere; }
 

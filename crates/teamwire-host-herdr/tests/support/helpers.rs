@@ -83,6 +83,8 @@ impl World {
         SpawnRequest {
             name: Address::parse(name).expect("address"),
             title: title.to_owned(),
+            team_title: "Demo team".to_owned(),
+            generation: 1,
             cwd: self.env.root().to_path_buf(),
             argv: vec![
                 "claude".into(),

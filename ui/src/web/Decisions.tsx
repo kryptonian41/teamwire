@@ -3,11 +3,11 @@ import type { DecisionQuery } from "../shared/api.ts";
 import type { DecisionTeam } from "../shared/teamwire.ts";
 import { ErrorNote, Loading, RefChips } from "./components.tsx";
 import { useClient, useLoad } from "./hooks.ts";
-import { decisionColumns, queryFromText, queryLabel } from "./model/decisions.ts";
+import { decisionColumns, pickColumn, queryFromText, queryLabel } from "./model/decisions.ts";
 import { href } from "./model/route.ts";
 
 /**
- * The team's "Decisions I made" lists, one column per member, and a search over every team.
+ * The team's "Decisions I made" lists, a member list with a detail pane, and a search over every team.
  * `query` is set by the search box or by a click on a ref chip in the page header.
  */
 export function Decisions({
@@ -24,6 +24,8 @@ export function Decisions({
   const client = useClient();
   const own = useLoad(() => client.teamDecisions(team), team, refresh);
   const [text, setText] = useState("");
+  // Kept here, not in `Members`: a failed load clears the data and unmounts `Members`, and the choice must outlive that.
+  const [picks, pick] = usePicks();
   const parsed = queryFromText(text);
   return (
     <section id="decisions" aria-labelledby="decisions-h">
@@ -54,17 +56,24 @@ export function Decisions({
       {own.data && (
         <>
           {own.data.errors.length > 0 && <ErrorNote>{own.data.errors.join("; ")}</ErrorNote>}
-          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Columns key={t.team} team={t} />)}
+          {own.data.teams.length === 0 ? <p className="quiet">No decisions found for this team.</p> : own.data.teams.map((t) => <Members key={t.team} team={t} role={picks[t.team] ?? null} onPick={(r) => pick(t.team, r)} />)}
         </>
       )}
     </section>
   );
 }
 
+/** The picked member's role for each team, by key. */
+function usePicks(): [Record<string, string>, (key: string, role: string) => void] {
+  const [picks, setPicks] = useState<Record<string, string>>({});
+  return [picks, (key, role) => setPicks((p) => ({ ...p, [key]: role }))];
+}
+
 function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void }) {
   const client = useClient();
   const key = "grep" in query ? `grep:${query.grep}` : `ref:${query.ref}`;
   const found = useLoad(() => client.searchDecisions(query), key);
+  const [picks, pick] = usePicks();
   return (
     <div className="decision-results">
       <div className="filter" role="status">
@@ -87,7 +96,7 @@ function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void
                 {t.live ? <a href={href.team(t.team)}>{t.title}</a> : t.title} <span className="sub">{t.team}{t.live ? "" : " (archived)"}</span>
               </h3>
               <RefChips refs={t.refs} />
-              <Columns team={t} />
+              <Members team={t} role={picks[`${t.team}-${t.created_at}`] ?? null} onPick={(r) => pick(`${t.team}-${t.created_at}`, r)} />
             </div>
           ))}
         </>
@@ -96,26 +105,41 @@ function Results({ query, onClear }: { query: DecisionQuery; onClear: () => void
   );
 }
 
-/** One column per member. The columns scroll sideways when there are many. */
-function Columns({ team }: { team: DecisionTeam }) {
+/** A list of the team's members and, beside it, the selected member's decisions as one numbered list. */
+function Members({ team, role, onPick }: { team: DecisionTeam; role: string | null; onPick: (role: string) => void }) {
   const cols = decisionColumns(team);
-  if (cols.length === 0) return <p className="quiet">No members.</p>;
+  // The role is kept, not the column, so a refresh keeps the choice; a role that is gone falls back to the default.
+  const sel = pickColumn(cols, role);
+  if (!sel) return <p className="quiet">No members.</p>;
   return (
-    <div className="decision-cols" style={{ gridTemplateColumns: `repeat(${cols.length}, minmax(240px, 1fr))` }}>
-      {cols.map((c) => (
-        <div key={c.role} className="decision-col">
-          <h4>
-            {c.role} <span className="sub">{c.kind}</span>
-          </h4>
-          {c.note && <p className="quiet">{c.note}</p>}
-          {/* Report text is untrusted, so it is shown as plain text and never parsed. */}
-          {c.blocks.map((b, i) => (
-            <pre key={i} className="decision-text">
-              {b}
-            </pre>
-          ))}
-        </div>
-      ))}
+    <div className="dec-split">
+      <ul className="dec-members" aria-label={`Members of ${team.title}`}>
+        {cols.map((c) => (
+          <li key={c.role}>
+            <button type="button" aria-pressed={c === sel} onClick={() => onPick(c.role)}>
+              <span className="role">{c.role}</span>
+              <span className="sub">{c.empty ?? `${c.count} ${c.count === 1 ? "decision" : "decisions"}`}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="dec-pane">
+        <p className="sub">
+          {sel.kind} · {sel.title}
+        </p>
+        {sel.empty !== null ? (
+          <p className="quiet">No decisions to show: {sel.empty}.</p>
+        ) : (
+          // Report text is untrusted, so each part is a plain string in a React element and never parsed.
+          <ol>
+            {sel.items.map((item, i) => (
+              <li key={i}>
+                {item.map((p, j) => (p.kind === "bold" ? <strong key={j}>{p.text}</strong> : p.kind === "code" ? <code key={j}>{p.text}</code> : p.text))}
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
     </div>
   );
 }

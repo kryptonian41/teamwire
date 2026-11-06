@@ -89,6 +89,8 @@ pub(crate) fn request(name: &str, dir: &std::path::Path, argv: &[&str]) -> Spawn
     SpawnRequest {
         name: Address::parse(name).unwrap(),
         title: "test".to_owned(),
+        team_title: "Demo team".to_owned(),
+        generation: 1,
         cwd: dir.to_path_buf(),
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
         env: Vec::new(),
