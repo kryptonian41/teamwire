@@ -858,6 +858,48 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     }
 }
 
+/// A spec-kit feature runs through members on three harnesses, so the
+/// reference says how each one runs `implement`, and how a worktree member
+/// finds its feature. The skill points at that section and says that
+/// spec-kit's `specs/` folder is a product file a member commits.
+#[test]
+fn the_reference_says_how_each_harness_runs_spec_kit() {
+    let reference = example("skills/teamwire/reference.md");
+    let (head, _) = reference.split_once("\n## ").unwrap();
+    assert!(
+        head.contains("\"Spec-kit features\""),
+        "the 'Read this when' list does not name the section"
+    );
+    let (_, section) = reference
+        .split_once("\n## Spec-kit features\n")
+        .unwrap_or_else(|| unreachable!("reference.md has no Spec-kit features section"));
+    let section = section.split("\n## ").next().unwrap();
+    for needed in [
+        "`/speckit-implement <scope>`",
+        "`$speckit-implement <scope>`",
+        "`.pi/prompts/speckit.implement.md`",
+        "`.specify/feature.json`",
+        "`.specify/memory/constitution.md`",
+        "`N questions for the parent.`",
+        "`converge`",
+        "`teamwire preset closer`",
+        "`teamwire decisions --ref speckit:NNN-name`",
+        "#4270",
+        "`events:`",
+    ] {
+        assert!(section.contains(needed), "the section lacks {needed}");
+    }
+    let skill = example("skills/teamwire/SKILL.md");
+    assert!(
+        skill.contains("\"Spec-kit features\" in `reference.md`"),
+        "the skill does not point at the section"
+    );
+    assert!(
+        skill.contains("Spec-kit's `specs/` folder"),
+        "the skill does not say where spec-kit's files go"
+    );
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]

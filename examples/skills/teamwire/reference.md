@@ -11,7 +11,8 @@ Read this when:
 - a member passes its handoff point or a handoff fails: "Context handoff";
 - a `verify` flag you do not know: "Verify flags";
 - a pr-watch line: "Pull request lines";
-- a close that refused: "Close".
+- a close that refused: "Close";
+- you build a feature with GitHub's spec-kit: "Spec-kit features".
 
 ## Setting up a machine
 
@@ -284,3 +285,142 @@ it may be running the full suite, or stuck on a failing command from its
 brief. On a database problem, such as damage or a newer schema, run
 `teamwire doctor`, then `teamwire verify <team> --deep`. `--repair-files`
 rewrites `comms/` copies that are missing or differ from the database.
+
+## Spec-kit features
+
+GitHub's spec-kit (https://github.com/github/spec-kit) writes a spec, a plan
+and a task list before any code. Each spec-kit command is a prompt file that
+one agent session follows. No spec-kit code reads `tasks.md`, and spec-kit
+runs no task in parallel. A teamwire team runs a spec-kit feature with
+spec-kit's own commands, each in the seat whose rules fit it, and spec-kit
+stays unchanged. Start the team spec from `teamwire preset speckit`. These
+facts come from spec-kit commit c438494 (v1.3.2 and 9 commits). Check them
+again after a spec-kit upgrade.
+
+### What the base branch must hold
+
+A worktree holds only committed files, so commit these on the base branch
+before launch:
+
+- `.specify/`, from `specify init --here --force --integration claude`, or
+  with the integration of your first member harness.
+- The command folder of each member harness. Add the others with
+  `specify integration install codex` and `specify integration install pi`.
+- A written `.specify/memory/constitution.md`. `init` leaves it as a
+  template full of placeholders. Write it with the user, through spec-kit's
+  `constitution` command, before the first feature.
+
+Then check that spec-kit added nothing that runs on its own:
+
+- `.specify/extensions.yml` lists no `git` extension and no extension with
+  `events:`.
+- No `.codex/config.toml` exists, and `.claude/settings.json` holds no hook
+  that spec-kit wrote. Spec-kit tags each of its hooks with
+  `"__speckit_event__": true`.
+
+The `git` extension creates and switches branches, and teamwire owns the
+branches. An extension with `events:` writes `.codex/config.toml`, and
+Codex launch refuses a repository that holds that file. The same extension
+writes hooks into `.claude/settings.json`, and those hooks run unreviewed
+with the member's rights. Remove such an extension before launch.
+
+### How each harness runs a spec-kit command
+
+| harness | command files | how a member runs `implement` |
+| --- | --- | --- |
+| Claude Code | `.claude/skills/speckit-<cmd>/SKILL.md` | `/speckit-implement <scope>` |
+| Codex | `.agents/skills/speckit-<cmd>/SKILL.md` | `$speckit-implement <scope>` |
+| pi | `.pi/prompts/speckit.<cmd>.md` | teamwire starts pi with `--no-approve` (ADR 0029), which skips the folder's prompt files. The brief says: read `.pi/prompts/speckit.implement.md` and follow it, with `$ARGUMENTS` set to the scope. |
+
+The other commands follow the same pattern, such as `/speckit-analyze`,
+`$speckit-analyze` or `.pi/prompts/speckit.analyze.md`. A scope is plain
+text, such as `Implement only Phase 3 (US1)`. The seat rules name no
+spec-kit command, so write the form for the member's harness in its brief.
+
+### The flow
+
+1. **Spec.** A `spec` implementer in its own worktree owns
+   `specs/NNN-name/`. Its brief names the folder and gives the feature
+   description. It runs `specify`, ends its turn with its open questions,
+   and you bring them to the user. It then runs `clarify` with the
+   answers, then `plan`, then `tasks`, and commits after each one. The user
+   reviews `spec.md` and `plan.md`.
+2. **Check.** Add a plan reviewer with `teamwire launch --add`. Its `cwd`
+   is the spec member's worktree, such as `<repo>/.worktrees/myteam-spec`
+   for the branch `myteam/spec`. It runs `analyze`, which writes nothing, and reads the briefs.
+   Reprompt the spec member once with the findings that hold. Run no second
+   analyze on the same plan.
+3. **Build.** One `impl` implementer runs `implement` phase by phase over
+   the whole `tasks.md`. Its `base` is the spec member's branch, so the
+   feature folder is in its worktree.
+4. **Join.** Only when the stories split (below). The integrator merges the
+   Foundational branch first, then the stories in priority order.
+5. **Close.** The closer runs `converge` beside its usual checks. The
+   owners fix what it finds.
+
+When the user brings a finished `tasks.md`, committed with its `spec.md` and
+`plan.md`, leave out the spec member and the plan reviewer, and cut the
+implementer's branch from the branch that holds them.
+
+### Rules for the briefs
+
+- **One spec at a time.** `specify` picks the next folder number by
+  scanning `specs/`, and two members that scan at once pick the same number
+  (spec-kit issue #4270). Run one spec member at a time, and name its
+  folder, such as `specs/001-user-auth/`, in its brief.
+- **Questions.** `specify`, `clarify` and `checklist` wait for an answer in
+  chat, and the seat rules forbid that wait. The spec member's brief says:
+  run `specify`, write the open questions under 'Questions for the parent'
+  in the report, and record `done` with a summary that starts with
+  `N questions for the parent.`. Ask the user, then send the answers with
+  `teamwire send <team> --to spec --type reprompt --file <answers>`. The
+  member runs `clarify` with those answers.
+- **Checklists.** `checklist` writes its items unticked, and spec-kit says
+  only a reviewer ticks them. So the user ticks them at the review of
+  `spec.md` and `plan.md`. `implement` stops on an unticked checklist with
+  "Do you want to proceed with implementation anyway? (yes/no)". The
+  implementer's brief says to treat that stop as a question to you.
+- **Ticks.** `implement` ticks `[X]` on each finished task in `tasks.md`.
+  Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
+  to tick only the lines of its own phases. Lines in separate phases should
+  merge cleanly. When they do not, the integrator stops on the conflict.
+- **Check.** The implementer's `check` runs the tests and fails on any
+  unticked task of its phases, such as
+  `<test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
+  For one member per story, match the story's label too, such as
+  `'^- \[ \] T[0-9]+ (\[P\] )?\[US1\]'`.
+- **Commits.** `implement` has no commit step, and the seat rules ask for a
+  commit after each unit. The brief says: commit at each phase checkpoint,
+  with the task ids in the message, such as `T012-T018: US1 user model`.
+- **The feature file.** Spec-kit finds the feature through the variable
+  `SPECIFY_FEATURE_DIRECTORY`, else `.specify/feature.json`. Spec-kit
+  git-ignores `.specify/feature.json`, so a new worktree has none, and a
+  team spec sets no environment variable. So the implementer's `setup`
+  writes the file, as the preset shows:
+  `printf '%s\n' '{"feature_directory": "specs/NNN-name"}' > "$1/.specify/feature.json"`.
+  The spec member needs no such line, because `specify` writes the file.
+  When a spec-kit script stops with "Feature directory not found", run that
+  command with `SPECIFY_FEATURE_DIRECTORY=specs/NNN-name` and
+  `SPECIFY_FEATURE_NO_PERSIST=1` set.
+- **The constitution.** The seat rules send a member to `CLAUDE.md` or
+  `AGENTS.md`, not to `.specify/memory/constitution.md`. Every brief says:
+  read the constitution before the first change and follow it. `analyze`
+  and `converge` report a conflict with it as CRITICAL.
+- **Split per story.** One implementer per user story only when the stories
+  after the Foundational phase touch disjoint files. Read the file paths in
+  the task lines to decide. Wave 1 is one member for Setup and
+  Foundational. Wave 2 has one member per story, each with wave 1's branch
+  as its `base` and its own phase as its scope. Polish comes last, on a
+  branch cut from the integrator's branch once the stories are merged.
+- **Converge.** Start the closer from `teamwire preset closer`, and add one
+  step to its task: in its own clone, on each head that ships, write
+  `.specify/feature.json`, run `converge`, and put converge's findings table
+  in the report. The section converge appends to `tasks.md` stays in the
+  clone. Converge reads code and runs no tests, so its "Converged" is a
+  model's judgement and the closer's other checks still run. In the fix
+  round, send each owner the findings for its phases. Each owner runs
+  `implement`, then `converge`, on its own branch, at most two rounds.
+- **The ref.** The team carries the feature as a ref,
+  `{"provider": "speckit", "id": "NNN-name"}`, with the folder name as the
+  id. `teamwire decisions --ref speckit:NNN-name` then lists the decisions
+  of every team that worked on the feature.
