@@ -284,7 +284,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | MCP-2 | MUST | Tool results state what happened: the ids created and each recipient's delivery state. A refused call creates no record other than the refusal. | harness R8 |
 | MCP-3 | SHOULD | The inbox is also a resource, whose update notification is only a hint. Dropping every notification loses nothing. | protocols R24 |
 | MCP-4 | SHOULD | Use `rmcp` pinned to an exact 3.x version. | rust 24; protocols R23 |
-| MCP-5 | SHOULD | Ship a teamwire skill, the five team shapes and the three steps added to a team as data files in the repo, with no machine-specific paths. | speclife LC-59, LC-60 |
+| MCP-5 | SHOULD | Ship a teamwire skill, the six team shapes and the three steps added to a team as data files in the repo, with no machine-specific paths. | speclife LC-59, LC-60 |
 
 ### Metrics and observability (OBS)
 

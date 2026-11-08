@@ -705,7 +705,7 @@ line into the session, as `teamwire_watch` does. The package refuses
 
 ### `teamwire preset [NAME]`
 
-Without a name, lists the five team shapes and the three steps added to a
+Without a name, lists the six team shapes and the three steps added to a
 team. The `plan-review` step goes before the implementers, and the
 `integrator` and `closer` steps go after the last wave. With a name, prints
 the preset's spec skeleton and its rules as text.
