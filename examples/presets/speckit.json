@@ -1,0 +1,80 @@
+{
+  "_shape": "One feature built the spec-kit way. A spec member writes the spec, a plan reviewer runs analyze, one implementer runs implement.",
+  "_why_this_works": "Spec-kit writes a spec, a plan and a task list before any code, and stops there: it runs no task in parallel and checks nothing itself. teamwire supplies the parts spec-kit leaves out: one worktree per writer, file ownership, a fresh reader before the build, independent checks and the merge. Each spec-kit command runs in the seat whose rules fit it, so spec-kit stays unchanged.",
+  "_input": "A feature description from the user, or a finished `tasks.md` the user brings. With a finished `tasks.md` committed on the base branch, leave out the spec and analyze members and start the implementer from that branch.",
+  "_rules": [
+    "BEFORE. The base branch holds spec-kit, committed: `.specify/` and the command folder of each member harness (`specify init --here --force --integration claude`, then `specify integration install codex` or `pi`), and a written `.specify/memory/constitution.md`. A worktree holds only committed files. No spec-kit `git` extension and no extension with `events:`: read `.specify/extensions.yml`, and look for `.codex/config.toml` and spec-kit hooks in `.claude/settings.json`. teamwire owns the branches, Codex launch refuses a repository with `.codex/config.toml`, and an `events:` hook in `.claude/settings.json` runs unreviewed. Read the section 'Spec-kit features' in the skill's `reference.md` first.",
+    "SPEC. The spec member runs `specify` with the feature description. It ends its turn with its open questions, under 'Questions for the parent' in its report and with a summary that starts with `N questions for the parent.`. Ask the user, then reprompt it with the answers. It then runs `clarify` with those answers, then `plan` and `tasks`, and commits after each one. The user reviews `spec.md` and `plan.md`. A checklist from `checklist` is ticked by the user at this review, because only a reviewer may tick one.",
+    "ONE SPEC AT A TIME. Run one spec member at a time and name its folder yourself, such as `specs/001-name/`. Spec-kit picks the next number by scanning `specs/`, and two members that scan at once pick the same one (spec-kit issue #4270).",
+    "CHECK. Add the plan reviewer with `teamwire launch --add` after the spec member's last commit. Its `cwd` is the spec member's worktree, so it reads the committed spec. It runs `analyze`, which is read-only, and reads the briefs. Reprompt the spec member once with the findings that hold. Never run a second analyze on the same plan.",
+    "BUILD. One implementer by default. Its `base` is the spec member's branch, so the feature folder is in its worktree. Its `setup` writes `.specify/feature.json` with `{\"feature_directory\": \"specs/NNN-name\"}`, because spec-kit git-ignores that file and a new worktree has none. It runs `implement` phase by phase, ticks `[X]` only on its own phases' lines in `tasks.md`, commits at each checkpoint with the task ids in the message, and reads the constitution. Its `check` runs the tests and fails on any unticked task of its phases, such as `! grep -nE '^- \\[ \\] T[0-9]+' specs/NNN-name/tasks.md`.",
+    "Implement stops with 'Do you want to proceed with implementation anyway?' when a checklist has unticked items. The brief tells the implementer to treat that stop as a question to you.",
+    "SPLIT ONLY ON DISJOINT FILES. One implementer per user story only when the stories after the Foundational phase touch disjoint files. Wave 1 is Setup and Foundational, wave 2 has one member per story, and Polish comes last. Each member owns `tasks.md` too and ticks only its own phase's lines. JOIN: the integrator (`teamwire preset integrator`) merges Foundational first, then the stories in priority order.",
+    "CLOSE. Start the closer from `teamwire preset closer` and add one step to its task: run `converge` in its own clone and report converge's findings table. The section converge appends to `tasks.md` stays in that clone. In the fix round, each owner runs `implement` then `converge` on its own branch, at most two rounds.",
+    "pi members do not load `.pi/prompts/`, because teamwire starts pi with `--no-approve` (ADR 0029). A pi brief says: read `.pi/prompts/speckit.<cmd>.md` and follow it, with `$ARGUMENTS` set to the scope.",
+    "REF. The team carries the feature as a ref, `{\"provider\": \"speckit\", \"id\": \"NNN-name\"}`, so `teamwire decisions --ref speckit:NNN-name` finds every team that worked on it."
+  ],
+  "team": "myteam",
+  "title": "CHANGEME spec-kit feature",
+  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "refs": [
+    {
+      "provider": "speckit",
+      "id": "001-CHANGEME"
+    }
+  ],
+  "children": [
+    {
+      "_wave": 1,
+      "_note": "Launch alone first. Its check fails until `tasks.md` exists, which the brief says is expected. Its brief names the folder, the spec-kit commands it runs in order, and the questions rule. Keep it open until the build starts, to fix what analyze finds.",
+      "role": "spec",
+      "title": "Spec: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "task_class": "contained_feature",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/spec",
+      "base": "main",
+      "deadline_s": 3600,
+      "check": "test -s specs/001-CHANGEME/spec.md && test -s specs/001-CHANGEME/plan.md && test -s specs/001-CHANGEME/tasks.md",
+      "owns": [
+        "specs/001-CHANGEME/"
+      ],
+      "task_file": "/abs/path/briefs/spec.md"
+    },
+    {
+      "_wave": 2,
+      "_launch_after": "spec has committed tasks.md and the user has reviewed spec.md and plan.md",
+      "_note": "On Claude Code, give this member the plugins map from the skill's 'Skills and plugins in members', so it reads no other member's findings through memory.",
+      "role": "analyze",
+      "title": "Analyze the CHANGEME spec",
+      "kind": "plan_reviewer",
+      "mode": "pane",
+      "task_class": "judgement",
+      "cwd": "/abs/path/repo/.worktrees/myteam-spec",
+      "deadline_s": 1200,
+      "task": "Review the spec-kit feature specs/001-CHANGEME for team myteam before any implementer starts. Your directory is the spec member's worktree. Run spec-kit's analyze command for that feature (CHANGEME: `/speckit-analyze` on Claude Code, `$speckit-analyze` on Codex, or on pi read `.pi/prompts/speckit.analyze.md` and follow it). Analyze is read-only: do not accept its offer of edits. Then read the plan at /abs/path/briefs/PLAN.md, the team spec at /abs/path/briefs/spec.json and every brief in /abs/path/briefs/. For each brief, write what it asks the member to build. Report analyze's findings table, then each place where a member would have to decide, guess or ask, ranked by harm, each with its file and line. Findings only, no fixes. Do NOT edit any file in the repository. If the spec and every brief are ready, say so plainly rather than inventing findings. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+    },
+    {
+      "_wave": 3,
+      "_launch_after": "the spec member has fixed analyze's findings and committed",
+      "_note": "Its base is the spec member's branch. Its setup writes `.specify/feature.json`. Its brief names its phases, the tick rule, a commit per checkpoint with the task ids, the constitution, and the checklist stop as a question to you. For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",
+      "role": "impl",
+      "title": "Build: CHANGEME",
+      "kind": "implementer",
+      "mode": "worktree",
+      "task_class": "contained_feature",
+      "repo": "/abs/path/repo",
+      "branch": "myteam/impl",
+      "base": "myteam/spec",
+      "deadline_s": 3600,
+      "setup": "./scripts/setup-worktree.sh \"$1\" && printf '%s\\n' '{\"feature_directory\": \"specs/001-CHANGEME\"}' > \"$1/.specify/feature.json\"",
+      "check": "CHANGEME targeted test command && ! grep -nE '^- \\[ \\] T[0-9]+' specs/001-CHANGEME/tasks.md",
+      "owns": [
+        "CHANGEME/src/",
+        "specs/001-CHANGEME/tasks.md"
+      ],
+      "task_file": "/abs/path/briefs/impl.md"
+    }
+  ]
+}

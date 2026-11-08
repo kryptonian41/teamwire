@@ -1,4 +1,4 @@
-//! `teamwire preset`, and the seven files of `examples/presets/`. Each file
+//! `teamwire preset`, and the nine files of `examples/presets/`. Each file
 //! must be a spec that `launch` accepts once its placeholders are filled in,
 //! so the test fills them in and runs the real validation.
 #![expect(
@@ -27,12 +27,13 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 8] = [
+const NAMES: [&str; 9] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
     "dependent-tickets",
     "contract-split",
+    "speckit",
     "plan-review",
     "integrator",
     "closer",
@@ -60,7 +61,15 @@ fn git(dir: &Path, args: &[&str]) {
 /// brief files and the branches its members start from.
 fn filled(name: &str, work: &Path) -> String {
     let (repo, briefs) = fixture(work);
+    // A pane that starts in an earlier member's worktree joins once launch
+    // has made that worktree. In one spec the real path would collide with
+    // that member's own worktree, so a stand-in directory takes its place.
+    let worktrees = work.join("worktrees");
     let text = preset_text(name)
+        .replace(
+            "/abs/path/repo/.worktrees",
+            &worktrees.display().to_string(),
+        )
         .replace("/abs/path/repo", &repo.display().to_string())
         .replace("/abs/path/briefs", &briefs.display().to_string());
     let doc: Value = serde_json::from_str(&text).unwrap();
@@ -70,6 +79,9 @@ fn filled(name: &str, work: &Path) -> String {
         }
         if let Some(base) = child["base"].as_str().filter(|b| *b != "main") {
             git(&repo, &["branch", "-f", base, "main"]);
+        }
+        if let Some(cwd) = child["cwd"].as_str() {
+            std::fs::create_dir_all(cwd).unwrap();
         }
     }
     text
@@ -243,11 +255,11 @@ fn without_a_name_every_preset_is_listed() {
     assert_eq!(names, NAMES);
 }
 
-/// The five team shapes come first. `plan-review`, `integrator` and `closer`
+/// The six team shapes come first. `plan-review`, `integrator` and `closer`
 /// are steps a lead adds to a team, so each says so at the start of its
 /// description.
 #[test]
-fn the_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
+fn the_steps_added_to_a_team_say_so_and_the_six_shapes_do_not() {
     for (name, start) in [
         ("plan-review", "FIRST STEP, not a team shape."),
         ("integrator", "FINAL STEP, not a team shape."),
@@ -259,7 +271,7 @@ fn the_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
             "{name}"
         );
     }
-    for name in &NAMES[..5] {
+    for name in &NAMES[..6] {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
         assert!(
             !file["_shape"]
@@ -743,6 +755,106 @@ fn the_contract_split_starts_with_the_contract_member() {
         assert_eq!(member["base"], base, "{}", member["role"]);
         assert_eq!(member["_wave"], 2, "{}", member["role"]);
         assert!(member.get("_launch").is_some(), "{}", member["role"]);
+    }
+}
+
+/// The spec-kit shape: a spec member writes the feature folder, a plan
+/// reviewer in its worktree runs analyze, and one implementer starts from the
+/// spec branch. The team carries the feature as a `speckit` ref, and the
+/// rules send the lead to the closer for converge.
+#[test]
+fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
+    let doc = preset_doc("speckit");
+    let members = doc["children"].as_array().unwrap();
+    let seats: Vec<(&str, &str, &str)> = members
+        .iter()
+        .map(|m| {
+            (
+                m["role"].as_str().unwrap(),
+                m["kind"].as_str().unwrap(),
+                m["mode"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        seats,
+        [
+            ("spec", "implementer", "worktree"),
+            ("analyze", "plan_reviewer", "pane"),
+            ("impl", "implementer", "worktree"),
+        ]
+    );
+    let spec = &members[0];
+    let spec_branch = spec["branch"].as_str().unwrap();
+    assert!(spec.get("_launch_after").is_none());
+    for later in &members[1..] {
+        assert!(later.get("_launch_after").is_some(), "{}", later["role"]);
+    }
+    assert!(
+        members[1]["cwd"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/.worktrees/{}", spec_branch.replace('/', "-"))),
+        "analyze starts in the spec member's worktree"
+    );
+    let imp = &members[2];
+    assert_eq!(imp["base"], spec_branch);
+
+    let refs = doc["refs"].as_array().unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0]["provider"], "speckit");
+    let feature = refs[0]["id"].as_str().unwrap();
+    let folder = format!("specs/{feature}");
+    assert!(
+        spec["owns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o.as_str().unwrap().starts_with(&folder)),
+        "the spec member owns the feature folder"
+    );
+    assert!(
+        imp["owns"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from(format!("{folder}/tasks.md"))),
+        "the implementer owns tasks.md, where it ticks its tasks"
+    );
+    let setup = imp["setup"].as_str().unwrap();
+    assert!(
+        setup.contains(".specify/feature.json") && setup.contains(&folder),
+        "{setup}"
+    );
+    let check = imp["check"].as_str().unwrap();
+    assert!(
+        check.contains(&format!(
+            "! grep -nE '^- \\[ \\] T[0-9]+' {folder}/tasks.md"
+        )),
+        "{check}"
+    );
+
+    let rules: Vec<&str> = doc["_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        rules
+            .iter()
+            .any(|r| r.contains("`converge`") && r.contains("`teamwire preset closer`")),
+        "{rules:?}"
+    );
+    for needed in [
+        "#4270",
+        "`events:`",
+        "N questions for the parent.",
+        "ADR 0029",
+    ] {
+        assert!(
+            rules.iter().any(|r| r.contains(needed)),
+            "no rule names {needed}"
+        );
     }
 }
 
