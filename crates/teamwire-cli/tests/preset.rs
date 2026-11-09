@@ -826,8 +826,10 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "the implementer owns tasks.md, where it ticks its tasks"
     );
     let setup = imp["setup"].as_str().unwrap();
+    // Spec-kit reads only the key feature_directory.
     assert!(
-        setup.contains(".specify/feature.json") && setup.contains(&folder),
+        setup.contains(&format!("'{{\"feature_directory\": \"{folder}\"}}'"))
+            && setup.contains("\"$1/.specify/feature.json\""),
         "{setup}"
     );
     let check = imp["check"].as_str().unwrap();
