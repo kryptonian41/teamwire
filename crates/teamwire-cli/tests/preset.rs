@@ -802,6 +802,10 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         ]
     );
     let spec = &members[0];
+    // At a question stop the spec member's check fails, so it records
+    // blocked; nothing excuses a failing check with done.
+    let note = spec["_note"].as_str().unwrap();
+    assert!(!note.contains("is expected"), "{note}");
     let spec_branch = spec["branch"].as_str().unwrap();
     assert!(spec.get("_launch_after").is_none());
     for later in &members[1..] {
@@ -881,7 +885,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "`events:`",
         "`.specify/extensions/<id>/extension.yml`",
         "`.specify/integration-events.yml`",
-        "N questions for the parent.",
+        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
         "ADR 0029",
     ] {
         assert!(
@@ -913,7 +917,8 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
         "`.pi/prompts/speckit.implement.md`",
         "`.specify/feature.json`",
         "`.specify/memory/constitution.md`",
-        "`N questions for the parent.`",
+        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "a question round, not a failure",
         "`converge`",
         "`teamwire preset closer`",
         "`teamwire decisions --ref speckit:NNN-name`",
@@ -984,6 +989,13 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
         skill.contains("\"Spec-kit features\" in `reference.md`"),
         "the skill does not point at the section"
     );
+    let flat_skill = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat_skill
+            .contains("starts with `N questions for the lead.` is a question round, not a failure"),
+        "the skill does not say how to read the spec member's blocked result"
+    );
+    assert!(!flat.contains("questions for the parent"), "{flat}");
     assert!(
         skill.contains("Spec-kit's `specs/` folder"),
         "the skill does not say where spec-kit's files go"

@@ -653,6 +653,11 @@ nothing" case held, so the member changed nothing on purpose and recorded
 `done`. Verify then flags `no-commits`, which is expected: waive it with the
 member's report as the reason.
 
+In a spec-kit team, a spec member's `blocked` result whose summary starts
+with `N questions for the lead.` is a question round, not a failure. Ask the
+user, then reprompt it with the answers, as "Spec-kit features" in
+`reference.md` says.
+
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.

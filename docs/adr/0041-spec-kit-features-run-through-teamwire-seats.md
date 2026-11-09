@@ -40,9 +40,12 @@ in the lead skill, its reference file, a new preset and the briefs. The seat
 rules in `crates/teamwire-launch/contracts/` do not change.
 
 1. **A spec member writes the spec.** An implementer in its own worktree
-   owns `specs/NNN-name/`. It runs `specify` and ends its turn with its open
-   questions, with a summary that starts with `N questions for the parent.`.
-   The lead asks the user and reprompts it with the answers. It then runs
+   owns `specs/NNN-name/`. It runs `specify` and stops with its open
+   questions. Its check fails there, so it records `blocked` with a summary
+   that starts with `N questions for the lead.`, which the lead reads as a
+   question round. The lead asks the user and reprompts it with the
+   answers. It records `done` only once `tasks.md` exists and its check
+   passes. It then runs
    `clarify` with those answers, then `plan` and `tasks`, and commits after
    each one. The user reviews `spec.md` and `plan.md`, and ticks any
    checklist from `checklist` at that review, because spec-kit lets only a

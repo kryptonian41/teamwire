@@ -379,12 +379,17 @@ it. Then cut the implementer's branch from that branch.
   (spec-kit issue #4270). Run one spec member at a time, and name its
   folder, such as `specs/001-user-auth/`, in its brief.
 - **Questions.** `specify`, `clarify` and `checklist` wait for an answer in
-  chat, and the seat rules forbid that wait. The spec member's brief says:
-  run `specify`, write the open questions under 'Questions for the parent'
-  in the report, and record `done` with a summary that starts with
-  `N questions for the parent.`. Ask the user, then send the answers with
+  chat, and the seat rules forbid that wait. So the spec member stops with
+  its questions instead. It writes them under 'Questions for the lead' in
+  its report and records
+  `teamwire done --status blocked --summary "3 questions for the lead. ..."`,
+  with its own count. Its check fails at that stop, and its seat allows
+  `blocked` with a failing check. A `blocked` result whose summary starts
+  with `N questions for the lead.` is a question round, not a failure. Ask
+  the user, then send the answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
-  member runs `clarify` with those answers.
+  member runs `clarify` with those answers. It records `done` only after
+  `tasks` is written and its check passes.
 - **Checklists.** `checklist` writes its items unticked, and spec-kit says
   only a reviewer ticks them. So the user ticks them in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
