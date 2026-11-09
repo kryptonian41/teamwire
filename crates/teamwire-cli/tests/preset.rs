@@ -986,6 +986,12 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     )
     .unwrap();
     let adr = adr.split_whitespace().collect::<Vec<_>>().join(" ");
+    // The ADR states the check rule the reference and the SPLIT rule state.
+    assert!(
+        adr.contains("only the integrator's `check` on the joined branch greps the whole file")
+            && !adr.contains("fails on any unticked task of its phases"),
+        "{adr}"
+    );
     for text in [flat.as_str(), &rules_text("speckit"), &adr] {
         assert!(
             text.contains("runs `converge` on its own branch, then `implement` on the new phase, then `converge` again"),

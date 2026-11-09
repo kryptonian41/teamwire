@@ -71,8 +71,13 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    Polish last. The integrator merges Foundational first, then the stories
    in priority order.
 3. **Each implementer ticks `[X]` only on its own phases' lines.**
-   `tasks.md` is in its `owns`. Its `check` runs the tests and fails on any
-   unticked task of its phases. It commits at each checkpoint with the task
+   `tasks.md` is in its `owns`. The single implementer's `check` runs the
+   tests and greps `tasks.md` for unticked tasks. In a per-story split, each
+   story member's `check` is `test -s specs/NNN-name/tasks.md && <its own
+   tests>`, and only the integrator's `check` on the joined branch greps the
+   whole file. A per-story grep cannot pass in wave 1, and it misses the
+   tasks `converge` appends, which carry no story label. Each implementer
+   commits at each checkpoint with the task
    ids in the message, because `implement` has no commit step. It reads
    `.specify/memory/constitution.md`, because the seat rules point only at
    `CLAUDE.md` and `AGENTS.md`. It treats `implement`'s stop on an unticked
