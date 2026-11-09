@@ -1007,6 +1007,16 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     )
     .unwrap();
     let adr = adr.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Each spec member scans specs/ in its own worktree, so the race is not
+    // only between members that run at once.
+    for text in [flat.as_str(), &flat_rules, &adr] {
+        assert!(
+            text.contains("scans `specs/` in its own worktree")
+                && text.contains("even when they run one after the other")
+                && !text.contains("scan at once"),
+            "{text}"
+        );
+    }
     // The ADR states the check rule the reference and the SPLIT rule state.
     assert!(
         adr.contains("only the integrator's `check` on the joined branch greps the whole file")

@@ -375,9 +375,11 @@ it. Then cut the implementer's branch from that branch.
 ### Rules for the briefs
 
 - **One spec at a time.** `specify` picks the next folder number by
-  scanning `specs/`, and two members that scan at once pick the same number
-  (spec-kit issue #4270). Run one spec member at a time, and name its
-  folder, such as `specs/001-user-auth/`, in its brief.
+  scanning `specs/`. Each spec member scans `specs/` in its own worktree,
+  so two spec members on branches cut from the same base pick the same
+  number, even when they run one after the other. Run one spec member at a
+  time, and name its folder, such as `specs/001-user-auth/`, in its brief.
+  Spec-kit issue #4270 is the related upstream report.
 - **Questions.** `specify`, `clarify` and `checklist` wait for an answer in
   chat, and the seat rules forbid that wait. So the spec member stops once
   per batch of questions:

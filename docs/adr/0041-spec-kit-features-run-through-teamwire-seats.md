@@ -61,8 +61,10 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    reads the briefs. The spec member fixes what holds, once. A finished
    `tasks.md` that the user brings is also a valid start, and the plan
    reviewer still runs `analyze` on it. One spec member runs at a time, and the lead names
-   its folder, because spec-kit picks the next number by scanning `specs/`
-   and two scans at once pick the same number (spec-kit issue #4270).
+   its folder. Spec-kit picks the next number by scanning `specs/`, and each
+   spec member scans `specs/` in its own worktree. So two spec members on
+   branches cut from the same base pick the same number, even when they run
+   one after the other. Spec-kit issue #4270 is the related upstream report.
 2. **One implementer by default.** It runs `implement` phase by phase over
    the whole `tasks.md`, with its branch cut from the spec member's branch.
    A split into one implementer per user story is allowed only when the
@@ -137,7 +139,7 @@ Also settled by the design:
 - **Spec-kit hooks or events to enforce teamwire's rules.** A hook is prose
   that an agent can skip. An `events:` extension writes `.codex/config.toml`
   and so blocks every Codex member.
-- **Several spec members at once,** because of the number race above.
+- **Several spec members at once,** because each one numbers its folder from its own worktree (decision 1).
 
 ## Consequences
 
