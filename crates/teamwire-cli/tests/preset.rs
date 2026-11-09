@@ -80,7 +80,12 @@ fn filled(name: &str, work: &Path) -> String {
         if let Some(base) = child["base"].as_str().filter(|b| *b != "main") {
             git(&repo, &["branch", "-f", base, "main"]);
         }
-        if let Some(cwd) = child["cwd"].as_str() {
+        // Only the stand-in is made, so a pane cwd that maps to nothing else
+        // still fails validation.
+        if let Some(cwd) = child["cwd"]
+            .as_str()
+            .filter(|c| Path::new(c).starts_with(&worktrees))
+        {
             std::fs::create_dir_all(cwd).unwrap();
         }
     }
