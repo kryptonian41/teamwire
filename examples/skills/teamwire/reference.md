@@ -312,8 +312,12 @@ before launch:
 
 Then check that spec-kit added nothing that runs on its own:
 
-- `.specify/extensions.yml` lists no `git` extension and no extension with
-  `events:`.
+- The `installed:` list in `.specify/extensions.yml` holds no `git`
+  extension.
+- No extension manifest, `.specify/extensions/<id>/extension.yml`, has a
+  top-level `events:` key, and no `.specify/integration-events.yml` exists.
+  An extension declares its `events:` in its own manifest, not in
+  `.specify/extensions.yml`.
 - No `.codex/config.toml` exists, and `.claude/settings.json` holds no hook
   that spec-kit wrote. Spec-kit tags each of its hooks with
   `"__speckit_event__": true`.

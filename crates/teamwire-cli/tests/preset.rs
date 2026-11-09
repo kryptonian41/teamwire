@@ -864,6 +864,8 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     for needed in [
         "#4270",
         "`events:`",
+        "`.specify/extensions/<id>/extension.yml`",
+        "`.specify/integration-events.yml`",
         "N questions for the parent.",
         "ADR 0029",
     ] {
@@ -902,6 +904,9 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
         "`teamwire decisions --ref speckit:NNN-name`",
         "#4270",
         "`events:`",
+        "`.specify/extensions/<id>/extension.yml`",
+        "`.specify/integration-events.yml`",
+        "`\"__speckit_event__\": true`",
     ] {
         assert!(section.contains(needed), "the section lacks {needed}");
     }
