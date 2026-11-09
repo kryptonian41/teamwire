@@ -943,6 +943,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     );
     // The closer's own session resolves the lead's checkout, so it follows
     // the command file in its clone instead.
+    // clarify asks questions of its own, so the spec member stops once per
+    // batch and never answers a spec-kit question itself.
+    let flat_rules = rules_text("speckit")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for text in [flat.as_str(), &flat_rules] {
+        for needed in [
+            "stops with its questions from `specify`, at most 3",
+            "stops again with clarify's questions, at most 5, each with clarify's recommended option",
+            "A further stop is allowed only when an answer raises a new question",
+            "never answers a spec-kit question itself, unless your reprompt says to take the recommended option",
+            "lists each such answer under Decisions I made",
+        ] {
+            assert!(text.contains(needed), "lacks {needed}: {text}");
+        }
+    }
     // A tasks.md that no member wrote gets the fresh read too.
     let input = preset_doc("speckit")["_input"].as_str().unwrap().to_owned();
     for text in [flat.as_str(), &input] {

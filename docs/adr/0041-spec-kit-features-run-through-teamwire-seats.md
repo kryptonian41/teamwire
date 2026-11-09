@@ -40,19 +40,27 @@ in the lead skill, its reference file, a new preset and the briefs. The seat
 rules in `crates/teamwire-launch/contracts/` do not change.
 
 1. **A spec member writes the spec.** An implementer in its own worktree
-   owns `specs/NNN-name/`. It runs `specify` and stops with its open
-   questions. Its check fails there, so it records `blocked` with a summary
-   that starts with `N questions for the lead.`, which the lead reads as a
-   question round. The lead asks the user and reprompts it with the
-   answers. It records `done` only once `tasks.md` exists and its check
-   passes. It then runs
-   `clarify` with those answers, then `plan` and `tasks`, and commits after
-   each one. The user reviews `spec.md` and `plan.md`, and ticks any
-   checklist from `checklist` at that review, because spec-kit lets only a
-   reviewer tick one. A plan reviewer in a pane, with its `cwd` at the spec
-   member's worktree, runs `analyze` and reads the briefs. The spec member
-   fixes what holds, once. A finished `tasks.md` that the user brings is
-   also a valid start. One spec member runs at a time, and the lead names
+   owns `specs/NNN-name/`. It stops once per batch of questions. It runs
+   `specify` and stops with its questions, at most 3. The lead asks the user
+   and reprompts it with the answers. It writes them into `spec.md`, runs
+   `clarify`'s scan, and stops again with clarify's questions, at most 5,
+   each with clarify's recommended option. The lead asks the user and
+   reprompts again. It records those answers through `clarify`, then runs
+   `plan` and `tasks`, and commits after each command. A further stop is
+   allowed only when an answer raises a new question. The member never
+   answers a spec-kit question itself, unless the lead's reprompt says to
+   take the recommended option, and then lists each such answer under
+   Decisions I made. Its check fails at a question stop, so it records
+   `blocked` with a summary that starts with `N questions for the lead.`,
+   which the lead reads as a question round. It records `done` only once
+   `tasks.md` exists and its check passes. The user reviews `spec.md` and
+   `plan.md`, and ticks any checklist from `checklist` at that review,
+   because spec-kit lets only a reviewer tick one. The spec member then
+   commits those ticks before any implementer starts. A plan reviewer in a
+   pane, with its `cwd` at the spec member's worktree, runs `analyze` and
+   reads the briefs. The spec member fixes what holds, once. A finished
+   `tasks.md` that the user brings is also a valid start, and the plan
+   reviewer still runs `analyze` on it. One spec member runs at a time, and the lead names
    its folder, because spec-kit picks the next number by scanning `specs/`
    and two scans at once pick the same number (spec-kit issue #4270).
 2. **One implementer by default.** It runs `implement` phase by phase over

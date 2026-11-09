@@ -345,10 +345,10 @@ spec-kit command, so write the form for the member's harness in its brief.
 
 1. **Spec.** A `spec` implementer in its own worktree owns
    `specs/NNN-name/`. Its brief names the folder and gives the feature
-   description. It runs `specify`, ends its turn with its open questions,
-   and you bring them to the user. It then runs `clarify` with the
-   answers, then `plan`, then `tasks`, and commits after each one. The user
-   reviews `spec.md` and `plan.md`.
+   description. It runs `specify`, then `clarify`, and stops after each
+   one with its questions, which you bring to the user. It then runs `plan`
+   and `tasks`, and commits after each command. The user reviews `spec.md`
+   and `plan.md`.
 2. **Check.** Add a plan reviewer with `teamwire launch --add`. Its `cwd`
    is the spec member's worktree, such as `<repo>/.worktrees/myteam-spec`
    for the branch `myteam/spec`. It runs `analyze`, which writes nothing, and reads the briefs.
@@ -379,17 +379,31 @@ it. Then cut the implementer's branch from that branch.
   (spec-kit issue #4270). Run one spec member at a time, and name its
   folder, such as `specs/001-user-auth/`, in its brief.
 - **Questions.** `specify`, `clarify` and `checklist` wait for an answer in
-  chat, and the seat rules forbid that wait. So the spec member stops with
-  its questions instead. It writes them under 'Questions for the lead' in
-  its report and records
+  chat, and the seat rules forbid that wait. So the spec member stops once
+  per batch of questions:
+  1. It runs `specify` and stops with its questions from `specify`, at
+     most 3.
+  2. You ask the user and reprompt it with the answers. It writes them into
+     `spec.md`, runs `clarify`'s scan, and stops again with clarify's
+     questions, at most 5, each with clarify's recommended option.
+  3. You ask the user and reprompt it again. It records those answers
+     through `clarify`, then runs `plan` and `tasks`.
+
+  A further stop is allowed only when an answer raises a new question. The
+  member never answers a spec-kit question itself, unless your reprompt
+  says to take the recommended option. Then it lists each such answer under
+  Decisions I made, so the user can tell those answers from the user's own
+  in `spec.md`.
+
+  At each stop the member writes its questions under 'Questions for the
+  lead' in its report and records
   `teamwire done --status blocked --summary "3 questions for the lead. ..."`,
   with its own count. Its check fails at that stop, and its seat allows
   `blocked` with a failing check. A `blocked` result whose summary starts
-  with `N questions for the lead.` is a question round, not a failure. Ask
-  the user, then send the answers with
+  with `N questions for the lead.` is a question round, not a failure. Send
+  the answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
-  member runs `clarify` with those answers. It records `done` only after
-  `tasks` is written and its check passes.
+  member records `done` only after `tasks` is written and its check passes.
 - **Checklists.** `checklist` writes its items unticked, and spec-kit says
   only a reviewer ticks them. So the user ticks them in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
