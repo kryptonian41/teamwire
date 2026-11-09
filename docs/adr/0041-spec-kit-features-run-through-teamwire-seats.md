@@ -77,8 +77,7 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    tests>`, and only the integrator's `check` on the joined branch greps the
    whole file. A per-story grep cannot pass in wave 1, and it misses the
    tasks `converge` appends, which carry no story label. Each implementer
-   commits at each checkpoint with the task
-   ids in the message, because `implement` has no commit step. It reads
+   commits at each checkpoint with the task ids in the message, because `implement` has no commit step. It reads
    `.specify/memory/constitution.md`, because the seat rules point only at
    `CLAUDE.md` and `AGENTS.md`. It treats `implement`'s stop on an unticked
    checklist as a question to the lead.
@@ -86,10 +85,16 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    The closer preset stays as it is. The lead adds one step to the closer's
    task: follow the clone's `converge` command file and report its findings
    table. The section converge appends to `tasks.md` stays in the clone, so
-   an owner's `tasks.md` has nothing open yet. In the fix round each owner
-   runs `converge` on its own branch, then `implement` on the new phase,
-   then `converge` again. Its own `converge` appends the open work to its
-   `tasks.md`. The owner stops at "Converged" or after two rounds.
+   an owner's `tasks.md` has nothing open yet. In the fix round the one
+   implementer runs `converge` on its own branch, then `implement` on the
+   new phase, then `converge` again. Its own `converge` appends the open
+   work to its `tasks.md`. It stops at "Converged" or after two rounds. In
+   a per-story split, story owners run no `converge`, because converge
+   compares the code with the whole spec and on a story branch reports
+   every other story as `missing`. So in a split the fix round runs on a
+   branch cut from the integrator's branch, by one implementer, such as the
+   Polish member. It runs the same loop on the joined code and is the only
+   writer of the Convergence phase. The integrator then merges its branch.
 5. **pi members read the prompt file.** teamwire starts pi with
    `--no-approve` (ADR 0029), which skips `.pi/prompts/`. A pi brief says:
    read `.pi/prompts/speckit.<cmd>.md` and follow it, with `$ARGUMENTS` set

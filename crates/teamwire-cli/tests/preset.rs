@@ -997,6 +997,13 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
             text.contains("runs `converge` on its own branch, then `implement` on the new phase, then `converge` again"),
             "{text}"
         );
+        // On a story branch converge reports the other stories as missing.
+        assert!(
+            text.contains(
+                "in a split the fix round runs on a branch cut from the integrator's branch"
+            ) && text.contains("story owners run no `converge`"),
+            "{text}"
+        );
         assert!(!text.contains("`implement` then `converge`"), "{text}");
         assert!(!text.contains("`implement`, then `converge`"), "{text}");
     }

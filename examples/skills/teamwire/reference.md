@@ -465,11 +465,17 @@ it. Then cut the implementer's branch from that branch.
   `tasks.md` stays in the clone. Converge reads code and runs no tests, so
   its "Converged" is a model's judgement and the closer's other checks
   still run.
-- **The fix round.** Send each owner the findings for its phases. The
-  closer's section is not in the owner's `tasks.md`, so each owner
+- **The fix round.** With one implementer, send it the closer's findings.
+  The closer's section is not in its `tasks.md`, so the implementer
   runs `converge` on its own branch, then `implement` on the new phase,
   then `converge` again. Its own `converge` appends the open work as a new
-  phase. The owner stops at "Converged" or after two rounds.
+  phase. It stops at "Converged" or after two rounds. In a per-story
+  split, story owners run no `converge`, because converge compares the
+  code with the whole spec and on a story branch reports every other story
+  as `missing`. So in a split the fix round runs on a branch cut from the
+  integrator's branch, by one implementer, such as the Polish member. It
+  runs the same loop on the joined code and is the only writer of the
+  Convergence phase. The integrator then merges its branch.
 - **The ref.** The team carries the feature as a ref,
   `{"provider": "speckit", "id": "NNN-name"}`, with the folder name as the
   id. `teamwire decisions --ref speckit:NNN-name` then lists the decisions
