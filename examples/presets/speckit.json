@@ -72,7 +72,8 @@
       "check": "test -s specs/001-CHANGEME/tasks.md && CHANGEME targeted test command && ! grep -nE '^- \\[ \\] T[0-9]+' specs/001-CHANGEME/tasks.md",
       "owns": [
         "CHANGEME/src/",
-        "specs/001-CHANGEME/tasks.md"
+        "specs/001-CHANGEME/tasks.md",
+        ".gitignore"
       ],
       "task_file": "/abs/path/briefs/impl.md"
     }

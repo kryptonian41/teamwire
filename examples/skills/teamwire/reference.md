@@ -384,6 +384,10 @@ implementer's branch from the branch that holds them.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
   to tick only the lines of its own phases. Lines in separate phases should
   merge cleanly. When they do not, the integrator stops on the conflict.
+- **Ignore files.** `implement` writes `.gitignore`, so the preset puts it
+  in the implementer's `owns`. `implement` may also write `.dockerignore`,
+  `.eslintignore` and similar files for the technology it detects. The
+  brief either puts each one in `owns` or tells the member not to write it.
 - **Check.** The implementer's `check` needs `tasks.md`, runs the tests
   and fails on any unticked task, such as
   `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.

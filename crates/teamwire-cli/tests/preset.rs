@@ -825,6 +825,10 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
             .contains(&Value::from(format!("{folder}/tasks.md"))),
         "the implementer owns tasks.md, where it ticks its tasks"
     );
+    assert!(
+        imp["owns"].as_array().unwrap().contains(&Value::from(".gitignore")),
+        "implement writes .gitignore"
+    );
     let setup = imp["setup"].as_str().unwrap();
     // Spec-kit reads only the key feature_directory.
     assert!(
