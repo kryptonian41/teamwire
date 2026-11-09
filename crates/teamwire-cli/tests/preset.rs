@@ -960,6 +960,27 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
             assert!(text.contains(needed), "lacks {needed}: {text}");
         }
     }
+    // Each fix is pinned in every place it changed. `! grep` passes on a
+    // missing file, so every grep example starts with `test -s`.
+    assert!(
+        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \\[ \\] T[0-9]+' specs/NNN-name/tasks.md`"),
+        "the reference's check example lacks test -s"
+    );
+    assert!(
+        flat_rules.contains("`test -s specs/NNN-name/tasks.md && <tests> && ! grep -nE"),
+        "the BUILD rule's check example lacks test -s"
+    );
+    assert!(
+        flat_rules
+            .contains("The integrator's `check` on the joined branch carries the whole-file grep"),
+        "the SPLIT rule does not move the grep to the integrator"
+    );
+    assert!(
+        flat.contains("**Ignore files.** `implement` writes `.gitignore`")
+            && flat.contains("`.dockerignore`")
+            && flat.contains("`.eslintignore`"),
+        "the reference lacks the Ignore files rule"
+    );
     // A tasks.md that no member wrote gets the fresh read too.
     let input = preset_doc("speckit")["_input"].as_str().unwrap().to_owned();
     for text in [flat.as_str(), &input] {
