@@ -435,10 +435,14 @@ implementer's branch from the branch that holds them.
   `/speckit-converge` from its own session, because its session starts in
   your checkout, so the command would read your checkout's files. It puts
   converge's findings table in the report. The section converge appends to
-  `tasks.md` stays in the clone. Converge reads code and runs no tests, so its "Converged" is a
-  model's judgement and the closer's other checks still run. In the fix
-  round, send each owner the findings for its phases. Each owner runs
-  `implement`, then `converge`, on its own branch, at most two rounds.
+  `tasks.md` stays in the clone. Converge reads code and runs no tests, so
+  its "Converged" is a model's judgement and the closer's other checks
+  still run.
+- **The fix round.** Send each owner the findings for its phases. The
+  closer's section is not in the owner's `tasks.md`, so each owner
+  runs `converge` on its own branch, then `implement` on the new phase,
+  then `converge` again. Its own `converge` appends the open work as a new
+  phase. The owner stops at "Converged" or after two rounds.
 - **The ref.** The team carries the feature as a ref,
   `{"provider": "speckit", "id": "NNN-name"}`, with the folder name as the
   id. `teamwire decisions --ref speckit:NNN-name` then lists the decisions

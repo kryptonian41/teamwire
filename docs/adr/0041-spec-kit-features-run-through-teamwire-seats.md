@@ -68,9 +68,12 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    checklist as a question to the lead.
 4. **The closer runs `converge`** in its own clone as independent evidence.
    The closer preset stays as it is. The lead adds one step to the closer's
-   task: run `converge` and report its findings table. The section converge
-   appends to `tasks.md` stays in the clone. In the fix round each owner
-   runs `implement` then `converge` on its own branch, at most two rounds.
+   task: follow the clone's `converge` command file and report its findings
+   table. The section converge appends to `tasks.md` stays in the clone, so
+   an owner's `tasks.md` has nothing open yet. In the fix round each owner
+   runs `converge` on its own branch, then `implement` on the new phase,
+   then `converge` again. Its own `converge` appends the open work to its
+   `tasks.md`. The owner stops at "Converged" or after two rounds.
 5. **pi members read the prompt file.** teamwire starts pi with
    `--no-approve` (ADR 0029), which skips `.pi/prompts/`. A pi brief says:
    read `.pi/prompts/speckit.<cmd>.md` and follow it, with `$ARGUMENTS` set

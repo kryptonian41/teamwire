@@ -938,6 +938,22 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     );
     // The closer's own session resolves the lead's checkout, so it follows
     // the command file in its clone instead.
+    // The closer's converge section stays in its clone, so an owner's fix
+    // round starts with its own converge.
+    let adr = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/adr/0041-spec-kit-features-run-through-teamwire-seats.md"),
+    )
+    .unwrap();
+    let adr = adr.split_whitespace().collect::<Vec<_>>().join(" ");
+    for text in [flat.as_str(), &rules_text("speckit"), &adr] {
+        assert!(
+            text.contains("runs `converge` on its own branch, then `implement` on the new phase, then `converge` again"),
+            "{text}"
+        );
+        assert!(!text.contains("`implement` then `converge`"), "{text}");
+        assert!(!text.contains("`implement`, then `converge`"), "{text}");
+    }
     for text in [flat.as_str(), &rules_text("speckit")] {
         assert!(
             text.contains("`.claude/skills/speckit-converge/SKILL.md`")
