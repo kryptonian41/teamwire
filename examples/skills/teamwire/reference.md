@@ -397,8 +397,12 @@ implementer's branch from the branch that holds them.
   `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
   Keep the `test -s`. Without it the check passes when the folder name is
   wrong, because `!` turns grep's missing-file error into success.
-  For one member per story, match the story's label too, such as
-  `'^- \[ \] T[0-9]+ (\[P\] )?\[US1\]'`.
+  When the stories split, a member's `check` is
+  `test -s specs/NNN-name/tasks.md && <its own tests>`, with no grep. Wave 1
+  cannot pass a grep over the story tasks it does not build, and the tasks
+  `converge` appends carry no story label. The integrator's `check` on the
+  joined branch carries the whole-file grep instead, so it also catches
+  converge's open tasks.
 - **Commits.** `implement` has no commit step, and the seat rules ask for a
   commit after each unit. The brief says: commit at each phase checkpoint,
   with the task ids in the message, such as `T012-T018: US1 user model`.

@@ -910,6 +910,14 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     ] {
         assert!(section.contains(needed), "the section lacks {needed}");
     }
+    // A per-story grep cannot pass in wave 1 and misses converge's tasks,
+    // which carry no story label. The joined branch's check holds the grep.
+    let flat = section.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(!flat.contains("[US1\\]"), "the section has a per-story grep");
+    assert!(
+        flat.contains("The integrator's `check` on the joined branch"),
+        "the section does not move the unticked-task grep to the integrator"
+    );
     let skill = example("skills/teamwire/SKILL.md");
     assert!(
         skill.contains("\"Spec-kit features\" in `reference.md`"),
