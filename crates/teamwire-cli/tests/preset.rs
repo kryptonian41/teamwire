@@ -938,6 +938,14 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     );
     // The closer's own session resolves the lead's checkout, so it follows
     // the command file in its clone instead.
+    // The user's checklist ticks live in the spec member's worktree until it
+    // commits them, and the implementer's worktree holds only commits.
+    for text in [flat.as_str(), &rules_text("speckit")] {
+        assert!(
+            text.contains("reprompt the spec member to commit them before any implementer starts"),
+            "{text}"
+        );
+    }
     // The closer's converge section stays in its clone, so an owner's fix
     // round starts with its own converge.
     let adr = std::fs::read_to_string(

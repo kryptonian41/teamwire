@@ -380,8 +380,10 @@ implementer's branch from the branch that holds them.
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
   member runs `clarify` with those answers.
 - **Checklists.** `checklist` writes its items unticked, and spec-kit says
-  only a reviewer ticks them. So the user ticks them at the review of
-  `spec.md` and `plan.md`. `implement` stops on an unticked checklist with
+  only a reviewer ticks them. So the user ticks them in
+  `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
+  `plan.md`. Then reprompt the spec member to commit them before any implementer starts,
+  because the implementer's worktree holds only commits. `implement` stops on an unticked checklist with
   "Do you want to proceed with implementation anyway? (yes/no)". The
   implementer's brief says to treat that stop as a question to you.
 - **Ticks.** `implement` ticks `[X]` on each finished task in `tasks.md`.
