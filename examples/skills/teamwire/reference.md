@@ -384,9 +384,11 @@ implementer's branch from the branch that holds them.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
   to tick only the lines of its own phases. Lines in separate phases should
   merge cleanly. When they do not, the integrator stops on the conflict.
-- **Check.** The implementer's `check` runs the tests and fails on any
-  unticked task of its phases, such as
-  `<test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
+- **Check.** The implementer's `check` needs `tasks.md`, runs the tests
+  and fails on any unticked task, such as
+  `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
+  Keep the `test -s`. Without it the check passes when the folder name is
+  wrong, because `!` turns grep's missing-file error into success.
   For one member per story, match the story's label too, such as
   `'^- \[ \] T[0-9]+ (\[P\] )?\[US1\]'`.
 - **Commits.** `implement` has no commit step, and the seat rules ask for a

@@ -833,6 +833,11 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "{setup}"
     );
     let check = imp["check"].as_str().unwrap();
+    // `! grep` passes on a missing file, so the check first needs tasks.md.
+    assert!(
+        check.starts_with(&format!("test -s {folder}/tasks.md && ")),
+        "{check}"
+    );
     assert!(
         check.contains(&format!(
             "! grep -nE '^- \\[ \\] T[0-9]+' {folder}/tasks.md"
