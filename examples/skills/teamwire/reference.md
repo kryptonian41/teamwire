@@ -427,10 +427,15 @@ implementer's branch from the branch that holds them.
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
 - **Converge.** Start the closer from `teamwire preset closer`, and add one
-  step to its task: in its own clone, on each head that ships, write
-  `.specify/feature.json`, run `converge`, and put converge's findings table
-  in the report. The section converge appends to `tasks.md` stays in the
-  clone. Converge reads code and runs no tests, so its "Converged" is a
+  step to its task. In its own clone, on each head that ships, the closer
+  writes `.specify/feature.json` at the clone's root. It then reads the
+  clone's `converge` command file of any installed harness, such as
+  `.claude/skills/speckit-converge/SKILL.md`, and follows it, running every
+  script that file names from the clone's root. The closer never invokes
+  `/speckit-converge` from its own session, because its session starts in
+  your checkout, so the command would read your checkout's files. It puts
+  converge's findings table in the report. The section converge appends to
+  `tasks.md` stays in the clone. Converge reads code and runs no tests, so its "Converged" is a
   model's judgement and the closer's other checks still run. In the fix
   round, send each owner the findings for its phases. Each owner runs
   `implement`, then `converge`, on its own branch, at most two rounds.

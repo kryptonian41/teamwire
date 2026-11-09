@@ -690,6 +690,18 @@ fn preset_doc(name: &str) -> Value {
     serde_json::from_str(&preset_text(name)).unwrap()
 }
 
+/// A preset's `_rules`, joined with spaces.
+fn rules_text(name: &str) -> String {
+    let doc = preset_doc(name);
+    let rules: Vec<&str> = doc["_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    rules.join(" ")
+}
+
 fn task_of<'a>(doc: &'a Value, role: &str) -> &'a str {
     doc["children"]
         .as_array()
@@ -826,7 +838,10 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "the implementer owns tasks.md, where it ticks its tasks"
     );
     assert!(
-        imp["owns"].as_array().unwrap().contains(&Value::from(".gitignore")),
+        imp["owns"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from(".gitignore")),
         "implement writes .gitignore"
     );
     let setup = imp["setup"].as_str().unwrap();
@@ -913,11 +928,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     // A per-story grep cannot pass in wave 1 and misses converge's tasks,
     // which carry no story label. The joined branch's check holds the grep.
     let flat = section.split_whitespace().collect::<Vec<_>>().join(" ");
-    assert!(!flat.contains("[US1\\]"), "the section has a per-story grep");
+    assert!(
+        !flat.contains("[US1\\]"),
+        "the section has a per-story grep"
+    );
     assert!(
         flat.contains("The integrator's `check` on the joined branch"),
         "the section does not move the unticked-task grep to the integrator"
     );
+    // The closer's own session resolves the lead's checkout, so it follows
+    // the command file in its clone instead.
+    for text in [flat.as_str(), &rules_text("speckit")] {
+        assert!(
+            text.contains("`.claude/skills/speckit-converge/SKILL.md`")
+                && text.contains("never invokes `/speckit-converge`"),
+            "{text}"
+        );
+    }
     let skill = example("skills/teamwire/SKILL.md");
     assert!(
         skill.contains("\"Spec-kit features\" in `reference.md`"),
