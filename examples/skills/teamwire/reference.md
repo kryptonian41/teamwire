@@ -363,8 +363,14 @@ spec-kit command, so write the form for the member's harness in its brief.
    owners fix what it finds.
 
 When the user brings a finished `tasks.md`, committed with its `spec.md` and
-`plan.md`, leave out the spec member and the plan reviewer, and cut the
-implementer's branch from the branch that holds them.
+`plan.md`, leave out the spec member, but the plan reviewer still runs
+`analyze` on it before any implementer starts, because no member has read
+that spec yet. Its `cwd` is a checkout of the branch that holds the spec,
+such as your own checkout. That checkout may have no
+`.specify/feature.json`, so its task says to run analyze's scripts with
+`SPECIFY_FEATURE_DIRECTORY=specs/NNN-name` and
+`SPECIFY_FEATURE_NO_PERSIST=1` set. The user fixes what holds and commits
+it. Then cut the implementer's branch from that branch.
 
 ### Rules for the briefs
 

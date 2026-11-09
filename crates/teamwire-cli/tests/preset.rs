@@ -938,6 +938,16 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     );
     // The closer's own session resolves the lead's checkout, so it follows
     // the command file in its clone instead.
+    // A tasks.md that no member wrote gets the fresh read too.
+    let input = preset_doc("speckit")["_input"].as_str().unwrap().to_owned();
+    for text in [flat.as_str(), &input] {
+        assert!(
+            text.contains(
+                "the plan reviewer still runs `analyze` on it before any implementer starts"
+            ),
+            "{text}"
+        );
+    }
     // The user's checklist ticks live in the spec member's worktree until it
     // commits them, and the implementer's worktree holds only commits.
     for text in [flat.as_str(), &rules_text("speckit")] {
