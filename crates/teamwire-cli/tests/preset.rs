@@ -1317,19 +1317,37 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
             .to_owned()
     };
     for (check, meaning) in [
-        ("committed", "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files"),
-        ("constitution", "The committed constitution, the copy in `HEAD`, still holds a template placeholder"),
+        (
+            "committed",
+            "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files",
+        ),
+        (
+            "constitution",
+            "The committed constitution, the copy in `HEAD`, still holds a template placeholder",
+        ),
         ("integrations", "has no command folder"),
-        ("git extension", "`.specify/extensions.yml` holds the `git` extension"),
+        (
+            "git extension",
+            "`.specify/extensions.yml` holds the `git` extension",
+        ),
         ("events", "A spec-kit runtime event is set up"),
         ("events", "`.codex/hooks.json` exists"),
-        ("events", "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`"),
-        ("feature pointer", "git does not ignore `.specify/feature.json`, so members would commit their pointer"),
+        (
+            "events",
+            "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`",
+        ),
+        (
+            "feature pointer",
+            "git does not ignore `.specify/feature.json`, so members would commit their pointer",
+        ),
         ("workflows", "Never a `warn`"),
         ("workflows", "teamwire starts none of them"),
     ] {
         let text = row(check);
-        assert!(text.contains(meaning), "spec-kit {check} lacks {meaning}: {text}");
+        assert!(
+            text.contains(meaning),
+            "spec-kit {check} lacks {meaning}: {text}"
+        );
     }
 }
 
