@@ -403,7 +403,9 @@ fn an_unreadable_integration_file_warns() {
     let detail = detail_of(&checks, "spec-kit integrations");
     assert!(detail.contains(".specify/integration.json"), "{detail}");
     assert!(
-        detail.contains("run `specify integration status`"),
+        detail.contains(
+            "delete it, run `specify integration install <key>` for each integration members use"
+        ),
         "{detail}"
     );
 }
@@ -1348,6 +1350,72 @@ fn a_tracked_feature_pointer_warns_until_git_rm_cached_is_committed() {
     git(root, &["commit", "-q", "-m", "untrack the pointer"]);
     assert_eq!(
         level_of(&bed.checks(), "spec-kit feature pointer"),
+        Level::Pass
+    );
+}
+
+/// What git 2.54 prints when it refuses a repository another user owns.
+const DUBIOUS: &str = "fatal: detected dubious ownership in repository at '/srv/repo'\n\
+                       To add an exception for this directory, call:\n";
+
+#[test]
+fn a_git_error_is_quoted_as_git_said_it_and_never_read_as_not_committed() {
+    let refused = RunOutput {
+        exit_code: 128,
+        stderr: DUBIOUS.as_bytes().to_vec(),
+        ..answer("")
+    };
+    let mut bed = speckit_bed();
+    let fake = Arc::new(FakePlatform::new());
+    fake.queue_run(Ok(refused.clone()));
+    bed.git = Some(fake);
+    let checks = bed.checks();
+    assert_eq!(speckit_names(&checks), vec!["spec-kit base"]);
+    let detail = detail_of(&checks, "spec-kit base");
+    assert!(
+        detail.contains("(fatal: detected dubious ownership in repository at '/srv/repo')"),
+        "{detail}"
+    );
+    assert!(!detail.contains("cannot resolve"), "{detail}");
+    assert!(!detail.contains("commit"), "{detail}");
+
+    // `show` refused for a file the commit lists.
+    let fake = fake_git(&mut bed, &[CONSTITUTION_FILE]);
+    fake.queue_run(Ok(refused));
+    let checks = bed.checks();
+    let detail = detail_of(&checks, "spec-kit constitution");
+    assert!(
+        detail.contains("git could not read .specify/memory/constitution.md"),
+        "{detail}"
+    );
+    assert!(detail.contains("dubious ownership"), "{detail}");
+    assert!(!detail.contains("not in HEAD"), "{detail}");
+}
+
+#[test]
+fn an_integration_file_missing_from_the_commit_names_the_command_that_writes_one() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    git(root, &["rm", "-q", "--cached", ".specify/integration.json"]);
+    git(root, &["commit", "-q", "-m", "untrack"]);
+    let detail = detail_of(&bed.checks(), "spec-kit integrations").to_owned();
+    assert!(
+        detail.contains(".specify/integration.json is on disk but not in HEAD ("),
+        "{detail}"
+    );
+    assert!(detail.ends_with("commit it on HEAD"), "{detail}");
+
+    std::fs::remove_file(root.join(".specify/integration.json")).unwrap();
+    let detail = detail_of(&bed.checks(), "spec-kit integrations").to_owned();
+    assert!(detail.contains("is not in HEAD ("), "{detail}");
+    assert!(
+        detail.contains("run `specify integration install <key>`"),
+        "{detail}"
+    );
+    // What `specify integration install claude` writes, committed.
+    put_committed(root, ".specify/integration.json", INTEGRATIONS);
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit integrations"),
         Level::Pass
     );
 }

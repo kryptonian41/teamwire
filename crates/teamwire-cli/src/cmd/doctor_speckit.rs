@@ -446,16 +446,32 @@ fn integrations_check(base: &Base<'_>) -> Check {
     let name = "spec-kit integrations";
     let file = INTEGRATION_FILE;
     let at = base.at();
-    let installed: Vec<String> = match base.show(file).and_then(|text| {
-        let text = text.ok_or_else(|| format!("{file} is not in {at}"))?;
-        serde_json::from_str::<serde_json::Value>(&text)
-            .map_err(|e| format!("could not read {file} in {at}: {e}"))
-    }) {
+    // `specify integration install` refuses a broken file and writes a new one in its place.
+    let repair = format!(
+        "run `specify integration install <key>` for each integration members use, then commit \
+         on {}",
+        base.name
+    );
+    let text = match base.show(file) {
+        Ok(Some(text)) => text,
+        Ok(None) if base.root.join(file).is_file() => {
+            return Check::warn(
+                name,
+                format!(
+                    "{file} is on disk but not in {at}; commit it on {}",
+                    base.name
+                ),
+            );
+        }
+        Ok(None) => return Check::warn(name, format!("{file} is not in {at}; {repair}")),
+        Err(e) => return Check::warn(name, e),
+    };
+    let installed = match serde_json::from_str::<serde_json::Value>(&text) {
         Ok(json) => installed_integrations(&json),
         Err(e) => {
             return Check::warn(
                 name,
-                format!("{e}; run `specify integration status` to repair it"),
+                format!("could not read {file} in {at}: {e}; delete it, {repair}"),
             );
         }
     };
