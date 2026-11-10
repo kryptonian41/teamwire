@@ -329,12 +329,23 @@ before launch:
 - A written `.specify/memory/constitution.md`. `init` leaves it as a
   template full of placeholders. Write it with the user, through spec-kit's
   `constitution` command, before the first feature.
+- No git ignore rule for a command folder. `specify init` advises adding
+  `.claude/` to `.gitignore`, but then no worktree member gets the spec-kit
+  commands.
 
-Then run `teamwire doctor` from the repository and read its `spec-kit ...`
-lines. Doctor prints them only when the repository's root holds
-`.specify/`. Each line is `ok` or `warn`, never `FAIL`, so none of them
-stops a launch, but doctor exits 2 on a `warn`. A `warn` names the file and
-what to do. Fix each one before launch:
+Then run `teamwire doctor --base <base>` from the repository, with the
+branch the first member starts from, and read its nine `spec-kit ...`
+lines. Without `--base`, doctor reads `HEAD`. Every line names the ref and
+its commit, as `in <ref> (<sha7>)`, and reads files from that commit, the
+one a worktree is cut from. Two lines also look at the disk:
+`spec-kit committed` lists each spec-kit file on disk that is not in the
+commit, and `spec-kit feature pointer` asks git whether it ignores
+`.specify/feature.json`. Doctor prints the section when `.specify/` is in
+that commit or on disk at the repository's root. A ref git cannot resolve
+gives one warning and no other spec-kit line. Each line is `ok` or `warn`,
+never `FAIL`, so none of them stops a launch, but doctor exits 2 on a
+`warn`. A `warn` names the file and one action that fixes it. Fix each one
+before launch:
 
 | check | a `warn` means |
 | --- | --- |

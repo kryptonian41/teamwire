@@ -1319,7 +1319,10 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
     let section = speckit_section();
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`teamwire doctor` from the repository and read its `spec-kit ...` lines",
+            "`teamwire doctor --base <base>` from the repository",
+            "read its nine `spec-kit ...` lines",
+            "`spec-kit version`",
+            "`spec-kit hooks`",
             "`spec-kit committed`",
             "`spec-kit constitution`",
             "`spec-kit integrations`",
@@ -1335,6 +1338,11 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
         }
         assert!(!text.contains("by hand: "), "{place}: {text}");
     }
+    assert!(
+        rules.contains("Do not git-ignore a command folder")
+            && section.contains("No git ignore rule for a command folder"),
+        "the guidance does not warn against ignoring a command folder"
+    );
     assert!(
         !section.contains("Then check that spec-kit added nothing"),
         "{section}"
