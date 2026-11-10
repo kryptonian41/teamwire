@@ -19,6 +19,9 @@ use teamwire_core::{Config, Harness, HarnessId, HostId, Registry, TaskClass};
 use teamwire_fakes::{FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_launch::{ValidateEnv, parse_spec, validate};
 
+#[path = "preset/run.rs"]
+mod run;
+
 fn presets_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/presets")
 }
@@ -863,7 +866,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     );
     assert!(
         check.contains(&format!(
-            "! grep -nE '^- \\[ \\] T[0-9]+' {folder}/tasks.md"
+            "! grep -nE '^[[:space:]]*[-*+][[:space:]]+\\[[[:space:]]*\\][[:space:]]*T[0-9]+' {folder}/tasks.md"
         )),
         "{check}"
     );
@@ -963,7 +966,7 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     // Each fix is pinned in every place it changed. `! grep` passes on a
     // missing file, so every grep example starts with `test -s`.
     assert!(
-        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \\[ \\] T[0-9]+' specs/NNN-name/tasks.md`"),
+        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^[[:space:]]*[-*+][[:space:]]+\\[[[:space:]]*\\][[:space:]]*T[0-9]+' specs/NNN-name/tasks.md`"),
         "the reference's check example lacks test -s"
     );
     assert!(

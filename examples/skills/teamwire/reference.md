@@ -458,10 +458,11 @@ it. Then cut the implementer's branch from that branch.
   make it fail.
 - **Check.** The implementer's `check` needs `tasks.md`, runs the tests
   and fails on any unticked task, such as
-  `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
+  `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^[[:space:]]*[-*+][[:space:]]+\[[[:space:]]*\][[:space:]]*T[0-9]+' specs/NNN-name/tasks.md`.
   Keep the `test -s`. Without it the check passes when the folder name is
   wrong, because `!` turns grep's missing-file error into success.
-  The check still passes on a lowercase `[x]` or a deleted task line, so
+  The grep also catches an open task with extra spaces, a tab, an indent
+  or a `*` or `+` bullet. The check still passes on a lowercase `[x]` or a deleted task line, so
   the closer counts the ticks (see Converge below).
   When the stories split, a member's `check` is
   `test -s specs/NNN-name/tasks.md && <its own tests>`, with no grep. Wave 1
