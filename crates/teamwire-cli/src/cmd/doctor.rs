@@ -13,6 +13,7 @@ use std::time::Duration;
 use teamwire_core::{CheckOutcome, Clock, Command, LeadCommand, LeadTarget, Platform, Registry};
 
 use crate::Global;
+use crate::cmd::doctor_speckit::speckit_checks;
 use crate::cmd::doctor_teams::database_checks;
 pub(crate) use crate::cmd::host_pick::{Host, HostPick, pick_host};
 use crate::cmd::install::wanted_command;
@@ -337,6 +338,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
         checks.extend(herdr_pi_check(inputs));
     }
     checks.push(worktrees_check(inputs));
+    checks.extend(speckit_checks(inputs));
     checks.extend(binary_checks(inputs));
     checks.push(credential_check(inputs));
     checks.extend(harness_checks(inputs, lead_setup_check::lead_checks));
