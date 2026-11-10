@@ -41,12 +41,18 @@ rules in `crates/teamwire-launch/contracts/` do not change.
 
 1. **A spec member writes the spec.** An implementer in its own worktree
    owns `specs/NNN-name/`. It stops once per batch of questions. It runs
-   `specify` and stops with its questions, at most 3. The lead asks the user
-   and reprompts it with the answers. It writes them into `spec.md`, runs
-   `clarify`'s scan, and stops again with clarify's questions, at most 5,
-   each with clarify's recommended option. The lead asks the user and
-   reprompts again. It records those answers through `clarify`, then runs
-   `plan` and `tasks`, and commits after each command. A further stop is
+   `specify` and stops with its questions, at most 3. `specify` ranks no
+   option, so the member marks its own recommended option for each question
+   and says the mark is its own. The lead asks the user and reprompts it
+   with the answers. It writes them into `spec.md`, runs `clarify`'s scan,
+   and stops again with clarify's questions, at most 5, each with clarify's
+   recommended option. The lead asks the user and reprompts again.
+   `clarify` asks one question at a time in chat, so the member follows
+   clarify's write steps by hand with the lead's answers. Both batches go
+   in clarify's `## Clarifications` section of `spec.md`, under
+   `### Session YYYY-MM-DD`, in clarify's format
+   `- Q: <question> → A: <answer>`. Then it runs `plan` and `tasks`, and
+   commits after each command. A further stop is
    allowed only when an answer raises a new question. The member never
    answers a spec-kit question itself, unless the lead's reprompt says to
    take the recommended option, and then lists each such answer under
@@ -55,7 +61,10 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    which the lead reads as a question round. It records `done` only once
    `tasks.md` exists and its check passes. The user reviews `spec.md` and
    `plan.md`, and ticks any checklist from `checklist` at that review,
-   because spec-kit lets only a reviewer tick one. The spec member then
+   because spec-kit lets only a reviewer tick one. `specify` writes
+   `checklists/requirements.md` itself and ticks its items when it
+   validates the spec, so `implement`'s checklist stop fires only for a
+   checklist left unticked. The spec member then
    commits those ticks before any implementer starts. A plan reviewer in a
    pane, with its `cwd` at the spec member's worktree, runs `analyze` and
    reads the briefs. The spec member fixes what holds, once. A finished

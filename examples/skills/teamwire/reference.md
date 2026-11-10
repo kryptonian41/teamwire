@@ -384,18 +384,27 @@ it. Then cut the implementer's branch from that branch.
   chat, and the seat rules forbid that wait. So the spec member stops once
   per batch of questions:
   1. It runs `specify` and stops with its questions from `specify`, at
-     most 3.
+     most 3. `specify` ranks no option, so the member marks its own
+     recommended option for each question and says the mark is its own.
   2. You ask the user and reprompt it with the answers. It writes them into
      `spec.md`, runs `clarify`'s scan, and stops again with clarify's
      questions, at most 5, each with clarify's recommended option.
-  3. You ask the user and reprompt it again. It records those answers
-     through `clarify`, then runs `plan` and `tasks`.
+  3. You ask the user and reprompt it again. `clarify` asks one question at
+     a time in chat, so the member cannot run it with a batch of answers.
+     It follows clarify's write steps by hand with your answers, then runs
+     `plan` and `tasks`.
+
+  Both batches go in clarify's `## Clarifications` section of `spec.md`,
+  under `### Session YYYY-MM-DD`, one line per answer in clarify's format
+  `- Q: <question> → A: <answer>`, so `spec.md` has one place for every
+  answer.
 
   A further stop is allowed only when an answer raises a new question. The
   member never answers a spec-kit question itself, unless your reprompt
-  says to take the recommended option. Then it lists each such answer under
-  Decisions I made, so the user can tell those answers from the user's own
-  in `spec.md`.
+  says to take the recommended option: the member's own mark at stop 1 and
+  clarify's at stop 2. Then it lists each such answer under Decisions I
+  made, with whose mark it took, so the user can tell those answers from
+  the user's own in `spec.md`.
 
   At each stop the member writes its questions under 'Questions for the
   lead' in its report and records
@@ -406,13 +415,18 @@ it. Then cut the implementer's branch from that branch.
   the answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
   member records `done` only after `tasks` is written and its check passes.
-- **Checklists.** `checklist` writes its items unticked, and spec-kit says
-  only a reviewer ticks them. So the user ticks them in
+- **Checklists.** `specify` writes `checklists/requirements.md` itself and
+  ticks its items when it validates the spec, so that checklist is ticked
+  before any review. `checklist` writes its items unticked, and spec-kit
+  says only a reviewer ticks them. The reviewer-only rule is about the
+  `checklist` command's checklists. So the user ticks those in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
   `plan.md`. Then reprompt the spec member to commit them before any implementer starts,
-  because the implementer's worktree holds only commits. `implement` stops on an unticked checklist with
-  "Do you want to proceed with implementation anyway? (yes/no)". The
-  implementer's brief says to treat that stop as a question to you.
+  because the implementer's worktree holds only commits. `implement` stops on a checklist with unticked items with
+  "Do you want to proceed with implementation anyway? (yes/no)". So the
+  stop fires only when a checklist has unticked items, such as one from
+  `checklist` that the user left open. The implementer's brief says to
+  treat that stop as a question to you.
 - **Ticks.** `implement` ticks `[X]` on each finished task in `tasks.md`.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
   to tick only the lines of its own phases. Lines in separate phases should

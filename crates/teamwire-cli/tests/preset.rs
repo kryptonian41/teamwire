@@ -1063,6 +1063,69 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     );
 }
 
+/// The text with every run of whitespace made one space, so a phrase matches
+/// across a line break.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The reference's "Spec-kit features" section, flat.
+fn speckit_section() -> String {
+    let reference = example("skills/teamwire/reference.md");
+    let (_, section) = reference
+        .split_once("\n## Spec-kit features\n")
+        .unwrap_or_else(|| unreachable!("reference.md has no Spec-kit features section"));
+    flat(section.split("\n## ").next().unwrap())
+}
+
+/// ADR 0041, flat.
+fn adr_0041() -> String {
+    flat(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/adr/0041-spec-kit-features-run-through-teamwire-seats.md"),
+        )
+        .unwrap(),
+    )
+}
+
+/// The pilot showed what the spec stage really does: `specify` ranks no
+/// option, `clarify` cannot take a batch of answers, both batches need one
+/// place in `spec.md`, and `specify` ticks its own checklist.
+#[test]
+fn the_speckit_spec_stage_states_what_the_pilot_showed() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    for (place, text) in [("rules", &rules), ("reference", &section), ("adr", &adr)] {
+        for needed in [
+            "`specify` ranks no option",
+            "marks its own recommended option for each question and says the mark is its own",
+            "follows clarify's write steps by hand",
+            "`## Clarifications`",
+            "`### Session YYYY-MM-DD`",
+            "`- Q: <question> → A: <answer>`",
+            "`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+        assert!(
+            !text.contains("records those answers through `clarify`"),
+            "{place} still says clarify records a batch: {text}"
+        );
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "the member's own mark at stop 1 and clarify's at stop 2",
+            "so `spec.md` has one place for every answer",
+            "The reviewer-only rule is about the `checklist` command's checklists",
+            "So the stop fires only when a checklist has unticked items",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]
