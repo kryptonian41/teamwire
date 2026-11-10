@@ -1,7 +1,7 @@
 # ADR 0041: Spec-kit features run through teamwire's seats
 
 Status: accepted, 2026-11-09, and amended 2026-11-10 from the pilot
-feature's findings. Extends ADR 0038 (ticket refs) with a
+feature's findings. Partly superseded by ADR 0042. Extends ADR 0038 (ticket refs) with a
 provider for spec-kit features. ADR 0029 still holds: pi members keep
 `--no-approve` and load no folder prompt file.
 

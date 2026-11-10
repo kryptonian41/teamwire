@@ -1743,3 +1743,36 @@ fn the_speckit_guidance_states_afk_untested_parts_and_the_tested_build() {
         "the metrics row reads a missing count as zero"
     );
 }
+
+/// ADR 0042 records what the review changed, and what is deferred, inside
+/// the repository; ADR 0041 keeps its words and points to it.
+#[test]
+fn adr_0042_supersedes_the_changed_parts_of_adr_0041() {
+    let adr = flat(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/adr/0042-spec-kit-after-the-review.md"),
+        )
+        .unwrap(),
+    );
+    for needed in [
+        "supersedes ADR 0041 decision 7",
+        "`teamwire speckit draft`",
+        "spec-kit's `bug` extension",
+        "its `assess` extension",
+        "`1 question for the parent.`",
+        "`^[1-9][0-9]* questions? for the parent\\.`",
+        "`git merge --no-ff --no-edit <sha>`",
+        "`teamwire doctor --base REF`",
+        "`spec-kit version`",
+        "`spec-kit hooks`",
+        "`TEAMWIRE_SCRATCH`",
+        "AFK runs spec-kit only from a reviewed spec",
+        "supersedes ADR 0041's \"The pilot is their first test\"",
+    ] {
+        assert!(adr.contains(needed), "ADR 0042 lacks {needed}");
+    }
+    let old = adr_0041();
+    let status = old.split("## Context").next().unwrap();
+    assert!(status.contains("Partly superseded by ADR 0042"), "{status}");
+}
