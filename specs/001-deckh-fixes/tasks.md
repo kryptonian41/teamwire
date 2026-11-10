@@ -28,13 +28,14 @@ for your finding before its first task.
 
 **Protected paths** (AGENTS.md): `tests/fakes/`, `scripts/`, `Cargo.toml`
 and `Cargo.lock` are protected. Ask the lead before editing any of them.
-T040 may need a `FakeHarness` setter in `tests/fakes/`.
+The lead granted one exception: T040 may add to `tests/fakes/src/harness.rs`
+the one `FakeHarness` setter that F10's test needs, and nothing else.
 
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: The task can run in parallel. It touches different files and
   depends on no task that is still open.
-- **[Story]**: US1, US2 or US3.
+- **[Story]**: US1, US2, US3 or US4.
 
 ---
 
@@ -48,7 +49,7 @@ T040 may need a `FakeHarness` setter in `tests/fakes/`.
 
 ## Phase 2: Foundational
 
-**Purpose**: No code prerequisite is shared by all three stories. Each
+**Purpose**: No code prerequisite is shared by all four stories. Each
 story starts from `develop`. The stories share files only for guidance
 text, listed in research.md under "Files shared between stories".
 
@@ -248,7 +249,7 @@ dry run.
   - `current_tool` reads that field in `crates/teamwire-harness-pi/src/session.rs:11-17`, wired into the `Harness` impl in `crates/teamwire-harness-pi/src/lib.rs`.
 
   T036 passes.
-- [ ] T040 [US3] Write the failing tests `status_role_shows_the_current_tool_and_its_duration` in `crates/teamwire-watch/tests/status.rs` and `status_role_prints_how_long_the_tool_has_run` in `crates/teamwire-cli/tests/status.rs`. With the fake harness returning a `ToolRun` 900 s old, the view's `current_tool.seconds == 900`, and the output holds `tool: Bash, running 15m`. If `FakeHarness` in `tests/fakes/` needs a setter, ask the lead first, because that path is protected.
+- [ ] T040 [US3] Write the failing tests `status_role_shows_the_current_tool_and_its_duration` in `crates/teamwire-watch/tests/status.rs` and `status_role_prints_how_long_the_tool_has_run` in `crates/teamwire-cli/tests/status.rs`. With the fake harness returning a `ToolRun` 900 s old, the view's `current_tool.seconds == 900`, and the output holds `tool: Bash, running 15m`. If the fake harness cannot return a `ToolRun` yet, add one setter to `FakeHarness` in `tests/fakes/src/harness.rs` (protected; the lead granted this file for this one setter only), beside `set_liveness` (`tests/fakes/src/harness.rs:151`), and name the grant in the commit's progress line.
 - [ ] T041 [US3] Implement the watch and CLI side:
   - Add `crates/teamwire-watch/src/tool.rs`, modelled on `crates/teamwire-watch/src/context.rs:13-26`.
   - Add the field `current_tool: Option<ToolView>` (with `name`, `started_at` and `seconds`) to `MemberView` in `crates/teamwire-watch/src/lib.rs:57-81`.
@@ -266,11 +267,61 @@ dry run.
 
 ---
 
-## Phase 6: Polish & cross-cutting
+## Phase 6: User Story 4 - A waiver for a file holds until that file changes (Priority: P4)
 
-- [ ] T044 Check that every new or changed source file in `crates/` stays under 400 lines, and split any that does not: `crates/teamwire-msg/src/send.rs`, `crates/teamwire-watch/src/plan.rs`, `crates/teamwire-watch/src/status.rs`, `crates/teamwire-close/src/member_close.rs`, `crates/teamwire-cli/src/cmd/speckit.rs` and `crates/teamwire-cli/src/cmd/speckit/*.rs`.
-- [ ] T045 Run `scripts/gate.sh fast` and `scripts/test-changed.sh` from the repository root, and record both exit codes in your report (changes no file).
-- [ ] T046 Run `teamwire speckit draft specs/001-deckh-fixes/tasks.md` on this feature, and record its phase table in your report for the lead (changes no file).
+**Goal**: A waiver for a flag that names one file counts at a later HEAD
+while that file's content is the same as at the waived HEAD. Any change to
+the file, a merge or rebase included, ends it. A waiver for a flag that
+names no file, or for `uncommitted:<path>`, ends at the next commit, as
+today.
+
+**Independent Test**: Run `cargo test -p teamwire-verify --locked --test verify`. The tests listed in research.md under F12 pass. The two marked "fails on `develop`" fail with the fix reverted.
+
+### ADR for US4
+
+- [ ] T044 [US4] Write `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`. Record the F12 decision from `specs/001-deckh-fixes/research.md`. It supersedes ADR 0009 point 2 (`docs/adr/0009-verify-verdicts.md:30-33`) only for the flags that name one file: `test-deleted`, `config-changed`, `outside-owns`, `weakened`, `lint-removed`, `test-removed` and `asserts-removed`. State that a flag naming no file, `uncommitted:<path>` and `head-moved` keep the old rule, and that VER-5's record-at-HEAD rule for removal stays. Do not edit ADR 0009.
+
+### Tests for US4 (write first)
+
+- [ ] T045 [US4] Write the two failing tests in `crates/teamwire-verify/tests/verify.rs`, beside `the_spec_kit_constitution_is_check_config` (`verify.rs:382`), with the existing helpers (`repo_on_work`, `implementer`, `report_all_commits`, `run_one`, `flag_ids`, `waive`):
+  - `a_file_flag_waiver_holds_while_that_file_is_unchanged`: the deckh replay. A member with `owns = ["src/"]` changes `.specify/memory/constitution.md`. The lead waives `config-changed:.specify/memory/constitution.md` and `outside-owns:.specify/memory/constitution.md`. The member commits `src/b.rs`. Assert `verdict == Verdict::Pass` and both flags `waived`.
+  - `a_waiver_for_a_deleted_file_holds_while_the_file_stays_deleted`: with `deleted_test()` (`verify.rs:529-540`), waive `test-deleted:tests/a.rs`, commit `src/more.rs`, assert the flag is `waived`.
+
+  Run `cargo test -p teamwire-verify --locked --test verify a_file_flag_waiver_holds a_waiver_for_a_deleted_file` and see both fail on the verdict or `waived` assertion. These tests need no new name.
+- [ ] T046 [US4] Write five tests in `crates/teamwire-verify/tests/verify.rs` that keep the rest of the rule. They pass on `develop` and must still pass after T047:
+  - `a_file_flag_waiver_ends_when_that_file_changes`: after the waivers of T045's first test, a commit changes the constitution again. The flags are not waived and the verdict is `Verdict::Flagged`.
+  - `a_file_flag_waiver_ends_when_a_merge_changes_that_file`: a side branch made with `repo.git(&["checkout", "-b", ...])` changes the constitution, and the member merges it with `--no-ff`. The flags are not waived.
+  - `a_waiver_at_a_commit_git_does_not_know_does_not_carry_over`: insert a waiver row with `tx.insert_waiver` and `head_sha` of forty `0`s for the constitution flag. The flag is not waived.
+  - `a_waiver_for_a_flag_with_no_file_ends_at_the_next_commit`: an implementer with an empty `owns` raises `no-owns`. Waive it, commit, and assert `no-owns` is not waived.
+  - `an_uncommitted_path_waiver_ends_at_the_next_commit`: waive `uncommitted:notes.txt`, commit another file, and assert the flag is not waived.
+
+### Implementation for US4
+
+- [ ] T047 [US4] Implement the rule, in one commit with its guidance:
+  - In `crates/teamwire-verify/src/inspect.rs:11-23`, add `path: Option<String>` to `RawFlag`, keep `RawFlag::new` with `path: None`, and add `RawFlag::about(path, id, detail)`. Use `about` at the file-flag sites: `inspect.rs:45` (`test-deleted`), `:51` (`config-changed`), `:57` (`outside-owns`), `:120` and `:177` (`weakened`), `:192` (`lint-removed`, the old path), `:208` (`test-removed`) and `:223` (`asserts-removed`). Leave `bad-owns` at `:35`.
+  - In `crates/teamwire-verify/src/git.rs`, beside `file_at` (`git.rs:161-164`), add `Git::blob(rev, path) -> Result<Option<String>, VerifyError>` that runs `git ls-tree -z --full-tree <rev> -- <path>`: `Ok(Some(id))` for the blob id, `Ok(None)` for empty output, `Err` when git does not know `rev`.
+  - Add `crates/teamwire-verify/src/waivers.rs` with one function that returns the waived flag ids for a member at HEAD. Read the member's rows with `tx.all_waivers()` filtered by role (no store change). A flag is waived when a waiver for its id is at HEAD, or when it has a path and a waiver for its id at an older HEAD `w` has `blob(w, path) == blob(HEAD, path)`, both `Ok`. Declare the module in `crates/teamwire-verify/src/lib.rs:26-32`.
+  - In `crates/teamwire-verify/src/lib.rs:310-317`, call that function in place of the `tx.waivers(&member.role, head)` read. Rewrite the crate note at `lib.rs:1-6` ("waivers bound to a HEAD", "Never: ... count a waiver for a HEAD other than the one it was recorded at") to the new rule.
+  - In `crates/teamwire-verify/tests/verify.rs`, change the file note at `:1-2` and the last block of `a_waiver_makes_the_flagged_pass_a_pass_for_that_head_only` (`verify.rs:627-632`): the comment names ADR 0045, and after the commit to `src/more.rs` it expects `Verdict::Pass` and the flag `waived`. Keep every assert. List this changed expectation in your report, because the lead's weakening check looks for one.
+
+  In the same commit, update:
+  - `examples/skills/teamwire/reference.md:204-208` ("Verify flags"): replace "A later commit needs a new waiver" with the rule: a waiver for a flag that names one file holds until that file's content changes, a merge or rebase included; any other waiver, `uncommitted:<path>` included, ends at the next commit.
+  - `examples/skills/teamwire/SKILL.md:790-791`: a finished implementer gets a waiver per flag; a file flag's waiver holds until that file changes, and any other flag needs one at its final HEAD.
+  - `docs/api/cli.md:432-433`, the `--waive` sentence of `teamwire verify`.
+  - `docs/requirements.md:240` (VER-5): add the carry-over rule, and cite ADR 0045 and the T045 and T046 tests.
+  - `docs/failure-modes.md:63`: a file flag's waiver carries over only while that file is unchanged, and verify must still run at the new HEAD.
+
+  `teamwire verify` has no `--json` output, and `Flag` keeps its fields, so `ui/src/shared/teamwire.ts` does not change. Run `cargo test -p teamwire-verify --locked` and `cargo test -p teamwire-close --locked` (close reads verify records).
+
+**Checkpoint**: The deckh replay passes after one waiver per flag.
+
+---
+
+## Phase 7: Polish & cross-cutting
+
+- [ ] T048 Check that every new or changed source file in `crates/` stays under 400 lines, and split any that does not: `crates/teamwire-msg/src/send.rs`, `crates/teamwire-watch/src/plan.rs`, `crates/teamwire-watch/src/status.rs`, `crates/teamwire-close/src/member_close.rs`, `crates/teamwire-cli/src/cmd/speckit.rs`, `crates/teamwire-cli/src/cmd/speckit/*.rs`, `crates/teamwire-verify/src/inspect.rs` and `crates/teamwire-verify/src/waivers.rs`.
+- [ ] T049 Run `scripts/gate.sh fast` and `scripts/test-changed.sh` from the repository root, and record both exit codes in your report (changes no file).
+- [ ] T050 Run `teamwire speckit draft specs/001-deckh-fixes/tasks.md` on this feature, and record its phase table in your report for the lead (changes no file).
 
 ---
 
@@ -279,9 +330,12 @@ dry run.
 ### Phase dependencies
 
 - Setup (T001) and Foundational (T002) come first. They change no file.
-- US1 (Phase 3), US2 (Phase 4) and US3 (Phase 5) depend on no other story's
-  code. They share guidance files, listed below.
-- Polish (Phase 6) comes after the stories that are built.
+- US1 (Phase 3), US2 (Phase 4), US3 (Phase 5) and US4 (Phase 6) depend on
+  no other story's code. They share guidance files and
+  `crates/teamwire-verify/src/lib.rs`, listed below.
+- Polish (Phase 7) comes after the stories that are built.
+- One implementer runs every phase in order, so the shared files need no
+  merge order.
 
 ### Within each story
 
@@ -295,24 +349,29 @@ dry run.
   T024-T027 come after T022 and T023.
 - In US3, F6, F8 and F11 have no dependencies. F10's T033 comes before
   T034-T041.
+- In US4, T044 comes first. T045 and T046 come before T047. T047 edits
+  `crates/teamwire-verify/src/lib.rs` after US2's T023 has exported `Owns`
+  there.
 
 ### Files shared between stories (the lead measures these for a split)
 
 | File | Tasks |
 |---|---|
-| `docs/api/cli.md` | US1: T009, T011, T013, T015, T017, T019. US2: T028. US3: T041, T043 |
-| `examples/skills/teamwire/SKILL.md` | US1: T009, T015, T017, T019. US2: T028. US3: T032, T041 |
-| `examples/skills/teamwire/reference.md` | US1: T011, T013, T015, T019. US2: T028. US3: T030 |
+| `docs/api/cli.md` | US1: T009, T011, T013, T015, T017, T019. US2: T028. US3: T041, T043. US4: T047 |
+| `examples/skills/teamwire/SKILL.md` | US1: T009, T015, T017, T019. US2: T028. US3: T032, T041. US4: T047 |
+| `examples/skills/teamwire/reference.md` | US1: T011, T013, T015, T019. US2: T028. US3: T030. US4: T047 |
 | `examples/presets/speckit.json` | US2: T028. US3: T030 |
 | `crates/teamwire-cli/tests/preset.rs` | US3: T029, T031 (US2's T028 runs it, but does not edit it) |
 | `crates/teamwire-watch/src/status.rs` | US1: T015. US3: T041 |
 | `crates/teamwire-watch/tests/status.rs` | US1: T014, T015. US3: T040 |
 | `crates/teamwire-cli/tests/status.rs` | US1: T008. US3: T040 |
-| `docs/requirements.md` | US1: T013, T015, T017 |
+| `docs/requirements.md` | US1: T013, T015, T017. US4: T047 |
+| `docs/failure-modes.md` | US1: T017. US4: T047 |
+| `crates/teamwire-verify/src/lib.rs` | US2: T023. US4: T047 |
 
 ### Tasks that change no file
 
-T001, T002, T045 and T046.
+T001, T002, T049 and T050.
 
 ### Parallel opportunities
 
@@ -325,6 +384,9 @@ These sets of tasks touch disjoint files:
 - US2's code (`crates/teamwire-cli/src/cmd/speckit*`,
   `crates/teamwire-verify/`) touches no file of US1 or US3. Only its
   guidance task, T028, shares files.
+- US4's code is all in `crates/teamwire-verify/`. Its only code file shared
+  with another story is `crates/teamwire-verify/src/lib.rs` (US2's T023).
+  T044, the US4 ADR, touches no other task's file.
 
 ---
 
@@ -352,11 +414,14 @@ Task: "T042 F11 test in crates/teamwire-close/tests/ignored_files.rs"
 2. US2 gives the split table and the `owns` drafts for the next spec-kit
    team.
 3. US3's four small fixes can ship in any order.
+4. US4 ends the repeated waivers for a file that did not change.
 
 ### Split for parallel implementers
 
-The split belongs to the lead and the user. Each story's code is disjoint
-from the others' code. The shared files are guidance text and the status
+The lead and the user decided on one implementer that runs every phase in
+order. The notes below stay for a later team. Each story's code is disjoint
+from the others' code, except `crates/teamwire-verify/src/lib.rs` (US2 and
+US4). The shared files are guidance text and the status
 code and tests above. A split per story needs one owner for each shared
 file, or a merge order. Any merge conflict in a guidance file is a text
 conflict.
