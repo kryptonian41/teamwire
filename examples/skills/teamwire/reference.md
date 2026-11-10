@@ -310,17 +310,26 @@ before launch:
   template full of placeholders. Write it with the user, through spec-kit's
   `constitution` command, before the first feature.
 
-Then check that spec-kit added nothing that runs on its own:
+Then run `teamwire doctor` from the repository and read its `spec-kit ...`
+lines. Doctor prints them only when the repository's root holds
+`.specify/`. Each line is `ok` or `warn`, never `FAIL`, so none of them
+stops a launch, but doctor exits 2 on a `warn`. A `warn` names the file and
+what to do. Fix each one before launch:
 
-- The `installed:` list in `.specify/extensions.yml` holds no `git`
-  extension.
-- No extension manifest, `.specify/extensions/<id>/extension.yml`, has a
-  top-level `events:` key, and no `.specify/integration-events.yml` exists.
-  An extension declares its `events:` in its own manifest, not in
-  `.specify/extensions.yml`.
-- No `.codex/config.toml` exists, and `.claude/settings.json` holds no hook
-  that spec-kit wrote. Spec-kit tags each of its hooks with
-  `"__speckit_event__": true`.
+| check | a `warn` means |
+| --- | --- |
+| `spec-kit committed` | `.specify/memory/constitution.md` is not tracked by git, so a worktree member gets no spec-kit files. Commit `.specify/` and the command folders. |
+| `spec-kit constitution` | The constitution still holds a template placeholder, such as `[PROJECT_NAME]`. Write it through spec-kit's `constitution` command. |
+| `spec-kit integrations` | An integration listed in `.specify/integration.json` has no command folder: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. The `ok` line lists the installed integrations. |
+| `spec-kit git extension` | The `installed:` list in `.specify/extensions.yml` holds the `git` extension, which creates and switches branches. |
+| `spec-kit events` | A spec-kit runtime event is set up: an extension manifest, `.specify/extensions/<id>/extension.yml`, has a top-level `events:` key, or `.specify/integration-events.yml` exists, or `.codex/config.toml` exists, or `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`. An extension declares its `events:` in its own manifest, not in `.specify/extensions.yml`. |
+| `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature. |
+| `spec-kit workflows` | Never a `warn`. The line lists the workflow ids in `.specify/workflows/workflow-registry.json` and says teamwire starts none of them. |
+
+`specify init` also installs a workflow,
+`.specify/workflows/speckit/workflow.yml`, listed in
+`.specify/workflows/workflow-registry.json`. Nothing runs it unless someone
+runs `specify workflow run`, and no teamwire member does.
 
 The `git` extension creates and switches branches, and teamwire owns the
 branches. An extension with `events:` writes `.codex/config.toml`, and

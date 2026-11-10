@@ -192,8 +192,9 @@ Also settled by the design:
   holds the flow, the harness table, what the base branch must hold and the
   brief rules. Every lead harness reads it, so Claude Code, Codex and pi
   leads get the feature alike.
-- Nothing checks spec-kit's preconditions yet. The lead checks the base
-  branch by hand until step B.
+- `teamwire doctor` checks spec-kit's preconditions in a repository whose
+  root holds `.specify/`. It prints seven `spec-kit ...` lines, each `ok`
+  or `warn`, and the lead reads them before launch.
 - The merge of tick lines from parallel implementers, and `converge` across
   parallel branches, are unproven. The pilot is their first test. If tick
   lines conflict at the merge, decision 3 is revisited.

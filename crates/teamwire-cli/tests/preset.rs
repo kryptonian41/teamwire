@@ -1244,6 +1244,53 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
     }
 }
 
+/// Doctor now checks the BEFORE rule, so the lead reads its `spec-kit`
+/// lines instead of checking by hand, and `specify init` installs a
+/// workflow that nothing runs. Close waits only for a closer that started.
+#[test]
+fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`teamwire doctor` from the repository and read its `spec-kit ...` lines",
+            "`spec-kit committed`",
+            "`spec-kit constitution`",
+            "`spec-kit integrations`",
+            "`spec-kit git extension`",
+            "`spec-kit events`",
+            "`spec-kit feature pointer`",
+            "`spec-kit workflows`",
+            "`.specify/workflows/speckit/workflow.yml`",
+            "`.specify/workflows/workflow-registry.json`",
+            "Nothing runs it unless someone runs `specify workflow run`, and no teamwire member does",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+        assert!(!text.contains("by hand: "), "{place}: {text}");
+    }
+    assert!(
+        !section.contains("Then check that spec-kit added nothing"),
+        "{section}"
+    );
+    let adr = adr_0041();
+    assert!(
+        !adr.contains("checks the base branch by hand") && adr.contains("`teamwire doctor`"),
+        "{adr}"
+    );
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    assert!(
+        skill.contains(
+            "It also refuses any other member while a closer runs in the team and has not reported since its latest start or reprompt"
+        ) && skill.contains("A team with no closer yet gets no closer refusal"),
+        "the skill does not say when close waits for a closer"
+    );
+    assert!(
+        !skill.contains("while the team's closer has not reported"),
+        "the skill still says close waits for a closer that never started"
+    );
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]

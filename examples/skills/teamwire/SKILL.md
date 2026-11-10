@@ -780,8 +780,11 @@ the user which member and why.
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
 worktree. Removing too early costs more: `verify` skips removed members, and
 the owner fixes findings on its work most cheaply. So `close --role` refuses
-an implementer with no passing verify at its current HEAD, and any member
-while the team's closer has not reported, unless you pass `--unverified`. A
+an implementer with no passing verify at its current HEAD. It also refuses
+any other member while a closer runs in the team and has not reported since
+its latest start or reprompt. `--unverified` overrides both. A team with no
+closer yet gets no closer refusal, so a plan reviewer can go as soon as you
+have acted on its report. A
 commit after verify passed makes it refuse again until verify runs again. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
 Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`
