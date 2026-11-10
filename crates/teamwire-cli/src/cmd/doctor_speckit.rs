@@ -26,7 +26,10 @@ pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     };
     vec![
         committed_check(inputs, &root),
+        constitution_check(&root),
+        integrations_check(&root),
         feature_pointer_check(inputs, &root),
+        workflows_check(&root),
     ]
 }
 
@@ -88,4 +91,132 @@ fn feature_pointer_check(inputs: &Inputs<'_>, root: &Path) -> Check {
         Ok(code) => Check::warn(name, format!("git check-ignore exited with code {code}")),
         Err(e) => Check::warn(name, format!("could not run git: {e}")),
     }
+}
+
+/// spec-kit's constitution template marks each slot as `[PROJECT_NAME]`,
+/// `[PRINCIPLE_1_NAME]` and so on: capitals, digits and at least one
+/// underscore. Task markers such as `[P]`, `[US1]` and `[NEEDS CLARIFICATION]`
+/// do not have that shape.
+fn first_placeholder(text: &str) -> Option<&str> {
+    text.split('[')
+        .skip(1)
+        .filter_map(|rest| rest.split_once(']').map(|(inside, _)| inside))
+        .find(|inside| {
+            inside.contains('_')
+                && inside.starts_with(|c: char| c.is_ascii_uppercase())
+                && inside
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+        })
+}
+
+fn constitution_check(root: &Path) -> Check {
+    let name = "spec-kit constitution";
+    match std::fs::read_to_string(root.join(CONSTITUTION)) {
+        Ok(text) => match first_placeholder(&text) {
+            Some(slot) => Check::warn(
+                name,
+                format!(
+                    "{CONSTITUTION} still holds the template placeholder [{slot}]; \
+                     fill it in with /speckit-constitution and commit it"
+                ),
+            ),
+            None => Check::pass(name, "no template placeholder left"),
+        },
+        Err(e) => Check::warn(
+            name,
+            format!("could not read {CONSTITUTION}: {e}; write it with /speckit-constitution"),
+        ),
+    }
+}
+
+/// Where each integration teamwire can run keeps its spec-kit commands: a
+/// folder, and the start and end of an entry's name in it. Another
+/// integration is listed without a folder check.
+fn command_folder(integration: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match integration {
+        "claude" => Some((".claude/skills", "speckit-", "")),
+        "codex" => Some((".agents/skills", "speckit-", "")),
+        "pi" => Some((".pi/prompts", "speckit.", ".md")),
+        _ => None,
+    }
+}
+
+fn has_entry(dir: &Path, start: &str, end: &str) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with(start) && n.ends_with(end))
+        })
+    })
+}
+
+fn integrations_check(root: &Path) -> Check {
+    let name = "spec-kit integrations";
+    let file = ".specify/integration.json";
+    let installed: Vec<String> = match std::fs::read_to_string(root.join(file))
+        .map_err(|e| e.to_string())
+        .and_then(|text| {
+            serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string())
+        }) {
+        Ok(json) => json
+            .get("installed_integrations")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|v| v.as_str().map(str::to_owned))
+            .collect(),
+        Err(e) => return Check::warn(name, format!("could not read {file}: {e}")),
+    };
+    let missing: Vec<String> = installed
+        .iter()
+        .filter_map(|key| {
+            let (dir, start, end) = command_folder(key)?;
+            (!has_entry(&root.join(dir), start, end)).then(|| {
+                format!(
+                    "{key} has no {dir}/{start}*{end}; run `specify integration upgrade {key}` \
+                     and commit the folder"
+                )
+            })
+        })
+        .collect();
+    let list = if installed.is_empty() {
+        "none".to_owned()
+    } else {
+        installed.join(", ")
+    };
+    if missing.is_empty() {
+        Check::pass(name, format!("installed: {list}"))
+    } else {
+        Check::warn(
+            name,
+            format!("{file} lists {list}, but {}", missing.join("; ")),
+        )
+    }
+}
+
+/// Always `ok`: a spec-kit workflow is something a member could start by
+/// hand, never something teamwire runs.
+fn workflows_check(root: &Path) -> Check {
+    let name = "spec-kit workflows";
+    let file = ".specify/workflows/workflow-registry.json";
+    let ids: Vec<String> = std::fs::read_to_string(root.join(file))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .and_then(|json| {
+            json.get("workflows")?
+                .as_object()
+                .map(|m| m.keys().cloned().collect())
+        })
+        .unwrap_or_default();
+    let list = if ids.is_empty() {
+        "none".to_owned()
+    } else {
+        ids.join(", ")
+    };
+    Check::pass(
+        name,
+        format!("installed: {list}; teamwire starts none of them"),
+    )
 }

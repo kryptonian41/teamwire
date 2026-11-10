@@ -9,13 +9,48 @@ use super::*;
 const FILLED: &str = "# wordtool Constitution\n\n## Core Principles\n\n### I. Small CLI\n\
                       Every feature is a subcommand.\n\n**Version**: 1.0.0 | **Ratified**: 2026-11-10\n";
 
-/// A healthy bed whose repository is a spec-kit project: a `.git` and a
-/// `.specify/` with a filled constitution. git answers yes to both questions.
+/// The pilot repository's `.specify/integration.json`, as `specify init`
+/// and `specify integration install pi` wrote it.
+const INTEGRATIONS: &str = r#"{
+  "version": "1.3.3.dev0",
+  "integration_state_schema": 1,
+  "installed_integrations": [
+    "claude",
+    "pi"
+  ],
+  "integration_settings": {
+    "claude": {"script": "sh", "invoke_separator": "-"},
+    "pi": {"script": "sh", "invoke_separator": "."}
+  },
+  "integration": "claude",
+  "default_integration": "claude"
+}"#;
+
+/// The pilot repository's `.specify/workflows/workflow-registry.json`.
+const WORKFLOWS: &str = r#"{
+  "schema_version": "1.0",
+  "workflows": {
+    "speckit": {
+      "name": "Full SDD Cycle",
+      "version": "1.0.1",
+      "source": "bundled"
+    }
+  }
+}"#;
+
+/// A healthy bed whose repository is a spec-kit project as `specify init`
+/// leaves it for Claude Code and pi: a `.git`, a filled constitution, both
+/// command folders and the bundled workflow. git answers yes to both
+/// questions.
 fn speckit_bed() -> Bed {
     let mut bed = Bed::healthy();
     let root = bed.home.path();
     std::fs::create_dir_all(root.join(".git")).unwrap();
     put(root, ".specify/memory/constitution.md", FILLED);
+    put(root, ".specify/integration.json", INTEGRATIONS);
+    put(root, ".specify/workflows/workflow-registry.json", WORKFLOWS);
+    put(root, ".claude/skills/speckit-plan/SKILL.md", "plan");
+    put(root, ".pi/prompts/speckit.plan.md", "plan");
     bed.speckit_git = vec![0, 0];
     bed
 }
@@ -108,6 +143,138 @@ fn a_git_that_cannot_answer_is_a_warning() {
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
+}
+
+#[test]
+fn a_constitution_with_a_template_placeholder_left_warns_and_names_it() {
+    let bed = speckit_bed();
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit constitution"),
+        Level::Pass
+    );
+
+    // The untouched template, as `specify init` writes it.
+    put(
+        bed.home.path(),
+        ".specify/memory/constitution.md",
+        "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n",
+    );
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit constitution");
+    assert!(detail.contains("[PROJECT_NAME]"), "{detail}");
+    assert!(
+        detail.contains(".specify/memory/constitution.md"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn brackets_that_are_not_template_placeholders_pass() {
+    let bed = speckit_bed();
+    put(
+        bed.home.path(),
+        ".specify/memory/constitution.md",
+        "# wordtool Constitution\n- [x] done\n- [ ] open\nT001 [P] [US1] task\n\
+         [NEEDS CLARIFICATION] and a [link](https://example.com) and [V1]\n",
+    );
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit constitution"),
+        Level::Pass
+    );
+}
+
+#[test]
+fn a_missing_constitution_warns() {
+    let bed = speckit_bed();
+    std::fs::remove_file(bed.home.path().join(".specify/memory/constitution.md")).unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
+    assert!(detail_of(&checks, "spec-kit constitution").contains("/speckit-constitution"));
+}
+
+#[test]
+fn each_installed_integration_needs_its_command_folder() {
+    let bed = speckit_bed();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Pass);
+    assert!(
+        detail_of(&checks, "spec-kit integrations").contains("claude, pi"),
+        "{checks:?}"
+    );
+
+    std::fs::remove_dir_all(bed.home.path().join(".pi")).unwrap();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit integrations");
+    assert!(detail.contains(".pi/prompts/speckit.*.md"), "{detail}");
+    assert!(!detail.contains(".claude/skills"), "{detail}");
+
+    std::fs::remove_dir_all(bed.home.path().join(".claude/skills/speckit-plan")).unwrap();
+    let detail = detail_of(&bed.checks(), "spec-kit integrations").to_owned();
+    assert!(detail.contains(".claude/skills/speckit-*"), "{detail}");
+}
+
+#[test]
+fn codex_needs_its_skills_folder() {
+    let bed = speckit_bed();
+    put(
+        bed.home.path(),
+        ".specify/integration.json",
+        r#"{"installed_integrations": ["codex"]}"#,
+    );
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit integrations"),
+        Level::Warn
+    );
+    put(
+        bed.home.path(),
+        ".agents/skills/speckit-plan/SKILL.md",
+        "plan",
+    );
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit integrations"),
+        Level::Pass
+    );
+}
+
+#[test]
+fn an_unreadable_integration_file_warns() {
+    let bed = speckit_bed();
+    std::fs::remove_file(bed.home.path().join(".specify/integration.json")).unwrap();
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit integrations"),
+        Level::Warn
+    );
+    put(bed.home.path(), ".specify/integration.json", "{not json");
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit integrations"),
+        Level::Warn
+    );
+}
+
+#[test]
+fn the_workflows_line_lists_the_ids_and_is_always_ok() {
+    let bed = speckit_bed();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit workflows"), Level::Pass);
+    let detail = detail_of(&checks, "spec-kit workflows");
+    assert!(detail.contains("speckit"), "{detail}");
+    assert!(detail.contains("teamwire starts none"), "{detail}");
+
+    std::fs::remove_file(
+        bed.home
+            .path()
+            .join(".specify/workflows/workflow-registry.json"),
+    )
+    .unwrap();
+    assert_eq!(level_of(&bed.checks(), "spec-kit workflows"), Level::Pass);
+    put(
+        bed.home.path(),
+        ".specify/workflows/workflow-registry.json",
+        "[",
+    );
+    assert_eq!(level_of(&bed.checks(), "spec-kit workflows"), Level::Pass);
 }
 
 /// `git` with a fixed author, so a commit works on any machine.
