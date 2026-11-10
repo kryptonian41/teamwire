@@ -34,8 +34,10 @@ HOW TO WORK
   need it. If it is still missing at the finish, report blocked to the
   lead: set status 'blocked' in your completion.
 - Put temporary files, such as scripts and sample inputs, in your own
-  scratch folder, the path in `$TEAMWIRE_SCRATCH`. Never put them in the
-  repository or in /tmp: other members share /tmp and can overwrite
-  them. The folder is deleted when the team closes.
+  scratch folder, the path in `$TEAMWIRE_SCRATCH`, or in the scratch
+  folder your harness gives this session. Never put them in the
+  repository or in a shared /tmp path: other members share /tmp and
+  can overwrite them. The `$TEAMWIRE_SCRATCH` folder is deleted when
+  the team closes.
 - Do not end a turn while a background job you still need is running.
   Closing a member ends its background jobs with its tab.
