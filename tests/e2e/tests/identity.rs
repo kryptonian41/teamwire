@@ -34,8 +34,8 @@ fn member_under_env_clearing_host_can_send_done_and_report() {
     );
     let member = w.member_screen("demo", "inv");
     // The host cleared the environment; `settings.json` `env` brought all
-    // four variables (team, role, home, token) back.
-    assert!(member.contains("identity-vars=4"), "{member}");
+    // five variables (team, role, home, token, scratch) back.
+    assert!(member.contains("identity-vars=5"), "{member}");
     assert!(member.contains("send-exit=0"), "{member}");
     assert!(member.contains("done-exit=0"), "{member}");
     let lead = w.lead_screen();
