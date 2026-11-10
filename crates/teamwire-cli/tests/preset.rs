@@ -1412,8 +1412,17 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
         ("committed", "Remove each ignore rule it names"),
         (
             "committed",
-            "run the `git add` it prints, then commit on the ref",
+            "which also names each ignore file you edited, such as `git add .claude/skills/speckit-* .gitignore`",
         ),
+        (
+            "committed",
+            "When the ref is not the checked-out branch, run `git switch <ref>` and commit there, or commit here and merge this branch into the ref",
+        ),
+        (
+            "events",
+            "only on disk also warns: remove it from the repository. A manifest",
+        ),
+        ("committed", "Run the `git add` it prints"),
         (
             "constitution",
             "in the commit still holds a template placeholder",
