@@ -110,6 +110,15 @@ fn outside_a_spec_kit_repository_doctor_prints_no_spec_kit_line() {
 }
 
 #[test]
+fn a_git_worktree_whose_git_is_a_file_is_a_spec_kit_root() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    std::fs::remove_dir_all(root.join(".git")).unwrap();
+    put(root, ".git", "gitdir: /elsewhere/.git/worktrees/w\n");
+    assert_eq!(speckit_names(&bed.checks()).len(), 7);
+}
+
+#[test]
 fn git_is_asked_about_head_at_the_root() {
     let bed = speckit_bed();
     let checks = bed.checks();
@@ -369,6 +378,9 @@ fn other_extensions_and_git_outside_the_installed_list_pass() {
     let yml = "installed:\n- bug\nhooks:\n- git\n";
     assert_eq!(git_extension(&bed, yml).0, Level::Pass);
     assert_eq!(git_extension(&bed, "installed: []\n").0, Level::Pass);
+    // `installed:` nested under another key is not the top-level list.
+    let yml = "settings:\n  installed: [git]\n  other:\n  - git\n";
+    assert_eq!(git_extension(&bed, yml).0, Level::Pass);
 }
 
 fn events(bed: &Bed) -> (Level, String) {
