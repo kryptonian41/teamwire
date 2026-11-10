@@ -19,6 +19,8 @@ mod cmd {
     pub(crate) mod close;
     pub(crate) mod decisions;
     pub(crate) mod doctor;
+    pub(crate) mod doctor_speckit;
+    pub(crate) mod doctor_speckit_files;
     pub(crate) mod doctor_teams;
     pub(crate) mod done;
     pub(crate) mod events;
