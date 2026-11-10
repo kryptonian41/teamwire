@@ -176,7 +176,7 @@ pub(super) fn committed_check(base: &Base<'_>) -> Check {
             State::Changed | State::New | State::Untracked => None,
         })
         .collect();
-    let adds: BTreeSet<&str> = groups
+    let mut adds: BTreeSet<&str> = groups
         .keys()
         .map(|(label, _)| {
             if label.starts_with(".specify/") {
@@ -186,6 +186,14 @@ pub(super) fn committed_check(base: &Base<'_>) -> Check {
             }
         })
         .collect();
+    // The edited ignore file must reach the commit too, or members keep the rule. A
+    // rule in `.git/info/exclude` or a global excludes file is never committed.
+    adds.extend(groups.keys().filter_map(|(_, state)| match state {
+        State::Ignored(source, ..) if !source.starts_with('/') && !source.starts_with(".git/") => {
+            Some(source.as_str())
+        }
+        State::Changed | State::New | State::Untracked | State::Ignored(..) => None,
+    }));
     let mut action: Vec<String> = rules.into_iter().collect();
     action.push(format!(
         "run `git add {}`",

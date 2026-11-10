@@ -1078,7 +1078,9 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
         "{detail}"
     );
     assert!(
-        detail.contains("remove the rule `.claude/` from .gitignore (line 1), run `git add .claude/skills/speckit-*`"),
+        detail.contains(
+            "remove the rule `.claude/` from .gitignore (line 1), run `git add .claude/skills/speckit-* .gitignore`"
+        ),
         "{detail}"
     );
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
@@ -1096,6 +1098,13 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
 
     put(root, ".gitignore", "");
     follow_git_add(root, &detail);
+    // The edited `.gitignore` reached the commit, so members do not keep the rule.
+    let committed = std::process::Command::new("git")
+        .args(["show", "HEAD:.gitignore"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(committed.stdout).unwrap(), "");
     let checks = bed.checks();
     assert_eq!(
         level_of(&checks, "spec-kit committed"),
