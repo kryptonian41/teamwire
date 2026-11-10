@@ -20,6 +20,10 @@ Finding numbers F1 to F11 below refer to that file.
 - Q: A message reaches a member whose last result is `done`. Does teamwire hold it, or deliver it and track the woken turn? → A: By default teamwire delivers it, and the turn it starts counts as a new generation that the watch tracks and that ends with `done` like any generation. Exception: when the member's newest result has a `handoff:` summary, teamwire holds the message (stored, not typed), and `teamwire handoff` passes the held messages to the fresh session.
 - Q: What counts as a repository file that "mentions" a task path in the `owns` draft? → A: A file that holds the exact path text, a CI workflow `paths:` glob that matches the path, the path's dotted module name (`harness.tools` for `harness/tools.py`), or the path's full file name with its extension (`tools.py`). A bare stem such as `tools` never counts. The output is labelled a draft for the lead to check.
 - Q: May the fixes supersede accepted ADRs? → A: Yes, narrowly, in one new ADR for US1 that names each superseded point. ADR 0003 point 7 and INV-8 stay. WAT-6 and ADR 0007 point 6 are superseded so that a member whose result is `UNDELIVERED` or `UNCONFIRMED` and whose session is busy counts as working, not settled; a member whose session is dead or idle is still settled. The new-generation rule for a woken member supersedes any ADR point or requirement that says only a `reprompt` starts a generation.
+- Q: When the watch cannot tell whether a member's session is busy, idle or dead, and that member's result is `UNDELIVERED` or `UNCONFIRMED`, does the watch count the member as settled or as working? → A: Settled, as today; the watch's line says it could not see the session.
+- Q: Which recorded results make a waking message start a new generation: only a `done` result, or any result (`done`, `blocked`, `failed`)? → A: Any recorded result in the current generation (`done`, `blocked`, `failed`); the `handoff:` hold is the only exception.
+- Q: The lead reprompts, instead of handing off, a member whose newest result is `handoff:` and that has held messages. What happens to the held messages? → A: The reprompt delivers the held messages right after the reprompt text, oldest first, and the hold ends.
+- Q: Does the `tasks.md` reader draft one `owns` list per user story, or per member of a split it proposes? → A: One `owns` draft per user story, plus one for the setup and polish phases, and a line naming which stories share files; the lead merges stories into members.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -82,9 +86,10 @@ a member with a `handoff:` result is held for the handoff.
    print `TEAM-COMPLETE`.
 7. **Given** a member's result was not delivered and the member's session
    is dead or idle, **When** a watch starts, **Then** the watch counts the
-   member as settled, so the team can complete.
-8. **Given** a member recorded `done` with a summary that does not start with
-   `handoff:`, **When** the lead or another member sends it a message that
+   member as settled, so the team can complete. The same holds when the
+  watch cannot see the session, and the watch's line says so.
+8. **Given** a member recorded a result (`done`, `blocked` or `failed`)
+   whose summary does not start with `handoff:`, **When** the lead or another member sends it a message that
    wakes it, **Then** the woken turn counts as a new generation that the
    watch tracks, and that generation ends when the member records `done`.
 9. **Given** a member's newest result has a `handoff:` summary, **When** the
@@ -92,6 +97,10 @@ a member with a `handoff:` result is held for the handoff.
    message and types nothing into the member's pane, and
    `teamwire handoff <team> --role <role>` passes the held messages to the
    fresh session.
+10. **Given** a member with a `handoff:` result has held messages, **When**
+    the lead reprompts it instead of handing it off, **Then** the held
+    messages are typed right after the reprompt text, oldest first, and the
+    hold ends.
 
 ---
 
@@ -107,8 +116,9 @@ a test that pins an exact list, and a CI workflow path filter.
 After this story, one teamwire command reads a spec-kit `tasks.md` and
 prints three things: which phases and which stories share files, the tasks
 that change no file or touch only files no other task touches, and a draft
-`owns` list per proposed member. The draft adds the repository files that
-mention the task paths. The lead checks the draft; the draft is not a final
+`owns` list per user story, plus one for the setup and polish phases. Each
+draft adds the repository files that mention the task paths. The lead merges
+stories into members. The lead checks the draft; the draft is not a final
 list.
 
 **Why this priority**: The split and the `owns` list are set once, before
@@ -197,8 +207,8 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 - A member with a `handoff:` result gets several messages before the lead
   hands it off. The handoff passes all of them, oldest first.
 - The lead reprompts, instead of handing off, a member with a `handoff:`
-  result that has held messages. The held messages reach the member with
-  the reprompt.
+  result that has held messages. The held messages are typed right after
+  the reprompt text, oldest first, and the hold ends.
 - A woken member's new generation ends with no `done`, because its session
   dies. The watch reports it the way it reports any generation whose
   session died.
@@ -209,8 +219,8 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 - An answer with `--re` names a message that is not a question to the
   sender. The delivery state of that message does not change.
 - The host cannot report whether a member's session with an undelivered
-  result is busy, idle or dead. The watch keeps the rule it uses today
-  for an unknown session and says it could not tell.
+  result is busy, idle or dead. The watch counts the member as settled, as
+  today, and its line says it could not see the session.
 - A member's harness does not report when the current tool call started.
   `teamwire status --role` says the duration is unknown, not zero.
 - A task line names a path that does not exist in the repository yet (a new
@@ -249,13 +259,17 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   whose session is busy MUST count as working, not settled, in the watch and
   in `teamwire status`. The watch MUST NOT print `TEAM-COMPLETE` while such a
   member works. A member whose session is dead or idle MUST still count as
-  settled.
-- **FR-008**: A message that wakes a member whose newest result is `done`
-  without a `handoff:` summary MUST start a new generation that the watch
+  settled. A member whose session the watch cannot see MUST count as
+  settled, and the watch's line MUST say it could not see the session.
+- **FR-008**: A message that wakes a member whose newest result in its
+  current generation is `done`, `blocked` or `failed`, without a `handoff:`
+  summary, MUST start a new generation that the watch
   tracks and that ends when the member records `done`.
 - **FR-009**: A message to a member whose newest result has a `handoff:`
   summary MUST be stored and not typed. `teamwire handoff` MUST pass the
-  held messages to the fresh session.
+  held messages to the fresh session. A `reprompt` to that member MUST type
+  the held messages right after the reprompt text, oldest first, and end
+  the hold.
 - **FR-010**: One new ADR MUST record the US1 decisions and name each point
   it supersedes: WAT-6, ADR 0007 point 6, and any ADR point or requirement
   that says only a `reprompt` starts a generation.
@@ -268,8 +282,9 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   of user stories, the files both name.
 - **FR-013**: The command MUST list the tasks that name no file, and the
   tasks whose files no other task names.
-- **FR-014**: The command MUST print a draft `owns` list for each proposed
-  member, built from the task paths plus the repository files that mention
+- **FR-014**: The command MUST print one draft `owns` list per user story,
+  plus one for the setup and polish phases, and a line naming which stories
+  share files. Each draft is built from the task paths plus the repository files that mention
   those paths, each added file with the reason it was added. A file
   mentions a task path when it holds the exact path text, a CI workflow
   `paths:` glob that matches the path, the path's dotted module name (such
@@ -362,9 +377,8 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   scope.
 - The `owns` draft is a starting point for the lead, not a final list. The
   lead still runs the planning check in the skill.
-- The command proposes one member per user story when stories share no
-  files, and one member for stories that share files. The lead decides the
-  split.
+- The command proposes no split. It drafts per user story, and the lead
+  merges stories into members.
 - The fixes reuse the existing delivery, message, report, watch and close
   code, and the existing presets. No new crate unless the layering rules in
   `docs/conventions.md` section 5 call for one.
