@@ -12,7 +12,7 @@
   ],
   "team": "myteam",
   "title": "Join CHANGEME",
-  "setup": "true CHANGEME worktree setup command",
+  "setup": "echo 'CHANGEME: fill in the worktree setup command' >&2; false",
   "children": [
     {
       "role": "integrator",

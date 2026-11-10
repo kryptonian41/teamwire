@@ -14,7 +14,7 @@
   ],
   "team": "myteam",
   "title": "CHANGEME: logic and UI split",
-  "setup": "true CHANGEME worktree setup command",
+  "setup": "echo 'CHANGEME: fill in the worktree setup command' >&2; false",
   "children": [
     {
       "_wave": 1,

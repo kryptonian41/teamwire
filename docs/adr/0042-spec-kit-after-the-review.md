@@ -94,6 +94,10 @@ fix on 2026-11-10. This ADR records what changed from ADR 0041.
   reads them.
 - The preset tests run the `speckit` preset's `setup` and `check` in
   scratch git repositories, so a command that stops working fails a test.
-- Every preset's `setup` is `true CHANGEME worktree setup command`, which
-  runs as printed, because a named script that a new repository lacks
-  failed only at the real launch.
+- Every preset's `setup` starts with
+  `echo 'CHANGEME: fill in the worktree setup command' >&2; false`. A
+  launch that still holds it stops at setup with that line, and the
+  fill-in line names it.
+  A named script that a new repository lacks gave the same failure with no
+  word on what to fill in, and a command that does nothing would start
+  members with no setup.

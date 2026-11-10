@@ -709,8 +709,10 @@ Without a name, lists the six team shapes and the three steps added to a
 team. The `plan-review` step goes before the implementers, and the
 `integrator` and `closer` steps go after the last wave. With a name, prints
 the preset's spec skeleton and its rules as text. Each `setup` in a
-skeleton is `true CHANGEME worktree setup command`, which runs and does
-nothing until the lead puts the repository's own setup command there.
+skeleton starts with
+`echo 'CHANGEME: fill in the worktree setup command' >&2; false`. It fails
+and prints that line, so a launch stops at setup until the lead puts the
+repository's own setup command, or `true`, in its place.
 
 ### `teamwire models [--harness ID] [--for CLASS] [--json]`
 
