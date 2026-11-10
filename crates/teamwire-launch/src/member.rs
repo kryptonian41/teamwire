@@ -61,6 +61,14 @@ pub(crate) fn launch_all(ctx: &mut Ctx<'_>, plan: &ValidPlan) -> LaunchReport {
     let dirs = Dirs {
         team: ctx.home.join("teams").join(plan.spec.team.as_str()),
     };
+    // Members write their reports here; a first write into a missing folder
+    // fails. `--add` makes it too, for a team an older build launched.
+    if let Err(e) = std::fs::create_dir_all(dirs.reports()) {
+        warnings.push(format!(
+            "could not make {}: {e}; members must make it before they write their reports",
+            dirs.reports().display()
+        ));
+    }
     for m in &plan.members {
         let outcome = launch_member(ctx, plan, &dirs, m, &launch_id, requested, &mut warnings);
         members.push(MemberOutcome {

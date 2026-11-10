@@ -41,10 +41,11 @@ impl Dirs {
             .join("briefs")
             .join(format!("{}.md", role.as_str()))
     }
+    pub(crate) fn reports(&self) -> PathBuf {
+        self.team.join("reports")
+    }
     pub(crate) fn report(&self, role: &Role) -> PathBuf {
-        self.team
-            .join("reports")
-            .join(format!("{}.md", role.as_str()))
+        self.reports().join(format!("{}.md", role.as_str()))
     }
     pub(crate) fn setup_log(&self, role: &Role) -> PathBuf {
         self.team
