@@ -344,6 +344,39 @@ fn has_entry(base: &Base<'_>, dir: &str, start: &str, end: &str) -> bool {
     })
 }
 
+/// The integrations spec-kit counts as installed: `installed_integrations`,
+/// and the older keys `default_integration` and `integration`, the way
+/// spec-kit's `normalize_integration_state` reads them.
+fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
+    let key = |name: &str| {
+        json.get(name)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .map(str::to_owned)
+    };
+    let mut installed: Vec<String> = Vec::new();
+    for k in json
+        .get("installed_integrations")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+    {
+        if !installed.iter().any(|i| i == k) {
+            installed.push(k.to_owned());
+        }
+    }
+    if let Some(default) = key("default_integration").or_else(|| key("integration"))
+        && !installed.contains(&default)
+    {
+        installed.insert(0, default);
+    }
+    installed
+}
+
 fn integrations_check(base: &Base<'_>) -> Check {
     let name = "spec-kit integrations";
     let file = ".specify/integration.json";
@@ -353,13 +386,7 @@ fn integrations_check(base: &Base<'_>) -> Check {
         serde_json::from_str::<serde_json::Value>(&text)
             .map_err(|e| format!("could not read {file} in {at}: {e}"))
     }) {
-        Ok(json) => json
-            .get("installed_integrations")
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect(),
+        Ok(json) => installed_integrations(&json),
         Err(e) => {
             return Check::warn(
                 name,
@@ -425,6 +452,14 @@ fn workflows_check(base: &Base<'_>) -> Check {
     )
 }
 
+/// The warning for a YAML file the reader cannot read: it never passes.
+pub(crate) fn unreadable_yaml(file: &str, at: &str, why: &str) -> String {
+    format!(
+        "could not read {file} in {at} ({why}); check the file by hand, since doctor reads only \
+         the YAML forms spec-kit writes"
+    )
+}
+
 /// spec-kit's `git` extension makes branches per feature; teamwire gives each
 /// member its own branch and worktree, so the two would fight.
 fn git_extension_check(base: &Base<'_>) -> Check {
@@ -435,7 +470,11 @@ fn git_extension_check(base: &Base<'_>) -> Check {
         Ok(text) => text.unwrap_or_default(),
         Err(e) => return Check::warn(name, e),
     };
-    if installed_extensions(&text).iter().any(|id| id == "git") {
+    let ids = match installed_extensions(&text) {
+        Ok(ids) => ids,
+        Err(e) => return Check::warn(name, unreadable_yaml(file, &at, &e)),
+    };
+    if ids.iter().any(|id| id == "git") {
         Check::warn(
             name,
             format!(

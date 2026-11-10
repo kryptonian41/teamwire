@@ -1050,3 +1050,68 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
         "{checks:?}"
     );
 }
+
+#[test]
+fn an_older_integration_file_still_names_its_integration() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    remove_committed(root, ".claude");
+    // The form spec-kit before `installed_integrations` wrote.
+    put_committed(
+        root,
+        ".specify/integration.json",
+        r#"{"integration": "claude", "version": "0.8.0"}"#,
+    );
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit integrations");
+    assert!(detail.contains("lists claude"), "{detail}");
+    assert!(detail.contains(".claude/skills/speckit-*"), "{detail}");
+
+    // `default_integration` counts too, ahead of the list.
+    put_committed(
+        root,
+        ".specify/integration.json",
+        r#"{"installed_integrations": ["pi"], "default_integration": "claude"}"#,
+    );
+    let detail = detail_of(&bed.checks(), "spec-kit integrations").to_owned();
+    assert!(detail.contains("lists claude, pi"), "{detail}");
+}
+
+#[test]
+fn a_skills_folder_with_only_the_users_own_skills_has_no_spec_kit_commands() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    remove_committed(root, ".claude/skills/speckit-plan");
+    put_committed(root, ".claude/skills/mine/SKILL.md", "mine");
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    assert!(
+        detail_of(&checks, "spec-kit integrations").contains(".claude/skills/speckit-*"),
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn every_form_spec_kit_reads_as_listing_git_warns_and_an_unreadable_file_never_passes() {
+    let bed = speckit_bed();
+    for form in [
+        "installed: [git] # note\n",
+        "\"installed\":\n- git\n",
+        "\u{feff}installed:\n- git\n",
+        "installed: [bug,\n  git]\n",
+        "installed:\r\n- git\r\n",
+        "installed:\n- id: git\n",
+    ] {
+        let (level, detail) = git_extension(&bed, form);
+        assert_eq!(level, Level::Warn, "{form:?}: {detail}");
+        assert!(detail.contains("specify extension remove git"), "{detail}");
+    }
+    let (level, detail) = git_extension(&bed, "installed: &ids [git]\n");
+    assert_eq!(level, Level::Warn, "{detail}");
+    assert!(detail.contains("check the file by hand"), "{detail}");
+    assert!(
+        detail.contains(".specify/extensions.yml in HEAD ("),
+        "{detail}"
+    );
+}
