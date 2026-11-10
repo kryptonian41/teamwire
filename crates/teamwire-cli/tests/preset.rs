@@ -1663,3 +1663,52 @@ fn the_afk_skill_lists_a_missing_closer_before_the_close() {
     assert!(listed < close, "{section}");
     assert!(!section.contains("before you close."), "{section}");
 }
+
+/// What the review found missing: other extensions' mandatory hooks, the
+/// scratch folder, the watch during a question round, and the two flags a
+/// per-story split raises by design.
+#[test]
+fn the_speckit_guidance_covers_hooks_scratch_the_watch_and_split_flags() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let reference = flat(&example("skills/teamwire/reference.md"));
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`optional: false`",
+            "remove the extension or make the hook optional, then commit",
+            "`specs/NNN-name/` in the integrator's `owns`",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    assert!(
+        section.contains("Doctor's `spec-kit hooks` line"),
+        "{section}"
+    );
+    assert!(
+        section.contains("both own overlapping paths (specs/NNN-name/tasks.md")
+            && section.contains("Expect that warning, which does not refuse the launch"),
+        "{section}"
+    );
+    assert!(
+        rules.contains("expect that warning, which refuses nothing"),
+        "{rules}"
+    );
+    for (place, text) in [("skill", &skill), ("reference", &reference)] {
+        assert!(
+            text.contains("`$TEAMWIRE_SCRATCH`"),
+            "{place} lacks the scratch folder"
+        );
+    }
+    assert!(
+        skill.contains("never in the repository or in `/tmp`")
+            && skill.contains("A question round does not end the watch"),
+        "{skill}"
+    );
+    assert!(
+        reference.contains("so this line cannot print while it waits")
+            && section.contains("and the watch keeps running"),
+        "{reference}"
+    );
+}

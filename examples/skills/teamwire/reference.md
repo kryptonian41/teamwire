@@ -114,7 +114,7 @@ database, so run `teamwire doctor`. The other lines:
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
-| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
+| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A member waiting in a question round, a `blocked` result whose summary starts `N questions for the parent.`, has not stopped, so this line cannot print while it waits: the watch keeps running and follows the member again after your reprompt. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
 
 ## Messages
 
@@ -337,6 +337,15 @@ Codex launch refuses a repository that holds that file. The same extension
 writes hooks into `.claude/settings.json`, and those hooks run unreviewed
 with the member's rights. Remove such an extension before launch.
 
+Any other extension can register hooks in `.specify/extensions.yml`. Every
+spec-kit command tells the member to run each enabled hook that has
+`optional: false`, before or after the command, and to wait for it. One
+such hook demands a merged pull request before `tasks`, which a worktree
+member cannot produce, and a hook can also commit, push or switch branches.
+Doctor's `spec-kit hooks` line names each mandatory hook with its extension,
+event and command. Clear each one before launch: read what it runs, then
+remove the extension or make the hook optional, then commit.
+
 ### How each harness runs a spec-kit command
 
 | harness | command files | how a member runs `implement` |
@@ -362,7 +371,8 @@ spec-kit command, so write the form for the member's harness in its brief.
    is the spec member's worktree, such as `<repo>/.worktrees/myteam-spec`
    for the branch `myteam/spec`. It runs `analyze`, which writes nothing, and reads the briefs.
    It also runs any task in `tasks.md` that claims "confirm the new tests
-   fail", in its own scratch copy outside the repository, because a claim
+   fail", in its own scratch copy under `$TEAMWIRE_SCRATCH`, outside the
+   repository, because a claim
    that is half false can lead the implementer to weaken tests.
    Reprompt the spec member once with the findings that hold. Run no second
    analyze on the same plan.
@@ -433,7 +443,11 @@ it. Then cut the implementer's branch from that branch.
   Its check fails at that stop, and its seat allows `blocked` with a
   failing check. A question round is a result with status `blocked` whose
   summary, after an optional leading `handoff: `, matches
-  `^[1-9][0-9]* questions? for the parent\.`. Such a result is a question round, not a failure. Send the
+  `^[1-9][0-9]* questions? for the parent\.`. Such a result is a question round, not a failure.
+  The result reaches you once, like any result, and the watch keeps
+  running: until your reprompt it counts the member as waiting for you,
+  not as finished, so no `TEAM-COMPLETE`, `SILENT` or `LATE` line comes for
+  it, and the same watch follows the member after the reprompt. Send the
   answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
   member records `done` only after `tasks` is written and its check passes.
@@ -530,6 +544,17 @@ it. Then cut the implementer's branch from that branch.
   Foundational. Wave 2 has one member per story, each with wave 1's branch
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
+  Each story member owns `specs/NNN-name/tasks.md`, so launch prints
+  `roles <a> and <b> both own overlapping paths (specs/NNN-name/tasks.md and specs/NNN-name/tasks.md)`
+  for each pair of them. Expect that warning, which does not refuse the
+  launch, and keep `tasks.md` in every member's `owns`: without it each
+  tick is flagged `outside-owns:specs/NNN-name/tasks.md`. Each member ticks
+  only its own phase's lines, so the merge is clean.
+  The integrator merges wave 1's branch, which is cut from the spec
+  member's branch, so its diff from `main` holds every file the spec member
+  committed, and verify flags each one as `outside-owns:specs/NNN-name/<file>`
+  even with no amendment. Put `specs/NNN-name/` in the integrator's `owns`
+  beside the merged members' paths, and no such flag comes.
 - **Converge.** Start the closer from `teamwire preset closer`, and add two
   steps to its task. First, the closer counts the ticks at each of the
   implementer's commits and checks that no task line is missing, because
