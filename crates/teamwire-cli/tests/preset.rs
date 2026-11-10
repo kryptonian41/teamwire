@@ -1126,6 +1126,61 @@ fn the_speckit_spec_stage_states_what_the_pilot_showed() {
     }
 }
 
+/// The pilot's build: `tasks.md` has checkpoints only after story phases,
+/// `implement` appends ignore patterns, a "confirm the tests fail" task can be
+/// half false, and the check's grep misses a lowercase tick or a deleted line.
+#[test]
+fn the_speckit_build_states_what_the_pilot_showed() {
+    let doc = preset_doc("speckit");
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    let impl_note = flat(
+        doc["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "impl")
+            .and_then(|m| m["_note"].as_str())
+            .unwrap(),
+    );
+    for (place, text) in [
+        ("rules", &rules),
+        ("reference", &section),
+        ("adr", &adr),
+        ("impl note", &impl_note),
+    ] {
+        assert!(
+            text.contains("at the end of every phase that has tasks"),
+            "{place} lacks the phase commit rule: {text}"
+        );
+        for old in ["at each checkpoint", "per checkpoint", "phase checkpoint"] {
+            assert!(!text.contains(old), "{place} still says {old}: {text}");
+        }
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`**Checkpoint**` lines only after story phases, so Setup and Polish have none",
+            "A phase with no tasks, such as an empty Foundational phase, gets no commit",
+            "overrides the \"Commit after every checkpoint\" line",
+            "follows the ignore-file step for `.gitignore` only, appends only the patterns the step lists, lists each one it added in its report, and writes no other ignore file unless its brief owns that file",
+            "runs any task in `tasks.md` that claims \"confirm the new tests fail\"",
+            "a \"confirm the tests fail\" task is finished when the cases it names fail",
+            "never changes a test to make it fail",
+            "counts the ticks at each of the implementer's commits and checks that no task line is missing",
+            "passes on a lowercase `[x]` or a deleted task line",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    let analyze = flat(task_of(&doc, "analyze"));
+    assert!(
+        analyze.contains("claims \"confirm the new tests fail\"")
+            && analyze.contains("in your own scratch copy"),
+        "{analyze}"
+    );
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]

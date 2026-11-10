@@ -352,6 +352,9 @@ spec-kit command, so write the form for the member's harness in its brief.
 2. **Check.** Add a plan reviewer with `teamwire launch --add`. Its `cwd`
    is the spec member's worktree, such as `<repo>/.worktrees/myteam-spec`
    for the branch `myteam/spec`. It runs `analyze`, which writes nothing, and reads the briefs.
+   It also runs any task in `tasks.md` that claims "confirm the new tests
+   fail", in its own scratch copy outside the repository, because a claim
+   that is half false can lead the implementer to weaken tests.
    Reprompt the spec member once with the findings that hold. Run no second
    analyze on the same plan.
 3. **Build.** One `impl` implementer runs `implement` phase by phase over
@@ -431,15 +434,26 @@ it. Then cut the implementer's branch from that branch.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
   to tick only the lines of its own phases. Lines in separate phases should
   merge cleanly. When they do not, the integrator stops on the conflict.
-- **Ignore files.** `implement` writes `.gitignore`, so the preset puts it
-  in the implementer's `owns`. `implement` may also write `.dockerignore`,
-  `.eslintignore` and similar files for the technology it detects. The
-  brief either puts each one in `owns` or tells the member not to write it.
+- **Ignore files.** `implement` writes `.gitignore`: its ignore-file step
+  appends spec-kit's critical patterns for the technology it detects, 10 in
+  the pilot, most of them unrelated to the feature. The step may also
+  create `.dockerignore`, `.eslintignore` and similar files. The preset
+  puts `.gitignore` in the implementer's `owns`. The brief says the
+  implementer follows the ignore-file step for `.gitignore` only, appends
+  only the patterns the step lists, lists each one it added in its report,
+  and writes no other ignore file unless its brief owns that file.
+- **Test claims.** A task such as "confirm the new tests fail" can be half
+  false: in the pilot, three of six new cases passed before the code
+  existed. The brief says a "confirm the tests fail" task is finished when
+  the cases it names fail, and the implementer never changes a test to
+  make it fail.
 - **Check.** The implementer's `check` needs `tasks.md`, runs the tests
   and fails on any unticked task, such as
   `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
   Keep the `test -s`. Without it the check passes when the folder name is
   wrong, because `!` turns grep's missing-file error into success.
+  The check still passes on a lowercase `[x]` or a deleted task line, so
+  the closer counts the ticks (see Converge below).
   When the stories split, a member's `check` is
   `test -s specs/NNN-name/tasks.md && <its own tests>`, with no grep. Wave 1
   cannot pass a grep over the story tasks it does not build, and the tasks
@@ -447,8 +461,14 @@ it. Then cut the implementer's branch from that branch.
   joined branch carries the whole-file grep instead, so it also catches
   converge's open tasks.
 - **Commits.** `implement` has no commit step, and the seat rules ask for a
-  commit after each unit. The brief says: commit at each phase checkpoint,
-  with the task ids in the message, such as `T012-T018: US1 user model`.
+  commit after each unit. The brief says: commit at the end of every phase
+  that has tasks. Each commit holds that phase's code and its ticks, with
+  the task ids in the message, such as `T012-T018: US1 user model`.
+  Spec-kit's `tasks.md` writes `**Checkpoint**` lines only after story
+  phases, so Setup and Polish have none. A phase with no tasks, such as an
+  empty Foundational phase, gets no commit. The brief overrides the
+  "Commit after every checkpoint" line that spec-kit's template writes
+  into `tasks.md`.
 - **The feature file.** Spec-kit finds the feature through the variable
   `SPECIFY_FEATURE_DIRECTORY`, else `.specify/feature.json`. Spec-kit
   git-ignores `.specify/feature.json`, so a new worktree has none, and a
@@ -469,8 +489,11 @@ it. Then cut the implementer's branch from that branch.
   Foundational. Wave 2 has one member per story, each with wave 1's branch
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
-- **Converge.** Start the closer from `teamwire preset closer`, and add one
-  step to its task. In its own clone, on each head that ships, the closer
+- **Converge.** Start the closer from `teamwire preset closer`, and add two
+  steps to its task. First, the closer counts the ticks at each of the
+  implementer's commits and checks that no task line is missing, because
+  the implementer's check still passes on a lowercase `[x]` or a deleted
+  task line. Second, in its own clone, on each head that ships, the closer
   writes `.specify/feature.json` at the clone's root. It then reads the
   clone's `converge` command file of any installed harness, such as
   `.claude/skills/speckit-converge/SKILL.md`, and follows it, running every

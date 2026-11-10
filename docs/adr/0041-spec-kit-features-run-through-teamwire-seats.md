@@ -88,7 +88,10 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    tests>`, and only the integrator's `check` on the joined branch greps the
    whole file. A per-story grep cannot pass in wave 1, and it misses the
    tasks `converge` appends, which carry no story label. Each implementer
-   commits at each checkpoint with the task ids in the message, because `implement` has no commit step. It reads
+   commits at the end of every phase that has tasks, with the task ids in
+   the message, because `implement` has no commit step. Spec-kit writes
+   `**Checkpoint**` lines only after story phases, so a commit only at
+   checkpoints would leave Setup and Polish uncommitted. It reads
    `.specify/memory/constitution.md`, because the seat rules point only at
    `CLAUDE.md` and `AGENTS.md`. It treats `implement`'s stop on an unticked
    checklist as a question to the lead.
