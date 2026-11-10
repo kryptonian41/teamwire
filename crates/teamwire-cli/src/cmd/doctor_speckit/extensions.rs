@@ -4,7 +4,9 @@
 
 use super::Base;
 use crate::cmd::doctor::Check;
-use crate::cmd::doctor_speckit_files::{has_speckit_event, installed_extensions, required_hooks};
+use crate::cmd::doctor_speckit_files::{
+    declares_events, has_speckit_event, installed_extensions, required_hooks,
+};
 
 const EXTENSIONS: &str = ".specify/extensions.yml";
 
@@ -85,37 +87,38 @@ pub(super) fn hooks_check(base: &Base<'_>) -> Check {
     )
 }
 
+/// The integrations the committed `integration.json` lists, for the action.
+fn integration_keys(base: &Base<'_>) -> Vec<String> {
+    base.show(super::INTEGRATION_FILE)
+        .ok()
+        .flatten()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .map(|json| super::installed_integrations(&json))
+        .unwrap_or_default()
+}
+
 /// A spec-kit runtime event runs a spec-kit script from the agent's own hook
-/// system, in every member session, with no member asking for it.
+/// system, in every member session, with no member asking for it. Only the
+/// hooks spec-kit really wrote count: a manifest that declares `events:` sets
+/// up nothing while the extension is disabled or the integration runs with
+/// `--events false`.
 pub(super) fn events_check(base: &Base<'_>) -> Check {
     let name = "spec-kit events";
     let at = base.at();
-    let mut found = Vec::new();
-    let mut ids: Vec<&str> = base
+    let mut declared: Vec<&str> = base
         .under(".specify/extensions")
         .filter_map(|rest| rest.strip_suffix("/extension.yml"))
         .filter(|id| !id.contains('/'))
+        .filter(|id| {
+            let file = format!(".specify/extensions/{id}/extension.yml");
+            base.show(&file)
+                .ok()
+                .flatten()
+                .is_some_and(|text| declares_events(&text))
+        })
         .collect();
-    ids.sort_unstable();
-    for id in ids {
-        let file = format!(".specify/extensions/{id}/extension.yml");
-        let text = base.show(&file).ok().flatten().unwrap_or_default();
-        // shortcut: a top-level key is a line that starts with `events:`, not a YAML parse.
-        if text.lines().any(|l| l.starts_with("events:")) {
-            found.push(format!("{file} declares events:"));
-        }
-    }
-    if base.has(".specify/integration-events.yml") {
-        found.push(".specify/integration-events.yml exists".to_owned());
-    }
-    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`).
-    for file in [".codex/config.toml", ".codex/hooks.json"] {
-        if base.has(file) {
-            found.push(format!(
-                "{file} exists, so teamwire refuses to start a Codex member here"
-            ));
-        }
-    }
+    declared.sort_unstable();
+    let mut hooks = Vec::new();
     let settings = ".claude/settings.json";
     if base
         .show(settings)
@@ -124,20 +127,92 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
         .is_some_and(|json| has_speckit_event(&json))
     {
-        found.push(format!(
+        hooks.push(format!(
             "{settings} has a hook tagged \"__speckit_event__\": true"
         ));
     }
-    if found.is_empty() {
-        return Check::pass(name, format!("no spec-kit runtime event is set up in {at}"));
+    let config = ".codex/config.toml";
+    if base
+        .show(config)
+        .ok()
+        .flatten()
+        .is_some_and(|text| text.contains("speckit_marker = true"))
+    {
+        hooks.push(format!("{config} has a hook marked speckit_marker = true"));
+    }
+    let dispatcher = ".specify/events.py";
+    if base.has(dispatcher) {
+        hooks.push(format!("{dispatcher} is the script those hooks run"));
+    }
+    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`),
+    // committed or only on disk.
+    let mut codex = Vec::new();
+    for file in [config, ".codex/hooks.json"] {
+        if base.has(file) {
+            codex.push(format!("{file} is in {at}"));
+        } else if base.root.join(file).exists() {
+            codex.push(format!("{file} is on disk"));
+        }
+    }
+    if hooks.is_empty() && codex.is_empty() {
+        let note = if declared.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "; {} declares events:, but spec-kit wrote no hook for them (a disabled \
+                 extension, or an integration with --events false)",
+                declared.join(", ")
+            )
+        };
+        return Check::pass(
+            name,
+            format!("no spec-kit runtime event is set up in {at}{note}"),
+        );
+    }
+    let mut found = Vec::new();
+    let mut actions = Vec::new();
+    if !hooks.is_empty() {
+        found.push(format!(
+            "in {at}, {}; each runs a spec-kit script from the agent's own hooks in every \
+             member session",
+            hooks.join(", ")
+        ));
+        let mut keys = integration_keys(base);
+        if keys.is_empty() {
+            keys.push("<key>".to_owned());
+        }
+        let upgrade = keys
+            .iter()
+            .map(|k| {
+                format!("`specify integration upgrade {k} --force --integration-options=\"--events false\"`")
+            })
+            .collect::<Vec<_>>()
+            .join(" and ");
+        actions.push(if declared.is_empty() {
+            format!("run {upgrade}")
+        } else {
+            let ids = declared.join(" ");
+            format!(
+                "run `specify extension remove {ids}` (or `specify extension disable {ids}`), or {upgrade}"
+            )
+        });
+    }
+    if !codex.is_empty() {
+        found.push(format!(
+            "{}, and teamwire refuses to start a Codex member while it is",
+            codex.join(", ")
+        ));
+        if hooks.is_empty() {
+            actions.push("remove it from the repository".to_owned());
+        }
     }
     Check::warn(
         name,
         format!(
-            "in {at}: {}; each runs a spec-kit script from the agent's own hooks in every member \
-             session. Remove it, or reinstall the integration with \
-             `--integration-options=\"--events false\"`",
-            found.join("; ")
+            "{}; {}, then commit on {}",
+            found.join("; "),
+            actions.join(", "),
+            base.name
         ),
     )
 }

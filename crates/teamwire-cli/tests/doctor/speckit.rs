@@ -485,23 +485,34 @@ fn an_extension_that_declares_events_warns_and_one_that_does_not_passes() {
         ".specify/extensions/tw-ev/extension.yml",
         "extension:\n  id: tw-ev\nevents:\n  pre_tool_use:\n    command: speckit.tw-ev.guard\n",
     );
+    // Declared, but spec-kit wrote no hook: nothing runs, so a note and no warning.
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Pass);
+    assert!(
+        detail.contains("tw-ev declares events:, but spec-kit wrote no hook"),
+        "{detail}"
+    );
+    assert!(!detail.contains("bug"), "{detail}");
+
+    // Once spec-kit wrote its hook, the action names the extension.
+    put_committed(root, ".claude/settings.json", EVX_CLAUDE_SETTINGS);
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(
-        detail.contains(".specify/extensions/tw-ev/extension.yml"),
+        detail.contains("specify extension remove tw-ev"),
         "{detail}"
     );
-    assert!(!detail.contains("extensions/bug"), "{detail}");
 }
 
 #[test]
 fn an_integration_events_file_or_a_codex_config_warns() {
     let bed = speckit_bed();
+    // An override file sets up no hook on its own.
     put_committed(bed.home.path(), ".specify/integration-events.yml", "{}\n");
     let (level, detail) = events(&bed);
-    assert_eq!(level, Level::Warn);
+    assert_eq!(level, Level::Pass);
     assert!(
-        detail.contains(".specify/integration-events.yml"),
+        !detail.contains(".specify/integration-events.yml"),
         "{detail}"
     );
 
@@ -1193,4 +1204,69 @@ fn a_required_hook_of_another_extension_warns_until_it_is_removed_disabled_or_op
     let (level, detail) = hooks(&bed);
     assert_eq!(level, Level::Warn);
     assert!(detail.contains("check the file by hand"), "{detail}");
+}
+
+#[test]
+fn events_warn_only_on_hooks_spec_kit_wrote_and_each_named_remedy_clears_them() {
+    // The three commands that remove spec-kit's event hooks, each as the
+    // files it leaves (proven with spec-kit 1.3.3.dev0 in a scratch repository).
+    // `remove` also deletes the manifest; `disable` and the upgrade keep it.
+    let remedies = [
+        ("specify extension remove evx", false),
+        ("specify extension disable evx", true),
+        (
+            "specify integration upgrade claude --force --integration-options=\"--events false\"",
+            true,
+        ),
+    ];
+    for (named, keeps_manifest) in remedies {
+        let bed = speckit_bed();
+        let root = bed.home.path();
+        put(
+            root,
+            ".specify/integration.json",
+            &INTEGRATIONS.replace("\"pi\"", "\"codex\""),
+        );
+        put_evx(root);
+        commit(root);
+        let (level, detail) = events(&bed);
+        assert_eq!(level, Level::Warn);
+        assert!(detail.contains(named), "{named}: {detail}");
+        assert!(
+            detail.contains("and `specify integration upgrade codex --force"),
+            "{detail}"
+        );
+        assert!(detail.contains(".claude/settings.json"), "{detail}");
+        assert!(detail.contains(".codex/config.toml"), "{detail}");
+        assert!(detail.contains(".specify/events.py"), "{detail}");
+        assert!(detail.ends_with("then commit on HEAD"), "{detail}");
+
+        for file in [
+            ".claude/settings.json",
+            ".codex/config.toml",
+            ".specify/events.py",
+        ] {
+            std::fs::remove_file(root.join(file)).unwrap();
+        }
+        if !keeps_manifest {
+            std::fs::remove_file(root.join(".specify/extensions/evx/extension.yml")).unwrap();
+        }
+        commit(root);
+        let (level, detail) = events(&bed);
+        assert_eq!(level, Level::Pass, "{named}: {detail}");
+    }
+}
+
+#[test]
+fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    put(root, ".codex/hooks.json", "{}\n");
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains(".codex/hooks.json is on disk"), "{detail}");
+    assert!(detail.contains("Codex member"), "{detail}");
+    assert!(detail.contains("remove it from the repository"), "{detail}");
+    std::fs::remove_file(root.join(".codex/hooks.json")).unwrap();
+    assert_eq!(events(&bed).0, Level::Pass);
 }

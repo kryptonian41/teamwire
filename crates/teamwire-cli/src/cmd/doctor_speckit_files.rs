@@ -68,6 +68,17 @@ pub(crate) fn required_hooks(text: &str) -> Result<Vec<RequiredHook>, String> {
     Ok(found)
 }
 
+/// True when an extension manifest has a top-level `events:` with at least
+/// one event. spec-kit counts `events: {}` as none. A manifest the reader
+/// cannot read counts when a line starts with `events:`, since this is only a
+/// note.
+pub(crate) fn declares_events(text: &str) -> bool {
+    match parse_yaml(text) {
+        Ok(doc) => matches!(doc.get("events"), Some(Yaml::Map(events)) if !events.is_empty()),
+        Err(_) => text.lines().any(|l| l.starts_with("events:")),
+    }
+}
+
 /// True when a JSON value holds an object with `"__speckit_event__": true`,
 /// the tag spec-kit puts on each hook it writes into `.claude/settings.json`.
 pub(crate) fn has_speckit_event(value: &serde_json::Value) -> bool {
@@ -193,5 +204,15 @@ mod tests {
         assert_eq!(required("hooks: {}\n"), Vec::new());
         assert_eq!(required(""), Vec::new());
         assert!(required_hooks("hooks:\n  before_tasks: *gate\n").is_err());
+    }
+
+    #[test]
+    fn a_manifest_declares_events_only_with_one_event_at_the_top_level() {
+        assert!(declares_events(
+            "events:\n  session_start:\n    command: speckit.evx.guard\n"
+        ));
+        assert!(!declares_events("events: {}\n"));
+        assert!(!declares_events("extension:\n  events: none\n"));
+        assert!(declares_events("events: &a\n  x: 1\n"));
     }
 }

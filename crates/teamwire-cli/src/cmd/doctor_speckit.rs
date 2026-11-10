@@ -29,6 +29,7 @@ const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 const CONSTITUTION: &str = ".specify/memory/constitution.md";
 const FEATURE_POINTER: &str = ".specify/feature.json";
+const INTEGRATION_FILE: &str = ".specify/integration.json";
 
 /// The folders `ls-tree` lists: spec-kit's own, and where the harnesses
 /// teamwire runs keep spec-kit's commands and hooks.
@@ -349,7 +350,7 @@ fn has_entry(base: &Base<'_>, dir: &str, start: &str, end: &str) -> bool {
 /// The integrations spec-kit counts as installed: `installed_integrations`,
 /// and the older keys `default_integration` and `integration`, the way
 /// spec-kit's `normalize_integration_state` reads them.
-fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
+pub(super) fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
     let key = |name: &str| {
         json.get(name)
             .and_then(serde_json::Value::as_str)
@@ -381,7 +382,7 @@ fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
 
 fn integrations_check(base: &Base<'_>) -> Check {
     let name = "spec-kit integrations";
-    let file = ".specify/integration.json";
+    let file = INTEGRATION_FILE;
     let at = base.at();
     let installed: Vec<String> = match base.show(file).and_then(|text| {
         let text = text.ok_or_else(|| format!("{file} is not in {at}"))?;
