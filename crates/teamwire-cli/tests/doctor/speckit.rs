@@ -1,7 +1,8 @@
 //! The spec-kit checks of `teamwire doctor`: printed only inside a git
 //! repository whose root holds `.specify/`, each `ok` or `warn`, never a
-//! failure. The in-process tests give git's answers through the fake
-//! platform; the binary test asks a real git.
+//! failure. The in-process tests ask a real git about a real scratch
+//! repository, except where a fake git must time out; the binary tests run
+//! `teamwire doctor` itself.
 
 use super::*;
 
@@ -42,17 +43,6 @@ const WORKFLOWS: &str = r#"{
 const TEMPLATE: &str =
     "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n";
 
-/// What git prints when the path is not in `HEAD`: exit 128, as real git
-/// does for `cat-file -e` and `show` both.
-fn not_in_head() -> RunOutput {
-    RunOutput {
-        exit_code: 128,
-        stderr: b"fatal: path '.specify/memory/constitution.md' does not exist in 'HEAD'\n"
-            .to_vec(),
-        ..answer("")
-    }
-}
-
 fn exits(code: i32) -> RunOutput {
     RunOutput {
         exit_code: code,
@@ -61,27 +51,51 @@ fn exits(code: i32) -> RunOutput {
 }
 
 /// A healthy bed whose repository is a spec-kit project as `specify init`
-/// leaves it for Claude Code and pi: a `.git`, a filled constitution on disk
-/// and in `HEAD`, both command folders and the bundled workflow. git ignores
-/// the feature pointer.
+/// leaves it for Claude Code and pi, all committed: a filled constitution,
+/// both command folders and the bundled workflow. spec-kit's own
+/// `.specify/.gitignore` makes git ignore the feature pointer.
 fn speckit_bed() -> Bed {
-    let mut bed = Bed::healthy();
+    let bed = Bed::healthy();
     let root = bed.home.path();
-    std::fs::create_dir_all(root.join(".git")).unwrap();
+    git(root, &["init", "-q"]);
+    put(root, ".specify/.gitignore", "feature.json\n");
     put(root, ".specify/memory/constitution.md", FILLED);
     put(root, ".specify/integration.json", INTEGRATIONS);
     put(root, ".specify/workflows/workflow-registry.json", WORKFLOWS);
     put(root, ".claude/skills/speckit-plan/SKILL.md", "plan");
     put(root, ".pi/prompts/speckit.plan.md", "plan");
-    commit_constitution(&mut bed, FILLED);
+    commit(root);
     bed
 }
 
-/// git's answers when `text` is the constitution in `HEAD`: `cat-file -e`
-/// finds it, `show` prints it, and `check-ignore` ignores the pointer.
-fn commit_constitution(bed: &mut Bed, text: &str) {
-    bed.speckit_git = vec![answer(""), answer(text), answer("")];
+/// Commits every change in the repository.
+fn commit(root: &Path) {
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "--allow-empty", "-m", "change"]);
 }
+
+/// Writes `file` and commits it.
+fn put_committed(root: &Path, file: &str, text: &str) {
+    put(root, file, text);
+    commit(root);
+}
+
+/// Removes `path` and commits that.
+fn remove_committed(root: &Path, path: &str) {
+    git(root, &["rm", "-r", "-q", path]);
+    commit(root);
+}
+
+/// Makes `text` the constitution in `HEAD` and leaves the copy on disk as
+/// it was.
+fn commit_constitution(bed: &mut Bed, text: &str) {
+    let root = bed.home.path();
+    let disk = std::fs::read_to_string(root.join(CONSTITUTION_FILE)).unwrap();
+    put_committed(root, CONSTITUTION_FILE, text);
+    put(root, CONSTITUTION_FILE, &disk);
+}
+
+const CONSTITUTION_FILE: &str = ".specify/memory/constitution.md";
 
 fn put(root: &Path, file: &str, text: &str) {
     let path = root.join(file);
@@ -113,20 +127,41 @@ fn outside_a_spec_kit_repository_doctor_prints_no_spec_kit_line() {
 fn a_git_worktree_whose_git_is_a_file_is_a_spec_kit_root() {
     let bed = speckit_bed();
     let root = bed.home.path();
-    std::fs::remove_dir_all(root.join(".git")).unwrap();
-    put(root, ".git", "gitdir: /elsewhere/.git/worktrees/w\n");
-    assert_eq!(speckit_names(&bed.checks()).len(), 7);
+    // What `git init --separate-git-dir` leaves: `.git` is a file naming the repository.
+    let elsewhere = TestHome::new().unwrap();
+    let moved = elsewhere.path().join("repo.git");
+    std::fs::rename(root.join(".git"), &moved).unwrap();
+    put(root, ".git", &format!("gitdir: {}\n", moved.display()));
+    let checks = bed.checks();
+    assert_eq!(speckit_names(&checks).len(), 7);
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Pass);
 }
+
+/// A fake git for the spec-kit checks, with `rev-parse` and `ls-tree`
+/// answered: the commit is `SHA` and holds `files`.
+fn fake_git(bed: &mut Bed, files: &[&str]) -> Arc<FakePlatform> {
+    let fake = Arc::new(FakePlatform::new());
+    fake.queue_run(Ok(answer(&format!("{SHA}\n"))));
+    let listed: String = files.iter().flat_map(|f| [f, "\0"]).collect();
+    fake.queue_run(Ok(answer(&listed)));
+    bed.git = Some(fake.clone());
+    fake
+}
+
+const SHA: &str = "b529e55fe8460706b2943536ecf8d8c17962daf3";
 
 #[test]
 fn git_is_asked_about_head_at_the_root() {
-    let bed = speckit_bed();
+    let mut bed = speckit_bed();
+    let fake = fake_git(&mut bed, &[CONSTITUTION_FILE, ".specify/integration.json"]);
+    // `show` for the constitution, then for `integration.json`; `check-ignore` ignores.
+    fake.queue_run(Ok(answer(FILLED)));
+    fake.queue_run(Ok(answer(INTEGRATIONS)));
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Pass);
-    assert!(detail_of(&checks, "spec-kit committed").contains("committed in HEAD"));
+    assert!(detail_of(&checks, "spec-kit committed").contains("committed in HEAD (b529e55)"));
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Pass);
-    let git: Vec<(Vec<String>, Option<PathBuf>)> = bed
-        .platform
+    let git: Vec<(Vec<String>, Option<PathBuf>)> = fake
         .runs()
         .iter()
         .filter(|(c, _)| c.program == "git")
@@ -137,15 +172,40 @@ fn git_is_asked_about_head_at_the_root() {
         let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
         assert!(git.contains(&(args, root.clone())), "{git:?}");
     };
-    asked(&["cat-file", "-e", "HEAD:.specify/memory/constitution.md"]);
-    asked(&["show", "HEAD:.specify/memory/constitution.md"]);
+    asked(&["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"]);
+    asked(&[
+        "ls-tree",
+        "-r",
+        "-z",
+        "--name-only",
+        SHA,
+        "--",
+        ".specify",
+        ".claude",
+        ".agents",
+        ".pi",
+        ".codex",
+    ]);
+    asked(&["show", &format!("{SHA}:.specify/memory/constitution.md")]);
     asked(&["check-ignore", "-q", ".specify/feature.json"]);
 }
 
 #[test]
 fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_the_file() {
-    let mut bed = speckit_bed();
-    bed.speckit_git = vec![not_in_head(), not_in_head(), exits(1)];
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    git(
+        root,
+        &[
+            "rm",
+            "-q",
+            "--cached",
+            CONSTITUTION_FILE,
+            ".specify/.gitignore",
+        ],
+    );
+    std::fs::remove_file(root.join(".specify/.gitignore")).unwrap();
+    git(root, &["commit", "-q", "-m", "drop"]);
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit committed");
@@ -153,8 +213,8 @@ fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_th
         detail.contains(".specify/memory/constitution.md"),
         "{detail}"
     );
-    assert!(detail.contains("not committed in HEAD"), "{detail}");
-    assert!(detail.contains("does not exist in 'HEAD'"), "{detail}");
+    assert!(detail.contains("is not in HEAD ("), "{detail}");
+    assert!(detail.contains("commit .specify/"), "{detail}");
     assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit constitution");
     assert!(detail.contains("/speckit-constitution"), "{detail}");
@@ -168,20 +228,36 @@ fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_th
 
 #[test]
 fn a_git_that_cannot_answer_warns_and_names_the_file_and_git_status() {
-    let mut bed = speckit_bed();
     let timed_out = RunOutput {
         timed_out: true,
         ..answer("")
     };
-    bed.speckit_git = vec![timed_out.clone(), timed_out, exits(128)];
+    // No answer to `rev-parse`: one line, and no other spec-kit line.
+    let mut bed = speckit_bed();
+    let fake = Arc::new(FakePlatform::new());
+    fake.queue_run(Ok(timed_out.clone()));
+    bed.git = Some(fake);
     let checks = bed.checks();
-    for (name, file) in [
-        ("spec-kit committed", ".specify/memory/constitution.md"),
-        ("spec-kit constitution", ".specify/memory/constitution.md"),
-        ("spec-kit feature pointer", ".specify/feature.json"),
+    assert_eq!(speckit_names(&checks), vec!["spec-kit base"]);
+    let detail = detail_of(&checks, "spec-kit base");
+    assert!(detail.contains("no answer within 10 s"), "{detail}");
+
+    // No answer to `show`, and `check-ignore` exits 128.
+    let fake = fake_git(&mut bed, &[CONSTITUTION_FILE]);
+    fake.queue_run(Ok(timed_out));
+    fake.queue_run(Ok(exits(128)));
+    let after = bed.checks();
+    for (checks, name, file) in [
+        (&checks, "spec-kit base", "`HEAD`"),
+        (
+            &after,
+            "spec-kit constitution",
+            ".specify/memory/constitution.md",
+        ),
+        (&after, "spec-kit feature pointer", ".specify/feature.json"),
     ] {
-        assert_eq!(level_of(&checks, name), Level::Warn);
-        let detail = detail_of(&checks, name);
+        assert_eq!(level_of(checks, name), Level::Warn);
+        let detail = detail_of(checks, name);
         assert!(detail.contains(file), "{name}: {detail}");
         assert!(detail.contains("run `git status` in"), "{name}: {detail}");
     }
@@ -266,14 +342,14 @@ fn each_installed_integration_needs_its_command_folder() {
         "{checks:?}"
     );
 
-    std::fs::remove_dir_all(bed.home.path().join(".pi")).unwrap();
+    remove_committed(bed.home.path(), ".pi");
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit integrations");
     assert!(detail.contains(".pi/prompts/speckit.*.md"), "{detail}");
     assert!(!detail.contains(".claude/skills"), "{detail}");
 
-    std::fs::remove_dir_all(bed.home.path().join(".claude/skills/speckit-plan")).unwrap();
+    remove_committed(bed.home.path(), ".claude/skills/speckit-plan");
     let detail = detail_of(&bed.checks(), "spec-kit integrations").to_owned();
     assert!(detail.contains(".claude/skills/speckit-*"), "{detail}");
 }
@@ -281,7 +357,7 @@ fn each_installed_integration_needs_its_command_folder() {
 #[test]
 fn codex_needs_its_skills_folder() {
     let bed = speckit_bed();
-    put(
+    put_committed(
         bed.home.path(),
         ".specify/integration.json",
         r#"{"installed_integrations": ["codex"]}"#,
@@ -290,7 +366,7 @@ fn codex_needs_its_skills_folder() {
         level_of(&bed.checks(), "spec-kit integrations"),
         Level::Warn
     );
-    put(
+    put_committed(
         bed.home.path(),
         ".agents/skills/speckit-plan/SKILL.md",
         "plan",
@@ -304,12 +380,12 @@ fn codex_needs_its_skills_folder() {
 #[test]
 fn an_unreadable_integration_file_warns() {
     let bed = speckit_bed();
-    std::fs::remove_file(bed.home.path().join(".specify/integration.json")).unwrap();
+    remove_committed(bed.home.path(), ".specify/integration.json");
     assert_eq!(
         level_of(&bed.checks(), "spec-kit integrations"),
         Level::Warn
     );
-    put(bed.home.path(), ".specify/integration.json", "{not json");
+    put_committed(bed.home.path(), ".specify/integration.json", "{not json");
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit integrations");
@@ -329,14 +405,9 @@ fn the_workflows_line_lists_the_ids_and_is_always_ok() {
     assert!(detail.contains("speckit"), "{detail}");
     assert!(detail.contains("teamwire starts none"), "{detail}");
 
-    std::fs::remove_file(
-        bed.home
-            .path()
-            .join(".specify/workflows/workflow-registry.json"),
-    )
-    .unwrap();
+    remove_committed(bed.home.path(), ".specify/workflows/workflow-registry.json");
     assert_eq!(level_of(&bed.checks(), "spec-kit workflows"), Level::Pass);
-    put(
+    put_committed(
         bed.home.path(),
         ".specify/workflows/workflow-registry.json",
         "[",
@@ -345,7 +416,7 @@ fn the_workflows_line_lists_the_ids_and_is_always_ok() {
 }
 
 fn git_extension(bed: &Bed, extensions_yml: &str) -> (Level, String) {
-    put(bed.home.path(), ".specify/extensions.yml", extensions_yml);
+    put_committed(bed.home.path(), ".specify/extensions.yml", extensions_yml);
     let checks = bed.checks();
     let name = "spec-kit git extension";
     (level_of(&checks, name), detail_of(&checks, name).to_owned())
@@ -394,14 +465,14 @@ fn an_extension_that_declares_events_warns_and_one_that_does_not_passes() {
     let bed = speckit_bed();
     let root = bed.home.path();
     // A nested `events:` key is not the top-level one spec-kit reads.
-    put(
+    put_committed(
         root,
         ".specify/extensions/bug/extension.yml",
         "extension:\n  id: bug\n  events: none\nprovides:\n  commands: []\n",
     );
     assert_eq!(events(&bed).0, Level::Pass);
 
-    put(
+    put_committed(
         root,
         ".specify/extensions/tw-ev/extension.yml",
         "extension:\n  id: tw-ev\nevents:\n  pre_tool_use:\n    command: speckit.tw-ev.guard\n",
@@ -418,7 +489,7 @@ fn an_extension_that_declares_events_warns_and_one_that_does_not_passes() {
 #[test]
 fn an_integration_events_file_or_a_codex_config_warns() {
     let bed = speckit_bed();
-    put(bed.home.path(), ".specify/integration-events.yml", "{}\n");
+    put_committed(bed.home.path(), ".specify/integration-events.yml", "{}\n");
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(
@@ -427,7 +498,7 @@ fn an_integration_events_file_or_a_codex_config_warns() {
     );
 
     let bed = speckit_bed();
-    put(
+    put_committed(
         bed.home.path(),
         ".codex/config.toml",
         "[[hooks.PreToolUse]]\n",
@@ -441,7 +512,7 @@ fn an_integration_events_file_or_a_codex_config_warns() {
 #[test]
 fn a_codex_hooks_file_warns_because_codex_launch_refuses_it() {
     let bed = speckit_bed();
-    put(bed.home.path(), ".codex/hooks.json", "{}\n");
+    put_committed(bed.home.path(), ".codex/hooks.json", "{}\n");
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".codex/hooks.json"), "{detail}");
@@ -460,9 +531,9 @@ fn a_claude_settings_hook_tagged_as_a_spec_kit_event_warns() {
         }]}]}})
         .to_string()
     };
-    put(bed.home.path(), ".claude/settings.json", &settings(false));
+    put_committed(bed.home.path(), ".claude/settings.json", &settings(false));
     assert_eq!(events(&bed).0, Level::Pass);
-    put(bed.home.path(), ".claude/settings.json", &settings(true));
+    put_committed(bed.home.path(), ".claude/settings.json", &settings(true));
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".claude/settings.json"), "{detail}");
@@ -536,7 +607,17 @@ fn the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository() {
     std::fs::create_dir_all(&sub).unwrap();
     put(repo.path(), ".specify/memory/constitution.md", FILLED);
 
-    // spec-kit's own `.specify/.gitignore` is not there yet, and nothing is committed.
+    // No commit yet: one line says so, and no other line guesses.
+    let out = teamwire(&bed, &path, &sub).out;
+    let line = line_of(&out, "spec-kit base");
+    assert!(line.starts_with("warn"), "{out}");
+    assert!(line.contains("Needed a single revision"), "{out}");
+    assert!(!out.contains("spec-kit feature pointer"), "{out}");
+    assert!(!out.contains("FAIL spec-kit"), "{out}");
+
+    // spec-kit's own `.specify/.gitignore` is not there yet.
+    git(repo.path(), &["add", ".gitignore"]);
+    git(repo.path(), &["commit", "-q", "-m", "first"]);
     let out = teamwire(&bed, &path, &sub).out;
     assert!(
         line_of(&out, "spec-kit committed").starts_with("warn"),
@@ -546,7 +627,6 @@ fn the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository() {
         line_of(&out, "spec-kit feature pointer").starts_with("warn"),
         "{out}"
     );
-    assert!(!out.contains("FAIL spec-kit"), "{out}");
 
     // Staged but not committed: a worktree cut from HEAD gets none of it.
     put(repo.path(), ".specify/.gitignore", "feature.json\n");
@@ -581,4 +661,229 @@ fn the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository() {
         line_of(&out, "spec-kit constitution").starts_with("ok"),
         "{out}"
     );
+}
+
+/// The start of the `.specify/extensions.yml` that `specify extension add
+/// git` (spec-kit 1.3.3.dev0) writes: its two hooks with `optional: false`
+/// and one optional hook. The real file goes on with 15 more optional hooks.
+const GIT_EXTENSIONS: &str = "installed:
+- git
+settings:
+  auto_execute_hooks: true
+hooks:
+  before_constitution:
+  - extension: git
+    command: speckit.git.initialize
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.git.initialize?
+    description: Initialize Git repository before constitution setup
+    condition: null
+  before_specify:
+  - extension: git
+    command: speckit.git.feature
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.git.feature?
+    description: Create feature branch before specification
+    condition: null
+  before_clarify:
+  - extension: git
+    command: speckit.git.commit
+    enabled: true
+    optional: true
+    priority: 10
+    prompt: Commit outstanding changes before clarification?
+    description: Auto-commit before spec clarification
+    condition: null
+";
+
+/// What `specify extension remove <id>` leaves in `.specify/extensions.yml`
+/// when it removed the last extension.
+const NO_EXTENSIONS: &str = "installed: []\nsettings:\n  auto_execute_hooks: true\nhooks: {}\n";
+
+/// The manifest of a scratch extension `evx` that declares one event.
+const EVX_MANIFEST: &str = "schema_version: \"1.0\"
+extension:
+  id: evx
+  name: \"Events demo\"
+  version: \"1.0.0\"
+provides:
+  commands:
+    - name: speckit.evx.guard
+      file: commands/speckit.evx.guard.md
+events:
+  session_start:
+    command: speckit.evx.guard
+";
+
+/// The `.claude/settings.json` that `specify extension add --dev evx` wrote.
+const EVX_CLAUDE_SETTINGS: &str = r#"{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.specify/events.py\" speckit.evx.guard session_start 60",
+            "timeout": 65,
+            "__speckit_event__": true
+          }
+        ]
+      }
+    ]
+  }
+}
+"#;
+
+/// The `.codex/config.toml` that `specify extension add --dev evx` wrote.
+const EVX_CODEX_CONFIG: &str = "
+
+[[hooks.SessionStart]]
+matcher = \"*\"
+
+[[hooks.SessionStart.hooks]]
+type = \"command\"
+command = \"python3 .specify/events.py speckit.evx.guard session_start 60\"
+timeout = 65
+speckit_marker = true
+";
+
+/// Every file `specify extension add --dev evx` wrote for Claude Code and Codex.
+fn put_evx(root: &Path) {
+    put(root, ".specify/extensions/evx/extension.yml", EVX_MANIFEST);
+    put(root, ".claude/settings.json", EVX_CLAUDE_SETTINGS);
+    put(root, ".codex/config.toml", EVX_CODEX_CONFIG);
+    put(root, ".specify/events.py", "#!/usr/bin/env python3\n");
+}
+
+#[test]
+fn every_line_reads_the_commit_and_a_change_only_on_disk_does_not_clear_a_warning() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    put(root, ".specify/extensions.yml", GIT_EXTENSIONS);
+    put_evx(root);
+    commit(root);
+    // pi's prompts on disk, but not in the commit.
+    git(root, &["rm", "-r", "-q", "--cached", ".pi"]);
+    git(root, &["commit", "-q", "-m", "drop pi"]);
+
+    // What `specify extension remove git` and `specify extension remove evx`
+    // change, not committed.
+    put(root, ".specify/extensions.yml", NO_EXTENSIONS);
+    for file in [
+        ".specify/extensions/evx/extension.yml",
+        ".claude/settings.json",
+        ".codex/config.toml",
+        ".specify/events.py",
+    ] {
+        std::fs::remove_file(root.join(file)).unwrap();
+    }
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit git extension"), Level::Warn);
+    assert_eq!(level_of(&checks, "spec-kit events"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit events");
+    assert!(detail.contains(".claude/settings.json"), "{detail}");
+    assert!(detail.contains(".codex/config.toml"), "{detail}");
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit integrations");
+    assert!(
+        detail.contains(".pi/prompts/speckit.*.md in HEAD ("),
+        "{detail}"
+    );
+
+    // Committed, each line turns ok.
+    commit(root);
+    let checks = bed.checks();
+    for name in [
+        "spec-kit git extension",
+        "spec-kit events",
+        "spec-kit integrations",
+    ] {
+        assert_eq!(level_of(&checks, name), Level::Pass, "{name}: {checks:?}");
+    }
+}
+
+#[test]
+fn base_names_the_commit_the_lines_read_and_every_line_names_it() {
+    let bed = Bed::healthy();
+    let bins = FakeBins::ensure().unwrap();
+    let fake_dir = bed.bin.path().join("fakes");
+    bins.install(&fake_dir).unwrap();
+    let path = format!("{}:/usr/bin:/bin", fake_dir.display());
+    let repo = ignoring_repo();
+    let root = repo.path();
+    git(root, &["checkout", "-q", "-b", "main"]);
+    git(root, &["add", ".gitignore"]);
+    git(root, &["commit", "-q", "-m", "first"]);
+    git(root, &["checkout", "-q", "-b", "develop"]);
+    put(root, ".specify/.gitignore", "feature.json\n");
+    put(root, ".specify/memory/constitution.md", FILLED);
+    put(root, ".specify/integration.json", INTEGRATIONS);
+    put(root, ".claude/skills/speckit-plan/SKILL.md", "plan");
+    put(root, ".pi/prompts/speckit.plan.md", "plan");
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "spec-kit"]);
+    let short = |name: &str| {
+        let out = std::process::Command::new("git")
+            .args(["rev-parse", "--short=7", name])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    };
+
+    // The default is HEAD, here develop, which holds spec-kit.
+    let out = teamwire(&bed, &path, root).out;
+    let line = line_of(&out, "spec-kit constitution");
+    assert!(line.starts_with("ok"), "{out}");
+    assert!(
+        line.contains(&format!("in HEAD ({})", short("develop"))),
+        "{out}"
+    );
+
+    // Members cut from main get no spec-kit.
+    let out = teamwire_with(&bed, &path, root, &["--base", "main"]).out;
+    let at = format!("main ({})", short("main"));
+    for name in [
+        "spec-kit committed",
+        "spec-kit constitution",
+        "spec-kit integrations",
+        "spec-kit git extension",
+        "spec-kit events",
+        "spec-kit workflows",
+    ] {
+        let line = line_of(&out, name);
+        assert!(line.contains(&at), "{name}: {out}");
+    }
+    assert!(
+        line_of(&out, "spec-kit constitution").starts_with("warn"),
+        "{out}"
+    );
+    assert!(
+        line_of(&out, "spec-kit committed").starts_with("warn"),
+        "{out}"
+    );
+
+    // A ref git cannot resolve: one line, and it names the ref.
+    let out = teamwire_with(&bed, &path, root, &["--base", "mian"]).out;
+    let line = line_of(&out, "spec-kit base");
+    assert!(line.starts_with("warn"), "{out}");
+    assert!(line.contains("`mian`"), "{out}");
+    assert!(line.contains("pass `--base` a branch or commit"), "{out}");
+    assert!(!out.contains("spec-kit committed"), "{out}");
+}
+
+#[test]
+fn doctor_help_shows_base() {
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .args(["doctor", "--help"])
+        .output()
+        .unwrap();
+    let help = String::from_utf8(out.stdout).unwrap();
+    assert!(help.contains("--base <REF>"), "{help}");
+    assert!(help.contains("[default: HEAD]"), "{help}");
 }

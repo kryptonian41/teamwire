@@ -86,7 +86,7 @@ pub(crate) enum Command {
     /// The stdio MCP server, started by a harness.
     Mcp(McpArgs),
     /// Read-only checks of the state, the disk and the tools teamwire needs.
-    Doctor,
+    Doctor(DoctorArgs),
     /// Install the lead setup: the plugin `teamwire@teamwire`, with the skill,
     /// the lead's MCP server and the Stop hook.
     Install(InstallArgs),
@@ -396,6 +396,14 @@ pub(crate) struct InstallArgs {
     /// the harnesses found on PATH, and anything else installs `claude-code`.
     #[arg(long, value_delimiter = ',', value_name = "ID")]
     pub(crate) harness: Vec<String>,
+}
+
+#[derive(Args)]
+pub(crate) struct DoctorArgs {
+    /// The branch or commit members start from. The spec-kit lines read the
+    /// files in this commit, since a worktree is cut from it.
+    #[arg(long, value_name = "REF", default_value = "HEAD")]
+    pub(crate) base: String,
 }
 
 #[derive(Args)]
