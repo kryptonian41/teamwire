@@ -293,6 +293,16 @@ pub trait Harness: Send + Sync {
     /// finds the session's own transcript. `Ok(None)` means unknown (none yet,
     /// or a compaction left none), never zero. Default `Ok(None)`.
     fn context_fill(&self, s: &SessionId, transcript: Option<&Path>) -> Result<Option<Fill>, HarnessError>;
+    /// The session's token usage so far, per model, read without writing from
+    /// the harness's own session file. `transcript` as for `context_fill`.
+    /// `Ok(None)` means no reading. Default `Ok(None)`: the turn-end then
+    /// reads the hook's transcript with the Claude Code reader in
+    /// teamwire-report. pi sums every assistant message's `input`, `output`,
+    /// `cacheRead` and `cacheWrite`. Codex takes the newest
+    /// `total_token_usage`, takes `cached_input_tokens` out of `input_tokens`
+    /// as cache reads, counts reasoning inside output, reports no cache writes
+    /// (0), and puts every token under the newest turn's model.
+    fn session_usage(&self, s: &SessionId, transcript: Option<&Path>) -> Result<Option<SessionUsage>, HarnessError>;
     fn processes_for_session(&self, s: &SessionId, timeout: Duration) -> Result<Vec<Pid>, HarnessError>;
     fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError>;
     /// Parse turn-end hook stdin into the neutral form.
@@ -575,7 +585,16 @@ impl Fill {
 /// `context_handoff_tokens`. A rule of thumb: no published measurement backs 40% for Claude.
 pub const DEFAULT_HANDOFF_PCT: u64 = 40;
 
-impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>; }
+impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>;
+                     pub fn scratch_dir(&self) -> Option<PathBuf>; }  // <home>/scratch/<team>/<role>; every harness sets TEAMWIRE_SCRATCH to it
+/// `<home>/scratch/<team>`: the members' scratch folders, outside the team
+/// directory, so the archive never copies them; team close deletes it.
+pub fn team_scratch_dir(home: &Path, team: &TeamName) -> PathBuf;
+/// One model's tokens in a session so far, in the shape of `data.usage` on
+/// `result.delivering`. A kind the harness does not report is 0.
+pub struct TokenCounts { pub input: u64, pub output: u64, pub cache_read: u64, pub cache_creation: u64 }
+impl TokenCounts { pub fn add(&mut self, other: Self); }  // each count saturating
+pub type SessionUsage = BTreeMap<String, TokenCounts>;   // by model name
 impl LaunchSpec { pub fn shell_word(text: &str) -> String; }  // single-quotes any word outside [A-Za-z0-9/._-+:=@,]; "%" is quoted
 /// What the harness returns. Files are written by launch (mode given) before spawn.
 pub struct LaunchSpec { pub argv: Vec<String>,

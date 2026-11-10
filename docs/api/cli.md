@@ -37,15 +37,23 @@ VER-5).
 ### `teamwire launch [--add] [--dry-run] [--spec FILE]`
 
 Reads a team spec (JSON) from stdin or `--spec`. Validates everything first
-(LCH-2), then per member: records it as `creating`, makes the worktree, runs
-setup, writes contract, brief (also as `<worktree>/TASK.md`, excluded from
-git) and per-run config, spawns it through the host,
+(LCH-2), then makes `<home>/teams/<team>/reports/`, where members write their
+reports (`--add` makes it when it is missing), then per member: records it as
+`creating`, makes the worktree, runs setup, makes the member's scratch folder
+`<home>/scratch/<team>/<role>/`, writes contract, brief (also as
+`<worktree>/TASK.md`, excluded from git) and per-run config, spawns it through
+the host,
 answers a plain trust dialog, records it as `started`, and sends the task as
 its first message. Starts or reuses the sleep hold. Accepted risk: Claude Code
 2.1.303 shows the same plain folder-trust prompt for a folder whose settings
 declare hooks, project MCP servers or an `apiKeyHelper`, and launch answers it,
 so those then run with the member's rights. Read a folder's `.claude/` and
-`.mcp.json` before you launch members into it for the first time. `--add` adds members to a
+`.mcp.json` before you launch members into it for the first time. Every
+harness (Claude Code, Codex, pi) hands the member its scratch folder's path
+as `TEAMWIRE_SCRATCH`, and the seat rules say to keep temporary files there,
+never in the repository or `/tmp`. A member whose launch fails after its
+scratch folder was made has the folder removed with the rest of its undo; a
+handoff or reopen keeps the folder. `--add` adds members to a
 running team. `--dry-run` validates and prints the plan, touching nothing.
 
 Refuses (exit 1, nothing created): a real launch from a member identity
@@ -463,9 +471,11 @@ directory is deleted last: it is first renamed to
 `$TEAMWIRE_HOME/deleting/<team>.<pid>`, so a kill never leaves
 `teams/<team>` without its `team.db`, and then removed. A later close
 removes any directory there whose pid is dead. Deleting the state also
-deletes `$TEAMWIRE_HOME/cache/closer/<team>/`, the closer's clone, the same way
-(a symlink there is removed as a link); a failure to delete it is a note in the
-step's detail and never fails the close. `--keep-state` and `--role` leave it.
+deletes `$TEAMWIRE_HOME/cache/closer/<team>/`, the closer's clone, and
+`$TEAMWIRE_HOME/scratch/<team>/`, the members' scratch folders, the same way
+(a symlink there is removed as a link); a failure to delete either is a note
+in the step's detail and never fails the close. The archive copies neither.
+`--keep-state` and `--role` leave both.
 Prints the
 branches kept and any unpushed commits. `branches kept:` lists only branches
 that exist in the repo; a branch the user deleted by hand is left out. The
@@ -887,6 +897,6 @@ and still exits 0.
 | `teamwire install [--dry-run] [--force] [--harness ID[,ID]]` | Installs the teamwire plugin `teamwire@teamwire` (ADR 0018): writes a local marketplace to `$TEAMWIRE_HOME/claude-plugin/` holding the skills (`skills/teamwire/SKILL.md`, `skills/teamwire/reference.md` and `skills/afk/SKILL.md`, which Claude Code lists as `/teamwire:afk`), the lead's MCP server `<this binary> [--home DIR] mcp --lead` the lead's Stop hook `<this binary> [--home DIR] hook claude-lead-stop`, and the lead's tool hook `<this binary> [--home DIR] hook lead-tool --harness claude-code` on `PostToolUse` for `Edit`, `Write`, `MultiEdit`, `NotebookEdit` and `Bash` (ADR 0035), then registers it at user scope through `claude plugin marketplace add|update` and `claude plugin install|update|enable`. The plugin's version is a hash of its files, all three skill files included, so a new binary or skill is a new version. Then removes an ADR 0012 setup: the stamped skill under `<claude dir>/skills/teamwire/` and the user MCP entry `teamwire` (through `claude mcp remove`). Skips what is already current. Refuses, before any change, a skill edited by hand, an MCP entry named `teamwire` that is not the lead's server, a marketplace named `teamwire` from another source, a binary inside a `target/` directory, and a `claude` whose `plugin` command does not run; `--force` passes the first four. A foreign MCP entry is described with secret flag values (`--token X`, `--token=X`) hidden and URLs printed without user info or query. Exit 0 when done or when nothing needed a change, 1 when refused or when a change failed before anything was changed, 2 when a change failed after another was made (the message lists what was done; run it again). `--harness` names the harnesses to install for (`claude-code`, `codex`, `pi`). A name that is not on PATH is refused with exit 1, and an unknown name is a usage error, exit 3. Without it, a terminal gets a numbered selector of the harnesses found on PATH, all selected by default, and a script without a terminal gets `claude-code`. For Codex, install writes a marketplace to `$TEAMWIRE_HOME/codex-plugin/`, whose hooks run `hook lead-stop --harness codex` and `hook lead-tool --harness codex`, with the same `reference.md` (its `SKILL.md` also carries the Codex part), and changes Codex only through `codex plugin marketplace add\|remove` and `codex plugin add\|remove` (ADR 0023). When a change needs it, install prints that Codex will ask you to review the plugin's hook once after the change. For pi, install writes the lead package to `$TEAMWIRE_HOME/pi-package/` (the lead extension, which registers `mcp --lead`, runs `hook lead-stop --harness pi`, `hook lead-tool --harness pi` and the `teamwire_watch` tool; the skill with its pi part; `reference.md`) and lists it with `pi install <dir>`, run with `PI_OFFLINE=1`, only when pi's `settings.json` does not list it yet (ADR 0030). pi loads the folder in place, so changed files need no second `pi install`; install prints that open pi sessions see the change after a restart. |
 | `teamwire uninstall [--dry-run] [--force]` | Runs `claude plugin uninstall` and `claude plugin marketplace remove`, deletes `$TEAMWIRE_HOME/claude-plugin/` (the whole plugin directory, all three skill files), and removes an ADR 0012 skill and MCP entry with the same refusals as `install`; `--force` removes an edited skill, a foreign entry, or a marketplace named `teamwire` from another source anyway. A binary under `target/` may uninstall. Exit codes as for `install`. `claude plugin uninstall` leaves the plugin's cache folder on disk, which is Claude Code's behaviour: Claude Code keeps it at `<claude dir>/plugins/cache/teamwire/teamwire/<version>/`, one folder per installed version. `uninstall` does not delete it. When `codex` is on PATH, it also removes the Codex plugin and marketplace through `codex plugin`. When `pi` is on PATH, it also runs `pi remove <dir>` for a listed lead package and deletes `$TEAMWIRE_HOME/pi-package/`. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines with CloudEvents-style names (STO-14). From a member session the lead's session id is left out: `team.lead_session` and the `old_session` and `new_session` of every `team.lead_adopted` event are null. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows (`docs/metrics.md`). With a team name, a team that is closed is read from its newest archive under `$TEAMWIRE_HOME/archive/`; a team never seen is refused. `teamwire.member.tokens` lines cover Claude Code, pi and Codex members alike; what each harness reports is in `docs/metrics.md`. When the named team's store cannot be read (for example a schema newer than this binary), it prints the error and exits 6; without a team, an unreadable team is a warning and the exit stays 0. |
 | `teamwire metrics export [--once]` | Sends events after the export mark to the OTLP endpoint, then moves the mark. A batch stops before the first unsent event whose 60-second bucket has not ended, so each bucket is sent as one point (ADR 0005); events of the current minute go in a later export. Without `--once` it repeats every 60 s until stopped; with `--once` it makes one pass and exits. When export is off it exits 0 at once. It also exits 0 when one team's store cannot be opened; that is intended, so one damaged team cannot stop the repeating exporter. |
 | `teamwire version` | Binary version, as `<crate version>+<12 hex commit>` (or `+unknown` when the build found no git commit), and the schema version it writes. |
