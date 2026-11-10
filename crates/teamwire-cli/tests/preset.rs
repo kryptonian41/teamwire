@@ -1303,6 +1303,36 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
     );
 }
 
+/// Each row of the reference's doctor table says what a `warn` on that check
+/// means, so a row that says the opposite fails here, not at a launch.
+#[test]
+fn the_reference_doctor_table_says_what_each_warn_means() {
+    let reference = example("skills/teamwire/reference.md");
+    let row = |check: &str| {
+        let start = format!("| `spec-kit {check}` |");
+        reference
+            .lines()
+            .find(|l| l.starts_with(&start))
+            .unwrap_or_else(|| unreachable!("no doctor row for spec-kit {check}"))
+            .to_owned()
+    };
+    for (check, meaning) in [
+        ("committed", "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files"),
+        ("constitution", "The committed constitution, the copy in `HEAD`, still holds a template placeholder"),
+        ("integrations", "has no command folder"),
+        ("git extension", "`.specify/extensions.yml` holds the `git` extension"),
+        ("events", "A spec-kit runtime event is set up"),
+        ("events", "`.codex/hooks.json` exists"),
+        ("events", "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`"),
+        ("feature pointer", "git does not ignore `.specify/feature.json`, so members would commit their pointer"),
+        ("workflows", "Never a `warn`"),
+        ("workflows", "teamwire starts none of them"),
+    ] {
+        let text = row(check);
+        assert!(text.contains(meaning), "spec-kit {check} lacks {meaning}: {text}");
+    }
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]

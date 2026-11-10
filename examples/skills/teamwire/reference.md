@@ -318,11 +318,11 @@ what to do. Fix each one before launch:
 
 | check | a `warn` means |
 | --- | --- |
-| `spec-kit committed` | `.specify/memory/constitution.md` is not tracked by git, so a worktree member gets no spec-kit files. Commit `.specify/` and the command folders. |
-| `spec-kit constitution` | The constitution still holds a template placeholder, such as `[PROJECT_NAME]`. Write it through spec-kit's `constitution` command. |
+| `spec-kit committed` | `.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files. Commit `.specify/` and the command folders. |
+| `spec-kit constitution` | The committed constitution, the copy in `HEAD`, still holds a template placeholder, such as `[PROJECT_NAME]`. A written copy on disk that is not committed does not count. Write it through spec-kit's `constitution` command, then commit it. |
 | `spec-kit integrations` | An integration listed in `.specify/integration.json` has no command folder: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. The `ok` line lists the installed integrations. |
 | `spec-kit git extension` | The `installed:` list in `.specify/extensions.yml` holds the `git` extension, which creates and switches branches. |
-| `spec-kit events` | A spec-kit runtime event is set up: an extension manifest, `.specify/extensions/<id>/extension.yml`, has a top-level `events:` key, or `.specify/integration-events.yml` exists, or `.codex/config.toml` exists, or `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`. An extension declares its `events:` in its own manifest, not in `.specify/extensions.yml`. |
+| `spec-kit events` | A spec-kit runtime event is set up: an extension manifest, `.specify/extensions/<id>/extension.yml`, has a top-level `events:` key, or `.specify/integration-events.yml` exists, or `.codex/config.toml` exists, or `.codex/hooks.json` exists, or `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`. An extension declares its `events:` in its own manifest, not in `.specify/extensions.yml`. |
 | `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature. |
 | `spec-kit workflows` | Never a `warn`. The line lists the workflow ids in `.specify/workflows/workflow-registry.json` and says teamwire starts none of them. |
 
