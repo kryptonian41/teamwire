@@ -709,6 +709,156 @@ The existing tests in that file (`:36-114`) stay as they are.
 
 ---
 
+## US4: waivers (F12)
+
+### F12. A waiver ends at the member's next commit, even one that leaves the waived file alone
+
+**Evidence from deckh (read only):**
+
+- `6a05efad1a` in `/Users/apoorvagarwal/Projects/knit-3.0` changed
+  `.specify/memory/constitution.md`, plus two files under `specs/`.
+- `0e05a21fac`, the next commit, changed only three files under `specs/`.
+  `git diff --stat 6a05efad1a 0e05a21fac -- .specify` prints nothing.
+- deckh's `waivers` table (`sqlite3 -readonly`, `SELECT`) holds the same
+  two flags for `spec`, `outside-owns:.specify/memory/constitution.md` and
+  `config-changed:.specify/memory/constitution.md`, at four HEADs:
+  `6a05efad1a` (15:12Z), `0e05a21fac` (15:36Z), `2f160a7001` (16:23Z) and
+  `c91f8ae81e` (17:21Z). The last three reasons say the later commits do
+  not touch the file. The findings file counts only the second round, but
+  the store shows four rounds.
+
+**Root cause (verified on `develop`):**
+
+- `waive` records the waiver at the member's HEAD now
+  (`crates/teamwire-verify/src/lib.rs:226-254`). It reads HEAD at l.238 and
+  stores it as `head_sha` at l.248.
+- `verify_member` reads only the waivers stored at the HEAD it verifies
+  (`lib.rs:310-317`, `tx.waivers(&member.role, head)` at l.313). The store
+  query matches `head_sha` exactly
+  (`crates/teamwire-store/src/verify.rs:189-200`).
+- The set of waived ids marks each raised flag (`lib.rs:322`). So a waiver
+  recorded at any other HEAD never counts.
+- This is the rule ADR 0009 point 2 sets: "A waiver does not carry over to
+  a new HEAD" (`docs/adr/0009-verify-verdicts.md:30-33`). The crate's own
+  note repeats it: "Never: ... count a waiver for a HEAD other than the one
+  it was recorded at" (`lib.rs:5-6`).
+- The flags that name one file put the path only in the flag id string
+  (`crates/teamwire-verify/src/inspect.rs:45-59, 120-125, 177-180,
+  192-195, 208-212, 223-227`). `RawFlag` has no path field
+  (`inspect.rs:11-23`). So verify has no file to compare, even if it wanted
+  to.
+- The existing test pins the old rule:
+  `a_waiver_makes_the_flagged_pass_a_pass_for_that_head_only`
+  (`crates/teamwire-verify/tests/verify.rs:601-633`). Its last block, after
+  the comment at l.627, commits `src/more.rs` and expects `FLAGGED`.
+
+**Decision:**
+
+- A new ADR, `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`,
+  supersedes ADR 0009 point 2 for the flags that name one file. ADR 0009
+  itself is not edited.
+- `RawFlag` gets `path: Option<String>`. A new constructor,
+  `RawFlag::about(path, id, detail)`, sets it. The file flags use it:
+  `test-deleted`, `config-changed`, `outside-owns`, `weakened` (both
+  sites), `lint-removed` (the old path), `test-removed` and
+  `asserts-removed`. Every other flag keeps `RawFlag::new`, with no path.
+- `uncommitted:<path>` keeps `RawFlag::new` with no path
+  (`lib.rs:428-434`). Its change is in the worktree, not in any commit, so
+  "the file's content at the waived HEAD" does not describe what the lead
+  waived. Its waiver still ends at the next commit.
+- A new helper, `Git::blob(rev, path)`, in
+  `crates/teamwire-verify/src/git.rs`, runs
+  `git ls-tree -z --full-tree <rev> -- <path>`. It returns `Ok(Some(id))`
+  for the file's blob id, `Ok(None)` when the file is absent at `rev`, and
+  `Err` when git does not know `rev`.
+- A new module, `crates/teamwire-verify/src/waivers.rs`, holds the rule.
+  `lib.rs` is 440 lines, past the 400-line split point, so the rule does
+  not go in `lib.rs`. One function works out the waived ids for one member
+  at HEAD:
+  - It reads the member's waivers with the existing `tx.all_waivers()`,
+    filtered by role. No store change is needed.
+  - A flag is waived when a waiver for its id is stored at HEAD now, as
+    today.
+  - A flag with a path is also waived when a waiver for its id is stored at
+    an older HEAD `w`, and `blob(w, path)` equals `blob(HEAD, path)`. Both
+    `Ok(None)` count as equal, since the file is absent at both HEADs.
+  - An `Err` from either side means the waiver does not count.
+- `lib.rs:310-317` calls that function in place of the HEAD-only read. The
+  note at `lib.rs:1-6` changes to the new rule.
+- Only the end states are compared, not the history between them. A file
+  changed and then changed back has the waived content at HEAD, so the
+  waiver holds.
+- The text output keeps `(waived)` for a carried waiver
+  (`crates/teamwire-cli/src/cmd/verify.rs:144`). `Flag` keeps its fields,
+  so nothing that reads a `VerifyRecord` changes.
+- `teamwire verify` has no `--json` flag (`crates/teamwire-cli/src/args.rs:225-243`).
+  The dashboard reads waivers only from `verify.waived` events, and those do
+  not change. So `ui/src/shared/teamwire.ts` does not change.
+- `waive` itself does not change. A waiver is still recorded at HEAD now,
+  for a flag that HEAD raises.
+- Member removal and `close` still need a verify record at HEAD now
+  (VER-5, CLS-5). A carried waiver does not change that rule. The lead
+  still runs verify again after a commit, and that run now passes without a
+  new waiver.
+
+**Rejected alternatives:**
+
+- Storing the file's blob id in the waiver row. That needs a schema
+  migration, and the HEAD stored today already gives the blob.
+- Parsing the path out of the flag id. A path may contain `:`, and
+  `weakened` and `lint-removed` add `:<line>` after it.
+- Checking every commit between the two HEADs for a change to the file.
+  That costs one git call per commit. The user's rule compares content,
+  and the end states give the same answer except for a change that was
+  reverted, where the waived content is what is there.
+
+**Tests that fail without the fix** (`crates/teamwire-verify/tests/verify.rs`):
+
+| Test | Assertion | Fails on `develop`? |
+|---|---|---|
+| `a_file_flag_waiver_holds_while_that_file_is_unchanged` (the deckh replay: the constitution changed outside `owns`, both flags waived, then a commit under `src/`) | `verdict == Pass`, both flags `waived` | Yes: `Flagged`, not waived |
+| `a_waiver_for_a_deleted_file_holds_while_the_file_stays_deleted` | `test-deleted:tests/a.rs` waived after a commit to `src/` | Yes |
+| `a_file_flag_waiver_ends_when_that_file_changes` | after a commit that changes the waived file, `verdict == Flagged`, flags not waived | No; this test keeps the rule's other half |
+| `a_file_flag_waiver_ends_when_a_merge_changes_that_file` (a side branch changes the file, merged with `--no-ff`) | flags not waived | No; keeps FR-025 |
+| `a_waiver_at_a_commit_git_does_not_know_does_not_carry_over` (a waiver row inserted with an unknown sha) | flag not waived | No; keeps FR-025 |
+| `a_waiver_for_a_flag_with_no_file_ends_at_the_next_commit` (`no-owns` waived, then a commit) | `no-owns` not waived | No; keeps FR-026 |
+| `an_uncommitted_path_waiver_ends_at_the_next_commit` | `uncommitted:<path>` not waived after a commit | No; keeps FR-026 |
+
+The existing test `a_waiver_makes_the_flagged_pass_a_pass_for_that_head_only`
+(`verify.rs:601-633`) asserts the rule ADR 0045 supersedes. Its last block
+(l.627-632) changes, in the same commit as the fix, to expect `Pass` with
+the flag waived after the commit to `src/more.rs`. The test keeps every
+assert it has. Only the expected verdict and `waived` value change, and the
+comment at l.627 names ADR 0045. The implementer lists this change in its
+report, because a changed expected value in an existing test is what the
+lead's weakening check looks for.
+
+**Guidance and docs in the same change:**
+
+- `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md` (new).
+- `examples/skills/teamwire/reference.md:204-208`, "Verify flags": "A later
+  commit needs a new waiver" becomes the new rule. A waiver for a flag that
+  names one file holds until that file's content changes, a merge or rebase
+  included. Any other waiver, `uncommitted:<path>` included, ends at the
+  next commit.
+- `examples/skills/teamwire/SKILL.md:790-791`: "gets a waiver per flag at
+  its final HEAD" becomes "a waiver per flag; a file flag's waiver holds
+  until that file changes, any other flag needs one at its final HEAD".
+- `docs/api/cli.md:432-433`, the `--waive` sentence of `teamwire verify`.
+- `docs/requirements.md:240`, VER-5: add the carry-over rule and cite ADR
+  0045 and the new tests.
+- `docs/failure-modes.md:63`: "a waiver for the old HEAD does not carry
+  over" becomes "a file flag's waiver carries over only while that file is
+  unchanged; verify must still run at the new HEAD".
+- `crates/teamwire-verify/src/lib.rs:1-6`, the crate note.
+- `crates/teamwire-verify/tests/verify.rs:1-2`, the file note "waivers
+  bound to a HEAD".
+- `crates/teamwire-cli/src/args.rs:231` ("Waive one flag of one member at
+  its current HEAD") stays true, because the waiver is still recorded at
+  HEAD now.
+
+---
+
 ## Files per story
 
 The lead uses this table to measure which stories share files. The
@@ -719,12 +869,15 @@ The lead uses this table to measure which stories share files. The
 | US1 | `crates/teamwire-core/src/message.rs`; `crates/teamwire-store/src/delivery.rs`; `crates/teamwire-msg/src/{send.rs,attempt.rs,resend.rs}`; `crates/teamwire-msg/tests/{woken.rs,answer.rs,resend.rs,reprompt.rs,stopped.rs}`; `crates/teamwire-deliver/src/lines.rs`; `crates/teamwire-report/src/{received.rs,lead_stop.rs,lib.rs}`; `crates/teamwire-report/tests/{undelivered_to_lead.rs,turn_end.rs}`; `crates/teamwire-watch/src/{plan.rs,status.rs,snapshot.rs}`; `crates/teamwire-watch/tests/{poll.rs,status.rs}`; `crates/teamwire-launch/contracts/talking_head.md`; `crates/teamwire-launch/src/contract/tests*.rs`; `crates/teamwire-launch/tests/handoff.rs`; `crates/teamwire-harness-claude/src/lead_setup/plugin.rs`; `crates/teamwire-harness-claude/tests/lead_setup.rs`; `crates/teamwire-cli/src/cmd/{received.rs,hook/lead.rs,handoff_guide.md}`; `crates/teamwire-cli/tests/{status.rs,hook_lead.rs}`; `docs/adr/0043-*.md`; `docs/requirements.md`; `docs/failure-modes.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}` |
 | US2 | `crates/teamwire-verify/src/{owns.rs,lib.rs}`; `crates/teamwire-cli/src/{args.rs,main.rs}`; `crates/teamwire-cli/src/cmd/speckit.rs`; `crates/teamwire-cli/src/cmd/speckit/*.rs`; `crates/teamwire-cli/tests/speckit_draft.rs`; `docs/adr/0044-*.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}`; `examples/presets/speckit.json`; `examples/skills/afk/SKILL.md` |
 | US3 | F6: `examples/presets/speckit.json`, `examples/skills/teamwire/reference.md`, `crates/teamwire-cli/tests/preset.rs`. F8: `examples/presets/closer.json`, `examples/skills/teamwire/SKILL.md`, `crates/teamwire-cli/tests/preset.rs`. F10: `crates/teamwire-core/src/{harness.rs,tool_run.rs,lib.rs}`; `crates/teamwire-harness-{claude,codex,pi}/src/*`; their `tests/`; `crates/teamwire-watch/src/{tool.rs,status.rs,lib.rs}`; `crates/teamwire-watch/tests/status.rs`; `crates/teamwire-cli/src/cmd/status.rs`; `crates/teamwire-cli/tests/status.rs`; `ui/src/shared/teamwire.ts`; `docs/api/cli.md`. F11: `crates/teamwire-close/src/member_close.rs`, `crates/teamwire-close/tests/ignored_files.rs`, `docs/api/cli.md` |
+| US4 | `crates/teamwire-verify/src/{inspect.rs,git.rs,waivers.rs,lib.rs}`; `crates/teamwire-verify/tests/verify.rs`; `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`; `docs/requirements.md`; `docs/failure-modes.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}` |
 
 **Files shared between stories:**
 
 | Files | Stories |
 |---|---|
-| `docs/api/cli.md`, `examples/skills/teamwire/SKILL.md` and `reference.md` | all three |
+| `docs/api/cli.md`, `examples/skills/teamwire/SKILL.md` and `reference.md` | all four |
+| `crates/teamwire-verify/src/lib.rs` | US2 (`pub use owns::Owns`) and US4 (the waiver call and the crate note) |
+| `docs/requirements.md`, `docs/failure-modes.md` | US1 and US4 |
 | `examples/presets/speckit.json` | US2 and US3 (F6) |
 | `crates/teamwire-watch/src/status.rs`, `crates/teamwire-watch/tests/status.rs`, `crates/teamwire-cli/tests/status.rs` | US1 and US3 (F10) |
 | `crates/teamwire-harness-claude/` | US1 (`lead_setup/plugin.rs`) and US3 (the session reader). These are different files. |

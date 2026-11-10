@@ -77,6 +77,20 @@ cargo test -p teamwire-watch --locked --test status
 F10 also changes the dashboard schema. Run the UI checks that
 `ui/AGENTS.md` names for a change to `ui/src/shared/teamwire.ts`.
 
+## US4: waivers
+
+```bash
+cargo test -p teamwire-verify --locked --test verify
+```
+
+Expected results:
+
+- After a commit that leaves the waived file alone, the file's flags print
+  `(waived)` and the verdict is `PASS`.
+- After a commit or merge that changes the waived file, the flags are not
+  waived.
+- A waiver for `no-owns` or `uncommitted:<path>` ends at the next commit.
+
 ## Before finishing
 
 ```bash

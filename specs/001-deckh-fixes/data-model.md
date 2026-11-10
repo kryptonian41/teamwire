@@ -1,8 +1,8 @@
 # Data Model: Fixes from team deckh's live run
 
 The feature adds no table and no schema migration. It changes the rules
-that move existing rows. It adds one error code, one core type and one view
-field.
+that move existing rows, and the rule that reads waivers. It adds one error
+code, one core type and one view field.
 
 ## Delivery row (`deliveries`, `crates/teamwire-store/src/schema/v1.sql:66-80`)
 
@@ -77,6 +77,26 @@ implementation returns `Ok(None)`.
 and `seconds`. The field is set only under `status --role` for a working
 member. It appears in `status --json` and is mirrored as
 `current_tool: ToolView.nullish()` in `ui/src/shared/teamwire.ts:71-95`.
+
+## Waiver (`waivers`, `crates/teamwire-store/src/schema/v1.sql:115-122`; US4)
+
+Fields: `role`, `flag_id`, `head_sha`, `reason`, `created_at`. The key is
+(`role`, `flag_id`, `head_sha`). The table does not change. `waive` still
+records a row at the member's HEAD now.
+
+**When a waiver counts at HEAD `h`** (new rule, ADR 0045):
+
+| The waived flag | The waiver at `head_sha` = `w` counts when |
+|---|---|
+| any flag | `w` equals `h` (as today) |
+| a flag that names one file `p`: `test-deleted`, `config-changed`, `outside-owns`, `weakened`, `lint-removed`, `test-removed`, `asserts-removed` | git knows `w`, and the blob of `p` at `w` equals the blob of `p` at `h`. A file absent at both counts as equal. |
+| a flag that names no file (`no-commits`, `no-owns`, `no-base`, `report-*`, `bad-owns:*`, `diff-failed`, `status-failed`) | only when `w` equals `h` |
+| `uncommitted:<path>` | only when `w` equals `h` |
+| `head-moved` | never (as today) |
+
+**Raw flag** (in memory, `crates/teamwire-verify/src/inspect.rs`): gains
+`path: Option<String>`, set for the file flags in the table and `None` for
+every other flag. The stored and printed `Flag` does not change.
 
 ## Task line and owns draft (US2, in memory only)
 

@@ -92,6 +92,24 @@ kit: removal deletes ignored files: .env.local; removes symlinks (targets kept):
 kit: removes symlinks (targets kept): old -> /gone (broken)
 ```
 
+## `teamwire verify` waivers (F12)
+
+The output format does not change. A waiver for a flag that names one file
+now also counts at a later HEAD while that file is unchanged, and the flag
+prints `(waived)` there:
+
+```text
+$ teamwire verify deckh --role spec
+spec         PASS     exit 0 in 41s, 2 flag(s)
+             ! [config-changed:.specify/memory/constitution.md] (waived) check config changed outside owns: .specify/memory/constitution.md
+             ! [outside-owns:.specify/memory/constitution.md] (waived) changed outside owns: .specify/memory/constitution.md
+             head 0e05a21fac...
+```
+
+The `--waive` confirmation, `waived <flag> for <role> at its current HEAD`,
+does not change. `teamwire verify` has no `--json` output, so the dashboard
+schema does not change.
+
 ## `teamwire speckit draft <tasks.md> [--repo <dir>]` (F4, F5, new)
 
 The command is read only and prints text. It exits non-zero when the file
