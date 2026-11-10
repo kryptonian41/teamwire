@@ -189,6 +189,70 @@ fn without_the_forward_move_the_amendment_would_be_flagged() {
     );
 }
 
+/// The spec member amends `spec.md` on the spec branch (`main` here)
+/// before the implementer's first commit, and the implementer merges the
+/// amendment with `merge_args`, then commits its own work. Returns the
+/// amendment's sha and the verify record.
+fn merge_a_spec_amendment(merge_args: &[&str]) -> (String, VerifyRecord) {
+    let repo = repo_on_work(&[
+        ("specs/001-x/spec.md", "v1\n"),
+        ("specs/001-x/tasks.md", "- [ ] T001\n"),
+    ]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer(
+        "api",
+        &repo,
+        Some("true"),
+        &["src/", "specs/001-x/tasks.md"],
+    ));
+    repo.git(&["checkout", "--quiet", "main"]);
+    let amendment = repo.commit(
+        &[("specs/001-x/spec.md", "v2\n")],
+        "SPEC AMENDMENT: clarify",
+        start_secs() + 10,
+    );
+    repo.git(&["checkout", "--quiet", "work"]);
+    let mut args = vec!["merge"];
+    args.extend_from_slice(merge_args);
+    args.extend(["--quiet", "--no-edit", "main"]);
+    repo.git_at(&args, start_secs() + 15);
+    let own = repo.commit(
+        &[
+            ("src/a.rs", "fn a() {}\n"),
+            ("specs/001-x/tasks.md", "- [x] T001\n"),
+        ],
+        "T001",
+        start_secs() + 20,
+    );
+    fx.write_report("api", &full_report(&[&own]));
+    (amendment, run_one(&mut fx, "api"))
+}
+
+/// Without `--no-ff` the merge fast-forwards, so the amendment sits on the
+/// implementer's own first-parent chain: verify counts it as the member's
+/// own commit, outside `owns` and missing from the report.
+#[test]
+fn a_spec_amendment_merge_that_fast_forwards_is_flagged() {
+    let (amendment, record) = merge_a_spec_amendment(&[]);
+    assert_eq!(
+        flag_ids(&record),
+        [
+            "outside-owns:specs/001-x/spec.md".to_owned(),
+            format!("report-no-line:{}", &amendment[..7]),
+        ],
+        "{record:?}"
+    );
+}
+
+/// The notice's `git merge --no-ff --no-edit <sha>` always makes a merge
+/// commit, so the diff start moves to the amendment and no flag is raised.
+#[test]
+fn a_spec_amendment_merged_with_no_ff_is_not_flagged() {
+    let (_, record) = merge_a_spec_amendment(&["--no-ff"]);
+    assert_eq!(flag_ids(&record), Vec::<&str>::new(), "{record:?}");
+    assert_eq!(record.verdict, Verdict::Pass);
+}
+
 #[test]
 fn the_diff_base_never_moves_back() {
     let repo = repo_on_work(&[("contract.md", "v1\n")]);
