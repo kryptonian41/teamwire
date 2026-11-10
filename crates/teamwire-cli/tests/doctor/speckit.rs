@@ -894,6 +894,34 @@ fn base_names_the_commit_the_lines_read_and_every_line_names_it() {
         "{out}"
     );
 
+    // From develop, a commit lands on develop, so the action says how to reach main.
+    let line = line_of(&out, "spec-kit committed");
+    assert!(
+        line.contains("run `git switch main` and commit there"),
+        "{out}"
+    );
+    assert!(
+        line.contains("or commit here and merge this branch into main"),
+        "{out}"
+    );
+    assert!(!line.contains("then commit on main"), "{out}");
+    // The ref that is checked out keeps the plain action.
+    put(root, ".pi/prompts/speckit.tasks.md", "tasks");
+    let out = teamwire_with(&bed, &path, root, &["--base", "develop"]).out;
+    let line = line_of(&out, "spec-kit committed");
+    assert!(line.ends_with("then commit on develop"), "{out}");
+    git(root, &["add", ".pi"]);
+    git(root, &["commit", "-q", "-m", "tasks"]);
+    // Following the action: merge develop into main.
+    git(root, &["switch", "-q", "main"]);
+    git(root, &["merge", "-q", "develop"]);
+    git(root, &["switch", "-q", "develop"]);
+    let out = teamwire_with(&bed, &path, root, &["--base", "main"]).out;
+    assert!(
+        line_of(&out, "spec-kit committed").starts_with("ok"),
+        "{out}"
+    );
+
     // A ref git cannot resolve: one line, and it names the ref.
     let out = teamwire_with(&bed, &path, root, &["--base", "mian"]).out;
     let line = line_of(&out, "spec-kit base");

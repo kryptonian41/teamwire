@@ -191,14 +191,22 @@ pub(super) fn committed_check(base: &Base<'_>) -> Check {
         "run `git add {}`",
         adds.into_iter().collect::<Vec<_>>().join(" ")
     ));
+    let then = if base.checked_out {
+        format!("then commit on {}", base.name)
+    } else {
+        // A commit here lands on the checked-out branch, not on the ref members start from.
+        format!(
+            "then, since {0} is not the checked-out branch, run `git switch {0}` and commit \
+             there, or commit here and merge this branch into {0}",
+            base.name
+        )
+    };
     Check::warn(
         name,
         format!(
-            "on disk but not in {at}, so a worktree member does not get them: {}{more}; {}, \
-             then commit on {}",
+            "on disk but not in {at}, so a worktree member does not get them: {}{more}; {}, {then}",
             named.join(", "),
             action.join(", "),
-            base.name
         ),
     )
 }

@@ -122,6 +122,8 @@ pub(crate) struct Base<'a> {
     pub(crate) name: String,
     sha: String,
     files: BTreeSet<String>,
+    /// True when the ref is the checked-out branch, so a commit here lands on it.
+    pub(crate) checked_out: bool,
 }
 
 impl<'a> Base<'a> {
@@ -148,6 +150,10 @@ impl<'a> Base<'a> {
             });
         }
         let sha = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        let checked_out = name == "HEAD"
+            || git(inputs, root, &["symbolic-ref", "-q", "--short", "HEAD"]).is_ok_and(|out| {
+                out.exit_code == 0 && String::from_utf8_lossy(&out.stdout).trim() == name
+            });
         let mut args = vec!["ls-tree", "-r", "-z", "--name-only", sha.as_str(), "--"];
         args.extend(LISTED);
         let out = git(inputs, root, &args)
@@ -169,6 +175,7 @@ impl<'a> Base<'a> {
             name,
             sha,
             files,
+            checked_out,
         })
     }
 
