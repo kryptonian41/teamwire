@@ -439,6 +439,17 @@ fn an_integration_events_file_or_a_codex_config_warns() {
 }
 
 #[test]
+fn a_codex_hooks_file_warns_because_codex_launch_refuses_it() {
+    let bed = speckit_bed();
+    put(bed.home.path(), ".codex/hooks.json", "{}\n");
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains(".codex/hooks.json"), "{detail}");
+    assert!(detail.contains("Codex member"), "{detail}");
+    assert!(!detail.contains(".codex/config.toml"), "{detail}");
+}
+
+#[test]
 fn a_claude_settings_hook_tagged_as_a_spec_kit_event_warns() {
     let bed = speckit_bed();
     let settings = |marker: bool| {

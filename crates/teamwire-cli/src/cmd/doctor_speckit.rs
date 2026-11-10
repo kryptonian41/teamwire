@@ -393,11 +393,13 @@ fn events_check(root: &Path) -> Check {
     if root.join(".specify/integration-events.yml").exists() {
         found.push(".specify/integration-events.yml exists".to_owned());
     }
-    if root.join(".codex/config.toml").exists() {
-        found.push(
-            ".codex/config.toml exists, so teamwire refuses to start a Codex member here"
-                .to_owned(),
-        );
+    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`).
+    for file in [".codex/config.toml", ".codex/hooks.json"] {
+        if root.join(file).exists() {
+            found.push(format!(
+                "{file} exists, so teamwire refuses to start a Codex member here"
+            ));
+        }
     }
     let settings = ".claude/settings.json";
     if std::fs::read_to_string(root.join(settings))
