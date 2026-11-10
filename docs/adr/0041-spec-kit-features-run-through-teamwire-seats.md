@@ -1,6 +1,7 @@
 # ADR 0041: Spec-kit features run through teamwire's seats
 
-Status: accepted, 2026-11-09. Extends ADR 0038 (ticket refs) with a
+Status: accepted, 2026-11-09, and amended 2026-11-10 from the pilot
+feature's findings. Extends ADR 0038 (ticket refs) with a
 provider for spec-kit features. ADR 0029 still holds: pi members keep
 `--no-approve` and load no folder prompt file.
 
@@ -102,7 +103,15 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    an owner's `tasks.md` has nothing open yet. In the fix round the one
    implementer runs `converge` on its own branch, then `implement` on the
    new phase, then `converge` again. Its own `converge` appends the open
-   work to its `tasks.md`. It stops at "Converged" or after two rounds. In
+   work to its `tasks.md`. It stops at "Converged" or after two rounds.
+   Converge makes no commit, so the implementer commits converge's
+   appended section alone, before it implements it, with a message such as
+   `converge round 1: ...`. A finding in the spec's own words goes to the
+   spec member first, because converge compares the code with the spec's
+   text and so cannot find a gap that the spec itself carries. The spec
+   member changes the spec and design files and commits, without touching
+   `tasks.md`, and sends its SPEC AMENDMENT notice (decision 8). The
+   implementer merges that commit, then runs the loop. In
    a per-story split, story owners run no `converge`, because converge
    compares the code with the whole spec and on a story branch reports
    every other story as `missing`. So in a split the fix round runs on a
@@ -123,6 +132,21 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    hand-written briefs. Step B (doctor checks, a verify rule for the
    constitution) and step C (a `tasks.md` reader) are planned from what the
    pilot shows.
+8. **A spec change reaches an implementer by a merge.** The user chose
+   this on 2026-11-10. Worktrees share no files, and the implementer's
+   branch starts from the spec as committed at its launch. After that only
+   the spec member changes `spec.md`, `plan.md` and the design files. It
+   commits each change and announces it itself, with a `notice` to every
+   running implementer and the lead that starts `SPEC AMENDMENT:` and names
+   the commit. A notice must name a commit on the sender's branch, so
+   uncommitted edits never reach anyone. Each implementer merges that
+   commit before its next unit. It is the same merge as the skill's
+   `CONTRACT AMENDMENT`, sent by the owner of the change instead of the
+   lead. verify does not flag the merged spec files, because the
+   implementer's `base` is the spec branch. Once an implementer starts,
+   only implementers write `tasks.md`: their ticks and the Convergence
+   sections that converge appends. The spec member never edits `tasks.md`
+   again, so the merge cannot conflict on it.
 
 Also settled by the design:
 
@@ -151,6 +175,13 @@ Also settled by the design:
 - **Spec-kit hooks or events to enforce teamwire's rules.** A hook is prose
   that an agent can skip. An `events:` extension writes `.codex/config.toml`
   and so blocks every Codex member.
+- **A shared specs folder outside the repository,** in the team
+  directory or in a folder beside the repository, in place of the merge in
+  decision 8. The user ruled it out on 2026-11-10. Spec-kit versions specs
+  on branches and merges them. Writers that run at the same time would
+  share one live `tasks.md`, so ticks would no longer match commits.
+  verify checks `owns` only inside the repository, and the folder would
+  not ship in the pull request.
 - **Several spec members at once,** because each one numbers its folder from its own worktree (decision 1).
 
 ## Consequences

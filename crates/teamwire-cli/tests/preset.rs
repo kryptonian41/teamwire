@@ -1181,6 +1181,69 @@ fn the_speckit_build_states_what_the_pilot_showed() {
     );
 }
 
+/// The pilot's fix round: converge cannot see a gap the spec itself
+/// carries, converge commits nothing, and worktrees share no files, so the
+/// spec member announces each spec change as a commit to merge.
+#[test]
+fn the_speckit_fix_round_states_what_the_pilot_showed() {
+    let doc = preset_doc("speckit");
+    let note_of = |role: &str| {
+        flat(
+            doc["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["role"] == role)
+                .and_then(|m| m["_note"].as_str())
+                .unwrap(),
+        )
+    };
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    for (place, text) in [("rules", &rules), ("reference", &section), ("adr", &adr)] {
+        for needed in [
+            "A finding in the spec's own words goes to the spec member first",
+            "cannot find a gap that the spec itself carries",
+            "changes the spec and design files and commits, without touching `tasks.md`",
+            "Converge makes no commit",
+            "commits converge's appended section alone, before it implements it, with a message such as `converge round 1: ...`",
+            "SPEC AMENDMENT:",
+            "Once an implementer starts, only implementers write `tasks.md`",
+            "The spec member never edits `tasks.md` again",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>\"`",
+            "on a notice that starts with `SPEC AMENDMENT:`, merge that commit before your next unit",
+            "The lead sends nothing",
+            "Uncommitted edits in the spec member's worktree never reach anyone",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    let spec_note = note_of("spec");
+    assert!(
+        spec_note.contains("SPEC AMENDMENT:")
+            && spec_note.contains(
+                "after every commit that changes `spec.md`, `plan.md` or a design file once an implementer has started"
+            ),
+        "{spec_note}"
+    );
+    let impl_note = note_of("impl");
+    assert!(impl_note.contains("`SPEC AMENDMENT:`"), "{impl_note}");
+    // The user chose the merge over a shared specs folder; the ADR keeps why.
+    for needed in [
+        "shared specs folder outside the repository",
+        "verify checks `owns` only inside the repository",
+    ] {
+        assert!(adr.contains(needed), "the ADR lacks {needed}: {adr}");
+    }
+}
+
 /// A gate that fails on the base before any merge is the base's result, not
 /// a reason for the integrator to stop as blocked.
 #[test]

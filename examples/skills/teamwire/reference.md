@@ -504,11 +504,41 @@ it. Then cut the implementer's branch from that branch.
   `tasks.md` stays in the clone. Converge reads code and runs no tests, so
   its "Converged" is a model's judgement and the closer's other checks
   still run.
-- **The fix round.** With one implementer, send it the closer's findings.
+- **Spec changes.** Worktrees share no files. The implementer's branch is
+  cut from the spec member's branch at launch, so it starts with the spec
+  as committed then. After that only the spec member changes `spec.md`,
+  `plan.md` and the design files, and it commits each change. Then the
+  spec member itself announces the change to every running implementer
+  and to you, with a notice that names the commit:
+  `teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text "SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>"`.
+  A notice must name a commit on the sender's branch, so it cannot point
+  at uncommitted work. Uncommitted edits in the spec member's worktree
+  never reach anyone. Each implementer's brief says: on a notice that
+  starts with `SPEC AMENDMENT:`, merge that commit before your next unit,
+  then go on. The lead sends nothing. The spec member's brief says to send
+  the notice after every commit that changes `spec.md`, `plan.md` or a
+  design file once an implementer has started. This is the same merge as
+  the skill's `CONTRACT AMENDMENT`, sent by the owner of the change instead
+  of you. verify does not flag the merged spec files, because the
+  implementer's `base` is the spec branch.
+- **One writer of `tasks.md`.** Once an implementer starts, only
+  implementers write `tasks.md`: their ticks and the Convergence sections
+  that converge appends. The spec member never edits `tasks.md` again, so
+  an amendment merge cannot conflict on it.
+- **The fix round.** A finding in the spec's own words goes to the spec
+  member first, such as a wrong claim in `research.md` that the code
+  follows. Converge compares the code with the spec's text, so it cannot
+  find a gap that the spec itself carries. Then the fix round runs in
+  this order: the spec member changes the spec and design files and
+  commits, without touching `tasks.md`, and sends its SPEC AMENDMENT
+  notice. The implementer merges that commit, then runs the loop below.
+  With one implementer, send it the closer's findings.
   The closer's section is not in its `tasks.md`, so the implementer
   runs `converge` on its own branch, then `implement` on the new phase,
   then `converge` again. Its own `converge` appends the open work as a new
-  phase. It stops at "Converged" or after two rounds. In a per-story
+  phase. It stops at "Converged" or after two rounds. Converge makes no
+  commit, so the implementer commits converge's appended section alone,
+  before it implements it, with a message such as `converge round 1: ...`. In a per-story
   split, story owners run no `converge`, because converge compares the
   code with the whole spec and on a story branch reports every other story
   as `missing`. So in a split the fix round runs on a branch cut from the
