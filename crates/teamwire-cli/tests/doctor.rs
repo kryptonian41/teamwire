@@ -31,11 +31,14 @@ use teamwire_store::{NewTeam, Store};
 #[path = "support/schema_1.rs"]
 mod schema_1;
 
+#[path = "doctor/speckit.rs"]
+mod speckit;
+
 /// The command file is compiled here with the crate-level items it names
 /// (`Global`, `wiring::Wiring`, `cmd::shared::home_or_refuse`,
 /// `cmd::install::wanted_command`) and the real `cmd::lead_setup_check`,
-/// `cmd::host_pick` and `cmd::doctor_teams`, so the checks run against a
-/// fake platform.
+/// `cmd::host_pick`, `cmd::doctor_speckit` and `cmd::doctor_teams`, so the
+/// checks run against a fake platform.
 #[derive(Debug)]
 pub(crate) struct Global {
     pub(crate) home: Option<PathBuf>,
@@ -63,11 +66,19 @@ mod lead_setup_check;
 #[path = "../src/cmd/host_pick.rs"]
 mod host_pick;
 
+#[path = "../src/cmd/doctor_speckit.rs"]
+mod doctor_speckit;
+
+#[path = "../src/cmd/doctor_speckit_files.rs"]
+mod doctor_speckit_files;
+
 #[path = "../src/cmd/doctor_teams.rs"]
 mod doctor_teams;
 
 mod cmd {
-    pub(crate) use crate::{doctor, doctor_teams, host_pick, lead_setup_check};
+    pub(crate) use crate::{
+        doctor, doctor_speckit, doctor_speckit_files, doctor_teams, host_pick, lead_setup_check,
+    };
 
     pub(crate) mod install {
         use teamwire_core::LeadCommand;
@@ -123,6 +134,10 @@ struct Bed {
     /// The state directory of the doctor run, when it is not `home`, the one
     /// the plugin was installed for.
     run_home: Option<PathBuf>,
+    /// git's answers to the spec-kit checks, in the order they ask:
+    /// `cat-file -e`, `show`, then `check-ignore`. Queued after the
+    /// `.worktrees` answer.
+    speckit_git: Vec<RunOutput>,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -153,6 +168,7 @@ impl Bed {
             codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
             codex_platform: Arc::new(FakePlatform::new()),
             run_home: None,
+            speckit_git: Vec::new(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -292,9 +308,12 @@ impl Bed {
 
     /// The checks as a binary under `target/` (`build`) or an installed one.
     fn checks_as(&self, build: bool) -> Vec<Check> {
-        // The order doctor runs them in: git, then the claude probes, then
-        // the host's version.
+        // The order doctor runs them in: git, then the spec-kit checks' git
+        // questions, then the claude probes, then the host's version.
         self.platform.queue_run(Ok(answer("")));
+        for out in &self.speckit_git {
+            self.platform.queue_run(Ok(out.clone()));
+        }
         self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
         self.platform.queue_run(Ok(answer(&self.claude_help)));
         self.platform.queue_run(Ok(answer("host 1.2.3\n")));

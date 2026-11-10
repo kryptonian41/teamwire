@@ -15,9 +15,11 @@ write every brief, decide who joins and who leaves, and judge every result.
 Nobody else on the team makes those calls. Members do the rest of the work:
 they edit the code, run the builds and tests, merge the branches and open
 the pull requests. You write no code. You run teamwire's own commands, read
-what members report, and keep your plan, specs and briefs outside the
-repository. When the user asks for a change while a team runs, give it to
-the member that owns the file, or brief a new one. Do the work yourself only
+what members report, and keep your own plan, team specs and briefs outside
+the repository. Spec-kit's `specs/` folder is different: it holds product
+files, which a member writes and commits. When the user asks for a change
+while a team runs, give it to the member that owns the file, or brief a new
+one. Do the work yourself only
 when the user says so. While you lead an open team, the lead's tool hook adds
 a note when you edit a file in its repository, or run a build, a test, or a
 git command that commits, merges or pushes.
@@ -103,7 +105,7 @@ orchestrated run costs more again. The sources for every rule and figure in
 this file are in `docs/research/2026-10-18-lead-field-reports.md` in the
 teamwire repository.
 
-`teamwire preset` lists the five team shapes and three steps added to a
+`teamwire preset` lists the six team shapes and three steps added to a
 team. The `plan-review` step goes before the implementers, and the
 `integrator` and `closer` steps go after the last wave.
 `teamwire preset <name>` prints one preset's rules and a spec to fill in.
@@ -115,9 +117,16 @@ team. The `plan-review` step goes before the implementers, and the
 | `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and the integrator merges blockers first. |
 | `survey` | Read-only investigation across several areas. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
+| `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and `tasks.md`, a plan reviewer runs `analyze`, and one implementer runs `implement`. Read "Spec-kit features" in `reference.md` first. |
 | `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
 | `integrator` | The step after the last wave of a shape that joins branches. One implementer merges the branches in the plan's order and runs the full gate. It decides nothing. |
 | `closer` | The last step of every team that wrote code. One agent verifies the team's claims and writes one report. |
+
+For a feature built with GitHub's spec-kit, start from
+`teamwire preset speckit` and read "Spec-kit features" in `reference.md`. That section says
+what the base branch must hold, how Claude Code, Codex and pi members run
+spec-kit's commands, and what each brief says about questions, ticks,
+commits and `converge`.
 
 The model and effort of each member are the largest cost lever in a run.
 "Choose each member's model" below says how to pick them.
@@ -644,6 +653,11 @@ nothing" case held, so the member changed nothing on purpose and recorded
 `done`. Verify then flags `no-commits`, which is expected: waive it with the
 member's report as the reason.
 
+In a spec-kit team, a spec member's `blocked` result whose summary starts
+with `N questions for the lead.` is a question round, not a failure. Ask the
+user, then reprompt it with the answers, as "Spec-kit features" in
+`reference.md` says.
+
 ### Messages
 
 Leads, implementers and investigators talk, within a team and across teams.
@@ -766,8 +780,11 @@ the user which member and why.
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
 worktree. Removing too early costs more: `verify` skips removed members, and
 the owner fixes findings on its work most cheaply. So `close --role` refuses
-an implementer with no passing verify at its current HEAD, and any member
-while the team's closer has not reported, unless you pass `--unverified`. A
+an implementer with no passing verify at its current HEAD. It also refuses
+any other member while a closer runs in the team and has not reported since
+its latest start or reprompt. `--unverified` overrides both. A team with no
+closer yet gets no closer refusal, so a plan reviewer can go as soon as you
+have acted on its report. A
 commit after verify passed makes it refuse again until verify runs again. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
 Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`

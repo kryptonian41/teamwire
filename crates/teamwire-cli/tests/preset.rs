@@ -1,4 +1,4 @@
-//! `teamwire preset`, and the seven files of `examples/presets/`. Each file
+//! `teamwire preset`, and the nine files of `examples/presets/`. Each file
 //! must be a spec that `launch` accepts once its placeholders are filled in,
 //! so the test fills them in and runs the real validation.
 #![expect(
@@ -27,12 +27,13 @@ fn preset_text(name: &str) -> String {
     std::fs::read_to_string(presets_dir().join(format!("{name}.json"))).unwrap()
 }
 
-const NAMES: [&str; 8] = [
+const NAMES: [&str; 9] = [
     "survey",
     "implement-then-review",
     "parallel-tickets",
     "dependent-tickets",
     "contract-split",
+    "speckit",
     "plan-review",
     "integrator",
     "closer",
@@ -60,7 +61,15 @@ fn git(dir: &Path, args: &[&str]) {
 /// brief files and the branches its members start from.
 fn filled(name: &str, work: &Path) -> String {
     let (repo, briefs) = fixture(work);
+    // A pane that starts in an earlier member's worktree joins once launch
+    // has made that worktree. In one spec the real path would collide with
+    // that member's own worktree, so a stand-in directory takes its place.
+    let worktrees = work.join("worktrees");
     let text = preset_text(name)
+        .replace(
+            "/abs/path/repo/.worktrees",
+            &worktrees.display().to_string(),
+        )
         .replace("/abs/path/repo", &repo.display().to_string())
         .replace("/abs/path/briefs", &briefs.display().to_string());
     let doc: Value = serde_json::from_str(&text).unwrap();
@@ -70,6 +79,14 @@ fn filled(name: &str, work: &Path) -> String {
         }
         if let Some(base) = child["base"].as_str().filter(|b| *b != "main") {
             git(&repo, &["branch", "-f", base, "main"]);
+        }
+        // Only the stand-in is made, so a pane cwd that maps to nothing else
+        // still fails validation.
+        if let Some(cwd) = child["cwd"]
+            .as_str()
+            .filter(|c| Path::new(c).starts_with(&worktrees))
+        {
+            std::fs::create_dir_all(cwd).unwrap();
         }
     }
     text
@@ -243,11 +260,11 @@ fn without_a_name_every_preset_is_listed() {
     assert_eq!(names, NAMES);
 }
 
-/// The five team shapes come first. `plan-review`, `integrator` and `closer`
+/// The six team shapes come first. `plan-review`, `integrator` and `closer`
 /// are steps a lead adds to a team, so each says so at the start of its
 /// description.
 #[test]
-fn the_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
+fn the_steps_added_to_a_team_say_so_and_the_six_shapes_do_not() {
     for (name, start) in [
         ("plan-review", "FIRST STEP, not a team shape."),
         ("integrator", "FINAL STEP, not a team shape."),
@@ -259,7 +276,7 @@ fn the_steps_added_to_a_team_say_so_and_the_five_shapes_do_not() {
             "{name}"
         );
     }
-    for name in &NAMES[..5] {
+    for name in &NAMES[..6] {
         let file: Value = serde_json::from_str(&preset_text(name)).unwrap();
         assert!(
             !file["_shape"]
@@ -673,6 +690,18 @@ fn preset_doc(name: &str) -> Value {
     serde_json::from_str(&preset_text(name)).unwrap()
 }
 
+/// A preset's `_rules`, joined with spaces.
+fn rules_text(name: &str) -> String {
+    let doc = preset_doc(name);
+    let rules: Vec<&str> = doc["_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    rules.join(" ")
+}
+
 fn task_of<'a>(doc: &'a Value, role: &str) -> &'a str {
     doc["children"]
         .as_array()
@@ -743,6 +772,595 @@ fn the_contract_split_starts_with_the_contract_member() {
         assert_eq!(member["base"], base, "{}", member["role"]);
         assert_eq!(member["_wave"], 2, "{}", member["role"]);
         assert!(member.get("_launch").is_some(), "{}", member["role"]);
+    }
+}
+
+/// The spec-kit shape: a spec member writes the feature folder, a plan
+/// reviewer in its worktree runs analyze, and one implementer starts from the
+/// spec branch. The team carries the feature as a `speckit` ref, and the
+/// rules send the lead to the closer for converge.
+#[test]
+fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
+    let doc = preset_doc("speckit");
+    let members = doc["children"].as_array().unwrap();
+    let seats: Vec<(&str, &str, &str)> = members
+        .iter()
+        .map(|m| {
+            (
+                m["role"].as_str().unwrap(),
+                m["kind"].as_str().unwrap(),
+                m["mode"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        seats,
+        [
+            ("spec", "implementer", "worktree"),
+            ("analyze", "plan_reviewer", "pane"),
+            ("impl", "implementer", "worktree"),
+        ]
+    );
+    let spec = &members[0];
+    // At a question stop the spec member's check fails, so it records
+    // blocked; nothing excuses a failing check with done.
+    let note = spec["_note"].as_str().unwrap();
+    assert!(!note.contains("is expected"), "{note}");
+    let spec_branch = spec["branch"].as_str().unwrap();
+    assert!(spec.get("_launch_after").is_none());
+    for later in &members[1..] {
+        assert!(later.get("_launch_after").is_some(), "{}", later["role"]);
+    }
+    assert!(
+        members[1]["cwd"]
+            .as_str()
+            .unwrap()
+            .ends_with(&format!("/.worktrees/{}", spec_branch.replace('/', "-"))),
+        "analyze starts in the spec member's worktree"
+    );
+    let imp = &members[2];
+    assert_eq!(imp["base"], spec_branch);
+
+    let refs = doc["refs"].as_array().unwrap();
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0]["provider"], "speckit");
+    let feature = refs[0]["id"].as_str().unwrap();
+    let folder = format!("specs/{feature}");
+    assert!(
+        spec["owns"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|o| o.as_str().unwrap().starts_with(&folder)),
+        "the spec member owns the feature folder"
+    );
+    assert!(
+        imp["owns"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from(format!("{folder}/tasks.md"))),
+        "the implementer owns tasks.md, where it ticks its tasks"
+    );
+    assert!(
+        imp["owns"]
+            .as_array()
+            .unwrap()
+            .contains(&Value::from(".gitignore")),
+        "implement writes .gitignore"
+    );
+    let setup = imp["setup"].as_str().unwrap();
+    // Spec-kit reads only the key feature_directory.
+    assert!(
+        setup.contains(&format!("'{{\"feature_directory\": \"{folder}\"}}'"))
+            && setup.contains("\"$1/.specify/feature.json\""),
+        "{setup}"
+    );
+    let check = imp["check"].as_str().unwrap();
+    // `! grep` passes on a missing file, so the check first needs tasks.md.
+    assert!(
+        check.starts_with(&format!("test -s {folder}/tasks.md && ")),
+        "{check}"
+    );
+    assert!(
+        check.contains(&format!(
+            "! grep -nE '^- \\[ \\] T[0-9]+' {folder}/tasks.md"
+        )),
+        "{check}"
+    );
+
+    let rules: Vec<&str> = doc["_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .collect();
+    assert!(
+        rules
+            .iter()
+            .any(|r| r.contains("`converge`") && r.contains("`teamwire preset closer`")),
+        "{rules:?}"
+    );
+    for needed in [
+        "#4270",
+        "`events:`",
+        "`.specify/extensions/<id>/extension.yml`",
+        "`.specify/integration-events.yml`",
+        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "ADR 0029",
+    ] {
+        assert!(
+            rules.iter().any(|r| r.contains(needed)),
+            "no rule names {needed}"
+        );
+    }
+}
+
+/// A spec-kit feature runs through members on three harnesses, so the
+/// reference says how each one runs `implement`, and how a worktree member
+/// finds its feature. The skill points at that section and says that
+/// spec-kit's `specs/` folder is a product file a member commits.
+#[test]
+fn the_reference_says_how_each_harness_runs_spec_kit() {
+    let reference = example("skills/teamwire/reference.md");
+    let (head, _) = reference.split_once("\n## ").unwrap();
+    assert!(
+        head.contains("\"Spec-kit features\""),
+        "the 'Read this when' list does not name the section"
+    );
+    let (_, section) = reference
+        .split_once("\n## Spec-kit features\n")
+        .unwrap_or_else(|| unreachable!("reference.md has no Spec-kit features section"));
+    let section = section.split("\n## ").next().unwrap();
+    for needed in [
+        "`/speckit-implement <scope>`",
+        "`$speckit-implement <scope>`",
+        "`.pi/prompts/speckit.implement.md`",
+        "`.specify/feature.json`",
+        "`.specify/memory/constitution.md`",
+        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "a question round, not a failure",
+        "`converge`",
+        "`teamwire preset closer`",
+        "`teamwire decisions --ref speckit:NNN-name`",
+        "#4270",
+        "`events:`",
+        "`.specify/extensions/<id>/extension.yml`",
+        "`.specify/integration-events.yml`",
+        "`\"__speckit_event__\": true`",
+    ] {
+        assert!(section.contains(needed), "the section lacks {needed}");
+    }
+    // A per-story grep cannot pass in wave 1 and misses converge's tasks,
+    // which carry no story label. The joined branch's check holds the grep.
+    let flat = section.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        !flat.contains("[US1\\]"),
+        "the section has a per-story grep"
+    );
+    assert!(
+        flat.contains("The integrator's `check` on the joined branch"),
+        "the section does not move the unticked-task grep to the integrator"
+    );
+    // The closer's own session resolves the lead's checkout, so it follows
+    // the command file in its clone instead.
+    // clarify asks questions of its own, so the spec member stops once per
+    // batch and never answers a spec-kit question itself.
+    let flat_rules = rules_text("speckit")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    for text in [flat.as_str(), &flat_rules] {
+        for needed in [
+            "stops with its questions from `specify`, at most 3",
+            "stops again with clarify's questions, at most 5, each with clarify's recommended option",
+            "A further stop is allowed only when an answer raises a new question",
+            "never answers a spec-kit question itself, unless your reprompt says to take the recommended option",
+            "lists each such answer under Decisions I made",
+        ] {
+            assert!(text.contains(needed), "lacks {needed}: {text}");
+        }
+    }
+    // Each fix is pinned in every place it changed. `! grep` passes on a
+    // missing file, so every grep example starts with `test -s`.
+    assert!(
+        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \\[ \\] T[0-9]+' specs/NNN-name/tasks.md`"),
+        "the reference's check example lacks test -s"
+    );
+    assert!(
+        flat_rules.contains("`test -s specs/NNN-name/tasks.md && <tests> && ! grep -nE"),
+        "the BUILD rule's check example lacks test -s"
+    );
+    assert!(
+        flat_rules
+            .contains("The integrator's `check` on the joined branch carries the whole-file grep"),
+        "the SPLIT rule does not move the grep to the integrator"
+    );
+    assert!(
+        flat.contains("**Ignore files.** `implement` writes `.gitignore`")
+            && flat.contains("`.dockerignore`")
+            && flat.contains("`.eslintignore`"),
+        "the reference lacks the Ignore files rule"
+    );
+    // A tasks.md that no member wrote gets the fresh read too.
+    let input = preset_doc("speckit")["_input"].as_str().unwrap().to_owned();
+    for text in [flat.as_str(), &input] {
+        assert!(
+            text.contains(
+                "the plan reviewer still runs `analyze` on it before any implementer starts"
+            ),
+            "{text}"
+        );
+    }
+    // The user's checklist ticks live in the spec member's worktree until it
+    // commits them, and the implementer's worktree holds only commits.
+    for text in [flat.as_str(), &rules_text("speckit")] {
+        assert!(
+            text.contains("reprompt the spec member to commit them before any implementer starts"),
+            "{text}"
+        );
+    }
+    // The closer's converge section stays in its clone, so an owner's fix
+    // round starts with its own converge.
+    let adr = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../docs/adr/0041-spec-kit-features-run-through-teamwire-seats.md"),
+    )
+    .unwrap();
+    let adr = adr.split_whitespace().collect::<Vec<_>>().join(" ");
+    // Each spec member scans specs/ in its own worktree, so the race is not
+    // only between members that run at once.
+    for text in [flat.as_str(), &flat_rules, &adr] {
+        assert!(
+            text.contains("scans `specs/` in its own worktree")
+                && text.contains("even when they run one after the other")
+                && !text.contains("scan at once"),
+            "{text}"
+        );
+    }
+    // The ADR states the check rule the reference and the SPLIT rule state.
+    assert!(
+        adr.contains("only the integrator's `check` on the joined branch greps the whole file")
+            && !adr.contains("fails on any unticked task of its phases"),
+        "{adr}"
+    );
+    for text in [flat.as_str(), &rules_text("speckit"), &adr] {
+        assert!(
+            text.contains("runs `converge` on its own branch, then `implement` on the new phase, then `converge` again"),
+            "{text}"
+        );
+        // On a story branch converge reports the other stories as missing.
+        assert!(
+            text.contains(
+                "in a split the fix round runs on a branch cut from the integrator's branch"
+            ) && text.contains("story owners run no `converge`"),
+            "{text}"
+        );
+        assert!(!text.contains("`implement` then `converge`"), "{text}");
+        assert!(!text.contains("`implement`, then `converge`"), "{text}");
+    }
+    for text in [flat.as_str(), &rules_text("speckit")] {
+        assert!(
+            text.contains("`.claude/skills/speckit-converge/SKILL.md`")
+                && text.contains("never invokes `/speckit-converge`"),
+            "{text}"
+        );
+    }
+    let skill = example("skills/teamwire/SKILL.md");
+    assert!(
+        skill.contains("\"Spec-kit features\" in `reference.md`"),
+        "the skill does not point at the section"
+    );
+    let flat_skill = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat_skill
+            .contains("starts with `N questions for the lead.` is a question round, not a failure"),
+        "the skill does not say how to read the spec member's blocked result"
+    );
+    assert!(!flat.contains("questions for the parent"), "{flat}");
+    assert!(
+        skill.contains("Spec-kit's `specs/` folder"),
+        "the skill does not say where spec-kit's files go"
+    );
+}
+
+/// The text with every run of whitespace made one space, so a phrase matches
+/// across a line break.
+fn flat(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// The reference's "Spec-kit features" section, flat.
+fn speckit_section() -> String {
+    let reference = example("skills/teamwire/reference.md");
+    let (_, section) = reference
+        .split_once("\n## Spec-kit features\n")
+        .unwrap_or_else(|| unreachable!("reference.md has no Spec-kit features section"));
+    flat(section.split("\n## ").next().unwrap())
+}
+
+/// ADR 0041, flat.
+fn adr_0041() -> String {
+    flat(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/adr/0041-spec-kit-features-run-through-teamwire-seats.md"),
+        )
+        .unwrap(),
+    )
+}
+
+/// The pilot showed what the spec stage really does: `specify` ranks no
+/// option, `clarify` cannot take a batch of answers, both batches need one
+/// place in `spec.md`, and `specify` ticks its own checklist.
+#[test]
+fn the_speckit_spec_stage_states_what_the_pilot_showed() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    for (place, text) in [("rules", &rules), ("reference", &section), ("adr", &adr)] {
+        for needed in [
+            "`specify` ranks no option",
+            "marks its own recommended option for each question and says the mark is its own",
+            "follows clarify's write steps by hand",
+            "`## Clarifications`",
+            "`### Session YYYY-MM-DD`",
+            "`- Q: <question> → A: <answer>`",
+            "`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+        assert!(
+            !text.contains("records those answers through `clarify`"),
+            "{place} still says clarify records a batch: {text}"
+        );
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "the member's own mark at stop 1 and clarify's at stop 2",
+            "so `spec.md` has one place for every answer",
+            "The reviewer-only rule is about the `checklist` command's checklists",
+            "So the stop fires only when a checklist has unticked items",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+}
+
+/// The pilot's build: `tasks.md` has checkpoints only after story phases,
+/// `implement` appends ignore patterns, a "confirm the tests fail" task can be
+/// half false, and the check's grep misses a lowercase tick or a deleted line.
+#[test]
+fn the_speckit_build_states_what_the_pilot_showed() {
+    let doc = preset_doc("speckit");
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    let impl_note = flat(
+        doc["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "impl")
+            .and_then(|m| m["_note"].as_str())
+            .unwrap(),
+    );
+    for (place, text) in [
+        ("rules", &rules),
+        ("reference", &section),
+        ("adr", &adr),
+        ("impl note", &impl_note),
+    ] {
+        assert!(
+            text.contains("at the end of every phase that has tasks"),
+            "{place} lacks the phase commit rule: {text}"
+        );
+        for old in ["at each checkpoint", "per checkpoint", "phase checkpoint"] {
+            assert!(!text.contains(old), "{place} still says {old}: {text}");
+        }
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`**Checkpoint**` lines only after story phases, so Setup and Polish have none",
+            "A phase with no tasks, such as an empty Foundational phase, gets no commit",
+            "overrides the \"Commit after every checkpoint\" line",
+            "follows the ignore-file step for `.gitignore` only, appends only the patterns the step lists, lists each one it added in its report, and writes no other ignore file unless its brief owns that file",
+            "runs any task in `tasks.md` that claims \"confirm the new tests fail\"",
+            "a \"confirm the tests fail\" task is finished when the cases it names fail",
+            "never changes a test to make it fail",
+            "counts the ticks at each of the implementer's commits and checks that no task line is missing",
+            "passes on a lowercase `[x]` or a deleted task line",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    let analyze = flat(task_of(&doc, "analyze"));
+    assert!(
+        analyze.contains("claims \"confirm the new tests fail\"")
+            && analyze.contains("in your own scratch copy"),
+        "{analyze}"
+    );
+}
+
+/// The pilot's fix round: converge cannot see a gap the spec itself
+/// carries, converge commits nothing, and worktrees share no files, so the
+/// spec member announces each spec change as a commit to merge.
+#[test]
+fn the_speckit_fix_round_states_what_the_pilot_showed() {
+    let doc = preset_doc("speckit");
+    let note_of = |role: &str| {
+        flat(
+            doc["children"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|m| m["role"] == role)
+                .and_then(|m| m["_note"].as_str())
+                .unwrap(),
+        )
+    };
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let adr = adr_0041();
+    for (place, text) in [("rules", &rules), ("reference", &section), ("adr", &adr)] {
+        for needed in [
+            "A finding in the spec's own words goes to the spec member first",
+            "cannot find a gap that the spec itself carries",
+            "changes the spec and design files and commits, without touching `tasks.md`",
+            "Converge makes no commit",
+            "commits converge's appended section alone, before it implements it, with a message such as `converge round 1: ...`",
+            "SPEC AMENDMENT:",
+            "Once an implementer starts, only implementers write `tasks.md`",
+            "The spec member never edits `tasks.md` again",
+            // verify starts the owns diff after a merge only from `base`, so
+            // a split member whose base is not the spec branch is flagged.
+            "verify does not flag the merged spec files for the one implementer or for a split's wave 1 member, because their `base` is the spec branch",
+            "verify flags each merged spec file as `outside-owns:specs/NNN-name/<file>`",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+        assert!(
+            !text.contains("verify does not flag the merged spec files, because"),
+            "{place} says no member is flagged: {text}"
+        );
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        let waive = "`teamwire verify <team> --role <role> --waive outside-owns:specs/NNN-name/spec.md --reason \"SPEC AMENDMENT notice m007\"`";
+        assert!(text.contains(waive), "{place} lacks the waiver: {text}");
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>\"`",
+            "on a notice that starts with `SPEC AMENDMENT:`, merge that commit before your next unit",
+            "The lead sends nothing",
+            "Uncommitted edits in the spec member's worktree never reach anyone",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    let spec_note = note_of("spec");
+    assert!(
+        spec_note.contains("SPEC AMENDMENT:")
+            && spec_note.contains(
+                "after every commit that changes `spec.md`, `plan.md` or a design file once an implementer has started"
+            ),
+        "{spec_note}"
+    );
+    let impl_note = note_of("impl");
+    assert!(impl_note.contains("`SPEC AMENDMENT:`"), "{impl_note}");
+    // The user chose the merge over a shared specs folder; the ADR keeps why.
+    for needed in [
+        "shared specs folder outside the repository",
+        "verify checks `owns` only inside the repository",
+    ] {
+        assert!(adr.contains(needed), "the ADR lacks {needed}: {adr}");
+    }
+}
+
+/// Doctor now checks the BEFORE rule, so the lead reads its `spec-kit`
+/// lines instead of checking by hand, and `specify init` installs a
+/// workflow that nothing runs. Close waits only for a closer that started.
+#[test]
+fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`teamwire doctor` from the repository and read its `spec-kit ...` lines",
+            "`spec-kit committed`",
+            "`spec-kit constitution`",
+            "`spec-kit integrations`",
+            "`spec-kit git extension`",
+            "`spec-kit events`",
+            "`spec-kit feature pointer`",
+            "`spec-kit workflows`",
+            "`.specify/workflows/speckit/workflow.yml`",
+            "`.specify/workflows/workflow-registry.json`",
+            "Nothing runs it unless someone runs `specify workflow run`, and no teamwire member does",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+        assert!(!text.contains("by hand: "), "{place}: {text}");
+    }
+    assert!(
+        !section.contains("Then check that spec-kit added nothing"),
+        "{section}"
+    );
+    let adr = adr_0041();
+    assert!(
+        !adr.contains("checks the base branch by hand") && adr.contains("`teamwire doctor`"),
+        "{adr}"
+    );
+    // Codex launch refuses either file (teamwire-harness-codex OWN_CONFIG_FILES).
+    for needed in [
+        "no `.codex/config.toml` or `.codex/hooks.json` exists",
+        "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`",
+    ] {
+        assert!(rules.contains(needed), "rules lack {needed}: {rules}");
+    }
+    assert!(
+        adr.contains(
+            "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`"
+        ),
+        "{adr}"
+    );
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    assert!(
+        skill.contains(
+            "It also refuses any other member while a closer runs in the team and has not reported since its latest start or reprompt"
+        ) && skill.contains("A team with no closer yet gets no closer refusal"),
+        "the skill does not say when close waits for a closer"
+    );
+    assert!(
+        !skill.contains("while the team's closer has not reported"),
+        "the skill still says close waits for a closer that never started"
+    );
+}
+
+/// Each row of the reference's doctor table says what a `warn` on that check
+/// means, so a row that says the opposite fails here, not at a launch.
+#[test]
+fn the_reference_doctor_table_says_what_each_warn_means() {
+    let reference = example("skills/teamwire/reference.md");
+    let row = |check: &str| {
+        let start = format!("| `spec-kit {check}` |");
+        reference
+            .lines()
+            .find(|l| l.starts_with(&start))
+            .unwrap_or_else(|| unreachable!("no doctor row for spec-kit {check}"))
+            .to_owned()
+    };
+    for (check, meaning) in [
+        (
+            "committed",
+            "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files",
+        ),
+        (
+            "constitution",
+            "The committed constitution, the copy in `HEAD`, still holds a template placeholder",
+        ),
+        ("integrations", "has no command folder"),
+        (
+            "git extension",
+            "`.specify/extensions.yml` holds the `git` extension",
+        ),
+        ("events", "A spec-kit runtime event is set up"),
+        ("events", "`.codex/hooks.json` exists"),
+        (
+            "events",
+            "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`",
+        ),
+        (
+            "feature pointer",
+            "git does not ignore `.specify/feature.json`, so members would commit their pointer",
+        ),
+        ("workflows", "Never a `warn`"),
+        ("workflows", "teamwire starts none of them"),
+    ] {
+        let text = row(check);
+        assert!(
+            text.contains(meaning),
+            "spec-kit {check} lacks {meaning}: {text}"
+        );
     }
 }
 

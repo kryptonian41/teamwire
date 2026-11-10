@@ -74,7 +74,7 @@ reports the failure instead of dropping it.
 - **A full context gets a fresh session.** `teamwire handoff` gives a member a new
   session in the same seat when its context runs high.
 - **Team shapes come ready-made.** `teamwire preset` prints a tested spec for
-  five common team shapes, plus a closer that checks a finished team.
+  six common team shapes, plus a closer that checks a finished team.
 - **Metrics stay on your machine.** `teamwire metrics` reads each team's
   events locally. `teamwire metrics export` sends them to an OpenTelemetry
   endpoint.
@@ -236,6 +236,7 @@ The specs also live in [examples/presets/](examples/presets/).
 | `survey` | You need a read-only investigation across several areas. |
 | `implement-then-review` | One implementer builds, then one fresh reviewer reads the finished diff. |
 | `contract-split` | One feature must be split across implementers. Use it only as a last resort. |
+| `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and the task list, a plan reviewer runs `analyze`, and one implementer runs `implement`. |
 | `integrator` | A finished team's branches must join into one. One implementer merges them in the plan's order and runs the full gate. It is a final step, not a shape. |
 | `closer` | A finished team that wrote code needs one agent to check every claim and write one report. It is a final step, not a shape. |
 
