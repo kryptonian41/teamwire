@@ -1393,27 +1393,74 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
     };
     for (check, meaning) in [
         (
+            "base",
+            "when git cannot resolve the `--base` ref to a commit",
+        ),
+        ("version", "records a version outside the 1.3 line, or none"),
+        (
+            "version",
+            "tested with 1.3.3.dev0 (spec-kit commit c438494)",
+        ),
+        (
+            "version",
+            "run `specify integration upgrade <key>` for each integration, then commit on the ref",
+        ),
+        (
             "committed",
-            "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files",
+            "A spec-kit file is on disk but not in the commit, so a worktree member does not get it",
+        ),
+        ("committed", "Remove each ignore rule it names"),
+        (
+            "committed",
+            "run the `git add` it prints, then commit on the ref",
         ),
         (
             "constitution",
-            "The committed constitution, the copy in `HEAD`, still holds a template placeholder",
+            "in the commit still holds a template placeholder",
         ),
-        ("integrations", "has no command folder"),
+        (
+            "constitution",
+            "A written copy on disk that is not committed does not count",
+        ),
+        (
+            "integrations",
+            "has no command folder with `speckit-` command files in the commit",
+        ),
+        ("integrations", "in its current or its older format"),
         (
             "git extension",
-            "`.specify/extensions.yml` holds the `git` extension",
+            "lists the `git` extension under `installed:`",
         ),
-        ("events", "A spec-kit runtime event is set up"),
-        ("events", "`.codex/hooks.json` exists"),
+        (
+            "git extension",
+            "Run `specify extension remove git`, then commit on the ref",
+        ),
+        ("hooks", "a hook that a member must run (`optional: false`)"),
+        (
+            "hooks",
+            "A hook or extension with `enabled: false` does not count",
+        ),
+        (
+            "hooks",
+            "then run `specify extension remove <ext>` or set `optional: true` on the hook",
+        ),
+        ("events", "A spec-kit runtime event is set up in the commit"),
+        (
+            "events",
+            "`.codex/hooks.json` that is only on disk also warns",
+        ),
         (
             "events",
             "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`",
         ),
+        ("events", "is `ok`, with a note"),
         (
             "feature pointer",
             "git does not ignore `.specify/feature.json`, so members would commit their pointer",
+        ),
+        (
+            "feature pointer",
+            "run `git rm --cached .specify/feature.json`, then commit on the ref",
         ),
         ("workflows", "Never a `warn`"),
         ("workflows", "teamwire starts none of them"),

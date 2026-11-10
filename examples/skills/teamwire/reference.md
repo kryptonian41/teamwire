@@ -347,15 +347,18 @@ never `FAIL`, so none of them stops a launch, but doctor exits 2 on a
 `warn`. A `warn` names the file and one action that fixes it. Fix each one
 before launch:
 
-| check | a `warn` means |
+| check | a `warn` means, and the action that fixes it |
 | --- | --- |
-| `spec-kit committed` | `.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files. Commit `.specify/` and the command folders. |
-| `spec-kit constitution` | The committed constitution, the copy in `HEAD`, still holds a template placeholder, such as `[PROJECT_NAME]`. A written copy on disk that is not committed does not count. Write it through spec-kit's `constitution` command, then commit it. |
-| `spec-kit integrations` | An integration listed in `.specify/integration.json` has no command folder: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. The `ok` line lists the installed integrations. |
-| `spec-kit git extension` | The `installed:` list in `.specify/extensions.yml` holds the `git` extension, which creates and switches branches. |
-| `spec-kit events` | A spec-kit runtime event is set up: an extension manifest, `.specify/extensions/<id>/extension.yml`, has a top-level `events:` key, or `.specify/integration-events.yml` exists, or `.codex/config.toml` exists, or `.codex/hooks.json` exists, or `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`. An extension declares its `events:` in its own manifest, not in `.specify/extensions.yml`. |
-| `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature. |
-| `spec-kit workflows` | Never a `warn`. The line lists the workflow ids in `.specify/workflows/workflow-registry.json` and says teamwire starts none of them. |
+| `spec-kit base` | Printed alone, in place of the nine lines, when git cannot resolve the `--base` ref to a commit. Pass `--base` a branch or commit that exists, or make the first commit. When git refuses for another reason, such as dubious ownership, the line quotes git's first stderr line: run `git status` in the repository to see why. |
+| `spec-kit version` | `.specify/integration.json` in the commit records a version outside the 1.3 line, or none. The `ok` line prints the version and says the guidance was tested with 1.3.3.dev0 (spec-kit commit c438494). With spec-kit 1.3 installed (`specify --version`), run `specify integration upgrade <key>` for each integration, then commit on the ref. With no version recorded, fix `.specify/integration.json` as the `spec-kit integrations` line says. |
+| `spec-kit committed` | A spec-kit file is on disk but not in the commit, so a worktree member does not get it: a file under `.specify/`, except `feature.json` and what `.specify/.gitignore` ignores, or a `speckit-` entry of `.claude/skills`, `.agents/skills` or `.pi/prompts`. The line names each path as changed, new (in git's index but not in the commit), untracked or git-ignored, with the ignore rule and its file and line. Remove each ignore rule it names, such as the `.claude/` rule that `specify init` advises, run the `git add` it prints, then commit on the ref. |
+| `spec-kit constitution` | `.specify/memory/constitution.md` in the commit still holds a template placeholder, such as `[PROJECT_NAME]`, or is not in the commit. A written copy on disk that is not committed does not count, and the `ok` line says when the copy on disk differs. Write it with spec-kit's `constitution` command, such as `/speckit-constitution`, then commit it on the ref. |
+| `spec-kit integrations` | An integration listed in the committed `.specify/integration.json`, in its current or its older format, has no command folder with `speckit-` command files in the commit: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. Run `specify integration upgrade <key>`, then commit the folder on the ref. A folder that is only on disk is committed as the `spec-kit committed` line says. When `integration.json` is missing, run `specify integration install <key>` for each integration members use, then commit. When it is broken, delete it first. The `ok` line lists the installed integrations. |
+| `spec-kit git extension` | `.specify/extensions.yml` in the commit lists the `git` extension under `installed:`, but teamwire owns the branches and worktrees. Run `specify extension remove git`, then commit on the ref. |
+| `spec-kit hooks` | `.specify/extensions.yml` in the commit has a hook that a member must run (`optional: false`), from an enabled extension other than `git`. The line names each extension, its command and its event. Read what each command runs, then run `specify extension remove <ext>` or set `optional: true` on the hook in `.specify/extensions.yml`, then commit on the ref. `specify extension disable <ext>` also clears it. A hook or extension with `enabled: false` does not count. |
+| `spec-kit events` | A spec-kit runtime event is set up in the commit: `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`, `.codex/config.toml` holds a hook marked `speckit_marker = true`, or `.specify/` holds the events script those hooks run. Each hook runs a spec-kit script in every member session, and teamwire refuses to start a Codex member while `.codex/config.toml` is in the repository. Run `specify extension remove <ids>` or `specify extension disable <ids>`, or `specify integration upgrade <key> --force --integration-options="--events false"` for each installed integration, then commit on the ref. A `.codex/config.toml` or `.codex/hooks.json` that is only on disk also warns: remove it from the repository. A manifest that declares `events:` while spec-kit wrote no hook, such as a disabled extension or an integration with `--events false`, is `ok`, with a note. |
+| `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature: add `feature.json` to `.specify/.gitignore`, then commit on the ref. When the file is tracked in the commit, the ignore rule does not apply, because git ignores only untracked files: run `git rm --cached .specify/feature.json`, then commit on the ref. |
+| `spec-kit workflows` | Never a `warn`. The line lists the installed workflow ids and says teamwire starts none of them. |
 
 `specify init` also installs a workflow,
 `.specify/workflows/speckit/workflow.yml`, listed in
@@ -366,7 +369,11 @@ The `git` extension creates and switches branches, and teamwire owns the
 branches. An extension with `events:` writes `.codex/config.toml`, and
 Codex launch refuses a repository that holds that file. The same extension
 writes hooks into `.claude/settings.json`, and those hooks run unreviewed
-with the member's rights. Remove such an extension before launch.
+with the member's rights. Remove such an extension before launch. An
+extension declares its `events:` in its own manifest,
+`.specify/extensions/<id>/extension.yml`, not in `.specify/extensions.yml`,
+and `.specify/integration-events.yml` overrides them. Doctor warns only on
+the hooks spec-kit really wrote.
 
 Any other extension can register hooks in `.specify/extensions.yml`. Every
 spec-kit command tells the member to run each enabled hook that has
