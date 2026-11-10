@@ -1211,9 +1211,21 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
             "SPEC AMENDMENT:",
             "Once an implementer starts, only implementers write `tasks.md`",
             "The spec member never edits `tasks.md` again",
+            // verify starts the owns diff after a merge only from `base`, so
+            // a split member whose base is not the spec branch is flagged.
+            "verify does not flag the merged spec files for the one implementer or for a split's wave 1 member, because their `base` is the spec branch",
+            "verify flags each merged spec file as `outside-owns:specs/NNN-name/<file>`",
         ] {
             assert!(text.contains(needed), "{place} lacks {needed}: {text}");
         }
+        assert!(
+            !text.contains("verify does not flag the merged spec files, because"),
+            "{place} says no member is flagged: {text}"
+        );
+    }
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        let waive = "`teamwire verify <team> --role <role> --waive outside-owns:specs/NNN-name/spec.md --reason \"SPEC AMENDMENT notice m007\"`";
+        assert!(text.contains(waive), "{place} lacks the waiver: {text}");
     }
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [

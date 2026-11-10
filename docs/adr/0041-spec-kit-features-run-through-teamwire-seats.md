@@ -142,8 +142,13 @@ rules in `crates/teamwire-launch/contracts/` do not change.
    uncommitted edits never reach anyone. Each implementer merges that
    commit before its next unit. It is the same merge as the skill's
    `CONTRACT AMENDMENT`, sent by the owner of the change instead of the
-   lead. verify does not flag the merged spec files, because the
-   implementer's `base` is the spec branch. Once an implementer starts,
+   lead. verify does not flag the merged spec files for the one
+   implementer or for a split's wave 1 member, because their `base` is the
+   spec branch. Every other member of a split, such as a story member or
+   the Polish or fix-round member, has a `base` that is not the spec
+   branch, so verify flags each merged spec file as
+   `outside-owns:specs/NNN-name/<file>`, and the lead waives each such flag
+   with the notice as the reason. Once an implementer starts,
    only implementers write `tasks.md`: their ticks and the Convergence
    sections that converge appends. The spec member never edits `tasks.md`
    again, so the merge cannot conflict on it.

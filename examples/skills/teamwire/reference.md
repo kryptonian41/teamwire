@@ -528,8 +528,14 @@ it. Then cut the implementer's branch from that branch.
   the notice after every commit that changes `spec.md`, `plan.md` or a
   design file once an implementer has started. This is the same merge as
   the skill's `CONTRACT AMENDMENT`, sent by the owner of the change instead
-  of you. verify does not flag the merged spec files, because the
-  implementer's `base` is the spec branch.
+  of you. verify does not flag the merged spec files for the one
+  implementer or for a split's wave 1 member, because their `base` is the
+  spec branch. Every other member of a split, such as a story member or the
+  Polish or fix-round member, has a `base` that is not the spec branch, so
+  verify flags each merged spec file as
+  `outside-owns:specs/NNN-name/<file>`. Waive each such flag with the
+  notice as the reason, such as
+  `teamwire verify <team> --role <role> --waive outside-owns:specs/NNN-name/spec.md --reason "SPEC AMENDMENT notice m007"`.
 - **One writer of `tasks.md`.** Once an implementer starts, only
   implementers write `tasks.md`: their ticks and the Convergence sections
   that converge appends. The spec member never edits `tasks.md` again, so
