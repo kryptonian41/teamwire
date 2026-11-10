@@ -69,11 +69,16 @@ mod host_pick;
 #[path = "../src/cmd/doctor_speckit.rs"]
 mod doctor_speckit;
 
+#[path = "../src/cmd/doctor_speckit_files.rs"]
+mod doctor_speckit_files;
+
 #[path = "../src/cmd/doctor_teams.rs"]
 mod doctor_teams;
 
 mod cmd {
-    pub(crate) use crate::{doctor, doctor_speckit, doctor_teams, host_pick, lead_setup_check};
+    pub(crate) use crate::{
+        doctor, doctor_speckit, doctor_speckit_files, doctor_teams, host_pick, lead_setup_check,
+    };
 
     pub(crate) mod install {
         use teamwire_core::LeadCommand;
