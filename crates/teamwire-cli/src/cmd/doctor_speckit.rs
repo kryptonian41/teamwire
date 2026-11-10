@@ -28,6 +28,8 @@ pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         committed_check(inputs, &root),
         constitution_check(&root),
         integrations_check(&root),
+        git_extension_check(&root),
+        events_check(&root),
         feature_pointer_check(inputs, &root),
         workflows_check(&root),
     ]
@@ -218,5 +220,127 @@ fn workflows_check(root: &Path) -> Check {
     Check::pass(
         name,
         format!("installed: {list}; teamwire starts none of them"),
+    )
+}
+
+/// One YAML scalar as spec-kit writes it: maybe quoted, maybe followed by a
+/// comment.
+fn yaml_scalar(text: &str) -> String {
+    let text = text.split(" #").next().unwrap_or(text);
+    text.trim().trim_matches(['"', '\'']).to_owned()
+}
+
+/// The extension ids under the top-level `installed:` key, written as an
+/// inline list (`installed: [bug, git]`) or as `- git` items below it.
+fn installed_extensions(text: &str) -> Vec<String> {
+    // shortcut: reads `installed:` line by line instead of parsing YAML, so a flow
+    // list that spans lines, an anchor or a quoted key is missed; switch to a
+    // YAML parser if the workspace gains one or a check needs nested keys.
+    let mut lines = text.lines();
+    let Some(rest) = lines.find_map(|l| l.strip_prefix("installed:")) else {
+        return Vec::new();
+    };
+    if let Some(inline) = rest.trim().strip_prefix('[') {
+        return inline
+            .trim_end()
+            .trim_end_matches(']')
+            .split(',')
+            .map(yaml_scalar)
+            .filter(|id| !id.is_empty())
+            .collect();
+    }
+    // The block list ends at the next top-level key.
+    lines
+        .take_while(|l| l.is_empty() || l.starts_with([' ', '-', '#']))
+        .filter_map(|l| l.trim_start().strip_prefix('-'))
+        .map(yaml_scalar)
+        .collect()
+}
+
+/// spec-kit's `git` extension makes branches per feature; teamwire gives each
+/// member its own branch and worktree, so the two would fight.
+fn git_extension_check(root: &Path) -> Check {
+    let name = "spec-kit git extension";
+    let file = ".specify/extensions.yml";
+    let text = std::fs::read_to_string(root.join(file)).unwrap_or_default();
+    if installed_extensions(&text).iter().any(|id| id == "git") {
+        Check::warn(
+            name,
+            format!(
+                "{file} lists the git extension under installed:, but teamwire owns branches and \
+                 worktrees; run `specify extension remove git`"
+            ),
+        )
+    } else {
+        Check::pass(name, "the git extension is not installed")
+    }
+}
+
+/// True when a JSON value holds an object with `"__speckit_event__": true`,
+/// the tag spec-kit puts on each hook it writes into `.claude/settings.json`.
+fn has_speckit_event(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.get("__speckit_event__") == Some(&serde_json::Value::Bool(true))
+                || map.values().any(has_speckit_event)
+        }
+        serde_json::Value::Array(items) => items.iter().any(has_speckit_event),
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => false,
+    }
+}
+
+/// A spec-kit runtime event runs a spec-kit script from the agent's own hook
+/// system, in every member session, with no member asking for it.
+fn events_check(root: &Path) -> Check {
+    let name = "spec-kit events";
+    let mut found = Vec::new();
+    let extensions = root.join(".specify/extensions");
+    let mut ids: Vec<String> = std::fs::read_dir(&extensions)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    ids.sort();
+    for id in ids {
+        let file = format!(".specify/extensions/{id}/extension.yml");
+        let text = std::fs::read_to_string(root.join(&file)).unwrap_or_default();
+        // shortcut: a top-level key is a line that starts with `events:`, not a YAML parse.
+        if text.lines().any(|l| l.starts_with("events:")) {
+            found.push(format!("{file} declares events:"));
+        }
+    }
+    if root.join(".specify/integration-events.yml").exists() {
+        found.push(".specify/integration-events.yml exists".to_owned());
+    }
+    if root.join(".codex/config.toml").exists() {
+        found.push(
+            ".codex/config.toml exists, so teamwire refuses to start a Codex member here"
+                .to_owned(),
+        );
+    }
+    let settings = ".claude/settings.json";
+    if std::fs::read_to_string(root.join(settings))
+        .ok()
+        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .is_some_and(|json| has_speckit_event(&json))
+    {
+        found.push(format!(
+            "{settings} has a hook tagged \"__speckit_event__\": true"
+        ));
+    }
+    if found.is_empty() {
+        return Check::pass(name, "no spec-kit runtime event is set up");
+    }
+    Check::warn(
+        name,
+        format!(
+            "{}; each runs a spec-kit script from the agent's own hooks in every member session. \
+             Remove it, or reinstall the integration with `--integration-options=\"--events false\"`",
+            found.join("; ")
+        ),
     )
 }

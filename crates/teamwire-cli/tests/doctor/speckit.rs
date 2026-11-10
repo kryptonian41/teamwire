@@ -277,6 +277,145 @@ fn the_workflows_line_lists_the_ids_and_is_always_ok() {
     assert_eq!(level_of(&bed.checks(), "spec-kit workflows"), Level::Pass);
 }
 
+fn git_extension(bed: &Bed, extensions_yml: &str) -> (Level, String) {
+    put(bed.home.path(), ".specify/extensions.yml", extensions_yml);
+    let checks = bed.checks();
+    let name = "spec-kit git extension";
+    (level_of(&checks, name), detail_of(&checks, name).to_owned())
+}
+
+#[test]
+fn the_git_extension_listed_under_installed_warns() {
+    let bed = speckit_bed();
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit git extension"),
+        Level::Pass
+    );
+
+    // The inline list `specify extension add` writes, and a block list.
+    let (level, detail) = git_extension(&bed, "installed: [tw-demo, git]\nhooks: {}\n");
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains(".specify/extensions.yml"), "{detail}");
+    assert!(detail.contains("specify extension remove git"), "{detail}");
+    let block = "installed:\n- bug\n- 'git'\nsettings: {auto_execute_hooks: true}\n";
+    assert_eq!(git_extension(&bed, block).0, Level::Warn);
+    let indented = "installed:\n  - \"git\"  # branches\n";
+    assert_eq!(git_extension(&bed, indented).0, Level::Warn);
+}
+
+#[test]
+fn other_extensions_and_git_outside_the_installed_list_pass() {
+    let bed = speckit_bed();
+    let yml = "installed: [gitlab, bug]\nhooks:\n  after_tasks:\n  - {extension: git, command: speckit.git.commit}\n";
+    assert_eq!(git_extension(&bed, yml).0, Level::Pass);
+    let yml = "installed:\n- bug\nhooks:\n- git\n";
+    assert_eq!(git_extension(&bed, yml).0, Level::Pass);
+    assert_eq!(git_extension(&bed, "installed: []\n").0, Level::Pass);
+}
+
+fn events(bed: &Bed) -> (Level, String) {
+    let checks = bed.checks();
+    let name = "spec-kit events";
+    (level_of(&checks, name), detail_of(&checks, name).to_owned())
+}
+
+#[test]
+fn an_extension_that_declares_events_warns_and_one_that_does_not_passes() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    // A nested `events:` key is not the top-level one spec-kit reads.
+    put(
+        root,
+        ".specify/extensions/bug/extension.yml",
+        "extension:\n  id: bug\n  events: none\nprovides:\n  commands: []\n",
+    );
+    assert_eq!(events(&bed).0, Level::Pass);
+
+    put(
+        root,
+        ".specify/extensions/tw-ev/extension.yml",
+        "extension:\n  id: tw-ev\nevents:\n  pre_tool_use:\n    command: speckit.tw-ev.guard\n",
+    );
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(
+        detail.contains(".specify/extensions/tw-ev/extension.yml"),
+        "{detail}"
+    );
+    assert!(!detail.contains("extensions/bug"), "{detail}");
+}
+
+#[test]
+fn an_integration_events_file_or_a_codex_config_warns() {
+    let bed = speckit_bed();
+    put(bed.home.path(), ".specify/integration-events.yml", "{}\n");
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(
+        detail.contains(".specify/integration-events.yml"),
+        "{detail}"
+    );
+
+    let bed = speckit_bed();
+    put(
+        bed.home.path(),
+        ".codex/config.toml",
+        "[[hooks.PreToolUse]]\n",
+    );
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains(".codex/config.toml"), "{detail}");
+    assert!(detail.contains("Codex member"), "{detail}");
+}
+
+#[test]
+fn a_claude_settings_hook_tagged_as_a_spec_kit_event_warns() {
+    let bed = speckit_bed();
+    let settings = |marker: bool| {
+        serde_json::json!({"hooks": {"PreToolUse": [{"hooks": [{
+            "type": "command",
+            "command": "python3 \"${CLAUDE_PROJECT_DIR}/.specify/events.py\" speckit.tw-ev.guard pre_tool_use 60",
+            "__speckit_event__": marker
+        }]}]}})
+        .to_string()
+    };
+    put(bed.home.path(), ".claude/settings.json", &settings(false));
+    assert_eq!(events(&bed).0, Level::Pass);
+    put(bed.home.path(), ".claude/settings.json", &settings(true));
+    let (level, detail) = events(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains(".claude/settings.json"), "{detail}");
+}
+
+#[test]
+fn a_healthy_spec_kit_repository_prints_seven_ok_lines_in_order() {
+    let checks = speckit_bed().checks();
+    let lines: Vec<(&str, Level)> = checks
+        .iter()
+        .filter(|c| c.name.starts_with("spec-kit"))
+        .map(|c| (c.name.as_str(), c.level))
+        .collect();
+    let want: Vec<(&str, Level)> = [
+        "spec-kit committed",
+        "spec-kit constitution",
+        "spec-kit integrations",
+        "spec-kit git extension",
+        "spec-kit events",
+        "spec-kit feature pointer",
+        "spec-kit workflows",
+    ]
+    .into_iter()
+    .map(|n| (n, Level::Pass))
+    .collect();
+    assert_eq!(lines, want);
+    // Right after the `.worktrees` check.
+    let at = names(&checks)
+        .iter()
+        .position(|n| *n == ".worktrees ignored")
+        .unwrap();
+    assert_eq!(checks[at + 1].name, "spec-kit committed");
+}
+
 /// `git` with a fixed author, so a commit works on any machine.
 fn git(dir: &Path, args: &[&str]) {
     let status = std::process::Command::new("git")
