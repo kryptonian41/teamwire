@@ -442,6 +442,17 @@ pub(super) fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
     installed
 }
 
+/// True when the folder on disk holds an entry whose name has the start and end.
+fn on_disk(dir: &Path, start: &str, end: &str) -> bool {
+    std::fs::read_dir(dir).is_ok_and(|entries| {
+        entries.flatten().any(|e| {
+            e.file_name()
+                .to_str()
+                .is_some_and(|n| n.starts_with(start) && n.ends_with(end))
+        })
+    })
+}
+
 fn integrations_check(base: &Base<'_>) -> Check {
     let name = "spec-kit integrations";
     let file = INTEGRATION_FILE;
@@ -480,11 +491,18 @@ fn integrations_check(base: &Base<'_>) -> Check {
         .filter_map(|key| {
             let (dir, start, end) = command_folder(key)?;
             (!has_entry(base, dir, start, end)).then(|| {
-                format!(
-                    "{key} has no {dir}/{start}*{end} in {at}; run `specify integration upgrade \
-                     {key}`, then commit the folder on {}",
-                    base.name
-                )
+                if on_disk(&base.root.join(dir), start, end) {
+                    format!(
+                        "{key} has no {dir}/{start}*{end} in {at}, though the folder is on disk; \
+                         commit it as the spec-kit committed line says"
+                    )
+                } else {
+                    format!(
+                        "{key} has no {dir}/{start}*{end} in {at}; run `specify integration \
+                         upgrade {key}`, then commit the folder on {}",
+                        base.name
+                    )
+                }
             })
         })
         .collect();

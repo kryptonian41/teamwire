@@ -1054,6 +1054,17 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
         "{detail}"
     );
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    let integrations = detail_of(&checks, "spec-kit integrations");
+    assert!(
+        integrations.contains(
+            "though the folder is on disk; commit it as the spec-kit committed line says"
+        ),
+        "{integrations}"
+    );
+    assert!(
+        !integrations.contains("specify integration upgrade"),
+        "{integrations}"
+    );
 
     put(root, ".gitignore", "");
     follow_git_add(root, &detail);
