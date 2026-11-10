@@ -133,7 +133,7 @@ fn a_git_worktree_whose_git_is_a_file_is_a_spec_kit_root() {
     std::fs::rename(root.join(".git"), &moved).unwrap();
     put(root, ".git", &format!("gitdir: {}\n", moved.display()));
     let checks = bed.checks();
-    assert_eq!(speckit_names(&checks).len(), 7);
+    assert_eq!(speckit_names(&checks).len(), 8);
     assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Pass);
 }
 
@@ -560,6 +560,7 @@ fn a_healthy_spec_kit_repository_prints_seven_ok_lines_in_order() {
         "spec-kit constitution",
         "spec-kit integrations",
         "spec-kit git extension",
+        "spec-kit hooks",
         "spec-kit events",
         "spec-kit feature pointer",
         "spec-kit workflows",
@@ -1114,4 +1115,82 @@ fn every_form_spec_kit_reads_as_listing_git_warns_and_an_unreadable_file_never_p
         detail.contains(".specify/extensions.yml in HEAD ("),
         "{detail}"
     );
+}
+
+/// The `.specify/extensions.yml` that `specify extension add --dev gate`
+/// (spec-kit 1.3.3.dev0) wrote for a scratch extension `gate` with one
+/// required and one optional hook.
+const GATE_EXTENSIONS: &str = "installed:
+- gate
+settings:
+  auto_execute_hooks: true
+hooks:
+  before_tasks:
+  - extension: gate
+    command: speckit.gate.check
+    enabled: true
+    optional: false
+    priority: 10
+    prompt: Execute speckit.gate.check?
+    description: Require a merge request
+    condition: null
+  after_tasks:
+  - extension: gate
+    command: speckit.gate.check
+    enabled: true
+    optional: true
+    priority: 10
+    prompt: Execute speckit.gate.check?
+    description: ''
+    condition: null
+";
+
+fn hooks(bed: &Bed) -> (Level, String) {
+    let checks = bed.checks();
+    let name = "spec-kit hooks";
+    (level_of(&checks, name), detail_of(&checks, name).to_owned())
+}
+
+#[test]
+fn a_required_hook_of_another_extension_warns_until_it_is_removed_disabled_or_optional() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    assert_eq!(hooks(&bed).0, Level::Pass);
+    // The git extension's required hooks are its own line's.
+    put_committed(root, ".specify/extensions.yml", GIT_EXTENSIONS);
+    assert_eq!(hooks(&bed).0, Level::Pass);
+
+    put_committed(root, ".specify/extensions.yml", GATE_EXTENSIONS);
+    let (level, detail) = hooks(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(
+        detail.contains("gate runs speckit.gate.check at before_tasks"),
+        "{detail}"
+    );
+    assert!(!detail.contains("after_tasks"), "{detail}");
+    assert!(detail.contains("specify extension remove gate"), "{detail}");
+    assert!(detail.ends_with("then commit on HEAD"), "{detail}");
+
+    // Not committed yet: members still get the hook.
+    put(root, ".specify/extensions.yml", NO_EXTENSIONS);
+    assert_eq!(hooks(&bed).0, Level::Warn);
+    // What `specify extension remove gate` leaves, committed.
+    commit(root);
+    assert_eq!(hooks(&bed).0, Level::Pass);
+
+    // Made optional by hand, or disabled (`specify extension disable` sets `enabled: false`).
+    for fixed in [
+        GATE_EXTENSIONS.replace("optional: false", "optional: true"),
+        GATE_EXTENSIONS.replace("enabled: true", "enabled: false"),
+    ] {
+        put_committed(root, ".specify/extensions.yml", GATE_EXTENSIONS);
+        assert_eq!(hooks(&bed).0, Level::Warn);
+        put_committed(root, ".specify/extensions.yml", &fixed);
+        assert_eq!(hooks(&bed).0, Level::Pass, "{fixed}");
+    }
+
+    put_committed(root, ".specify/extensions.yml", "hooks: [unclosed\n");
+    let (level, detail) = hooks(&bed);
+    assert_eq!(level, Level::Warn);
+    assert!(detail.contains("check the file by hand"), "{detail}");
 }

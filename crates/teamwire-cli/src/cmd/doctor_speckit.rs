@@ -16,13 +16,14 @@ use std::time::Duration;
 use teamwire_core::{Command, RunOutput};
 
 use crate::cmd::doctor::{Check, Inputs};
-use crate::cmd::doctor_speckit_files::{has_speckit_event, installed_extensions};
-
 // A path, so the test crates that include this file by path find it too.
 #[path = "doctor_speckit/committed.rs"]
 mod committed;
+#[path = "doctor_speckit/extensions.rs"]
+mod extensions;
 
 use committed::committed_check;
+use extensions::{events_check, git_extension_check, hooks_check};
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -52,6 +53,7 @@ pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         constitution_check(&base),
         integrations_check(&base),
         git_extension_check(&base),
+        hooks_check(&base),
         events_check(&base),
         feature_pointer_check(&base),
         workflows_check(&base),
@@ -448,99 +450,6 @@ fn workflows_check(base: &Base<'_>) -> Check {
         format!(
             "installed in {}: {list}; teamwire starts none of them",
             base.at()
-        ),
-    )
-}
-
-/// The warning for a YAML file the reader cannot read: it never passes.
-pub(crate) fn unreadable_yaml(file: &str, at: &str, why: &str) -> String {
-    format!(
-        "could not read {file} in {at} ({why}); check the file by hand, since doctor reads only \
-         the YAML forms spec-kit writes"
-    )
-}
-
-/// spec-kit's `git` extension makes branches per feature; teamwire gives each
-/// member its own branch and worktree, so the two would fight.
-fn git_extension_check(base: &Base<'_>) -> Check {
-    let name = "spec-kit git extension";
-    let file = ".specify/extensions.yml";
-    let at = base.at();
-    let text = match base.show(file) {
-        Ok(text) => text.unwrap_or_default(),
-        Err(e) => return Check::warn(name, e),
-    };
-    let ids = match installed_extensions(&text) {
-        Ok(ids) => ids,
-        Err(e) => return Check::warn(name, unreadable_yaml(file, &at, &e)),
-    };
-    if ids.iter().any(|id| id == "git") {
-        Check::warn(
-            name,
-            format!(
-                "{file} in {at} lists the git extension under installed:, but teamwire owns \
-                 branches and worktrees; run `specify extension remove git`, then commit on {}",
-                base.name
-            ),
-        )
-    } else {
-        Check::pass(name, format!("the git extension is not installed in {at}"))
-    }
-}
-
-/// A spec-kit runtime event runs a spec-kit script from the agent's own hook
-/// system, in every member session, with no member asking for it.
-fn events_check(base: &Base<'_>) -> Check {
-    let name = "spec-kit events";
-    let at = base.at();
-    let mut found = Vec::new();
-    let mut ids: Vec<&str> = base
-        .under(".specify/extensions")
-        .filter_map(|rest| rest.strip_suffix("/extension.yml"))
-        .filter(|id| !id.contains('/'))
-        .collect();
-    ids.sort_unstable();
-    for id in ids {
-        let file = format!(".specify/extensions/{id}/extension.yml");
-        let text = base.show(&file).ok().flatten().unwrap_or_default();
-        // shortcut: a top-level key is a line that starts with `events:`, not a YAML parse.
-        if text.lines().any(|l| l.starts_with("events:")) {
-            found.push(format!("{file} declares events:"));
-        }
-    }
-    if base.has(".specify/integration-events.yml") {
-        found.push(".specify/integration-events.yml exists".to_owned());
-    }
-    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`).
-    for file in [".codex/config.toml", ".codex/hooks.json"] {
-        if base.has(file) {
-            found.push(format!(
-                "{file} exists, so teamwire refuses to start a Codex member here"
-            ));
-        }
-    }
-    let settings = ".claude/settings.json";
-    if base
-        .show(settings)
-        .ok()
-        .flatten()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .is_some_and(|json| has_speckit_event(&json))
-    {
-        found.push(format!(
-            "{settings} has a hook tagged \"__speckit_event__\": true"
-        ));
-    }
-    if found.is_empty() {
-        return Check::pass(name, format!("no spec-kit runtime event is set up in {at}"));
-    }
-    Check::warn(
-        name,
-        format!(
-            "in {at}: {}; each runs a spec-kit script from the agent's own hooks in every member \
-             session. Remove it, or reinstall the integration with \
-             `--integration-options=\"--events false\"`",
-            found.join("; ")
         ),
     )
 }
