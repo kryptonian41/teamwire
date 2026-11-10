@@ -2,7 +2,9 @@
 //! inside a git repository whose root holds `.specify/`.
 //!
 //! Never: run `specify`, use the network, or change a file. The checks read
-//! files and ask git (`ls-files`, `check-ignore`).
+//! files and ask git (`cat-file`, `show`, `check-ignore`). A worktree is cut
+//! from a commit, so the constitution checks look at `HEAD`, not at git's
+//! index or the disk.
 //! Every line is `ok` or `warn`, never `FAIL`: a doctor failure blocks
 //! `teamwire afk start`, and none of these stops a launch on its own. Each
 //! warning names the file and what to do.
@@ -10,7 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use teamwire_core::Command;
+use teamwire_core::{Command, RunOutput};
 
 use crate::cmd::doctor::{Check, Inputs};
 
@@ -26,7 +28,7 @@ pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
     };
     vec![
         committed_check(inputs, &root),
-        constitution_check(&root),
+        constitution_check(inputs, &root),
         integrations_check(&root),
         git_extension_check(&root),
         events_check(&root),
@@ -43,37 +45,61 @@ fn speckit_root(dir: &Path) -> Option<PathBuf> {
     root.join(".specify").is_dir().then(|| root.to_path_buf())
 }
 
-/// Runs `git args` at the root and returns its exit code, or why it gave none.
-fn git(inputs: &Inputs<'_>, root: &Path, args: &[&str]) -> Result<i32, String> {
+/// Runs `git args` at the root and returns what it printed, or why it gave
+/// no answer.
+fn git(inputs: &Inputs<'_>, root: &Path, args: &[&str]) -> Result<RunOutput, String> {
     let cmd = Command::new("git")
         .args(args.iter().copied())
         .cwd(root.to_path_buf());
     match inputs.platform.run(&cmd, GIT_TIMEOUT) {
         Ok(out) if out.timed_out => Err(format!("no answer within {} s", GIT_TIMEOUT.as_secs())),
-        Ok(out) => Ok(out.exit_code),
+        Ok(out) => Ok(out),
         Err(e) => Err(e.to_string()),
     }
 }
 
-/// A worktree holds only what is committed, so an untracked `.specify/`
-/// leaves a worktree member with no spec-kit files.
+/// The first line git wrote to stderr, which says why it refused.
+fn git_said(out: &RunOutput) -> String {
+    let text = String::from_utf8_lossy(&out.stderr);
+    let line = text.lines().next().unwrap_or("").trim();
+    if line.is_empty() {
+        format!("exit code {}", out.exit_code)
+    } else {
+        line.to_owned()
+    }
+}
+
+/// The action for a git that gave no usable answer.
+fn git_status_hint(root: &Path) -> String {
+    format!("run `git status` in {} to see why", root.display())
+}
+
+/// A worktree is cut from a commit, so a `.specify/` that is only on disk or
+/// only staged leaves a worktree member with no spec-kit files.
 fn committed_check(inputs: &Inputs<'_>, root: &Path) -> Check {
     let name = "spec-kit committed";
-    match git(
-        inputs,
-        root,
-        &["ls-files", "--error-unmatch", "--", CONSTITUTION],
-    ) {
-        Ok(0) => Check::pass(name, format!("{CONSTITUTION} is tracked by git")),
-        Ok(1) => Check::warn(
+    let object = format!("HEAD:{CONSTITUTION}");
+    match git(inputs, root, &["cat-file", "-e", &object]) {
+        Ok(out) if out.exit_code == 0 => {
+            Check::pass(name, format!("{CONSTITUTION} is committed in HEAD"))
+        }
+        // `cat-file -e` exits 128 for a path not in HEAD and for a
+        // repository with no commit yet alike.
+        Ok(out) => Check::warn(
             name,
             format!(
-                "{CONSTITUTION} is not tracked by git, so a worktree member has no spec-kit files; \
-                 commit .specify/ and the agents' spec-kit command folders"
+                "{CONSTITUTION} is not committed in HEAD ({}), so a worktree member has no \
+                 spec-kit files; commit .specify/ and the agents' spec-kit command folders",
+                git_said(&out)
             ),
         ),
-        Ok(code) => Check::warn(name, format!("git ls-files exited with code {code}")),
-        Err(e) => Check::warn(name, format!("could not run git: {e}")),
+        Err(e) => Check::warn(
+            name,
+            format!(
+                "could not ask git whether {CONSTITUTION} is committed: {e}; {}",
+                git_status_hint(root)
+            ),
+        ),
     }
 }
 
@@ -82,16 +108,31 @@ fn committed_check(inputs: &Inputs<'_>, root: &Path) -> Check {
 fn feature_pointer_check(inputs: &Inputs<'_>, root: &Path) -> Check {
     let name = "spec-kit feature pointer";
     match git(inputs, root, &["check-ignore", "-q", FEATURE_POINTER]) {
-        Ok(0) => Check::pass(name, format!("git ignores {FEATURE_POINTER}")),
-        Ok(1) => Check::warn(
+        Ok(out) if out.exit_code == 0 => {
+            Check::pass(name, format!("git ignores {FEATURE_POINTER}"))
+        }
+        Ok(out) if out.exit_code == 1 => Check::warn(
             name,
             format!(
                 "git does not ignore {FEATURE_POINTER}, so members would commit their feature \
                  pointer; add `feature.json` to .specify/.gitignore"
             ),
         ),
-        Ok(code) => Check::warn(name, format!("git check-ignore exited with code {code}")),
-        Err(e) => Check::warn(name, format!("could not run git: {e}")),
+        Ok(out) => Check::warn(
+            name,
+            format!(
+                "git check-ignore could not tell whether it ignores {FEATURE_POINTER} ({}); {}",
+                git_said(&out),
+                git_status_hint(root)
+            ),
+        ),
+        Err(e) => Check::warn(
+            name,
+            format!(
+                "could not ask git whether it ignores {FEATURE_POINTER}: {e}; {}",
+                git_status_hint(root)
+            ),
+        ),
     }
 }
 
@@ -112,22 +153,51 @@ fn first_placeholder(text: &str) -> Option<&str> {
         })
 }
 
-fn constitution_check(root: &Path) -> Check {
+/// Members get the constitution in `HEAD`, so that copy is the one read for
+/// placeholders. A copy on disk that differs is named, since it is what the
+/// lead sees but not what members get.
+fn constitution_check(inputs: &Inputs<'_>, root: &Path) -> Check {
     let name = "spec-kit constitution";
-    match std::fs::read_to_string(root.join(CONSTITUTION)) {
-        Ok(text) => match first_placeholder(&text) {
-            Some(slot) => Check::warn(
+    let object = format!("HEAD:{CONSTITUTION}");
+    let committed = match git(inputs, root, &["show", &object]) {
+        Ok(out) if out.exit_code == 0 => String::from_utf8_lossy(&out.stdout).into_owned(),
+        Ok(out) => {
+            return Check::warn(
                 name,
                 format!(
-                    "{CONSTITUTION} still holds the template placeholder [{slot}]; \
-                     fill it in with /speckit-constitution and commit it"
+                    "{CONSTITUTION} is not committed in HEAD ({}); write it with \
+                     /speckit-constitution and commit it",
+                    git_said(&out)
                 ),
-            ),
-            None => Check::pass(name, "no template placeholder left"),
-        },
-        Err(e) => Check::warn(
+            );
+        }
+        Err(e) => {
+            return Check::warn(
+                name,
+                format!(
+                    "could not ask git for {CONSTITUTION} in HEAD: {e}; {}",
+                    git_status_hint(root)
+                ),
+            );
+        }
+    };
+    let on_disk = std::fs::read_to_string(root.join(CONSTITUTION)).ok();
+    let differs = if on_disk.as_deref() == Some(committed.as_str()) {
+        ""
+    } else {
+        "; the copy on disk differs from HEAD, and members get the committed one"
+    };
+    match first_placeholder(&committed) {
+        Some(slot) => Check::warn(
             name,
-            format!("could not read {CONSTITUTION}: {e}; write it with /speckit-constitution"),
+            format!(
+                "{CONSTITUTION} in HEAD still holds the template placeholder [{slot}]; \
+                 fill it in with /speckit-constitution and commit it{differs}"
+            ),
+        ),
+        None => Check::pass(
+            name,
+            format!("no template placeholder left in HEAD{differs}"),
         ),
     }
 }
@@ -169,7 +239,14 @@ fn integrations_check(root: &Path) -> Check {
             .flatten()
             .filter_map(|v| v.as_str().map(str::to_owned))
             .collect(),
-        Err(e) => return Check::warn(name, format!("could not read {file}: {e}")),
+        Err(e) => {
+            return Check::warn(
+                name,
+                format!(
+                    "could not read {file}: {e}; run `specify integration status` to repair it"
+                ),
+            );
+        }
     };
     let missing: Vec<String> = installed
         .iter()

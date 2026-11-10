@@ -129,9 +129,10 @@ struct Bed {
     /// The state directory of the doctor run, when it is not `home`, the one
     /// the plugin was installed for.
     run_home: Option<PathBuf>,
-    /// The exit codes git gives the spec-kit checks, in the order they ask:
-    /// `ls-files`, then `check-ignore`. Queued after the `.worktrees` answer.
-    speckit_git: Vec<i32>,
+    /// git's answers to the spec-kit checks, in the order they ask:
+    /// `cat-file -e`, `show`, then `check-ignore`. Queued after the
+    /// `.worktrees` answer.
+    speckit_git: Vec<RunOutput>,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -305,11 +306,8 @@ impl Bed {
         // The order doctor runs them in: git, then the spec-kit checks' git
         // questions, then the claude probes, then the host's version.
         self.platform.queue_run(Ok(answer("")));
-        for code in &self.speckit_git {
-            self.platform.queue_run(Ok(RunOutput {
-                exit_code: *code,
-                ..answer("")
-            }));
+        for out in &self.speckit_git {
+            self.platform.queue_run(Ok(out.clone()));
         }
         self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
         self.platform.queue_run(Ok(answer(&self.claude_help)));

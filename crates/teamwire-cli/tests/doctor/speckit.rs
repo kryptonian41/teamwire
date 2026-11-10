@@ -38,10 +38,32 @@ const WORKFLOWS: &str = r#"{
   }
 }"#;
 
+/// spec-kit's constitution template, untouched.
+const TEMPLATE: &str =
+    "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n";
+
+/// What git prints when the path is not in `HEAD`: exit 128, as real git
+/// does for `cat-file -e` and `show` both.
+fn not_in_head() -> RunOutput {
+    RunOutput {
+        exit_code: 128,
+        stderr: b"fatal: path '.specify/memory/constitution.md' does not exist in 'HEAD'\n"
+            .to_vec(),
+        ..answer("")
+    }
+}
+
+fn exits(code: i32) -> RunOutput {
+    RunOutput {
+        exit_code: code,
+        ..answer("")
+    }
+}
+
 /// A healthy bed whose repository is a spec-kit project as `specify init`
-/// leaves it for Claude Code and pi: a `.git`, a filled constitution, both
-/// command folders and the bundled workflow. git answers yes to both
-/// questions.
+/// leaves it for Claude Code and pi: a `.git`, a filled constitution on disk
+/// and in `HEAD`, both command folders and the bundled workflow. git ignores
+/// the feature pointer.
 fn speckit_bed() -> Bed {
     let mut bed = Bed::healthy();
     let root = bed.home.path();
@@ -51,8 +73,14 @@ fn speckit_bed() -> Bed {
     put(root, ".specify/workflows/workflow-registry.json", WORKFLOWS);
     put(root, ".claude/skills/speckit-plan/SKILL.md", "plan");
     put(root, ".pi/prompts/speckit.plan.md", "plan");
-    bed.speckit_git = vec![0, 0];
+    commit_constitution(&mut bed, FILLED);
     bed
+}
+
+/// git's answers when `text` is the constitution in `HEAD`: `cat-file -e`
+/// finds it, `show` prints it, and `check-ignore` ignores the pointer.
+fn commit_constitution(bed: &mut Bed, text: &str) {
+    bed.speckit_git = vec![answer(""), answer(text), answer("")];
 }
 
 fn put(root: &Path, file: &str, text: &str) {
@@ -82,53 +110,46 @@ fn outside_a_spec_kit_repository_doctor_prints_no_spec_kit_line() {
 }
 
 #[test]
-fn a_committed_constitution_and_an_ignored_pointer_are_ok_and_git_is_asked_at_the_root() {
+fn git_is_asked_about_head_at_the_root() {
     let bed = speckit_bed();
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Pass);
+    assert!(detail_of(&checks, "spec-kit committed").contains("committed in HEAD"));
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Pass);
-    let runs = bed.platform.runs();
-    let git: Vec<(Vec<String>, Option<PathBuf>)> = runs
+    let git: Vec<(Vec<String>, Option<PathBuf>)> = bed
+        .platform
+        .runs()
         .iter()
         .filter(|(c, _)| c.program == "git")
         .map(|(c, _)| (c.args.clone(), c.cwd.clone()))
         .collect();
     let root = Some(bed.home.path().to_path_buf());
-    assert!(
-        git.contains(&(
-            vec![
-                "ls-files".to_owned(),
-                "--error-unmatch".to_owned(),
-                "--".to_owned(),
-                ".specify/memory/constitution.md".to_owned()
-            ],
-            root.clone()
-        )),
-        "{git:?}"
-    );
-    assert!(
-        git.contains(&(
-            vec![
-                "check-ignore".to_owned(),
-                "-q".to_owned(),
-                ".specify/feature.json".to_owned()
-            ],
-            root
-        )),
-        "{git:?}"
-    );
+    let asked = |args: &[&str]| {
+        let args: Vec<String> = args.iter().map(|a| (*a).to_owned()).collect();
+        assert!(git.contains(&(args, root.clone())), "{git:?}");
+    };
+    asked(&["cat-file", "-e", "HEAD:.specify/memory/constitution.md"]);
+    asked(&["show", "HEAD:.specify/memory/constitution.md"]);
+    asked(&["check-ignore", "-q", ".specify/feature.json"]);
 }
 
 #[test]
-fn an_untracked_constitution_and_a_pointer_git_does_not_ignore_warn_and_name_the_file() {
+fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_the_file() {
     let mut bed = speckit_bed();
-    bed.speckit_git = vec![1, 1];
+    bed.speckit_git = vec![not_in_head(), not_in_head(), exits(1)];
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit committed");
     assert!(
-        detail_of(&checks, "spec-kit committed").contains(".specify/memory/constitution.md"),
-        "{checks:?}"
+        detail.contains(".specify/memory/constitution.md"),
+        "{detail}"
     );
+    assert!(detail.contains("not committed in HEAD"), "{detail}");
+    assert!(detail.contains("does not exist in 'HEAD'"), "{detail}");
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit constitution");
+    assert!(detail.contains("/speckit-constitution"), "{detail}");
+    assert!(detail.contains("commit it"), "{detail}");
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
     assert!(
         detail_of(&checks, "spec-kit feature pointer").contains(".specify/feature.json"),
@@ -137,28 +158,36 @@ fn an_untracked_constitution_and_a_pointer_git_does_not_ignore_warn_and_name_the
 }
 
 #[test]
-fn a_git_that_cannot_answer_is_a_warning() {
+fn a_git_that_cannot_answer_warns_and_names_the_file_and_git_status() {
     let mut bed = speckit_bed();
-    bed.speckit_git = vec![128, 128];
+    let timed_out = RunOutput {
+        timed_out: true,
+        ..answer("")
+    };
+    bed.speckit_git = vec![timed_out.clone(), timed_out, exits(128)];
     let checks = bed.checks();
-    assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
-    assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
+    for (name, file) in [
+        ("spec-kit committed", ".specify/memory/constitution.md"),
+        ("spec-kit constitution", ".specify/memory/constitution.md"),
+        ("spec-kit feature pointer", ".specify/feature.json"),
+    ] {
+        assert_eq!(level_of(&checks, name), Level::Warn);
+        let detail = detail_of(&checks, name);
+        assert!(detail.contains(file), "{name}: {detail}");
+        assert!(detail.contains("run `git status` in"), "{name}: {detail}");
+    }
 }
 
 #[test]
 fn a_constitution_with_a_template_placeholder_left_warns_and_names_it() {
-    let bed = speckit_bed();
+    let mut bed = speckit_bed();
     assert_eq!(
         level_of(&bed.checks(), "spec-kit constitution"),
         Level::Pass
     );
 
-    // The untouched template, as `specify init` writes it.
-    put(
-        bed.home.path(),
-        ".specify/memory/constitution.md",
-        "# [PROJECT_NAME] Constitution\n\n### [PRINCIPLE_1_NAME]\n[PRINCIPLE_1_DESCRIPTION]\n",
-    );
+    put(bed.home.path(), ".specify/memory/constitution.md", TEMPLATE);
+    commit_constitution(&mut bed, TEMPLATE);
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit constitution");
@@ -167,14 +196,48 @@ fn a_constitution_with_a_template_placeholder_left_warns_and_names_it() {
         detail.contains(".specify/memory/constitution.md"),
         "{detail}"
     );
+    assert!(!detail.contains("differs"), "{detail}");
+}
+
+#[test]
+fn a_constitution_filled_only_on_disk_warns_because_members_get_the_committed_template() {
+    let mut bed = speckit_bed();
+    commit_constitution(&mut bed, TEMPLATE);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit constitution");
+    assert!(detail.contains("[PROJECT_NAME]"), "{detail}");
+    assert!(
+        detail.contains("the copy on disk differs from HEAD"),
+        "{detail}"
+    );
+}
+
+#[test]
+fn a_filled_constitution_in_head_passes_and_says_when_the_disk_copy_differs() {
+    let bed = speckit_bed();
+    let detail = detail_of(&bed.checks(), "spec-kit constitution").to_owned();
+    assert!(!detail.contains("differs"), "{detail}");
+
+    put(
+        bed.home.path(),
+        ".specify/memory/constitution.md",
+        &format!("{FILLED}\n### II. Tests first\n"),
+    );
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Pass);
+    let detail = detail_of(&checks, "spec-kit constitution");
+    assert!(
+        detail.contains("the copy on disk differs from HEAD"),
+        "{detail}"
+    );
 }
 
 #[test]
 fn brackets_that_are_not_template_placeholders_pass() {
-    let bed = speckit_bed();
-    put(
-        bed.home.path(),
-        ".specify/memory/constitution.md",
+    let mut bed = speckit_bed();
+    commit_constitution(
+        &mut bed,
         "# wordtool Constitution\n- [x] done\n- [ ] open\nT001 [P] [US1] task\n\
          [NEEDS CLARIFICATION] and a [link](https://example.com) and [V1]\n",
     );
@@ -182,15 +245,6 @@ fn brackets_that_are_not_template_placeholders_pass() {
         level_of(&bed.checks(), "spec-kit constitution"),
         Level::Pass
     );
-}
-
-#[test]
-fn a_missing_constitution_warns() {
-    let bed = speckit_bed();
-    std::fs::remove_file(bed.home.path().join(".specify/memory/constitution.md")).unwrap();
-    let checks = bed.checks();
-    assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
-    assert!(detail_of(&checks, "spec-kit constitution").contains("/speckit-constitution"));
 }
 
 #[test]
@@ -247,9 +301,13 @@ fn an_unreadable_integration_file_warns() {
         Level::Warn
     );
     put(bed.home.path(), ".specify/integration.json", "{not json");
-    assert_eq!(
-        level_of(&bed.checks(), "spec-kit integrations"),
-        Level::Warn
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit integrations");
+    assert!(detail.contains(".specify/integration.json"), "{detail}");
+    assert!(
+        detail.contains("run `specify integration status`"),
+        "{detail}"
     );
 }
 
@@ -467,16 +525,37 @@ fn the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository() {
     );
     assert!(!out.contains("FAIL spec-kit"), "{out}");
 
+    // Staged but not committed: a worktree cut from HEAD gets none of it.
     put(repo.path(), ".specify/.gitignore", "feature.json\n");
+    put(repo.path(), ".specify/memory/constitution.md", TEMPLATE);
     git(repo.path(), &["add", "."]);
+    let out = teamwire(&bed, &path, &sub).out;
+    assert!(
+        line_of(&out, "spec-kit committed").starts_with("warn"),
+        "{out}"
+    );
+    assert!(
+        line_of(&out, "spec-kit feature pointer").starts_with("ok"),
+        "{out}"
+    );
+
+    // The template committed, then filled in only on disk.
     git(repo.path(), &["commit", "-q", "-m", "spec-kit"]);
+    put(repo.path(), ".specify/memory/constitution.md", FILLED);
     let out = teamwire(&bed, &path, &sub).out;
     assert!(
         line_of(&out, "spec-kit committed").starts_with("ok"),
         "{out}"
     );
+    let line = line_of(&out, "spec-kit constitution");
+    assert!(line.starts_with("warn"), "{out}");
+    assert!(line.contains("[PROJECT_NAME]"), "{out}");
+    assert!(line.contains("the copy on disk differs from HEAD"), "{out}");
+
+    git(repo.path(), &["commit", "-q", "-am", "constitution"]);
+    let out = teamwire(&bed, &path, &sub).out;
     assert!(
-        line_of(&out, "spec-kit feature pointer").starts_with("ok"),
+        line_of(&out, "spec-kit constitution").starts_with("ok"),
         "{out}"
     );
 }
