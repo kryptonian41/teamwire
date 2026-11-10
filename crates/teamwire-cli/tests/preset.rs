@@ -1412,8 +1412,17 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
         ("committed", "Remove each ignore rule it names"),
         (
             "committed",
-            "run the `git add` it prints, then commit on the ref",
+            "which also names each ignore file you edited, such as `git add .claude/skills/speckit-* .gitignore`",
         ),
+        (
+            "committed",
+            "When the ref is not the checked-out branch, run `git switch <ref>` and commit there, or commit here and merge this branch into the ref",
+        ),
+        (
+            "events",
+            "only on disk also warns: remove it from the repository. A manifest",
+        ),
+        ("committed", "Run the `git add` it prints"),
         (
             "constitution",
             "in the commit still holds a template placeholder",
@@ -1758,11 +1767,15 @@ fn the_speckit_guidance_covers_hooks_scratch_the_watch_and_split_flags() {
     }
     assert!(
         skill.contains("never in the repository or in `/tmp`")
-            && skill.contains("A question round does not end the watch"),
+            && skill.contains("A question round does not end the watch")
+            && skill.contains("That holds for a member of any kind")
+            && skill.contains("cannot print until you reprompt the member or remove it"),
         "{skill}"
     );
     assert!(
-        reference.contains("so this line cannot print while it waits")
+        reference.contains("A member of any kind waiting in a question round")
+            && reference
+                .contains("so this line cannot print until you reprompt that member or remove it")
             && section.contains("and the watch keeps running"),
         "{reference}"
     );

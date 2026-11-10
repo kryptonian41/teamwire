@@ -18,7 +18,7 @@
   ],
   "team": "myteam",
   "title": "CHANGEME spec-kit feature",
-  "setup": "true CHANGEME worktree setup command",
+  "setup": "echo 'CHANGEME: fill in the worktree setup command' >&2; false",
   "refs": [
     {
       "provider": "speckit",
@@ -70,7 +70,7 @@
       "branch": "myteam/impl",
       "base": "myteam/spec",
       "deadline_s": 3600,
-      "setup": "true CHANGEME worktree setup command && printf '%s\\n' '{\"feature_directory\": \"specs/001-CHANGEME\"}' > \"$1/.specify/feature.json\"",
+      "setup": "echo 'CHANGEME: fill in the worktree setup command' >&2; false && printf '%s\\n' '{\"feature_directory\": \"specs/001-CHANGEME\"}' > \"$1/.specify/feature.json\"",
       "check": "test -s specs/001-CHANGEME/tasks.md && CHANGEME targeted test command && ! grep -nE '^[[:space:]]*[-*+][[:space:]]+\\[[[:space:]]*\\][[:space:]]*T[0-9]+' specs/001-CHANGEME/tasks.md",
       "owns": [
         "CHANGEME/src/",

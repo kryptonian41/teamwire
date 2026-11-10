@@ -661,15 +661,19 @@ nothing" case held, so the member changed nothing on purpose and recorded
 `done`. Verify then flags `no-commits`, which is expected: waive it with the
 member's report as the reason.
 
-In a spec-kit team, a spec member's `blocked` result whose summary starts
+A `blocked` result whose summary starts
 with `N questions for the parent.`, or `1 question for the parent.`, after
-an optional `handoff: `, is a question round, not a failure. Ask the user,
-then reprompt it with the answers, as "Spec-kit features" in `reference.md`
-says. The spec member's brief carries that section's override line word
-for word, because its seat rules would let it decide a question itself. A
-question round does not end the watch. Until your reprompt the watch counts
-the member as waiting for you, so `TEAM-COMPLETE` cannot print, and the
-same watch follows the member after the reprompt.
+an optional `handoff: `, is a question round, not a failure. That holds for
+a member of any kind. A question round does not end the watch. The watch
+counts that member as waiting for you, so `TEAM-COMPLETE` cannot print
+until you reprompt the member or remove it, and the same watch follows the
+member after the reprompt.
+
+In a spec-kit team, the spec member stops this way at each batch of
+spec-kit questions. Ask the user, then reprompt it with the answers, as
+"Spec-kit features" in `reference.md` says. The spec member's brief carries
+that section's override line word for word, because its seat rules would
+let it decide a question itself.
 
 ### Messages
 

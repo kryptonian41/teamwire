@@ -17,7 +17,7 @@
   ],
   "team": "myteam",
   "title": "CHANGEME tickets",
-  "setup": "true CHANGEME worktree setup command",
+  "setup": "echo 'CHANGEME: fill in the worktree setup command' >&2; false",
   "children": [
     {
       "_note": "For a Claude Code member with mattpocock-skills on, put these two sentences in the brief file: Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt.",

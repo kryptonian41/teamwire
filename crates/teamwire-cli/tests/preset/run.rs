@@ -78,7 +78,12 @@ fn repo(work: &Path, feature: &str) -> PathBuf {
 /// Exit code of `<shell> -c <script> teamwire-setup <dir>` run in `dir`, the
 /// form launch runs a `setup` in and a superset of how verify runs a check.
 fn run_in(shell: &str, script: &str, dir: &Path) -> i32 {
-    std::process::Command::new(shell)
+    run_with_stderr(shell, script, dir).0
+}
+
+/// `run_in`, with what the script wrote to stderr.
+fn run_with_stderr(shell: &str, script: &str, dir: &Path) -> (i32, String) {
+    let out = std::process::Command::new(shell)
         .arg("-c")
         .arg(script)
         .arg("teamwire-setup")
@@ -86,11 +91,16 @@ fn run_in(shell: &str, script: &str, dir: &Path) -> i32 {
         .current_dir(dir)
         .stdin(std::process::Stdio::null())
         .output()
-        .unwrap()
-        .status
-        .code()
-        .unwrap_or(-1)
+        .unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
+
+/// The `setup` placeholder every preset starts with. It fails, and says
+/// what to fill in, so a launch that still holds it stops at setup.
+const PLACEHOLDER: &str = "echo 'CHANGEME: fill in the worktree setup command' >&2; false";
 
 /// The implementer's check, with its test command placeholder replaced.
 fn impl_check(doc: &Value, tests: &str) -> String {
@@ -240,28 +250,40 @@ fn setups(name: &str) -> Vec<String> {
         .collect()
 }
 
-/// A lead fills in only what the skeleton marks, so every `setup` runs as
-/// printed in a repository that has no script of its own, and the fill-in
-/// line names the `setup` placeholder. Launch runs `setup` in each new
-/// worktree, and a dry run never does, so a missing script fails only at
-/// the real launch, with exit 127.
+/// Every `setup` starts with the placeholder, and the fill-in line names it.
+/// As printed, each one fails and names the placeholder, so a lead who
+/// forgets it gets a setup failure, not members with no setup. With a real
+/// command in its place, each one runs in a repository that has no script
+/// of its own. Launch runs `setup` in each new worktree and a dry run never
+/// does, so a named script the repository lacks failed only at the real
+/// launch, with exit 127.
 #[test]
-fn every_preset_setup_runs_as_printed_and_is_marked_to_fill_in() {
+fn every_preset_setup_fails_until_filled_in_and_then_runs() {
     let run = teamwire(&["preset", "speckit"]);
     let fill_in = run
         .out
         .lines()
         .find(|l| l.starts_with("Spec skeleton."))
         .unwrap();
-    let placeholder = "true CHANGEME worktree setup command";
-    assert!(fill_in.contains(&format!("`{placeholder}`")), "{fill_in}");
+    assert!(fill_in.contains(&format!("`{PLACEHOLDER}`")), "{fill_in}");
     let work = tempfile::tempdir().unwrap();
     let repo = repo(work.path(), "specs/001-CHANGEME");
     for name in super::NAMES {
         for setup in setups(name) {
-            assert!(setup.starts_with(placeholder), "{name}: {setup}");
+            assert!(setup.starts_with(PLACEHOLDER), "{name}: {setup}");
+            let filled = setup.replacen(PLACEHOLDER, "true", 1);
             for shell in shells() {
-                assert_eq!(run_in(shell, &setup, &repo), 0, "{shell}: {name}: {setup}");
+                let (code, stderr) = run_with_stderr(shell, &setup, &repo);
+                assert_ne!(code, 0, "{shell}: {name}: the placeholder ran: {setup}");
+                assert!(
+                    stderr.contains("CHANGEME: fill in the worktree setup command"),
+                    "{shell}: {name}: the failure does not name the placeholder: {stderr}"
+                );
+                assert_eq!(
+                    run_in(shell, &filled, &repo),
+                    0,
+                    "{shell}: {name}: {filled}"
+                );
             }
         }
     }
@@ -274,13 +296,24 @@ fn every_preset_setup_runs_as_printed_and_is_marked_to_fill_in() {
 fn the_speckit_implementer_setup_writes_the_ignored_feature_pointer() {
     let doc = printed();
     let feature = folder(&doc);
-    let setup = member(&doc, "impl")["setup"].as_str().unwrap();
+    let printed = member(&doc, "impl")["setup"].as_str().unwrap();
+    assert!(printed.starts_with(PLACEHOLDER), "{printed}");
+    let setup = printed.replacen(PLACEHOLDER, "true", 1);
     let work = tempfile::tempdir().unwrap();
     let repo = repo(work.path(), &feature);
     let pointer = repo.join(".specify/feature.json");
     for shell in shells() {
         std::fs::remove_file(&pointer).unwrap_or_default();
-        assert_eq!(run_in(shell, setup, &repo), 0, "{shell}: {setup}");
+        assert_ne!(
+            run_in(shell, printed, &repo),
+            0,
+            "{shell}: the placeholder ran: {printed}"
+        );
+        assert!(
+            !pointer.exists(),
+            "{shell}: the placeholder still wrote the pointer"
+        );
+        assert_eq!(run_in(shell, &setup, &repo), 0, "{shell}: {setup}");
         let written: Value = serde_json::from_str(&std::fs::read_to_string(&pointer).unwrap())
             .unwrap_or_else(|e| unreachable!("{shell}: feature.json is not JSON: {e}"));
         assert_eq!(
