@@ -19,6 +19,18 @@ you may stop for the user.
 
 ## 1. Preflight, while the user may still be at the keyboard
 
+A spec-kit feature runs AFK only from a `spec.md`, `plan.md` and `tasks.md`
+that the user already reviewed and committed on a branch. The spec stage
+needs the user four times: the answers at both question stops, the review
+of `spec.md` and `plan.md`, and the ticks on the `checklist` command's
+checklists. Under the one rule you would answer all four yourself, and the
+user would come back to code built on a spec nobody reviewed. So when the
+task asks for a spec-kit feature with no such reviewed spec, tell the user
+that the spec stage needs them, and stop before step 2. With a reviewed
+spec, follow "Spec-kit features" in the teamwire skill's `reference.md`
+from its finished `tasks.md` case: the plan reviewer, the build, the closer
+and the fix rounds run as usual.
+
 1. Check that your context says bypass permissions mode or auto mode is
    active. If it does not, tell the user to restart the session with
    `claude --permission-mode bypassPermissions`, and stop.

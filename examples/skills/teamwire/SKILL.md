@@ -172,7 +172,8 @@ spec and the code for it, and run no build and no test.
 3. No two members of one wave have overlapping `owns`. Launch compares `owns`
    only within one spec file, so check an `--add` against the running members
    yourself ("Changing the team while it runs" lists what each `--add` spec
-   needs).
+   needs). The one planned overlap is a spec-kit split, where every story
+   member owns the shared `tasks.md` ("Spec-kit features" in `reference.md`).
 4. No file the work must change is unowned. For each name the brief
    changes (a function, field, constant, route, env key, message text or
    rule), grep the whole repository for the name and for its old value, not
@@ -364,8 +365,8 @@ findings on earlier plans, and is no longer fresh.
 
 Turn `mattpocock-skills` on for an investigator that hunts a bug, and name
 `diagnosing-bugs` phases 1 to 3 (no fix) in its brief. Tell it to build the
-phase 1 feedback loop in a temporary directory, because it may not edit the
-repository. Put two sentences in every implementer brief:
+phase 1 feedback loop in its scratch folder, the path in `$TEAMWIRE_SCRATCH`,
+because it may not edit the repository. Put two sentences in every implementer brief:
 
 - "Use the tdd skill for each unit; test only at these seams: ..." Naming the
   seams means the skill never needs to ask the user.
@@ -457,7 +458,11 @@ Put the whole brief, the shared parts too, in each `task_file`. A brief that
 only points at another file is archived as the pointer, and a file in a
 temporary directory can be gone before anyone reads the archive. Members
 write reports only to the report file launch names, never into the
-repository.
+repository. A member puts its temporary files in its scratch folder, the
+path in `$TEAMWIRE_SCRATCH` (`$TEAMWIRE_HOME/scratch/<team>/<role>/`), never
+in the repository or in `/tmp`. Launch makes the folder for every member on
+every harness, a handoff or reopen keeps it, and closing the team deletes
+it, so the archive never holds it.
 
 State the end state, not the steps. Anthropic, OpenAI and GitHub all ask for
 acceptance criteria and clear boundaries, and OpenAI's Codex guide names a
@@ -507,10 +512,13 @@ Then send each affected member this one message, never a prose description:
 
 ```bash
 teamwire send <team> --to api,web --type note --text \
-  "CONTRACT AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>"
+  "CONTRACT AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>"
 ```
 
-`verify` skips merge commits. It starts its `owns` diff after the merged
+`verify` skips merge commits. `--no-ff` makes the merge a merge commit even
+when the member has not committed yet. A fast-forward would put the contract
+member's commit on the member's own line, and verify and `done` would count
+it as the member's commit. Verify starts its `owns` diff after the merged
 amendment only when `base` names the contract branch. Without `base`, it
 flags the amended files as outside `owns`.
 
@@ -654,9 +662,14 @@ nothing" case held, so the member changed nothing on purpose and recorded
 member's report as the reason.
 
 In a spec-kit team, a spec member's `blocked` result whose summary starts
-with `N questions for the lead.` is a question round, not a failure. Ask the
-user, then reprompt it with the answers, as "Spec-kit features" in
-`reference.md` says.
+with `N questions for the parent.`, or `1 question for the parent.`, after
+an optional `handoff: `, is a question round, not a failure. Ask the user,
+then reprompt it with the answers, as "Spec-kit features" in `reference.md`
+says. The spec member's brief carries that section's override line word
+for word, because its seat rules would let it decide a question itself. A
+question round does not end the watch. Until your reprompt the watch counts
+the member as waiting for you, so `TEAM-COMPLETE` cannot print, and the
+same watch follows the member after the reprompt.
 
 ### Messages
 

@@ -19,6 +19,9 @@ use teamwire_core::{Config, Harness, HarnessId, HostId, Registry, TaskClass};
 use teamwire_fakes::{FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_launch::{ValidateEnv, parse_spec, validate};
 
+#[path = "preset/run.rs"]
+mod run;
+
 fn presets_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/presets")
 }
@@ -863,7 +866,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     );
     assert!(
         check.contains(&format!(
-            "! grep -nE '^- \\[ \\] T[0-9]+' {folder}/tasks.md"
+            "! grep -nE '^[[:space:]]*[-*+][[:space:]]+\\[[[:space:]]*\\][[:space:]]*T[0-9]+' {folder}/tasks.md"
         )),
         "{check}"
     );
@@ -885,7 +888,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "`events:`",
         "`.specify/extensions/<id>/extension.yml`",
         "`.specify/integration-events.yml`",
-        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "`teamwire done --status blocked --summary \"3 questions for the parent. ...\"`",
         "ADR 0029",
     ] {
         assert!(
@@ -917,7 +920,7 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
         "`.pi/prompts/speckit.implement.md`",
         "`.specify/feature.json`",
         "`.specify/memory/constitution.md`",
-        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "`teamwire done --status blocked --summary \"3 questions for the parent. ...\"`",
         "a question round, not a failure",
         "`converge`",
         "`teamwire preset closer`",
@@ -963,7 +966,7 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     // Each fix is pinned in every place it changed. `! grep` passes on a
     // missing file, so every grep example starts with `test -s`.
     assert!(
-        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \\[ \\] T[0-9]+' specs/NNN-name/tasks.md`"),
+        flat.contains("`test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^[[:space:]]*[-*+][[:space:]]+\\[[[:space:]]*\\][[:space:]]*T[0-9]+' specs/NNN-name/tasks.md`"),
         "the reference's check example lacks test -s"
     );
     assert!(
@@ -1053,10 +1056,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     let flat_skill = skill.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         flat_skill
-            .contains("starts with `N questions for the lead.` is a question round, not a failure"),
+            .contains("starts with `N questions for the parent.`, or `1 question for the parent.`, after an optional `handoff: `, is a question round, not a failure"),
         "the skill does not say how to read the spec member's blocked result"
     );
-    assert!(!flat.contains("questions for the parent"), "{flat}");
+    // Split so that `git grep` for the retired wording finds only ADR 0041.
+    let retired = format!("questions for the {}", "lead");
+    for (place, text) in [
+        ("reference", flat.as_str()),
+        ("skill", &flat_skill),
+        ("rules", &flat_rules),
+    ] {
+        assert!(!text.contains(&retired), "{place} still says {retired}");
+    }
+    assert!(
+        reference
+            .contains("> At spec-kit's question stops, this brief replaces your seat's rule on"),
+        "the reference lacks the override line"
+    );
     assert!(
         skill.contains("Spec-kit's `specs/` folder"),
         "the skill does not say where spec-kit's files go"
@@ -1105,7 +1121,6 @@ fn the_speckit_spec_stage_states_what_the_pilot_showed() {
             "`## Clarifications`",
             "`### Session YYYY-MM-DD`",
             "`- Q: <question> → A: <answer>`",
-            "`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec",
         ] {
             assert!(text.contains(needed), "{place} lacks {needed}: {text}");
         }
@@ -1114,8 +1129,21 @@ fn the_speckit_spec_stage_states_what_the_pilot_showed() {
             "{place} still says clarify records a batch: {text}"
         );
     }
+    // ADR 0041 keeps its words; ADR 0042 records that `specify` leaves an
+    // item unticked while the spec holds a question.
+    assert!(
+        adr.contains("`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec"),
+        "{adr}"
+    );
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
+            "`specify` writes `checklists/requirements.md` itself and ticks each item that passes its validation",
+            "re-runs `specify`'s validation, and ticks each item of `checklists/requirements.md` that now passes",
+            "replaces each `[NEEDS CLARIFICATION]` marker with its answer",
+            "A stop with no questions records no stop",
+            "or `1 question for the parent.` for one",
+            "matches `^[1-9][0-9]* questions? for the parent\\.`",
+            "override line",
             "the member's own mark at stop 1 and clarify's at stop 2",
             "so `spec.md` has one place for every answer",
             "The reviewer-only rule is about the `checklist` command's checklists",
@@ -1160,9 +1188,9 @@ fn the_speckit_build_states_what_the_pilot_showed() {
     }
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`**Checkpoint**` lines only after story phases, so Setup and Polish have none",
+            "a `**Checkpoint**` line after the Foundational phase and after each story phase, so Setup and Polish have none",
             "A phase with no tasks, such as an empty Foundational phase, gets no commit",
-            "overrides the \"Commit after every checkpoint\" line",
+            "overrides any commit line in the notes of `tasks.md`, such as the template's \"Commit after each task or logical group\"",
             "follows the ignore-file step for `.gitignore` only, appends only the patterns the step lists, lists each one it added in its report, and writes no other ignore file unless its brief owns that file",
             "runs any task in `tasks.md` that claims \"confirm the new tests fail\"",
             "a \"confirm the tests fail\" task is finished when the cases it names fail",
@@ -1229,7 +1257,7 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
     }
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>\"`",
+            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>\"`",
             "on a notice that starts with `SPEC AMENDMENT:`, merge that commit before your next unit",
             "The lead sends nothing",
             "Uncommitted edits in the spec member's worktree never reach anyone",
@@ -1256,6 +1284,32 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
     }
 }
 
+/// A fast-forward merge puts the sender's commit on the member's own line,
+/// where verify and `done` count it as the member's commit. So every
+/// amendment notice merges with `--no-ff`, and each place says why.
+#[test]
+fn every_amendment_notice_merges_with_no_ff() {
+    for (place, text) in [
+        ("skill", flat(&example("skills/teamwire/SKILL.md"))),
+        ("reference", flat(&example("skills/teamwire/reference.md"))),
+        ("contract-split", flat(&preset_text("contract-split"))),
+        ("speckit", flat(&preset_text("speckit"))),
+    ] {
+        assert!(
+            text.contains("git merge --no-ff --no-edit <sha>"),
+            "{place} lacks the --no-ff merge"
+        );
+        assert!(
+            !text.contains(&format!("git merge {}<sha>", "--no-edit ")),
+            "{place} still merges without --no-ff"
+        );
+        assert!(
+            text.contains("`--no-ff` makes the merge a merge commit even"),
+            "{place} does not say why"
+        );
+    }
+}
+
 /// Doctor now checks the BEFORE rule, so the lead reads its `spec-kit`
 /// lines instead of checking by hand, and `specify init` installs a
 /// workflow that nothing runs. Close waits only for a closer that started.
@@ -1265,7 +1319,10 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
     let section = speckit_section();
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`teamwire doctor` from the repository and read its `spec-kit ...` lines",
+            "`teamwire doctor --base <base>` from the repository",
+            "read its nine `spec-kit ...` lines",
+            "`spec-kit version`",
+            "`spec-kit hooks`",
             "`spec-kit committed`",
             "`spec-kit constitution`",
             "`spec-kit integrations`",
@@ -1281,6 +1338,11 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
         }
         assert!(!text.contains("by hand: "), "{place}: {text}");
     }
+    assert!(
+        rules.contains("Do not git-ignore a command folder")
+            && section.contains("No git ignore rule for a command folder"),
+        "the guidance does not warn against ignoring a command folder"
+    );
     assert!(
         !section.contains("Then check that spec-kit added nothing"),
         "{section}"
@@ -1331,27 +1393,74 @@ fn the_reference_doctor_table_says_what_each_warn_means() {
     };
     for (check, meaning) in [
         (
+            "base",
+            "when git cannot resolve the `--base` ref to a commit",
+        ),
+        ("version", "records a version outside the 1.3 line, or none"),
+        (
+            "version",
+            "tested with 1.3.3.dev0 (spec-kit commit c438494)",
+        ),
+        (
+            "version",
+            "run `specify integration upgrade <key>` for each integration, then commit on the ref",
+        ),
+        (
             "committed",
-            "`.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files",
+            "A spec-kit file is on disk but not in the commit, so a worktree member does not get it",
+        ),
+        ("committed", "Remove each ignore rule it names"),
+        (
+            "committed",
+            "run the `git add` it prints, then commit on the ref",
         ),
         (
             "constitution",
-            "The committed constitution, the copy in `HEAD`, still holds a template placeholder",
+            "in the commit still holds a template placeholder",
         ),
-        ("integrations", "has no command folder"),
+        (
+            "constitution",
+            "A written copy on disk that is not committed does not count",
+        ),
+        (
+            "integrations",
+            "has no command folder with `speckit-` command files in the commit",
+        ),
+        ("integrations", "in its current or its older format"),
         (
             "git extension",
-            "`.specify/extensions.yml` holds the `git` extension",
+            "lists the `git` extension under `installed:`",
         ),
-        ("events", "A spec-kit runtime event is set up"),
-        ("events", "`.codex/hooks.json` exists"),
+        (
+            "git extension",
+            "Run `specify extension remove git`, then commit on the ref",
+        ),
+        ("hooks", "a hook that a member must run (`optional: false`)"),
+        (
+            "hooks",
+            "A hook or extension with `enabled: false` does not count",
+        ),
+        (
+            "hooks",
+            "then run `specify extension remove <ext>` or set `optional: true` on the hook",
+        ),
+        ("events", "A spec-kit runtime event is set up in the commit"),
+        (
+            "events",
+            "`.codex/hooks.json` that is only on disk also warns",
+        ),
         (
             "events",
             "`.claude/settings.json` holds a hook tagged `\"__speckit_event__\": true`",
         ),
+        ("events", "is `ok`, with a note"),
         (
             "feature pointer",
             "git does not ignore `.specify/feature.json`, so members would commit their pointer",
+        ),
+        (
+            "feature pointer",
+            "run `git rm --cached .specify/feature.json`, then commit on the ref",
         ),
         ("workflows", "Never a `warn`"),
         ("workflows", "teamwire starts none of them"),
@@ -1608,4 +1717,117 @@ fn the_afk_skill_lists_a_missing_closer_before_the_close() {
     let close = section.find("Run `teamwire close <team>`").unwrap();
     assert!(listed < close, "{section}");
     assert!(!section.contains("before you close."), "{section}");
+}
+
+/// What the review found missing: other extensions' mandatory hooks, the
+/// scratch folder, the watch during a question round, and the two flags a
+/// per-story split raises by design.
+#[test]
+fn the_speckit_guidance_covers_hooks_scratch_the_watch_and_split_flags() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let reference = flat(&example("skills/teamwire/reference.md"));
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    for (place, text) in [("rules", &rules), ("reference", &section)] {
+        for needed in [
+            "`optional: false`",
+            "remove the extension or make the hook optional, then commit",
+            "`specs/NNN-name/` in the integrator's `owns`",
+        ] {
+            assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+        }
+    }
+    assert!(
+        section.contains("Doctor's `spec-kit hooks` line"),
+        "{section}"
+    );
+    assert!(
+        section.contains("both own overlapping paths (specs/NNN-name/tasks.md")
+            && section.contains("Expect that warning, which does not refuse the launch"),
+        "{section}"
+    );
+    assert!(
+        rules.contains("expect that warning, which refuses nothing"),
+        "{rules}"
+    );
+    for (place, text) in [("skill", &skill), ("reference", &reference)] {
+        assert!(
+            text.contains("`$TEAMWIRE_SCRATCH`"),
+            "{place} lacks the scratch folder"
+        );
+    }
+    assert!(
+        skill.contains("never in the repository or in `/tmp`")
+            && skill.contains("A question round does not end the watch"),
+        "{skill}"
+    );
+    assert!(
+        reference.contains("so this line cannot print while it waits")
+            && section.contains("and the watch keeps running"),
+        "{reference}"
+    );
+}
+
+/// AFK needs a reviewed spec, the reference says which parts no run has
+/// tested, the tested build carries the label doctor prints, and a missing
+/// token count is not read as zero.
+#[test]
+fn the_speckit_guidance_states_afk_untested_parts_and_the_tested_build() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let afk = flat(&example("skills/afk/SKILL.md"));
+    for (place, text) in [("rules", &rules), ("reference", &section), ("afk", &afk)] {
+        assert!(
+            text.contains("only from a `spec.md`, `plan.md` and `tasks.md` that the user already reviewed and committed"),
+            "{place} lacks the AFK rule: {text}"
+        );
+    }
+    assert!(afk.contains("stop before step 2"), "{afk}");
+    for needed in [
+        "No run has tested two parts of this section",
+        "A split per user story",
+        "Codex as a member",
+        "spec-kit 1.3.3.dev0 at commit c438494",
+    ] {
+        assert!(section.contains(needed), "the section lacks {needed}");
+    }
+    assert!(!section.contains("v1.3.2 and 9 commits"), "{section}");
+    let reference = flat(&example("skills/teamwire/reference.md"));
+    assert!(
+        reference.contains("read a missing count as not recorded, never as zero"),
+        "the metrics row reads a missing count as zero"
+    );
+}
+
+/// ADR 0042 records what the review changed, and what is deferred, inside
+/// the repository; ADR 0041 keeps its words and points to it.
+#[test]
+fn adr_0042_supersedes_the_changed_parts_of_adr_0041() {
+    let adr = flat(
+        &std::fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../docs/adr/0042-spec-kit-after-the-review.md"),
+        )
+        .unwrap(),
+    );
+    for needed in [
+        "supersedes ADR 0041 decision 7",
+        "`teamwire speckit draft`",
+        "spec-kit's `bug` extension",
+        "its `assess` extension",
+        "`1 question for the parent.`",
+        "`^[1-9][0-9]* questions? for the parent\\.`",
+        "`git merge --no-ff --no-edit <sha>`",
+        "`teamwire doctor --base REF`",
+        "`spec-kit version`",
+        "`spec-kit hooks`",
+        "`TEAMWIRE_SCRATCH`",
+        "AFK runs spec-kit only from a reviewed spec",
+        "supersedes ADR 0041's \"The pilot is their first test\"",
+    ] {
+        assert!(adr.contains(needed), "ADR 0042 lacks {needed}");
+    }
+    let old = adr_0041();
+    let status = old.split("## Context").next().unwrap();
+    assert!(status.contains("Partly superseded by ADR 0042"), "{status}");
 }

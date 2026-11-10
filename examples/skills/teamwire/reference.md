@@ -114,7 +114,7 @@ database, so run `teamwire doctor`. The other lines:
 | `UNREAD <id> -> <role> <age>` | A message over 300 characters has waited unread 10 minutes since it was sent or resent, and the member has not reported `done`, `blocked` or `failed` since. `resend` refuses it, because the session already took it. Send a short `note` telling the member to read its inbox. |
 | `UNANSWERED <id> from <role> <age>` | A question to you has waited 10 minutes. Answer with `--type answer --re <id>`. |
 | `TEAM-CLOSED` | The team was closed before `TEAM-COMPLETE`, and the watch exited. If you did not close it, another session did, so run `teamwire status` before you act. |
-| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
+| `TEAM-COMPLETE` | Every current member has stopped. `n/m done` counts only status `done` and names the others. `m` counts every member still in the team, including one that reported `failed`, and leaves out members refused or failed at launch and removed members. It comes on the poll after `WATCHING` at the earliest, so a team that was already finished when you started the watch takes one interval to say so. A member waiting in a question round, a `blocked` result whose summary starts `N questions for the parent.`, has not stopped, so this line cannot print while it waits: the watch keeps running and follows the member again after your reprompt. A later wave, a reviewer or the closer may still be due. While the team has an implementer and no closer has reported, the line ends `If no wave is due: add the integrator when branches join, then the closer (teamwire preset closer).` |
 
 ## Messages
 
@@ -270,7 +270,7 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 | --- | --- |
 | `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. A member whose session file holds no usage that teamwire reads shows no tokens, so read a missing count as not recorded, never as zero. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
 | `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |
@@ -294,8 +294,28 @@ one agent session follows. No spec-kit code reads `tasks.md`, and spec-kit
 runs no task in parallel. A teamwire team runs a spec-kit feature with
 spec-kit's own commands, each in the seat whose rules fit it, and spec-kit
 stays unchanged. Start the team spec from `teamwire preset speckit`. These
-facts come from spec-kit commit c438494 (v1.3.2 and 9 commits). Check them
-again after a spec-kit upgrade.
+facts come from spec-kit 1.3.3.dev0 at commit c438494, the version that
+`.specify/integration.json` records and doctor's `spec-kit version` line
+prints. Check them again after a spec-kit upgrade.
+
+No run has tested two parts of this section. Tell the user before you pick
+either one:
+
+- A split per user story: the merge of tick lines from parallel members,
+  the fix round on a branch cut from the integrator's branch, and the
+  per-member `outside-owns` waivers. The pilot ran one implementer.
+- Codex as a member: a Codex member that runs `$speckit-<cmd>` from
+  `.agents/skills/` in a worktree. The pilot ran Claude Code and pi
+  members only.
+
+AFK runs a spec-kit feature only from a `spec.md`, `plan.md` and `tasks.md`
+that the user already reviewed and committed. The spec stage needs the
+user four times: the answers at both question stops, the review of
+`spec.md` and `plan.md`, and the ticks on the `checklist` command's
+checklists. An AFK lead answers every question itself, so the user would
+come back to code built on a spec nobody reviewed. From a reviewed spec,
+AFK runs the flow as for a finished `tasks.md` (below): the plan reviewer,
+the build, the closer and the fix rounds.
 
 ### What the base branch must hold
 
@@ -309,22 +329,36 @@ before launch:
 - A written `.specify/memory/constitution.md`. `init` leaves it as a
   template full of placeholders. Write it with the user, through spec-kit's
   `constitution` command, before the first feature.
+- No git ignore rule for a command folder. `specify init` advises adding
+  `.claude/` to `.gitignore`, but then no worktree member gets the spec-kit
+  commands.
 
-Then run `teamwire doctor` from the repository and read its `spec-kit ...`
-lines. Doctor prints them only when the repository's root holds
-`.specify/`. Each line is `ok` or `warn`, never `FAIL`, so none of them
-stops a launch, but doctor exits 2 on a `warn`. A `warn` names the file and
-what to do. Fix each one before launch:
+Then run `teamwire doctor --base <base>` from the repository, with the
+branch the first member starts from, and read its nine `spec-kit ...`
+lines. Without `--base`, doctor reads `HEAD`. Every line names the ref and
+its commit, as `in <ref> (<sha7>)`, and reads files from that commit, the
+one a worktree is cut from. Two lines also look at the disk:
+`spec-kit committed` lists each spec-kit file on disk that is not in the
+commit, and `spec-kit feature pointer` asks git whether it ignores
+`.specify/feature.json`. Doctor prints the section when `.specify/` is in
+that commit or on disk at the repository's root. A ref git cannot resolve
+gives one warning and no other spec-kit line. Each line is `ok` or `warn`,
+never `FAIL`, so none of them stops a launch, but doctor exits 2 on a
+`warn`. A `warn` names the file and one action that fixes it. Fix each one
+before launch:
 
-| check | a `warn` means |
+| check | a `warn` means, and the action that fixes it |
 | --- | --- |
-| `spec-kit committed` | `.specify/memory/constitution.md` is not in the base branch's last commit (`HEAD`), so a worktree member gets no spec-kit files. Commit `.specify/` and the command folders. |
-| `spec-kit constitution` | The committed constitution, the copy in `HEAD`, still holds a template placeholder, such as `[PROJECT_NAME]`. A written copy on disk that is not committed does not count. Write it through spec-kit's `constitution` command, then commit it. |
-| `spec-kit integrations` | An integration listed in `.specify/integration.json` has no command folder: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. The `ok` line lists the installed integrations. |
-| `spec-kit git extension` | The `installed:` list in `.specify/extensions.yml` holds the `git` extension, which creates and switches branches. |
-| `spec-kit events` | A spec-kit runtime event is set up: an extension manifest, `.specify/extensions/<id>/extension.yml`, has a top-level `events:` key, or `.specify/integration-events.yml` exists, or `.codex/config.toml` exists, or `.codex/hooks.json` exists, or `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`. An extension declares its `events:` in its own manifest, not in `.specify/extensions.yml`. |
-| `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature. |
-| `spec-kit workflows` | Never a `warn`. The line lists the workflow ids in `.specify/workflows/workflow-registry.json` and says teamwire starts none of them. |
+| `spec-kit base` | Printed alone, in place of the nine lines, when git cannot resolve the `--base` ref to a commit. Pass `--base` a branch or commit that exists, or make the first commit. When git refuses for another reason, such as dubious ownership, the line quotes git's first stderr line: run `git status` in the repository to see why. |
+| `spec-kit version` | `.specify/integration.json` in the commit records a version outside the 1.3 line, or none. The `ok` line prints the version and says the guidance was tested with 1.3.3.dev0 (spec-kit commit c438494). With spec-kit 1.3 installed (`specify --version`), run `specify integration upgrade <key>` for each integration, then commit on the ref. With no version recorded, fix `.specify/integration.json` as the `spec-kit integrations` line says. |
+| `spec-kit committed` | A spec-kit file is on disk but not in the commit, so a worktree member does not get it: a file under `.specify/`, except `feature.json` and what `.specify/.gitignore` ignores, or a `speckit-` entry of `.claude/skills`, `.agents/skills` or `.pi/prompts`. The line names each path as changed, new (in git's index but not in the commit), untracked or git-ignored, with the ignore rule and its file and line. Remove each ignore rule it names, such as the `.claude/` rule that `specify init` advises, run the `git add` it prints, then commit on the ref. |
+| `spec-kit constitution` | `.specify/memory/constitution.md` in the commit still holds a template placeholder, such as `[PROJECT_NAME]`, or is not in the commit. A written copy on disk that is not committed does not count, and the `ok` line says when the copy on disk differs. Write it with spec-kit's `constitution` command, such as `/speckit-constitution`, then commit it on the ref. |
+| `spec-kit integrations` | An integration listed in the committed `.specify/integration.json`, in its current or its older format, has no command folder with `speckit-` command files in the commit: `.claude/skills/speckit-*` for `claude`, `.agents/skills/speckit-*` for `codex`, `.pi/prompts/speckit.*.md` for `pi`. Run `specify integration upgrade <key>`, then commit the folder on the ref. A folder that is only on disk is committed as the `spec-kit committed` line says. When `integration.json` is missing, run `specify integration install <key>` for each integration members use, then commit. When it is broken, delete it first. The `ok` line lists the installed integrations. |
+| `spec-kit git extension` | `.specify/extensions.yml` in the commit lists the `git` extension under `installed:`, but teamwire owns the branches and worktrees. Run `specify extension remove git`, then commit on the ref. |
+| `spec-kit hooks` | `.specify/extensions.yml` in the commit has a hook that a member must run (`optional: false`), from an enabled extension other than `git`. The line names each extension, its command and its event. Read what each command runs, then run `specify extension remove <ext>` or set `optional: true` on the hook in `.specify/extensions.yml`, then commit on the ref. `specify extension disable <ext>` also clears it. A hook or extension with `enabled: false` does not count. |
+| `spec-kit events` | A spec-kit runtime event is set up in the commit: `.claude/settings.json` holds a hook tagged `"__speckit_event__": true`, `.codex/config.toml` holds a hook marked `speckit_marker = true`, or `.specify/` holds the events script those hooks run. Each hook runs a spec-kit script in every member session, and teamwire refuses to start a Codex member while `.codex/config.toml` is in the repository. Run `specify extension remove <ids>` or `specify extension disable <ids>`, or `specify integration upgrade <key> --force --integration-options="--events false"` for each installed integration, then commit on the ref. A `.codex/config.toml` or `.codex/hooks.json` that is only on disk also warns: remove it from the repository. A manifest that declares `events:` while spec-kit wrote no hook, such as a disabled extension or an integration with `--events false`, is `ok`, with a note. |
+| `spec-kit feature pointer` | git does not ignore `.specify/feature.json`, so members would commit their pointer to the feature: add `feature.json` to `.specify/.gitignore`, then commit on the ref. When the file is tracked in the commit, the ignore rule does not apply, because git ignores only untracked files: run `git rm --cached .specify/feature.json`, then commit on the ref. |
+| `spec-kit workflows` | Never a `warn`. The line lists the installed workflow ids and says teamwire starts none of them. |
 
 `specify init` also installs a workflow,
 `.specify/workflows/speckit/workflow.yml`, listed in
@@ -335,7 +369,20 @@ The `git` extension creates and switches branches, and teamwire owns the
 branches. An extension with `events:` writes `.codex/config.toml`, and
 Codex launch refuses a repository that holds that file. The same extension
 writes hooks into `.claude/settings.json`, and those hooks run unreviewed
-with the member's rights. Remove such an extension before launch.
+with the member's rights. Remove such an extension before launch. An
+extension declares its `events:` in its own manifest,
+`.specify/extensions/<id>/extension.yml`, not in `.specify/extensions.yml`,
+and `.specify/integration-events.yml` overrides them. Doctor warns only on
+the hooks spec-kit really wrote.
+
+Any other extension can register hooks in `.specify/extensions.yml`. Every
+spec-kit command tells the member to run each enabled hook that has
+`optional: false`, before or after the command, and to wait for it. One
+such hook demands a merged pull request before `tasks`, which a worktree
+member cannot produce, and a hook can also commit, push or switch branches.
+Doctor's `spec-kit hooks` line names each mandatory hook with its extension,
+event and command. Clear each one before launch: read what it runs, then
+remove the extension or make the hook optional, then commit.
 
 ### How each harness runs a spec-kit command
 
@@ -362,7 +409,8 @@ spec-kit command, so write the form for the member's harness in its brief.
    is the spec member's worktree, such as `<repo>/.worktrees/myteam-spec`
    for the branch `myteam/spec`. It runs `analyze`, which writes nothing, and reads the briefs.
    It also runs any task in `tasks.md` that claims "confirm the new tests
-   fail", in its own scratch copy outside the repository, because a claim
+   fail", in its own scratch copy under `$TEAMWIRE_SCRATCH`, outside the
+   repository, because a claim
    that is half false can lead the implementer to weaken tests.
    Reprompt the spec member once with the findings that hold. Run no second
    analyze on the same plan.
@@ -399,8 +447,11 @@ it. Then cut the implementer's branch from that branch.
      most 3. `specify` ranks no option, so the member marks its own
      recommended option for each question and says the mark is its own.
   2. You ask the user and reprompt it with the answers. It writes them into
-     `spec.md`, runs `clarify`'s scan, and stops again with clarify's
-     questions, at most 5, each with clarify's recommended option.
+     `spec.md` the way `specify`'s own steps say: it replaces each
+     `[NEEDS CLARIFICATION]` marker with its answer, re-runs `specify`'s
+     validation, and ticks each item of `checklists/requirements.md` that
+     now passes. Then it runs `clarify`'s scan, and stops again with
+     clarify's questions, at most 5, each with clarify's recommended option.
   3. You ask the user and reprompt it again. `clarify` asks one question at
      a time in chat, so the member cannot run it with a batch of answers.
      It follows clarify's write steps by hand with your answers, then runs
@@ -411,6 +462,11 @@ it. Then cut the implementer's branch from that branch.
   `- Q: <question> → A: <answer>`, so `spec.md` has one place for every
   answer.
 
+  A stop with no questions records no stop. `specify` asks only when no
+  reasonable default exists, so it often asks none, and `clarify`'s scan
+  can report no critical ambiguities. Then the member goes on to the next
+  command: from `specify` to `clarify`'s scan, and from the scan to `plan`.
+
   A further stop is allowed only when an answer raises a new question. The
   member never answers a spec-kit question itself, unless your reprompt
   says to take the recommended option: the member's own mark at stop 1 and
@@ -418,18 +474,42 @@ it. Then cut the implementer's branch from that branch.
   made, with whose mark it took, so the user can tell those answers from
   the user's own in `spec.md`.
 
-  At each stop the member writes its questions under 'Questions for the
-  lead' in its report and records
-  `teamwire done --status blocked --summary "3 questions for the lead. ..."`,
-  with its own count. Its check fails at that stop, and its seat allows
-  `blocked` with a failing check. A `blocked` result whose summary starts
-  with `N questions for the lead.` is a question round, not a failure. Send
-  the answers with
+  At each stop the member writes its questions under the heading
+  `Questions for the parent` in its report and records
+  `teamwire done --status blocked --summary "3 questions for the parent. ..."`,
+  with its own count, or `1 question for the parent.` for one question.
+  Its check fails at that stop, and its seat allows `blocked` with a
+  failing check. A question round is a result with status `blocked` whose
+  summary, after an optional leading `handoff: `, matches
+  `^[1-9][0-9]* questions? for the parent\.`. Such a result is a question round, not a failure.
+  The result reaches you once, like any result, and the watch keeps
+  running: until your reprompt it counts the member as waiting for you,
+  not as finished, so no `TEAM-COMPLETE`, `SILENT` or `LATE` line comes for
+  it, and the same watch follows the member after the reprompt. Send the
+  answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
   member records `done` only after `tasks` is written and its check passes.
+
+  The spec member is an implementer. Its seat rules say to ask by question
+  message, keep working, and decide and finish when no answer comes. That
+  rule would let it answer spec-kit's questions itself. So the spec
+  member's brief carries this override line, word for word:
+
+  > At spec-kit's question stops, this brief replaces your seat's rule on
+  > questions. Send no question message, and never decide a spec-kit
+  > question yourself, even when no answer has come. Write the questions
+  > under the heading 'Questions for the parent' in your report, record
+  > `teamwire done --status blocked --summary "N questions for the parent. ..."`
+  > with your count (`1 question for the parent.` for one), and stop until
+  > the lead reprompts you with the answers.
 - **Checklists.** `specify` writes `checklists/requirements.md` itself and
-  ticks its items when it validates the spec, so that checklist is ticked
-  before any review. `checklist` writes its items unticked, and spec-kit
+  ticks each item that passes its validation. An item stays unticked while
+  the spec holds a question, such as "No [NEEDS CLARIFICATION] markers
+  remain", and after three failed rounds of validation, and `clarify` can
+  untick an item that regresses. So after the first question round the
+  spec member re-runs `specify`'s validation and ticks each item that now
+  passes. Before the review, check that `requirements.md` has no unticked
+  item, or the implementer stops on it. `checklist` writes its items unticked, and spec-kit
   says only a reviewer ticks them. The reviewer-only rule is about the
   `checklist` command's checklists. So the user ticks those in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
@@ -437,7 +517,8 @@ it. Then cut the implementer's branch from that branch.
   because the implementer's worktree holds only commits. `implement` stops on a checklist with unticked items with
   "Do you want to proceed with implementation anyway? (yes/no)". So the
   stop fires only when a checklist has unticked items, such as one from
-  `checklist` that the user left open. The implementer's brief says to
+  `checklist` that the user left open, or an item of `specify`'s own
+  `requirements.md` that is still unticked. The implementer's brief says to
   treat that stop as a question to you.
 - **Ticks.** `implement` ticks `[X]` on each finished task in `tasks.md`.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
@@ -458,10 +539,11 @@ it. Then cut the implementer's branch from that branch.
   make it fail.
 - **Check.** The implementer's `check` needs `tasks.md`, runs the tests
   and fails on any unticked task, such as
-  `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^- \[ \] T[0-9]+' specs/NNN-name/tasks.md`.
+  `test -s specs/NNN-name/tasks.md && <test command> && ! grep -nE '^[[:space:]]*[-*+][[:space:]]+\[[[:space:]]*\][[:space:]]*T[0-9]+' specs/NNN-name/tasks.md`.
   Keep the `test -s`. Without it the check passes when the folder name is
   wrong, because `!` turns grep's missing-file error into success.
-  The check still passes on a lowercase `[x]` or a deleted task line, so
+  The grep also catches an open task with extra spaces, a tab, an indent
+  or a `*` or `+` bullet. The check still passes on a lowercase `[x]` or a deleted task line, so
   the closer counts the ticks (see Converge below).
   When the stories split, a member's `check` is
   `test -s specs/NNN-name/tasks.md && <its own tests>`, with no grep. Wave 1
@@ -473,11 +555,13 @@ it. Then cut the implementer's branch from that branch.
   commit after each unit. The brief says: commit at the end of every phase
   that has tasks. Each commit holds that phase's code and its ticks, with
   the task ids in the message, such as `T012-T018: US1 user model`.
-  Spec-kit's `tasks.md` writes `**Checkpoint**` lines only after story
-  phases, so Setup and Polish have none. A phase with no tasks, such as an
-  empty Foundational phase, gets no commit. The brief overrides the
-  "Commit after every checkpoint" line that spec-kit's template writes
-  into `tasks.md`.
+  Spec-kit's `tasks.md` template writes a `**Checkpoint**` line after the
+  Foundational phase and after each story phase, so Setup and Polish have
+  none. A phase with no tasks, such as an
+  empty Foundational phase, gets no commit. The brief overrides any commit
+  line in the notes of `tasks.md`, such as the template's "Commit after
+  each task or logical group" or a model's own "Commit after every
+  checkpoint".
 - **The feature file.** Spec-kit finds the feature through the variable
   `SPECIFY_FEATURE_DIRECTORY`, else `.specify/feature.json`. Spec-kit
   git-ignores `.specify/feature.json`, so a new worktree has none, and a
@@ -498,6 +582,17 @@ it. Then cut the implementer's branch from that branch.
   Foundational. Wave 2 has one member per story, each with wave 1's branch
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
+  Each story member owns `specs/NNN-name/tasks.md`, so launch prints
+  `roles <a> and <b> both own overlapping paths (specs/NNN-name/tasks.md and specs/NNN-name/tasks.md)`
+  for each pair of them. Expect that warning, which does not refuse the
+  launch, and keep `tasks.md` in every member's `owns`: without it each
+  tick is flagged `outside-owns:specs/NNN-name/tasks.md`. Each member ticks
+  only its own phase's lines, so the merge is clean.
+  The integrator merges wave 1's branch, which is cut from the spec
+  member's branch, so its diff from `main` holds every file the spec member
+  committed, and verify flags each one as `outside-owns:specs/NNN-name/<file>`
+  even with no amendment. Put `specs/NNN-name/` in the integrator's `owns`
+  beside the merged members' paths, and no such flag comes.
 - **Converge.** Start the closer from `teamwire preset closer`, and add two
   steps to its task. First, the closer counts the ticks at each of the
   implementer's commits and checks that no task line is missing, because
@@ -519,9 +614,12 @@ it. Then cut the implementer's branch from that branch.
   `plan.md` and the design files, and it commits each change. Then the
   spec member itself announces the change to every running implementer
   and to you, with a notice that names the commit:
-  `teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text "SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>"`.
-  A notice must name a commit on the sender's branch, so it cannot point
-  at uncommitted work. Uncommitted edits in the spec member's worktree
+  `teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text "SPEC AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>"`.
+  `--no-ff` makes the merge a merge commit even before the implementer's
+  first commit, so verify skips it. A fast-forward would make the spec
+  member's commit look like the implementer's own, and verify and `done`
+  would flag it. A notice must name a commit on the sender's branch, so it
+  cannot point at uncommitted work. Uncommitted edits in the spec member's worktree
   never reach anyone. Each implementer's brief says: on a notice that
   starts with `SPEC AMENDMENT:`, merge that commit before your next unit,
   then go on. The lead sends nothing. The spec member's brief says to send
