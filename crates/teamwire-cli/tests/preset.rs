@@ -1712,3 +1712,34 @@ fn the_speckit_guidance_covers_hooks_scratch_the_watch_and_split_flags() {
         "{reference}"
     );
 }
+
+/// AFK needs a reviewed spec, the reference says which parts no run has
+/// tested, the tested build carries the label doctor prints, and a missing
+/// token count is not read as zero.
+#[test]
+fn the_speckit_guidance_states_afk_untested_parts_and_the_tested_build() {
+    let rules = flat(&rules_text("speckit"));
+    let section = speckit_section();
+    let afk = flat(&example("skills/afk/SKILL.md"));
+    for (place, text) in [("rules", &rules), ("reference", &section), ("afk", &afk)] {
+        assert!(
+            text.contains("only from a `spec.md`, `plan.md` and `tasks.md` that the user already reviewed and committed"),
+            "{place} lacks the AFK rule: {text}"
+        );
+    }
+    assert!(afk.contains("stop before step 2"), "{afk}");
+    for needed in [
+        "No run has tested two parts of this section",
+        "A split per user story",
+        "Codex as a member",
+        "spec-kit 1.3.3.dev0 at commit c438494",
+    ] {
+        assert!(section.contains(needed), "the section lacks {needed}");
+    }
+    assert!(!section.contains("v1.3.2 and 9 commits"), "{section}");
+    let reference = flat(&example("skills/teamwire/reference.md"));
+    assert!(
+        reference.contains("read a missing count as not recorded, never as zero"),
+        "the metrics row reads a missing count as zero"
+    );
+}

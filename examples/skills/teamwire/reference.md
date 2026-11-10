@@ -270,7 +270,7 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 | --- | --- |
 | `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
-| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
+| `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. A member whose session file holds no usage that teamwire reads shows no tokens, so read a missing count as not recorded, never as zero. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
 | `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
 | `teamwire doctor` | Read-only checks of the state, the disk, the tools and the plugin. Exit 0 when all pass, 2 on any `warn` or `fail` line. |
 | `teamwire version` | The binary's version and the schema version it writes. |
@@ -294,8 +294,28 @@ one agent session follows. No spec-kit code reads `tasks.md`, and spec-kit
 runs no task in parallel. A teamwire team runs a spec-kit feature with
 spec-kit's own commands, each in the seat whose rules fit it, and spec-kit
 stays unchanged. Start the team spec from `teamwire preset speckit`. These
-facts come from spec-kit commit c438494 (v1.3.2 and 9 commits). Check them
-again after a spec-kit upgrade.
+facts come from spec-kit 1.3.3.dev0 at commit c438494, the version that
+`.specify/integration.json` records and doctor's `spec-kit version` line
+prints. Check them again after a spec-kit upgrade.
+
+No run has tested two parts of this section. Tell the user before you pick
+either one:
+
+- A split per user story: the merge of tick lines from parallel members,
+  the fix round on a branch cut from the integrator's branch, and the
+  per-member `outside-owns` waivers. The pilot ran one implementer.
+- Codex as a member: a Codex member that runs `$speckit-<cmd>` from
+  `.agents/skills/` in a worktree. The pilot ran Claude Code and pi
+  members only.
+
+AFK runs a spec-kit feature only from a `spec.md`, `plan.md` and `tasks.md`
+that the user already reviewed and committed. The spec stage needs the
+user four times: the answers at both question stops, the review of
+`spec.md` and `plan.md`, and the ticks on the `checklist` command's
+checklists. An AFK lead answers every question itself, so the user would
+come back to code built on a spec nobody reviewed. From a reviewed spec,
+AFK runs the flow as for a finished `tasks.md` (below): the plan reviewer,
+the build, the closer and the fix rounds.
 
 ### What the base branch must hold
 
