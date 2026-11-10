@@ -115,11 +115,12 @@ fn the_speckit_implementer_check_fails_on_every_open_task() {
     assert!(done.contains(t006) && !done.contains("- [ ] "), "{done}");
     let open = |line: &str| Some(done.replace(t006, line));
     let crlf = done.replace(t006, "- [ ] T006 [US1]").replace('\n', "\r\n");
-    let deleted: String = done
+    let deleted = done
         .lines()
         .filter(|l| !l.starts_with(t006))
-        .map(|l| format!("{l}\n"))
-        .collect();
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     let converge = format!(
         "{done}\n## Phase 8: Convergence\n\n- [ ] T020 Add the missing case per FR-004 (missing)\n"
     );
