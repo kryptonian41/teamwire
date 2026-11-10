@@ -147,8 +147,10 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
     // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`),
     // committed or only on disk.
     let mut codex = Vec::new();
+    let mut codex_committed = false;
     for file in [config, ".codex/hooks.json"] {
         if base.has(file) {
+            codex_committed = true;
             codex.push(format!("{file} is in {at}"));
         } else if base.root.join(file).exists() {
             codex.push(format!("{file} is on disk"));
@@ -206,13 +208,14 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
             actions.push("remove it from the repository".to_owned());
         }
     }
+    // A file only on disk was never committed, so removing it needs no commit.
+    let then = if hooks.is_empty() && !codex_committed {
+        String::new()
+    } else {
+        format!(", then commit on {}", base.name)
+    };
     Check::warn(
         name,
-        format!(
-            "{}; {}, then commit on {}",
-            found.join("; "),
-            actions.join(", "),
-            base.name
-        ),
+        format!("{}; {}{then}", found.join("; "), actions.join(", ")),
     )
 }

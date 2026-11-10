@@ -541,6 +541,11 @@ fn a_codex_hooks_file_warns_because_codex_launch_refuses_it() {
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".codex/hooks.json"), "{detail}");
+    // Committed, the removal needs a commit.
+    assert!(
+        detail.ends_with("remove it from the repository, then commit on HEAD"),
+        "{detail}"
+    );
     assert!(detail.contains("Codex member"), "{detail}");
     assert!(!detail.contains(".codex/config.toml"), "{detail}");
 }
@@ -894,6 +899,34 @@ fn base_names_the_commit_the_lines_read_and_every_line_names_it() {
         "{out}"
     );
 
+    // From develop, a commit lands on develop, so the action says how to reach main.
+    let line = line_of(&out, "spec-kit committed");
+    assert!(
+        line.contains("run `git switch main` and commit there"),
+        "{out}"
+    );
+    assert!(
+        line.contains("or commit here and merge this branch into main"),
+        "{out}"
+    );
+    assert!(!line.contains("then commit on main"), "{out}");
+    // The ref that is checked out keeps the plain action.
+    put(root, ".pi/prompts/speckit.tasks.md", "tasks");
+    let out = teamwire_with(&bed, &path, root, &["--base", "develop"]).out;
+    let line = line_of(&out, "spec-kit committed");
+    assert!(line.ends_with("then commit on develop"), "{out}");
+    git(root, &["add", ".pi"]);
+    git(root, &["commit", "-q", "-m", "tasks"]);
+    // Following the action: merge develop into main.
+    git(root, &["switch", "-q", "main"]);
+    git(root, &["merge", "-q", "develop"]);
+    git(root, &["switch", "-q", "develop"]);
+    let out = teamwire_with(&bed, &path, root, &["--base", "main"]).out;
+    assert!(
+        line_of(&out, "spec-kit committed").starts_with("ok"),
+        "{out}"
+    );
+
     // A ref git cannot resolve: one line, and it names the ref.
     let out = teamwire_with(&bed, &path, root, &["--base", "mian"]).out;
     let line = line_of(&out, "spec-kit base");
@@ -1050,7 +1083,9 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
         "{detail}"
     );
     assert!(
-        detail.contains("remove the rule `.claude/` from .gitignore (line 1), run `git add .claude/skills/speckit-*`"),
+        detail.contains(
+            "remove the rule `.claude/` from .gitignore (line 1), run `git add .claude/skills/speckit-* .gitignore`"
+        ),
         "{detail}"
     );
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
@@ -1068,6 +1103,13 @@ fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it
 
     put(root, ".gitignore", "");
     follow_git_add(root, &detail);
+    // The edited `.gitignore` reached the commit, so members do not keep the rule.
+    let committed = std::process::Command::new("git")
+        .args(["show", "HEAD:.gitignore"])
+        .current_dir(root)
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(committed.stdout).unwrap(), "");
     let checks = bed.checks();
     assert_eq!(
         level_of(&checks, "spec-kit committed"),
@@ -1284,7 +1326,11 @@ fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".codex/hooks.json is on disk"), "{detail}");
     assert!(detail.contains("Codex member"), "{detail}");
-    assert!(detail.contains("remove it from the repository"), "{detail}");
+    assert!(
+        detail.ends_with("remove it from the repository"),
+        "{detail}"
+    );
+    assert!(!detail.contains("then commit"), "{detail}");
     std::fs::remove_file(root.join(".codex/hooks.json")).unwrap();
     assert_eq!(events(&bed).0, Level::Pass);
 }
