@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{Fill, Harness, Liveness, Pid, PlaceState, SessionId, Timestamp};
+use teamwire_core::{
+    Fill, Harness, Liveness, Pid, PlaceState, SessionId, SessionUsage, Timestamp, TokenCounts,
+};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_pi::{Pi, PiConfig};
 
@@ -188,6 +190,58 @@ fn the_fill_is_the_newest_reading() {
     assert_eq!(rig.pi().context_fill(&id(), None).unwrap(), want);
     let other = SessionId::parse("never-ran").unwrap();
     assert_eq!(rig.pi().context_fill(&other, Some(&path)).unwrap(), want);
+}
+
+/// A pi session file in the shape pi 1.4 writes, its message text cut out.
+const USAGE_FIXTURE: &str = include_str!("fixtures/session-usage.jsonl");
+
+/// Every assistant message counts once, by its model. pi splits a response
+/// into input, output, cache reads and cache writes, as Claude Code does.
+#[test]
+fn the_usage_sums_every_assistant_message_by_model() {
+    let rig = Rig::new();
+    assert_eq!(rig.pi().session_usage(&id(), None).unwrap(), None);
+    let lines: Vec<String> = USAGE_FIXTURE.lines().map(str::to_owned).collect();
+    let path = rig.write("2026-11-10T07-27-55-158Z", ID, &lines);
+    let mut want = SessionUsage::new();
+    want.insert(
+        "claude-opus-5-5".to_owned(),
+        TokenCounts {
+            input: 4,
+            output: 236,
+            cache_read: 23_285,
+            cache_creation: 24_976,
+        },
+    );
+    want.insert(
+        "gpt-5".to_owned(),
+        TokenCounts {
+            input: 10,
+            output: 5,
+            cache_read: 0,
+            cache_creation: 0,
+        },
+    );
+    assert_eq!(
+        rig.pi().session_usage(&id(), None).unwrap(),
+        Some(want.clone())
+    );
+    let other = SessionId::parse("never-ran").unwrap();
+    assert_eq!(
+        rig.pi().session_usage(&other, Some(&path)).unwrap(),
+        Some(want)
+    );
+}
+
+#[test]
+fn a_session_with_no_assistant_message_has_no_usage() {
+    let rig = Rig::new();
+    rig.write(
+        "2026-10-25T09-18-05-096Z",
+        ID,
+        &[header(ID), MESSAGE.to_owned(), fill(30_000)],
+    );
+    assert_eq!(rig.pi().session_usage(&id(), None).unwrap(), None);
 }
 
 #[test]

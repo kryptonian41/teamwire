@@ -32,6 +32,7 @@ pub mod spec;
 pub mod team;
 pub mod timestamp;
 pub mod tool_call;
+pub mod usage;
 pub mod who;
 
 pub use completion::{Completion, CompletionStatus, FinalSource, ReportGaps, ReportState};
@@ -73,4 +74,5 @@ pub use strings::UnknownString;
 pub use team::{LeadRoute, TeamState};
 pub use timestamp::{Timestamp, TimestampError};
 pub use tool_call::{ToolAction, ToolCall};
+pub use usage::{SessionUsage, TokenCounts};
 pub use who::{Actor, Recipient, Remote};

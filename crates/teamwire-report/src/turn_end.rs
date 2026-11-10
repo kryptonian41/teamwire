@@ -63,6 +63,26 @@ pub fn on_turn_end(ctx: &mut Ctx<'_>, me: &Role, t: &TurnEnd) -> TurnEndReply {
     reply
 }
 
+/// The member's harness reads its own session file (pi, Codex). A harness
+/// that gives no reading leaves the transcript the hook was handed to the
+/// Claude Code reader here, which finds nothing in another harness's file.
+fn session_usage(ctx: &Ctx<'_>, member: &Member, t: &TurnEnd) -> Option<serde_json::Value> {
+    ctx.registry
+        .harness(&member.harness)
+        .ok()
+        .and_then(|h| {
+            h.session_usage(&t.session, t.transcript.as_deref())
+                .ok()
+                .flatten()
+        })
+        .and_then(|usage| serde_json::to_value(usage).ok())
+        .or_else(|| {
+            t.transcript
+                .as_deref()
+                .and_then(crate::usage::session_usage)
+        })
+}
+
 /// `started + budget`, or `None` when that is beyond what an `Instant` can
 /// hold: adding would panic, and a hook must always exit 0.
 fn deadline_after(started: std::time::Instant, budget: Duration) -> Option<std::time::Instant> {
@@ -325,12 +345,7 @@ fn deliver(
     // cannot be read leaves the key out and never stops the delivery.
     // `session` lets the metrics tell one session's running totals from the next.
     let mut claim_data = json!({ "session": t.session.to_string() });
-    if let (Some(usage), Some(data)) = (
-        t.transcript
-            .as_deref()
-            .and_then(crate::usage::session_usage),
-        claim_data.as_object_mut(),
-    ) {
+    if let (Some(usage), Some(data)) = (session_usage(ctx, member, t), claim_data.as_object_mut()) {
         data.insert("usage".to_owned(), usage);
     }
     // Take the delivery. No write transaction is open while the host works.

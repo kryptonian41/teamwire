@@ -897,3 +897,62 @@ fn an_export_that_fails_in_the_store_leaves_one_store_error_row() {
         .collect();
     assert_eq!(errors, [json!({ "op": "metrics", "code": "io" })]);
 }
+
+/// Tokens are counted per member whatever its harness: a pi member's and a
+/// Codex member's delivered results carry the reading their harness read
+/// from its own session file.
+#[test]
+fn metrics_print_tokens_for_pi_and_codex_members() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    for (role, harness, model) in [
+        ("pi", "pi", "claude-opus-5-5"),
+        ("cx", "codex", "gpt-5-codex"),
+    ] {
+        let role = Role::parse(role).unwrap();
+        s.write(|tx| {
+            tx.insert_member(
+                at(1),
+                &NewMember {
+                    role: role.clone(),
+                    title: format!("the {role}"),
+                    kind: MemberKind::Implementer,
+                    mode: Mode::Pane,
+                    harness: HarnessId::parse(harness).unwrap(),
+                    host: HostId::from_static("herdr"),
+                    cwd: "/work".into(),
+                    repo: None,
+                    branch: None,
+                    base: None,
+                    base_sha: None,
+                    check: None,
+                    owns: vec!["src/".to_owned()],
+                    deadline_s: 1800,
+                },
+            )?;
+            tx.record_event(
+                at(5),
+                EventType::ResultDelivering,
+                Some(&role),
+                None,
+                &json!({"session": "s1", "usage": {model: {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0}}}),
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    }
+    let run = teamwire(&home, &[], &["metrics", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    for (role, model) in [("pi", "claude-opus-5-5"), ("cx", "gpt-5-codex")] {
+        let lines: Vec<&str> = run
+            .out
+            .lines()
+            .filter(|l| {
+                l.starts_with("teamwire.member.tokens{")
+                    && l.contains(&format!("role={role}"))
+                    && l.contains(&format!("model={model}"))
+            })
+            .collect();
+        assert!(!lines.is_empty(), "{role}: {}", run.out);
+    }
+}

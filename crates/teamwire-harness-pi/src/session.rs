@@ -21,8 +21,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use teamwire_core::{
-    CallerSession, Fill, Liveness, Pid, PlaceState, Platform, SessionId, SessionKind, Timestamp,
-    platform::ProcessRef,
+    CallerSession, Fill, Liveness, Pid, PlaceState, Platform, SessionId, SessionKind, SessionUsage,
+    Timestamp, TokenCounts, platform::ProcessRef,
 };
 
 use crate::extension::{FILL_ENTRY, STATE_SUFFIX};
@@ -30,6 +30,10 @@ use crate::extension::{FILL_ENTRY, STATE_SUFFIX};
 /// The most of a session file's end that is read for the fill. The file
 /// grows without bound, and a fill entry closes every turn.
 const TAIL_BYTES: u64 = 4 << 20;
+
+/// A session file larger than this is not read for usage: the turn-end hook
+/// has a time budget, and usage needs the whole file.
+const MAX_USAGE_BYTES: u64 = 64 << 20;
 
 /// An id that is also a part of a file name must not leave its directory.
 fn is_plain(id: &SessionId) -> bool {
@@ -203,6 +207,48 @@ pub(crate) fn context_fill(file: &Path) -> Option<Fill> {
             window: data.get("window")?.as_u64()?,
         })
     })
+}
+
+/// The token usage of every assistant message in the file, by model. A line
+/// is `{"type":"message","id":..,"message":{"role":"assistant","model":..,
+/// "usage":{"input","output","cacheRead","cacheWrite",..}}}` (pi's
+/// `session-format.md`). pi writes each response once, as one entry with
+/// its own id, so each line counts once. `None` when the file is missing,
+/// larger than `MAX_USAGE_BYTES`, or holds no assistant message.
+pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
+    std::fs::metadata(file)
+        .ok()
+        .filter(|m| m.is_file() && m.len() <= MAX_USAGE_BYTES)?;
+    let mut totals = SessionUsage::new();
+    for line in lines(file) {
+        let Ok(doc) = serde_json::from_str::<Value>(&line) else {
+            continue;
+        };
+        let Some(message) = doc
+            .get("message")
+            .filter(|_| doc.get("type").and_then(Value::as_str) == Some("message"))
+            .filter(|m| m.get("role").and_then(Value::as_str) == Some("assistant"))
+        else {
+            continue;
+        };
+        let (Some(model), Some(usage)) = (
+            message.get("model").and_then(Value::as_str),
+            message.get("usage"),
+        ) else {
+            continue;
+        };
+        let count = |key: &str| usage.get(key).and_then(Value::as_u64).unwrap_or(0);
+        totals
+            .entry(model.to_owned())
+            .or_default()
+            .add(TokenCounts {
+                input: count("input"),
+                output: count("output"),
+                cache_read: count("cacheRead"),
+                cache_creation: count("cacheWrite"),
+            });
+    }
+    (!totals.is_empty()).then_some(totals)
 }
 
 /// The last `TAIL_BYTES` of the file, without its first line when the cut

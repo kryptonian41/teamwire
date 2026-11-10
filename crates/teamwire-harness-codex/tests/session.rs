@@ -17,7 +17,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{Harness, HarnessErrorCode, Liveness, Pid, RunOutput, SessionId, SessionKind};
+use teamwire_core::{
+    Harness, HarnessErrorCode, Liveness, Pid, RunOutput, SessionId, SessionKind, SessionUsage,
+    TokenCounts,
+};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
 
@@ -239,5 +242,49 @@ fn context_fill_reads_the_newest_token_count_event() {
             tokens: 120_000,
             window: 258_400
         })
+    );
+}
+
+/// Turn-context and token-count lines in the shape of openai/codex's
+/// `protocol.rs` (`TurnContextItem`, `TokenUsageInfo`). Codex is not
+/// installed where this was written, so no live rollout was copied.
+const USAGE_FIXTURE: &str = include_str!("fixtures/rollout-usage.jsonl");
+
+/// The newest cumulative total counts, under the newest turn's model. Codex's
+/// `input_tokens` holds the cached tokens too, so they are split out; Codex
+/// reports no cache writes.
+#[test]
+fn session_usage_reads_the_newest_total_under_the_turns_model() {
+    let dir = tempfile::tempdir().unwrap();
+    let (codex, _) = setup(dir.path());
+    assert_eq!(codex.session_usage(&sid(ID), None).unwrap(), None);
+    rollout(dir.path(), ID, "cli", "/w");
+    assert_eq!(codex.session_usage(&sid(ID), None).unwrap(), None);
+    let lines: Vec<String> = USAGE_FIXTURE.lines().map(str::to_owned).collect();
+    append(dir.path(), ID, &lines);
+    let mut want = SessionUsage::new();
+    want.insert(
+        "gpt-5-codex".to_owned(),
+        TokenCounts {
+            input: 2_000,
+            output: 400,
+            cache_read: 3_000,
+            cache_creation: 0,
+        },
+    );
+    assert_eq!(
+        codex.session_usage(&sid(ID), None).unwrap(),
+        Some(want.clone())
+    );
+    let path = std::fs::read_dir(dir.path().join("sessions/2026/10/18"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let other = sid("019e0000-0000-7000-8000-0000000000ff");
+    assert_eq!(
+        codex.session_usage(&other, Some(&path)).unwrap(),
+        Some(want)
     );
 }

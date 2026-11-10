@@ -14,7 +14,7 @@ use std::time::Duration;
 use serde_json::Value;
 use teamwire_core::{
     CallerSession, Command, Fill, HarnessError, HarnessErrorCode, Liveness, Pid, PlaceState,
-    Platform, SessionId, SessionKind,
+    Platform, SessionId, SessionKind, SessionUsage, TokenCounts,
 };
 
 /// The variables that name the caller's session, in the order they are read.
@@ -208,6 +208,53 @@ pub(crate) fn context_fill(codex_home: &Path, session: &SessionId) -> Option<Fil
         let window = info.get("model_context_window")?.as_u64()?;
         Some(Fill { tokens, window })
     })
+}
+
+/// The session's usage, from the newest `token_count` event with `info` in
+/// the end of `file`: `info.total_token_usage` holds the session's running
+/// totals (`TokenUsage` in openai/codex `codex-rs/protocol/src/protocol.rs`).
+/// Its `input_tokens` holds the cached tokens, so `cached_input_tokens` is
+/// taken out of it and counted as cache reads. `output_tokens` holds the
+/// reasoning tokens. Codex reports no cache writes, so that count is 0. The
+/// model is the newest `turn_context` line's `payload.model` before that
+/// event. As for the fill, no live Codex run checked this shape.
+///
+/// shortcut: a session that changed model has all its tokens counted under
+/// the newest one; sum the change between events per model if members ever
+/// switch models mid-session.
+pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
+    let tail = tail_text(file)?;
+    let mut lines = tail
+        .lines()
+        .rev()
+        .filter_map(|l| serde_json::from_str::<Value>(l).ok());
+    let total = lines.by_ref().find_map(|doc| {
+        let payload = doc.get("payload")?;
+        (payload.get("type")?.as_str()? == "token_count")
+            .then(|| payload.get("info")?.get("total_token_usage").cloned())
+            .flatten()
+    })?;
+    let model = lines
+        .find_map(|doc| {
+            (doc.get("type")?.as_str()? == "turn_context")
+                .then(|| {
+                    doc.get("payload")?
+                        .get("model")?
+                        .as_str()
+                        .map(str::to_owned)
+                })
+                .flatten()
+        })
+        .unwrap_or_else(|| "unknown".to_owned());
+    let count = |key: &str| total.get(key).and_then(Value::as_u64).unwrap_or(0);
+    let cached = count("cached_input_tokens");
+    let counts = TokenCounts {
+        input: count("input_tokens").saturating_sub(cached),
+        output: count("output_tokens"),
+        cache_read: cached,
+        cache_creation: 0,
+    };
+    Some(SessionUsage::from([(model, counts)]))
 }
 
 /// The last `TAIL_BYTES` of the file, without its first line when the cut

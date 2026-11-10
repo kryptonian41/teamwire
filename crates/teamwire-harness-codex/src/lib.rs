@@ -31,7 +31,7 @@ use std::time::Duration;
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
     MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
-    SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    SessionId, SessionUsage, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 /// Where Codex keeps its files, and how to start it.
@@ -188,6 +188,20 @@ impl Harness for CodexCli {
         // Codex hooks hand over no rollout path, so the rollout is always
         // found from the session id.
         Ok(session::context_fill(&self.config.codex_home, s))
+    }
+
+    /// The Stop hook hands over `transcript_path`, the rollout; without it
+    /// the rollout is found from the session id.
+    fn session_usage(
+        &self,
+        s: &SessionId,
+        transcript: Option<&Path>,
+    ) -> Result<Option<SessionUsage>, HarnessError> {
+        let file = match transcript {
+            Some(path) => Some(path.to_path_buf()),
+            None => session::rollout_path(&self.config.codex_home, s),
+        };
+        Ok(file.and_then(|f| session::session_usage(&f)))
     }
 
     fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {

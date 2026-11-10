@@ -33,7 +33,7 @@ use std::time::Duration;
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
     MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
-    SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    SessionId, SessionUsage, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 use crate::lead_extension::LEAD_SESSION_VAR;
@@ -247,6 +247,18 @@ impl Harness for Pi {
             None => session::session_file(&self.config.sessions_dir(), s),
         };
         Ok(file.and_then(|f| session::context_fill(&f)))
+    }
+
+    fn session_usage(
+        &self,
+        s: &SessionId,
+        transcript: Option<&Path>,
+    ) -> Result<Option<SessionUsage>, HarnessError> {
+        let file = match transcript {
+            Some(path) => Some(path.to_path_buf()),
+            None => session::session_file(&self.config.sessions_dir(), s),
+        };
+        Ok(file.and_then(|f| session::session_usage(&f)))
     }
 
     fn models(&self, timeout: Duration) -> Result<ModelCatalog, HarnessError> {

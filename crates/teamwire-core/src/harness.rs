@@ -19,6 +19,7 @@ use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
 use crate::strings::string_enum;
 use crate::tool_call::ToolCall;
+use crate::usage::SessionUsage;
 
 pub trait Harness: Send + Sync {
     fn id(&self) -> HarnessId;
@@ -113,6 +114,18 @@ pub trait Harness: Send + Sync {
         _s: &SessionId,
         _transcript: Option<&Path>,
     ) -> Result<Option<Fill>, HarnessError> {
+        Ok(None)
+    }
+    /// The session's token usage so far, per model, read without writing.
+    /// `transcript` is the path a hook was handed; without it the harness
+    /// finds the session's own file. `Ok(None)` means no reading. The
+    /// default is `Ok(None)`, and the turn-end then reads the transcript it
+    /// was handed in the one format the report crate knows.
+    fn session_usage(
+        &self,
+        _s: &SessionId,
+        _transcript: Option<&Path>,
+    ) -> Result<Option<SessionUsage>, HarnessError> {
         Ok(None)
     }
     /// The models this harness can start a member on, and the effort levels

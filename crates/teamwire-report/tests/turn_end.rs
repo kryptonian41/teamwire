@@ -673,3 +673,123 @@ fn a_result_file_that_was_not_written_points_the_lead_at_the_report() {
     assert!(!rig.team_dir().join("outbox/api.md").exists());
     assert_eq!(rig.newest(&api).result_sha256, None);
 }
+
+/// The fake harness, with a usage reading of its own, as pi's and Codex's
+/// harnesses read one from their session files.
+struct UsageHarness {
+    inner: Arc<teamwire_fakes::FakeHarness>,
+    usage: teamwire_core::SessionUsage,
+}
+
+impl teamwire_core::Harness for UsageHarness {
+    fn id(&self) -> teamwire_core::HarnessId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> teamwire_core::HarnessCaps {
+        self.inner.capabilities()
+    }
+    fn launch_spec(
+        &self,
+        m: &teamwire_core::MemberLaunch,
+    ) -> Result<teamwire_core::LaunchSpec, teamwire_core::HarnessError> {
+        self.inner.launch_spec(m)
+    }
+    fn resume_spec(
+        &self,
+        m: &teamwire_core::MemberLaunch,
+        s: &teamwire_core::SessionId,
+    ) -> Result<teamwire_core::LaunchSpec, teamwire_core::HarnessError> {
+        self.inner.resume_spec(m, s)
+    }
+    fn caller_session(
+        &self,
+        get: &dyn Fn(&str) -> Option<String>,
+    ) -> Option<teamwire_core::CallerSession> {
+        self.inner.caller_session(get)
+    }
+    fn processes_for_session(
+        &self,
+        s: &teamwire_core::SessionId,
+        timeout: Duration,
+    ) -> Result<Vec<Pid>, teamwire_core::HarnessError> {
+        self.inner.processes_for_session(s, timeout)
+    }
+    fn is_alive(
+        &self,
+        s: &teamwire_core::SessionId,
+        timeout: Duration,
+    ) -> Result<teamwire_core::Liveness, teamwire_core::HarnessError> {
+        self.inner.is_alive(s, timeout)
+    }
+    fn parse_turn_end(
+        &self,
+        stdin: &[u8],
+    ) -> Result<teamwire_core::TurnEnd, teamwire_core::HarnessError> {
+        self.inner.parse_turn_end(stdin)
+    }
+    fn hold_reply(&self, note: &str) -> Vec<u8> {
+        self.inner.hold_reply(note)
+    }
+    fn screen_state(&self, tail: &str) -> teamwire_core::ScreenState {
+        self.inner.screen_state(tail)
+    }
+    fn answer_startup(
+        &self,
+        host: &dyn teamwire_core::Host,
+        place: &teamwire_core::Place,
+        policy: teamwire_core::TrustPolicy,
+    ) -> Result<teamwire_core::StartupOutcome, teamwire_core::HarnessError> {
+        self.inner.answer_startup(host, place, policy)
+    }
+    fn otel_env(
+        &self,
+        team: &TeamName,
+        role: &Role,
+        base: &teamwire_core::OtelConfig,
+    ) -> Vec<(String, String)> {
+        self.inner.otel_env(team, role, base)
+    }
+    fn session_usage(
+        &self,
+        _s: &teamwire_core::SessionId,
+        _transcript: Option<&std::path::Path>,
+    ) -> Result<Option<teamwire_core::SessionUsage>, teamwire_core::HarnessError> {
+        Ok(Some(self.usage.clone()))
+    }
+}
+
+/// A member whose harness reads its own session file (pi, Codex) gets that
+/// reading on the delivering event, in the shape the metrics read.
+#[test]
+fn delivering_event_carries_the_usage_the_members_harness_reads() {
+    let (mut rig, api) = finished_member();
+    let mut usage = teamwire_core::SessionUsage::new();
+    usage.insert(
+        "gpt-5-codex".to_owned(),
+        teamwire_core::TokenCounts {
+            input: 2_000,
+            output: 400,
+            cache_read: 3_000,
+            cache_creation: 0,
+        },
+    );
+    let mut registry = teamwire_core::Registry::new();
+    registry
+        .add_harness(Arc::new(UsageHarness {
+            inner: rig.harness.clone(),
+            usage,
+        }))
+        .unwrap();
+    registry.add_host(rig.host.clone()).unwrap();
+    rig.registry = registry;
+    rig.complete_now(&api);
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &stop("api-1")),
+        TurnEndReply::Continue
+    );
+    let delivering = &rig.events(EventType::ResultDelivering)[0];
+    assert_eq!(
+        delivering.data["usage"],
+        serde_json::json!({"gpt-5-codex": {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0}})
+    );
+}
