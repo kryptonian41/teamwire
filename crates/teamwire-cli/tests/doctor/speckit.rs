@@ -144,6 +144,10 @@ fn fake_git(bed: &mut Bed, files: &[&str]) -> Arc<FakePlatform> {
     fake.queue_run(Ok(answer(&format!("{SHA}\n"))));
     let listed: String = files.iter().flat_map(|f| [f, "\0"]).collect();
     fake.queue_run(Ok(answer(&listed)));
+    // `spec-kit committed`: `diff` and both `ls-files` find nothing on disk.
+    for _ in 0..3 {
+        fake.queue_run(Ok(answer("")));
+    }
     bed.git = Some(fake.clone());
     fake
 }
@@ -159,7 +163,10 @@ fn git_is_asked_about_head_at_the_root() {
     fake.queue_run(Ok(answer(INTEGRATIONS)));
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Pass);
-    assert!(detail_of(&checks, "spec-kit committed").contains("committed in HEAD (b529e55)"));
+    assert!(
+        detail_of(&checks, "spec-kit committed")
+            .contains("every spec-kit file on disk is in HEAD (b529e55)")
+    );
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Pass);
     let git: Vec<(Vec<String>, Option<PathBuf>)> = fake
         .runs()
@@ -213,8 +220,9 @@ fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_th
         detail.contains(".specify/memory/constitution.md"),
         "{detail}"
     );
-    assert!(detail.contains("is not in HEAD ("), "{detail}");
-    assert!(detail.contains("commit .specify/"), "{detail}");
+    assert!(detail.contains("not in HEAD ("), "{detail}");
+    assert!(detail.contains("constitution.md (untracked)"), "{detail}");
+    assert!(detail.contains("`git add .specify`"), "{detail}");
     assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit constitution");
     assert!(detail.contains("/speckit-constitution"), "{detail}");
@@ -646,10 +654,9 @@ fn the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository() {
     git(repo.path(), &["commit", "-q", "-m", "spec-kit"]);
     put(repo.path(), ".specify/memory/constitution.md", FILLED);
     let out = teamwire(&bed, &path, &sub).out;
-    assert!(
-        line_of(&out, "spec-kit committed").starts_with("ok"),
-        "{out}"
-    );
+    let line = line_of(&out, "spec-kit committed");
+    assert!(line.starts_with("warn"), "{out}");
+    assert!(line.contains("constitution.md (changed)"), "{out}");
     let line = line_of(&out, "spec-kit constitution");
     assert!(line.starts_with("warn"), "{out}");
     assert!(line.contains("[PROJECT_NAME]"), "{out}");
@@ -886,4 +893,160 @@ fn doctor_help_shows_base() {
     let help = String::from_utf8(out.stdout).unwrap();
     assert!(help.contains("--base <REF>"), "{help}");
     assert!(help.contains("[default: HEAD]"), "{help}");
+}
+
+/// Runs the `git add ...` that a `spec-kit committed` warning names, as the
+/// lead would, then commits.
+fn follow_git_add(root: &Path, detail: &str) {
+    let add = detail
+        .split("run `git add ")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+        .unwrap_or_else(|| unreachable!("no git add in {detail}"));
+    let mut args = vec!["add"];
+    args.extend(add.split(' '));
+    git(root, &args);
+    git(root, &["commit", "-q", "-m", "follow doctor"]);
+}
+
+#[test]
+fn a_file_on_disk_but_not_in_the_commit_is_named_untracked_changed_new_or_git_ignored() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    put_committed(
+        root,
+        ".specify/.gitignore",
+        "feature.json\nextensions/*/local-config.yml\n",
+    );
+    put(
+        root,
+        ".specify/integration.json",
+        &INTEGRATIONS.replace("pi", "codex"),
+    );
+    put(root, ".agents/skills/speckit-plan/SKILL.md", "plan");
+    put(root, ".agents/skills/speckit-tasks/SKILL.md", "tasks");
+    put(root, ".specify/scripts/bash/common.sh", "#!/bin/sh\n");
+    git(root, &["add", ".specify/scripts"]);
+    put(root, ".gitignore", ".pi/prompts/speckit.tasks.md\n");
+    put(root, ".pi/prompts/speckit.tasks.md", "tasks");
+    // Not spec-kit's to commit: the pointer, local config spec-kit ignores, a user's own skill.
+    put(root, ".specify/feature.json", "{}");
+    put(root, ".specify/extensions/bug/local-config.yml", "a: 1\n");
+    put(root, ".claude/skills/mine/SKILL.md", "mine");
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit committed");
+    assert!(detail.contains("not in HEAD ("), "{detail}");
+    assert!(
+        detail.contains(".specify/integration.json (changed)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(".specify/scripts/bash/common.sh (new)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(".agents/skills/speckit-* (untracked, 2 files)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(
+            ".pi/prompts/speckit.*.md (git-ignored by `.pi/prompts/speckit.tasks.md` in .gitignore:1)"
+        ),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("remove the rule `.pi/prompts/speckit.tasks.md` from .gitignore (line 1)"),
+        "{detail}"
+    );
+    for skipped in ["feature.json", "local-config.yml", "mine"] {
+        assert!(!detail.contains(skipped), "{skipped}: {detail}");
+    }
+    assert!(detail.ends_with("then commit on HEAD"), "{detail}");
+}
+
+#[test]
+fn codex_installed_but_not_committed_warns_until_the_named_git_add_is_committed() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    // What `specify integration install codex` changes on a committed claude setup.
+    put(
+        root,
+        ".specify/integration.json",
+        &INTEGRATIONS.replace("\"pi\"", "\"codex\""),
+    );
+    put(root, ".specify/integrations/codex.manifest.json", "{}\n");
+    for cmd in ["plan", "tasks", "implement"] {
+        put(root, &format!(".agents/skills/speckit-{cmd}/SKILL.md"), cmd);
+    }
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit committed").to_owned();
+    assert!(
+        detail.contains(".agents/skills/speckit-* (untracked, 3 files)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains(".specify/integrations/codex.manifest.json (untracked)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("run `git add .agents/skills/speckit-* .specify`"),
+        "{detail}"
+    );
+
+    follow_git_add(root, &detail);
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "spec-kit committed"),
+        Level::Pass,
+        "{checks:?}"
+    );
+    assert_eq!(
+        level_of(&checks, "spec-kit integrations"),
+        Level::Pass,
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn a_command_folder_ignored_as_spec_kit_advises_warns_until_the_rule_goes_and_it_is_committed() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    // `specify init` advises adding `.claude/` to `.gitignore`.
+    put(root, ".gitignore", ".claude/\n");
+    git(root, &["rm", "-r", "-q", "--cached", ".claude"]);
+    git(root, &["add", ".gitignore"]);
+    git(
+        root,
+        &["commit", "-q", "-m", "ignore .claude as spec-kit advises"],
+    );
+
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit committed").to_owned();
+    assert!(
+        detail.contains(".claude/skills/speckit-* (git-ignored by `.claude/` in .gitignore:1)"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("remove the rule `.claude/` from .gitignore (line 1), run `git add .claude/skills/speckit-*`"),
+        "{detail}"
+    );
+    assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
+
+    put(root, ".gitignore", "");
+    follow_git_add(root, &detail);
+    let checks = bed.checks();
+    assert_eq!(
+        level_of(&checks, "spec-kit committed"),
+        Level::Pass,
+        "{checks:?}"
+    );
+    assert_eq!(
+        level_of(&checks, "spec-kit integrations"),
+        Level::Pass,
+        "{checks:?}"
+    );
 }

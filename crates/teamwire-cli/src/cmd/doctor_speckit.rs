@@ -18,6 +18,12 @@ use teamwire_core::{Command, RunOutput};
 use crate::cmd::doctor::{Check, Inputs};
 use crate::cmd::doctor_speckit_files::{has_speckit_event, installed_extensions};
 
+// A path, so the test crates that include this file by path find it too.
+#[path = "doctor_speckit/committed.rs"]
+mod committed;
+
+use committed::committed_check;
+
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 const CONSTITUTION: &str = ".specify/memory/constitution.md";
@@ -63,9 +69,21 @@ fn git_root(dir: &Path) -> Option<PathBuf> {
 /// Runs `git args` at the root and returns what it printed, or why it gave
 /// no answer.
 fn git(inputs: &Inputs<'_>, root: &Path, args: &[&str]) -> Result<RunOutput, String> {
-    let cmd = Command::new("git")
+    git_with(inputs, root, args, None)
+}
+
+fn git_with(
+    inputs: &Inputs<'_>,
+    root: &Path,
+    args: &[&str],
+    stdin: Option<Vec<u8>>,
+) -> Result<RunOutput, String> {
+    let mut cmd = Command::new("git")
         .args(args.iter().copied())
         .cwd(root.to_path_buf());
+    if let Some(bytes) = stdin {
+        cmd = cmd.stdin(bytes);
+    }
     match inputs.git.run(&cmd, GIT_TIMEOUT) {
         Ok(out) if out.timed_out => Err(format!("no answer within {} s", GIT_TIMEOUT.as_secs())),
         Ok(out) => Ok(out),
@@ -194,24 +212,13 @@ impl<'a> Base<'a> {
     pub(crate) fn git(&self, args: &[&str]) -> Result<RunOutput, String> {
         git(self.inputs, &self.root, args)
     }
-}
 
-/// A worktree is cut from a commit, so a `.specify/` that is only on disk or
-/// only staged leaves a worktree member with no spec-kit files.
-fn committed_check(base: &Base<'_>) -> Check {
-    let name = "spec-kit committed";
-    let at = base.at();
-    if base.has(CONSTITUTION) {
-        Check::pass(name, format!("{CONSTITUTION} is committed in {at}"))
-    } else {
-        Check::warn(
-            name,
-            format!(
-                "{CONSTITUTION} is not in {at}, so a worktree member has no spec-kit files; \
-                 commit .specify/ and the agents' spec-kit command folders on {}",
-                base.name
-            ),
-        )
+    pub(crate) fn git_stdin(&self, args: &[&str], stdin: Vec<u8>) -> Result<RunOutput, String> {
+        git_with(self.inputs, &self.root, args, Some(stdin))
+    }
+
+    pub(crate) fn sha(&self) -> &str {
+        &self.sha
     }
 }
 
@@ -308,13 +315,24 @@ fn constitution_check(base: &Base<'_>) -> Check {
 /// Where each integration teamwire can run keeps its spec-kit commands: a
 /// folder, and the start and end of an entry's name in it. Another
 /// integration is listed without a folder check.
+const COMMAND_FOLDERS: [(&str, &str, &str, &str); 3] = [
+    ("claude", ".claude/skills", "speckit-", ""),
+    ("codex", ".agents/skills", "speckit-", ""),
+    ("pi", ".pi/prompts", "speckit.", ".md"),
+];
+
 fn command_folder(integration: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    match integration {
-        "claude" => Some((".claude/skills", "speckit-", "")),
-        "codex" => Some((".agents/skills", "speckit-", "")),
-        "pi" => Some((".pi/prompts", "speckit.", ".md")),
-        _ => None,
-    }
+    COMMAND_FOLDERS
+        .iter()
+        .find(|(key, ..)| *key == integration)
+        .map(|&(_, dir, start, end)| (dir, start, end))
+}
+
+/// Every command folder, whichever integration is installed.
+fn command_folders() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    COMMAND_FOLDERS
+        .iter()
+        .map(|&(_, dir, start, end)| (dir, start, end))
 }
 
 /// True when the commit holds an entry of `dir` whose name has the start and
