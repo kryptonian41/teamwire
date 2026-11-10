@@ -414,6 +414,11 @@ lint, type, test or CI config changed outside `owns` (spec-kit's
 file that lost assert lines on net, and `head-moved` when HEAD changed while the
 check ran (no waiver clears it). A started worktree member whose folder is gone
 is `FAIL`; a pane member with no check stays `SKIPPED`.
+The diff starts at the member's start commit, moved forward past a merge
+from its base branch (VER-2). A merge that fast-forwards moves nothing, so
+the merged commits count as the member's own and raise `outside-owns` and
+`report-no-line`. An amendment notice therefore says to merge with
+`git merge --no-ff --no-edit <sha>`.
 It writes a verify record with the HEAD sha. Exit 0 only when every checked
 member is `PASS`; else 2. `--waive` records a waiver for one flag of one
 member at its current HEAD. `--deep` also runs `PRAGMA integrity_check` and
