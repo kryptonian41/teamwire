@@ -1232,7 +1232,7 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
     }
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>\"`",
+            "`teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text \"SPEC AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>\"`",
             "on a notice that starts with `SPEC AMENDMENT:`, merge that commit before your next unit",
             "The lead sends nothing",
             "Uncommitted edits in the spec member's worktree never reach anyone",
@@ -1256,6 +1256,32 @@ fn the_speckit_fix_round_states_what_the_pilot_showed() {
         "verify checks `owns` only inside the repository",
     ] {
         assert!(adr.contains(needed), "the ADR lacks {needed}: {adr}");
+    }
+}
+
+/// A fast-forward merge puts the sender's commit on the member's own line,
+/// where verify and `done` count it as the member's commit. So every
+/// amendment notice merges with `--no-ff`, and each place says why.
+#[test]
+fn every_amendment_notice_merges_with_no_ff() {
+    for (place, text) in [
+        ("skill", flat(&example("skills/teamwire/SKILL.md"))),
+        ("reference", flat(&example("skills/teamwire/reference.md"))),
+        ("contract-split", flat(&preset_text("contract-split"))),
+        ("speckit", flat(&preset_text("speckit"))),
+    ] {
+        assert!(
+            text.contains("git merge --no-ff --no-edit <sha>"),
+            "{place} lacks the --no-ff merge"
+        );
+        assert!(
+            !text.contains("git merge --no-edit <sha>"),
+            "{place} still merges without --no-ff"
+        );
+        assert!(
+            text.contains("`--no-ff` makes the merge a merge commit even"),
+            "{place} does not say why"
+        );
     }
 }
 

@@ -507,10 +507,13 @@ Then send each affected member this one message, never a prose description:
 
 ```bash
 teamwire send <team> --to api,web --type note --text \
-  "CONTRACT AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>"
+  "CONTRACT AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>"
 ```
 
-`verify` skips merge commits. It starts its `owns` diff after the merged
+`verify` skips merge commits. `--no-ff` makes the merge a merge commit even
+when the member has not committed yet. A fast-forward would put the contract
+member's commit on the member's own line, and verify and `done` would count
+it as the member's commit. Verify starts its `owns` diff after the merged
 amendment only when `base` names the contract branch. Without `base`, it
 flags the amended files as outside `owns`.
 

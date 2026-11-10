@@ -520,9 +520,12 @@ it. Then cut the implementer's branch from that branch.
   `plan.md` and the design files, and it commits each change. Then the
   spec member itself announces the change to every running implementer
   and to you, with a notice that names the commit:
-  `teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text "SPEC AMENDMENT: run 'git merge --no-edit <sha>' now. <what changed and why>"`.
-  A notice must name a commit on the sender's branch, so it cannot point
-  at uncommitted work. Uncommitted edits in the spec member's worktree
+  `teamwire send <team> --to <implementers>,lead --type notice --commit <sha> --text "SPEC AMENDMENT: run 'git merge --no-ff --no-edit <sha>' now. <what changed and why>"`.
+  `--no-ff` makes the merge a merge commit even before the implementer's
+  first commit, so verify skips it. A fast-forward would make the spec
+  member's commit look like the implementer's own, and verify and `done`
+  would flag it. A notice must name a commit on the sender's branch, so it
+  cannot point at uncommitted work. Uncommitted edits in the spec member's worktree
   never reach anyone. Each implementer's brief says: on a notice that
   starts with `SPEC AMENDMENT:`, merge that commit before your next unit,
   then go on. The lead sends nothing. The spec member's brief says to send
