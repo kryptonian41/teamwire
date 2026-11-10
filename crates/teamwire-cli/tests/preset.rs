@@ -888,7 +888,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
         "`events:`",
         "`.specify/extensions/<id>/extension.yml`",
         "`.specify/integration-events.yml`",
-        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "`teamwire done --status blocked --summary \"3 questions for the parent. ...\"`",
         "ADR 0029",
     ] {
         assert!(
@@ -920,7 +920,7 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
         "`.pi/prompts/speckit.implement.md`",
         "`.specify/feature.json`",
         "`.specify/memory/constitution.md`",
-        "`teamwire done --status blocked --summary \"3 questions for the lead. ...\"`",
+        "`teamwire done --status blocked --summary \"3 questions for the parent. ...\"`",
         "a question round, not a failure",
         "`converge`",
         "`teamwire preset closer`",
@@ -1056,10 +1056,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
     let flat_skill = skill.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
         flat_skill
-            .contains("starts with `N questions for the lead.` is a question round, not a failure"),
+            .contains("starts with `N questions for the parent.`, or `1 question for the parent.`, after an optional `handoff: `, is a question round, not a failure"),
         "the skill does not say how to read the spec member's blocked result"
     );
-    assert!(!flat.contains("questions for the parent"), "{flat}");
+    // Split so that `git grep` for the retired wording finds only ADR 0041.
+    let retired = format!("questions for the {}", "lead");
+    for (place, text) in [
+        ("reference", flat.as_str()),
+        ("skill", &flat_skill),
+        ("rules", &flat_rules),
+    ] {
+        assert!(!text.contains(&retired), "{place} still says {retired}");
+    }
+    assert!(
+        reference
+            .contains("> At spec-kit's question stops, this brief replaces your seat's rule on"),
+        "the reference lacks the override line"
+    );
     assert!(
         skill.contains("Spec-kit's `specs/` folder"),
         "the skill does not say where spec-kit's files go"
@@ -1108,7 +1121,6 @@ fn the_speckit_spec_stage_states_what_the_pilot_showed() {
             "`## Clarifications`",
             "`### Session YYYY-MM-DD`",
             "`- Q: <question> → A: <answer>`",
-            "`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec",
         ] {
             assert!(text.contains(needed), "{place} lacks {needed}: {text}");
         }
@@ -1117,8 +1129,21 @@ fn the_speckit_spec_stage_states_what_the_pilot_showed() {
             "{place} still says clarify records a batch: {text}"
         );
     }
+    // ADR 0041 keeps its words; ADR 0042 records that `specify` leaves an
+    // item unticked while the spec holds a question.
+    assert!(
+        adr.contains("`specify` writes `checklists/requirements.md` itself and ticks its items when it validates the spec"),
+        "{adr}"
+    );
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
+            "`specify` writes `checklists/requirements.md` itself and ticks each item that passes its validation",
+            "re-runs `specify`'s validation, and ticks each item of `checklists/requirements.md` that now passes",
+            "replaces each `[NEEDS CLARIFICATION]` marker with its answer",
+            "A stop with no questions records no stop",
+            "or `1 question for the parent.` for one",
+            "matches `^[1-9][0-9]* questions? for the parent\\.`",
+            "override line",
             "the member's own mark at stop 1 and clarify's at stop 2",
             "so `spec.md` has one place for every answer",
             "The reviewer-only rule is about the `checklist` command's checklists",
@@ -1163,9 +1188,9 @@ fn the_speckit_build_states_what_the_pilot_showed() {
     }
     for (place, text) in [("rules", &rules), ("reference", &section)] {
         for needed in [
-            "`**Checkpoint**` lines only after story phases, so Setup and Polish have none",
+            "a `**Checkpoint**` line after the Foundational phase and after each story phase, so Setup and Polish have none",
             "A phase with no tasks, such as an empty Foundational phase, gets no commit",
-            "overrides the \"Commit after every checkpoint\" line",
+            "overrides any commit line in the notes of `tasks.md`, such as the template's \"Commit after each task or logical group\"",
             "follows the ignore-file step for `.gitignore` only, appends only the patterns the step lists, lists each one it added in its report, and writes no other ignore file unless its brief owns that file",
             "runs any task in `tasks.md` that claims \"confirm the new tests fail\"",
             "a \"confirm the tests fail\" task is finished when the cases it names fail",
@@ -1275,7 +1300,7 @@ fn every_amendment_notice_merges_with_no_ff() {
             "{place} lacks the --no-ff merge"
         );
         assert!(
-            !text.contains("git merge --no-edit <sha>"),
+            !text.contains(&format!("git merge {}<sha>", "--no-edit ")),
             "{place} still merges without --no-ff"
         );
         assert!(

@@ -399,8 +399,11 @@ it. Then cut the implementer's branch from that branch.
      most 3. `specify` ranks no option, so the member marks its own
      recommended option for each question and says the mark is its own.
   2. You ask the user and reprompt it with the answers. It writes them into
-     `spec.md`, runs `clarify`'s scan, and stops again with clarify's
-     questions, at most 5, each with clarify's recommended option.
+     `spec.md` the way `specify`'s own steps say: it replaces each
+     `[NEEDS CLARIFICATION]` marker with its answer, re-runs `specify`'s
+     validation, and ticks each item of `checklists/requirements.md` that
+     now passes. Then it runs `clarify`'s scan, and stops again with
+     clarify's questions, at most 5, each with clarify's recommended option.
   3. You ask the user and reprompt it again. `clarify` asks one question at
      a time in chat, so the member cannot run it with a batch of answers.
      It follows clarify's write steps by hand with your answers, then runs
@@ -411,6 +414,11 @@ it. Then cut the implementer's branch from that branch.
   `- Q: <question> → A: <answer>`, so `spec.md` has one place for every
   answer.
 
+  A stop with no questions records no stop. `specify` asks only when no
+  reasonable default exists, so it often asks none, and `clarify`'s scan
+  can report no critical ambiguities. Then the member goes on to the next
+  command: from `specify` to `clarify`'s scan, and from the scan to `plan`.
+
   A further stop is allowed only when an answer raises a new question. The
   member never answers a spec-kit question itself, unless your reprompt
   says to take the recommended option: the member's own mark at stop 1 and
@@ -418,18 +426,38 @@ it. Then cut the implementer's branch from that branch.
   made, with whose mark it took, so the user can tell those answers from
   the user's own in `spec.md`.
 
-  At each stop the member writes its questions under 'Questions for the
-  lead' in its report and records
-  `teamwire done --status blocked --summary "3 questions for the lead. ..."`,
-  with its own count. Its check fails at that stop, and its seat allows
-  `blocked` with a failing check. A `blocked` result whose summary starts
-  with `N questions for the lead.` is a question round, not a failure. Send
-  the answers with
+  At each stop the member writes its questions under the heading
+  `Questions for the parent` in its report and records
+  `teamwire done --status blocked --summary "3 questions for the parent. ..."`,
+  with its own count, or `1 question for the parent.` for one question.
+  Its check fails at that stop, and its seat allows `blocked` with a
+  failing check. A question round is a result with status `blocked` whose
+  summary, after an optional leading `handoff: `, matches
+  `^[1-9][0-9]* questions? for the parent\.`. Such a result is a question round, not a failure. Send the
+  answers with
   `teamwire send <team> --to spec --type reprompt --file <answers>`. The
   member records `done` only after `tasks` is written and its check passes.
+
+  The spec member is an implementer. Its seat rules say to ask by question
+  message, keep working, and decide and finish when no answer comes. That
+  rule would let it answer spec-kit's questions itself. So the spec
+  member's brief carries this override line, word for word:
+
+  > At spec-kit's question stops, this brief replaces your seat's rule on
+  > questions. Send no question message, and never decide a spec-kit
+  > question yourself, even when no answer has come. Write the questions
+  > under the heading 'Questions for the parent' in your report, record
+  > `teamwire done --status blocked --summary "N questions for the parent. ..."`
+  > with your count (`1 question for the parent.` for one), and stop until
+  > the lead reprompts you with the answers.
 - **Checklists.** `specify` writes `checklists/requirements.md` itself and
-  ticks its items when it validates the spec, so that checklist is ticked
-  before any review. `checklist` writes its items unticked, and spec-kit
+  ticks each item that passes its validation. An item stays unticked while
+  the spec holds a question, such as "No [NEEDS CLARIFICATION] markers
+  remain", and after three failed rounds of validation, and `clarify` can
+  untick an item that regresses. So after the first question round the
+  spec member re-runs `specify`'s validation and ticks each item that now
+  passes. Before the review, check that `requirements.md` has no unticked
+  item, or the implementer stops on it. `checklist` writes its items unticked, and spec-kit
   says only a reviewer ticks them. The reviewer-only rule is about the
   `checklist` command's checklists. So the user ticks those in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
@@ -437,7 +465,8 @@ it. Then cut the implementer's branch from that branch.
   because the implementer's worktree holds only commits. `implement` stops on a checklist with unticked items with
   "Do you want to proceed with implementation anyway? (yes/no)". So the
   stop fires only when a checklist has unticked items, such as one from
-  `checklist` that the user left open. The implementer's brief says to
+  `checklist` that the user left open, or an item of `specify`'s own
+  `requirements.md` that is still unticked. The implementer's brief says to
   treat that stop as a question to you.
 - **Ticks.** `implement` ticks `[X]` on each finished task in `tasks.md`.
   Put `specs/NNN-name/tasks.md` in each implementer's `owns`, and tell it
@@ -474,11 +503,13 @@ it. Then cut the implementer's branch from that branch.
   commit after each unit. The brief says: commit at the end of every phase
   that has tasks. Each commit holds that phase's code and its ticks, with
   the task ids in the message, such as `T012-T018: US1 user model`.
-  Spec-kit's `tasks.md` writes `**Checkpoint**` lines only after story
-  phases, so Setup and Polish have none. A phase with no tasks, such as an
-  empty Foundational phase, gets no commit. The brief overrides the
-  "Commit after every checkpoint" line that spec-kit's template writes
-  into `tasks.md`.
+  Spec-kit's `tasks.md` template writes a `**Checkpoint**` line after the
+  Foundational phase and after each story phase, so Setup and Polish have
+  none. A phase with no tasks, such as an
+  empty Foundational phase, gets no commit. The brief overrides any commit
+  line in the notes of `tasks.md`, such as the template's "Commit after
+  each task or logical group" or a model's own "Commit after every
+  checkpoint".
 - **The feature file.** Spec-kit finds the feature through the variable
   `SPECIFY_FEATURE_DIRECTORY`, else `.specify/feature.json`. Spec-kit
   git-ignores `.specify/feature.json`, so a new worktree has none, and a

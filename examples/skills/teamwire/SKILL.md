@@ -657,9 +657,11 @@ nothing" case held, so the member changed nothing on purpose and recorded
 member's report as the reason.
 
 In a spec-kit team, a spec member's `blocked` result whose summary starts
-with `N questions for the lead.` is a question round, not a failure. Ask the
-user, then reprompt it with the answers, as "Spec-kit features" in
-`reference.md` says.
+with `N questions for the parent.`, or `1 question for the parent.`, after
+an optional `handoff: `, is a question round, not a failure. Ask the user,
+then reprompt it with the answers, as "Spec-kit features" in `reference.md`
+says. The spec member's brief carries that section's override line word
+for word, because its seat rules would let it decide a question itself.
 
 ### Messages
 
