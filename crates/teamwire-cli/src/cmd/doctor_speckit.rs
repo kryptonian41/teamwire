@@ -50,6 +50,7 @@ pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
         return Vec::new();
     }
     vec![
+        version_check(&base),
         committed_check(&base),
         constitution_check(&base),
         integrations_check(&base),
@@ -227,11 +228,22 @@ impl<'a> Base<'a> {
 
 /// spec-kit rewrites its feature pointer on every feature switch, so each
 /// member's copy differs and must stay out of commits. Ignore rules apply to
-/// the disk, so this line asks git about the working tree.
+/// the disk, so this line asks git about the working tree. `--no-index`
+/// finds the rule even for a tracked file, which plain `check-ignore` skips.
 fn feature_pointer_check(base: &Base<'_>) -> Check {
     let name = "spec-kit feature pointer";
     let hint = git_status_hint(&base.root);
-    match base.git(&["check-ignore", "-q", FEATURE_POINTER]) {
+    let at = base.at();
+    match base.git(&["check-ignore", "-q", "--no-index", FEATURE_POINTER]) {
+        Ok(out) if out.exit_code == 0 && base.has(FEATURE_POINTER) => Check::warn(
+            name,
+            format!(
+                "{FEATURE_POINTER} is tracked in {at}, and git ignores only untracked files, so \
+                 members would commit their feature pointer; run `git rm --cached \
+                 {FEATURE_POINTER}`, then commit on {}",
+                base.name
+            ),
+        ),
         Ok(out) if out.exit_code == 0 => {
             Check::pass(name, format!("git ignores {FEATURE_POINTER}"))
         }
@@ -239,7 +251,8 @@ fn feature_pointer_check(base: &Base<'_>) -> Check {
             name,
             format!(
                 "git does not ignore {FEATURE_POINTER}, so members would commit their feature \
-                 pointer; add `feature.json` to .specify/.gitignore"
+                 pointer; add `feature.json` to .specify/.gitignore, then commit on {}",
+                base.name
             ),
         ),
         Ok(out) => Check::warn(
@@ -252,6 +265,55 @@ fn feature_pointer_check(base: &Base<'_>) -> Check {
         Err(e) => Check::warn(
             name,
             format!("could not ask git whether it ignores {FEATURE_POINTER}: {e}; {hint}"),
+        ),
+    }
+}
+
+/// The spec-kit release teamwire's guidance was tested with, as spec-kit
+/// itself prints it, and its commit.
+const TESTED_VERSION: &str = "1.3.3.dev0";
+const TESTED_COMMIT: &str = "c438494";
+
+/// teamwire's spec-kit guidance names commands and file formats of the 1.3
+/// line; another release may rename them.
+fn version_check(base: &Base<'_>) -> Check {
+    let name = "spec-kit version";
+    let at = base.at();
+    let tested = format!(
+        "teamwire's spec-kit guidance was tested with {TESTED_VERSION} (spec-kit commit \
+         {TESTED_COMMIT})"
+    );
+    let upgrade = format!(
+        "with spec-kit 1.3 installed (`specify --version`), run `specify integration upgrade \
+         <key>` for each integration, then commit on {}",
+        base.name
+    );
+    let version = match base.show(INTEGRATION_FILE) {
+        Ok(Some(text)) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|json| json.get("version")?.as_str().map(str::to_owned)),
+        Ok(None) => None,
+        Err(e) => return Check::warn(name, e),
+    };
+    match version {
+        Some(v) if v == "1.3" || v.starts_with("1.3.") => {
+            Check::pass(name, format!("{v} in {at}; {tested}"))
+        }
+        Some(v) => Check::warn(
+            name,
+            format!(
+                "{INTEGRATION_FILE} in {at} records {v}, outside the 1.3 line; {tested}, and \
+                 another release may rename its commands or files. To match the guidance, \
+                 {upgrade}"
+            ),
+        ),
+        None => Check::warn(
+            name,
+            format!(
+                "{INTEGRATION_FILE} in {at} records no version, so doctor cannot tell whether \
+                 the guidance fits it; {tested}. Fix {INTEGRATION_FILE} as the spec-kit \
+                 integrations line says"
+            ),
         ),
     }
 }

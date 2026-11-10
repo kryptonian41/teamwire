@@ -133,7 +133,7 @@ fn a_git_worktree_whose_git_is_a_file_is_a_spec_kit_root() {
     std::fs::rename(root.join(".git"), &moved).unwrap();
     put(root, ".git", &format!("gitdir: {}\n", moved.display()));
     let checks = bed.checks();
-    assert_eq!(speckit_names(&checks).len(), 8);
+    assert_eq!(speckit_names(&checks).len(), 9);
     assert_eq!(level_of(&checks, "spec-kit constitution"), Level::Pass);
 }
 
@@ -144,6 +144,10 @@ fn fake_git(bed: &mut Bed, files: &[&str]) -> Arc<FakePlatform> {
     fake.queue_run(Ok(answer(&format!("{SHA}\n"))));
     let listed: String = files.iter().flat_map(|f| [f, "\0"]).collect();
     fake.queue_run(Ok(answer(&listed)));
+    // `spec-kit version` reads `integration.json` first, when the commit has it.
+    if files.contains(&".specify/integration.json") {
+        fake.queue_run(Ok(answer(INTEGRATIONS)));
+    }
     // `spec-kit committed`: `diff` and both `ls-files` find nothing on disk.
     for _ in 0..3 {
         fake.queue_run(Ok(answer("")));
@@ -194,7 +198,7 @@ fn git_is_asked_about_head_at_the_root() {
         ".codex",
     ]);
     asked(&["show", &format!("{SHA}:.specify/memory/constitution.md")]);
-    asked(&["check-ignore", "-q", ".specify/feature.json"]);
+    asked(&["check-ignore", "-q", "--no-index", ".specify/feature.json"]);
 }
 
 #[test]
@@ -567,6 +571,7 @@ fn a_healthy_spec_kit_repository_prints_seven_ok_lines_in_order() {
         .map(|c| (c.name.as_str(), c.level))
         .collect();
     let want: Vec<(&str, Level)> = [
+        "spec-kit version",
         "spec-kit committed",
         "spec-kit constitution",
         "spec-kit integrations",
@@ -585,7 +590,7 @@ fn a_healthy_spec_kit_repository_prints_seven_ok_lines_in_order() {
         .iter()
         .position(|n| *n == ".worktrees ignored")
         .unwrap();
-    assert_eq!(checks[at + 1].name, "spec-kit committed");
+    assert_eq!(checks[at + 1].name, "spec-kit version");
 }
 
 /// `git` with a fixed author, so a commit works on any machine.
@@ -1269,4 +1274,80 @@ fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
     assert!(detail.contains("remove it from the repository"), "{detail}");
     std::fs::remove_file(root.join(".codex/hooks.json")).unwrap();
     assert_eq!(events(&bed).0, Level::Pass);
+}
+
+#[test]
+fn the_version_line_names_the_tested_release_and_warns_outside_the_1_3_line() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit version"), Level::Pass);
+    let detail = detail_of(&checks, "spec-kit version");
+    assert!(detail.starts_with("1.3.3.dev0 in HEAD ("), "{detail}");
+    assert!(
+        detail.contains("tested with 1.3.3.dev0 (spec-kit commit c438494)"),
+        "{detail}"
+    );
+
+    put_committed(
+        root,
+        ".specify/integration.json",
+        &INTEGRATIONS.replace("1.3.3.dev0", "1.4.0"),
+    );
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit version"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit version");
+    assert!(
+        detail.contains("records 1.4.0, outside the 1.3 line"),
+        "{detail}"
+    );
+    assert!(
+        detail.contains("specify integration upgrade <key>"),
+        "{detail}"
+    );
+    // `specify integration upgrade` with spec-kit 1.3 writes its own version back.
+    put_committed(root, ".specify/integration.json", INTEGRATIONS);
+    assert_eq!(level_of(&bed.checks(), "spec-kit version"), Level::Pass);
+
+    put_committed(
+        root,
+        ".specify/integration.json",
+        r#"{"integration": "claude"}"#,
+    );
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit version"), Level::Warn);
+    assert!(
+        detail_of(&checks, "spec-kit version").contains("records no version"),
+        "{checks:?}"
+    );
+}
+
+#[test]
+fn a_tracked_feature_pointer_warns_until_git_rm_cached_is_committed() {
+    let bed = speckit_bed();
+    let root = bed.home.path();
+    // spec-kit's `.specify/.gitignore` lists it, but the file was committed anyway.
+    put(
+        root,
+        ".specify/feature.json",
+        "{\"feature_directory\": \"specs/001-x\"}\n",
+    );
+    git(root, &["add", "-f", ".specify/feature.json"]);
+    git(root, &["commit", "-q", "-m", "track the pointer"]);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit feature pointer");
+    assert!(detail.contains("is tracked in HEAD ("), "{detail}");
+    assert!(
+        detail.contains("run `git rm --cached .specify/feature.json`, then commit on HEAD"),
+        "{detail}"
+    );
+    assert!(!detail.contains("add `feature.json`"), "{detail}");
+
+    git(root, &["rm", "-q", "--cached", ".specify/feature.json"]);
+    git(root, &["commit", "-q", "-m", "untrack the pointer"]);
+    assert_eq!(
+        level_of(&bed.checks(), "spec-kit feature pointer"),
+        Level::Pass
+    );
 }
