@@ -150,6 +150,30 @@ impl Rig {
         assert!(reached, "api's pane never read {want}");
     }
 
+    /// Waits until the agent has taken every line typed into its pane and
+    /// its status reads `done` or `idle`, so no queued line can start a turn
+    /// after the wait ends.
+    fn wait_until_settled(&self) {
+        let file = self.status_file();
+        let inbox = file.with_file_name("inbox");
+        let settled = (0..1500).any(|_| {
+            let typed = std::fs::read_to_string(&inbox).map_or(0, |t| t.lines().count());
+            let status = std::fs::read_to_string(&file)
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok());
+            let at = status.is_some_and(|s| {
+                let taken = s.get("prompts").and_then(Value::as_u64).unwrap_or(0);
+                let idle = s.get("status").is_some_and(|v| v == "done" || v == "idle");
+                idle && usize::try_from(taken).is_ok_and(|n| n >= typed)
+            });
+            if !at {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            at
+        });
+        assert!(settled, "api never took every typed line and settled");
+    }
+
     fn set_status(&self, status: &str) {
         std::fs::write(
             self.status_file(),
@@ -216,16 +240,11 @@ fn an_idle_member_gets_a_fresh_session_in_a_new_tab_and_its_first_line() {
     let document = rig.home.path().join("teams/alpha/reports/api.handoff.md");
     std::fs::create_dir_all(document.parent().unwrap()).unwrap();
     std::fs::write(&document, "# api handoff\n").unwrap();
-    // The typed note can keep the fake agent working for a moment after its
-    // status file reads done, so wait until the handoff's own busy check agrees.
-    let idle = (0..1500).any(|_| {
-        let dry = rig.teamwire(&["handoff", "alpha", "--role", "api", "--dry-run"], None);
-        if dry.code != 0 {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
-        dry.code == 0
-    });
-    assert!(idle, "api never became idle enough to hand off");
+    // The status can still read `done` from the first turn while the typed
+    // note waits in the pane, untaken; the agent then takes it and works, and
+    // the handoff's own busy check refuses. So wait until the agent has taken
+    // every typed line and reads idle, the state that check asks the host for.
+    rig.wait_until_settled();
     let before = rig.api();
     let old_place = before.place.clone().unwrap();
     let from = rig.herdr.calls().len();

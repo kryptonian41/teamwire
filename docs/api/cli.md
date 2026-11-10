@@ -51,7 +51,8 @@ so those then run with the member's rights. Read a folder's `.claude/` and
 `.mcp.json` before you launch members into it for the first time. Every
 harness (Claude Code, Codex, pi) hands the member its scratch folder's path
 as `TEAMWIRE_SCRATCH`, and the seat rules say to keep temporary files there,
-never in the repository or `/tmp`. A member whose launch fails after its
+or in the harness's own per-session scratch folder, never in the repository
+or a shared `/tmp` path. A member whose launch fails after its
 scratch folder was made has the folder removed with the rest of its undo; a
 handoff or reopen keeps the folder. `--add` adds members to a
 running team. `--dry-run` validates and prints the plan, touching nothing.
