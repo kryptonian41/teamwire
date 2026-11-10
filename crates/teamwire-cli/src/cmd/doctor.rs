@@ -114,6 +114,12 @@ pub(crate) struct Inputs<'a> {
     pub(crate) running_a_build: bool,
     /// The directory `.worktrees/` is checked in.
     pub(crate) repo: PathBuf,
+    /// The commit the spec-kit lines read, as `--base` names it.
+    pub(crate) base: String,
+    /// The platform the spec-kit lines ask git through: `platform` in the
+    /// binary. A test gives a real one, so those lines read a real
+    /// repository while the other probes stay fake.
+    pub(crate) git: &'a dyn Platform,
     /// The names of the environment variables that are set, never their
     /// values (SEC-1).
     pub(crate) env_names: Vec<String>,
@@ -361,6 +367,7 @@ pub(crate) fn render(checks: &[Check]) -> String {
 /// The checks' inputs for this process, and the host pick they rest on.
 pub(crate) fn inputs<'w>(
     home: PathBuf,
+    base: &str,
     global: &Global,
     wiring: &'w Wiring,
 ) -> (Inputs<'w>, HostPick) {
@@ -384,6 +391,8 @@ pub(crate) fn inputs<'w>(
             .is_ok_and(|c| lead_setup_check::is_build_output(&c.bin)),
         lead_command,
         repo: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        base: base.to_owned(),
+        git: wiring.platform.as_ref(),
         env_names: std::env::vars_os()
             .filter(|(_, v)| !v.is_empty())
             .filter_map(|(k, _)| k.into_string().ok())
@@ -392,12 +401,12 @@ pub(crate) fn inputs<'w>(
     (inputs, pick)
 }
 
-pub(crate) fn run(global: &Global, wiring: &Wiring) -> ExitCode {
+pub(crate) fn run(base: &str, global: &Global, wiring: &Wiring) -> ExitCode {
     let home = match home_or_refuse("doctor", global) {
         Ok(home) => home,
         Err(code) => return code,
     };
-    let (inputs, pick) = inputs(home, global, wiring);
+    let (inputs, pick) = inputs(home, base, global, wiring);
     let mut checks = diagnose(&inputs);
     // With no host, `binary_checks` already says so.
     if inputs.host != Host::None {

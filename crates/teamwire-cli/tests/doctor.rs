@@ -134,10 +134,11 @@ struct Bed {
     /// The state directory of the doctor run, when it is not `home`, the one
     /// the plugin was installed for.
     run_home: Option<PathBuf>,
-    /// git's answers to the spec-kit checks, in the order they ask:
-    /// `cat-file -e`, `show`, then `check-ignore`. Queued after the
-    /// `.worktrees` answer.
-    speckit_git: Vec<RunOutput>,
+    /// The git the spec-kit checks ask: a real one, unless a test gives a
+    /// fake one with its answers queued.
+    git: Option<Arc<FakePlatform>>,
+    /// What `--base` names.
+    base: String,
 }
 
 const ALL_FLAGS: &str = "--session-id --resume --permission-mode --append-system-prompt-file \
@@ -168,7 +169,8 @@ impl Bed {
             codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
             codex_platform: Arc::new(FakePlatform::new()),
             run_home: None,
-            speckit_git: Vec::new(),
+            git: None,
+            base: "HEAD".to_owned(),
         };
         std::fs::write(
             bed.claude.path().join("settings.json"),
@@ -308,12 +310,9 @@ impl Bed {
 
     /// The checks as a binary under `target/` (`build`) or an installed one.
     fn checks_as(&self, build: bool) -> Vec<Check> {
-        // The order doctor runs them in: git, then the spec-kit checks' git
-        // questions, then the claude probes, then the host's version.
+        // The order doctor runs them in: git, then the claude probes, then
+        // the host's version. The spec-kit checks ask their own git.
         self.platform.queue_run(Ok(answer("")));
-        for out in &self.speckit_git {
-            self.platform.queue_run(Ok(out.clone()));
-        }
         self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
         self.platform.queue_run(Ok(answer(&self.claude_help)));
         self.platform.queue_run(Ok(answer("host 1.2.3\n")));
@@ -322,6 +321,11 @@ impl Bed {
             self.platform.queue_run(Ok(answer("codex-cli 0.163.0\n")));
             self.codex_platform.queue_run(Ok(answer(&self.codex_list)));
         }
+        let real_git = teamwire_platform::native();
+        let git: &dyn teamwire_core::Platform = match &self.git {
+            Some(fake) => fake.as_ref(),
+            None => real_git.as_ref(),
+        };
         diagnose(&Inputs {
             pi: self.pi_config(),
             host: self.host,
@@ -337,6 +341,8 @@ impl Bed {
             lead_command: Ok(self.lead_command()),
             running_a_build: build,
             repo: self.home.path().to_path_buf(),
+            base: self.base.clone(),
+            git,
             env_names: self.env_names.clone(),
         })
     }
@@ -882,6 +888,8 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         lead_command: Err("cannot find this binary".to_owned()),
         running_a_build: false,
         repo: bed.home.path().to_path_buf(),
+        base: "HEAD".to_owned(),
+        git: &bed.platform,
         env_names: Vec::new(),
     });
     assert_eq!(level_of(&checks, "old lead setup"), Level::Pass);
@@ -916,10 +924,16 @@ struct Run {
 }
 
 fn teamwire(bed: &Bed, path: &str, cwd: &Path) -> Run {
+    teamwire_with(bed, path, cwd, &[])
+}
+
+/// `teamwire doctor` with `extra` arguments after `doctor`.
+fn teamwire_with(bed: &Bed, path: &str, cwd: &Path, extra: &[&str]) -> Run {
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")
         .arg(bed.home.path())
         .arg("doctor")
+        .args(extra)
         .current_dir(cwd)
         .env("HERDR_ENV", "1")
         .env_remove("TMUX")

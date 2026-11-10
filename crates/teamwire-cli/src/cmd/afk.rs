@@ -189,7 +189,7 @@ fn start(args: &AfkStartArgs, global: &Global, wiring: &Wiring) -> ExitCode {
 /// Runs doctor's checks. A `warn` is printed; a `FAIL` refuses.
 #[expect(clippy::print_stderr, reason = "the binary reports on stderr")]
 fn doctor_gate(home: &std::path::Path, global: &Global, wiring: &Wiring) -> Result<(), ExitCode> {
-    let (inputs, _) = doctor::inputs(home.to_path_buf(), global, wiring);
+    let (inputs, _) = doctor::inputs(home.to_path_buf(), "HEAD", global, wiring);
     let checks = doctor::diagnose(&inputs);
     let only = |level| {
         let picked: Vec<_> = checks

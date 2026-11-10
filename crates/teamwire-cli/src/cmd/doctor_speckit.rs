@@ -1,58 +1,94 @@
 //! The spec-kit checks of `teamwire doctor`, printed only when doctor runs
-//! inside a git repository whose root holds `.specify/`.
+//! inside a git repository whose root holds `.specify/`, on disk or in the
+//! commit that `--base` names.
 //!
-//! Never: run `specify`, use the network, or change a file. The checks read
-//! files and ask git (`cat-file`, `show`, `check-ignore`). A worktree is cut
-//! from a commit, so the constitution checks look at `HEAD`, not at git's
-//! index or the disk.
-//! Every line is `ok` or `warn`, never `FAIL`: a doctor failure blocks
-//! `teamwire afk start`, and none of these stops a launch on its own. Each
-//! warning names the file and what to do.
+//! Never: run `specify`, use the network, or change a file. The checks ask
+//! git (`rev-parse`, `ls-tree`, `show`, `check-ignore`) and read files. A
+//! worktree is cut from a commit, so every line reads that commit, never
+//! git's index or the disk, unless its comment says why it reads the disk.
+//! Every line is `ok` or `warn`, never `FAIL`, and names the ref and its
+//! short commit id. Each warning names the file and one action that fixes it.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use teamwire_core::{Command, RunOutput};
 
 use crate::cmd::doctor::{Check, Inputs};
-use crate::cmd::doctor_speckit_files::{has_speckit_event, installed_extensions};
+// A path, so the test crates that include this file by path find it too.
+#[path = "doctor_speckit/committed.rs"]
+mod committed;
+#[path = "doctor_speckit/extensions.rs"]
+mod extensions;
+
+use committed::committed_check;
+use extensions::{events_check, git_extension_check, hooks_check};
 
 const GIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 const CONSTITUTION: &str = ".specify/memory/constitution.md";
 const FEATURE_POINTER: &str = ".specify/feature.json";
+const INTEGRATION_FILE: &str = ".specify/integration.json";
+
+/// The folders `ls-tree` lists: spec-kit's own, and where the harnesses
+/// teamwire runs keep spec-kit's commands and hooks.
+const LISTED: [&str; 5] = [".specify", ".claude", ".agents", ".pi", ".codex"];
 
 /// The spec-kit checks, or none outside a spec-kit repository.
 pub(crate) fn speckit_checks(inputs: &Inputs<'_>) -> Vec<Check> {
-    let Some(root) = speckit_root(&inputs.repo) else {
+    let Some(root) = git_root(&inputs.repo) else {
         return Vec::new();
     };
+    let on_disk = root.join(".specify").is_dir();
+    let base = match Base::read(inputs, &root) {
+        Ok(base) => base,
+        Err(why) if on_disk => return vec![Check::warn("spec-kit base", why)],
+        Err(_) => return Vec::new(),
+    };
+    if !on_disk && !base.has_under(".specify") {
+        return Vec::new();
+    }
     vec![
-        committed_check(inputs, &root),
-        constitution_check(inputs, &root),
-        integrations_check(&root),
-        git_extension_check(&root),
-        events_check(&root),
-        feature_pointer_check(inputs, &root),
-        workflows_check(&root),
+        version_check(&base),
+        committed_check(&base),
+        constitution_check(&base),
+        integrations_check(&base),
+        git_extension_check(&base),
+        hooks_check(&base),
+        events_check(&base),
+        feature_pointer_check(&base),
+        workflows_check(&base),
     ]
 }
 
 /// The repository root is the nearest directory at or above `dir` that
-/// holds `.git` (a directory, or a file in a worktree). It counts only when
-/// it also holds `.specify/`.
-fn speckit_root(dir: &Path) -> Option<PathBuf> {
-    let root = dir.ancestors().find(|d| d.join(".git").exists())?;
-    root.join(".specify").is_dir().then(|| root.to_path_buf())
+/// holds `.git` (a directory, or a file in a worktree).
+fn git_root(dir: &Path) -> Option<PathBuf> {
+    dir.ancestors()
+        .find(|d| d.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 /// Runs `git args` at the root and returns what it printed, or why it gave
 /// no answer.
 fn git(inputs: &Inputs<'_>, root: &Path, args: &[&str]) -> Result<RunOutput, String> {
-    let cmd = Command::new("git")
+    git_with(inputs, root, args, None)
+}
+
+fn git_with(
+    inputs: &Inputs<'_>,
+    root: &Path,
+    args: &[&str],
+    stdin: Option<Vec<u8>>,
+) -> Result<RunOutput, String> {
+    let mut cmd = Command::new("git")
         .args(args.iter().copied())
         .cwd(root.to_path_buf());
-    match inputs.platform.run(&cmd, GIT_TIMEOUT) {
+    if let Some(bytes) = stdin {
+        cmd = cmd.stdin(bytes);
+    }
+    match inputs.git.run(&cmd, GIT_TIMEOUT) {
         Ok(out) if out.timed_out => Err(format!("no answer within {} s", GIT_TIMEOUT.as_secs())),
         Ok(out) => Ok(out),
         Err(e) => Err(e.to_string()),
@@ -75,40 +111,139 @@ fn git_status_hint(root: &Path) -> String {
     format!("run `git status` in {} to see why", root.display())
 }
 
-/// A worktree is cut from a commit, so a `.specify/` that is only on disk or
-/// only staged leaves a worktree member with no spec-kit files.
-fn committed_check(inputs: &Inputs<'_>, root: &Path) -> Check {
-    let name = "spec-kit committed";
-    let object = format!("HEAD:{CONSTITUTION}");
-    match git(inputs, root, &["cat-file", "-e", &object]) {
-        Ok(out) if out.exit_code == 0 => {
-            Check::pass(name, format!("{CONSTITUTION} is committed in HEAD"))
+/// The commit `--base` names, and the spec-kit paths in it.
+pub(crate) struct Base<'a> {
+    inputs: &'a Inputs<'a>,
+    pub(crate) root: PathBuf,
+    /// The ref as the lead named it.
+    pub(crate) name: String,
+    sha: String,
+    files: BTreeSet<String>,
+}
+
+impl<'a> Base<'a> {
+    fn read(inputs: &'a Inputs<'a>, root: &Path) -> Result<Self, String> {
+        let name = inputs.base.clone();
+        let hint = git_status_hint(root);
+        let spec = format!("{name}^{{commit}}");
+        let out = git(
+            inputs,
+            root,
+            &["rev-parse", "--verify", "--end-of-options", &spec],
+        )
+        .map_err(|e| format!("could not ask git for the commit `{name}` names: {e}; {hint}"))?;
+        if out.exit_code != 0 {
+            let said = git_said(&out);
+            return Err(if said.contains("Needed a single revision") {
+                format!(
+                    "git cannot resolve `{name}` to a commit ({said}), so no spec-kit line can \
+                     read what members start from; pass `--base` a branch or commit that \
+                     exists, or make the first commit"
+                )
+            } else {
+                format!("git could not resolve `{name}` ({said}); {hint}")
+            });
         }
-        // `cat-file -e` exits 128 for a path not in HEAD and for a
-        // repository with no commit yet alike.
-        Ok(out) => Check::warn(
-            name,
-            format!(
-                "{CONSTITUTION} is not committed in HEAD ({}), so a worktree member has no \
-                 spec-kit files; commit .specify/ and the agents' spec-kit command folders",
+        let sha = String::from_utf8_lossy(&out.stdout).trim().to_owned();
+        let mut args = vec!["ls-tree", "-r", "-z", "--name-only", sha.as_str(), "--"];
+        args.extend(LISTED);
+        let out = git(inputs, root, &args)
+            .map_err(|e| format!("could not ask git for the files in `{name}`: {e}; {hint}"))?;
+        if out.exit_code != 0 {
+            return Err(format!(
+                "git could not list the files in `{name}` ({}); {hint}",
                 git_said(&out)
-            ),
-        ),
-        Err(e) => Check::warn(
+            ));
+        }
+        let files = String::from_utf8_lossy(&out.stdout)
+            .split('\0')
+            .filter(|f| !f.is_empty())
+            .map(str::to_owned)
+            .collect();
+        Ok(Self {
+            inputs,
+            root: root.to_path_buf(),
             name,
-            format!(
-                "could not ask git whether {CONSTITUTION} is committed: {e}; {}",
-                git_status_hint(root)
-            ),
-        ),
+            sha,
+            files,
+        })
+    }
+
+    /// `HEAD (b529e55)`: the ref and its short commit id.
+    pub(crate) fn at(&self) -> String {
+        format!("{} ({})", self.name, self.sha.get(..7).unwrap_or(&self.sha))
+    }
+
+    pub(crate) fn has(&self, path: &str) -> bool {
+        self.files.contains(path)
+    }
+
+    /// The committed files under the folder `dir`.
+    pub(crate) fn under<'s>(&'s self, dir: &'s str) -> impl Iterator<Item = &'s str> + 's {
+        self.files
+            .iter()
+            .filter_map(move |f| f.strip_prefix(dir)?.strip_prefix('/'))
+    }
+
+    fn has_under(&self, dir: &str) -> bool {
+        self.under(dir).next().is_some()
+    }
+
+    /// The committed text of `path`, or `None` when the commit lacks it.
+    pub(crate) fn show(&self, path: &str) -> Result<Option<String>, String> {
+        if !self.has(path) {
+            return Ok(None);
+        }
+        let object = format!("{}:{path}", self.sha);
+        let at = self.at();
+        match git(self.inputs, &self.root, &["show", &object]) {
+            Ok(out) if out.exit_code == 0 => {
+                Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()))
+            }
+            Ok(out) => Err(format!(
+                "git could not read {path} in {at} ({}); {}",
+                git_said(&out),
+                git_status_hint(&self.root)
+            )),
+            Err(e) => Err(format!(
+                "could not ask git for {path} in {at}: {e}; {}",
+                git_status_hint(&self.root)
+            )),
+        }
+    }
+
+    /// `git args` at the root, for the lines that compare the disk.
+    pub(crate) fn git(&self, args: &[&str]) -> Result<RunOutput, String> {
+        git(self.inputs, &self.root, args)
+    }
+
+    pub(crate) fn git_stdin(&self, args: &[&str], stdin: Vec<u8>) -> Result<RunOutput, String> {
+        git_with(self.inputs, &self.root, args, Some(stdin))
+    }
+
+    pub(crate) fn sha(&self) -> &str {
+        &self.sha
     }
 }
 
 /// spec-kit rewrites its feature pointer on every feature switch, so each
-/// member's copy differs and must stay out of commits.
-fn feature_pointer_check(inputs: &Inputs<'_>, root: &Path) -> Check {
+/// member's copy differs and must stay out of commits. Ignore rules apply to
+/// the disk, so this line asks git about the working tree. `--no-index`
+/// finds the rule even for a tracked file, which plain `check-ignore` skips.
+fn feature_pointer_check(base: &Base<'_>) -> Check {
     let name = "spec-kit feature pointer";
-    match git(inputs, root, &["check-ignore", "-q", FEATURE_POINTER]) {
+    let hint = git_status_hint(&base.root);
+    let at = base.at();
+    match base.git(&["check-ignore", "-q", "--no-index", FEATURE_POINTER]) {
+        Ok(out) if out.exit_code == 0 && base.has(FEATURE_POINTER) => Check::warn(
+            name,
+            format!(
+                "{FEATURE_POINTER} is tracked in {at}, and git ignores only untracked files, so \
+                 members would commit their feature pointer; run `git rm --cached \
+                 {FEATURE_POINTER}`, then commit on {}",
+                base.name
+            ),
+        ),
         Ok(out) if out.exit_code == 0 => {
             Check::pass(name, format!("git ignores {FEATURE_POINTER}"))
         }
@@ -116,22 +251,68 @@ fn feature_pointer_check(inputs: &Inputs<'_>, root: &Path) -> Check {
             name,
             format!(
                 "git does not ignore {FEATURE_POINTER}, so members would commit their feature \
-                 pointer; add `feature.json` to .specify/.gitignore"
+                 pointer; add `feature.json` to .specify/.gitignore, then commit on {}",
+                base.name
             ),
         ),
         Ok(out) => Check::warn(
             name,
             format!(
-                "git check-ignore could not tell whether it ignores {FEATURE_POINTER} ({}); {}",
-                git_said(&out),
-                git_status_hint(root)
+                "git check-ignore could not tell whether it ignores {FEATURE_POINTER} ({}); {hint}",
+                git_said(&out)
             ),
         ),
         Err(e) => Check::warn(
             name,
+            format!("could not ask git whether it ignores {FEATURE_POINTER}: {e}; {hint}"),
+        ),
+    }
+}
+
+/// The spec-kit release teamwire's guidance was tested with, as spec-kit
+/// itself prints it, and its commit.
+const TESTED_VERSION: &str = "1.3.3.dev0";
+const TESTED_COMMIT: &str = "c438494";
+
+/// teamwire's spec-kit guidance names commands and file formats of the 1.3
+/// line; another release may rename them.
+fn version_check(base: &Base<'_>) -> Check {
+    let name = "spec-kit version";
+    let at = base.at();
+    let tested = format!(
+        "teamwire's spec-kit guidance was tested with {TESTED_VERSION} (spec-kit commit \
+         {TESTED_COMMIT})"
+    );
+    let upgrade = format!(
+        "with spec-kit 1.3 installed (`specify --version`), run `specify integration upgrade \
+         <key>` for each integration, then commit on {}",
+        base.name
+    );
+    let version = match base.show(INTEGRATION_FILE) {
+        Ok(Some(text)) => serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|json| json.get("version")?.as_str().map(str::to_owned)),
+        Ok(None) => None,
+        Err(e) => return Check::warn(name, e),
+    };
+    match version {
+        Some(v) if v == "1.3" || v.starts_with("1.3.") => {
+            Check::pass(name, format!("{v} in {at}; {tested}"))
+        }
+        Some(v) => Check::warn(
+            name,
             format!(
-                "could not ask git whether it ignores {FEATURE_POINTER}: {e}; {}",
-                git_status_hint(root)
+                "{INTEGRATION_FILE} in {at} records {v}, outside the 1.3 line; {tested}, and \
+                 another release may rename its commands or files. To match the guidance, \
+                 {upgrade}"
+            ),
+        ),
+        None => Check::warn(
+            name,
+            format!(
+                "{INTEGRATION_FILE} in {at} records no version, so doctor cannot tell whether \
+                 the guidance fits it; {tested}. Fix {INTEGRATION_FILE} as the spec-kit \
+                 integrations line says"
             ),
         ),
     }
@@ -154,51 +335,44 @@ fn first_placeholder(text: &str) -> Option<&str> {
         })
 }
 
-/// Members get the constitution in `HEAD`, so that copy is the one read for
+/// Members get the committed constitution, so that copy is the one read for
 /// placeholders. A copy on disk that differs is named, since it is what the
 /// lead sees but not what members get.
-fn constitution_check(inputs: &Inputs<'_>, root: &Path) -> Check {
+fn constitution_check(base: &Base<'_>) -> Check {
     let name = "spec-kit constitution";
-    let object = format!("HEAD:{CONSTITUTION}");
-    let committed = match git(inputs, root, &["show", &object]) {
-        Ok(out) if out.exit_code == 0 => String::from_utf8_lossy(&out.stdout).into_owned(),
-        Ok(out) => {
+    let at = base.at();
+    let committed = match base.show(CONSTITUTION) {
+        Ok(Some(text)) => text,
+        Ok(None) => {
             return Check::warn(
                 name,
                 format!(
-                    "{CONSTITUTION} is not committed in HEAD ({}); write it with \
-                     /speckit-constitution and commit it",
-                    git_said(&out)
+                    "{CONSTITUTION} is not in {at}; write it with /speckit-constitution and \
+                     commit it on {}",
+                    base.name
                 ),
             );
         }
-        Err(e) => {
-            return Check::warn(
-                name,
-                format!(
-                    "could not ask git for {CONSTITUTION} in HEAD: {e}; {}",
-                    git_status_hint(root)
-                ),
-            );
-        }
+        Err(e) => return Check::warn(name, e),
     };
-    let on_disk = std::fs::read_to_string(root.join(CONSTITUTION)).ok();
+    let on_disk = std::fs::read_to_string(base.root.join(CONSTITUTION)).ok();
     let differs = if on_disk.as_deref() == Some(committed.as_str()) {
-        ""
+        String::new()
     } else {
-        "; the copy on disk differs from HEAD, and members get the committed one"
+        format!("; the copy on disk differs from {at}, and members get the committed one")
     };
     match first_placeholder(&committed) {
         Some(slot) => Check::warn(
             name,
             format!(
-                "{CONSTITUTION} in HEAD still holds the template placeholder [{slot}]; \
-                 fill it in with /speckit-constitution and commit it{differs}"
+                "{CONSTITUTION} in {at} still holds the template placeholder [{slot}]; \
+                 fill it in with /speckit-constitution and commit it on {}{differs}",
+                base.name
             ),
         ),
         None => Check::pass(
             name,
-            format!("no template placeholder left in HEAD{differs}"),
+            format!("no template placeholder left in {at}{differs}"),
         ),
     }
 }
@@ -206,16 +380,70 @@ fn constitution_check(inputs: &Inputs<'_>, root: &Path) -> Check {
 /// Where each integration teamwire can run keeps its spec-kit commands: a
 /// folder, and the start and end of an entry's name in it. Another
 /// integration is listed without a folder check.
+const COMMAND_FOLDERS: [(&str, &str, &str, &str); 3] = [
+    ("claude", ".claude/skills", "speckit-", ""),
+    ("codex", ".agents/skills", "speckit-", ""),
+    ("pi", ".pi/prompts", "speckit.", ".md"),
+];
+
 fn command_folder(integration: &str) -> Option<(&'static str, &'static str, &'static str)> {
-    match integration {
-        "claude" => Some((".claude/skills", "speckit-", "")),
-        "codex" => Some((".agents/skills", "speckit-", "")),
-        "pi" => Some((".pi/prompts", "speckit.", ".md")),
-        _ => None,
-    }
+    COMMAND_FOLDERS
+        .iter()
+        .find(|(key, ..)| *key == integration)
+        .map(|&(_, dir, start, end)| (dir, start, end))
 }
 
-fn has_entry(dir: &Path, start: &str, end: &str) -> bool {
+/// Every command folder, whichever integration is installed.
+fn command_folders() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    COMMAND_FOLDERS
+        .iter()
+        .map(|&(_, dir, start, end)| (dir, start, end))
+}
+
+/// True when the commit holds an entry of `dir` whose name has the start and
+/// end: a file, or a folder of files.
+fn has_entry(base: &Base<'_>, dir: &str, start: &str, end: &str) -> bool {
+    base.under(dir).any(|rest| {
+        let entry = rest.split('/').next().unwrap_or(rest);
+        entry.starts_with(start) && entry.ends_with(end)
+    })
+}
+
+/// The integrations spec-kit counts as installed: `installed_integrations`,
+/// and the older keys `default_integration` and `integration`, the way
+/// spec-kit's `normalize_integration_state` reads them.
+pub(super) fn installed_integrations(json: &serde_json::Value) -> Vec<String> {
+    let key = |name: &str| {
+        json.get(name)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
+            .map(str::to_owned)
+    };
+    let mut installed: Vec<String> = Vec::new();
+    for k in json
+        .get("installed_integrations")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|k| !k.is_empty())
+    {
+        if !installed.iter().any(|i| i == k) {
+            installed.push(k.to_owned());
+        }
+    }
+    if let Some(default) = key("default_integration").or_else(|| key("integration"))
+        && !installed.contains(&default)
+    {
+        installed.insert(0, default);
+    }
+    installed
+}
+
+/// True when the folder on disk holds an entry whose name has the start and end.
+fn on_disk(dir: &Path, start: &str, end: &str) -> bool {
     std::fs::read_dir(dir).is_ok_and(|entries| {
         entries.flatten().any(|e| {
             e.file_name()
@@ -225,27 +453,36 @@ fn has_entry(dir: &Path, start: &str, end: &str) -> bool {
     })
 }
 
-fn integrations_check(root: &Path) -> Check {
+fn integrations_check(base: &Base<'_>) -> Check {
     let name = "spec-kit integrations";
-    let file = ".specify/integration.json";
-    let installed: Vec<String> = match std::fs::read_to_string(root.join(file))
-        .map_err(|e| e.to_string())
-        .and_then(|text| {
-            serde_json::from_str::<serde_json::Value>(&text).map_err(|e| e.to_string())
-        }) {
-        Ok(json) => json
-            .get("installed_integrations")
-            .and_then(serde_json::Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect(),
-        Err(e) => {
+    let file = INTEGRATION_FILE;
+    let at = base.at();
+    // `specify integration install` refuses a broken file and writes a new one in its place.
+    let repair = format!(
+        "run `specify integration install <key>` for each integration members use, then commit \
+         on {}",
+        base.name
+    );
+    let text = match base.show(file) {
+        Ok(Some(text)) => text,
+        Ok(None) if base.root.join(file).is_file() => {
             return Check::warn(
                 name,
                 format!(
-                    "could not read {file}: {e}; run `specify integration status` to repair it"
+                    "{file} is on disk but not in {at}; commit it on {}",
+                    base.name
                 ),
+            );
+        }
+        Ok(None) => return Check::warn(name, format!("{file} is not in {at}; {repair}")),
+        Err(e) => return Check::warn(name, e),
+    };
+    let installed = match serde_json::from_str::<serde_json::Value>(&text) {
+        Ok(json) => installed_integrations(&json),
+        Err(e) => {
+            return Check::warn(
+                name,
+                format!("could not read {file} in {at}: {e}; delete it, {repair}"),
             );
         }
     };
@@ -253,11 +490,19 @@ fn integrations_check(root: &Path) -> Check {
         .iter()
         .filter_map(|key| {
             let (dir, start, end) = command_folder(key)?;
-            (!has_entry(&root.join(dir), start, end)).then(|| {
-                format!(
-                    "{key} has no {dir}/{start}*{end}; run `specify integration upgrade {key}` \
-                     and commit the folder"
-                )
+            (!has_entry(base, dir, start, end)).then(|| {
+                if on_disk(&base.root.join(dir), start, end) {
+                    format!(
+                        "{key} has no {dir}/{start}*{end} in {at}, though the folder is on disk; \
+                         commit it as the spec-kit committed line says"
+                    )
+                } else {
+                    format!(
+                        "{key} has no {dir}/{start}*{end} in {at}; run `specify integration \
+                         upgrade {key}`, then commit the folder on {}",
+                        base.name
+                    )
+                }
             })
         })
         .collect();
@@ -267,22 +512,24 @@ fn integrations_check(root: &Path) -> Check {
         installed.join(", ")
     };
     if missing.is_empty() {
-        Check::pass(name, format!("installed: {list}"))
+        Check::pass(name, format!("installed in {at}: {list}"))
     } else {
         Check::warn(
             name,
-            format!("{file} lists {list}, but {}", missing.join("; ")),
+            format!("{file} in {at} lists {list}, but {}", missing.join("; ")),
         )
     }
 }
 
 /// Always `ok`: a spec-kit workflow is something a member could start by
 /// hand, never something teamwire runs.
-fn workflows_check(root: &Path) -> Check {
+fn workflows_check(base: &Base<'_>) -> Check {
     let name = "spec-kit workflows";
     let file = ".specify/workflows/workflow-registry.json";
-    let ids: Vec<String> = std::fs::read_to_string(root.join(file))
+    let ids: Vec<String> = base
+        .show(file)
         .ok()
+        .flatten()
         .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
         .and_then(|json| {
             json.get("workflows")?
@@ -297,80 +544,9 @@ fn workflows_check(root: &Path) -> Check {
     };
     Check::pass(
         name,
-        format!("installed: {list}; teamwire starts none of them"),
-    )
-}
-
-/// spec-kit's `git` extension makes branches per feature; teamwire gives each
-/// member its own branch and worktree, so the two would fight.
-fn git_extension_check(root: &Path) -> Check {
-    let name = "spec-kit git extension";
-    let file = ".specify/extensions.yml";
-    let text = std::fs::read_to_string(root.join(file)).unwrap_or_default();
-    if installed_extensions(&text).iter().any(|id| id == "git") {
-        Check::warn(
-            name,
-            format!(
-                "{file} lists the git extension under installed:, but teamwire owns branches and \
-                 worktrees; run `specify extension remove git`"
-            ),
-        )
-    } else {
-        Check::pass(name, "the git extension is not installed")
-    }
-}
-
-/// A spec-kit runtime event runs a spec-kit script from the agent's own hook
-/// system, in every member session, with no member asking for it.
-fn events_check(root: &Path) -> Check {
-    let name = "spec-kit events";
-    let mut found = Vec::new();
-    let extensions = root.join(".specify/extensions");
-    let mut ids: Vec<String> = std::fs::read_dir(&extensions)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .collect();
-    ids.sort();
-    for id in ids {
-        let file = format!(".specify/extensions/{id}/extension.yml");
-        let text = std::fs::read_to_string(root.join(&file)).unwrap_or_default();
-        // shortcut: a top-level key is a line that starts with `events:`, not a YAML parse.
-        if text.lines().any(|l| l.starts_with("events:")) {
-            found.push(format!("{file} declares events:"));
-        }
-    }
-    if root.join(".specify/integration-events.yml").exists() {
-        found.push(".specify/integration-events.yml exists".to_owned());
-    }
-    // The two files Codex launch refuses (`teamwire-harness-codex` `OWN_CONFIG_FILES`).
-    for file in [".codex/config.toml", ".codex/hooks.json"] {
-        if root.join(file).exists() {
-            found.push(format!(
-                "{file} exists, so teamwire refuses to start a Codex member here"
-            ));
-        }
-    }
-    let settings = ".claude/settings.json";
-    if std::fs::read_to_string(root.join(settings))
-        .ok()
-        .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
-        .is_some_and(|json| has_speckit_event(&json))
-    {
-        found.push(format!(
-            "{settings} has a hook tagged \"__speckit_event__\": true"
-        ));
-    }
-    if found.is_empty() {
-        return Check::pass(name, "no spec-kit runtime event is set up");
-    }
-    Check::warn(
-        name,
         format!(
-            "{}; each runs a spec-kit script from the agent's own hooks in every member session. \
-             Remove it, or reinstall the integration with `--integration-options=\"--events false\"`",
-            found.join("; ")
+            "installed in {}: {list}; teamwire starts none of them",
+            base.at()
         ),
     )
 }
