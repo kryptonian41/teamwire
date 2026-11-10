@@ -408,13 +408,19 @@ impl Seq<'_, '_> {
         }
         // Staged first: a kill after the team directory is gone must not
         // leave a cache no later close can reach.
-        let staged = delete::stage_closer_cache(self.ctx, &self.team);
+        let staged = delete::stage_caches(self.ctx, &self.team);
         let result = delete::delete_team_dir(self.ctx, &self.team, &self.team_dir);
-        let note = staged.map(delete::remove_staged_cache);
-        let result = match note {
-            Some(note) => result.map(|detail| format!("{detail}; {note}")),
-            None => result,
-        };
+        let notes: Vec<String> = staged
+            .into_iter()
+            .map(|(what, staged)| delete::remove_staged(what, staged))
+            .collect();
+        let result = result.map(|detail| {
+            [detail]
+                .into_iter()
+                .chain(notes)
+                .collect::<Vec<_>>()
+                .join("; ")
+        });
         self.done("delete_state", result)
     }
 

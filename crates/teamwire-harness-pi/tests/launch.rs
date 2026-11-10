@@ -123,6 +123,25 @@ fn the_token_goes_only_into_its_private_file() {
     assert!(ext.contains("\"bin\":\"/usr/local/bin/teamwire\""));
 }
 
+/// The extension copies its `env` into pi's process, so every bash command
+/// of the member sees the scratch folder.
+#[test]
+fn the_extension_names_the_members_scratch_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = member(dir.path());
+    let spec = pi().launch_spec(&m).unwrap();
+    let ext = String::from_utf8(file(&spec, "pi-extension.ts").bytes.clone()).unwrap();
+    let scratch = dir
+        .path()
+        .join("home/scratch/demo/api")
+        .display()
+        .to_string();
+    assert!(
+        ext.contains(&format!("\"TEAMWIRE_SCRATCH\":\"{scratch}\"")),
+        "{ext}"
+    );
+}
+
 #[test]
 fn model_and_effort_become_pis_flags() {
     let dir = tempfile::tempdir().unwrap();

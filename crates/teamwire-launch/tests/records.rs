@@ -1,5 +1,7 @@
 //! What launch records for `reopen`: the model and effort of each started
-//! member, and the folder of the lead.
+//! member, and the folder of the lead. And the folders launch makes before a
+//! member starts: `reports/` in the team directory, and each member's scratch
+//! folder outside it.
 
 #![expect(
     clippy::redundant_closure_for_method_calls,
@@ -18,7 +20,7 @@
 )]
 mod common;
 
-use common::{Rig, pane_member, role_events, team_spec, with};
+use common::{Rig, launch_one, pane_member, role_events, team_spec, with};
 use serde_json::json;
 use teamwire_core::{Role, SessionId};
 
@@ -133,4 +135,60 @@ fn member_creating_records_the_task_class_or_null() {
     let unset = creating("b");
     assert!(unset.as_object().unwrap().contains_key("task_class"));
     assert!(unset["task_class"].is_null());
+}
+
+#[test]
+fn launch_makes_the_reports_folder_before_the_first_member_writes() {
+    let rig = Rig::new();
+    let (report, _store) = launch_one(&rig, "demo", "a", false);
+    assert!(
+        matches!(
+            report.members.first().map(|m| &m.outcome),
+            Some(teamwire_launch::LaunchOutcome::Started)
+        ),
+        "{report:?}"
+    );
+    assert!(rig.home.path().join("teams/demo/reports").is_dir());
+}
+
+#[test]
+fn launch_add_makes_the_reports_folder_when_it_is_missing() {
+    let rig = Rig::new();
+    drop(launch_one(&rig, "demo", "a", false));
+    let reports = rig.home.path().join("teams/demo/reports");
+    std::fs::remove_dir(&reports).unwrap();
+    drop(launch_one(&rig, "demo", "b", true));
+    assert!(reports.is_dir());
+}
+
+#[test]
+fn a_started_member_has_its_own_scratch_folder_outside_the_team_directory() {
+    let rig = Rig::new();
+    drop(launch_one(&rig, "demo", "a", false));
+    drop(launch_one(&rig, "demo", "b", true));
+    for role in ["a", "b"] {
+        assert!(
+            rig.home.path().join("scratch/demo").join(role).is_dir(),
+            "{role}"
+        );
+    }
+}
+
+#[test]
+fn a_member_whose_start_fails_leaves_no_scratch_folder() {
+    use teamwire_core::{HostError, HostErrorCode};
+    use teamwire_fakes::Fault;
+    let rig = Rig::new();
+    rig.host.inject(
+        "spawn",
+        Fault::Fail(HostError::new(HostErrorCode::BadArgument, "no")),
+        1,
+    );
+    let (report, _store) = launch_one(&rig, "demo", "a", false);
+    let outcome = report.members.first().map(|m| &m.outcome);
+    assert!(
+        matches!(outcome, Some(teamwire_launch::LaunchOutcome::Failed(r)) if r.contains("scratch folder removed")),
+        "{report:?}"
+    );
+    assert!(!rig.home.path().join("scratch/demo/a").exists());
 }

@@ -245,6 +245,22 @@ fn the_token_is_only_in_its_private_file() {
     );
 }
 
+/// The agent's shell gets the member's scratch folder, as a Claude member's
+/// and a pi member's do.
+#[test]
+fn the_shell_environment_names_the_members_scratch_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = member(dir.path());
+    let o = overrides(&codex().launch_spec(&m).unwrap());
+    let scratch = dir.path().join("home/scratch/demo/api");
+    assert_eq!(
+        o["shell_environment_policy.set"]
+            .get("TEAMWIRE_SCRATCH")
+            .and_then(|v| v.as_str()),
+        Some(scratch.to_str().unwrap())
+    );
+}
+
 #[test]
 fn identity_and_servers_name_the_token_file() {
     let dir = tempfile::tempdir().unwrap();

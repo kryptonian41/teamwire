@@ -24,6 +24,8 @@ pub(crate) struct Values<'a> {
     pub(crate) team: &'a str,
     pub(crate) role: &'a str,
     pub(crate) token_file: &'a str,
+    /// The member's scratch folder, `TEAMWIRE_SCRATCH`.
+    pub(crate) scratch: Option<&'a str>,
     /// Where the extension writes each session's state file.
     pub(crate) state_dir: &'a str,
     pub(crate) hook_timeout_ms: u64,
@@ -43,6 +45,9 @@ pub(crate) fn render(v: &Values<'_>) -> String {
         env.insert("TEAMWIRE_HOME".into(), h.into());
     }
     env.insert("TEAMWIRE_TOKEN_FILE".into(), v.token_file.into());
+    if let Some(s) = v.scratch {
+        env.insert("TEAMWIRE_SCRATCH".into(), s.into());
+    }
     let config = json!({
         "bin": v.teamwire_bin,
         "homeArgs": home_args(v.home),
@@ -301,6 +306,7 @@ mod tests {
             team: "demo",
             role: "api",
             token_file: "/h/teams/demo/members/api/token",
+            scratch: Some("/h/scratch/demo/api"),
             state_dir: "/pi/sessions/teamwire",
             hook_timeout_ms: 60_000,
         }

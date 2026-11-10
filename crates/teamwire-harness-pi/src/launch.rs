@@ -48,6 +48,7 @@ pub(crate) fn build(
     let token_path = m.member_dir.join("token");
     let extension_path = m.member_dir.join(EXTENSION_FILE);
     let home = m.home_from_member_dir();
+    let scratch = m.scratch_dir().map(|p| text(&p));
     let hook_timeout_ms = Config::default().hook_timeout_s.saturating_mul(1000);
     let script = extension::render(&Values {
         teamwire_bin: &text(&m.teamwire_bin),
@@ -55,6 +56,7 @@ pub(crate) fn build(
         team: m.team.as_str(),
         role: m.role.as_str(),
         token_file: &text(&token_path),
+        scratch: scratch.as_deref(),
         state_dir: &text(sessions_dir),
         hook_timeout_ms,
     });

@@ -175,6 +175,14 @@ fn settings_env_has_team_role_home_and_token() {
     assert_eq!(env["TEAMWIRE_TOKEN"], TOKEN);
 }
 
+/// Temporary files go in a folder of the member's own, outside the repository
+/// and outside the team directory that close archives.
+#[test]
+fn settings_env_names_the_members_scratch_folder() {
+    let env = settings_env(&member());
+    assert_eq!(env["TEAMWIRE_SCRATCH"], "/home/tw/scratch/demo/api");
+}
+
 #[test]
 fn settings_env_fills_team_role_and_home_when_identity_lacks_them() {
     let mut m = member();

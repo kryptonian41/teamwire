@@ -1496,3 +1496,57 @@ fn the_closer_cache_is_staged_before_the_team_directory_is_deleted() {
     assert!(rig.team_dir().is_dir());
     assert!(!cache.exists());
 }
+
+#[test]
+fn closing_the_team_deletes_the_scratch_folders_after_the_archive() {
+    let mut rig = busy_team();
+    let file = rig.home.path().join("scratch/alpha/api/notes.txt");
+    std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+    std::fs::write(&file, "scratch").unwrap();
+    let team_scratch = rig
+        .home
+        .path()
+        .join("scratch")
+        .join(rig.team().name.as_str());
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let detail = &plan
+        .steps
+        .iter()
+        .find(|s| s.step == "delete_state")
+        .unwrap()
+        .detail;
+    assert!(
+        detail.contains(&team_scratch.display().to_string()),
+        "{detail}"
+    );
+    let report = close(&mut rig.ctx(), CloseTarget::Team, CloseOpts::default());
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(!team_scratch.exists());
+    let archive = report.archive.clone().unwrap();
+    assert!(
+        !archive.join("scratch").exists() && !file.exists(),
+        "the archive never copies scratch files"
+    );
+}
+
+#[test]
+fn keep_state_and_closing_one_member_keep_the_scratch_folders() {
+    let mut rig = busy_team();
+    let scout = rig.home.path().join("scratch/alpha/scout/notes.txt");
+    std::fs::create_dir_all(scout.parent().unwrap()).unwrap();
+    std::fs::write(&scout, "scratch").unwrap();
+    let report = close(
+        &mut rig.ctx(),
+        CloseTarget::Member(Role::parse("scout").unwrap()),
+        CloseOpts::default(),
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(scout.is_file());
+    let opts = CloseOpts {
+        keep_state: true,
+        ..CloseOpts::default()
+    };
+    let report = close(&mut rig.ctx(), CloseTarget::Team, opts);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    assert!(scout.is_file());
+}

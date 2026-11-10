@@ -148,6 +148,23 @@ fn a_handoff_starts_a_new_session_with_the_old_files_and_records_it() {
     assert!(done.warnings.is_empty(), "{:?}", done.warnings);
 }
 
+/// The new session works in the same scratch folder: what the old one left
+/// there is still there.
+#[test]
+fn a_handoff_keeps_the_members_scratch_folder() {
+    let rig = Rig::new();
+    let mut store = running_team(&rig);
+    let kept = rig.home.path().join("scratch/demo/api/notes.txt");
+    std::fs::write(&kept, "from the old session").unwrap();
+    write_document(&rig);
+    close_old_place(&rig, &store);
+    hand_off(&rig, &mut store).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&kept).unwrap(),
+        "from the old session"
+    );
+}
+
 #[test]
 fn a_failed_spawn_keeps_the_old_session_and_names_reopen() {
     let rig = Rig::new();

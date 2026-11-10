@@ -353,6 +353,15 @@ impl MemberLaunch {
         (!home.as_os_str().is_empty()).then(|| home.display().to_string())
     }
 
+    /// The member's scratch folder, `$TEAMWIRE_HOME/scratch/<team>/<role>`,
+    /// from the home `member_dir` names. Launch makes it, and every harness
+    /// hands its path to the member as `TEAMWIRE_SCRATCH`.
+    #[must_use]
+    pub fn scratch_dir(&self) -> Option<PathBuf> {
+        let home = self.home_from_member_dir()?;
+        Some(team_scratch_dir(Path::new(&home), &self.team).join(self.role.as_str()))
+    }
+
     /// A resume's launch with what the first start recorded beyond the model:
     /// the `teamwire` binary and the plugin switches. A harness that carries
     /// hook and MCP commands in argv (Codex) needs both to match the start.
@@ -366,6 +375,14 @@ impl MemberLaunch {
         self.plugins = plugins;
         self
     }
+}
+
+/// The folder of a team's member scratch folders, `<home>/scratch/<team>`.
+/// It is outside `teams/<team>/`, so the archive never copies it; team close
+/// deletes it.
+#[must_use]
+pub fn team_scratch_dir(home: &Path, team: &TeamName) -> PathBuf {
+    home.join("scratch").join(team.as_str())
 }
 
 impl LaunchSpec {
@@ -570,6 +587,38 @@ mod tests {
         assert_eq!(LaunchSpec::shell_word("/my dir/tw"), "'/my dir/tw'");
         assert_eq!(LaunchSpec::shell_word("it's"), "'it'\\''s'");
         assert_eq!(LaunchSpec::shell_word("50%"), "'50%'");
+    }
+
+    #[test]
+    fn the_scratch_folder_is_beside_teams_not_inside_the_team() {
+        let team = TeamName::parse("demo").unwrap();
+        let role = Role::parse("api").unwrap();
+        let launch = MemberLaunch {
+            address: Address::of(&team, &role),
+            team: team.clone(),
+            role,
+            kind: MemberKind::Implementer,
+            cwd: PathBuf::from("/work"),
+            session_id: SessionId::parse("s1").unwrap(),
+            model: None,
+            effort: None,
+            member_dir: PathBuf::from("/h/teams/demo/members/api"),
+            contract_path: PathBuf::from("/h/teams/demo/contract/api.md"),
+            identity: Vec::new(),
+            otel: OtelConfig::default(),
+            teamwire_bin: PathBuf::from("teamwire"),
+            plugins: BTreeMap::new(),
+            context_handoff_tokens: None,
+            accept_trust: false,
+        };
+        assert_eq!(
+            launch.scratch_dir(),
+            Some(PathBuf::from("/h/scratch/demo/api"))
+        );
+        assert_eq!(
+            team_scratch_dir(Path::new("/h"), &team),
+            PathBuf::from("/h/scratch/demo")
+        );
     }
 
     #[test]

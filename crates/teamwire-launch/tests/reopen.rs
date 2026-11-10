@@ -18,7 +18,7 @@ mod common;
 
 use std::time::Duration;
 
-use common::{Rig, member_row, pane_member, team_spec, with};
+use common::{Rig, member_row, pane_member, team_spec, with, write};
 use serde_json::json;
 use teamwire_core::{
     Address, Clock, Host, Liveness, MemberState, Pid, PlaceState, Role, SessionId, SessionKind,
@@ -125,6 +125,21 @@ fn a_dead_member_is_reopened_with_its_resume_argv_in_its_folder() {
         member_row(&store, "api").unwrap().session_id,
         Some(session),
         "the session id does not change"
+    );
+}
+
+/// A reopened session works in the same scratch folder as before.
+#[test]
+fn a_reopened_member_keeps_its_scratch_folder() {
+    let rig = Rig::new();
+    let kept = rig.home.path().join("scratch/demo/api/notes.txt");
+    let mut store = closed_team(&rig, &["api"]);
+    write(&kept, "from the first session");
+    let report = run(&rig, &mut store, &all()).unwrap();
+    assert_eq!(outcome(&report, "api"), &ReopenOutcome::Reopened);
+    assert_eq!(
+        std::fs::read_to_string(&kept).unwrap(),
+        "from the first session"
     );
 }
 

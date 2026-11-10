@@ -366,3 +366,21 @@ fn a_handoff_prefix_comes_before_every_other_prefix() {
         );
     }
 }
+
+/// Members that share `/tmp` overwrite each other's scratch files, so every
+/// kind is pointed at its own folder. The rule names a variable, not a
+/// command, so the seat rules still name only teamwire commands.
+#[test]
+fn every_kind_puts_temporary_files_in_its_own_scratch_folder() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("your own\n  scratch folder, the path in `$TEAMWIRE_SCRATCH`"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("Never put them in the\n  repository or in /tmp"),
+            "{kind}"
+        );
+    }
+}

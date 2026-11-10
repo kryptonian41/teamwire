@@ -265,6 +265,9 @@ fn shell_env(m: &MemberLaunch, home: Option<&String>, token_path: &Path) -> Valu
         env.push(("TEAMWIRE_HOME", text(h)));
     }
     env.push(("TEAMWIRE_TOKEN_FILE", text(&path_text(token_path))));
+    if let Some(scratch) = m.scratch_dir() {
+        env.push(("TEAMWIRE_SCRATCH", text(&path_text(&scratch))));
+    }
     table(env)
 }
 

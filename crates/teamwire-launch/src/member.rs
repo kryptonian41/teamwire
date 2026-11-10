@@ -411,6 +411,7 @@ fn run_member(
             .or(plan.spec.context_handoff_tokens),
         accept_trust: m.spec.accept_trust,
     };
+    make_scratch(&launch, made)?;
     write_contract(ctx, dirs, m, &launch)?;
     let spec = harness.launch_spec(&launch).map_err(|e| {
         Stop::fail(
@@ -558,6 +559,29 @@ fn run_member(
     if m.spec.dispatch {
         dispatch(host, &place, plan, dirs, m, warnings);
     }
+    Ok(())
+}
+
+/// Makes the member's scratch folder, whose path every harness hands the
+/// member as `TEAMWIRE_SCRATCH`. Only a folder this launch made is in
+/// `made`, so the undo never removes one it found.
+fn make_scratch(launch: &MemberLaunch, made: &mut Progress) -> Result<(), Stop> {
+    let dir = launch.scratch_dir().ok_or_else(|| {
+        Stop::fail(
+            ReasonCode::Files,
+            "the member's scratch folder has no home to go under",
+        )
+    })?;
+    if dir.is_dir() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        Stop::fail(
+            ReasonCode::Files,
+            format!("cannot make {}: {e}", dir.display()),
+        )
+    })?;
+    made.scratch = Some(dir);
     Ok(())
 }
 

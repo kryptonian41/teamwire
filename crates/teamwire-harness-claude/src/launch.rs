@@ -110,6 +110,7 @@ fn env_object(m: &MemberLaunch) -> Result<Map<String, Value>, HarnessError> {
     ensure("TEAMWIRE_TEAM", Some(m.team.as_str().to_owned()));
     ensure("TEAMWIRE_ROLE", Some(m.role.as_str().to_owned()));
     ensure("TEAMWIRE_HOME", m.home_from_member_dir());
+    ensure("TEAMWIRE_SCRATCH", m.scratch_dir().map(|p| path_text(&p)));
     if !env.iter().any(|(k, _)| k == "TEAMWIRE_TOKEN") {
         return Err(HarnessError::new(
             HarnessErrorCode::Refused,

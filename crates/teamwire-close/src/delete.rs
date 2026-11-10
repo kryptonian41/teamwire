@@ -54,36 +54,59 @@ fn stage(ctx: &Ctx<'_>, name: &str, from: &Path) -> Result<PathBuf, String> {
     Ok(doomed)
 }
 
-/// The closer's clone and build folder for a team. Nothing else removes it,
-/// and a build in it can hold tens of gigabytes.
-pub(crate) fn closer_cache(ctx: &Ctx<'_>, team: &TeamName) -> PathBuf {
-    ctx.home.join("cache").join("closer").join(team.as_str())
-}
-
-/// Moves the closer's cache folder into `deleting/` if there is one. The
-/// caller does this before it deletes the team directory, so a kill between
-/// the two leaves the folder where a later close of any team removes it.
-/// A failure is only a note: the team's work is already safe in the archive.
-pub(crate) fn stage_closer_cache(
+/// The folders outside the team directory that hold one team's throwaway
+/// files, as (what it is, its staging prefix, its path): the closer's clone
+/// and build folder, which can hold tens of gigabytes, and the members'
+/// scratch folders. The archive copies neither, and nothing else removes them.
+pub(crate) fn team_caches(
     ctx: &Ctx<'_>,
     team: &TeamName,
-) -> Option<Result<PathBuf, String>> {
-    let dir = closer_cache(ctx, team);
-    std::fs::symlink_metadata(&dir).ok()?;
-    // `_` cannot occur in a team name, so this never collides with a team's
-    // own staged directory.
-    Some(stage(ctx, &format!("closer_{}", team.as_str()), &dir))
+) -> [(&'static str, &'static str, PathBuf); 2] {
+    [
+        (
+            "closer cache",
+            "closer",
+            ctx.home.join("cache").join("closer").join(team.as_str()),
+        ),
+        (
+            "scratch folders",
+            "scratch",
+            teamwire_core::team_scratch_dir(ctx.home, team),
+        ),
+    ]
 }
 
-/// Removes a folder `stage_closer_cache` moved, and returns the note for the
+/// Moves each of the team's cache folders that exists into `deleting/`. The
+/// caller does this before it deletes the team directory, so a kill between
+/// the two leaves the folders where a later close of any team removes them.
+/// A failure is only a note: the team's work is already safe in the archive.
+pub(crate) fn stage_caches(
+    ctx: &Ctx<'_>,
+    team: &TeamName,
+) -> Vec<(&'static str, Result<PathBuf, String>)> {
+    team_caches(ctx, team)
+        .into_iter()
+        .filter(|(_, _, dir)| std::fs::symlink_metadata(dir).is_ok())
+        // `_` cannot occur in a team name, so this never collides with a
+        // team's own staged directory.
+        .map(|(what, prefix, dir)| {
+            (
+                what,
+                stage(ctx, &format!("{prefix}_{}", team.as_str()), &dir),
+            )
+        })
+        .collect()
+}
+
+/// Removes a folder `stage_caches` moved, and returns the note for the
 /// step's detail.
-pub(crate) fn remove_staged_cache(staged: Result<PathBuf, String>) -> String {
+pub(crate) fn remove_staged(what: &str, staged: Result<PathBuf, String>) -> String {
     match staged {
-        Err(e) => format!("closer cache kept: {e}"),
+        Err(e) => format!("{what} kept: {e}"),
         Ok(doomed) => match std::fs::remove_dir_all(&doomed) {
-            Ok(()) => "deleted the closer cache".to_owned(),
+            Ok(()) => format!("deleted the {what}"),
             Err(e) => format!(
-                "closer cache moved to {}, left for a later close to remove: {e}",
+                "{what} moved to {}, left for a later close to remove: {e}",
                 doomed.display()
             ),
         },

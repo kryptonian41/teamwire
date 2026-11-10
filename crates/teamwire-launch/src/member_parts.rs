@@ -20,6 +20,8 @@ pub(crate) struct Progress {
     pub(crate) place: Option<Place>,
     pub(crate) worktree: Option<Made>,
     pub(crate) excluded: Vec<Excluded>,
+    /// The scratch folder, when this launch made it.
+    pub(crate) scratch: Option<PathBuf>,
 }
 
 /// The paths of one team's directory.
@@ -82,7 +84,7 @@ impl Steps {
 }
 
 /// Takes back what was made: the place, then the worktree (no force), then
-/// the exclude lines setup added.
+/// the exclude lines setup added, then the scratch folder.
 /// The second value is true when the worktree could not be removed.
 pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (String, bool) {
     let mut left = false;
@@ -111,6 +113,12 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
     }
     for e in &made.excluded {
         notes.push(worktree::unexclude(ctx.platform, ctx.home, e));
+    }
+    if let Some(dir) = &made.scratch {
+        notes.push(match std::fs::remove_dir_all(dir) {
+            Ok(()) => "scratch folder removed".to_owned(),
+            Err(e) => format!("could not remove {}: {e}", dir.display()),
+        });
     }
     (notes.join("; "), left)
 }
