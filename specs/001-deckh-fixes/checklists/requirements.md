@@ -13,8 +13,8 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
-- [ ] Requirements are testable and unambiguous
+- [x] No [NEEDS CLARIFICATION] markers remain
+- [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
@@ -24,7 +24,7 @@
 
 ## Feature Readiness
 
-- [ ] All functional requirements have clear acceptance criteria
+- [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
 - [x] No implementation details leak into specification
@@ -36,8 +36,8 @@
   (`teamwire status`, `--re`, `TEAM-COMPLETE`, `close --dry-run`) are the
   user-facing interface, not implementation details. The spec names no
   crate, function or language.
-- Three [NEEDS CLARIFICATION] markers remain: US1 scenario 1 (retry or
-  report, FR-001), US1 scenario 5 (hold or track, FR-007), and US2
-  scenario 4 (what "mentions a path" means, FR-011). The three unticked
-  items stay unticked until the parent answers them, because FR-001,
-  FR-007 and FR-011 are not yet unambiguous.
+- The three [NEEDS CLARIFICATION] markers (FR-001, FR-008/FR-009 and
+  FR-014 after renumbering) were replaced with the parent's answers of
+  2026-11-10, recorded in spec.md under Clarifications. A fourth answer
+  (which ADR points may be superseded) became FR-002, FR-007 and FR-010.
+  Validation re-run after the answers: every item passes.

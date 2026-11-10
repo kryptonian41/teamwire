@@ -12,6 +12,15 @@ The source of every finding is
 `/Users/apoorvagarwal/Projects/teamwire-agent-local/deckh-findings-2026-11-10.md`.
 Finding numbers F1 to F11 below refer to that file.
 
+## Clarifications
+
+### Session 2026-11-10
+
+- Q: When a blocked lead pane frees up, does the watch retry delivery of an undelivered result or message? → A: No process ever types an old message again (ADR 0003 point 7 and INV-8 stay). Instead the lead's own hooks list each undelivered result and message to the lead, with its file path, at the lead's next tool call and turn end, until the lead marks it read; the hooks add text to the lead's turn and type nothing; this ships for Claude Code, Codex and pi. `teamwire received` accepts message ids besides roles (and the lead's MCP tools get the same where `received` is reachable). An `answer` with `--re <id>` settles that question's delivery state. The watch's `UNDELIVERED` and `QUESTION-UNDELIVERED` lines name the file to read.
+- Q: A message reaches a member whose last result is `done`. Does teamwire hold it, or deliver it and track the woken turn? → A: By default teamwire delivers it, and the turn it starts counts as a new generation that the watch tracks and that ends with `done` like any generation. Exception: when the member's newest result has a `handoff:` summary, teamwire holds the message (stored, not typed), and `teamwire handoff` passes the held messages to the fresh session.
+- Q: What counts as a repository file that "mentions" a task path in the `owns` draft? → A: A file that holds the exact path text, a CI workflow `paths:` glob that matches the path, the path's dotted module name (`harness.tools` for `harness/tools.py`), or the path's full file name with its extension (`tools.py`). A bare stem such as `tools` never counts. The output is labelled a draft for the lead to check.
+- Q: May the fixes supersede accepted ADRs? → A: Yes, narrowly, in one new ADR for US1 that names each superseded point. ADR 0003 point 7 and INV-8 stay. WAT-6 and ADR 0007 point 6 are superseded so that a member whose result is `UNDELIVERED` or `UNCONFIRMED` and whose session is busy counts as working, not settled; a member whose session is dead or idle is still settled. The new-generation rule for a woken member supersedes any ADR point or requirement that says only a `reprompt` starts a generation.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The users here are two people. The **lead** is the agent session that runs a
@@ -30,44 +39,59 @@ which is working again counts as stopped, so the watch prints
 wakes a finished member starts work that teamwire does not track, and the
 lead can then no longer hand that member off (F3).
 
-After this story, the lead learns of every result and question once its
-pane is free, can record "I read this" without a second copy, and keeps a
-watch that tracks every member that is working.
+After this story, the lead's own hooks tell the lead about every result and
+question that could not be typed, with the file to read, without typing
+anything into the pane. The lead can record "I read this" without a second
+copy. The watch tracks every member whose session is working, and a member
+that asked to be handed off waits for its handoff.
 
 **Why this priority**: These three faults cost the deckh lead about 90
 minutes and left the team without a watch. They break the core loop of
 teamwire: a member reports, the lead reads, the watch tracks.
 
 **Independent Test**: Run a team on the test fakes. Block the lead pane
-while a member sends a question and records a result. Free the pane. Check
-that the lead is told about both, that the lead can mark the question read
-without a second copy, and that the watch neither exits nor loses the
-member while the member's session is busy.
+while a member sends a question and records a result. Run the lead's hook.
+Check that the hook lists both with their files, that the lead can mark
+the question read without a second copy, that the watch neither exits nor
+loses the member while the member's session is busy, and that a message to
+a member with a `handoff:` result is held for the handoff.
 
 **Acceptance Scenarios**:
 
 1. **Given** the lead's pane is blocked by a dialog and a member records a
-   result, **When** the pane becomes free while a watch runs, **Then** the
-   result is delivered to the lead, or the watch prints one plain line that
-   names the result and the file to read it from. [NEEDS CLARIFICATION:
-   should the watch retry delivery by itself once the pane is free, or only
-   report plainly that it will not retry and where the message is?]
-2. **Given** a question to the lead shows as undelivered, **When** the lead
-   records it as read with a teamwire command, **Then** `teamwire status`
-   no longer lists it under deliveries that need attention, and nothing is
-   typed into any pane.
+   result and sends a question to the lead, **When** the lead makes its next
+   tool call or ends its turn, **Then** the lead's hook adds a list to the
+   lead's turn that names the result and the question, each with its file
+   path, and nothing is typed into the lead's pane.
+2. **Given** the hook has listed an undelivered message, **When** the lead
+   makes further tool calls without marking it read, **Then** the hook keeps
+   listing it at each tool call and turn end.
 3. **Given** a question to the lead shows as undelivered, **When** the lead
+   runs `teamwire received <team> <message id>`, **Then** `teamwire status`
+   no longer lists it under deliveries that need attention, the hook stops
+   listing it, and nothing is typed into any pane.
+4. **Given** a question to the lead shows as undelivered, **When** the lead
    sends an answer with `--re <that question's id>`, **Then** the question
-   no longer shows as undelivered.
-4. **Given** a member's result was not delivered and the member's session
-   is busy again, **When** a watch starts, **Then** the watch counts the
-   member as working and does not print `TEAM-COMPLETE`.
-5. **Given** a member recorded `done` (including a `handoff:` result),
-   **When** the lead sends that member an answer or a note, **Then** the
-   member's next work is tracked by teamwire, and the lead can still hand
-   off or reprompt the member. [NEEDS CLARIFICATION: should teamwire hold
-   the message until the lead reprompts or hands off, or deliver it and
-   count the woken turn as a new generation the watch tracks?]
+   no longer shows as undelivered and the hook stops listing it.
+5. **Given** a result or a question to the lead could not be typed, **When**
+   the watch prints its `UNDELIVERED` or `QUESTION-UNDELIVERED` line,
+   **Then** the line names the file to read.
+6. **Given** a member's result was not delivered (`UNDELIVERED` or
+   `UNCONFIRMED`) and the member's session is busy again, **When** a watch
+   starts, **Then** the watch counts the member as working and does not
+   print `TEAM-COMPLETE`.
+7. **Given** a member's result was not delivered and the member's session
+   is dead or idle, **When** a watch starts, **Then** the watch counts the
+   member as settled, so the team can complete.
+8. **Given** a member recorded `done` with a summary that does not start with
+   `handoff:`, **When** the lead or another member sends it a message that
+   wakes it, **Then** the woken turn counts as a new generation that the
+   watch tracks, and that generation ends when the member records `done`.
+9. **Given** a member's newest result has a `handoff:` summary, **When** the
+   lead or another member sends it a message, **Then** teamwire stores the
+   message and types nothing into the member's pane, and
+   `teamwire handoff <team> --role <role>` passes the held messages to the
+   fresh session.
 
 ---
 
@@ -108,11 +132,12 @@ test that pins a list naming a task path.
 4. **Given** a CI workflow whose path filter matches a task's path, and a
    test file that names a task's path in a fixed list, **When** the lead
    runs the command, **Then** both files appear in the draft `owns` list,
-   each with the reason it was added. [NEEDS CLARIFICATION: what counts as
-   a file that "mentions" a task path: the exact path text only, or also a
-   glob in a CI path filter that matches the path and the file's module or
-   base name?]
-5. **Given** a `tasks.md` file that does not exist or has no task lines,
+   each with the reason it was added.
+5. **Given** a task path `harness/tools.py`, a config file that names the
+   module `harness.tools`, and a file that names only the stem `tools`,
+   **When** the lead runs the command, **Then** the config file is in the
+   draft `owns` list and the file that names only `tools` is not.
+6. **Given** a `tasks.md` file that does not exist or has no task lines,
    **When** the lead runs the command, **Then** the command exits with a
    non-zero status and names the problem.
 
@@ -164,16 +189,28 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 
 ### Edge Cases
 
-- The lead's pane stays blocked for longer than the watch runs. The message
-  must still be reported when the next watch starts.
+- The lead's pane stays blocked for longer than the watch runs. The lead's
+  hook still lists the message at the lead's next tool call, with or
+  without a watch.
+- The lead's harness is Codex or pi. The hook that lists undelivered
+  messages works there the same way as on Claude Code.
+- A member with a `handoff:` result gets several messages before the lead
+  hands it off. The handoff passes all of them, oldest first.
+- The lead reprompts, instead of handing off, a member with a `handoff:`
+  result that has held messages. The held messages reach the member with
+  the reprompt.
+- A woken member's new generation ends with no `done`, because its session
+  dies. The watch reports it the way it reports any generation whose
+  session died.
 - The lead records a message as read that was already delivered. The command
   succeeds and changes nothing.
 - The lead records as read a message id that does not exist, or a message
   sent to another member. The command refuses and names the reason.
 - An answer with `--re` names a message that is not a question to the
   sender. The delivery state of that message does not change.
-- A member's session is busy but the host cannot report whether it is busy.
-  The watch keeps the member as not complete and says it could not tell.
+- The host cannot report whether a member's session with an undelivered
+  result is busy, idle or dead. The watch keeps the rule it uses today
+  for an unknown session and says it could not tell.
 - A member's harness does not report when the current tool call started.
   `teamwire status --role` says the duration is unknown, not zero.
 - A task line names a path that does not exist in the repository yet (a new
@@ -188,63 +225,84 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 
 **US1: delivery and member state (F1, F2, F3)**
 
-- **FR-001**: When a result or a message to the lead could not be delivered
-  because the lead's pane was blocked, teamwire MUST either deliver it once
-  the pane is free or print one line that names the message and the file to
-  read it from (see the clarification in US1 scenario 1).
-- **FR-002**: The lead MUST be able to record a message as read with a
-  teamwire command that types nothing into any pane.
-- **FR-003**: A message the lead recorded as read MUST no longer appear in
-  `teamwire status` under deliveries that need attention.
-- **FR-004**: An answer sent with `--re <id>` MUST settle the delivery state
-  of question `<id>`, so the question no longer shows as undelivered.
-- **FR-005**: The watch MUST NOT print `TEAM-COMPLETE` while any member's
-  session is busy, whatever that member's recorded delivery state.
-- **FR-006**: A member whose result was not delivered and whose session is
-  busy again MUST count as working in the watch and in `teamwire status`.
-- **FR-007**: A message that reaches a member whose last result is `done`
-  MUST NOT start work that the watch does not track. The lead MUST still be
-  able to hand off or reprompt that member afterwards.
+- **FR-001**: The lead's hooks MUST list each result and each message to
+  the lead that was never typed into the lead's pane, with its file path, at
+  the lead's next tool call and at the lead's turn end, and MUST keep
+  listing it until the lead marks it read. The hooks add text to the lead's
+  turn and MUST type nothing into the pane. This MUST ship for every lead
+  harness: Claude Code, Codex and pi.
+- **FR-002**: teamwire MUST NOT type a message after the command that
+  sent it has exited. ADR 0003 point 7 and INV-8 stay in force.
+- **FR-003**: `teamwire received` MUST accept message ids (such as `m008`)
+  besides roles, and record each named message as read by the lead without
+  typing it again. The lead's MCP tools MUST accept the same where they
+  reach `received`.
+- **FR-004**: A message the lead recorded as read MUST no longer appear in
+  `teamwire status` under deliveries that need attention, nor in the hook's
+  list.
+- **FR-005**: An answer sent with `--re <id>` MUST settle the delivery state
+  of question `<id>` for the lead, so the question no longer shows as
+  undelivered.
+- **FR-006**: The watch's `UNDELIVERED` and `QUESTION-UNDELIVERED` lines
+  MUST name the file to read.
+- **FR-007**: A member whose result is `UNDELIVERED` or `UNCONFIRMED` and
+  whose session is busy MUST count as working, not settled, in the watch and
+  in `teamwire status`. The watch MUST NOT print `TEAM-COMPLETE` while such a
+  member works. A member whose session is dead or idle MUST still count as
+  settled.
+- **FR-008**: A message that wakes a member whose newest result is `done`
+  without a `handoff:` summary MUST start a new generation that the watch
+  tracks and that ends when the member records `done`.
+- **FR-009**: A message to a member whose newest result has a `handoff:`
+  summary MUST be stored and not typed. `teamwire handoff` MUST pass the
+  held messages to the fresh session.
+- **FR-010**: One new ADR MUST record the US1 decisions and name each point
+  it supersedes: WAT-6, ADR 0007 point 6, and any ADR point or requirement
+  that says only a `reprompt` starts a generation.
 
 **US2: the `tasks.md` reader (F4, F5)**
 
-- **FR-008**: teamwire MUST provide a command that reads a spec-kit
+- **FR-011**: teamwire MUST provide a command that reads a spec-kit
   `tasks.md` and the repository it belongs to, and writes nothing.
-- **FR-009**: The command MUST print, for each pair of phases and each pair
+- **FR-012**: The command MUST print, for each pair of phases and each pair
   of user stories, the files both name.
-- **FR-010**: The command MUST list the tasks that name no file, and the
+- **FR-013**: The command MUST list the tasks that name no file, and the
   tasks whose files no other task names.
-- **FR-011**: The command MUST print a draft `owns` list for each proposed
+- **FR-014**: The command MUST print a draft `owns` list for each proposed
   member, built from the task paths plus the repository files that mention
-  those paths, including CI workflow path filters and tests that pin exact
-  lists, each added file with the reason it was added.
-- **FR-012**: The command's output MUST label the `owns` list as a draft for
+  those paths, each added file with the reason it was added. A file
+  mentions a task path when it holds the exact path text, a CI workflow
+  `paths:` glob that matches the path, the path's dotted module name (such
+  as `harness.tools` for `harness/tools.py`), or the path's full file name
+  with its extension (such as `tools.py`). A bare stem such as `tools` MUST
+  NOT count.
+- **FR-015**: The command's output MUST label the `owns` list as a draft for
   the lead to check.
-- **FR-013**: The decision to add this command MUST be recorded in a new
+- **FR-016**: The decision to add this command MUST be recorded in a new
   ADR that supersedes ADR 0042's decision 1 in part.
 
 **US3: small fixes (F6, F8, F10, F11)**
 
-- **FR-014**: The speckit preset MUST say that `specify` can leave items in
+- **FR-017**: The speckit preset MUST say that `specify` can leave items in
   `checklists/requirements.md` unticked, and MUST tell the lead to read the
   checklist before launching the implementer and to waive or fix each
   unticked item.
-- **FR-015**: The closer preset MUST have a slot for the gate this machine
+- **FR-018**: The closer preset MUST have a slot for the gate this machine
   may run and a slot for the gates left to CI. The closer's report MUST
   state both.
-- **FR-016**: `teamwire status --role <role>` MUST show the name of the
+- **FR-019**: `teamwire status --role <role>` MUST show the name of the
   member's current tool call and how long it has run, for members on Claude
   Code, Codex and pi.
-- **FR-017**: `teamwire close --dry-run` MUST mark each symlink among the
+- **FR-020**: `teamwire close --dry-run` MUST mark each symlink among the
   paths that removal touches, name its target, and keep it apart from the
   files that removal deletes.
 
 **All stories**
 
-- **FR-018**: Every fix MUST come with a test that fails without the fix.
-- **FR-019**: The lead skill, preset, reference or doc text that describes a
+- **FR-021**: Every fix MUST come with a test that fails without the fix.
+- **FR-022**: The lead skill, preset, reference or doc text that describes a
   changed behaviour MUST change in the same change as the code.
-- **FR-020**: Each fix MUST name its root cause with file and line evidence
+- **FR-023**: Each fix MUST name its root cause with file and line evidence
   on `develop` before code changes.
 
 ### Key Entities
@@ -257,8 +315,11 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   read by the recipient from its file.
 - **Result**: A member's completion record for one generation, with a
   status and a summary.
-- **Generation**: One prompted run of a member that the watch tracks, from
-  launch or reprompt to the member's `done`.
+- **Generation**: One run of a member that the watch tracks, from launch,
+  reprompt or a waking message to the member's `done`.
+- **Held message**: A message to a member whose newest result has a
+  `handoff:` summary. It is stored, not typed, until a handoff or a
+  reprompt passes it on.
 - **Task line**: One line of a spec-kit `tasks.md`, with a task id, an
   optional story label, a phase, and the file paths it names.
 - **Owns draft**: A proposed list of files a member may change, with the
@@ -269,14 +330,15 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 ### Measurable Outcomes
 
 - **SC-001**: In a replay of the deckh sequence on the test fakes, the lead
-  is told about every blocked result and question within one watch cycle of
-  the pane becoming free, against about 90 minutes in the live run.
+  is told about every blocked result and question, with its file, at its
+  next tool call, against about 90 minutes in the live run.
 - **SC-002**: The lead clears an undelivered message it has read in one
   command, with zero messages typed again into its pane.
 - **SC-003**: In that replay, the watch prints `TEAM-COMPLETE` zero times
   while a member is busy, against three times in the live run.
 - **SC-004**: The lead needs zero dummy reprompts to keep a woken member
-  tracked.
+  tracked, and a member with a `handoff:` result does zero work in its old
+  session after a message reaches it.
 - **SC-005**: Run on deckh's `tasks.md` and the knit-3.0 repository at that
   run's base, the command's `owns` draft includes all three files the live
   run missed, and its overlap table matches the four phase pairs measured
