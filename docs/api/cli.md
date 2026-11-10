@@ -407,7 +407,10 @@ per member (`PASS`, `FLAGGED`, `FAIL`, `NO-CHECK`, `SKIPPED`) with its flags,
 including `no-commits` for an implementer that recorded `done` while its
 HEAD is still its base,
 `no-owns` (waivable) for an implementer whose `owns` list is empty,
-`uncommitted:<path>` once per uncommitted path, `asserts-removed:<path>` for a
+`uncommitted:<path>` once per uncommitted path, `config-changed:<path>` for
+lint, type, test or CI config changed outside `owns` (spec-kit's
+`.specify/memory/constitution.md` counts, in any repository),
+`asserts-removed:<path>` for a
 file that lost assert lines on net, and `head-moved` when HEAD changed while the
 check ran (no waiver clears it). A started worktree member whose folder is gone
 is `FAIL`; a pane member with no check stays `SKIPPED`.

@@ -312,6 +312,35 @@ fn check_config_is_flagged_unless_the_member_owns_it() {
     }
 }
 
+/// spec-kit's `analyze` and `converge` treat the constitution as the
+/// authority over the code, so a change to it changes what is checked.
+#[test]
+fn the_spec_kit_constitution_is_check_config() {
+    const PATH: &str = ".specify/memory/constitution.md";
+    for (owns, expected) in [
+        (
+            &["src/"][..],
+            vec![
+                "config-changed:.specify/memory/constitution.md",
+                "outside-owns:.specify/memory/constitution.md",
+            ],
+        ),
+        (&["src/", ".specify/"][..], vec![]),
+    ] {
+        let repo = repo_on_work(&[(PATH, "Every feature has a test.\n")]);
+        let mut fx = Fixture::new();
+        fx.add_member(&implementer("api", &repo, Some("true"), owns));
+        repo.commit(
+            &[(PATH, "Tests are optional.\n")],
+            "relax",
+            start_secs() + 5,
+        );
+        report_all_commits(&fx, &repo, "api");
+        let record = run_one(&mut fx, "api");
+        assert_eq!(flag_ids(&record), expected, "owns {owns:?}");
+    }
+}
+
 #[test]
 fn cargo_lint_tables_are_watched_and_dependencies_are_not() {
     let manifest = "[package]\nname = \"a\"\n\n[dependencies]\nserde = \"1\"\n\n[lints.clippy]\npedantic = \"warn\"\nunwrap_used = \"warn\"\n";
