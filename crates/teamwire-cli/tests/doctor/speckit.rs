@@ -541,6 +541,11 @@ fn a_codex_hooks_file_warns_because_codex_launch_refuses_it() {
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".codex/hooks.json"), "{detail}");
+    // Committed, the removal needs a commit.
+    assert!(
+        detail.ends_with("remove it from the repository, then commit on HEAD"),
+        "{detail}"
+    );
     assert!(detail.contains("Codex member"), "{detail}");
     assert!(!detail.contains(".codex/config.toml"), "{detail}");
 }
@@ -1321,7 +1326,11 @@ fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
     assert_eq!(level, Level::Warn);
     assert!(detail.contains(".codex/hooks.json is on disk"), "{detail}");
     assert!(detail.contains("Codex member"), "{detail}");
-    assert!(detail.contains("remove it from the repository"), "{detail}");
+    assert!(
+        detail.ends_with("remove it from the repository"),
+        "{detail}"
+    );
+    assert!(!detail.contains("then commit"), "{detail}");
     std::fs::remove_file(root.join(".codex/hooks.json")).unwrap();
     assert_eq!(events(&bed).0, Level::Pass);
 }
