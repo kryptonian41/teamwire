@@ -1290,6 +1290,19 @@ fn the_speckit_before_rule_and_the_close_sentence_state_what_the_pilot_showed() 
         !adr.contains("checks the base branch by hand") && adr.contains("`teamwire doctor`"),
         "{adr}"
     );
+    // Codex launch refuses either file (teamwire-harness-codex OWN_CONFIG_FILES).
+    for needed in [
+        "no `.codex/config.toml` or `.codex/hooks.json` exists",
+        "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`",
+    ] {
+        assert!(rules.contains(needed), "rules lack {needed}: {rules}");
+    }
+    assert!(
+        adr.contains(
+            "Codex launch refuses a repository that holds `.codex/config.toml` or `.codex/hooks.json`"
+        ),
+        "{adr}"
+    );
     let skill = flat(&example("skills/teamwire/SKILL.md"));
     assert!(
         skill.contains(

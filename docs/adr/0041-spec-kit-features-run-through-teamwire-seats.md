@@ -27,8 +27,9 @@ the seat rules forbid that wait. `implement` ticks `tasks.md` and never
 commits. Spec-kit finds the active feature through `.specify/feature.json`,
 which it git-ignores, so a new worktree has none. A worktree holds only
 committed files. pi members skip the folder's prompt files. An extension
-with `events:` writes `.codex/config.toml`, which makes Codex launch refuse
-the repository, and hooks in `.claude/settings.json` that run unreviewed.
+with `events:` writes `.codex/config.toml`, and Codex launch refuses a
+repository that holds `.codex/config.toml` or `.codex/hooks.json`. The
+same extension writes hooks in `.claude/settings.json` that run unreviewed.
 The `git` extension switches branches inside a worktree. The lead skill
 said to keep specs outside the repository. Rule LCH-17 lets the seat rules
 name only teamwire's own commands.
@@ -178,8 +179,9 @@ Also settled by the design:
   the user asked to keep spec-kit as it is. teamwire reads the stock format
   instead.
 - **Spec-kit hooks or events to enforce teamwire's rules.** A hook is prose
-  that an agent can skip. An `events:` extension writes `.codex/config.toml`
-  and so blocks every Codex member.
+  that an agent can skip. An `events:` extension writes `.codex/config.toml`,
+  and Codex launch refuses that file and `.codex/hooks.json`, so the
+  extension blocks every Codex member.
 - **A shared specs folder outside the repository,** in the team
   directory or in a folder beside the repository, in place of the merge in
   decision 8. The user ruled it out on 2026-11-10. Spec-kit versions specs
