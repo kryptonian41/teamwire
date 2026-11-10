@@ -15,9 +15,9 @@ use crate::memory::{MemberMemory, WatchMemory, slept_since};
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
-    STALLED_PREFIX, age, agent_text, blocked_key, context_key, died_key, late_key, question_key,
-    result_key, result_path, result_written, silent_key, stalled_key, unanswered_key, unread_key,
-    unreported_key,
+    STALLED_PREFIX, age, agent_text, asks_the_parent, blocked_key, context_key, died_key, late_key,
+    question_key, result_key, result_path, result_written, silent_key, stalled_key, unanswered_key,
+    unread_key, unreported_key,
 };
 use crate::{UNANSWERED_AFTER, UNREAD_AFTER};
 
@@ -61,6 +61,9 @@ struct Verdict {
     settled: Option<String>,
     /// Nothing will move without the lead.
     stuck: bool,
+    /// A question round: the member waits for the lead's answers. It is
+    /// neither settled nor stuck, and the stall rule leaves it out.
+    asking: bool,
 }
 
 impl Verdict {
@@ -68,6 +71,7 @@ impl Verdict {
         Self {
             settled: None,
             stuck: false,
+            asking: false,
         }
     }
 
@@ -75,6 +79,7 @@ impl Verdict {
         Self {
             settled: Some(label.into()),
             stuck: false,
+            asking: false,
         }
     }
 }
@@ -154,6 +159,7 @@ pub(crate) fn plan(
     };
     let mut settled: Vec<(Role, String)> = Vec::new();
     let mut outstanding = 0_usize;
+    let mut asking = 0_usize;
     let mut stuck = Vec::new();
     for info in &snap.members {
         let role = &info.member.role;
@@ -171,6 +177,7 @@ pub(crate) fn plan(
             settled.push((role.clone(), label));
         } else {
             outstanding += 1;
+            asking += usize::from(verdict.asking);
             if verdict.stuck {
                 stuck.push(role.clone());
             }
@@ -212,8 +219,8 @@ pub(crate) fn plan(
         }
     }
 
-    // Everyone still outstanding is stuck right now: only that is worth a
-    // push. It is said once per stall episode, and the episode ends when
+    // Everyone still outstanding, apart from members waiting for the lead's
+    // answers, is stuck right now: only that is worth a push. It is said once per stall episode, and the episode ends when
     // something moves. Both facts are announcements in the store, so a
     // restarted watch finds the open episode and stays quiet.
     let episode = env
@@ -224,7 +231,8 @@ pub(crate) fn plan(
         .max()
         .unwrap_or(0);
     let open = u64::from(episode) > env.snap.stalls_ended;
-    if outstanding > 0 && stuck.len() == outstanding {
+    let movable = outstanding - asking;
+    if movable > 0 && stuck.len() == movable {
         if !open {
             let roles: Vec<&str> = stuck.iter().map(Role::as_str).collect();
             env.announce(
@@ -311,6 +319,7 @@ fn judge(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) -> Verdict
         return Verdict {
             settled: None,
             stuck: late,
+            asking: false,
         };
     }
     judge_running(env, info, mm)
@@ -325,8 +334,21 @@ fn judge_completion(
     let c = &record.completion;
     let role = &info.member.role;
     let path = result_path(&env.snap.team_dir, role, record.result_sha256.as_ref());
+    // A question round waits for the lead's reprompt, which starts a new
+    // generation that the watch then follows (WAT-22).
+    let asks = c.status == CompletionStatus::Blocked && asks_the_parent(&c.summary);
+    let settle = |label: &str| {
+        if asks {
+            Verdict {
+                asking: true,
+                ..Verdict::waiting()
+            }
+        } else {
+            Verdict::settled(label)
+        }
+    };
     match c.report_state {
-        ReportState::Delivered => Verdict::settled(if c.status == CompletionStatus::Done {
+        ReportState::Delivered => settle(if c.status == CompletionStatus::Done {
             "done"
         } else {
             c.status.as_str()
@@ -422,7 +444,7 @@ fn judge_completion(
                 "UNDELIVERED",
                 format!("UNDELIVERED {role} {reason} Result: {path}"),
             );
-            Verdict::settled("undelivered")
+            settle("undelivered")
         }
         ReportState::Unconfirmed => {
             env.announce(
@@ -430,7 +452,7 @@ fn judge_completion(
                 "UNCONFIRMED",
                 format!("UNCONFIRMED {role} Result: {path}"),
             );
-            Verdict::settled("unconfirmed")
+            settle("unconfirmed")
         }
     }
 }
@@ -544,5 +566,6 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     Verdict {
         settled: None,
         stuck,
+        asking: false,
     }
 }

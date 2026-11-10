@@ -1,3 +1,5 @@
 # Applies to every repository, whatever its language.
 language = "common"
-config_files = ["**/.github/workflows/**"]
+# spec-kit's constitution is the authority its `analyze` and `converge`
+# commands check the code against, so it is check config too.
+config_files = ["**/.github/workflows/**", "**/.specify/memory/constitution.md"]

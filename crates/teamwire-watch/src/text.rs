@@ -146,6 +146,19 @@ pub(crate) fn event(team: &str, at: Timestamp, text: &str) -> String {
     one_line(&format!("{head}{said}{tail}"), EVENT_MAX).into_string()
 }
 
+/// A `blocked` result with this summary is a question round (WAT-22): after
+/// an optional `handoff: `, it matches `^[1-9][0-9]* questions? for the
+/// parent\.`. The member waits for the lead's answers, so it is not done.
+pub(crate) fn asks_the_parent(summary: &str) -> bool {
+    let s = summary.strip_prefix("handoff: ").unwrap_or(summary);
+    let rest = s.trim_start_matches(|c: char| c.is_ascii_digit());
+    rest.len() < s.len()
+        && !s.starts_with('0')
+        && [" questions for the parent.", " question for the parent."]
+            .iter()
+            .any(|tail| rest.starts_with(tail))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

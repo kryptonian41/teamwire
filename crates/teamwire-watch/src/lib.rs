@@ -1,4 +1,4 @@
-//! The watch loop's single poll (WAT-1..WAT-21) and the read-only status
+//! The watch loop's single poll (WAT-1..WAT-22) and the read-only status
 //! view. Both derive each member's state the same way, with two intended
 //! differences: status reads an idle `"dispatch": false` member `quiet` at
 //! once (WAT-3), and status ages are wall time, since only a running watch
