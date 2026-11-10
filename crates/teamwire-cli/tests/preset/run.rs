@@ -223,3 +223,70 @@ fn the_speckit_spec_check_waits_for_tasks_and_owns_the_whole_folder() {
         );
     }
 }
+
+/// Every `setup` of every preset, the team's and each member's, as printed.
+fn setups(name: &str) -> Vec<String> {
+    let run = teamwire(&["preset", name]);
+    assert_eq!(run.code, 0, "{name}: {}", run.err);
+    let (_, skeleton) = run
+        .out
+        .split_once("`teamwire launch --spec FILE`:\n")
+        .unwrap();
+    let doc: Value = serde_json::from_str(skeleton).unwrap();
+    std::iter::once(&doc)
+        .chain(doc["children"].as_array().unwrap())
+        .filter_map(|v| v["setup"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// A lead fills in only what the skeleton marks, so every `setup` runs as
+/// printed in a repository that has no script of its own, and the fill-in
+/// line names the `setup` placeholder. Launch runs `setup` in each new
+/// worktree, and a dry run never does, so a missing script fails only at
+/// the real launch, with exit 127.
+#[test]
+fn every_preset_setup_runs_as_printed_and_is_marked_to_fill_in() {
+    let run = teamwire(&["preset", "speckit"]);
+    let fill_in = run
+        .out
+        .lines()
+        .find(|l| l.starts_with("Spec skeleton."))
+        .unwrap();
+    let placeholder = "true CHANGEME worktree setup command";
+    assert!(fill_in.contains(&format!("`{placeholder}`")), "{fill_in}");
+    let work = tempfile::tempdir().unwrap();
+    let repo = repo(work.path(), "specs/001-CHANGEME");
+    for name in super::NAMES {
+        for setup in setups(name) {
+            assert!(setup.starts_with(placeholder), "{name}: {setup}");
+            for shell in shells() {
+                assert_eq!(run_in(shell, &setup, &repo), 0, "{shell}: {name}: {setup}");
+            }
+        }
+    }
+}
+
+/// The implementer's `setup` writes the pointer spec-kit's scripts read,
+/// with the one key they read, and git ignores the file, so the member
+/// never commits it.
+#[test]
+fn the_speckit_implementer_setup_writes_the_ignored_feature_pointer() {
+    let doc = printed();
+    let feature = folder(&doc);
+    let setup = member(&doc, "impl")["setup"].as_str().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let repo = repo(work.path(), &feature);
+    let pointer = repo.join(".specify/feature.json");
+    for shell in shells() {
+        std::fs::remove_file(&pointer).unwrap_or_default();
+        assert_eq!(run_in(shell, setup, &repo), 0, "{shell}: {setup}");
+        let written: Value = serde_json::from_str(&std::fs::read_to_string(&pointer).unwrap())
+            .unwrap_or_else(|e| unreachable!("{shell}: feature.json is not JSON: {e}"));
+        assert_eq!(
+            written,
+            serde_json::json!({ "feature_directory": feature }),
+            "{shell}"
+        );
+        git(&repo, &["check-ignore", "-q", ".specify/feature.json"]);
+    }
+}

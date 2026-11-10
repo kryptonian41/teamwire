@@ -13,7 +13,7 @@
   ],
   "team": "myteam",
   "title": "Build and review CHANGEME",
-  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "setup": "true CHANGEME worktree setup command",
   "children": [
     {
       "_note": "For a Claude Code member with mattpocock-skills on, keep the task's tdd and diagnosing-bugs sentences. For any other member, keep them only when its harness has those skills.",

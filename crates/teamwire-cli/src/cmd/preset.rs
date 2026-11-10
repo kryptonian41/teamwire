@@ -186,7 +186,10 @@ fn show(name: &str, text: &str) -> Result<String, serde_json::Error> {
         }
     }
     out.push(
-        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values. Leave out each member \
+        "\nSpec skeleton. Fill in the CHANGEME and /abs/path values. Each `setup` starts \
+         with `true CHANGEME worktree setup command`, which runs and does nothing: put the \
+         command a new worktree needs there, such as an install, or keep `true` when it \
+         needs none. Leave out each member \
          with a `_launch` or `_launch_after` note and add it later with `--add`. Then run \
          `teamwire launch --spec FILE`:"
             .to_owned(),

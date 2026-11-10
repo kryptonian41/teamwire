@@ -14,7 +14,7 @@
   ],
   "team": "myteam",
   "title": "CHANGEME: logic and UI split",
-  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "setup": "true CHANGEME worktree setup command",
   "children": [
     {
       "_wave": 1,

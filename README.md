@@ -200,7 +200,7 @@ A minimal spec with one implementer looks like this:
 {
   "team": "refunds",
   "title": "Build the refund endpoint",
-  "setup": "./scripts/setup-worktree.sh \"$1\"",
+  "setup": "cargo fetch --locked",
   "children": [
     {
       "role": "api",
@@ -218,6 +218,10 @@ A minimal spec with one implementer looks like this:
   ]
 }
 ```
+
+Launch runs `setup` with `sh -c` in each new worktree before the member
+starts, with the worktree's path as `$1`. Put your repository's own command
+there, or `true` when a worktree needs nothing.
 
 The member runs on the lead's harness, because the spec names no `harness`.
 Its `task_class` says how hard its task is to reason about. To choose its
