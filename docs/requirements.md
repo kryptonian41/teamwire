@@ -96,6 +96,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | STO-14 | SHOULD | `teamwire export` writes every record as JSON lines with CloudEvents-style names. | rust 18; protocols R12 |
 | STO-15 | MUST | A corrupt or unreadable record is reported and skipped. It never blocks other records and is never read as success. | protocols R15; specmsg L2, L6; speclife F5 |
 | STO-16 | MUST | Every command works with no background process running. | rust 15 |
+| STO-17 | MUST | Inside a git repository whose root holds `.specify/`, `teamwire doctor` prints seven spec-kit lines (`spec-kit committed`, `spec-kit constitution`, `spec-kit integrations`, `spec-kit git extension`, `spec-kit events`, `spec-kit feature pointer`, `spec-kit workflows`), each `ok` or `warn` and never `FAIL`, because a doctor `FAIL` blocks `teamwire afk start` (AFK-2). Each warning names the file and what to do. The checks read files and ask git (`ls-files`, `check-ignore`); they never run `specify`. Outside such a repository doctor prints none of them. | ADR 0041; `docs/api/cli.md` `teamwire doctor`; `crates/teamwire-cli/tests/doctor/speckit.rs` `a_healthy_spec_kit_repository_prints_seven_ok_lines_in_order`, `outside_a_spec_kit_repository_doctor_prints_no_spec_kit_line`, `the_binary_asks_a_real_git_from_a_subdirectory_of_the_repository` |
 
 ### Delivery safety (DEL)
 
