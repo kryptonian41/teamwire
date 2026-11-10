@@ -10,7 +10,9 @@
 
 The source of every finding is
 `/Users/apoorvagarwal/Projects/teamwire-agent-local/deckh-findings-2026-11-10.md`.
-Finding numbers F1 to F11 below refer to that file.
+Finding numbers F1 to F12 below refer to that file. F12 was added to the
+findings file after the first draft, and the user put it in scope as US4
+(P4) on 2026-11-10.
 
 ## Clarifications
 
@@ -24,6 +26,7 @@ Finding numbers F1 to F11 below refer to that file.
 - Q: Which recorded results make a waking message start a new generation: only a `done` result, or any result (`done`, `blocked`, `failed`)? → A: Any recorded result in the current generation (`done`, `blocked`, `failed`); the `handoff:` hold is the only exception.
 - Q: The lead reprompts, instead of handing off, a member whose newest result is `handoff:` and that has held messages. What happens to the held messages? → A: The reprompt delivers the held messages right after the reprompt text, oldest first, and the hold ends.
 - Q: Does the `tasks.md` reader draft one `owns` list per user story, or per member of a split it proposes? → A: One `owns` draft per user story, plus one for the setup and polish phases, and a line naming which stories share files; the lead merges stories into members.
+- Q: May US4 supersede ADR 0009 point 2 ("A waiver does not carry over to a new HEAD"), and what ends a waiver instead? → A: Yes, narrowly, in a new ADR. A waiver for a flag about one file holds while that file's content is the same as at the HEAD where the lead waived it. Any change to that file's content ends the waiver, also one that a rebase or merge brings in. A flag that names no file, such as `no-commits`, still ends at the next commit, as today.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -197,6 +200,40 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 
 ---
 
+### User Story 4 - A waiver for a file holds until that file changes (Priority: P4)
+
+In deckh the `spec` member changed `.specify/memory/constitution.md` with
+the lead's approval, and the lead waived the two flags verify raised for
+that file. Each later commit of `spec` touched only `specs/`. Even so,
+verify raised both flags again, unwaived, at each new HEAD. The lead waived
+the same two flags with the same reason at four HEADs (F12).
+
+**Why this priority**: The cost is lead turns and a noisy verify, not lost
+work. The fix is small and touches one crate.
+
+**Independent Test**: In a test repository, a member changes a check config
+file outside its `owns`. The lead waives both flags. The member then commits
+a file inside its `owns`. Verify says `PASS` with both flags waived. A
+further commit that changes the waived file makes verify `FLAGGED` again.
+
+**Acceptance Scenarios**:
+
+1. **Given** a member whose commit changed one file outside its `owns`, and
+   the lead's waivers for that file's flags at that HEAD, **When** the
+   member makes a commit that leaves that file alone and the lead runs
+   `teamwire verify <team> --role <role>`, **Then** the file's flags show as
+   waived and the verdict is `PASS`.
+2. **Given** the same waivers, **When** the member makes a commit that
+   changes the waived file, **Then** the file's flags show as not waived and
+   the verdict is `FLAGGED`.
+3. **Given** the same waivers, **When** the member merges a branch that
+   changes the waived file, **Then** the file's flags show as not waived.
+4. **Given** a waiver for a flag that names no file, such as `no-owns`,
+   **When** the member makes any new commit, **Then** that flag shows as not
+   waived, as today.
+
+---
+
 ### Edge Cases
 
 - The lead's pane stays blocked for longer than the watch runs. The lead's
@@ -228,6 +265,15 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   draft.
 - A symlink's target is outside the repository, or the link is broken. The
   dry run still names the target and marks a broken link.
+- A member changes a waived file and later changes it back, so its content
+  at HEAD is the same as at the waived HEAD. The waiver holds, because
+  verify compares the file's content at the two HEADs, not its history.
+- The repository no longer holds the commit where the lead waived a flag,
+  for example after a rebase and a garbage collection. The waiver ends.
+- A waived flag's file was deleted at the waived HEAD and is still absent
+  at HEAD now. The content counts as the same, so the waiver holds.
+- An `uncommitted:<path>` flag is about a change that no commit holds. Its
+  waiver ends at the next commit, as today.
 
 ## Requirements *(mandatory)*
 
@@ -320,6 +366,23 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 - **FR-023**: Each fix MUST name its root cause with file and line evidence
   on `develop` before code changes.
 
+**US4: waivers (F12)**
+
+- **FR-024**: A waiver for a flag that names one file MUST count at a later
+  HEAD of the same member while that file's content at the later HEAD is the
+  same as at the HEAD where the lead waived it. A file absent at both HEADs
+  counts as the same.
+- **FR-025**: Any change to the waived file's content between the waived
+  HEAD and HEAD now MUST end the waiver, also a change that a rebase or a
+  merge brings in. A waiver whose HEAD the repository no longer holds MUST
+  end.
+- **FR-026**: A waiver for a flag that names no file, such as `no-commits`,
+  `no-owns` or `report-no-line:<sha>`, and a waiver for
+  `uncommitted:<path>`, MUST count only at the HEAD where it was recorded,
+  as today.
+- **FR-027**: A new ADR MUST record the US4 rule and supersede ADR 0009
+  point 2 only for the flags that name one file.
+
 ### Key Entities
 
 - **Message**: A question, answer, finding, notice or note between team
@@ -339,6 +402,9 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
   optional story label, a phase, and the file paths it names.
 - **Owns draft**: A proposed list of files a member may change, with the
   reason each file is on it.
+- **Waiver**: The lead's acceptance of one verify flag of one member, with a
+  reason and the HEAD where the lead recorded it. A flag that names one file
+  carries that file's path.
 
 ## Success Criteria *(mandatory)*
 
@@ -363,6 +429,10 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 - **SC-007**: An operator can tell from one `teamwire status --role` call
   how long a member's current tool call has run, on each of the three
   harnesses.
+- **SC-008**: In a replay of deckh's waiver sequence on a test repository,
+  the lead waives each file flag once, and verify says `PASS` at every later
+  commit that leaves the file alone, against the same two waivers recorded
+  at four HEADs in the live run.
 
 ## Assumptions
 
@@ -382,5 +452,7 @@ the three harnesses, and the dry run on a worktree fixture with a symlink.
 - The fixes reuse the existing delivery, message, report, watch and close
   code, and the existing presets. No new crate unless the layering rules in
   `docs/conventions.md` section 5 call for one.
+- US4 stores no new data. Each waiver already records the HEAD where the
+  lead waived it, and that HEAD is all the content comparison needs.
 - Tests use the fakes in `tests/fakes/`. No test types into a real pane or
   starts a real agent session.

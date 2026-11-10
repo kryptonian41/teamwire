@@ -41,3 +41,9 @@
   2026-11-10, recorded in spec.md under Clarifications. A fourth answer
   (which ADR points may be superseded) became FR-002, FR-007 and FR-010.
   Validation re-run after the answers: every item passes.
+- Re-validated on 2026-11-10 after US4 (F12) was added: US4 has four
+  acceptance scenarios, FR-024 to FR-027 are each testable, SC-008 is a
+  count, and the four new edge cases cover a reverted change, a lost
+  commit, a deleted file and an `uncommitted:<path>` flag. All 16 items
+  still pass. No new [NEEDS CLARIFICATION] marker was needed: the user's
+  F12 decision, recorded under Clarifications, answers what ends a waiver.
