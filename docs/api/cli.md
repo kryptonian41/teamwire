@@ -464,7 +464,12 @@ hash, not its bytes (STO-10).
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
 same checks plus CLS-5; `--stop` allows removing a busy member;
-`--unverified` overrides CLS-5 and prints why. A whole-team close, and its
+`--unverified` overrides CLS-5 and prints why. After `teamwire amend`,
+`--role` also refuses an implementer whose passing verify record was recorded
+at or before the newest amend note (`<role>'s verify at HEAD <sha7> was
+recorded before the lead amended its check or owns (<note id>); run teamwire
+verify <team> --role <role> again`), even at the same HEAD, until verify runs
+again (CLS-9). `--unverified` overrides it too. A whole-team close, and its
 `--dry-run`, first print on stderr `warning: no closer reported on team
 <team>, and <n> implementer branch(es) have commits; add one from teamwire
 preset closer, or close anyway if the user said so.` when no closer of the

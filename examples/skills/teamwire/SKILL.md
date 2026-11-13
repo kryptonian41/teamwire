@@ -833,7 +833,8 @@ any other member while a closer runs in the team and has not reported since
 its latest start or reprompt. `--unverified` overrides both. A team with no
 closer yet gets no closer refusal, so a plan reviewer can go as soon as you
 have acted on its report. A
-commit after verify passed makes it refuse again until verify runs again. It
+commit after verify passed makes it refuse again until verify runs again, and
+so does an amend of the member's check or owns, even at the same HEAD. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
 Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`
 gets past only that refusal, not the missing verify or closer. When

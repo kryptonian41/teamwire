@@ -939,3 +939,127 @@ fn removing_a_member_takes_back_its_exclude_lines_that_no_teammate_needs() {
     assert_eq!(report.stopped_at, None, "{report:?}");
     assert_eq!(std::fs::read_to_string(&exclude).unwrap(), "*.local\n");
 }
+
+// ---- an amend of the check or owns (ADR 0046) ----
+
+/// Stores a note from `sender` to `name` with `body`, as `send` would, and
+/// returns its display id.
+#[expect(
+    clippy::unwrap_used,
+    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
+)]
+fn note_to(rig: &mut Rig, sender: &str, name: &str, body: &str) -> String {
+    let now = rig.clock.now();
+    let new = teamwire_store::NewMessage {
+        sender: teamwire_core::Actor::parse(sender).unwrap(),
+        kind: teamwire_core::MessageType::Note,
+        re: None,
+        commit: None,
+        body: body.to_owned(),
+        client_key: None,
+        recipients: vec![teamwire_core::Recipient::parse(name).unwrap()],
+    };
+    let stored = rig.store.write(|tx| tx.insert_message(now, &new)).unwrap();
+    stored.message.display_id.to_string()
+}
+
+fn tick(rig: &Rig) {
+    rig.clock.advance(std::time::Duration::from_secs(5));
+}
+
+const AMEND_NOTE: &str = "CHECK AMENDED: the old check ran every test file\n\
+     The lead changed your scope.\ncheck: A -> B\n";
+
+#[test]
+fn an_amend_note_makes_an_older_pass_not_count() {
+    let mut rig = verified_implementer();
+    tick(&rig);
+    let note = note_to(&mut rig, "lead", "api", AMEND_NOTE);
+    let head = head_of(&rig, "api");
+    let short: String = head.chars().take(7).collect();
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    let want = format!(
+        "api's verify at HEAD {short} was recorded before the lead amended its check or owns \
+         ({note}); run teamwire verify alpha --role api again"
+    );
+    assert!(report.refusals.contains(&want), "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Started);
+
+    // A verify recorded after the note counts, at the same HEAD.
+    tick(&rig);
+    verify_at(&mut rig, "api", &head, "PASS", &[]);
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+
+    // `--unverified` sets the reason aside and says so.
+    let mut rig = verified_implementer();
+    tick(&rig);
+    note_to(&mut rig, "lead", "api", AMEND_NOTE);
+    let opts = CloseOpts {
+        unverified: true,
+        ..CloseOpts::default()
+    };
+    let report = remove(&mut rig, "api", opts);
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let first = report.steps.first().unwrap();
+    assert_eq!(first.step, "unverified");
+    assert!(
+        first
+            .detail
+            .contains("was recorded before the lead amended its check or owns"),
+        "{first:?}"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}
+
+#[test]
+fn a_record_at_the_same_time_as_the_note_does_not_count() {
+    // The PASS and the note carry the same clock time.
+    let mut rig = verified_implementer();
+    note_to(&mut rig, "lead", "api", AMEND_NOTE);
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(
+        asks(
+            &report.refusals,
+            "was recorded before the lead amended its check or owns"
+        ),
+        "{report:?}"
+    );
+    assert_eq!(rig.member("api").state, MemberState::Started);
+}
+
+#[test]
+fn a_pass_recorded_after_a_same_scope_amend_counts() {
+    let mut rig = verified_implementer();
+    tick(&rig);
+    note_to(
+        &mut rig,
+        "lead",
+        "api",
+        "CHECK AMENDED: no change\nThe lead changed your scope.\ncheck: A -> A\n",
+    );
+    tick(&rig);
+    let head = head_of(&rig, "api");
+    verify_at(&mut rig, "api", &head, "PASS", &[]);
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}
+
+#[test]
+fn a_note_without_the_marker_or_from_a_member_changes_nothing() {
+    let mut rig = verified_implementer();
+    rig.add_pane_member("scout", MemberKind::Investigator);
+    tick(&rig);
+    note_to(
+        &mut rig,
+        "lead",
+        "api",
+        "the check is fine; CHECK AMENDED: not first",
+    );
+    note_to(&mut rig, "scout", "api", AMEND_NOTE);
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    assert!(report.refusals.is_empty(), "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Removed);
+}

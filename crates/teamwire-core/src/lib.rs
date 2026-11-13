@@ -54,8 +54,8 @@ pub use lead_setup::{
 };
 pub use member::{Member, MemberKind, MemberState, Mode};
 pub use message::{
-    Delivery, DeliveryError, DeliveryErrorCode, DeliveryState, Message, MessageType, Refusal,
-    Route, SendRequest,
+    AMEND_MARKER, Delivery, DeliveryError, DeliveryErrorCode, DeliveryState, Message, MessageType,
+    Refusal, Route, SendRequest,
 };
 pub use models::{
     CatalogSource, Evidence, EvidenceEntry, EvidenceKind, ModelCatalog, ModelInfo, TaskClass,
