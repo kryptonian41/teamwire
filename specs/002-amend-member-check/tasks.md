@@ -171,8 +171,8 @@ kind's seat rules ban, and a test compares the two (F15).
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T020 Run `cargo fmt --all`, then `scripts/gate.sh fast`, then `scripts/test-changed.sh` (it tests the changed crates and every crate that depends on them, against `$TEAMWIRE_BASE`, else `main`); fix what fails within the two-round limit, and record each command and its result in your report (changes no file unless a fix is needed)
-- [ ] T021 Check the quickstart's automated block in `specs/002-amend-member-check/quickstart.md` against what you ran, and list in your report each test name of research.md with the task that wrote it and whether it failed on the base or is a guard (changes no file)
+- [X] T020 Run `cargo fmt --all`, then `scripts/gate.sh fast`, then `scripts/test-changed.sh` (it tests the changed crates and every crate that depends on them, against `$TEAMWIRE_BASE`, else `main`); fix what fails within the two-round limit, and record each command and its result in your report (changes no file unless a fix is needed)
+- [X] T021 Check the quickstart's automated block in `specs/002-amend-member-check/quickstart.md` against what you ran, and list in your report each test name of research.md with the task that wrote it and whether it failed on the base or is a guard (changes no file)
 
 ---
 
