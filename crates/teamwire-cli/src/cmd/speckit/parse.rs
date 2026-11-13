@@ -166,7 +166,7 @@ fn path_of(word: &Word<'_>) -> Option<String> {
     }
     let text = strip_line_suffix(text);
     let text = text.strip_prefix("./").unwrap_or(text);
-    if text.is_empty() || text.starts_with('-') {
+    if text.is_empty() || text.starts_with('-') || text.chars().all(|c| matches!(c, '/' | '.')) {
         return None;
     }
     let named = text.contains('/') || has_extension(text, if word.code { 1 } else { 2 });
@@ -271,11 +271,11 @@ mod tests {
     }
 
     /// Guard: passes on a stub that returns no tasks. A URL, a placeholder,
-    /// an abbreviation and a command in backticks name no path.
+    /// an abbreviation, a flag and a lone slash name no path.
     #[test]
     fn a_url_a_placeholder_and_an_abbreviation_are_not_paths() {
         let text = "- [ ] T001 See https://example.com/a/b.html, e.g. `reports/<role>.md`, \
-            and run `--repo`, then 1.5 times.\n";
+            and run `--repo`, then 1.5 times, and / or `./`.\n";
         assert!(paths_of(text, "T001").is_empty());
     }
 }
