@@ -85,7 +85,7 @@ pub(crate) fn context_fill(
     fill_from_tail(&tail_lines(&file)?, disable_1m_from_env())
 }
 
-fn find_transcript(claude_dir: &Path, session: &SessionId) -> Option<PathBuf> {
+pub(crate) fn find_transcript(claude_dir: &Path, session: &SessionId) -> Option<PathBuf> {
     let mut dirs: Vec<PathBuf> = std::fs::read_dir(claude_dir.join("projects"))
         .ok()?
         .filter_map(Result::ok)
@@ -99,7 +99,7 @@ fn find_transcript(claude_dir: &Path, session: &SessionId) -> Option<PathBuf> {
 
 /// The last `TAIL_BYTES` of the file as text, without its first line when the
 /// cut falls inside it.
-fn tail_lines(file: &Path) -> Option<String> {
+pub(crate) fn tail_lines(file: &Path) -> Option<String> {
     let mut f = std::fs::File::open(file).ok()?;
     let len = f.metadata().ok()?.len();
     let start = len.saturating_sub(TAIL_BYTES);

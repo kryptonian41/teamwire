@@ -21,6 +21,7 @@ mod lead_setup;
 mod models;
 mod screen;
 mod session;
+mod tool;
 mod trust;
 
 pub use lead_setup::{
@@ -211,6 +212,14 @@ impl Harness for ClaudeCode {
         transcript: Option<&Path>,
     ) -> Result<Option<Fill>, HarnessError> {
         Ok(fill::context_fill(&self.config.claude_dir, s, transcript))
+    }
+
+    fn current_tool(
+        &self,
+        s: &SessionId,
+        _cwd: Option<&Path>,
+    ) -> Result<Option<teamwire_core::ToolRun>, HarnessError> {
+        Ok(tool::current_tool(&self.config.claude_dir, s, None))
     }
 
     fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
