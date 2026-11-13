@@ -54,6 +54,14 @@ const TASKS_002: &str = "# Tasks: 002
   - refuse as `cmd/verify.rs:24-31` does, as `contracts/amend-cli.md` says; the rendered `teamwire/skills/teamwire/SKILL.md` and the package file `skills/teamwire/SKILL.md` name `teamwire amend`.
 - [X] T011 [US1] Launch with check `test -s specs/NNN-name/tasks.md`, then write `crates/teamwire-cli/src/cmd/amend.rs` (new) and change `cmd/lib.rs`.
 - [X] T018 [US1] Read `examples/skills/teamwire/SKILL.md` from `Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md\")`.
+
+## Phase 4: User Story 2 - new folder (Priority: P2)
+
+- [ ] T030 [US2] Write `crates/new/src/tools.py`.
+
+## Phase 5: User Story 3 - again (Priority: P3)
+
+- [ ] T031 [US3] Change `crates/new/src/tools.py` again.
 ";
 
 fn git(dir: &Path, args: &[&str]) {
@@ -364,6 +372,8 @@ fn every_name_that_is_no_path_is_printed_with_its_task() {
             "  T010: crates/b/**, crates/c/**, teamwire/skills/teamwire/SKILL.md",
             "  T011: specs/NNN-name/tasks.md, cmd/lib.rs",
             "  T018: Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md",
+            "  T030: crates/new/src/tools.py",
+            "  T031: crates/new/src/tools.py",
         ],
         "{out}"
     );
@@ -419,4 +429,33 @@ fn an_invalid_exclude_pattern_exits_three() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(3), "{err}");
     assert!(err.contains("bench/[a"), "{err}");
+}
+
+/// A new file in a new folder fails rule 2, yet two tasks that write it
+/// still share it in the overlap, and neither changes no file. No draft
+/// holds it: the lead adds it from the names list.
+#[test]
+fn a_name_in_a_new_folder_counts_in_the_overlap_but_in_no_draft() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let shared = block(&out, "Shared files between phases:");
+    assert!(
+        shared.contains(&"  Phase 4 and Phase 5: crates/new/src/tools.py"),
+        "{out}"
+    );
+    assert!(
+        line(&out, "Stories that share files:").contains("US2 and US3 (crates/new/src/tools.py)"),
+        "{out}"
+    );
+    let no_file = line(&out, "Tasks that change no file:");
+    assert!(
+        !no_file.contains("T030") && !no_file.contains("T031"),
+        "{out}"
+    );
+    for story in ["US2", "US3"] {
+        assert!(
+            !draft_paths(&out, story).contains(&"crates/new/src/tools.py"),
+            "{story}: {out}"
+        );
+    }
 }

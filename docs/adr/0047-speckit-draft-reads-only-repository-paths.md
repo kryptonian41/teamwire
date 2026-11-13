@@ -45,8 +45,12 @@ are records, not live files. The lead set the rules below on 2026-11-14.
    and that holds a `/`, is printed under `Names that are not repository
    paths:`, with its task id. A new file in a new folder lands there, and
    the lead adds it to an `owns` list by hand. These names go in no DRAFT
-   list. The words ADR 0044 already turned away, such as a URL, an absolute
-   path, a placeholder or a word with no extension, stay unprinted.
+   list. A name that only rule 2 or 3 turned away still counts in the
+   overlap table, in the story pairs, and in the task lists: a feature that
+   creates a folder writes its new files there, and two tasks that write
+   one such file share it. Code, turned away by rule 1, counts nowhere. The
+   words ADR 0044 already turned away, such as a URL, an absolute path, a
+   placeholder or a word with no extension, stay unprinted.
 5. **`--exclude PATTERN`.** The flag, repeated, takes one glob each, as
    `amend --owns` does, matched as verify matches `owns`. A tracked file
    that matches one is left out of the mention search. Paths still resolve
@@ -69,8 +73,10 @@ are records, not live files. The lead set the rules below on 2026-11-14.
 
 ## Consequences
 
-- A task that names only words the rules turn away is listed under
-  `Tasks that change no file`, and its words are printed under `Names that
-  are not repository paths`.
+- A task that names only code is listed under `Tasks that change no file`.
+  A task that names a file in a new folder is not: on deckh's `tasks.md`,
+  whose feature creates `apps/ai/gateway/decks/`, that list stays T058 and
+  T067, and T035 and T043 still share `apps/ai/gateway/decks/tools.py`.
+  Each such word is printed under `Names that are not repository paths`.
 - `docs/api/cli.md`, the lead skill and its reference describe the rules and
   `--exclude`.

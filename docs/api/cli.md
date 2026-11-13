@@ -908,7 +908,9 @@ with one line per task, `<task id>: <word>, <word>`, of each word with a `/`
 that ADR 0047 turned away (code, a word that does not resolve, a glob that
 matches nothing, a partial path that ends several tracked paths or none),
 which no list holds, so the lead can check it for a new file in a new
-folder; then
+folder. A word that only does not resolve, such as a file in a folder the
+feature creates, still counts in the overlap table and the two task lines,
+so two tasks that write it share it; code counts nowhere. Then
 `DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.`
 and one list per story, then `Setup and polish:`. An empty part reads
 `none`. Each list holds its task paths, `(task path)`, then every tracked

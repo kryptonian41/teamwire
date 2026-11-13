@@ -72,17 +72,24 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         Ok(files) => files,
         Err(why) => return fail(COMMAND, &why, REFUSED),
     };
+    // The drafts hold only repository paths. The overlap also counts the
+    // words that do not resolve, such as the files of a folder the feature
+    // creates, so tasks that write one file still share it.
     let mut paths: Vec<Vec<String>> = Vec::new();
+    let mut shared: Vec<Vec<String>> = Vec::new();
     // Each task's words that are no repository path, for the lead to check.
     let mut not_paths: Vec<(String, Vec<String>)> = Vec::new();
     for task in &list.tasks {
         let read = overlap::expand(&task.paths, &tracked);
+        let mut counted = read.paths.clone();
+        counted.extend(read.unresolved);
+        shared.push(counted);
         if !read.not_paths.is_empty() {
             not_paths.push((task.id.clone(), read.not_paths));
         }
         paths.push(read.paths);
     }
-    let overlap = overlap::overlap(&list, &paths);
+    let overlap = overlap::overlap(&list, &shared);
     // The feature folder names every path, so it is never a mention. The
     // lead's --exclude patterns name folders of records, such as `bench/`.
     let skip = relative_dir(&root, &folder);

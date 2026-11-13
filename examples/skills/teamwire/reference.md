@@ -633,7 +633,8 @@ it. Then cut the implementer's branch from that branch.
   a `/` that the command turns away is listed under `Names that are not
   repository paths`, with its task id, and is in no draft. Check each one:
   a new file in a new folder is listed there, and you add it to an `owns`
-  list yourself. Pass `--exclude PATTERN`, once per glob, for each folder
+  list yourself. Such a file still counts in the overlap table, so two
+  tasks that write it are not split apart. Pass `--exclude PATTERN`, once per glob, for each folder
   of archived records, which name paths but are not live files: in
   teamwire's own repository, `--exclude 'bench/**'`. Nothing is excluded
   by default. Wave 1 is one member for Setup and

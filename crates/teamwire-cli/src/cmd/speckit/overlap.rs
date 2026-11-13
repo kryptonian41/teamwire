@@ -36,13 +36,20 @@ pub(crate) struct Expanded {
     /// The words with a `/` that rules 1 to 3 turned away, each once. The
     /// lead checks them for a new file in a new folder.
     pub(crate) not_paths: Vec<String>,
+    /// The words of `not_paths` that only rule 2 or 3 turned away. A new
+    /// folder's files land here, so they still count in the overlap, though
+    /// no draft holds them. Code counts nowhere.
+    pub(crate) unresolved: Vec<String>,
 }
 
 /// How one word reads against the tracked files.
 enum Read {
     Paths(Vec<String>),
-    /// A word ADR 0047 turns away: the lead sees it when it holds a `/`.
-    NotPath,
+    /// Code (ADR 0047 rule 1): the lead sees it when it holds a `/`.
+    Code,
+    /// A word that does not resolve (rules 2 and 3): the lead sees it, and
+    /// the overlap counts it, when it holds a `/`.
+    Unresolved,
     /// A word ADR 0044 already turned away, such as a word with no
     /// extension that names no tracked folder.
     Skip,
@@ -74,8 +81,12 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Expanded {
                     add(&mut out.paths, p);
                 }
             }
-            Read::NotPath if word.contains('/') => add(&mut out.not_paths, word),
-            Read::NotPath | Read::Skip => {}
+            Read::Code if word.contains('/') => add(&mut out.not_paths, word),
+            Read::Unresolved if word.contains('/') => {
+                add(&mut out.not_paths, word);
+                add(&mut out.unresolved, word);
+            }
+            Read::Code | Read::Unresolved | Read::Skip => {}
         }
     }
     out
@@ -83,7 +94,7 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Expanded {
 
 fn read(word: &str, tracked: &[String]) -> Read {
     if is_code(word) {
-        return Read::NotPath;
+        return Read::Code;
     }
     if !word.contains('*') {
         return repo_path(word, tracked);
@@ -95,7 +106,7 @@ fn read(word: &str, tracked: &[String]) -> Read {
         .cloned()
         .collect();
     if matched.is_empty() {
-        Read::NotPath
+        Read::Unresolved
     } else {
         Read::Paths(matched)
     }
@@ -142,7 +153,7 @@ fn repo_path(word: &str, tracked: &[String]) -> Read {
     let mut ends = tracked.iter().filter(|t| t.ends_with(&tail));
     match (ends.next(), ends.next()) {
         (Some(only), None) => one(only.clone()),
-        _ => Read::NotPath,
+        _ => Read::Unresolved,
     }
 }
 
@@ -402,6 +413,27 @@ mod tests {
                 "specs/NNN-name/tasks.md",
                 "cmd/lib.rs",
                 "teamwire/skills/teamwire/SKILL.md",
+            ])
+        );
+    }
+
+    /// A word that fails only rule 2 or 3 still counts in the overlap; a
+    /// code word counts nowhere.
+    #[test]
+    fn an_unresolved_word_counts_in_the_overlap_and_code_does_not() {
+        let tracked = strings(&["crates/p/src/cmd/lib.rs", "crates/q/src/cmd/lib.rs"]);
+        let words = strings(&[
+            "z/c/**\".to_owned(",
+            "crates/b/**",
+            "apps/ai/gateway/decks/tools.py",
+            "cmd/lib.rs",
+        ]);
+        assert_eq!(
+            expand(&words, &tracked).unresolved,
+            strings(&[
+                "crates/b/**",
+                "apps/ai/gateway/decks/tools.py",
+                "cmd/lib.rs"
             ])
         );
     }
