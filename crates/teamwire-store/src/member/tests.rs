@@ -616,7 +616,12 @@ fn set_member_scope_updates_check_and_owns_only() {
     assert_eq!(after.owns, new_owns);
     assert_eq!(
         (&after.place, &after.branch, after.state, after.generation),
-        (&before.place, &before.branch, before.state, before.generation)
+        (
+            &before.place,
+            &before.branch,
+            before.state,
+            before.generation
+        )
     );
     // Like the other setters, the scope change writes no event.
     assert_eq!(event_types(&f.store), events_before);
