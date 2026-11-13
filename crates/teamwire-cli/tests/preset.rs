@@ -1844,3 +1844,18 @@ fn adr_0042_supersedes_the_changed_parts_of_adr_0041() {
     let status = old.split("## Context").next().unwrap();
     assert!(status.contains("Partly superseded by ADR 0042"), "{status}");
 }
+
+/// `specify` can leave a `requirements.md` item unticked on purpose, so the
+/// lead reads that checklist before the implementer starts and waives or
+/// fixes each open item, instead of meeting implement's stop later.
+#[test]
+fn the_speckit_preset_has_the_lead_read_the_checklist_before_the_implementer() {
+    let rules = rules_text("speckit");
+    for wanted in [
+        "checklists/requirements.md",
+        "before the implementer launches",
+        "waive",
+    ] {
+        assert!(rules.contains(wanted), "{wanted}: {rules}");
+    }
+}
