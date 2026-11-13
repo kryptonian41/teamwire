@@ -163,8 +163,15 @@ the command that sent it has exited.
   - The same holds for the hint that `send` prints when the lead's copy of a
     user's message was not delivered (lead decision, 2026-11-13):
     `lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead`
-    (`crates/teamwire-cli/src/cmd/send.rs:139-142`). The hint becomes
+    (`crates/teamwire-cli/src/cmd/send.rs:139-142`). The hint fires for an
+    `undelivered`, `unconfirmed` or `pending` copy (`send.rs:133-137`), but
+    the lead's hook lists only `undelivered` rows (F1-a). So the hint says
+    what holds for each state. For `undelivered`:
     `lead copy not delivered: <id>; the lead's hook lists it at the lead's next tool call`.
+    For `unconfirmed` or `pending`, the copy may have been typed:
+    `lead copy not delivered: <id>; it may have reached the lead's pane, and teamwire status lists it`.
+    `status` lists such a row under deliveries that need attention
+    (`crates/teamwire-watch/src/status.rs:137-158`). Neither names `resend`.
     The line keeps its `lead copy not delivered:` start, because the
     dashboard matches it (`ui/src/web/model/actions.ts:33`). The test that
     pins today's text is `a_users_note_exits_0_when_only_the_lead_copy_fails`

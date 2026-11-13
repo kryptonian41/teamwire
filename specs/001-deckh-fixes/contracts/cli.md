@@ -91,7 +91,12 @@ to the lead that was never typed, so do not resend it**.
 
 ```text
 lead copy not delivered: m001; the lead's hook lists it at the lead's next tool call
+lead copy not delivered: m002; it may have reached the lead's pane, and teamwire status lists it
 ```
+
+The first line is for an `undelivered` copy. The second is for an
+`unconfirmed` or `pending` copy, which may have been typed and which the
+hook does not list.
 
 The line still starts **`lead copy not delivered:`**, which the dashboard
 matches. It names no `resend`.

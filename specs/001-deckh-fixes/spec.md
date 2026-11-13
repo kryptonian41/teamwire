@@ -317,8 +317,9 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   same file as the watch's `Result:` path. The member's seat text MUST NOT
   tell a member to resend a message to the lead, because a resend would type
   a second copy. For the same reason, the line `send` prints when the lead's
-  copy of a message was not delivered MUST say that the lead's hook lists
-  it, and MUST NOT name `resend`.
+  copy of a message was not delivered MUST NOT name `resend`. It MUST say
+  that the lead's hook lists the copy, or, for a copy that may have been
+  typed, that `teamwire status` lists it.
 - **FR-002**: teamwire MUST NOT type a message after the command that
   sent it has exited. ADR 0003 point 7 and INV-8 stay in force.
 - **FR-003**: `teamwire received` MUST accept message ids (such as `m008`)
