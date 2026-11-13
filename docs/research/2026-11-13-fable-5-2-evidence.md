@@ -118,18 +118,25 @@ references, some of them before release.
   solutions pass without network access, Fable 5.2 at `high` (its API default)
   solved 96.3% for $1.39 per solved task, and at `low` 94.6% for $0.39. Both
   are single runs. On the same 463 problems, Fable 5.1 at its default solved
-  92.4% for $1.17, and Opus 5.5 solved 93.1% at `medium`, 95.5% at `high` and
-  96.5% at `xhigh` ($0.22, $0.30 and $0.75).
+  92.4% for $1.17, so Fable 5.2 at `low` solved more for about a third of the
+  cost. Opus 5.5 solved 93.1% at `medium`, 95.5% at `high` and 96.5% at
+  `xhigh` ($0.22, $0.30 and $0.75). The page says Opus 5.5 at `xhigh` is level
+  with Fable 5.2 at `high` for a little over half the cost.
 - **Internal agentic-coding benchmark.** 370 repository tasks graded by the
   repositories' own tests, one attempt per task. Fable 5.2 scored 88.9% at
   `low` ($1.05 per attempt), 88.9% at `medium` ($1.34) and 93.5% at `high`
   ($5.39). On the same page, Opus 5.5 scored 74.8% at `low`, 86.6% at
-  `medium`, 88.4% at `high` and 91.1% at `xhigh` ($4.11). Fable 5.1 scored
-  85.7% at `high`. Sonnet 5.5 scored 77.8% at `high` and 62.7% at `medium`.
+  `medium`, 88.4% at `high` and 91.1% at `xhigh` ($4.11). Opus 5.5 at its
+  default, `medium`, cost under two thirds as much per attempt as Fable 5.2 at
+  `medium`. Fable 5.1 scored 85.7% (317 of 370) at `high`, its default, one
+  attempt per task. Sonnet 5.5 scored 77.8% at `high`, its default, for $0.33
+  per attempt, and 62.7% at `medium`.
 - **Defect search.** A corpus of about 22 million tokens with 130 planted
-  defects, 10 runs per setting. Fable 5.2 alone scored a mean F1 of 0.866 at
-  `low` ($357 a run), 0.877 at `medium` ($378) and 0.909 at `high` ($563).
-  Fable 5.1 alone scored 0.829 to 0.847 across the same three efforts. As
+  defects, 10 runs per setting. Fable 5.2 alone scored a mean F1 of 0.866
+  (range 0.852 to 0.884) at `low` for $357 a run, 0.877 (0.863 to 0.884) at
+  `medium` for $378, and 0.909 (0.896 to 0.925) at `high` for $563. The page
+  says Fable 5.2 scored 4.3 points lower at `low` than at `high`, for 37%
+  less. Fable 5.1 alone scored 0.829 to 0.847 across the same three efforts. As
   orchestrator in Opus 5.5's place, Fable 5.2 cost 19% more and scored about
   the same.
 - **DeepResearch Bench II.** Fable 5.2 scored 54.5%, 55.0% and 57.7% at `low`,
@@ -147,7 +154,9 @@ references, some of them before release.
   3: the Fable 5.2 runs were graded in containers with no network access. The
   page says the Opus 5.5 and Fable 5.1 figures set beside them were graded
   with network access, "so only the problem set is matched, not the grading
-  setup". The page also calls the Fable 5.2 costs estimates, because they were
+  setup". The same reference says Sonnet 5.5 "ran the same version of the
+  benchmark" as Opus 5.5, so the two Sonnet 5.5 entries in the group were
+  graded with network access too. The page also calls the Fable 5.2 costs estimates, because they were
   priced from each attempt's token totals, not request by request. One Fable
   5.2 attempt at `high` was stopped by a safety monitor and counts as a
   failure; without it, `high` would be 96.5%. The two Fable 5.2 claims in the
@@ -200,14 +209,50 @@ Undated.
 - Fable 5.2 at `max` in Claude Code, dated 2026-11-09: 65.76% ±2.85, 330
   trials, $16,492.76.
 - Comparison rows, by the rule in "What was added": the best row on the board
-  of each of the 21 other covered models the board shows. Examples: Opus 5.5
-  at `max`, 65.76% ±3.11, $4,718.65; Sonnet 5.5 at `max`, 63.94%; GPT-6.1 Sol
-  at `max`, 60.91%; GPT-6 Astra at `max`, 60.30%; Fable 5.1 at `xhigh`, 57.58%
-  ±3.31, $4,872.04. Fable 5.1's `max` row (57.27%) is below its `xhigh` row on
-  this board, so the file keeps `xhigh`. "New sources" below lists every row.
-- The board's rows for models no harness reaches, or for versions pi does not
-  list, are left out: Kimi K3.1 Pro, GLM-5.3-Flash, DeepSeek V4.1 Flash and V4
-  Pro, Hy4, Muse, Mistral, Qwen3.8, MiMo, Inkling, Gemini, Beam and Nemotron.
+  of each of the 21 other covered models the board shows. Fable 5.1's `max`
+  row (57.27%) is below its `xhigh` row on this board, so the file keeps
+  `xhigh`. Every row the file takes from the board, each with 330 trials:
+
+  | File rank | Model | Effort | Score | 95% margin | Run cost | Harness | Row date |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 1 | Fable 5.2 | `max` | 65.76% | ±2.85 | $16,492.76 | Claude Code | 2026-11-09 |
+  | 1 | Opus 5.5 | `max` | 65.76% | ±3.11 | $4,718.65 | Claude Code | 2026-09-22 |
+  | 2 | Sonnet 5.5 | `max` | 63.94% | ±3.00 | $7,333.64 | Claude Code | 2026-09-28 |
+  | 3 | GPT-6.1 Sol | `max` | 60.91% | ±2.97 | $634.24 | Codex | 2026-09-29 |
+  | 4 | GPT-6 Astra | `max` | 60.30% | ±2.82 | $3,267.18 | Codex | 2026-09-03 |
+  | 5 | Fable 5.1 | `xhigh` | 57.58% | ±3.31 | $4,872.04 | Claude Code | 2026-09-01 |
+  | 6 | Opus 5 | `xhigh` | 53.33% | ±3.09 | $6,086.22 | Claude Code | 2026-07-24 |
+  | 6 | GPT-6.1 Terra | `max` | 53.33% | ±3.09 | $874.44 | Codex | 2026-10-26 |
+  | 7 | GPT-6 Sol | `max` | 50.30% | ±3.23 | $1,451.32 | Codex | 2026-09-22 |
+  | 8 | Fable 5 | `max` | 44.85% | ±3.83 | $7,265.01 | Claude Code | 2026-06-09 |
+  | 9 | GLM-5.3 | `max` | 41.21% | ±3.28 | $2,727.63 | Claude Code | 2026-08-14 |
+  | 10 | Haiku 5.5 | `max` | 40.00% | ±3.61 | $952.47 | Claude Code | 2026-10-07 |
+  | 11 | Grok 4.7 | `xhigh` | 38.79% | ±3.59 | $3,683.29 | Grok Build | 2026-09-21 |
+  | 12 | GPT-5.6 Sol | `max` | 38.48% | ±3.83 | $2,541.70 | Codex | 2026-06-26 |
+  | 13 | Opus 4.8 | `max` | 23.64% | ±3.59 | $6,481.26 | Claude Code | 2026-05-28 |
+  | 14 | Kimi K3 | `max` | 23.03% | ±3.73 | $1,919.83 | Claude Code | 2026-07-16 |
+  | 15 | GPT-5.6 Terra | `max` | 21.52% | ±3.25 | $1,733.52 | Codex | 2026-06-26 |
+  | 16 | Grok 4.6 | `high` | 19.70% | ±3.09 | $3,591.58 | Grok Build | 2026-08-12 |
+  | 17 | GPT-5.6 Luna | `max` | 17.58% | ±2.91 | $346.67 | Codex | 2026-06-26 |
+  | 18 | GPT-6 Luna | `max` | 15.15% | ±2.66 | $72.14 | Codex | 2026-09-22 |
+  | 19 | Sonnet 5 | `max` | 12.12% | ±3.00 | $9,603.86 | Claude Code | 2026-06-30 |
+  | 20 | GPT-5.4 Mini | `xhigh` | 1.82% | ±1.26 | $671.57 | Codex | 2026-03-17 |
+
+  The board gives Grok 4.7's cost as $3,683.287146. The file rounds it to
+  $3,683.29.
+- The board's other rows are left out, each for one of these reasons:
+  - Models that no harness lists on this machine: Hy4, Muse Ember, Muse Spark
+    1.3, Mistral Large 4, MiMo V2.6 Pro and Flash, Inkling, Inkling Small and
+    Inkling Small 2, Gemini 3.8 Flash and 3.7 Flash, Beam 1.0 and Nemotron 3.5
+    Super VL.
+  - Versions pi does not list, for families it does list: Kimi K3.1 Pro (pi
+    lists Kimi K3), GLM-5.3-Flash (pi lists GLM-5.3), Qwen3.8-Max (the
+    2026-11-03 note drops Qwen3.8 by name), Grok 4.5 at 12.42% (pi lists Grok
+    4.7, 4.6 and 4.3, not 4.5), and MiniMax M3 at 7.58% (the 2026-11-03 note
+    drops MiniMax M3 by name).
+  - DeepSeek V4.1 Flash and V4 Pro. pi lists no DeepSeek V4 model, and the
+    2026-11-03 note keeps V4 rows only from CodeReviewBench and SWE Atlas
+    Codebase QnA, the two boards with no DeepSeek version that pi lists.
 - Informs `contained_feature`.
 - Limits: Fable 5.2 has one row, at `max` only. It ties Opus 5.5 at `max` for
   about 3.5 times the cost.
