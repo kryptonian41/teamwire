@@ -1874,3 +1874,18 @@ fn the_closer_task_has_a_local_gate_and_a_ci_gate_slot_and_reports_both() {
         "{task}"
     );
 }
+
+/// Every text that sends the closer to work names its local gate and the
+/// gates left to CI, as the closer preset does, never "the full gate".
+#[test]
+fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
+    for name in ["implement-then-review", "parallel-tickets"] {
+        let rules = rules_text(name);
+        assert!(!rules.contains("runs the full gate"), "{name}: {rules}");
+        assert!(rules.contains("local gate its task names"), "{name}: {rules}");
+        assert!(rules.contains("gates the task leaves to CI"), "{name}: {rules}");
+    }
+    let skill = example("skills/afk/SKILL.md");
+    assert!(!skill.contains("repository's full gate on each branch"));
+    assert!(skill.contains("local gate its task names on each branch"));
+}
