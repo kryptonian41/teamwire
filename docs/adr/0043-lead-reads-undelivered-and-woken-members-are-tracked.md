@@ -180,8 +180,9 @@ and line on `develop` (`eda2e0b`), are in
   `docs/api/core.md`, `docs/metrics.md`, `docs/ARCHITECTURE.md`, the
   README, the lead skill and its reference, the handoff guide and the seat
   text state these rules, each in the commit that changes the code.
-- `ui/src/shared/teamwire.ts` gains `member.woken`, `held_deliveries` and
-  the `working (at a dialog)` word.
+- `ui/src/shared/teamwire.ts` gains `member.woken` and `held_deliveries`,
+  and `ui/src/shared/state.ts:39` counts the `working (at a dialog)` word
+  as active.
 - A member answered by the lead after its `done` now needs a new `done`
   before the team completes. That is the point of the change: its woken
   turn is tracked.

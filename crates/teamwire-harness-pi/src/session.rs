@@ -11,13 +11,12 @@
 //! The extension also writes `<sessions_dir>/<id>.teamwire.json` from the
 //! moment pi starts: `{"pid", "started_at_ms", "state"}`, where `state` is
 //! `idle`, `working`, `blocked` (an extension's dialog waits) or `ended` (pi
-//! quit or moved to another session). The lead's extension writes the same
-//! While a member's call runs, the file also holds `tool: {name,
-//! started_at_ms}`, the newest call with no result yet. The lead's extension
-//! writes the same
-//! file for the lead's session, with `"lead": true`, pi's `mode` (`tui` for
-//! the terminal UI) and `session_file`, because a lead's session file lives
-//! in pi's own folder for its cwd, not in `<sessions_dir>`.
+//! quit or moved to another session). While a member's call runs, the file
+//! also holds `tool: {name, started_at_ms}`, the newest call with no result
+//! yet. The lead's extension writes the same file for the lead's session,
+//! with `"lead": true`, pi's `mode` (`tui` for the terminal UI) and
+//! `session_file`, because a lead's session file lives in pi's own folder
+//! for its cwd, not in `<sessions_dir>`.
 
 use std::io::{BufRead, BufReader, Read as _, Seek as _, SeekFrom};
 use std::path::{Path, PathBuf};
