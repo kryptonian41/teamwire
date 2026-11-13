@@ -17,9 +17,13 @@ evidence is in `/Users/apoorvagarwal/.teamwire/archive/deckh-2026-11-13`.
 
 ### Session 2026-11-13
 
+Every answer below is the user's.
+
 - Q: Does the amend note wake a member that has already recorded a result? → A: Yes, as every note does (ADR 0043). The note tells the member to run its new check and record its result again, and the watch tracks that turn.
 - Q: Does a verify record made before an amend still count for `close --role`? → A: No. `close --role` needs a verify that started after the newest amend note to that member. The amend note's text starts with the fixed marker `CHECK AMENDED:`, and `close` finds the note by that marker, the way `SPEC AMENDMENT:` notices are recognised today. No schema change. `amend` also prints that verify must run again. A pass made with the old check must never vouch for the new one.
 - Q: Does `--owns` replace the member's owns list or add to it? → A: It replaces the whole list, in the same shape as launch's `owns`. The note shows the old list and the new one.
+- Q: Should `amend` also rewrite the member's seat rules file, so a handoff or reopen session sees the new check and owns? → A: Yes. `amend` rewrites the member's seat rules file (`members/<role>/contract`) with the new check and owns in the same command, so a handoff or reopen session reads the new scope.
+- Q: How does `--owns` take several patterns: one flag per pattern, or one comma-separated value? → A: One whole pattern per flag, repeated: `--owns crates/a/ --owns 'crates/{b,c}/**'`. No comma splitting.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -38,7 +42,7 @@ team's work failed verify. The closer found the right command, but the
 wrong one stayed for the rest of the run (F13).
 
 With this story, the lead runs
-`teamwire amend <team> --role <role> [--check CMD] [--owns PATHS] --reason TEXT`.
+`teamwire amend <team> --role <role> [--check CMD] [--owns PATH]... --reason TEXT`.
 Every verify after that runs the new check and judges the diff against the
 new owns. The member receives a `note` that states the new values and the
 reason, so the member knows its scope changed. That note, shown by
@@ -60,7 +64,7 @@ reason, and `teamwire log` shows that note.
    `teamwire verify <team> --role impl` runs B and not A, and `impl`'s inbox
    holds a `note` from the lead that names B and the reason.
 2. **Given** member `impl` with owns `crates/a/`, **When** the lead amends
-   it with `--owns crates/a/,crates/b/` and a reason, **Then** the next
+   it with `--owns crates/a/ --owns crates/b/` and a reason, **Then** the next
    verify raises no `outside-owns:` flag for a changed file under
    `crates/b/`.
 3. **Given** `impl` has a verify record made with check A, **When** the lead
@@ -84,7 +88,13 @@ reason, and `teamwire log` shows that note.
    **Then** the note wakes `impl` into a new generation, the note tells it
    to run its new check and record its result again, and `amend` prints
    that verify must run again.
-9. **Given** a lead on Claude Code, Codex or pi reads its lead guidance,
+9. **Given** the lead amended `impl`'s check to B, **When** the lead runs
+   `teamwire handoff <team> --role impl`, **Then** the fresh session's seat
+   rules name check B and the new owns, not the old values.
+10. **Given** the lead runs `amend` with `--owns 'crates/{b,c}/**'`,
+   **Then** the owns list holds that one pattern whole, and a changed file
+   under `crates/c/` raises no `outside-owns:` flag.
+11. **Given** a lead on Claude Code, Codex or pi reads its lead guidance,
    **Then** the guidance names `teamwire amend` and when to use it.
 
 ---
@@ -206,15 +216,22 @@ the missing command.
 **US1, amend (F13)**
 
 - **FR-001**: teamwire MUST provide
-  `teamwire amend <team> --role <role> [--check CMD] [--owns PATHS] --reason TEXT`,
+  `teamwire amend <team> --role <role> [--check CMD] [--owns PATH]... --reason TEXT`,
   a lifecycle command that takes its arguments, refuses, exits and prints
   the way `launch`, `verify` and `close` do.
 - **FR-002**: `amend` MUST refuse, change nothing and send no note when
   neither `--check` nor `--owns` is given, when `--reason` is missing or
   empty, when the team is not open, or when the role is not a member of the
   team, or when the member is removed. Each refusal names what is wrong.
-- **FR-003**: `--owns PATHS` MUST replace the member's whole owns list,
-  in the same shape as launch's `owns`. It never adds to the old list.
+- **FR-003**: `--owns PATH` MUST replace the member's whole owns list,
+  in the same shape as launch's `owns`. It never adds to the old list. The
+  flag is repeated, one whole pattern per flag; `amend` never splits a
+  value on commas, so a brace glob such as `crates/{b,c}/**` stays one
+  pattern.
+- **FR-003a**: `amend` MUST rewrite the member's seat rules file
+  (`members/<role>/contract`) with the new check and owns in the same
+  command, so a session that `teamwire handoff` or `teamwire reopen` starts
+  later reads the new scope.
 - **FR-004**: After `amend` exits 0, every `teamwire verify` that starts
   later MUST run the new check and judge the diff against the new owns.
 - **FR-005**: `amend` MUST leave every earlier verify record, waiver,
@@ -280,6 +297,9 @@ the missing command.
 - **Member scope**: a member's check (one shell command, or none) and owns
   (a list of path patterns). Launch sets it. `amend` changes it. Verify
   reads it at the start of each run.
+- **Seat rules file**: `members/<role>/contract`, the seat rules launch
+  writes for one member, with its check and owns. Handoff and reopen start a
+  fresh session from it. `amend` rewrites it with the new scope.
 - **Amend note**: a `note` message from the lead to the member. Its text
   starts with `CHECK AMENDED:` and holds the old and new values of each
   changed field and the reason. It is the only record of the change, and
