@@ -1,5 +1,5 @@
 {
-  "as_of": "2026-11-03",
+  "as_of": "2026-11-13",
   "entries": [
     {
       "task_class": "mechanical_edit",
@@ -494,6 +494,39 @@
       "source": "Terminal-Bench 4.0 leaderboard",
       "url": "https://www.tbench.ai/",
       "published": "2026-06-30",
+      "kind": "benchmark"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "max",
+      "rank": 1,
+      "claim": "Terminal-Bench 4.1 (330 trials, multi-step command-line tasks; the board re-scored its 4.0 rows as 4.1): 65.76% ±2.85 in Claude Code, $16,492.76, level with Opus 5.5 at max for about 3.5 times the cost.",
+      "source": "Terminal-Bench 4.1 leaderboard",
+      "url": "https://www.tbench.ai/",
+      "published": "2026-11-09",
+      "kind": "benchmark"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-opus-5-5",
+      "effort": "max",
+      "rank": 1,
+      "claim": "Terminal-Bench 4.1 (330 trials, multi-step command-line tasks; the board re-scored its 4.0 rows as 4.1): 65.76% ±3.11 in Claude Code, $4,718.65. Added for comparison with Fable 5.2.",
+      "source": "Terminal-Bench 4.1 leaderboard",
+      "url": "https://www.tbench.ai/",
+      "published": "2026-09-22",
+      "kind": "benchmark"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-1",
+      "effort": "max",
+      "rank": 2,
+      "claim": "Terminal-Bench 4.1 (330 trials, multi-step command-line tasks; the board re-scored its 4.0 rows as 4.1): 57.27% ±3.83 in Claude Code, $6,243.50. Added for comparison with Fable 5.2.",
+      "source": "Terminal-Bench 4.1 leaderboard",
+      "url": "https://www.tbench.ai/",
+      "published": "2026-09-01",
       "kind": "benchmark"
     },
     {
@@ -1092,9 +1125,20 @@
     },
     {
       "task_class": "contained_feature",
-      "model": "claude-opus-5-5",
+      "model": "claude-fable-5-2",
       "effort": "high",
       "rank": 2,
+      "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 96.3% solved on the 463 problems that pass without network access, at $1.39 per solved task in a single run; Opus 5.5 at xhigh scored 96.5% on the same 463 for a little over half the cost.",
+      "source": "Anthropic: Optimizing for cost and intelligence",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-opus-5-5",
+      "effort": "high",
+      "rank": 3,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 95.3% solved at $0.29 per task.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
@@ -1103,9 +1147,20 @@
     },
     {
       "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "low",
+      "rank": 4,
+      "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 94.6% solved on the 463 problems that pass without network access, at $0.39 per solved task in a single run, more than Fable 5.1 at its default (92.4% on the same 463) for about a third of the cost.",
+      "source": "Anthropic: Optimizing for cost and intelligence",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
       "model": "claude-opus-5-5",
       "effort": "medium",
-      "rank": 3,
+      "rank": 5,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 92.8% solved at $0.21 per task, the model's default effort.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
@@ -1116,7 +1171,7 @@
       "task_class": "contained_feature",
       "model": "claude-fable-5-1",
       "effort": "high",
-      "rank": 4,
+      "rank": 6,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 92.3% solved in a single run at $1.19 per solved task, matching Opus 5.5 at medium within noise for about five times the cost.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
@@ -1127,7 +1182,7 @@
       "task_class": "contained_feature",
       "model": "claude-sonnet-5-5",
       "effort": "high",
-      "rank": 5,
+      "rank": 7,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 87.6% solved at $0.11 per solved task.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
@@ -1138,7 +1193,7 @@
       "task_class": "contained_feature",
       "model": "claude-opus-5-5",
       "effort": "low",
-      "rank": 6,
+      "rank": 8,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: 87.4% solved at $0.11 per task; running low and re-running failures at high solved about 97% at about $0.17 per task.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
@@ -1149,11 +1204,77 @@
       "task_class": "contained_feature",
       "model": "claude-sonnet-5-5",
       "effort": "medium",
-      "rank": 7,
+      "rank": 9,
       "claim": "Anthropic's internal SWE-bench Pro subset, not comparable to the public board: about 7 points below Sonnet 5.5 at high for about 59% of the cost per task.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
       "published": "2026-11-03",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "high",
+      "rank": 1,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 93.5% at $5.39 per attempt, one attempt per task.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-opus-5-5",
+      "effort": "xhigh",
+      "rank": 2,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 91.1% at $4.11 per attempt, Opus 5.5's best. Added for comparison with Fable 5.2.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "low",
+      "rank": 3,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 88.9% at $1.05 per attempt, one attempt per task.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "medium",
+      "rank": 3,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 88.9% at $1.34 per attempt in a single run; Opus 5.5 at its default, medium, scored 86.6% for under two thirds of that cost.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-1",
+      "effort": "high",
+      "rank": 4,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 85.7% (317 of 370) at its default, one attempt per task. Added for comparison with Fable 5.2.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-sonnet-5-5",
+      "effort": "high",
+      "rank": 5,
+      "claim": "Anthropic's internal agentic-coding benchmark (370 repository tasks graded by the repositories' own tests, plain API agent, 128,000-token output cap): 77.8% at $0.33 per attempt, its default and its best here. Added for comparison with Fable 5.2.",
+      "source": "Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
       "kind": "vendor"
     },
     {
@@ -1495,6 +1616,94 @@
       "source": "Introducing Claude Haiku 5.5: FrontierCode v1.1",
       "url": "https://www.anthropic.com/claude-haiku-5-5",
       "published": "2026-10-07",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "xhigh",
+      "rank": 1,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 49.1% at $14.19 per task, the highest score of any released model Anthropic tested.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "max",
+      "rank": 2,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 45.6% at $44.70 per task, below its own xhigh.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-opus-5-5",
+      "effort": "max",
+      "rank": 3,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 45.5% at $12.82 per task, Opus 5.5's best on this chart. Added for comparison with Fable 5.2.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "high",
+      "rank": 4,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 45.3% at $6.72 per task, about level with Opus 5.5's best for roughly half the cost per task.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "gpt-6-astra",
+      "effort": "max",
+      "rank": 5,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 42.8% at $6.68 per task, Astra's best on this chart. Added for comparison with Fable 5.2.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "medium",
+      "rank": 6,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 37.6% at $2.48 per task.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-2",
+      "effort": "low",
+      "rank": 7,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 34.2% at $2.10 per task.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "contained_feature",
+      "model": "claude-fable-5-1",
+      "effort": "xhigh",
+      "rank": 8,
+      "claim": "FrontierCode 2.0 (would the maintainers merge the change), from the chart data on Anthropic's Fable 5.2 page: 32.4% at $8.68 per task, Fable 5.1's best on this chart. Added for comparison with Fable 5.2.",
+      "source": "Introducing Claude Fable 5.2: FrontierCode 2.0",
+      "url": "https://www.anthropic.com/claude-fable-and-mythos-5-2",
+      "published": "2026-11-09",
       "kind": "vendor"
     },
     {
@@ -1894,6 +2103,17 @@
       "kind": "vendor"
     },
     {
+      "task_class": "cross_cutting",
+      "model": "claude-fable-5-2",
+      "effort": null,
+      "rank": 2,
+      "claim": "Anthropic says that if evals at xhigh or max effort still fall short on demanding reasoning or long-horizon agentic work, move to Claude Fable 5.2.",
+      "source": "Anthropic: Choosing a model",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
       "task_class": "root_cause",
       "model": "gpt-5.5",
       "effort": "high",
@@ -2023,6 +2243,17 @@
       "source": "Anthropic: Choosing a model",
       "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
       "published": "2026-11-03",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "concurrency_data_loss",
+      "model": "claude-fable-5-2",
+      "effort": null,
+      "rank": 1,
+      "claim": "No benchmark measures current models on races or data loss; Anthropic says that if evals at xhigh or max effort still fall short on demanding reasoning or long-horizon agentic work, move to Claude Fable 5.2.",
+      "source": "Anthropic: Choosing a model",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
+      "published": "2026-11-13",
       "kind": "vendor"
     },
     {
@@ -2225,9 +2456,42 @@
     },
     {
       "task_class": "read_only_survey",
+      "model": "claude-fable-5-2",
+      "effort": "high",
+      "rank": 1,
+      "claim": "On Anthropic's defect-search benchmark larger than one context window (about 22 million tokens, 130 planted defects, 10 runs per setting), Fable 5.2 alone scored a mean F1 of 0.909 (0.896 to 0.925) for $563 a run, the highest single-model score on the page.",
+      "source": "Anthropic: Optimizing for cost and intelligence",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "read_only_survey",
+      "model": "claude-fable-5-2",
+      "effort": "medium",
+      "rank": 2,
+      "claim": "On Anthropic's defect-search benchmark larger than one context window (about 22 million tokens, 130 planted defects, 10 runs per setting), Fable 5.2 alone scored a mean F1 of 0.877 (0.863 to 0.884) for $378 a run.",
+      "source": "Anthropic: Optimizing for cost and intelligence",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "read_only_survey",
+      "model": "claude-fable-5-2",
+      "effort": "low",
+      "rank": 3,
+      "claim": "On Anthropic's defect-search benchmark larger than one context window (about 22 million tokens, 130 planted defects, 10 runs per setting), Fable 5.2 alone scored a mean F1 of 0.866 (0.852 to 0.884) for $357 a run, 4.3 points below its high for 37% less.",
+      "source": "Anthropic: Optimizing for cost and intelligence",
+      "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
+      "published": "2026-11-13",
+      "kind": "vendor"
+    },
+    {
+      "task_class": "read_only_survey",
       "model": "claude-fable-5-1",
       "effort": "low, medium and high",
-      "rank": 1,
+      "rank": 4,
       "claim": "On Anthropic's defect-search benchmark larger than one context window, Fable 5.1 alone cost $468 to $552 a run and took 15.2, 17.5 and 19.9 hours at low, medium and high; delegating parts to cheaper workers cost about half and scored 10 to 12 points lower.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
