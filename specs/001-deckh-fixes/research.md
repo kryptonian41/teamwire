@@ -427,7 +427,7 @@ could meet a busy pane.
 | `crates/teamwire-msg/tests/woken.rs` `an_answer_to_a_member_with_a_done_result_starts_a_generation` | The member's generation is one higher after the send (today unchanged, `send.rs:311`) |
 | same file, `a_note_to_a_member_with_a_blocked_or_failed_result_starts_a_generation` | Same, for `blocked` and `failed` results (one case each) |
 | same file, `the_woken_generation_is_recorded_as_member_woken` | The newest event for the member is `member.woken`, and no `member.reprompted` was written |
-| same file, `a_known_delivery_failure_undoes_the_woken_generation` | **Guard test, passes on `develop`**: the base never bumps, so the generation is already at its old value. It keeps the undo once T017's bump exists. It also asserts that the undo event is `member.woken` with `undone: true`, which fails until the fix writes it |
+| same file, `a_known_delivery_failure_undoes_the_woken_generation` | **Guard test, passes on `develop`**: the base never bumps, so the generation is already at its old value. It keeps the undo once T019's wake exists. It also asserts that the undo event is `member.woken` with `undone: true`, which fails until the fix writes it |
 | `crates/teamwire-store/tests/migrate_v11.rs` `a_version_10_store_migrates_and_accepts_member_woken` | A version 10 store opens at version 11, keeps every event row with its `seq`, and accepts a `member.woken` event (today the CHECK refuses it) |
 | `crates/teamwire-otel/src/outcomes/tests.rs` `a_woken_generation_is_not_counted_as_a_reprompt` | **Guard test, passes once the variant exists**: two `member.woken` events give `reprompts == 0` |
 | `crates/teamwire-otel/src/spans/tests.rs` `a_wake_opens_a_new_generation_span`, beside `a_handoff_opens_a_new_generation_span_with_the_new_session` (l.89) | The `teamwire.member.generation` span for generation 2 starts at the `member.woken` event (today `generation_start` skips it and the span starts at the older start) |
@@ -525,7 +525,7 @@ change, not one that must.
     (analyze's count).
   - An indented line under a task line belongs to that task, until the next
     task line, heading or blank line. This feature's own `tasks.md` names 56
-    paths on such lines, for example under T015 and T047.
+    paths on such lines, for example under T015 and T049.
   - A token that holds `*`, such as `crates/teamwire-cli/src/cmd/speckit/*.rs`,
     is a glob. It matches the repository's tracked files (`git ls-files`)
     with `teamwire_verify::Owns`, and each match counts as a task path. A
@@ -620,7 +620,7 @@ files, and the command gets integration tests in
 | `parse.rs` unit test `an_indented_line_belongs_to_the_task_above` | A T015-shaped task with paths on indented lines holds those paths, and a blank line or the next `- [ ] T` line ends it |
 | `parse.rs` unit test `a_star_token_is_a_glob` | The token `crates/x/src/cmd/speckit/*.rs` is kept as a glob, and `overlap.rs` or `mentions.rs` expands it against a list of tracked files |
 
-Two of the integration cases pass on T021's stub, because the stub prints
+Two of the integration cases pass on T023's stub, because the stub prints
 nothing and they assert that something is absent:
 `a_file_naming_only_the_bare_stem_is_not_added` and
 `the_feature_folder_is_not_a_mention`. So do the negative unit tests run

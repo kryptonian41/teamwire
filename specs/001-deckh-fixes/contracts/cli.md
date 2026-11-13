@@ -167,7 +167,7 @@ heading or blank line. A path token that holds `*` matches the repository's
 tracked files as a glob.
 
 ```text
-spec-kit tasks: specs/001-deckh-fixes/tasks.md (57 tasks, 6 phases, 3 stories)
+spec-kit tasks: specs/001-deckh-fixes/tasks.md (52 tasks, 7 phases, 4 stories)
 
 Shared files between phases:
   Phase 3 and Phase 4: crates/teamwire-watch/src/status.rs, docs/api/cli.md
