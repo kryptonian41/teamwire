@@ -68,7 +68,7 @@ the command that sent it has exited.
 **Decisions:**
 
 - **F1-a. The lead hook lists undelivered items.**
-  - Add `teamwire_report::undelivered_to_lead(home, session)` in
+  - Add `teamwire_report::undelivered_to_lead(home, session, platform, clock)` in
     `crates/teamwire-report/src/lead_stop.rs`, beside `teams_without_watch`
     (l.17), and reuse `led_by` (l.38). Export it from
     `crates/teamwire-report/src/lib.rs`.
@@ -77,6 +77,18 @@ the command that sent it has exited.
     `unconfirmed` rows may have been typed, so they are left out.
   - It also returns one line per completion whose `report_state` is
     `Undelivered`.
+  - The time comes from the `Clock` argument (AGENTS.md hard rule), and
+    file reads go through the `Platform` argument.
+  - A result line names the same file as the watch's `Result:` path: the
+    result file `outbox/<role>.md`, or `reports/<role>.md` when the result
+    file is missing or no longer holds the recorded text. That rule lives
+    in `result_written` and `result_path`
+    (`crates/teamwire-watch/src/text.rs:93-114`). teamwire-report and
+    teamwire-watch are both layer 4 and may not depend on each other
+    (`docs/conventions.md:316`). So the plan moves the two functions into
+    teamwire-deliver (layer 3), beside `CommsCopy`
+    (`crates/teamwire-deliver/src/lines.rs:100`), and both crates call them
+    from there. That is one rule, not a copy.
   - Each line names the team, the id or role, the file path, and the clear
     command, for example:
     `teamwire: m008 (question from impl) was never typed into your pane. Read <team dir>/comms/m008.md, then run teamwire received deckh m008.`
@@ -98,11 +110,19 @@ the command that sent it has exited.
       `crates/teamwire-harness-pi/src/hook.rs:75-76`).
 - **F1-b. `received` accepts message ids.**
   - `mark_received` in `crates/teamwire-report/src/received.rs` treats an
-    argument that parses as a message display id (`m` plus digits) as a
-    message. It calls `ack_delivery(at, message, &Recipient::Lead)` inside
-    the same `Store::write`.
-  - It returns a new outcome for each case: marked, already read, unknown
-    id, and not a message to the lead.
+    argument as a message display id only when it matches `^m[0-9]+$` and
+    no role of the team has that name. When a role has that name too, it
+    refuses the argument and names both the role and the message (lead
+    decision, 2026-11-13).
+  - For a message id, it calls `ack_delivery(at, message, &Recipient::Lead)`
+    inside the same `Store::write`, but only for a row in state
+    `undelivered`, `unconfirmed` or `pending`. `ack_delivery` would also move
+    a `handed_off` row to `acked` (`crates/teamwire-store/src/delivery.rs:166-191`).
+    A row already `handed_off` or `acked` stays as it is, and the outcome
+    says so.
+  - It returns a new outcome for each case: marked, already delivered,
+    already read, unknown id, not a message to the lead, and a name that is
+    both a role and a message id.
   - `crates/teamwire-cli/src/cmd/received.rs` prints the outcome per id.
   - The MCP server has no `received` tool (rca F1.5), so the lead's MCP
     tools change nothing. Per the user's answer, the MCP tools change only
@@ -129,6 +149,17 @@ the command that sent it has exited.
   `QUESTION-UNCONFIRMED` lines append ` File: <team dir>/comms/<id>.md`.
   The `Question` struct (`crates/teamwire-watch/src/snapshot.rs:116-141`)
   carries the path.
+- **F1-f. A member no longer resends to the lead** (user decision,
+  2026-11-13). The seat text tells a member to retry a message to the lead
+  once with `resend`, because "the lead is not" told
+  (`crates/teamwire-launch/contracts/talking_head.md:12-16`). After F1-a the
+  lead's hooks list every undelivered message, so a resend would type a
+  second copy. The seat text says instead that the lead's hooks list it,
+  and that the member must not send it again. The test that pins the old
+  text is `a_talking_member_does_not_resend_a_message_that_was_not_delivered`
+  (`crates/teamwire-launch/src/contract/tests_findings.rs:186-200`). Its
+  `resend demo <message id>` assert becomes an assert that the text is
+  absent, and it gains an assert for the new sentence.
 
 **Alternatives rejected:**
 
@@ -145,8 +176,13 @@ the command that sent it has exited.
 | `crates/teamwire-report/tests/undelivered_to_lead.rs` `a_question_and_a_result_never_typed_are_listed_with_their_files` | The returned lines name `m001` with `comms/m001.md` and the member's result with its outbox path (today the function does not exist; write the test against the existing store first, so it fails on the missing lines, not a missing name: add the function as a stub returning empty in the test commit) |
 | same file, `a_row_the_lead_received_is_not_listed` | After `received <id>`, the list is empty |
 | `crates/teamwire-cli/tests/hook_lead.rs` (or the existing lead hook test file) `the_tool_and_stop_hooks_carry_the_undelivered_note` | `lead_tool_in` and `lead_stop_in` output contains `was never typed` for a blocked-pane question, on `--harness claude-code`, `codex` and `pi` |
-| `crates/teamwire-harness-claude/tests/lead_setup.rs` `the_lead_tool_hook_runs_on_every_tool` | The plugin's `PostToolUse` entry has no matcher limited to edit and shell calls |
+| `crates/teamwire-harness-claude/src/lead_setup/plugin.rs`, unit test at the bottom of the file, `the_lead_tool_hook_runs_on_every_tool` | The plugin's `PostToolUse` entry has no matcher limited to edit and shell calls. The existing unit test `the_eight_files_name_the_binary_and_the_hook` (`plugin.rs:305`) pins the old matcher at `plugin.rs:342`, so its expected JSON changes in the same commit (pre-approved: it pins a point ADR 0043 supersedes) |
 | `crates/teamwire-cli/tests/status.rs` `received_with_a_message_id_clears_it_from_status_without_typing` | `status` no longer lists `m001` under deliveries that need attention, and the fake host records no new typing (today `received deckh m001` refuses "no member has this role") |
+| same file, `received_refuses_an_unknown_id_and_a_message_not_to_the_lead` | The two refusals in `contracts/cli.md` |
+| same file, `received_refuses_a_name_that_is_both_a_role_and_a_message_id` | With a role named `m1` and a message `m1`, the command refuses and names both |
+| same file, `received_leaves_a_delivered_or_read_message_as_it_is` | A `handed_off` row stays `handed_off`, and the output says `already delivered`; an `acked` row prints `already read` |
+| `crates/teamwire-report/tests/undelivered_to_lead.rs` `a_result_with_no_result_file_names_the_report` | With the outbox file missing, the line names `reports/<role>.md`, as the watch's `Result:` path does |
+| `crates/teamwire-launch/src/contract/tests_findings.rs` `a_talking_member_does_not_resend_a_message_that_was_not_delivered` (changed) | The rendered seat text no longer holds `resend demo <message id>` and says the lead's hooks list the message |
 | `crates/teamwire-msg/tests/answer.rs` (or rca's `rca_f1.rs` shape) `an_answer_with_re_settles_the_questions_lead_row` | The question's `lead` row is `acked` after the answer (rca F1b red today) |
 | `crates/teamwire-watch/tests/poll.rs` `an_undelivered_question_line_names_its_file` | The line contains `comms/m001.md` |
 
@@ -161,6 +197,9 @@ the command that sent it has exited.
   with `--re` settles the question.
 - `docs/api/cli.md:593-603` (`received` takes ids), `:218-223` (the watch
   line names the file), and `:236-244` (status).
+- `README.md:258`: the `teamwire received` row also records a message read
+  from its file.
+- `crates/teamwire-launch/contracts/talking_head.md:12-16` (F1-f).
 - `docs/requirements.md`: add a row for the lead's undelivered note and
   one for `received <id>`, beside DEL-16 (`:120`).
 - `docs/failure-modes.md`: the INV-5 and INV-8 rows stay true, so leave
@@ -200,9 +239,13 @@ the command that sent it has exited.
   | `Seen::Absent` or `Seen::NoInfo` | settled, as today. The announcement or a one-time line adds `(session not visible)` |
 
 - `status`'s `state_word` (`status.rs:249-264`) returns `working` for
-  `Undelivered` or `Unconfirmed` when `seen == Seen::Alive(Activity::Working)`.
-  `working` is already in the dashboard's word list, so the UI does not
-  change.
+  `Undelivered` or `Unconfirmed` when `seen == Seen::Alive(Activity::Working)`,
+  and `working (at a dialog)` when `seen == Seen::Alive(Activity::Blocked)`
+  (lead decision, 2026-11-13: status matches the watch).
+  `working` is already in the dashboard's word list. `working (at a dialog)`
+  is not: `classifyState` (`ui/src/shared/state.ts:37`) would sort it as
+  `unknown`. So `state.ts` classifies it as `active`, with a case in
+  `ui/src/shared/state.test.ts`, in the same commit.
 - Superseded points: WAT-6 and ADR 0007 point 6, narrowly. ADR 0043 names
   both, and `docs/requirements.md:177` gets the new rule.
 
@@ -218,9 +261,10 @@ change past the user's answer.
 | Test (file) | Assertion that fails on `develop` |
 |---|---|
 | `crates/teamwire-watch/tests/poll.rs` `an_undelivered_result_of_a_working_member_does_not_complete_the_team` (rca's `rca_f2_f3.rs` shape) | No line starts `TEAM-COMPLETE` while the fake session is `Working`; today it prints `TEAM-COMPLETE 1/2 done; not done: impl undelivered` |
-| same file, `an_undelivered_result_of_an_idle_member_still_settles` | `TEAM-COMPLETE` is printed once the fake session is `Idle` (guards the "one dead member never keeps the team open" rule; passes before and after) |
+| same file, `an_undelivered_result_of_an_idle_member_still_settles` | **Guard test, passes on `develop`** (analyze ran it). `TEAM-COMPLETE` is printed once the fake session is `Idle`. It keeps the "one dead member never keeps the team open" rule |
 | same file, `an_undelivered_result_with_no_visible_session_settles_and_says_so` | The line contains `session not visible` |
 | `crates/teamwire-watch/tests/status.rs` `an_undelivered_member_that_works_reads_working` | The status word is `working`, not `undelivered` |
+| same file, `an_undelivered_member_at_a_dialog_reads_working_at_a_dialog` | The status word is `working (at a dialog)` for a `Blocked` session |
 
 **Tests that pin today's behaviour, to update in the same change** (rca
 F2.5): `poll.rs` `undelivered_result_printed_once` (l.153),
@@ -269,6 +313,51 @@ fixture is allowed, but loosening an assertion is not.
     `unconfirmed` delivery keeps the bump.
   - The new generation ends when the member records `done`, through the
     existing Stop hook path (`crates/teamwire-report/src/turn_end.rs:105-155`).
+- **F3-f. A woken generation records `member.woken`** (user decision,
+  2026-11-13). `bump` calls `bump_generation`, which writes
+  `member.reprompted` (`crates/teamwire-store/src/member.rs:362-387`).
+  teamwire-otel counts each such event as a reprompt, and flags a member
+  with 2 or more (`crates/teamwire-otel/src/outcomes.rs:159-164, 213-224`).
+  A member answered twice would then read as harder than its class. So:
+  - `EventType::MemberWoken => "member.woken"` is a new variant in
+    `crates/teamwire-core/src/event.rs` (beside `MemberReprompted`, l.36).
+  - The `events.type` CHECK is a closed list
+    (`crates/teamwire-store/src/schema/v10.sql:7-13, 30-43`), and the store's
+    unit test checks it against `EventType::ALL`
+    (`crates/teamwire-store/src/lib.rs:312-316`). So the store moves to
+    schema version 11. `crates/teamwire-store/src/schema/v11.sql` rebuilds
+    `events` with `member.woken` in the list, exactly as `v10.sql` does.
+    `SCHEMA_V11_SQL` and `SCHEMA_VERSION = 11` go in
+    `crates/teamwire-store/src/lib.rs:56, 97`, the step goes in `MIGRATIONS`
+    (`crates/teamwire-store/src/store.rs:16, 46-47`), and the migration
+    lists in `crates/teamwire-store/tests/migrate.rs:15, 578-579` gain it.
+    A database at version 11 cannot be opened by an older binary, as ADR
+    0038 says of version 10 (`docs/adr/0038-teams-carry-ticket-refs.md:66`).
+  - The store gets `wake_generation(at, role, message)` beside
+    `bump_generation`, sharing one private helper, and writing
+    `member.woken`. `bump_generation` keeps its signature, so its ten
+    callers in tests do not change. `restore_generation`
+    (`member.rs:446-470`) takes the event type to write for the undo, so an
+    undone wake writes `member.woken` with `undone: true`. Its one caller
+    outside tests is `undo_bump` (`crates/teamwire-msg/src/attempt.rs:350-362`);
+    `Bumped` carries the event type for it.
+  - Every reader that takes `member.reprompted` as the start of a
+    generation also takes `member.woken`:
+    - the interrupted-reprompt check in `crates/teamwire-msg/src/attempt.rs:115-160`;
+    - `is_unprompted` in `crates/teamwire-watch/src/status.rs:378-389`;
+    - the undo stack and `generation_start` in
+      `crates/teamwire-otel/src/history.rs:25-40, 115-127`, so the
+      generation span starts at a wake.
+  - The reprompt counter in `crates/teamwire-otel/src/observe.rs:88-91` and
+    the count in `outcomes.rs:159-164` stay on `member.reprompted` only.
+    The match arms in `observe.rs:145-155, 462-472` and
+    `crates/teamwire-otel/src/spans.rs:75-90` gain `MemberWoken` beside
+    `MemberReprompted`.
+  - The dashboard's closed event list `EventType`
+    (`ui/src/shared/teamwire.ts:292-303`) gains `member.woken`, or every
+    events page with one would fail to parse. The timeline
+    (`ui/src/web/model/timeline.ts:156-159`) gets a `member.woken` case,
+    labelled `woken`, beside `member.reprompted`.
 - **F3-b. A message to a member that asked for a handoff is held.**
   - When that newest completion's summary starts with `handoff:`, the same
     write stores the delivery row as `undelivered` with error code
@@ -279,6 +368,20 @@ fixture is allowed, but loosening an assertion is not.
     failure (exit 0).
   - `error_code` is free `TEXT`, so the code needs no schema migration.
     The dashboard has no error-code enum.
+  - **Held rows in `status`** (user decision, 2026-11-13). Today
+    `status_with` lists every `undelivered` row under
+    `stuck_deliveries` (`crates/teamwire-watch/src/status.rs:137-158`). A
+    row with code `held_for_handoff` goes instead into a new list,
+    `held_deliveries: Vec<HeldDelivery { display_id, to }>`, on
+    `StatusView` (`crates/teamwire-watch/src/lib.rs:108-115, 190`). The CLI
+    prints one line per row, `held for handoff: m004 -> impl`, apart from
+    "deliveries that need attention" (`crates/teamwire-cli/src/cmd/status.rs:184-190`).
+  - The dashboard reads `stuck_deliveries` for its "needs a look" panel
+    (`ui/src/web/NeedsLook.tsx:16, 75-89`) and its attention marks
+    (`ui/src/web/model/teams.ts:93, 110`). Held rows are not in that list,
+    so neither shows them, and neither file changes. The zod `StatusView`
+    in `ui/src/shared/teamwire.ts` gains `held_deliveries`, in the same
+    commit, because the field changes `status --json`.
 - **F3-c. The handoff passes held messages on.** The handoff already
   counts `undelivered` rows as unread, and its first line tells the fresh
   session to read them (`crates/teamwire-launch/src/handoff.rs:86-109,
@@ -323,12 +426,20 @@ could meet a busy pane.
 |---|---|
 | `crates/teamwire-msg/tests/woken.rs` `an_answer_to_a_member_with_a_done_result_starts_a_generation` | The member's generation is one higher after the send (today unchanged, `send.rs:311`) |
 | same file, `a_note_to_a_member_with_a_blocked_or_failed_result_starts_a_generation` | Same, for `blocked` and `failed` results (one case each) |
-| same file, `a_known_delivery_failure_undoes_the_woken_generation` | The generation is back to its old value after a `no_place` failure |
+| same file, `the_woken_generation_is_recorded_as_member_woken` | The newest event for the member is `member.woken`, and no `member.reprompted` was written |
+| same file, `a_known_delivery_failure_undoes_the_woken_generation` | **Guard test, passes on `develop`**: the base never bumps, so the generation is already at its old value. It keeps the undo once T017's bump exists. It also asserts that the undo event is `member.woken` with `undone: true`, which fails until the fix writes it |
+| `crates/teamwire-store/tests/migrate_v11.rs` `a_version_10_store_migrates_and_accepts_member_woken` | A version 10 store opens at version 11, keeps every event row with its `seq`, and accepts a `member.woken` event (today the CHECK refuses it) |
+| `crates/teamwire-otel/src/outcomes/tests.rs` `a_woken_generation_is_not_counted_as_a_reprompt` | **Guard test, passes once the variant exists**: two `member.woken` events give `reprompts == 0` |
+| `crates/teamwire-otel/src/spans/tests.rs` `a_wake_opens_a_new_generation_span`, beside `a_handoff_opens_a_new_generation_span_with_the_new_session` (l.89) | The `teamwire.member.generation` span for generation 2 starts at the `member.woken` event (today `generation_start` skips it and the span starts at the older start) |
+| `ui/src/web/model/timeline.test.ts` `a_woken_row_is_labelled_woken` | A `member.woken` row gets the label `<role> woken` |
 | same file, `a_message_to_a_member_with_a_handoff_result_is_held_not_typed` | The row is `undelivered` with code `held_for_handoff`, and the fake host records no typing |
 | same file, `a_reprompt_names_the_held_messages_after_its_text` | The typed line holds `Held for you, oldest first: m001` after the reprompt body |
 | `crates/teamwire-msg/tests/resend.rs` `a_held_message_is_not_resent` | `resend` refuses and names `handoff` |
-| `crates/teamwire-launch/tests/handoff.rs` (or the existing handoff test file) `a_handoff_first_line_counts_the_held_messages` | The fresh session's first line contains `1 unread message(s)` for one held row (guards F3-c; must fail when the held row is written in a state outside `UNREAD`) |
-| `crates/teamwire-watch/tests/poll.rs` `a_member_woken_by_a_message_is_tracked` (rca `f3_…` shape) | No `TEAM-COMPLETE` while the woken member works (red today) |
+| `crates/teamwire-launch/tests/handoff.rs` (or the existing handoff test file) `a_handoff_first_line_counts_the_held_messages` | **Guard test, passes on `develop`** (analyze ran it): `UNREAD` includes `HandedOff` (`crates/teamwire-launch/src/handoff.rs:104-109`), so the base's typed row counts too. The fresh session's first line contains `1 unread message(s)` for one held row. It fails if the held row is ever written in a state outside `UNREAD` |
+| `crates/teamwire-watch/tests/status.rs` `a_held_message_is_listed_apart_from_stuck_deliveries` | An `undelivered` row with code `held_for_handoff` is in `held_deliveries` and not in `stuck_deliveries` (today it is in `stuck_deliveries`) |
+| `crates/teamwire-cli/src/cmd/status.rs`, unit test at the bottom, `held_rows_print_on_their_own_line` | The text holds `held for handoff: m004 -> impl` outside the "need attention" block |
+| `ui/src/shared/teamwire.test.ts` `held_deliveries_parse_and_are_kept` | A status JSON with `held_deliveries` keeps the field after the parse (zod drops a key the schema does not name) |
+| `crates/teamwire-watch/tests/poll.rs` `a_member_woken_by_a_message_is_tracked` | **Guard test, passes on `develop`** (lead decision, 2026-11-13). The fix is in teamwire-msg, and the watch's `Bed` writes rows directly (`crates/teamwire-watch/tests/support/fixture.rs:502-557`), so this test starts from the state the fix writes: the generation bumped, as `Bed::reprompt` does (`fixture.rs:551-557`). It asserts no `TEAM-COMPLETE` while the woken member works |
 
 **Tests that pin today's behaviour, to update in the same change** (rca
 F3.5):
@@ -337,6 +448,12 @@ F3.5):
   That test still holds for a prompt typed by hand, so keep it.
 - `crates/teamwire-msg/tests/reprompt.rs` and `stopped.rs`.
 - `crates/teamwire-report/tests/turn_end.rs` `completion_after_reprompt_is_new_result`.
+- `crates/teamwire-launch/src/contract/tests_findings.rs:186-200`, for the
+  held-message sentence in `talking_head.md`.
+
+analyze patched a rough F3 fix into a clone and ran the msg, report, launch,
+close and cli tests: none of these broke. So each is listed as one that may
+change, not one that must.
 
 **Guidance in the same change:**
 
@@ -352,8 +469,14 @@ F3.5):
 - `docs/requirements.md`: WAT-8 (`:179`), INV-14 (`:57`), REP-3 (`:129`).
 - `docs/failure-modes.md:41-42` (INV-14 rows).
 - `docs/api/cli.md:524-590` (`send` prints `held for handoff`, exit 0; and
-  `resend` refuses a held row) and `:237` (status words).
-- ADR 0043.
+  `resend` refuses a held row) and `:237` (status words, and the held line).
+- `docs/api/core.md:108-111`: the `DeliveryErrorCode` list gains
+  `HeldForHandoff`.
+- `docs/api/core.md:709` and `docs/ARCHITECTURE.md:109`: schema version 11.
+- `docs/metrics.md`: a `member.woken` row in the event table (beside `:18`),
+  the generation span's start events (`:102`), and the notes on what counts
+  as a reprompt (`:160-166`).
+- ADR 0043, which also records the schema step and the new event type.
 
 ---
 
@@ -397,6 +520,18 @@ F3.5):
   - A path is a token inside backticks, or a bare token, that contains a
     `/` or ends in `.<ext>`, with trailing punctuation removed. URLs are
     left out.
+  - A `:N` or `:N-M` suffix is stripped, so `send.rs:297-321` and `send.rs`
+    are one file. This feature's own `tasks.md` has 53 such suffixes
+    (analyze's count).
+  - An indented line under a task line belongs to that task, until the next
+    task line, heading or blank line. This feature's own `tasks.md` names 56
+    paths on such lines, for example under T015 and T047.
+  - A token that holds `*`, such as `crates/teamwire-cli/src/cmd/speckit/*.rs`,
+    is a glob. It matches the repository's tracked files (`git ls-files`)
+    with `teamwire_verify::Owns`, and each match counts as a task path. A
+    glob that matches no tracked file counts as itself, like a path that
+    does not exist yet.
+  - These three rules are the lead's decision of 2026-11-13.
   - The story is the `[US<n>]` label. A task with no label belongs to the
     "setup and polish" group.
 - **Overlap.**
@@ -437,9 +572,10 @@ F3.5):
     `Cargo.lock` changes.
 - **Excluded from mentions.** The feature folder that holds the `tasks.md`
   (`specs/NNN-name/`) names every path, so its files are left out.
-- **Errors.** A missing `tasks.md`, or one with no task lines, exits
-  non-zero and names the problem. The command uses the exit code that
-  `docs/api/cli.md` gives for bad input.
+- **Errors.** A missing or unreadable `tasks.md`, or one with no task
+  lines, exits 1 and names the problem (lead decision, 2026-11-13). Exit 3
+  stays for usage errors, as the table in `docs/api/cli.md:14-20` gives
+  it.
 - **ADR.** `docs/adr/0044-*.md` supersedes ADR 0042 decision 1 in part:
   the reader now exists. The new ADR records the matching rule and the
   rule that the drafts are drafts. ADR 0042 itself is not edited.
@@ -478,8 +614,20 @@ files, and the command gets integration tests in
 | `a_file_naming_only_the_bare_stem_is_not_added` | a file naming only `tools` is absent |
 | `the_feature_folder_is_not_a_mention` | `specs/001-x/plan.md` is absent |
 | `an_unreadable_workflow_is_named_not_skipped` | Output names the workflow with an anchor |
-| `a_missing_or_empty_tasks_file_exits_non_zero` | Non-zero exit and a message naming the file |
+| `a_missing_or_empty_tasks_file_exits_one` | Exit 1 and a message naming the file |
 | `the_drafts_are_labelled_as_drafts` | Output contains `DRAFT` before the owns lists |
+| `parse.rs` unit test `a_line_suffix_is_stripped` | `` `send.rs:297-321` `` and `` `send.rs:12` `` give the path `send.rs` |
+| `parse.rs` unit test `an_indented_line_belongs_to_the_task_above` | A T015-shaped task with paths on indented lines holds those paths, and a blank line or the next `- [ ] T` line ends it |
+| `parse.rs` unit test `a_star_token_is_a_glob` | The token `crates/x/src/cmd/speckit/*.rs` is kept as a glob, and `overlap.rs` or `mentions.rs` expands it against a list of tracked files |
+
+Two of the integration cases pass on T021's stub, because the stub prints
+nothing and they assert that something is absent:
+`a_file_naming_only_the_bare_stem_is_not_added` and
+`the_feature_folder_is_not_a_mention`. So do the negative unit tests run
+against a stub that returns no tasks, such as the rule that leaves out URLs.
+These are **guard tests**: each one passes on the stub and must still pass
+after the fix. A guard test sits in the same fixture as a positive case, so
+the fixture proves the command found the other mentions.
 
 **Guidance in the same change:**
 
@@ -574,9 +722,30 @@ files, and the command gets integration tests in
 The existing `the_closer_task_lists_setups_and_has_a_restore_fallback`
 (`preset.rs:1520-1531`) stays.
 
+**The closer's seat text** (lead decision, 2026-11-13). The seat contract
+says "Run the full gate your brief names once on each head that ships"
+(`crates/teamwire-launch/contracts/kind_closer.md:11-19`). After the preset
+change, the seat and the brief would disagree. So the seat text says: run
+the local gate your brief names once on each head that ships, run none of
+the gates the brief leaves to CI, and report both.
+
+| Test | Assertion |
+|---|---|
+| `crates/teamwire-launch/src/contract/tests_findings.rs` `a_closer_runs_the_local_gate_and_reports_the_gates_left_to_ci` | The rendered closer seat holds `local gate` and `left to CI`, and no longer holds `Run the full gate your brief names` |
+
+The existing `closer_and_reviewer_carry_the_checks_that_catch_a_test_that_cannot_fail`
+(`crates/teamwire-launch/src/contract/tests.rs:116-130`) pins phrases of
+the same block: `joined head when one exists`,
+`do not also\n  run member checks on the joined head` and
+`run only its failing tests on the base commit`. The new text keeps them
+where they still hold. Where one must change, its expected text changes
+(pre-approved: it pins the gate rule that FR-018 changes), and no assert is
+removed.
+
 **Guidance:**
 
 - `examples/presets/closer.json:13, 28`.
+- `crates/teamwire-launch/contracts/kind_closer.md:11-19`.
 - `examples/skills/teamwire/SKILL.md:864-880`, the closer step.
 - The closer row at `SKILL.md:280`.
 
@@ -619,6 +788,12 @@ The existing `the_closer_task_lists_setups_and_has_a_restore_fallback`
     exists on this machine.
     - The implementer confirms the shape against Codex's published rollout
       format or a real rollout file, and records which one it used.
+    - When neither confirms it (lead decision, 2026-11-13), the implementer
+      builds against the fixture and marks the parser with a comment that
+      starts `shortcut:` and names the limit: the rollout shape is
+      unconfirmed. The report says so. `current_tool` returns `None`
+      for any entry it cannot read, so an unknown shape gives
+      `tool: unknown`, never a wrong tool.
   - **pi.** teamwire owns the member extension, so it records the start
     itself. On pi's `tool_call` event, the extension writes
     `tool: {name, started_at_ms}` into `<id>.teamwire.json`. On
@@ -652,22 +827,28 @@ The existing `the_closer_task_lists_setups_and_has_a_restore_fallback`
 | `crates/teamwire-harness-codex/tests/session.rs` `the_current_tool_is_the_newest_call_without_output` | Same, on a rollout fixture |
 | `crates/teamwire-harness-pi/tests/session.rs` `the_current_tool_comes_from_the_state_file` | Same, on a state file with `tool` |
 | `crates/teamwire-harness-pi/tests/launch.rs` (or the extension snapshot test) `the_member_extension_stamps_and_clears_the_tool` | The generated extension source registers `tool_call` and writes `tool` |
-| `crates/teamwire-watch/tests/status.rs` `status_role_shows_the_current_tool_and_its_duration` | With `FakeHarness` returning a `ToolRun` 900 s old, the view's `current_tool.seconds == 900` |
-| `crates/teamwire-cli/tests/status.rs` `status_role_prints_how_long_the_tool_has_run` | Output contains `tool: Bash, running 15m` |
-| `ui/` zod test (per `ui/AGENTS.md`), if the schema has fixture tests | A status JSON with `current_tool` parses |
+| `crates/teamwire-watch/tests/status.rs` `status_role_shows_the_current_tool_and_its_duration` | With the watch's fixture harness returning a `ToolRun` 900 s old, the view's `current_tool.seconds == 900` |
+| `crates/teamwire-cli/src/cmd/status.rs`, unit test at the bottom, `status_role_prints_how_long_the_tool_has_run` | The text for a view with `current_tool.seconds == 902` holds `tool: Bash, running 15m02s`, and a working member with no `current_tool` gets `tool: unknown (this harness does not report it)` |
+| `ui/src/shared/teamwire.test.ts` `current_tool_parses_and_is_kept` | A status JSON with `current_tool` keeps the field after the parse |
 
-`FakeHarness` (`tests/fakes/`) may need a setter for `current_tool`.
-`tests/fakes/` is a protected path (AGENTS.md), so the implementer asks the
-lead before editing it. The fake can use the trait default if the test
-reaches the method another way.
+**The test seam** (lead decision, 2026-11-13). The CLI's integration tests
+run the real binary, whose members name adapters the binary does not have
+(`crates/teamwire-cli/tests/status.rs:1-2`). So no member there is
+`working`, and no fake harness can reach it. The watch's `Bed` registers its
+own wrapper, `FillHarness` (`crates/teamwire-watch/tests/support/fixture.rs:28-84`),
+which forwards each trait method to a `FakeHarness` and answers
+`context_fill` from its own map. The plan extends `FillHarness` the same
+way: it forwards `current_tool` and answers it from a map that the test
+sets. The CLI's text gets a unit test in `cmd/status.rs` on a built view.
+No file under `tests/fakes/` changes.
 
 **Guidance:**
 
 - `docs/api/cli.md:236-244`, status `--role`.
 - `examples/skills/teamwire/SKILL.md`, the place that tells the lead to
   read `status --role` for a member that looks stuck.
-- `docs/api/` harness docs, if a page describes the `Harness` trait's
-  methods.
+- `docs/api/core.md:290-298`, the `Harness` trait's methods: add
+  `current_tool` beside `context_fill`.
 
 ### F11. `close --dry-run` and symlinks
 
@@ -866,9 +1047,9 @@ The lead uses this table to measure which stories share files. The
 
 | Story | Files |
 |---|---|
-| US1 | `crates/teamwire-core/src/message.rs`; `crates/teamwire-store/src/delivery.rs`; `crates/teamwire-msg/src/{send.rs,attempt.rs,resend.rs}`; `crates/teamwire-msg/tests/{woken.rs,answer.rs,resend.rs,reprompt.rs,stopped.rs}`; `crates/teamwire-deliver/src/lines.rs`; `crates/teamwire-report/src/{received.rs,lead_stop.rs,lib.rs}`; `crates/teamwire-report/tests/{undelivered_to_lead.rs,turn_end.rs}`; `crates/teamwire-watch/src/{plan.rs,status.rs,snapshot.rs}`; `crates/teamwire-watch/tests/{poll.rs,status.rs}`; `crates/teamwire-launch/contracts/talking_head.md`; `crates/teamwire-launch/src/contract/tests*.rs`; `crates/teamwire-launch/tests/handoff.rs`; `crates/teamwire-harness-claude/src/lead_setup/plugin.rs`; `crates/teamwire-harness-claude/tests/lead_setup.rs`; `crates/teamwire-cli/src/cmd/{received.rs,hook/lead.rs,handoff_guide.md}`; `crates/teamwire-cli/tests/{status.rs,hook_lead.rs}`; `docs/adr/0043-*.md`; `docs/requirements.md`; `docs/failure-modes.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}` |
+| US1 | `crates/teamwire-core/src/{message.rs,event.rs}`; `crates/teamwire-store/src/{delivery.rs,member.rs,lib.rs,store.rs}`; `crates/teamwire-store/src/schema/v11.sql`; `crates/teamwire-store/tests/{migrate.rs,migrate_v11.rs}`; `crates/teamwire-msg/src/{send.rs,attempt.rs,resend.rs}`; `crates/teamwire-msg/tests/{woken.rs,answer.rs,resend.rs,reprompt.rs,stopped.rs}`; `crates/teamwire-deliver/src/{lines.rs,lib.rs}`; `crates/teamwire-report/src/{received.rs,lead_stop.rs,lib.rs}`; `crates/teamwire-report/tests/{undelivered_to_lead.rs,turn_end.rs}`; `crates/teamwire-watch/src/{plan.rs,status.rs,snapshot.rs,text.rs,lib.rs}`; `crates/teamwire-watch/tests/{poll.rs,status.rs}`; `crates/teamwire-otel/src/{history.rs,observe.rs,spans.rs}`; `crates/teamwire-otel/src/{outcomes,spans}/tests.rs`; `crates/teamwire-launch/contracts/talking_head.md`; `crates/teamwire-launch/src/contract/tests_findings.rs`; `crates/teamwire-launch/tests/handoff.rs`; `crates/teamwire-harness-claude/src/lead_setup/plugin.rs`; `crates/teamwire-cli/src/cmd/{received.rs,status.rs,hook/lead.rs,handoff_guide.md}`; `crates/teamwire-cli/tests/{status.rs,hook_lead.rs}`; `ui/src/shared/{teamwire.ts,teamwire.test.ts,state.ts,state.test.ts}`; `ui/src/web/model/{timeline.ts,timeline.test.ts}`; `docs/adr/0043-*.md`; `docs/requirements.md`; `docs/failure-modes.md`; `docs/metrics.md`; `docs/api/cli.md`; `docs/api/core.md`; `docs/ARCHITECTURE.md`; `README.md`; `examples/skills/teamwire/{SKILL.md,reference.md}` |
 | US2 | `crates/teamwire-verify/src/{owns.rs,lib.rs}`; `crates/teamwire-cli/src/{args.rs,main.rs}`; `crates/teamwire-cli/src/cmd/speckit.rs`; `crates/teamwire-cli/src/cmd/speckit/*.rs`; `crates/teamwire-cli/tests/speckit_draft.rs`; `docs/adr/0044-*.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}`; `examples/presets/speckit.json`; `examples/skills/afk/SKILL.md` |
-| US3 | F6: `examples/presets/speckit.json`, `examples/skills/teamwire/reference.md`, `crates/teamwire-cli/tests/preset.rs`. F8: `examples/presets/closer.json`, `examples/skills/teamwire/SKILL.md`, `crates/teamwire-cli/tests/preset.rs`. F10: `crates/teamwire-core/src/{harness.rs,tool_run.rs,lib.rs}`; `crates/teamwire-harness-{claude,codex,pi}/src/*`; their `tests/`; `crates/teamwire-watch/src/{tool.rs,status.rs,lib.rs}`; `crates/teamwire-watch/tests/status.rs`; `crates/teamwire-cli/src/cmd/status.rs`; `crates/teamwire-cli/tests/status.rs`; `ui/src/shared/teamwire.ts`; `docs/api/cli.md`. F11: `crates/teamwire-close/src/member_close.rs`, `crates/teamwire-close/tests/ignored_files.rs`, `docs/api/cli.md` |
+| US3 | F6: `examples/presets/speckit.json`, `examples/skills/teamwire/reference.md`, `crates/teamwire-cli/tests/preset.rs`. F8: `examples/presets/closer.json`, `examples/skills/teamwire/SKILL.md`, `crates/teamwire-cli/tests/preset.rs`, `crates/teamwire-launch/contracts/kind_closer.md`, `crates/teamwire-launch/src/contract/{tests.rs,tests_findings.rs}`. F10: `crates/teamwire-core/src/{harness.rs,tool_run.rs,lib.rs}`; `crates/teamwire-harness-{claude,codex,pi}/src/*`; their `tests/`; `crates/teamwire-watch/src/{tool.rs,status.rs,lib.rs}`; `crates/teamwire-watch/tests/status.rs`; `crates/teamwire-watch/tests/support/fixture.rs`; `crates/teamwire-cli/src/cmd/status.rs`; `ui/src/shared/{teamwire.ts,teamwire.test.ts}`; `docs/api/cli.md`; `docs/api/core.md`. F11: `crates/teamwire-close/src/member_close.rs`, `crates/teamwire-close/tests/ignored_files.rs`, `docs/api/cli.md` |
 | US4 | `crates/teamwire-verify/src/{inspect.rs,git.rs,waivers.rs,lib.rs}`; `crates/teamwire-verify/tests/verify.rs`; `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`; `docs/requirements.md`; `docs/failure-modes.md`; `docs/api/cli.md`; `examples/skills/teamwire/{SKILL.md,reference.md}` |
 
 **Files shared between stories:**
@@ -876,8 +1057,12 @@ The lead uses this table to measure which stories share files. The
 | Files | Stories |
 |---|---|
 | `docs/api/cli.md`, `examples/skills/teamwire/SKILL.md` and `reference.md` | all four |
+| `docs/metrics.md`, `crates/teamwire-otel/`, `crates/teamwire-store/` | US1 only |
 | `crates/teamwire-verify/src/lib.rs` | US2 (`pub use owns::Owns`) and US4 (the waiver call and the crate note) |
 | `docs/requirements.md`, `docs/failure-modes.md` | US1 and US4 |
 | `examples/presets/speckit.json` | US2 and US3 (F6) |
-| `crates/teamwire-watch/src/status.rs`, `crates/teamwire-watch/tests/status.rs`, `crates/teamwire-cli/tests/status.rs` | US1 and US3 (F10) |
+| `crates/teamwire-watch/src/{status.rs,lib.rs}`, `crates/teamwire-watch/tests/status.rs`, `crates/teamwire-cli/src/cmd/status.rs` | US1 (held rows, status words) and US3 (F10) |
+| `ui/src/shared/teamwire.ts`, `ui/src/shared/teamwire.test.ts` | US1 (`member.woken`, `held_deliveries`) and US3 (F10 `current_tool`) |
+| `docs/api/core.md` | US1 (`HeldForHandoff`, schema version) and US3 (`current_tool`) |
+| `crates/teamwire-launch/src/contract/tests_findings.rs` | US1 (`talking_head.md`) and US3 (F8, `kind_closer.md`) |
 | `crates/teamwire-harness-claude/` | US1 (`lead_setup/plugin.rs`) and US3 (the session reader). These are different files. |

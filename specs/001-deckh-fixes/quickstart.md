@@ -13,12 +13,16 @@ output is in [contracts/cli.md](contracts/cli.md).
 ## US1: delivery and member state
 
 ```bash
+cargo test -p teamwire-store --locked
 cargo test -p teamwire-report --locked
 cargo test -p teamwire-msg --locked
 cargo test -p teamwire-watch --locked
+cargo test -p teamwire-otel --locked
 cargo test -p teamwire-launch --locked
-cargo test -p teamwire-harness-claude --locked --test lead_setup
-cargo test -p teamwire-cli --locked --test status
+cargo test -p teamwire-harness-claude --locked
+cargo test -p teamwire-cli --locked --test status --test hook_lead
+cargo test -p teamwire-cli --locked --bin teamwire status
+(cd ui && bun test src/shared src/web/model && bun run typecheck)
 ```
 
 Expected results:
@@ -28,8 +32,21 @@ Expected results:
 - `received <id>` clears the row with no typing.
 - The watch prints no `TEAM-COMPLETE` while a member with an undelivered
   result works.
-- A note to a member with a `done` result starts a generation.
-- A note to a member with a `handoff:` result is held.
+- A note to a member with a `done` result starts a generation, written as
+  `member.woken`.
+- A note to a member with a `handoff:` result is held, and `status` lists
+  it as `held for handoff: <id> -> <role>`.
+- A version 10 store opens at version 11 and keeps every event.
+
+Some tests in this story are guard tests: they pass before and after the
+fix. tasks.md marks each one. Revert a fix only to check the tests marked
+failing.
+
+Read-only check for SC-001 and SC-003, done by the closer: replay deckh's
+sequence on the fakes. Block the lead pane, have a member send a question
+and record a result, run the lead's hook, and run a watch while that member
+works. The hook must name both files at the next tool call, and the watch
+must print no `TEAM-COMPLETE` while the member works.
 
 To check that each test fails without its fix, revert the fix commit in a
 clone and run the same test.
@@ -47,8 +64,8 @@ Expected results:
 - The second command prints `Stories that share files`.
 - The second command prints `DRAFT` before the owns lists.
 
-Manual check for SC-005. Do not make this a test, because it reads another
-repository. This needs the knit-3.0 checkout at deckh's base and deckh's
+Read-only check for SC-005, done by the closer. Do not make this a test,
+because it reads another repository. This needs the knit-3.0 checkout at deckh's base and deckh's
 `tasks.md`.
 
 ```bash
@@ -67,6 +84,7 @@ The phase table should match the four phase pairs in the findings file.
 
 ```bash
 cargo test -p teamwire-cli --locked --test preset
+cargo test -p teamwire-launch --locked --lib contract
 cargo test -p teamwire-close --locked --test ignored_files
 cargo test -p teamwire-harness-claude --locked --test sessions
 cargo test -p teamwire-harness-codex --locked --test session
@@ -75,7 +93,8 @@ cargo test -p teamwire-watch --locked --test status
 ```
 
 F10 also changes the dashboard schema. Run the UI checks that
-`ui/AGENTS.md` names for a change to `ui/src/shared/teamwire.ts`.
+`ui/AGENTS.md` names for a change to `ui/src/shared/teamwire.ts`. The CLI's
+`tool:` line has a unit test in `crates/teamwire-cli/src/cmd/status.rs`.
 
 ## US4: waivers
 

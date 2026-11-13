@@ -22,8 +22,12 @@ changes in the same commit.
   - `received` accepts message ids.
   - An `answer --re` settles its question.
   - The watch looks at the session behind an undelivered result.
-  - A waking message starts a generation, and a message to a member that
-    asked for a handoff is held for the handoff.
+  - A waking message starts a generation, recorded as a new event type,
+    `member.woken`, that the metrics do not count as a reprompt. The store's
+    event type list is closed, so this takes schema version 11.
+  - A message to a member that asked for a handoff is held for the
+    handoff, and `status` lists it on its own line.
+  - The member's seat text no longer tells it to resend to the lead.
 
   One new ADR records these decisions: 0043.
 - **US2 (F4, F5).** A new read-only command, `teamwire speckit draft`, lives
@@ -52,13 +56,13 @@ in [research.md](research.md).
 
 ## Technical Context
 
-**Language/Version**: Rust (edition and toolchain from `rust-toolchain.toml`); the dashboard is TypeScript on Bun (`ui/`), touched only for F10's status field.
+**Language/Version**: Rust (edition and toolchain from `rust-toolchain.toml`); the dashboard is TypeScript on Bun (`ui/`), touched for the `status --json` fields (`held_deliveries`, F10's `current_tool`), the `member.woken` event type, and the `working (at a dialog)` status word.
 
 **Primary Dependencies**: Existing workspace crates only. `globset` is reached through `teamwire-verify` (already a dependency of `teamwire-cli`). The YAML reader comes from `crates/teamwire-cli/src/cmd/doctor_speckit/yaml.rs`. No new dependency, and no `Cargo.lock` change.
 
-**Storage**: The SQLite team store (`crates/teamwire-store`). No schema migration. A held message is an `undelivered` delivery row with a new error code, `held_for_handoff`. `error_code` is free `TEXT` with no CHECK (`crates/teamwire-store/src/schema/v1.sql:74`).
+**Storage**: The SQLite team store (`crates/teamwire-store`). One schema step, version 11, rebuilds `events` with `member.woken` in its closed CHECK list, as version 10 did (`crates/teamwire-store/src/schema/v10.sql`). A store at version 11 cannot be opened by an older binary. A held message is an `undelivered` delivery row with a new error code, `held_for_handoff`. `error_code` is free `TEXT` with no CHECK (`crates/teamwire-store/src/schema/v1.sql:74`), so the code needs no schema step.
 
-**Testing**: `cargo test -p <crate> --locked`, with `teamwire_fakes::TestHome`, `FakeHarness` and `FakeHost` (`tests/fakes/`). The watch's `Bed` fixture is used for watch tests and the message rig for message tests. The CLI tests run the binary on a temporary git repository (`crates/teamwire-cli/tests/preset.rs:45-53, 238-246`).
+**Testing**: `cargo test -p <crate> --locked`, with `teamwire_fakes::TestHome`, `FakeHarness` and `FakeHost` (`tests/fakes/`), which this feature does not change. The watch's `Bed` fixture is used for watch tests, with its `FillHarness` wrapper extended for F10, and the message rig for message tests. The dashboard's tests run with `bun test` as `ui/AGENTS.md` names. The CLI tests run the binary on a temporary git repository (`crates/teamwire-cli/tests/preset.rs:45-53, 238-246`).
 
 **Target Platform**: macOS and Linux (`teamwire-platform`).
 
@@ -68,7 +72,7 @@ in [research.md](research.md).
 
 **Constraints**: AGENTS.md's hard rules, as the constitution's principle IV states them. No process types a message after the command that sent it has exited (ADR 0003 point 7, INV-8).
 
-**Scale/Scope**: 10 findings, 4 user stories, about 12 crates touched. The crate list is in [research.md](research.md) under "Files per story".
+**Scale/Scope**: 10 findings, 4 user stories, about 14 crates touched. The crate list is in [research.md](research.md) under "Files per story".
 
 ## Constitution Check
 
@@ -78,13 +82,13 @@ in [research.md](research.md).
 |-----------|-----------------------|--------|
 | I. Root cause first | Each finding in research.md opens with its root cause and file:line on `develop` (`eda2e0b`). For F1-F3 the causes come from rca's report, re-read in the code by the spec member. F12's cause was checked against deckh's waiver rows and the knit-3.0 commits `6a05efad1a` and `0e05a21fac`. | PASS |
 | II. A failing test first | Each finding names its test and the assertion that fails without the fix. In tasks.md each test task comes before its fix task. | PASS |
-| III. Guidance changes with the code | Each finding lists the skill, preset, reference, doc and `ui/src/shared/teamwire.ts` text in the same task as its code. F10 is the only `--json` change, and it updates `ui/src/shared/teamwire.ts` in that task. F12 changes no output: `teamwire verify` has no `--json`, and `Flag` keeps its fields. | PASS |
+| III. Guidance changes with the code | Each finding lists the skill, preset, reference, doc, README and `ui/src/shared/teamwire.ts` text in the same task as its code. Three `--json` changes update `ui/src/shared/teamwire.ts` in their own tasks: `status --json` gains `held_deliveries` (F3) and `current_tool` (F10), and `events --json` gains the `member.woken` type (F3). `docs/metrics.md`, `docs/api/core.md`, `README.md` and the closer's seat text are each in the task that changes the code they describe. F12 changes no output: `teamwire verify` has no `--json`, and `Flag` keeps its fields. | PASS |
 | IV. AGENTS.md hard rules | The new writes run inside `Store::write`: the ack by `received`, the ack by `--re`, the woken bump, and the held row. The F11 symlink check reads with `std::fs::symlink_metadata` and writes nothing. The F12 blob comparison runs git through the existing `Git` helper, which goes through `Platform::run`, and writes nothing. Only `teamwire-cli` prints. No new dependency. | PASS |
 | V. Every harness | The F1 hook note lives in shared code that all three lead harnesses reach (`lead.rs` `lead_stop_in` and `lead_tool_in`). F10 adds a `Harness` method implemented for Claude Code, Codex and pi. F3 does not depend on the harness. | PASS |
 | VI. Fakes only in tests | All tests use `tests/fakes/`, `TestHome`, the watch `Bed` and the message rig. F10 fixtures are session-file lines in each harness's `tests/fixtures/`. | PASS |
-| VII. Smallest complete change; ADR by supersede | No new crate. Three new ADRs (0043, 0044, 0045) supersede named points. ADR 0003, 0007, 0009, 0035 and 0042 are not edited. F12 reuses `all_waivers` and needs no schema change. The changes reuse `ack_delivery`, `bump`, `doctor_speckit/yaml.rs`, `Owns` and the `context_fill` tail readers. | PASS |
+| VII. Smallest complete change; ADR by supersede | No new crate. Three new ADRs (0043, 0044, 0045) supersede named points. ADR 0003, 0007, 0009, 0024, 0035 and 0042 are not edited. The one schema step (version 11) is the user's choice of a new event type, and copies version 10's rebuild. F12 reuses `all_waivers` and needs no schema change. The watch's result-path rule moves down to teamwire-deliver, so the lead's hook reuses it instead of a copy. The changes reuse `ack_delivery`, `bump`, `doctor_speckit/yaml.rs`, `Owns` and the `context_fill` tail readers. | PASS |
 
-Re-check after Phase 1 design: PASS, with no violations, so Complexity Tracking stays empty. The design added a new error code and not a new delivery state, which avoids a schema migration and a dashboard enum change.
+Re-check after Phase 1 design: PASS, with no violations, so Complexity Tracking stays empty. The design added a new error code and not a new delivery state, which avoids a second schema step and a dashboard enum change. Re-checked on 2026-11-13 after the plan review's answers: still PASS.
 
 ## Project Structure
 
@@ -111,13 +115,14 @@ story".
 
 ```text
 crates/
-├── teamwire-core/src/           # message.rs (HeldForHandoff code), harness.rs (current_tool), tool_run.rs (new type)
-├── teamwire-store/src/          # delivery.rs (held rows, lead undelivered query), message.rs
+├── teamwire-core/src/           # message.rs (HeldForHandoff code), event.rs (MemberWoken), harness.rs (current_tool), tool_run.rs (new type)
+├── teamwire-store/src/          # delivery.rs (held rows, lead undelivered query), member.rs (wake_generation), schema/v11.sql, lib.rs, store.rs; tests/migrate_v11.rs
 ├── teamwire-msg/src/            # send.rs, attempt.rs, resend.rs, rules.rs; tests/
-├── teamwire-deliver/src/        # message_line (held list after reprompt text)
+├── teamwire-deliver/src/        # message_line (held list after reprompt text), result_path and result_written (moved from the watch)
 ├── teamwire-report/src/         # received.rs (message ids), lead_stop.rs (undelivered_to_lead), lib.rs
-├── teamwire-watch/src/          # plan.rs, status.rs, snapshot.rs, lib.rs (MemberView), new tool.rs; tests/
-├── teamwire-launch/src/         # handoff.rs (held messages to the fresh session); contracts/talking_head.md
+├── teamwire-watch/src/          # plan.rs, status.rs, snapshot.rs, text.rs, lib.rs (MemberView, held_deliveries), new tool.rs; tests/ (FillHarness)
+├── teamwire-otel/src/           # history.rs, observe.rs, spans.rs (member.woken starts a generation, is no reprompt)
+├── teamwire-launch/             # contracts/talking_head.md, contracts/kind_closer.md; src/contract/tests*.rs; tests/handoff.rs
 ├── teamwire-close/src/          # member_close.rs (symlinks); tests/ignored_files.rs
 ├── teamwire-verify/src/         # lib.rs, owns.rs (Owns made public); inspect.rs (flag paths), git.rs (blob), new waivers.rs; tests/verify.rs
 ├── teamwire-harness-claude/src/ # lead_setup/plugin.rs (matcher), current_tool from the transcript
@@ -126,11 +131,14 @@ crates/
 └── teamwire-cli/src/            # cmd/received.rs, cmd/hook/lead.rs, cmd/status.rs, args.rs, main.rs, cmd/speckit.rs, cmd/speckit/*.rs; tests/
 docs/
 ├── adr/0043-*.md, adr/0044-*.md, adr/0045-*.md # new ADRs
-├── requirements.md, failure-modes.md, api/cli.md
+├── requirements.md, failure-modes.md, metrics.md, ARCHITECTURE.md, api/cli.md, api/core.md
+README.md                        # the received row
 examples/
 ├── skills/teamwire/SKILL.md, reference.md
 └── presets/speckit.json, closer.json
-ui/src/shared/teamwire.ts        # F10's MemberView field only
+ui/src/shared/teamwire.ts        # held_deliveries, current_tool, member.woken; tests in teamwire.test.ts
+ui/src/shared/state.ts           # working (at a dialog) is active
+ui/src/web/model/timeline.ts     # a member.woken row
 ```
 
 **Structure Decision**: The repository's existing workspace layout. Each
