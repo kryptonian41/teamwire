@@ -8,10 +8,9 @@ reads your brief and the document you write.
 Before you write: finish the step you are on. If your role writes code,
 commit your work (a handoff refuses uncommitted changes in your worktree)
 and add each commit's progress line to your report file.
-If your role does not write code, commit nothing.
-Your directory may be shared, and the changes in it may not be yours.
-Your report needs its 'Decisions I made' list ('none' if there were none),
-or the turn-end check holds your stop once.
+If your role does not write code, commit nothing. Your directory may be shared,
+and the changes in it may not be yours. Your report needs its 'Decisions I made'
+list ('none' if there were none), or the turn-end check holds your stop once.
 
 Write the document to the path the note named, `reports/<your role>.handoff.md`
 in your team directory, never `$TMPDIR` or the repository. Its sections:
@@ -30,8 +29,7 @@ After you write, record your completion with status `done` and a summary that
 starts with `handoff:`, then end your turn. A handoff `done` does not mean your
 check passed: the `handoff:` prefix tells the lead to run the handoff. Use the
 team_done tool, or the `done` command your contract names, with `--status done`.
-Messages sent to you after that `done` are held, not typed: the fresh session
-reads them with `teamwire inbox`, and a reprompt in your old session names them.
+Messages sent to you after that `done` wait, untyped, for the fresh session.
 
 ---
 
