@@ -348,3 +348,35 @@ fn a_partial_path_resolves_only_when_it_is_a_unique_end() {
     }
     assert!(!us1.iter().any(|p| p.ends_with("/cmd/lib.rs")), "{out}");
 }
+
+/// ADR 0047 rule 4: each word with a `/` that rules 1 to 3 turn away is
+/// printed with its task id, and no draft holds it. A route, which ADR 0044
+/// already turned away, is not printed.
+#[test]
+fn every_name_that_is_no_path_is_printed_with_its_task() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let names = block(&out, "Names that are not repository paths:");
+    assert_eq!(
+        names,
+        [
+            "  T002: &[\"y/\".to_owned(, z/c/**\".to_owned(, z/d/**\".to_owned(",
+            "  T010: crates/b/**, crates/c/**, teamwire/skills/teamwire/SKILL.md",
+            "  T011: specs/NNN-name/tasks.md, cmd/lib.rs",
+            "  T018: Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md",
+        ],
+        "{out}"
+    );
+    let drafts: Vec<&str> = out
+        .lines()
+        .skip_while(|l| !l.starts_with("DRAFT owns lists."))
+        .collect();
+    for word in ["crates/b/**", "specs/NNN-name/tasks.md", "cmd/lib.rs"] {
+        assert!(
+            !drafts
+                .iter()
+                .any(|l| l.split_whitespace().next() == Some(word)),
+            "{word}: {out}"
+        );
+    }
+}

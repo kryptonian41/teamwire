@@ -28,6 +28,26 @@ pub(crate) struct Overlap {
     pub(crate) independent: Vec<(String, Vec<String>)>,
 }
 
+/// The words of one task, read against the tracked files (ADR 0047).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Expanded {
+    /// The repository paths, each once.
+    pub(crate) paths: Vec<String>,
+    /// The words with a `/` that rules 1 to 3 turned away, each once. The
+    /// lead checks them for a new file in a new folder.
+    pub(crate) not_paths: Vec<String>,
+}
+
+/// How one word reads against the tracked files.
+enum Read {
+    Paths(Vec<String>),
+    /// A word ADR 0047 turns away: the lead sees it when it holds a `/`.
+    NotPath,
+    /// A word ADR 0044 already turned away, such as a word with no
+    /// extension that names no tracked folder.
+    Skip,
+}
+
 /// The words of `paths` that are repository paths (FR-013, ADR 0047), with
 /// each glob (a path that holds `*`) replaced by the tracked files it
 /// matches, as verify's `owns` matches them. A glob that matches no tracked
@@ -40,29 +60,45 @@ pub(crate) struct Overlap {
 /// no `/` is a path only when it names a tracked file at the repository's
 /// root, such as `README.md`: an event name such as `knit.progress` or a
 /// bare `lib.rs` is not.
-pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    let mut add = |p: &str| {
-        if !out.iter().any(|o| o == p) {
-            out.push(p.to_owned());
+pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Expanded {
+    let mut out = Expanded::default();
+    let add = |list: &mut Vec<String>, p: &str| {
+        if !list.iter().any(|o| o == p) {
+            list.push(p.to_owned());
         }
     };
-    for path in paths {
-        if is_code(path) {
-            continue;
-        }
-        if !path.contains('*') {
-            if let Some(p) = repo_path(path, tracked) {
-                add(&p);
+    for word in paths {
+        match read(word, tracked) {
+            Read::Paths(found) => {
+                for p in &found {
+                    add(&mut out.paths, p);
+                }
             }
-            continue;
-        }
-        let owns = Owns::new(std::slice::from_ref(path));
-        for m in tracked.iter().filter(|t| owns.matches(t)) {
-            add(m);
+            Read::NotPath if word.contains('/') => add(&mut out.not_paths, word),
+            Read::NotPath | Read::Skip => {}
         }
     }
     out
+}
+
+fn read(word: &str, tracked: &[String]) -> Read {
+    if is_code(word) {
+        return Read::NotPath;
+    }
+    if !word.contains('*') {
+        return repo_path(word, tracked);
+    }
+    let owns = Owns::new(&[word.to_owned()]);
+    let matched: Vec<String> = tracked
+        .iter()
+        .filter(|t| owns.matches(t))
+        .cloned()
+        .collect();
+    if matched.is_empty() {
+        Read::NotPath
+    } else {
+        Read::Paths(matched)
+    }
 }
 
 /// True when `word` is code, not a path (ADR 0047 rule 1): it holds a quote,
@@ -73,35 +109,40 @@ fn is_code(word: &str) -> bool {
     word.contains(['"', '\'', '(', ')', ',', ';', '!']) || word.contains("::")
 }
 
-/// `word` as a repository path, or `None` when it names none (see `expand`).
-fn repo_path(word: &str, tracked: &[String]) -> Option<String> {
+/// `word` read as a repository path (see `expand`).
+fn repo_path(word: &str, tracked: &[String]) -> Read {
+    let one = |p: String| Read::Paths(vec![p]);
     if !word.contains('/') {
-        return tracked.iter().any(|t| t == word).then(|| word.to_owned());
+        return if tracked.iter().any(|t| t == word) {
+            one(word.to_owned())
+        } else {
+            Read::Skip
+        };
     }
     let bare = word.trim_end_matches('/');
     if !word.ends_with('/') && tracked.iter().any(|t| t == bare) {
-        return Some(bare.to_owned());
+        return one(bare.to_owned());
     }
     let folder = format!("{bare}/");
     if tracked.iter().any(|t| t.starts_with(&folder)) {
-        return Some(folder);
+        return one(folder);
     }
     if word.ends_with('/') || !has_extension(word, 1) {
-        return None;
+        return Read::Skip;
     }
     // A new file counts only in a folder that already holds tracked files.
     let parent = bare.rsplit_once('/').map_or("", |(dir, _)| dir);
     let parent = format!("{parent}/");
     if tracked.iter().any(|t| t.starts_with(&parent)) {
-        return Some(word.to_owned());
+        return one(word.to_owned());
     }
     // A partial path, such as `cmd/send.rs`, is the one tracked path it
     // ends at a `/`. When it ends several, the task did not say which.
     let tail = format!("/{word}");
     let mut ends = tracked.iter().filter(|t| t.ends_with(&tail));
     match (ends.next(), ends.next()) {
-        (Some(only), None) => Some(only.clone()),
-        _ => None,
+        (Some(only), None) => one(only.clone()),
+        _ => Read::NotPath,
     }
 }
 
@@ -236,7 +277,7 @@ mod tests {
         ]);
         let paths = strings(&["crates/x/src/cmd/speckit/*.rs", "src/new/*.rs", "src/a.rs"]);
         assert_eq!(
-            expand(&paths, &tracked),
+            expand(&paths, &tracked).paths,
             strings(&[
                 "crates/x/src/cmd/speckit/one.rs",
                 "crates/x/src/cmd/speckit/two.rs",
@@ -262,7 +303,7 @@ mod tests {
             "z/c/a!.rs",
             "z/c/a::b.rs",
         ]);
-        assert!(expand(&words, &tracked).is_empty());
+        assert!(expand(&words, &tracked).paths.is_empty());
     }
 
     /// ADR 0047 rule 2, from 002's `tasks.md`: an example glob that matches
@@ -285,7 +326,7 @@ mod tests {
             "specs/002-x/plan.md",
         ]);
         assert_eq!(
-            expand(&words, &tracked),
+            expand(&words, &tracked).paths,
             strings(&[
                 "crates/teamwire-cli/src/cmd/send.rs",
                 "crates/teamwire-cli/src/",
@@ -318,12 +359,49 @@ mod tests {
             "md/send.rs",
         ]);
         assert_eq!(
-            expand(&words, &tracked),
+            expand(&words, &tracked).paths,
             strings(&[
                 "crates/teamwire-cli/src/cmd/send.rs",
                 "crates/teamwire-cli/src/cmd/verify.rs",
                 "examples/skills/teamwire/SKILL.md",
                 "specs/002-x/contracts/amend-cli.md",
+            ])
+        );
+    }
+
+    /// ADR 0047 rule 4: each word rules 1 to 3 turn away that holds a `/`
+    /// is kept for the lead, once. A word ADR 0044 already turned away, and
+    /// a word with no `/`, is not.
+    #[test]
+    fn each_turned_away_word_with_a_slash_is_kept_for_the_lead() {
+        let tracked = strings(&[
+            "crates/p/src/cmd/lib.rs",
+            "crates/q/src/cmd/lib.rs",
+            "z/c/one.rs",
+        ]);
+        let words = strings(&[
+            "z/c/**\".to_owned(",
+            "crates/b/**",
+            "specs/NNN-name/tasks.md",
+            "cmd/lib.rs",
+            "teamwire/skills/teamwire/SKILL.md",
+            "crates/b/**",
+            "foo(\"x.rs",
+            "deck_editor/",
+            "apps/ai",
+            "lib.rs",
+            "z/c/one.rs",
+        ]);
+        let got = expand(&words, &tracked);
+        assert_eq!(got.paths, strings(&["z/c/one.rs"]));
+        assert_eq!(
+            got.not_paths,
+            strings(&[
+                "z/c/**\".to_owned(",
+                "crates/b/**",
+                "specs/NNN-name/tasks.md",
+                "cmd/lib.rs",
+                "teamwire/skills/teamwire/SKILL.md",
             ])
         );
     }

@@ -1,6 +1,6 @@
 //! `teamwire speckit draft`: reads a spec-kit `tasks.md` and prints the
 //! files phases and stories share, the tasks that can run apart, and a DRAFT
-//! `owns` list per story (ADR 0044).
+//! `owns` list per story (ADR 0044, ADR 0047).
 //!
 //! Never: write a file or a store row, or call the network. Git is asked
 //! only for the tracked files. The lists are drafts for the lead to check.
@@ -62,11 +62,16 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         Ok(files) => files,
         Err(why) => return fail(COMMAND, &why, REFUSED),
     };
-    let paths: Vec<Vec<String>> = list
-        .tasks
-        .iter()
-        .map(|t| overlap::expand(&t.paths, &tracked))
-        .collect();
+    let mut paths: Vec<Vec<String>> = Vec::new();
+    // Each task's words that are no repository path, for the lead to check.
+    let mut not_paths: Vec<(String, Vec<String>)> = Vec::new();
+    for task in &list.tasks {
+        let read = overlap::expand(&task.paths, &tracked);
+        if !read.not_paths.is_empty() {
+            not_paths.push((task.id.clone(), read.not_paths));
+        }
+        paths.push(read.paths);
+    }
     let overlap = overlap::overlap(&list, &paths);
     // The feature folder names every path, so it is never a mention.
     let skip = relative_dir(&root, &folder);
@@ -81,6 +86,7 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         list: &list,
         overlap: &overlap,
         unread: &found.unread,
+        not_paths: &not_paths,
         drafts: &drafts,
     }));
     ExitCode::SUCCESS

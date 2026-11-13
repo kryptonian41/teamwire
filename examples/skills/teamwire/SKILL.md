@@ -198,6 +198,8 @@ spec and the code for it, and run no build and no test.
    names a task path by its exact path, a dotted module name, its full file
    name or a CI `paths:` glob. Check each draft, and keep the grep above for
    the names a draft cannot see, such as a changed function or message text.
+   Check its `Names that are not repository paths` too: a new file in a new
+   folder is listed there, not in a draft.
 5. Each content or product rule, such as which real people may appear, has
    one worked example, settled with the user. In five of teamwire's own runs,
    members decided the same question differently.
