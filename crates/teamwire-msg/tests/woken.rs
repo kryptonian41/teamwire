@@ -265,3 +265,40 @@ fn a_resume_by_key_leaves_a_held_row_held() {
         Some(DeliveryErrorCode::HeldForHandoff)
     );
 }
+
+/// The reprompt that names the held messages ends their hold: the rows are
+/// `handed_off`, so `status` stops listing them, and a later reprompt does
+/// not name them again.
+#[test]
+fn a_reprompt_that_names_the_held_messages_ends_their_hold() {
+    let mut rig = team_rig();
+    finish(
+        &mut rig,
+        "api",
+        CompletionStatus::Done,
+        "handoff: next is T020",
+    );
+    let req = rig.request("lead", &["api"], MessageType::Note, "one more thing");
+    let held = send(&mut rig.ctx(), req).unwrap();
+    let req = rig.request("lead", &["api"], MessageType::Reprompt, "carry on here");
+    send(&mut rig.ctx(), req).unwrap();
+    let row = rig
+        .store
+        .read(|tx| tx.delivery(&held.id, &rig::to("api")))
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.delivery.state, DeliveryState::HandedOff);
+    assert_eq!(row.delivery.error, None);
+    let req = rig.request("lead", &["api"], MessageType::Reprompt, "and once more");
+    send(&mut rig.ctx(), req).unwrap();
+    let typed = rig
+        .host
+        .log()
+        .calls()
+        .into_iter()
+        .rfind(|c| c.name == "submit")
+        .unwrap()
+        .detail;
+    assert!(typed.contains("and once more"), "{typed}");
+    assert!(!typed.contains("Held for you"), "{typed}");
+}
