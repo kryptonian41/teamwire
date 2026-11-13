@@ -127,7 +127,9 @@ For a feature built with GitHub's spec-kit, start from
 `tasks.md` exists, and read "Spec-kit features" in `reference.md`. That section says
 what the base branch must hold, how Claude Code, Codex and pi members run
 spec-kit's commands, and what each brief says about questions, ticks,
-commits and `converge`.
+commits and `converge`. A team that removes spec-kit before the pull request
+follows the preset's REMOVE SPEC-KIT rule: the removal goes on the pull
+request branch, never on the implementer's own branch.
 
 The model and effort of each member are the largest cost lever in a run.
 "Choose each member's model" below says how to pick them.

@@ -444,6 +444,18 @@ spec-kit command, so write the form for the member's harness in its brief.
 5. **Close.** The closer runs `converge` beside its usual checks. The
    owners fix what it finds.
 
+**Remove spec-kit on the pull request branch (REMOVE SPEC-KIT).** When the
+user wants spec-kit's files out of the pull request, cut the pull request
+branch from the implementer's last verified head, the head of its newest
+`PASS`, and make the removal commit there, never on the implementer's own
+branch. The implementer's check tests `specs/NNN-name/tasks.md`, so a
+removal on its branch fails every later verify, a `FAIL` takes no waiver,
+and `close --role` then refuses it. When the removal is already on the
+implementer's branch, run
+`teamwire amend <team> --role <role> --check CMD --reason TEXT` with a check
+that does not test `tasks.md`, such as its test command alone, then
+`teamwire verify <team> --role <role>` again.
+
 When the user brings a finished `tasks.md`, committed with its `spec.md` and
 `plan.md`, leave out the spec member, but the plan reviewer still runs
 `analyze` on it before any implementer starts, because no member has read

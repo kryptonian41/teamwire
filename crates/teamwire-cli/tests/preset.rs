@@ -1860,6 +1860,25 @@ fn the_speckit_preset_has_the_lead_read_the_checklist_before_the_implementer() {
     }
 }
 
+/// F14: a spec-kit removal on the implementer's own branch fails every later
+/// verify, so the preset and the reference say where the removal goes, and
+/// that `teamwire amend` swaps the check when it is already there.
+#[test]
+fn the_speckit_preset_puts_the_removal_on_the_pr_branch_and_names_amend() {
+    let rules = rules_text("speckit");
+    let reference = speckit_section();
+    for wanted in [
+        "REMOVE SPEC-KIT",
+        "pull request branch",
+        "last verified head",
+        "never on the implementer's own branch",
+        "teamwire amend <team> --role <role> --check",
+    ] {
+        assert!(rules.contains(wanted), "preset: {wanted}: {rules}");
+        assert!(reference.contains(wanted), "reference: {wanted}: {reference}");
+    }
+}
+
 /// Some gates run only in CI (a `SonarCloud` scan, a deploy check). The closer
 /// task names the gate it runs locally and the gates it leaves to CI, and
 /// reports both, so a closer never claims a gate it did not run.
