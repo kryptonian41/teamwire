@@ -6,12 +6,12 @@ use globset::{Glob, GlobBuilder, GlobSet, GlobSetBuilder};
 
 /// A member's `owns` list, compiled once per verify run.
 #[derive(Debug)]
-pub(crate) struct Owns {
+pub struct Owns {
     prefixes: Vec<String>,
     globs: GlobSet,
     /// Patterns that are not valid globs. They match nothing, and verify
     /// flags each one so the mistake is seen.
-    pub(crate) invalid: Vec<String>,
+    pub invalid: Vec<String>,
 }
 
 fn glob(pattern: &str) -> Result<Glob, globset::Error> {
@@ -19,7 +19,7 @@ fn glob(pattern: &str) -> Result<Glob, globset::Error> {
 }
 
 impl Owns {
-    pub(crate) fn new(patterns: &[String]) -> Self {
+    pub fn new(patterns: &[String]) -> Self {
         let mut prefixes = Vec::new();
         let mut builder = GlobSetBuilder::new();
         let mut invalid = Vec::new();
@@ -45,11 +45,11 @@ impl Owns {
     }
 
     /// True when the member listed no pattern at all.
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.prefixes.is_empty() && self.globs.is_empty() && self.invalid.is_empty()
     }
 
-    pub(crate) fn matches(&self, path: &str) -> bool {
+    pub fn matches(&self, path: &str) -> bool {
         self.prefixes.iter().any(|p| path.starts_with(p.as_str())) || self.globs.is_match(path)
     }
 }

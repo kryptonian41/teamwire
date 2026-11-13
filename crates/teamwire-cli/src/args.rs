@@ -68,6 +68,8 @@ pub(crate) enum Command {
     PrWatch(PrWatchArgs),
     /// List the team shapes, or print one.
     Preset(PresetArgs),
+    /// Spec-kit helpers. Read only.
+    Speckit(SpeckitArgs),
     /// The models a harness reaches, and with `--for` the evidence for one
     /// task class. Reads only.
     Models(ModelsArgs),
@@ -421,6 +423,30 @@ pub(crate) struct UninstallArgs {
 #[derive(Args)]
 pub(crate) struct PresetArgs {
     pub(crate) name: Option<String>,
+}
+
+#[derive(Args)]
+pub(crate) struct SpeckitArgs {
+    #[command(subcommand)]
+    pub(crate) command: SpeckitCommand,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum SpeckitCommand {
+    /// Read a spec-kit `tasks.md`: the files phases and stories share, the
+    /// tasks that can run apart, and a DRAFT `owns` list per story.
+    Draft(SpeckitDraftArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct SpeckitDraftArgs {
+    /// The feature's `tasks.md`.
+    #[arg(value_name = "TASKS_MD")]
+    pub(crate) tasks: PathBuf,
+    /// The repository to search for files that name a task path. Default:
+    /// the git top level of the folder that holds `tasks.md`.
+    #[arg(long, value_name = "DIR")]
+    pub(crate) repo: Option<PathBuf>,
 }
 
 #[derive(Args)]

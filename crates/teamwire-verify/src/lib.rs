@@ -32,6 +32,7 @@ mod report;
 mod rules;
 
 pub use files::{DeepReport, FileFinding, FileProblem, check_copies, deep_check, repair_copies};
+pub use owns::Owns;
 pub use report::{report_check, report_path};
 
 use git::Git;

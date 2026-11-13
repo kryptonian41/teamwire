@@ -45,6 +45,7 @@ mod cmd {
     pub(crate) mod resend;
     pub(crate) mod send;
     pub(crate) mod shared;
+    pub(crate) mod speckit;
     pub(crate) mod status;
     pub(crate) mod teams;
     pub(crate) mod user_key;
@@ -64,7 +65,8 @@ pub(crate) use args::{
     EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs,
     InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand,
     ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs,
-    StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
+    SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, StatusArgs, TeamsArgs, UninstallArgs,
+    VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -98,6 +100,7 @@ fn main() -> ExitCode {
         Command::PrWatch(a) => cmd::pr_watch::run(a, global, &wiring),
         Command::Preset(a) => cmd::preset::run(a, global, &wiring),
         Command::Models(a) => cmd::models::run(a, global, &wiring),
+        Command::Speckit(a) => cmd::speckit::run(a, global, &wiring),
         Command::Done(a) => cmd::done::run(a, global, &wiring),
         Command::Inbox(a) => cmd::inbox::run(a, global, &wiring),
         Command::Ack(a) => cmd::ack::run(a, global, &wiring),
