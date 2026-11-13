@@ -59,7 +59,7 @@ and no existing ADR is edited.
 
 **Purpose**: Confirm the base and the commands before changing code.
 
-- [ ] T001 Confirm the worktree's code matches `develop` (`7e78c1a`) with `git diff --stat 7e78c1a -- crates docs examples README.md` (expect no output), and run `cargo test -p teamwire-close --locked` once as the baseline; record both in your report (changes no file)
+- [X] T001 Confirm the worktree's code matches `develop` (`7e78c1a`) with `git diff --stat 7e78c1a -- crates docs examples README.md` (expect no output), and run `cargo test -p teamwire-close --locked` once as the baseline; record both in your report (changes no file)
 
 ---
 
