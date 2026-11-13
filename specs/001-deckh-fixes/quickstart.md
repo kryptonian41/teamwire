@@ -86,7 +86,9 @@ The drafts should list these three files:
 - `apps/ai/tests/test_harness_targets.py`
 - `.github/workflows/evals-harness-replay.yml`
 
-The phase table should match the four phase pairs in the findings file.
+The phase table should hold all four phase pairs of the findings file's
+F4 table, with the shared files that deckh's `tasks.md` names. Files that
+only `impl`'s commits touched are not expected.
 
 ## US3: small fixes
 

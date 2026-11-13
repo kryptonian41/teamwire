@@ -24,7 +24,7 @@ findings file after the first draft, and the user put it in scope as US4
 - Q: May the fixes supersede accepted ADRs? → A: Yes, narrowly, in one new ADR for US1 that names each superseded point. ADR 0003 point 7 and INV-8 stay. WAT-6 and ADR 0007 point 6 are superseded so that a member whose result is `UNDELIVERED` or `UNCONFIRMED` and whose session is busy counts as working, not settled; a member whose session is dead or idle is still settled. The new-generation rule for a woken member supersedes any ADR point or requirement that says only a `reprompt` starts a generation.
 - Q: When the watch cannot tell whether a member's session is busy, idle or dead, and that member's result is `UNDELIVERED` or `UNCONFIRMED`, does the watch count the member as settled or as working? → A: Settled, as today; the watch's line says it could not see the session.
 - Q: Which recorded results make a waking message start a new generation: only a `done` result, or any result (`done`, `blocked`, `failed`)? → A: Any recorded result in the current generation (`done`, `blocked`, `failed`); the `handoff:` hold is the only exception.
-- Q: The lead reprompts, instead of handing off, a member whose newest result is `handoff:` and that has held messages. What happens to the held messages? → A: The reprompt delivers the held messages right after the reprompt text, oldest first, and the hold ends.
+- Q: The lead reprompts, instead of handing off, a member whose newest result is `handoff:` and that has held messages. What happens to the held messages? → A: The reprompt delivers the held messages right after the reprompt text, oldest first, and the hold ends. (Fix round 1, 2026-11-13: the reprompt names the held messages by id and points to `teamwire inbox`; it does not type their text.)
 - Q: Does the `tasks.md` reader draft one `owns` list per user story, or per member of a split it proposes? → A: One `owns` draft per user story, plus one for the setup and polish phases, and a line naming which stories share files; the lead merges stories into members.
 - Q: May US4 supersede ADR 0009 point 2 ("A waiver does not carry over to a new HEAD"), and what ends a waiver instead? → A: Yes, narrowly, in a new ADR. A waiver for a flag about one file holds while that file's content is the same as at the HEAD where the lead waived it. Any change to that file's content ends the waiver, also one that a rebase or merge brings in. A flag that names no file, such as `no-commits`, still ends at the next commit, as today.
 
@@ -120,8 +120,8 @@ a member with a `handoff:` result is held for the handoff.
    fresh session.
 10. **Given** a member with a `handoff:` result has held messages, **When**
     the lead reprompts it instead of handing it off, **Then** the held
-    messages are typed right after the reprompt text, oldest first, and the
-    hold ends.
+    messages are named right
+    after the reprompt text, oldest first, with their ids and a pointer to `teamwire inbox`, and the hold ends.
 
 ---
 
@@ -262,15 +262,16 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - A member with a `handoff:` result gets several messages before the lead
   hands it off. The handoff passes all of them, oldest first.
 - The lead reprompts, instead of handing off, a member with a `handoff:`
-  result that has held messages. The held messages are typed right after
-  the reprompt text, oldest first, and the hold ends.
+  result that has held messages. The reprompt text is followed by the held
+  messages' ids, oldest first, and a pointer to `teamwire inbox`. The hold
+  ends.
 - A woken member's new generation ends with no `done`, because its session
   dies. The watch reports it the way it reports any generation whose
   session died.
 - The lead records a message as read that was already delivered or already
   read. The command changes nothing and says so.
-- A team has a role whose name looks like a message id, such as `m12`. The
-  lead runs `teamwire received <team> m12`. The command refuses and names
+- A team has a role whose name looks like a message id, such as `m012`. The
+  lead runs `teamwire received <team> m012`. The command refuses and names
   both the role and the message.
 - A member with a `handoff:` result has held messages. `teamwire status`
   lists each held message on its own line, not under deliveries that need
@@ -353,9 +354,9 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   NOT count it as a reprompt.
 - **FR-009**: A message to a member whose newest result has a `handoff:`
   summary MUST be stored and not typed. `teamwire handoff` MUST pass the
-  held messages to the fresh session. A `reprompt` to that member MUST type
-  the held messages right after the reprompt text, oldest first, and end
-  the hold. `teamwire status` MUST list each held message on its own line,
+  held messages to the fresh session. A `reprompt` to that member MUST name
+  the held messages by id right after the reprompt text, oldest first,
+  MUST point to `teamwire inbox` to read them, and MUST end the hold. `teamwire status` MUST list each held message on its own line,
   not under deliveries that need attention, and the dashboard MUST NOT show
   it as needing a look.
 - **FR-010**: One new ADR MUST record the US1 decisions and name each point
@@ -377,7 +378,14 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - **FR-012**: The command MUST print, for each pair of phases and each pair
   of user stories, the files both name.
 - **FR-013**: The command MUST list the tasks that name no file, and the
-  tasks whose files no other task names.
+  tasks whose files no other task names. A token of a task line is a
+  repository path only when it holds `/`, does not start with `/`, is not
+  part of a markdown link's `](...)` syntax, and either names a tracked
+  file or directory or ends in a file extension. So a route such as
+  `"/agui/deck_editor"`, an event name such as `knit.progress`, and an
+  absolute path are not paths. A directory token, such as `apps/ai`, counts
+  in the overlap table as a prefix of the files under it, and adds no file
+  to the mention search.
 - **FR-014**: The command MUST print one draft `owns` list per user story,
   plus one for the setup and polish phases, and a line naming which stories
   share files. Each draft is built from the task paths plus the repository files that mention
@@ -385,7 +393,11 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   mentions a task path when it holds the exact path text, a CI workflow
   `paths:` glob that matches the path, the path's dotted module name (such
   as `harness.tools` for `harness/tools.py`), or the path's full file name
-  with its extension (such as `tools.py`). A bare stem such as `tools` MUST
+  with its extension (such as `tools.py`). The exact-path rule and the
+  file-name rule MUST also match right after a `/` or `./` prefix, so
+  `./apps/ai/harness/tools.py`, `$ROOT/apps/ai/harness/tools.py` and
+  `harness/tools.py` all mention `apps/ai/harness/tools.py`. The dotted
+  module rule keeps its token boundary. A bare stem such as `tools` MUST
   NOT count.
 - **FR-015**: The command's output MUST label the `owns` list as a draft for
   the lead to check.
@@ -470,15 +482,19 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - **SC-002**: The lead clears an undelivered message it has read in one
   command, with zero messages typed again into its pane.
 - **SC-003**: In that replay, the watch prints `TEAM-COMPLETE` zero times
-  while a member is busy, against three times in the live run. The closer
+  while a member is busy, against two times in the live run (rca F2.2:
+  the first `TEAM-COMPLETE`, at 14:02:06, came before the answers woke
+  `impl`). The closer
   checks this in the same replay.
 - **SC-004**: The lead needs zero dummy reprompts to keep a woken member
   tracked, and a member with a `handoff:` result does zero work in its old
   session after a message reaches it.
 - **SC-005**: Run on deckh's `tasks.md` and the knit-3.0 repository at that
   run's base, the command's `owns` draft includes all three files the live
-  run missed, and its overlap table matches the four phase pairs measured
-  from `impl`'s commits. The closer checks this read-only, by running the
+  run missed, and its overlap table holds all four phase pairs of the
+  findings file's F4 table, with the shared files that deckh's `tasks.md`
+  names. A `tasks.md` reader sees only the files the task lines name, so
+  files that only `impl`'s commits touched are not expected. The closer checks this read-only, by running the
   command on deckh's `tasks.md` in knit-3.0.
 - **SC-006**: Every fix in scope has a test that fails when the fix is
   reverted.

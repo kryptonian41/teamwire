@@ -809,8 +809,9 @@ removed.
   - **Codex.** Walk the rollout tail (`crates/teamwire-harness-codex/src/session.rs:60, 195, 262`).
     Find the newest `response_item` of type `function_call` (or
     `local_shell_call` or `custom_tool_call`) whose `call_id` has no later
-    `*_output`. The entry shape is INFERRED, because no Codex rollout
-    exists on this machine.
+    `*_output`. The implementer confirmed the entry shape against openai/codex's
+    published `codex-rs/protocol/src/models.rs` (fix round 1,
+    2026-11-13). No Codex rollout exists on this machine.
     - The implementer confirms the shape against Codex's published rollout
       format or a real rollout file, and records which one it used.
     - When neither confirms it (lead decision, 2026-11-13), the implementer
@@ -818,7 +819,7 @@ removed.
       starts `shortcut:` and names the limit: the rollout shape is
       unconfirmed. The report says so. `current_tool` returns `None`
       for any entry it cannot read, so an unknown shape gives
-      `tool: unknown`, never a wrong tool.
+      `tool: none reported`, never a wrong tool.
   - **pi.** teamwire owns the member extension, so it records the start
     itself. On pi's `tool_call` event, the extension writes
     `tool: {name, started_at_ms}` into `<id>.teamwire.json`. On
@@ -838,8 +839,9 @@ removed.
     comes from `Clock`.
 - **CLI.** `crates/teamwire-cli/src/cmd/status.rs:245-269` prints
   `tool: <name>, running <duration>` under `--role`, or
-  `tool: unknown (this harness does not report it)` when the method
-  returns `None` for a working member.
+  `tool: none reported` when the method returns `None` for a working
+  member. The text is true for a harness that reports no tool and for a
+  member between two tool calls.
 - **Dashboard.** `ui/src/shared/teamwire.ts:71-95` gets
   `current_tool: ToolView.nullish()` in the zod `MemberView`, in the same
   commit, because the field changes `status --json`.
@@ -853,7 +855,7 @@ removed.
 | `crates/teamwire-harness-pi/tests/session.rs` `the_current_tool_comes_from_the_state_file` | Same, on a state file with `tool` |
 | `crates/teamwire-harness-pi/tests/launch.rs` (or the extension snapshot test) `the_member_extension_stamps_and_clears_the_tool` | The generated extension source registers `tool_call` and writes `tool` |
 | `crates/teamwire-watch/tests/status.rs` `status_role_shows_the_current_tool_and_its_duration` | With the watch's fixture harness returning a `ToolRun` 900 s old, the view's `current_tool.seconds == 900` |
-| `crates/teamwire-cli/src/cmd/status.rs`, unit test at the bottom, `status_role_prints_how_long_the_tool_has_run` | The text for a view with `current_tool.seconds == 902` holds `tool: Bash, running 15m02s`, and a working member with no `current_tool` gets `tool: unknown (this harness does not report it)` |
+| `crates/teamwire-cli/src/cmd/status.rs`, unit test at the bottom, `status_role_prints_how_long_the_tool_has_run` | The text for a view with `current_tool.seconds == 902` holds `tool: Bash, running 15m02s`, and a working member with no `current_tool` gets `tool: none reported` |
 | `ui/src/shared/teamwire.test.ts` `current_tool_parses_and_is_kept` | A status JSON with `current_tool` keeps the field after the parse |
 
 **The test seam** (lead decision, 2026-11-13). The CLI's integration tests
