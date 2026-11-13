@@ -259,7 +259,7 @@ pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
 
 /// The last `TAIL_BYTES` of the file, without its first line when the cut
 /// falls inside it.
-fn tail_text(file: &Path) -> Option<String> {
+pub(crate) fn tail_text(file: &Path) -> Option<String> {
     let mut f = std::fs::File::open(file).ok()?;
     let start = f.metadata().ok()?.len().saturating_sub(TAIL_BYTES);
     f.seek(SeekFrom::Start(start)).ok()?;

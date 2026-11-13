@@ -20,6 +20,7 @@ mod models;
 mod screen;
 mod session;
 mod startup;
+mod tool;
 
 pub use teamwire_core::screen::StartupPoll;
 
@@ -188,6 +189,16 @@ impl Harness for CodexCli {
         // Codex hooks hand over no rollout path, so the rollout is always
         // found from the session id.
         Ok(session::context_fill(&self.config.codex_home, s))
+    }
+
+    /// Codex files its rollouts by date, not by working directory, so the
+    /// rollout is found from the session id alone.
+    fn current_tool(
+        &self,
+        s: &SessionId,
+        _cwd: Option<&Path>,
+    ) -> Result<Option<teamwire_core::ToolRun>, HarnessError> {
+        Ok(tool::current_tool(&self.config.codex_home, s))
     }
 
     /// The Stop hook hands over `transcript_path`, the rollout; without it
