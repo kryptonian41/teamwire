@@ -16,7 +16,7 @@ use std::time::Duration;
 use serde_json::json;
 use teamwire_core::{
     Harness, HarnessErrorCode, Liveness, Pid, PlaceState, Platform, PlatformError,
-    PlatformErrorCode, RunOutput, SessionId, SessionKind, Timestamp,
+    PlatformErrorCode, RunOutput, SessionId, SessionKind, Timestamp, ToolRun,
 };
 use teamwire_fakes::{FakeHerdrEnv, FakePlatform};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
@@ -496,4 +496,41 @@ fn caller_kind_comes_from_session_file() {
     // No file for this pid: the unattended flag decides.
     assert_eq!(kind_of("1", "0"), SessionKind::Background);
     assert_eq!(kind_of("1", "1"), SessionKind::Interactive);
+}
+
+/// Real transcript lines, trimmed: a `Read` call and its result, then a
+/// `Bash` call started at 07:00:09.500Z, then the `Bash` result 15 minutes
+/// later as the last line.
+const TOOL_TRANSCRIPT: &str = include_str!("fixtures/transcript-tool.jsonl");
+
+/// The newest `tool_use` whose `id` no later `tool_result` names is the call
+/// that runs now. Once its result is written, no call runs.
+#[test]
+fn the_current_tool_is_the_newest_tool_use_without_a_result() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("projects").join("-work-repo");
+    std::fs::create_dir_all(&project).unwrap();
+    let file = project.join("0f3c9a2e-5b1d-4c7e-8f2a-6d4b3c2a1e0f.jsonl");
+    let session = sid("0f3c9a2e-5b1d-4c7e-8f2a-6d4b3c2a1e0f");
+    let p = platform();
+    let claude = ClaudeCode::new(p.clone(), config(dir.path()));
+    let lines: Vec<&str> = TOOL_TRANSCRIPT.lines().collect();
+    let (result, running) = lines.split_last().unwrap();
+
+    p.write_atomic(&file, format!("{}\n", running.join("\n")).as_bytes())
+        .unwrap();
+    assert_eq!(
+        claude.current_tool(&session, None).unwrap(),
+        Some(ToolRun {
+            name: "Bash".to_owned(),
+            started_at: Timestamp::parse("2026-11-13T07:00:09.500Z").unwrap(),
+        })
+    );
+
+    p.write_atomic(
+        &file,
+        format!("{}\n{result}\n", running.join("\n")).as_bytes(),
+    )
+    .unwrap();
+    assert_eq!(claude.current_tool(&session, None).unwrap(), None);
 }
