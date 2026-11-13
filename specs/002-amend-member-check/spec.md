@@ -185,9 +185,14 @@ the missing command.
   then raises `no-owns`, as it does at launch for an empty list.
 - `amend --owns` names a pattern that is not a valid glob. Verify raises
   `bad-owns:` for it, as it does for a launch value.
-- `amend` targets a reviewer, closer or plan reviewer, which takes no
-  messages. The check and owns still change; the note is stored and shown
-  by `teamwire log`, following the rules for a note to that kind today.
+- `amend` targets a reviewer, closer or plan reviewer. Only the lead may
+  message these kinds, and `amend` sends as the lead, so the note goes as
+  to any member.
+- `amend` targets a removed member. The command refuses, as `send` refuses
+  a removed recipient, and changes nothing.
+- The member's newest result has a `handoff:` summary. The amend note is
+  held for the fresh session, as any message is (ADR 0043), and `close`
+  still finds it by its marker.
 - A waiver recorded before the amend. The amend changes no waiver; each
   waiver ends by its own rule (ADR 0045).
 - The lead runs `amend` while a verify for the same member is running.
@@ -207,7 +212,7 @@ the missing command.
 - **FR-002**: `amend` MUST refuse, change nothing and send no note when
   neither `--check` nor `--owns` is given, when `--reason` is missing or
   empty, when the team is not open, or when the role is not a member of the
-  team. Each refusal names what is wrong.
+  team, or when the member is removed. Each refusal names what is wrong.
 - **FR-003**: `--owns PATHS` MUST replace the member's whole owns list,
   in the same shape as launch's `owns`. It never adds to the old list.
 - **FR-004**: After `amend` exits 0, every `teamwire verify` that starts
@@ -234,8 +239,9 @@ the missing command.
   schema version.
 - **FR-008**: `amend` MUST be a shell command only. The MCP server MUST NOT
   offer it as a tool.
-- **FR-009**: `teamwire status` and `--json` outputs that show a member's
-  check or owns MUST show the amended values after `amend`.
+- **FR-009**: Every output that shows a member's owns, such as
+  `teamwire teams --json`, MUST show the amended list after `amend`. No
+  output changes its shape.
 - **FR-010**: The lead skill, its reference, the AFK skill where it lists
   lead commands, `docs/api/cli.md`, the README and the lead guidance that
   teamwire writes for Codex and pi leads MUST name `teamwire amend`, in the
