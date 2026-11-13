@@ -47,3 +47,11 @@
   commit, a deleted file and an `uncommitted:<path>` flag. All 16 items
   still pass. No new [NEEDS CLARIFICATION] marker was needed: the user's
   F12 decision, recorded under Clarifications, answers what ends a waiver.
+- Re-validated on 2026-11-13 after the plan review's fix round. The new
+  answers are recorded under Clarifications, Session 2026-11-13, and
+  folded into FR-001, FR-003, FR-007 to FR-011 and FR-018, SC-001, SC-003,
+  SC-005, the edge cases, Key Entities and Assumptions. Each new rule is
+  testable: an event type, a status line, a refusal, an exit code, a parse
+  rule. The `member.woken` event type is part of `teamwire events` output,
+  so naming it is not an implementation detail. All 16 items still pass,
+  and no [NEEDS CLARIFICATION] marker was needed.

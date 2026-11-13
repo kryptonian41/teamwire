@@ -28,6 +28,22 @@ findings file after the first draft, and the user put it in scope as US4
 - Q: Does the `tasks.md` reader draft one `owns` list per user story, or per member of a split it proposes? → A: One `owns` draft per user story, plus one for the setup and polish phases, and a line naming which stories share files; the lead merges stories into members.
 - Q: May US4 supersede ADR 0009 point 2 ("A waiver does not carry over to a new HEAD"), and what ends a waiver instead? → A: Yes, narrowly, in a new ADR. A waiver for a flag about one file holds while that file's content is the same as at the HEAD where the lead waived it. Any change to that file's content ends the waiver, also one that a rebase or merge brings in. A flag that names no file, such as `no-commits`, still ends at the next commit, as today.
 
+### Session 2026-11-13
+
+These answers came from the plan review. The first four are the user's. The
+rest are the lead's.
+
+- Q: Which event records a generation that an `answer` or `note` started? → A: A new event type, `member.woken`, not `member.reprompted`. The metrics do not count it as a reprompt.
+- Q: Where do held messages show? → A: `teamwire status` lists each on its own line, such as `held for handoff: m004 -> impl`, and not under deliveries that need attention. The dashboard does not show them as needing a look.
+- Q: Does a member still resend a message to the lead that was not delivered? → A: No. The lead's hooks list every undelivered message, so a resend would type a second copy. The member's seat text no longer tells it to resend to the lead.
+- Q: May an existing test change its expected value? → A: Yes, when it pins a rule that this feature's ADRs or a user answer in this spec changes. No assert may be removed, and the implementer names each changed test.
+- Q (lead): What does `teamwire status` say for a member with an undelivered result whose session waits at a dialog mid-turn? → A: `working (at a dialog)`, as the watch counts it as working.
+- Q (lead): How does `received` tell a message id from a role? → A: An argument is a message id only when it matches `m` and digits and no role of the team has that name. When a role has that name too, the command refuses and names both. A row already delivered or already read changes nothing, and the command says so.
+- Q (lead): Which file does the lead's hook name for an undelivered result? → A: The same file as the watch's `Result:` path: the result file, or the member's report when the result file is missing.
+- Q (lead): Which exit code does `speckit draft` use for a missing `tasks.md`? → A: 1, with a named error. Exit 3 stays for usage errors.
+- Q (lead): How does `speckit draft` read paths? → A: It strips a `:N` or `:N-M` line suffix. An indented line under a task belongs to that task, until the next task line, heading or blank line. A token that holds `*` matches the repository's tracked files as a glob.
+- Q (lead): Who measures SC-001, SC-003 and SC-005? → A: The closer, read-only. The closer replays deckh's sequence on the fakes and runs `speckit draft` on deckh's `tasks.md` in knit-3.0.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The users here are two people. The **lead** is the agent session that runs a
@@ -151,8 +167,8 @@ test that pins a list naming a task path.
    **When** the lead runs the command, **Then** the config file is in the
    draft `owns` list and the file that names only `tools` is not.
 6. **Given** a `tasks.md` file that does not exist or has no task lines,
-   **When** the lead runs the command, **Then** the command exits with a
-   non-zero status and names the problem.
+   **When** the lead runs the command, **Then** the command exits with
+   status 1 and names the problem. Exit status 3 stays for usage errors.
 
 ---
 
@@ -249,8 +265,17 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - A woken member's new generation ends with no `done`, because its session
   dies. The watch reports it the way it reports any generation whose
   session died.
-- The lead records a message as read that was already delivered. The command
-  succeeds and changes nothing.
+- The lead records a message as read that was already delivered or already
+  read. The command changes nothing and says so.
+- A team has a role whose name looks like a message id, such as `m12`. The
+  lead runs `teamwire received <team> m12`. The command refuses and names
+  both the role and the message.
+- A member with a `handoff:` result has held messages. `teamwire status`
+  lists each held message on its own line, not under deliveries that need
+  attention.
+- A task line in `tasks.md` names a path with a line suffix, such as
+  `send.rs:297-321`, or names its paths on indented lines under the task.
+  The command counts `send.rs` and reads the indented paths as the task's.
 - The lead records as read a message id that does not exist, or a message
   sent to another member. The command refuses and names the reason.
 - An answer with `--re` names a message that is not a question to the
@@ -286,13 +311,19 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   the lead's next tool call and at the lead's turn end, and MUST keep
   listing it until the lead marks it read. The hooks add text to the lead's
   turn and MUST type nothing into the pane. This MUST ship for every lead
-  harness: Claude Code, Codex and pi.
+  harness: Claude Code, Codex and pi. For a result, the hooks MUST name the
+  same file as the watch's `Result:` path. The member's seat text MUST NOT
+  tell a member to resend a message to the lead, because a resend would type
+  a second copy.
 - **FR-002**: teamwire MUST NOT type a message after the command that
   sent it has exited. ADR 0003 point 7 and INV-8 stay in force.
 - **FR-003**: `teamwire received` MUST accept message ids (such as `m008`)
   besides roles, and record each named message as read by the lead without
-  typing it again. The lead's MCP tools MUST accept the same where they
-  reach `received`.
+  typing it again. An argument is a message id only when it is `m` followed
+  by digits and no role of the team has that name; when a role has that name
+  too, the command MUST refuse and name both. A message already delivered or
+  already read MUST stay as it is, and the command MUST say so. The lead's
+  MCP tools MUST accept the same where they reach `received`.
 - **FR-004**: A message the lead recorded as read MUST no longer appear in
   `teamwire status` under deliveries that need attention, nor in the hook's
   list.
@@ -304,26 +335,40 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - **FR-007**: A member whose result is `UNDELIVERED` or `UNCONFIRMED` and
   whose session is busy MUST count as working, not settled, in the watch and
   in `teamwire status`. The watch MUST NOT print `TEAM-COMPLETE` while such a
-  member works. A member whose session is dead or idle MUST still count as
+  member works. A session that waits at a dialog mid-turn counts as busy, and
+  `teamwire status` MUST show such a member as `working (at a dialog)`. A
+  member whose session is dead or idle MUST still count as
   settled. A member whose session the watch cannot see MUST count as
   settled, and the watch's line MUST say it could not see the session.
 - **FR-008**: A message that wakes a member whose newest result in its
   current generation is `done`, `blocked` or `failed`, without a `handoff:`
   summary, MUST start a new generation that the watch
-  tracks and that ends when the member records `done`.
+  tracks and that ends when the member records `done`. teamwire MUST record
+  that generation with its own event type, `member.woken`. The metrics MUST
+  NOT count it as a reprompt.
 - **FR-009**: A message to a member whose newest result has a `handoff:`
   summary MUST be stored and not typed. `teamwire handoff` MUST pass the
   held messages to the fresh session. A `reprompt` to that member MUST type
   the held messages right after the reprompt text, oldest first, and end
-  the hold.
+  the hold. `teamwire status` MUST list each held message on its own line,
+  not under deliveries that need attention, and the dashboard MUST NOT show
+  it as needing a look.
 - **FR-010**: One new ADR MUST record the US1 decisions and name each point
-  it supersedes: WAT-6, ADR 0007 point 6, and any ADR point or requirement
-  that says only a `reprompt` starts a generation.
+  it supersedes: WAT-6, ADR 0007 point 6, ADR 0024 point 2 (`received`
+  takes roles only), ADR 0035 point 1 (the Claude lead tool hook's tool
+  list), and any ADR point or requirement that says only a `reprompt` starts
+  a generation.
 
 **US2: the `tasks.md` reader (F4, F5)**
 
 - **FR-011**: teamwire MUST provide a command that reads a spec-kit
-  `tasks.md` and the repository it belongs to, and writes nothing.
+  `tasks.md` and the repository it belongs to, and writes nothing. The
+  command MUST read a path with a `:N` or `:N-M` line suffix as the path
+  without the suffix. An indented line under a task line MUST count as part
+  of that task, until the next task line, heading or blank line. A path
+  that holds `*` MUST match the repository's tracked files as a glob. A
+  missing or unreadable `tasks.md`, or one with no task lines, MUST exit 1
+  with a named error.
 - **FR-012**: The command MUST print, for each pair of phases and each pair
   of user stories, the files both name.
 - **FR-013**: The command MUST list the tasks that name no file, and the
@@ -350,7 +395,8 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   unticked item.
 - **FR-018**: The closer preset MUST have a slot for the gate this machine
   may run and a slot for the gates left to CI. The closer's report MUST
-  state both.
+  state both. The closer's seat text MUST say the same: run the local gate
+  the brief names, and report the gates left to CI.
 - **FR-019**: `teamwire status --role <role>` MUST show the name of the
   member's current tool call and how long it has run, for members on Claude
   Code, Codex and pi.
@@ -394,10 +440,12 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - **Result**: A member's completion record for one generation, with a
   status and a summary.
 - **Generation**: One run of a member that the watch tracks, from launch,
-  reprompt or a waking message to the member's `done`.
+  reprompt or a waking message to the member's `done`. A generation that a
+  waking message starts is recorded as `member.woken`, apart from a
+  reprompt.
 - **Held message**: A message to a member whose newest result has a
   `handoff:` summary. It is stored, not typed, until a handoff or a
-  reprompt passes it on.
+  reprompt passes it on. `teamwire status` lists it on its own line.
 - **Task line**: One line of a spec-kit `tasks.md`, with a task id, an
   optional story label, a phase, and the file paths it names.
 - **Owns draft**: A proposed list of files a member may change, with the
@@ -412,18 +460,21 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 
 - **SC-001**: In a replay of the deckh sequence on the test fakes, the lead
   is told about every blocked result and question, with its file, at its
-  next tool call, against about 90 minutes in the live run.
+  next tool call, against about 90 minutes in the live run. The closer
+  checks this read-only, by replaying deckh's sequence on the fakes.
 - **SC-002**: The lead clears an undelivered message it has read in one
   command, with zero messages typed again into its pane.
 - **SC-003**: In that replay, the watch prints `TEAM-COMPLETE` zero times
-  while a member is busy, against three times in the live run.
+  while a member is busy, against three times in the live run. The closer
+  checks this in the same replay.
 - **SC-004**: The lead needs zero dummy reprompts to keep a woken member
   tracked, and a member with a `handoff:` result does zero work in its old
   session after a message reaches it.
 - **SC-005**: Run on deckh's `tasks.md` and the knit-3.0 repository at that
   run's base, the command's `owns` draft includes all three files the live
   run missed, and its overlap table matches the four phase pairs measured
-  from `impl`'s commits.
+  from `impl`'s commits. The closer checks this read-only, by running the
+  command on deckh's `tasks.md` in knit-3.0.
 - **SC-006**: Every fix in scope has a test that fails when the fix is
   reverted.
 - **SC-007**: An operator can tell from one `teamwire status --role` call
@@ -442,7 +493,9 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   cause must hold on `develop`; a finding already fixed there is reported,
   not fixed again.
 - The `tasks.md` reader reads the task line format that spec-kit's `tasks`
-  command writes: `- [ ] T001 [P] [US1] Description with file paths`.
+  command writes: `- [ ] T001 [P] [US1] Description with file paths`, plus
+  indented continuation lines and `:N-M` line suffixes, as this feature's
+  own `tasks.md` has.
 - The command reads `tasks.md` only. Reading a free-form brief is out of
   scope.
 - The `owns` draft is a starting point for the lead, not a final list. The
@@ -452,6 +505,10 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - The fixes reuse the existing delivery, message, report, watch and close
   code, and the existing presets. No new crate unless the layering rules in
   `docs/conventions.md` section 5 call for one.
+- US1 adds one event type, `member.woken`. The store's list of event types
+  is closed, so the store moves to a new schema version. A store that the
+  new build has opened cannot be opened by an older build, as with every
+  earlier schema version.
 - US4 stores no new data. Each waiver already records the HEAD where the
   lead waived it, and that HEAD is all the content comparison needs.
 - Tests use the fakes in `tests/fakes/`. No test types into a real pane or
