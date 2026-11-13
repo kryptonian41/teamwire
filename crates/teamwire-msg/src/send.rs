@@ -307,6 +307,9 @@ fn store_message(
         return Ok(Stage::Closed);
     }
     let stored = tx.insert_message(at, new)?;
+    if new.kind == MessageType::Answer && !stored.duplicate {
+        settle_question(tx, at, new)?;
+    }
     let mut bumped = Vec::new();
     if new.kind == MessageType::Reprompt && !stored.duplicate {
         for recipient in &new.recipients {
@@ -319,6 +322,30 @@ fn store_message(
         stored: Box::new(stored),
         bumped,
     })
+}
+
+/// An answer settles the delivery of its question to the answerer (ADR
+/// 0043 decision 3): the lead that answers a question it read from its file
+/// is no longer told about it. A `re` with no delivery to the sender, such
+/// as a message that was not a question to it, changes nothing.
+fn settle_question(
+    tx: &Tx<'_>,
+    at: Timestamp,
+    answer: &NewMessage,
+) -> Result<(), teamwire_store::StoreError> {
+    let Some(question) = &answer.re else {
+        return Ok(());
+    };
+    let answerer = match &answer.sender {
+        Actor::Lead => Recipient::Lead,
+        Actor::Member(role) => Recipient::Member(role.clone()),
+        Actor::Other(remote) => Recipient::Other(remote.clone()),
+        Actor::User => return Ok(()),
+    };
+    if tx.reader().delivery(question, &answerer)?.is_some() {
+        tx.ack_delivery(at, question, &answerer)?;
+    }
+    Ok(())
 }
 
 /// The team row.

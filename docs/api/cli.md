@@ -569,6 +569,13 @@ delivering it; if it does not arrive, run teamwire resend <team> <id> after 60
 s` on stderr and exits 5. So only a crash after the host call can type the line
 a second time. That is the one duplicate ADR 0003 allows.
 
+An `answer` with `--re <id>` settles question `<id>` for the answerer, in the
+same write as the answer: the question's delivery row to the sender becomes
+`acked` (ADR 0043). So a question to the lead that was never typed, and that
+the lead answered, no longer shows as undelivered in `status` or the lead's
+hook. A `--re` that names a message with no delivery to the sender changes
+no row.
+
 ### `teamwire resend <team> <ID> [--to ROLES]`
 
 Retries one stored message, by display id, to its `undelivered`,
