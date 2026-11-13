@@ -55,3 +55,6 @@
   rule. The `member.woken` event type is part of `teamwire events` output,
   so naming it is not an implementation detail. All 16 items still pass,
   and no [NEEDS CLARIFICATION] marker was needed.
+- Re-validated on 2026-11-13 after the lead's last change (m005): the
+  schema-11 answer and the lead-copy hint answer are under Clarifications,
+  FR-001 and Assumptions. Each is testable. All 16 items still pass.

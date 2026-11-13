@@ -87,6 +87,15 @@ not send it again". The sentence that tells a member to retry a message to
 the lead with `resend` goes. In its place: **the lead's hooks list a message
 to the lead that was never typed, so do not resend it**.
 
+## `teamwire send` when the lead's copy was not delivered (F1)
+
+```text
+lead copy not delivered: m001; the lead's hook lists it at the lead's next tool call
+```
+
+The line still starts **`lead copy not delivered:`**, which the dashboard
+matches. It names no `resend`.
+
 ## `teamwire status` (F2, F3, F10)
 
 - A member with an `undelivered` or `unconfirmed` result whose session works

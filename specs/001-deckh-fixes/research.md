@@ -160,6 +160,18 @@ the command that sent it has exited.
   (`crates/teamwire-launch/src/contract/tests_findings.rs:186-200`). Its
   `resend demo <message id>` assert becomes an assert that the text is
   absent, and it gains an assert for the new sentence.
+  - The same holds for the hint that `send` prints when the lead's copy of a
+    user's message was not delivered (lead decision, 2026-11-13):
+    `lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead`
+    (`crates/teamwire-cli/src/cmd/send.rs:139-142`). The hint becomes
+    `lead copy not delivered: <id>; the lead's hook lists it at the lead's next tool call`.
+    The line keeps its `lead copy not delivered:` start, because the
+    dashboard matches it (`ui/src/web/model/actions.ts:33`). The test that
+    pins today's text is `a_users_note_exits_0_when_only_the_lead_copy_fails`
+    (`crates/teamwire-cli/tests/send.rs:869`, expected line at `:884`). Its
+    expected line changes to the new one. ADR 0040 point 5
+    (`docs/adr/0040-user-sender.md:86-87`) gives the old hint, so ADR 0043
+    supersedes that sentence.
 
 **Alternatives rejected:**
 
@@ -182,6 +194,8 @@ the command that sent it has exited.
 | same file, `received_refuses_a_name_that_is_both_a_role_and_a_message_id` | With a role named `m1` and a message `m1`, the command refuses and names both |
 | same file, `received_leaves_a_delivered_or_read_message_as_it_is` | A `handed_off` row stays `handed_off`, and the output says `already delivered`; an `acked` row prints `already read` |
 | `crates/teamwire-report/tests/undelivered_to_lead.rs` `a_result_with_no_result_file_names_the_report` | With the outbox file missing, the line names `reports/<role>.md`, as the watch's `Result:` path does |
+| `crates/teamwire-cli/tests/send.rs` `the_lead_copy_hint_names_the_hook_not_resend` | The `lead copy not delivered: m001` stderr line names the lead's hook and holds no `resend` (today it holds `run teamwire resend alpha m001 --to lead`) |
+| same file, `a_users_note_exits_0_when_only_the_lead_copy_fails` (changed, l.869) | The expected stderr line at `:884` becomes the new hint |
 | `crates/teamwire-launch/src/contract/tests_findings.rs` `a_talking_member_does_not_resend_a_message_that_was_not_delivered` (changed) | The rendered seat text no longer holds `resend demo <message id>` and says the lead's hooks list the message |
 | `crates/teamwire-msg/tests/answer.rs` (or rca's `rca_f1.rs` shape) `an_answer_with_re_settles_the_questions_lead_row` | The question's `lead` row is `acked` after the answer (rca F1b red today) |
 | `crates/teamwire-watch/tests/poll.rs` `an_undelivered_question_line_names_its_file` | The line contains `comms/m001.md` |
@@ -200,6 +214,7 @@ the command that sent it has exited.
 - `README.md:258`: the `teamwire received` row also records a message read
   from its file.
 - `crates/teamwire-launch/contracts/talking_head.md:12-16` (F1-f).
+- `docs/api/cli.md:543-548`: the `lead copy not delivered` hint.
 - `docs/requirements.md`: add a row for the lead's undelivered note and
   one for `received <id>`, beside DEL-16 (`:120`).
 - `docs/failure-modes.md`: the INV-5 and INV-8 rows stay true, so leave
@@ -333,6 +348,9 @@ fixture is allowed, but loosening an assertion is not.
     lists in `crates/teamwire-store/tests/migrate.rs:15, 578-579` gain it.
     A database at version 11 cannot be opened by an older binary, as ADR
     0038 says of version 10 (`docs/adr/0038-teams-carry-ticket-refs.md:66`).
+    The upgrade only goes forward. The user chose this on 2026-11-13, and
+    installs the new build only after team `deckh` closes, so no running
+    team's store is migrated under it.
   - The store gets `wake_generation(at, role, message)` beside
     `bump_generation`, sharing one private helper, and writing
     `member.woken`. `bump_generation` keeps its signature, so its ten

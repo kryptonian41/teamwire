@@ -37,6 +37,8 @@ rest are the lead's.
 - Q: Where do held messages show? → A: `teamwire status` lists each on its own line, such as `held for handoff: m004 -> impl`, and not under deliveries that need attention. The dashboard does not show them as needing a look.
 - Q: Does a member still resend a message to the lead that was not delivered? → A: No. The lead's hooks list every undelivered message, so a resend would type a second copy. The member's seat text no longer tells it to resend to the lead.
 - Q: May an existing test change its expected value? → A: Yes, when it pins a rule that this feature's ADRs or a user answer in this spec changes. No assert may be removed, and the implementer names each changed test.
+- Q: May `member.woken` move the store to a new schema version, and how does the upgrade go out? → A: Yes, schema version 11. The upgrade only goes forward: a store the new build has opened cannot be opened by an older build, as ADR 0038 says of version 10. The user installs the new build only after team `deckh` closes.
+- Q (lead): What does `send` print when the lead's copy of a user's message was not delivered? → A: It still starts `lead copy not delivered: <id>`, then says the lead's hook lists the message. It names no `resend`, for the same reason as the seat text.
 - Q (lead): What does `teamwire status` say for a member with an undelivered result whose session waits at a dialog mid-turn? → A: `working (at a dialog)`, as the watch counts it as working.
 - Q (lead): How does `received` tell a message id from a role? → A: An argument is a message id only when it matches `m` and digits and no role of the team has that name. When a role has that name too, the command refuses and names both. A row already delivered or already read changes nothing, and the command says so.
 - Q (lead): Which file does the lead's hook name for an undelivered result? → A: The same file as the watch's `Result:` path: the result file, or the member's report when the result file is missing.
@@ -314,7 +316,9 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   harness: Claude Code, Codex and pi. For a result, the hooks MUST name the
   same file as the watch's `Result:` path. The member's seat text MUST NOT
   tell a member to resend a message to the lead, because a resend would type
-  a second copy.
+  a second copy. For the same reason, the line `send` prints when the lead's
+  copy of a message was not delivered MUST say that the lead's hook lists
+  it, and MUST NOT name `resend`.
 - **FR-002**: teamwire MUST NOT type a message after the command that
   sent it has exited. ADR 0003 point 7 and INV-8 stay in force.
 - **FR-003**: `teamwire received` MUST accept message ids (such as `m008`)
@@ -508,7 +512,8 @@ further commit that changes the waived file makes verify `FLAGGED` again.
 - US1 adds one event type, `member.woken`. The store's list of event types
   is closed, so the store moves to a new schema version. A store that the
   new build has opened cannot be opened by an older build, as with every
-  earlier schema version.
+  earlier schema version. The upgrade only goes forward, so the user
+  installs the new build only after team `deckh` closes.
 - US4 stores no new data. Each waiver already records the HEAD where the
   lead waived it, and that HEAD is all the content comparison needs.
 - Tests use the fakes in `tests/fakes/`. No test types into a real pane or

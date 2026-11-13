@@ -10,6 +10,14 @@ output is in [contracts/cli.md](contracts/cli.md).
 - No real herdr or tmux pane and no real agent session. Every test runs on
   `tests/fakes/` and `TestHome`.
 
+## Installing the new build
+
+US1 moves the store to schema version 11. The upgrade only goes forward: a
+store the new build has opened cannot be opened by an older build. Install
+the new build only after team `deckh` closes. Until then, run the checks
+below from the worktree with `cargo test` and `cargo run`, never an
+installed `teamwire`.
+
 ## US1: delivery and member state
 
 ```bash
