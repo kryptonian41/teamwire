@@ -13,7 +13,8 @@ use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
 use crate::attempt::{
-    Bumped, bump, bump_again, claim_attempt, deliver_one, earlier_bump, report_of, skipped,
+    Bumped, Waking, bump, bump_again, claim_attempt, deliver_one, earlier_bump, report_of, skipped,
+    waking,
 };
 use crate::remote::{Try, deliver_to_team};
 use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
@@ -311,9 +312,19 @@ fn store_message(
         settle_question(tx, at, new)?;
     }
     let mut bumped = Vec::new();
-    if new.kind == MessageType::Reprompt && !stored.duplicate {
+    if !stored.duplicate {
         for recipient in &new.recipients {
-            if let Some(b) = bump(tx, at, &stored.message.display_id, recipient)? {
+            // A reprompt starts the next generation. Any other message to a
+            // member whose newest result is in its current generation wakes
+            // it, and that turn is a generation too (ADR 0043).
+            let kind = if new.kind == MessageType::Reprompt {
+                EventType::MemberReprompted
+            } else if waking(tx, recipient)? == Waking::Wake {
+                EventType::MemberWoken
+            } else {
+                continue;
+            };
+            if let Some(b) = bump(tx, at, &stored.message.display_id, recipient, kind)? {
                 bumped.push(b);
             }
         }

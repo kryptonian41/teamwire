@@ -100,7 +100,7 @@ after the fact, with their recorded start and end times.
 | `teamwire.team` | none | `team.created` | `team.closed` (open while the team lives) | `teamwire.team`, `teamwire.harness`, `teamwire.host` |
 | `teamwire.launch` | `teamwire.team` | first event with a given `data.launch` | the event that makes every requested member started, failed or refused | `teamwire.members.requested`, `.started` |
 | `teamwire.launch.member` | `teamwire.launch` | `member.creating` of the same launch | `member.started`, `member.failed` or `member.refused` | `teamwire.role`, `teamwire.kind`, `error.type` |
-| `teamwire.member.generation` | `teamwire.team` | `member.started`, `member.reprompted` or `member.handoff` | `member.completed` | `teamwire.role`, `teamwire.generation`, `teamwire.status`, `session.id` |
+| `teamwire.member.generation` | `teamwire.team` | `member.started`, `member.reprompted`, `member.woken` or `member.handoff` | `member.completed` | `teamwire.role`, `teamwire.generation`, `teamwire.status`, `session.id` |
 | `teamwire.message` | `teamwire.team` | `message.sent` | last recipient's final delivery event | `teamwire.message.id`, `teamwire.message.type`, `teamwire.from` (the event's `data.from`, else the sender's role, else `lead`; a message from another team shows `role@team`) |
 | `teamwire.delivery` | `teamwire.message` | `message.sent` | that recipient's outcome | `teamwire.to`, `teamwire.route`, `teamwire.outcome`, `teamwire.attempts`, `error.type` |
 | `teamwire.result` | `teamwire.member.generation` | `member.completed` | `result.delivered` or `.undelivered` | `teamwire.route`, `teamwire.outcome` |
@@ -163,6 +163,12 @@ wave-1 contract:
   `session.id` is the new session (absent when `new_session` is null). The event
   adds to no counter, sets no member state, and is not counted as a reprompt.
   An undo of a later reprompt returns to the handoff's generation.
+- A `member.woken` event starts a generation and is not a reprompt (ADR
+  0043). A message other than a reprompt woke a finished member. The run
+  duration and the generation span count from it, and no reprompt counter
+  or outcome's `reprompts` includes it. A `member.woken` event with
+  `data.undone: true` records a wake that a known delivery failure took
+  back; it is not taken as the start of a generation, and not counted either.
 - A `member.reprompted` event with `data.undone: true` records an undone
   reprompt. The undone reprompt is neither counted as a reprompt nor taken as the start of a
   generation. A `team.closed` event carries

@@ -4,8 +4,8 @@
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, DeliveryError, DeliveryState, DisplayId, EventType, Message, MessageType, Recipient,
-    Refusal, Route, TeamName, TeamState, Timestamp,
+    Actor, DeliveryError, DeliveryState, DisplayId, EventType, MemberState, Message, MessageType,
+    Recipient, Refusal, Route, TeamName, TeamState, Timestamp,
 };
 use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
@@ -72,20 +72,26 @@ pub(crate) fn skipped(row: &DeliveryRecord) -> RecipientReport {
     }
 }
 
-/// The member's generation before a reprompt bumped it, kept to undo the
-/// bump when the reprompt is known not to have arrived.
+/// The member's generation before a reprompt, or a waking message, bumped
+/// it, kept to undo the bump when the message is known not to have arrived.
+/// `kind` is the event the bump wrote, `member.reprompted` or
+/// `member.woken`, and the undo writes the same.
 pub(crate) struct Bumped {
     pub(crate) recipient: Recipient,
     generation: u32,
     started_at: Timestamp,
+    kind: EventType,
 }
 
 /// Starts the recipient's next generation and remembers the one it replaced.
+/// `kind` is `member.reprompted` for a reprompt and `member.woken` for a
+/// message that wakes a finished member (ADR 0043).
 pub(crate) fn bump(
     tx: &Tx<'_>,
     at: Timestamp,
     id: &DisplayId,
     recipient: &Recipient,
+    kind: EventType,
 ) -> Result<Option<Bumped>, teamwire_store::StoreError> {
     let Recipient::Member(role) = recipient else {
         return Ok(None);
@@ -93,12 +99,54 @@ pub(crate) fn bump(
     let Some(member) = tx.reader().member(role)? else {
         return Ok(None);
     };
-    tx.bump_generation(at, role, id.as_str())?;
+    if kind == EventType::MemberWoken {
+        tx.wake_generation(at, role, id.as_str())?;
+    } else {
+        tx.bump_generation(at, role, id.as_str())?;
+    }
     Ok(Some(Bumped {
         recipient: recipient.clone(),
         generation: member.generation,
         started_at: member.gen_started_at,
+        kind,
     }))
+}
+
+/// What a message that is not a reprompt does to a member recipient.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Waking {
+    /// The member works on its current generation, or is no started member.
+    Nothing,
+    /// The member's newest result is in its current generation: the message
+    /// starts its next one, which the watch tracks (ADR 0043 decision 8).
+    Wake,
+}
+
+/// Whether a message that is not a reprompt wakes `recipient`: a started
+/// member whose newest completion, of any status, is in its current
+/// generation.
+pub(crate) fn waking(
+    tx: &Tx<'_>,
+    recipient: &Recipient,
+) -> Result<Waking, teamwire_store::StoreError> {
+    let Recipient::Member(role) = recipient else {
+        return Ok(Waking::Nothing);
+    };
+    let Some(member) = tx.reader().member(role)? else {
+        return Ok(Waking::Nothing);
+    };
+    if member.state != MemberState::Started {
+        return Ok(Waking::Nothing);
+    }
+    let finished = tx
+        .reader()
+        .latest_completion(role)?
+        .is_some_and(|c| c.completion.generation == member.generation);
+    Ok(if finished {
+        Waking::Wake
+    } else {
+        Waking::Nothing
+    })
 }
 
 /// The bump an earlier, interrupted attempt of this reprompt left behind: the
@@ -114,13 +162,11 @@ pub(crate) fn earlier_bump(
     let Recipient::Member(role) = recipient else {
         return Ok(None);
     };
-    if message.kind != MessageType::Reprompt {
-        return Ok(None);
-    }
     let (events, member) = ctx.store.read(|tx| {
         let kinds = [
             EventType::MemberCreating,
             EventType::MemberReprompted,
+            EventType::MemberWoken,
             EventType::MemberHandoff,
         ];
         Ok((tx.events_of_kinds(role, &kinds)?, tx.member(role)?))
@@ -128,44 +174,42 @@ pub(crate) fn earlier_bump(
     let Some(member) = member else {
         return Ok(None);
     };
-    // Each generation with the time it started and the message that started
-    // it. A `member.creating` event starts generation 1, a bump or a handoff
+    // Each generation with the time it started, the message that started it
+    // and the event that recorded it. A `member.creating` event starts
+    // generation 1, a bump (a reprompt or a wake, ADR 0043) or a handoff
     // pushes the next one, and an undo pops a bump again. A handoff has no
-    // undo and no message.
-    let mut starts: Vec<(u32, Timestamp, Option<String>)> = Vec::new();
+    // undo and no message. A message that bumped nothing, such as a note to
+    // a working member, never matches the newest start, so it gives none
+    // back.
+    let mut starts: Vec<(u32, Timestamp, Option<String>, EventType)> = Vec::new();
     for e in &events {
+        let generation = e
+            .data
+            .get("generation")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|g| u32::try_from(g).ok());
         if e.kind == EventType::MemberCreating {
-            starts = vec![(1, e.time, None)];
+            starts = vec![(1, e.time, None, e.kind)];
         } else if e.kind == EventType::MemberHandoff {
-            if let Some(g) = e
-                .data
-                .get("generation")
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|g| u32::try_from(g).ok())
-            {
-                starts.push((g, e.time, None));
+            if let Some(g) = generation {
+                starts.push((g, e.time, None, e.kind));
             }
-        } else if e.kind == EventType::MemberReprompted {
+        } else if matches!(e.kind, EventType::MemberReprompted | EventType::MemberWoken) {
             if e.data.get("undone") == Some(&json!(true)) {
                 if starts.len() > 1 {
                     starts.pop();
                 }
-            } else if let Some(g) = e
-                .data
-                .get("generation")
-                .and_then(serde_json::Value::as_u64)
-                .and_then(|g| u32::try_from(g).ok())
-            {
+            } else if let Some(g) = generation {
                 let by = e
                     .data
                     .get("message")
                     .and_then(serde_json::Value::as_str)
                     .map(str::to_owned);
-                starts.push((g, e.time, by));
+                starts.push((g, e.time, by, e.kind));
             }
         }
     }
-    let [.., (before, started_at, _), (now, _, by)] = starts.as_slice() else {
+    let [.., (before, started_at, _, _), (now, _, by, kind)] = starts.as_slice() else {
         return Ok(None);
     };
     if by.as_deref() != Some(message.display_id.as_str()) || *now != member.generation {
@@ -175,21 +219,35 @@ pub(crate) fn earlier_bump(
         recipient: recipient.clone(),
         generation: *before,
         started_at: *started_at,
+        kind: *kind,
     }))
 }
 
 /// A resume of a reprompt whose earlier failure was undone: bump again, in a
-/// transaction that first checks the team is still open.
+/// transaction that first checks the team is still open. Another message
+/// bumps again only when it wakes the member now, as `send` decides
+/// (ADR 0043).
 pub(crate) fn bump_again(
     ctx: &mut Ctx<'_>,
     message: &Message,
     recipient: &Recipient,
 ) -> Result<Option<Bumped>, SendError> {
-    if message.kind != MessageType::Reprompt {
-        return Ok(None);
-    }
     let now = ctx.clock.now();
     let id = message.display_id.clone();
+    if message.kind != MessageType::Reprompt {
+        // A wake is a side effect of the message, never a reason to refuse
+        // it, so a team that is closing just gets no new generation.
+        return Ok(ctx.store.write(|tx| {
+            let open = tx
+                .reader()
+                .team()?
+                .is_some_and(|t| t.state == teamwire_core::TeamState::Open);
+            if !open || waking(tx, recipient)? != Waking::Wake {
+                return Ok(None);
+            }
+            bump(tx, now, &id, recipient, EventType::MemberWoken)
+        })?);
+    }
     let outcome = ctx.store.write(|tx| {
         let open = tx
             .reader()
@@ -198,7 +256,7 @@ pub(crate) fn bump_again(
         if !open {
             return Ok(None);
         }
-        bump(tx, now, &id, recipient).map(Some)
+        bump(tx, now, &id, recipient, EventType::MemberReprompted).map(Some)
     })?;
     match outcome {
         None => Err(Refusal::TeamClosed.into()),
@@ -352,9 +410,9 @@ fn undo_bump(ctx: &mut Ctx<'_>, bumped: &Bumped) {
         return;
     };
     let now = ctx.clock.now();
-    let undone = ctx
-        .store
-        .write(|tx| tx.restore_generation(now, role, bumped.generation, bumped.started_at));
+    let undone = ctx.store.write(|tx| {
+        tx.restore_generation(now, role, bumped.generation, bumped.started_at, bumped.kind)
+    });
     if let Err(e) = undone {
         // Another reprompt moved the generation on; leave it where it is.
         tracing::warn!(%role, error = %e, "could not give back the generation of a failed reprompt");

@@ -227,7 +227,7 @@ fn bumping_the_generation_and_undoing_it() {
     );
 
     f.store
-        .write(|tx| tx.restore_generation(at(31), &r, 1, at(1)))
+        .write(|tx| tx.restore_generation(at(31), &r, 1, at(1), EventType::MemberReprompted))
         .unwrap();
     let m = f.store.read(|tx| tx.member(&r)).unwrap().unwrap();
     assert_eq!((m.generation, m.gen_started_at), (1, at(1)));
@@ -235,7 +235,7 @@ fn bumping_the_generation_and_undoing_it() {
     // It cannot go back twice.
     let twice = f
         .store
-        .write(|tx| tx.restore_generation(at(32), &r, 1, at(1)));
+        .write(|tx| tx.restore_generation(at(32), &r, 1, at(1), EventType::MemberReprompted));
     assert!(matches!(twice, Err(StoreError::Constraint(_))));
 }
 
@@ -267,7 +267,7 @@ fn a_reprompt_cannot_be_undone_once_the_new_generation_has_a_completion() {
         .unwrap();
     let undone = f
         .store
-        .write(|tx| tx.restore_generation(at(32), &r, 1, at(1)));
+        .write(|tx| tx.restore_generation(at(32), &r, 1, at(1), EventType::MemberReprompted));
     assert!(
         matches!(undone, Err(StoreError::Constraint(_))),
         "{undone:?}"

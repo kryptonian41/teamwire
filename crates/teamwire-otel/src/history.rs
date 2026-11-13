@@ -31,7 +31,8 @@ impl History {
                 let stack = open.entry(role.as_str()).or_default();
                 if e.kind == EventType::MemberCreating {
                     stack.clear();
-                } else if e.kind == EventType::MemberReprompted {
+                } else if matches!(e.kind, EventType::MemberReprompted | EventType::MemberWoken) {
+                    // A wake starts a generation as a reprompt does (ADR 0043).
                     if flag(&e.data, "undone") {
                         undone.extend(stack.pop());
                     } else {
@@ -112,14 +113,14 @@ impl History {
 
     /// The event that began the run `end` closes: the latest
     /// `member.started`, `member.handoff` or (not undone) `member.reprompted`
-    /// of the same role before it.
+    /// or `member.woken` of the same role before it.
     pub(crate) fn generation_start(&self, end: &Event) -> Option<&Event> {
         let role = end.role.as_ref()?;
         self.of_role(role.as_str())
             .take_while(|e| e.seq < end.seq)
             .filter(|e| {
                 matches!(e.kind, EventType::MemberStarted | EventType::MemberHandoff)
-                    || (e.kind == EventType::MemberReprompted
+                    || (matches!(e.kind, EventType::MemberReprompted | EventType::MemberWoken)
                         && !flag(&e.data, "undone")
                         && !self.is_undone(e))
             })

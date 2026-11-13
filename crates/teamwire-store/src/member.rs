@@ -365,6 +365,28 @@ impl Tx<'_> {
         role: &Role,
         message: &str,
     ) -> Result<u32, StoreError> {
+        self.next_generation(at, role, message, EventType::MemberReprompted)
+    }
+
+    /// Starts the next generation of a finished member that a message other
+    /// than a reprompt woke (ADR 0043): as `bump_generation`, but the event
+    /// is `member.woken`, which no reprompt count includes.
+    pub fn wake_generation(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        message: &str,
+    ) -> Result<u32, StoreError> {
+        self.next_generation(at, role, message, EventType::MemberWoken)
+    }
+
+    fn next_generation(
+        &self,
+        at: Timestamp,
+        role: &Role,
+        message: &str,
+        kind: EventType,
+    ) -> Result<u32, StoreError> {
         let rows = self.connection().execute(
             "UPDATE members SET generation = generation + 1, gen_started_at = ?2
              WHERE role = ?1 AND state IN ('creating', 'started')",
@@ -378,7 +400,7 @@ impl Tx<'_> {
             .ok_or_else(|| StoreError::Constraint(format!("no such member {role}")))?;
         self.record_event(
             at,
-            EventType::MemberReprompted,
+            kind,
             Some(role),
             None,
             &json!({ "generation": generation, "message": message }),
@@ -437,18 +459,19 @@ impl Tx<'_> {
         Ok(generation)
     }
 
-    /// Undoes a `bump_generation` after a known failure to deliver the
-    /// reprompt: puts back the earlier generation and its start time. The
-    /// earlier `member.reprompted` event stays; a second one with
-    /// `"undone": true` says the bump was taken back. Refused once the new
-    /// generation has a completion, which the undo would hide (ADR 0007
-    /// point 10).
+    /// Undoes a `bump_generation` or `wake_generation` after a known failure
+    /// to deliver its message: puts back the earlier generation and its start
+    /// time. The earlier event stays; a second one of the same `kind`
+    /// (`member.reprompted` or `member.woken`) with `"undone": true` says the
+    /// bump was taken back. Refused once the new generation has a
+    /// completion, which the undo would hide (ADR 0007 point 10).
     pub fn restore_generation(
         &self,
         at: Timestamp,
         role: &Role,
         generation: u32,
         gen_started_at: Timestamp,
+        kind: EventType,
     ) -> Result<(), StoreError> {
         let rows = self.connection().execute(
             "UPDATE members SET generation = ?2, gen_started_at = ?3
@@ -463,7 +486,7 @@ impl Tx<'_> {
         )?;
         self.record_event(
             at,
-            EventType::MemberReprompted,
+            kind,
             Some(role),
             None,
             &json!({ "generation": generation, "undone": true }),

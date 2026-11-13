@@ -239,7 +239,9 @@ member identity); per member: state
 covers a member gone while its completion is still pending; a member whose
 result is `undelivered` or `unconfirmed` reads `working` while its session
 works and `working (at a dialog)` while it waits at a dialog mid-turn, as the
-watch counts it (ADR 0043)), generation, age against
+watch counts it (ADR 0043); `prompted outside teamwire` means a prompt typed
+by hand, because any teamwire message to a finished member starts its next
+generation), generation, age against
 deadline, delivery state of its newest result, `ctx` (the context fill as
 `72% 720k`, or `-` when unknown), branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or

@@ -394,7 +394,7 @@ fn is_unprompted(started: Option<&teamwire_core::Event>, events: &[teamwire_core
             && !events.iter().any(|e| {
                 matches!(
                     e.kind,
-                    EventType::MemberReprompted | EventType::MemberHandoff
+                    EventType::MemberReprompted | EventType::MemberWoken | EventType::MemberHandoff
                 ) && e.seq > s.seq
             })
     })
