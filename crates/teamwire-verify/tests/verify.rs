@@ -405,6 +405,225 @@ fn the_spec_kit_constitution_is_check_config() {
     }
 }
 
+// ---- ADR 0045: a waiver for a file holds until that file changes ----
+
+const CONSTITUTION: &str = ".specify/memory/constitution.md";
+const CONSTITUTION_FLAGS: [&str; 2] = [
+    "config-changed:.specify/memory/constitution.md",
+    "outside-owns:.specify/memory/constitution.md",
+];
+
+/// The deckh replay up to the waivers: a member that owns `src/` changes the
+/// constitution, and the lead waives both flags at that HEAD.
+fn constitution_waived() -> (Fixture, Repo) {
+    let repo = repo_on_work(&[
+        (CONSTITUTION, "Every feature has a test.\n"),
+        ("src/a.rs", "fn a() {}\n"),
+    ]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    repo.commit(
+        &[(CONSTITUTION, "Every feature has a test, and a doc.\n")],
+        "amend the constitution",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    assert_eq!(flag_ids(&run_one(&mut fx, "api")), CONSTITUTION_FLAGS);
+    for flag in CONSTITUTION_FLAGS {
+        waive(
+            &mut fx.ctx(),
+            &role("api"),
+            &FlagId::new(flag),
+            "the user asked for this amendment",
+        )
+        .unwrap();
+    }
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+    (fx, repo)
+}
+
+/// Each named flag of the record with whether it is waived.
+fn waived_of<'a>(record: &'a VerifyRecord, ids: &[&str]) -> Vec<(&'a str, bool)> {
+    record
+        .flags
+        .iter()
+        .filter(|f| ids.contains(&f.id.as_str()))
+        .map(|f| (f.id.as_str(), f.waived))
+        .collect()
+}
+
+#[test]
+fn a_file_flag_waiver_holds_while_that_file_is_unchanged() {
+    let (mut fx, repo) = constitution_waived();
+    repo.commit(&[("src/b.rs", "fn b() {}\n")], "own work", start_secs() + 9);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Pass, "{record:?}");
+    assert_eq!(
+        waived_of(&record, &CONSTITUTION_FLAGS),
+        CONSTITUTION_FLAGS.map(|id| (id, true))
+    );
+}
+
+#[test]
+fn a_waiver_for_a_deleted_file_holds_while_the_file_stays_deleted() {
+    let (mut fx, repo) = deleted_test();
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("test-deleted:tests/a.rs"),
+        "the suite moved to src/",
+    )
+    .unwrap();
+    repo.commit(&[("src/more.rs", "fn m() {}\n")], "more", start_secs() + 9);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        waived_of(&record, &["test-deleted:tests/a.rs"]),
+        [("test-deleted:tests/a.rs", true)],
+        "{record:?}"
+    );
+}
+
+#[test]
+fn a_file_flag_waiver_ends_when_that_file_changes() {
+    let (mut fx, repo) = constitution_waived();
+    repo.commit(
+        &[(CONSTITUTION, "Tests are optional.\n")],
+        "relax",
+        start_secs() + 9,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    assert_eq!(
+        waived_of(&record, &CONSTITUTION_FLAGS),
+        CONSTITUTION_FLAGS.map(|id| (id, false))
+    );
+}
+
+#[test]
+fn a_file_flag_waiver_ends_when_a_merge_changes_that_file() {
+    let (mut fx, repo) = constitution_waived();
+    repo.git(&["checkout", "--quiet", "-b", "side"]);
+    repo.commit(
+        &[(CONSTITUTION, "Tests are optional.\n")],
+        "relax on a side branch",
+        start_secs() + 7,
+    );
+    repo.git(&["checkout", "--quiet", "work"]);
+    repo.git_at(
+        &["merge", "--no-ff", "--quiet", "-m", "merge side", "side"],
+        start_secs() + 9,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        waived_of(&record, &CONSTITUTION_FLAGS),
+        CONSTITUTION_FLAGS.map(|id| (id, false)),
+        "{record:?}"
+    );
+}
+
+#[test]
+fn a_waiver_at_a_commit_git_does_not_know_does_not_carry_over() {
+    let repo = repo_on_work(&[(CONSTITUTION, "Every feature has a test.\n")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    repo.commit(
+        &[(CONSTITUTION, "Tests are optional.\n")],
+        "relax",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let at = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| {
+            tx.insert_waiver(
+                at,
+                &teamwire_store::Waiver {
+                    role: role("api"),
+                    flag_id: CONSTITUTION_FLAGS[0].to_owned(),
+                    head_sha: "0".repeat(40),
+                    reason: "recorded before a rebase".to_owned(),
+                    created_at: at,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        waived_of(&record, &CONSTITUTION_FLAGS[..1]),
+        [(CONSTITUTION_FLAGS[0], false)],
+        "{record:?}"
+    );
+}
+
+#[test]
+fn a_waiver_for_a_flag_with_no_file_ends_at_the_next_commit() {
+    let repo = repo_on_work(&[("src/lib.rs", "fn a() {}\n"), ("billing/plan.rs", "x\n")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &[]));
+    repo.commit(
+        &[("billing/plan.rs", "y\n")],
+        "touch billing",
+        start_secs() + 5,
+    );
+    report_all_commits(&fx, &repo, "api");
+    assert_eq!(flag_ids(&run_one(&mut fx, "api")), ["no-owns"]);
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("no-owns"),
+        "reads only",
+    )
+    .unwrap();
+    repo.commit(
+        &[("billing/plan.rs", "z\n")],
+        "touch again",
+        start_secs() + 9,
+    );
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        waived_of(&record, &["no-owns"]),
+        [("no-owns", false)],
+        "{record:?}"
+    );
+}
+
+#[test]
+fn an_uncommitted_path_waiver_ends_at_the_next_commit() {
+    let repo = repo_on_work(&[("src/lib.rs", "fn a() {}\n")]);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    report_all_commits(&fx, &repo, "api");
+    repo.write(&[("notes.txt", "scratch\n")]);
+    assert_eq!(
+        flag_ids(&run_one(&mut fx, "api")),
+        ["uncommitted:notes.txt"]
+    );
+    waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("uncommitted:notes.txt"),
+        "scratch file",
+    )
+    .unwrap();
+    // Commit another file only, so notes.txt stays uncommitted.
+    repo.write(&[("src/b.rs", "fn b() {}\n")]);
+    repo.git(&["add", "--", "src/b.rs"]);
+    repo.git_at(&["commit", "--quiet", "-m", "own work"], start_secs() + 9);
+    report_all_commits(&fx, &repo, "api");
+    let record = run_one(&mut fx, "api");
+    assert_eq!(
+        waived_of(&record, &["uncommitted:notes.txt"]),
+        [("uncommitted:notes.txt", false)],
+        "{record:?}"
+    );
+}
+
 #[test]
 fn cargo_lint_tables_are_watched_and_dependencies_are_not() {
     let manifest = "[package]\nname = \"a\"\n\n[dependencies]\nserde = \"1\"\n\n[lints.clippy]\npedantic = \"warn\"\nunwrap_used = \"warn\"\n";
