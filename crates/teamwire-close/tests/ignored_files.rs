@@ -282,3 +282,29 @@ fn a_broken_symlink_is_marked_broken() -> std::io::Result<()> {
     );
     Ok(())
 }
+
+/// A link whose target sits inside the worktree loses its target with the
+/// worktree, so the warning names it apart and never says "targets kept".
+#[test]
+fn a_symlink_into_the_worktree_is_not_named_as_keeping_its_target() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let api = rig.member("api");
+    std::fs::write(rig.repo.join(".git/info/exclude"), "cache\nlink-out\n")?;
+    std::fs::create_dir_all(api.cwd.join("data/cache"))?;
+    std::os::unix::fs::symlink("data/cache", api.cwd.join("cache"))?;
+    let outside = rig.work.path().join("main-venv");
+    std::fs::create_dir_all(&outside)?;
+    std::os::unix::fs::symlink(&outside, api.cwd.join("link-out"))?;
+
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let lines = removal(plan.steps.into_iter().map(|s| (s.step, s.detail)));
+    assert_eq!(
+        lines,
+        [format!(
+            "api: removal removes symlinks (targets kept): link-out -> {}; \
+             removes symlinks and their targets in the worktree: cache -> data/cache",
+            outside.display()
+        )]
+    );
+    Ok(())
+}
