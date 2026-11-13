@@ -65,7 +65,7 @@ story starts from `develop`. The stories share files only for guidance
 text and a few status and schema files, listed in research.md under "Files
 shared between stories".
 
-- [ ] T002 Read `specs/001-deckh-fixes/research.md`, `specs/001-deckh-fixes/data-model.md`, `specs/001-deckh-fixes/contracts/cli.md` and `.specify/memory/constitution.md` before any story task (changes no file)
+- [X] T002 Read `specs/001-deckh-fixes/research.md`, `specs/001-deckh-fixes/data-model.md`, `specs/001-deckh-fixes/contracts/cli.md` and `.specify/memory/constitution.md` before any story task (changes no file)
 
 **Checkpoint**: Any story may start.
 
