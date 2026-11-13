@@ -41,8 +41,8 @@ waive without reading. The user agreed the rule below on 2026-11-13.
      garbage collection, does not carry over. An error from git on either
      side means the waiver does not count, never that it does.
 2. **Every other waiver keeps ADR 0009 point 2.** A flag that names no file,
-   such as `no-owns`, `bad-owns` or `head-moved`, needs a waiver at the HEAD
-   verify checks. So does `uncommitted:<path>`: its change lives in the
+   such as `no-owns` or `bad-owns`, needs a waiver at the HEAD verify
+   checks. `head-moved` is never waivable, as before. So does `uncommitted:<path>`: its change lives in the
    worktree, not in a commit, so "the file's content at the waived HEAD"
    does not describe what the lead waived.
 3. **Recording does not change.** `teamwire verify --waive` still records
