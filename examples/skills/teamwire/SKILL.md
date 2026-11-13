@@ -285,7 +285,7 @@ needs `mode`, as the last column shows.
 | `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. A brief never offers it a worktree. It runs tests in its own clone. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
 | `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for, then reports ranked findings, each with the brief's file and line. Start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. | `pane` (launch refuses `worktree`) |
 | `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
-| `closer` | Takes `teamwire verify` as the evidence for each member's check, and runs each other claimed check once per commit. Runs the full gate once on each head that ships, the joined head when one exists, in a clone of its own. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
+| `closer` | Takes `teamwire verify` as the evidence for each member's check, and runs each other claimed check once per commit. Runs the local gate its task names once on each head that ships, the joined head when one exists, in a clone of its own, runs none of the gates left to CI, and reports both. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode and a plan
@@ -902,11 +902,17 @@ members merge, build, test and push, and you judge what they report.
    because parts that pass alone can fail together.
 2. **Add the closer to every team that wrote code.** Use the `closer`
    preset, add it to the finished team with `--add`, and start a new watch.
-   Fill in the preset's full gate, and list each member's `setup` in the
+   Fill in the preset's two gate slots: `Local gate:`, the command the
+   closer runs on this machine, and `Gates left to CI:`, the gates only CI
+   runs, such as a SonarCloud scan. When the user allows the full gate
+   locally, put it in the local slot and `none` in the CI slot. Then
+   list each member's `setup` in the
    closer's task, because teamwire stores the command nowhere a member can
-   read. The preset's task has it run `teamwire verify` and every claimed
-   check, revert the fix behind each claimed new test, and run the full gate
-   on each branch that no integrator joins, in a clone of its own. A passing
+   read. The preset's task has it run
+   `teamwire verify` and every claimed check, revert the fix behind each
+   claimed new test, run the local gate on each branch that no integrator
+   joins, in a clone of its own, and report which gate ran and which were
+   left to CI. A passing
    test can prove nothing, which is why the closer reverts. It names
    contradictions, writes one report, and cannot send work. Read its report,
    then a member's result only where it

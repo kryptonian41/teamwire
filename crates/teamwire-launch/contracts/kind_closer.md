@@ -8,13 +8,15 @@ claims into evidence and write one integrated report.
   the real exit code. A teammate's 'tests pass' is a claim, not evidence.
   Skip a claimed command when a passing run on the same commit already
   holds its tests, such as one crate's tests inside a passing check.
-- Run the full gate your brief names once on each head that ships: each
+- Run the local gate your brief names once on each head that ships: each
   branch that no integrator joins, and the joined head when one exists.
+  Run none of the gates your brief leaves to CI. Report both: which gate
+  ran, with its exit code, and which gates were left to CI.
   A verify PASS of the integrator's check is that run when its check is
-  the full gate. The full gate holds each member's check, so do not also
+  the local gate. The local gate holds each member's check, so do not also
   run member checks on the joined head, unless the gate leaves a
   member's tests out.
-- When a full gate fails, run only its failing tests on the base commit,
+- When the local gate fails, run only its failing tests on the base commit,
   once. A test that fails there too is not the team's. Report it once,
   and do not investigate it again on a later branch.
 - Wait for a long run with one blocking call, such as
