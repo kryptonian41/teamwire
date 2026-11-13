@@ -242,3 +242,8 @@ Commit at the end of every phase that has tasks, and inside US1 after each
 test-then-fix pair (T002-T003, T004-T005, T006-T007, T008-T009,
 T010-T011, T012-T014), so each commit holds a test and the fix that makes it
 pass, with its guidance. Each commit names its task ids.
+
+## Phase 7: Convergence
+
+- [ ] T022 Read the clock inside the `Store::write` that commits the row, for the amend note's `created_at` (`crates/teamwire-msg/src/send.rs:93`) and the verify record's `recorded_at` (`crates/teamwire-verify/src/lib.rs:364`), so the order of the times is the order of the commits; write a test that fails before the fix where a pass made with the old check commits between amend's clock read and amend's commit, and state the rule as built in ADR 0046 decision 5 and VER-9 per research.md US1 decision 5, FR-006b, US1/AC7 (partial)
+- [ ] T023 When a delivery is still `pending` after the commit, print `send`'s `NOT RECORDED for <role>: ... run teamwire resend <team> <id>` line on stderr and exit 6, with a test, per contracts/amend-cli.md exit 6 (partial)
