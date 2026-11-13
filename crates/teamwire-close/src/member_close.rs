@@ -2,6 +2,7 @@
 //! HEAD's commits get a rescue branch first), take the worktree back, close
 //! the place, and say what a kept branch has that no remote has.
 
+use std::path::Path;
 use std::time::Duration;
 
 use teamwire_core::{
@@ -56,6 +57,10 @@ const BUILD_DIRS: [&str; 2] = ["target/", "node_modules/"];
 /// dirty check does not list them. `TASK.md` is the brief's own copy, which
 /// launch excludes and the dirty check ignores, so it is not named. Nor are the top-level `BUILD_DIRS`. `None` when there are none, or when git
 /// cannot say (the dirty check has already refused in that case).
+///
+/// An ignored path that is a symlink, such as a `.venv` linked to the main
+/// checkout, is named apart with its target: the removal deletes the link
+/// and keeps what it points at. The `IGNORED_SHOWN` limit counts both lists.
 pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> {
     if member.mode != Mode::Worktree || !member.cwd.is_dir() {
         return None;
@@ -77,16 +82,50 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     if ignored.is_empty() {
         return None;
     }
-    let mut named: Vec<String> = ignored
-        .iter()
-        .take(IGNORED_SHOWN)
-        .map(|p| (*p).to_owned())
-        .collect();
-    if ignored.len() > IGNORED_SHOWN {
-        named.push(format!("and {} more", ignored.len() - IGNORED_SHOWN));
+    let (mut files, mut links) = (Vec::new(), Vec::new());
+    for p in ignored.iter().take(IGNORED_SHOWN) {
+        match link_text(&member.cwd, p) {
+            Some(link) => links.push(link),
+            None => files.push((*p).to_owned()),
+        }
     }
-    let named = named.join(", ");
-    Some(format!("removal deletes ignored files: {named}"))
+    let mut parts = Vec::new();
+    if !files.is_empty() {
+        parts.push(format!("deletes ignored files: {}", files.join(", ")));
+    }
+    if !links.is_empty() {
+        parts.push(format!(
+            "removes symlinks (targets kept): {}",
+            links.join(", ")
+        ));
+    }
+    let more = ignored.len().saturating_sub(IGNORED_SHOWN);
+    let more = if more > 0 {
+        format!(", and {more} more")
+    } else {
+        String::new()
+    };
+    Some(format!("removal {}{more}", parts.join("; ")))
+}
+
+/// `<path> -> <target>` when `path` in `cwd` is a symlink, with ` (broken)`
+/// when its target is gone; `None` for anything else. Reads only.
+fn link_text(cwd: &Path, path: &str) -> Option<String> {
+    let full = cwd.join(path.trim_end_matches('/'));
+    if !std::fs::symlink_metadata(&full)
+        .ok()?
+        .file_type()
+        .is_symlink()
+    {
+        return None;
+    }
+    let target = std::fs::read_link(&full).ok()?;
+    let broken = if std::fs::metadata(&full).is_err() {
+        " (broken)"
+    } else {
+        ""
+    };
+    Some(format!("{path} -> {}{broken}", target.display()))
 }
 
 /// How often a close checks whether the processes that ran in a closed place

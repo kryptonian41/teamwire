@@ -137,7 +137,8 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
 }
 
 /// One step per worktree whose removal deletes ignored files, named by role
-/// so the line reads `<role>: removal deletes ignored files: ...`.
+/// so the line reads `<role>: removal deletes ignored files: ...`, with the
+/// symlinks it removes after `; removes symlinks (targets kept): ...`.
 fn ignored_steps<'a>(
     ctx: &'a Ctx<'_>,
     members: &'a [Member],
