@@ -170,3 +170,14 @@ fn afk_note_for(
 pub fn watch_missing_note(team: &TeamName, start: WatchStart) -> String {
     watch_text(start, WatchText::StopHold, team)
 }
+
+/// The lines the lead's hooks add to the lead's turn for each item that was
+/// never typed into the lead's pane (ADR 0043 decision 1).
+pub fn undelivered_to_lead(
+    _home: &Path,
+    _session: &SessionId,
+    _platform: &dyn Platform,
+    _clock: &dyn Clock,
+) -> Vec<String> {
+    Vec::new()
+}
