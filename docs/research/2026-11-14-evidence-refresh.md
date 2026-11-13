@@ -18,6 +18,7 @@ it held on 2026-11-13.
 | New rows in "Terminal-Bench 4.1 leaderboard" for (model, effort) pairs that only the 4.0 group held | 12 added |
 | Fable 5.1 entries on the choosing-a-model page | 2 removed |
 | The Fable 5.1 defect-search entry | 1 reworded |
+| The Sonnet 5.5 vendor entry for Terminal-Bench 4.0, past tense for the public board | 1 reworded, no number changed |
 
 The file's `as_of` moved from 2026-11-13 to 2026-11-14. Only the entries named
 in this note were read again on 2026-11-14. Every other entry keeps the
@@ -41,7 +42,8 @@ board was last updated 2026-11-13. The page shows no Terminal-Bench 4.0 table.
 - Every one of the 29 (model, effort) pairs of the old 4.0 group still has a
   row on the board. So no pair was removed for being off the board.
 - 17 of the 29 pairs already had a 4.1 row in the file. Each of them keeps
-  that one 4.1 entry, unchanged, and loses its 4.0 entry.
+  that one 4.1 entry and loses its 4.0 entry. The kept entry's text and
+  score stay the same, and its rank can change (see "Groups re-ranked").
 - The other 12 pairs had only a 4.0 entry. Each now has a 4.1 entry with the
   board's current numbers, read off the board on 2026-11-14. Every row has 330
   trials, and `published` is the row's date on the board.
@@ -89,7 +91,14 @@ entry had and the 4.1 score it keeps:
 | Sonnet 5 | `max` | 12.42% | 12.12% |
 
 The other five rows of the 4.1 group (Fable 5.2, GPT-6.1 Terra, Haiku 5.5,
-Kimi K3 and GPT-5.4 Mini) had no 4.0 entry and are unchanged.
+Kimi K3 and GPT-5.4 Mini) had no 4.0 entry. Their text and scores stay the
+same.
+
+So all 22 rows the group held on 2026-11-13 keep their text and scores.
+The 12 new entries push 17 of those rows down in rank. Only the top five
+rows (Fable 5.2, Opus 5.5, Sonnet 5.5, GPT-6.1 Sol and GPT-6 Astra at `max`)
+keep their ranks. The rank table under "Groups re-ranked" gives each old and
+new rank.
 
 The board's other rows stay out of the file for the reasons the 2026-11-13
 note gives: models no harness lists here, versions pi does not list, and
@@ -234,13 +243,22 @@ lowest, 0.866 at `low`.
   board's figures are now 63.94% for Sonnet 5.5 at `max` and 65.76% for Opus
   5.5 at `max`.
 
-## Open question for the lead
+## The two vendor groups for Terminal-Bench 4.0
 
 The vendor groups "Introducing Claude Haiku 5.5: Terminal-Bench 4.0" and
-"Introducing Claude Sonnet 5.5: Terminal-Bench 4.0" still carry Anthropic's
-Terminal-Bench 4.0 numbers from its dated release pages. This refresh left
-them as they are. Their claims compare with the public board's 4.0 numbers.
-For example, the Sonnet 5.5 entry says 70.6% is "higher than the 61.82% the
-public leaderboard shows". The board now shows 63.94% for that row. Whether
-those groups, or the wording of their comparisons, should move to 4.1 is not
-decided here.
+"Introducing Claude Sonnet 5.5: Terminal-Bench 4.0" keep Anthropic's
+Terminal-Bench 4.0 numbers. Anthropic published those numbers on dated
+release pages, and the lead decided on 2026-11-14 to keep them as they are.
+
+One claim in those groups described the public board in the present tense.
+That claim is the Sonnet 5.5 entry at `max`, and only its wording changed:
+
+| | Claim |
+| --- | --- |
+| Old | Terminal-Bench 4.0: 70.6% at max as reported by Anthropic, higher than the 61.82% the public leaderboard shows for Sonnet 5.5 at max; Anthropic's chart puts it at 28.8% at medium. |
+| New | Terminal-Bench 4.0: 70.6% at max as reported by Anthropic, higher than the 61.82% the public Terminal-Bench 4.0 leaderboard showed for Sonnet 5.5 at max; Anthropic's chart puts it at 28.8% at medium. |
+
+The 61.82% is the 4.0 board's figure as read on 2026-11-03. The 4.1 board
+now shows 63.94% ±3.00 for that row (Sonnet 5.5 at `max`, Claude Code,
+2026-09-28). No other claim in the two groups states what the public board
+shows, so no other entry changed. No number and no rank changed.

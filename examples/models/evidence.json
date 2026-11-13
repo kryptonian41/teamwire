@@ -1733,7 +1733,7 @@
       "model": "claude-sonnet-5-5",
       "effort": "max",
       "rank": 1,
-      "claim": "Terminal-Bench 4.0: 70.6% at max as reported by Anthropic, higher than the 61.82% the public leaderboard shows for Sonnet 5.5 at max; Anthropic's chart puts it at 28.8% at medium.",
+      "claim": "Terminal-Bench 4.0: 70.6% at max as reported by Anthropic, higher than the 61.82% the public Terminal-Bench 4.0 leaderboard showed for Sonnet 5.5 at max; Anthropic's chart puts it at 28.8% at medium.",
       "source": "Introducing Claude Sonnet 5.5: Terminal-Bench 4.0",
       "url": "https://www.anthropic.com/claude-sonnet-5-5",
       "published": "2026-09-28",
