@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use teamwire_verify::Owns;
 
-use super::parse::TaskList;
+use super::parse::{TaskList, has_extension};
 
 /// The files a pair of phases, or a pair of stories, both name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -28,9 +28,16 @@ pub(crate) struct Overlap {
     pub(crate) independent: Vec<(String, Vec<String>)>,
 }
 
-/// `paths` with each glob (a path that holds `*`) replaced by the tracked
-/// files it matches, as verify's `owns` matches them. A glob that matches
-/// no tracked file stays as itself, like a path that does not exist yet.
+/// The words of `paths` that are repository paths (FR-013), with each glob
+/// (a path that holds `*`) replaced by the tracked files it matches, as
+/// verify's `owns` matches them. A glob that matches no tracked file stays
+/// as itself, like a path that does not exist yet.
+///
+/// A word with a `/` is a path when it names a tracked file, a tracked
+/// folder (kept with a trailing `/`), or ends in an extension, as a file a
+/// task creates does. A word with no `/` is a path only when it names a
+/// tracked file at the repository's root, such as `README.md`: an event
+/// name such as `knit.progress` or a bare `lib.rs` is not.
 pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut add = |p: &str| {
@@ -40,7 +47,9 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
     };
     for path in paths {
         if !path.contains('*') {
-            add(path);
+            if let Some(p) = repo_path(path, tracked) {
+                add(&p);
+            }
             continue;
         }
         let owns = Owns::new(std::slice::from_ref(path));
@@ -55,12 +64,32 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
     out
 }
 
+/// `word` as a repository path, or `None` when it names none (see `expand`).
+fn repo_path(word: &str, tracked: &[String]) -> Option<String> {
+    if !word.contains('/') {
+        return tracked.iter().any(|t| t == word).then(|| word.to_owned());
+    }
+    let bare = word.trim_end_matches('/');
+    if !word.ends_with('/') && tracked.iter().any(|t| t == bare) {
+        return Some(bare.to_owned());
+    }
+    let folder = format!("{bare}/");
+    if tracked.iter().any(|t| t.starts_with(&folder)) {
+        return Some(folder);
+    }
+    (!word.ends_with('/') && has_extension(word, 1)).then(|| word.to_owned())
+}
+
+/// True when `a` and `b` name the same file, or one is a folder (with a
+/// trailing `/`) that holds the other.
+fn meets(a: &str, b: &str) -> bool {
+    a == b || (a.ends_with('/') && b.starts_with(a)) || (b.ends_with('/') && a.starts_with(b))
+}
+
 /// The overlap of `list`, where `paths[i]` is the expanded paths of task `i`.
 pub(crate) fn overlap(list: &TaskList, paths: &[Vec<String>]) -> Overlap {
     let mut by_phase: BTreeMap<usize, BTreeSet<&str>> = BTreeMap::new();
     let mut by_story: BTreeMap<u32, BTreeSet<&str>> = BTreeMap::new();
-    // Which tasks name each path.
-    let mut namers: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
     let mut out = Overlap::default();
     for (task, paths) in list.tasks.iter().zip(paths) {
         if paths.is_empty() {
@@ -73,29 +102,39 @@ pub(crate) fn overlap(list: &TaskList, paths: &[Vec<String>]) -> Overlap {
             if let Some(story) = task.story {
                 by_story.entry(story).or_default().insert(p);
             }
-            namers.entry(p).or_default().insert(&task.id);
         }
     }
     out.phases = pairs(&by_phase);
     out.stories = pairs(&by_story);
-    for (task, paths) in list.tasks.iter().zip(paths) {
+    for (i, (task, mine)) in list.tasks.iter().zip(paths).enumerate() {
         let alone = paths
             .iter()
-            .all(|p| namers.get(p.as_str()).is_none_or(|n| n.len() == 1));
-        if !paths.is_empty() && alone {
-            out.independent.push((task.id.clone(), paths.clone()));
+            .enumerate()
+            .filter(|(j, _)| *j != i)
+            .all(|(_, theirs)| !mine.iter().any(|p| theirs.iter().any(|q| meets(p, q))));
+        if !mine.is_empty() && alone {
+            out.independent.push((task.id.clone(), mine.clone()));
         }
     }
     out
 }
 
 /// Every pair of keys whose path sets meet, in key order, with the paths
-/// they share.
+/// they share. A folder in one set shares each file of the other set that
+/// sits under it, and that file is listed.
 fn pairs<K: Copy + Ord>(sets: &BTreeMap<K, BTreeSet<&str>>) -> Vec<Shared<K>> {
     let mut out = Vec::new();
     for (i, (first, a)) in sets.iter().enumerate() {
         for (second, b) in sets.iter().skip(i + 1) {
-            let shared: Vec<String> = a.intersection(b).map(|p| (*p).to_owned()).collect();
+            let within = |p: &str, other: &BTreeSet<&str>| {
+                other
+                    .iter()
+                    .any(|q| q.ends_with('/') && p.starts_with(q) && p != *q)
+            };
+            let mut both: BTreeSet<&str> = a.intersection(b).copied().collect();
+            both.extend(a.iter().copied().filter(|p| within(p, b)));
+            both.extend(b.iter().copied().filter(|p| within(p, a)));
+            let shared: Vec<String> = both.into_iter().map(str::to_owned).collect();
             if !shared.is_empty() {
                 out.push(Shared {
                     first: *first,

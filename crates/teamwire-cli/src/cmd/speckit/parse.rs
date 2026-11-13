@@ -144,32 +144,72 @@ fn words(text: &str) -> Vec<Word<'_>> {
 
 fn add_paths(paths: &mut Vec<String>, text: &str) {
     for word in words(text) {
-        if let Some(path) = path_of(&word)
-            && !paths.contains(&path)
-        {
-            paths.push(path);
+        for path in paths_of(&word) {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
         }
     }
 }
 
-/// The path a word names, if it names one: it holds a `/` or ends in
-/// `.<ext>`, after the punctuation around it and a `:N` or `:N-M` line
-/// suffix are taken off. A URL, a placeholder such as `<role>.md` and a
-/// word outside backticks whose extension is one letter (`e.g.`) name none.
-fn path_of(word: &Word<'_>) -> Option<String> {
+/// The paths a word may name, after the punctuation around it is taken off
+/// and a brace set such as `src/{a,b}.rs` is expanded. Which of them count
+/// depends on the tracked files (`overlap::expand`, FR-013).
+fn paths_of(word: &Word<'_>) -> Vec<String> {
     let text = word
         .text
-        .trim_start_matches(['(', '[', '{', '"', '\''])
-        .trim_end_matches(['.', ',', ';', ':', ')', ']', '}', '"', '\'', '!', '?']);
+        .trim_start_matches(['(', '[', '"', '\''])
+        .trim_end_matches(['.', ',', ';', ':', ')', ']', '"', '\'', '!', '?']);
+    // A markdown link's `](...)` is link syntax, not a path the task names.
+    if text.contains("](") {
+        return Vec::new();
+    }
+    braces(text)
+        .iter()
+        .filter_map(|t| path_of(t, word.code))
+        .collect()
+}
+
+/// `text` with its first brace set of two or more choices expanded, each
+/// choice again: `src/{a,b}.rs` gives `src/a.rs` and `src/b.rs`. A brace
+/// with no comma, such as a placeholder `{role}`, is left as it is.
+fn braces(text: &str) -> Vec<String> {
+    let set = text.find('{').and_then(|open| {
+        let close = open + text.get(open..)?.find('}')?;
+        let inside = text.get(open + 1..close)?;
+        inside.contains(',').then_some((open, close, inside))
+    });
+    let Some((open, close, inside)) = set else {
+        return vec![text.to_owned()];
+    };
+    let (head, tail) = (
+        text.get(..open).unwrap_or(""),
+        text.get(close + 1..).unwrap_or(""),
+    );
+    inside
+        .split(',')
+        .flat_map(|choice| braces(&format!("{head}{}{tail}", choice.trim())))
+        .collect()
+}
+
+/// The path one word may name: it holds a `/` or ends in `.<ext>`, after a
+/// `:N` or `:N-M` line suffix and a `./` are taken off. A URL, a
+/// placeholder such as `<role>.md`, an absolute path or route such as
+/// `/agui/deck_editor`, and a word outside backticks whose extension is one
+/// letter (`e.g.`) name none.
+fn path_of(text: &str, code: bool) -> Option<String> {
     if text.contains("://") || text.contains(['<', '>', '{', '}', '|', '=']) {
         return None;
     }
     let text = strip_line_suffix(text);
     let text = text.strip_prefix("./").unwrap_or(text);
-    if text.is_empty() || text.starts_with('-') || text.chars().all(|c| matches!(c, '/' | '.')) {
+    if text.is_empty()
+        || text.starts_with(['-', '/'])
+        || text.chars().all(|c| matches!(c, '/' | '.'))
+    {
         return None;
     }
-    let named = text.contains('/') || has_extension(text, if word.code { 1 } else { 2 });
+    let named = text.contains('/') || has_extension(text, if code { 1 } else { 2 });
     named.then(|| text.to_owned())
 }
 
@@ -187,7 +227,7 @@ fn strip_line_suffix(text: &str) -> &str {
 
 /// True when `text` ends in `.<ext>`: a stem, then an extension of at least
 /// `min` letters and digits with at least one letter.
-fn has_extension(text: &str, min: usize) -> bool {
+pub(crate) fn has_extension(text: &str, min: usize) -> bool {
     let name = text.rsplit('/').next().unwrap_or(text);
     let Some((stem, ext)) = name.rsplit_once('.') else {
         return false;

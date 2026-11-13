@@ -27,9 +27,17 @@ the reader and its matching rule on 2026-11-10 and 2026-11-13.
    - A task line is `- [ ]`, `- [x]` or `- [X]`, then `T<digits>`, an
      optional `[P]`, an optional `[US<n>]`, and the description. A task
      with no `[US<n>]` label belongs to the "setup and polish" group.
-   - A path is a token in backticks, or a bare token, that holds a `/` or
-     ends in `.<ext>`, with trailing punctuation removed. A URL is not a
-     path.
+   - A path is a token in backticks, or a bare token, with the
+     punctuation around it removed (FR-013). A token with a `/` is a path
+     when it does not start with `/`, is not inside a markdown link's
+     `](...)`, and names a tracked file, a tracked folder, or ends in
+     `.<ext>`. A token with no `/` is a path only when it names a tracked
+     file at the repository's root, such as `README.md`. So a route such as
+     `"/agui/deck_editor"`, an event name such as `knit.progress`, an
+     absolute path and a URL are not paths.
+   - A folder token, such as `apps/ai`, counts in the overlap table as a
+     prefix of the files under it, and adds no file to the mention search.
+   - A brace set such as `src/{a,b}.rs` names each of its files.
    - A `:N` or `:N-M` suffix is stripped, so `send.rs:297-321` and
      `send.rs` are one file.
    - An indented line under a task line belongs to that task, until the

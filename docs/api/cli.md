@@ -807,11 +807,20 @@ by default the git top level of the folder that holds `tasks.md`.
 - A phase starts at `## Phase <n>: <title>`. A task line is `- [ ]`,
   `- [x]` or `- [X]`, then `T<digits>`, an optional `[P]` and an optional
   `[US<n>]`. A task with no story label is in "Setup and polish".
-- A path is a word, in backticks or not, that holds `/` or ends in
-  `.<ext>`, without the punctuation around it. A `:N` or `:N-M` line suffix
-  is dropped, so `send.rs:297-321` is `send.rs`. A URL, a placeholder such
-  as `<role>.md` and a word made only of `/` and `.` are not paths. Outside
-  backticks the extension needs two characters, so `e.g.` is no path.
+- A path is a word, in backticks or not, without the punctuation around
+  it. A word with `/` is a path when it does not start with `/`, is not in
+  a markdown link's `](...)`, and names a tracked file or folder or ends in
+  `.<ext>`. A word with no `/` is a path only when it names a tracked file
+  at the repository's root, such as `README.md`, so `knit.progress` and a
+  bare `lib.rs` are not. A `:N` or `:N-M` line suffix is dropped, so
+  `crates/x/src/send.rs:297-321` is `crates/x/src/send.rs`. A URL, a
+  placeholder such as `<role>.md`, a route such as `"/agui/deck_editor"`
+  and a word made only of `/` and `.` are not paths. Outside backticks the
+  extension needs two characters, so `e.g.` is no path. A brace set such as
+  `src/{a,b}.rs` names each file.
+- A folder, printed with a trailing `/`, shares with each file under it in
+  the overlap table and the independent list, and adds no file to the
+  mention search.
 - An indented line under a task line belongs to that task, until the next
   task line, heading or blank line.
 - A path that holds `*` is a glob over `git ls-files`, matched as verify
