@@ -68,9 +68,17 @@ the implementer with `--unverified`. The user agreed the decisions below on
    every CLS-5 reason. A verify record counts for `close --role` only when
    it was recorded after the newest amend note and verify raised no
    `scope-changed` on it. That equals "a verify that started after the
-   amend" in every case but one: an amend that kept the same check and
+   amend" with one exception: an amend that kept the same check and
    owns. There a run that started before the amend ran the very check the
-   amend names, so nothing unproven passes. A note that someone typed with
+   amend names, so nothing unproven passes. The rule rests on the order of
+   the stored times being the order of the commits, so both commands read
+   the clock inside the `Store::write` that commits their row, under the
+   store lock: the note's `created_at` in `send_with_write`, the record's
+   `recorded_at` in verify. A time read before the lock could be later than
+   the time of a write that waited for the same lock and committed first,
+   and close would then count a pass made with the old check. Only a wall
+   clock that steps back between the two writes can still reorder the
+   times. A note that someone typed with
    `teamwire send` and that starts with the marker also counts, which only
    makes close stricter. The whole-team close reads no verify record and is
    unchanged.
@@ -79,9 +87,12 @@ the implementer with `--unverified`. The user agreed the decisions below on
    in the transaction that stores the record. When they differ from the
    values it ran with, the record gets the flag `scope-changed`, and a
    `PASS` becomes `FLAGGED`. The flag is raised after the waiver step, as
-   `head-moved` is, so no waiver can clear it. So a pass made with the old
-   check never vouches for the new one, even when it is stored after the
-   note.
+   `head-moved` is, so no waiver can clear it. A verify that commits before
+   the amend has a time at or before the note's, and close does not count
+   it. A verify that commits after the amend re-reads the new scope in that
+   same write and is flagged when it ran the old one. So a pass made with
+   the old check does not vouch for the new one, as long as the wall clock
+   does not step back between the two writes.
 6. **The seat rules file is rewritten.** After the transaction, amend renders
    the member's seat rules again from its stored team, role, kind, check and
    owns, with `teamwire_launch::rewrite_contract`, and writes

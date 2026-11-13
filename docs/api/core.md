@@ -802,6 +802,8 @@ pub fn send(ctx: &mut Ctx, req: SendRequest) -> Result<SendReport, SendError>;
 /// `send`, with `also` run inside the transaction that stores the message, so
 /// both are saved or neither is; delivery runs after the commit. A closed team
 /// runs no `also`; an error from it rolls the message back (`teamwire amend`).
+/// Every send reads the message's time inside that write, under the store
+/// lock, so the order of the times is the order of the commits (ADR 0046).
 pub fn send_with_write(ctx: &mut Ctx, req: SendRequest,
     also: &dyn Fn(&Tx) -> Result<(), StoreError>, on_stored: &mut dyn FnMut(&Stored))
     -> Result<SendReport, SendError>;

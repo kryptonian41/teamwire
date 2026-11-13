@@ -361,9 +361,11 @@ fn verify_member(
             .and_then(|o| o.log.as_ref().map(|(p, _)| p.clone())),
         note: outcome.and_then(|o| o.note),
     };
-    let now = ctx.clock.now();
     // The scope is read again in the transaction that stores the record, so
-    // an amend that came in while the check ran shows in this very row.
+    // an amend that came in while the check ran shows in this very row. The
+    // time is read there too, under the store lock, so the order of the
+    // stored times is the order of the commits: `close --role` compares
+    // this time with an amend note's (ADR 0046).
     ctx.store
         .write(|tx| {
             let mut record = record;
@@ -383,7 +385,7 @@ fn verify_member(
                 flags: record.flags.iter().map(|f| f.id.to_string()).collect(),
                 log_sha256,
             };
-            tx.insert_verify_record(now, &stored)?;
+            tx.insert_verify_record(ctx.clock.now(), &stored)?;
             Ok(record)
         })
         .map_err(VerifyError::from)

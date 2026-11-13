@@ -90,8 +90,13 @@ pub fn send_with_write(
         client_key: client_key.clone(),
         recipients: checked.recipients,
     };
-    let now = ctx.clock.now();
-    let stage = ctx.store.write(|tx| store_message(tx, now, &new, also))?;
+    // The time is read under the store lock, so the order of the stored
+    // times is the order of the commits. `close --role` compares an amend
+    // note's time with verify records' times (ADR 0046): a time read before
+    // the lock could be later than that of a write that committed first.
+    let stage = ctx
+        .store
+        .write(|tx| store_message(tx, ctx.clock.now(), &new, also))?;
     let (stored, bumped) = match stage {
         Stage::Stored { stored, bumped } => (stored, bumped),
         Stage::Closed => {

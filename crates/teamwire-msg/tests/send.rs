@@ -1112,3 +1112,127 @@ fn send_with_write_stores_the_message_and_the_write_together() {
     assert!(!ran.get());
     assert!(nothing_stored(&rig));
 }
+
+/// A clock that stands for a verify that ran the member's old check and
+/// waits for the store lock. At each reading it moves time on one second
+/// and tries to commit that verify's PASS from a second connection, which
+/// gives up at once when another writer holds the lock. It returns the time
+/// from before the move, as a command that read the clock first and wrote
+/// later would hold it. The rival stops once the message is stored.
+struct RivalPassAtEachRead {
+    inner: teamwire_fakes::FakeClock,
+    rival: Mutex<Store>,
+    armed: std::sync::atomic::AtomicBool,
+    /// Each reading's time, and whether the rival's PASS committed then.
+    reads: Mutex<Vec<(Timestamp, bool)>>,
+}
+
+impl Clock for RivalPassAtEachRead {
+    fn now(&self) -> Timestamp {
+        let read = self.inner.now();
+        if !self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+            return read;
+        }
+        self.inner.advance(Duration::from_secs(1));
+        let at = self.inner.now();
+        let pass = teamwire_store::NewVerifyRecord {
+            role: role("api"),
+            head_sha: FULL_SHA.to_owned(),
+            verdict: "PASS".to_owned(),
+            exit_code: Some(0),
+            seconds: Some(1),
+            flags: Vec::new(),
+            log_sha256: None,
+        };
+        let committed = self
+            .rival
+            .lock()
+            .unwrap()
+            .write(|tx| tx.insert_verify_record(at, &pass).map(|_| ()))
+            .is_ok();
+        self.reads.lock().unwrap().push((read, committed));
+        read
+    }
+
+    fn monotonic(&self) -> Instant {
+        self.inner.monotonic()
+    }
+}
+
+/// `close --role` counts a PASS only when its time is after the newest amend
+/// note's (ADR 0046). So a PASS made with the old check that commits before
+/// the note must carry a time at or before the note's, whatever order the
+/// two commands read the clock in. The note's time is read inside the write
+/// that stores it, under the store lock.
+#[test]
+fn a_pass_committed_before_the_amend_note_is_not_timed_after_it() {
+    let mut rig = team_rig();
+    let team = teamwire_core::TeamName::parse("alpha").unwrap();
+    let rival = Store::open_existing(rig.home.path(), &team).unwrap();
+    rival
+        .read(|tx| {
+            tx.connection().busy_timeout(Duration::ZERO)?;
+            Ok(())
+        })
+        .unwrap();
+    let clock = RivalPassAtEachRead {
+        inner: teamwire_fakes::FakeClock::new(),
+        rival: Mutex::new(rival),
+        armed: std::sync::atomic::AtomicBool::new(true),
+        reads: Mutex::new(Vec::new()),
+    };
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let owns = vec!["b/".to_owned()];
+    let mut ctx = Ctx {
+        home: rig.home.path(),
+        store: &mut rig.store,
+        registry: &rig.registry,
+        platform: &rig.platform,
+        clock: &clock,
+        config: &rig.config,
+    };
+    let report = send_with_write(
+        &mut ctx,
+        req,
+        &|tx| tx.set_member_scope(&role("api"), Some("cargo test -p b"), &owns),
+        &mut |_| {
+            clock
+                .armed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        },
+    )
+    .unwrap();
+    let note = rig
+        .store
+        .read(|tx| tx.message_by_display_id(&report.display_id))
+        .unwrap()
+        .unwrap();
+    // Every PASS stored now committed during a reading before the note was
+    // stored.
+    let passes = rig
+        .store
+        .read(|tx| tx.verify_records(&role("api")))
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap();
+    let reads = clock.reads.lock().unwrap().clone();
+    for pass in &passes {
+        assert!(
+            pass.recorded_at <= note.created_at,
+            "a PASS committed before the note at {:?} carries a later time than the note's {:?}; \
+             close --role would count it (reads: {reads:?})",
+            pass.recorded_at,
+            note.created_at
+        );
+    }
+    let at_note: Vec<bool> = reads
+        .iter()
+        .filter(|(t, _)| *t == note.created_at)
+        .map(|(_, committed)| *committed)
+        .collect();
+    assert_eq!(
+        at_note,
+        [false],
+        "the note's time was not read under the store lock: {reads:?}"
+    );
+}

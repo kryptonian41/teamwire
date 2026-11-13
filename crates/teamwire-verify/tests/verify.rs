@@ -1379,3 +1379,94 @@ fn scope_changed_cannot_be_waived() {
         "{waived:?}"
     );
 }
+
+/// A clock that, at each reading, moves time on one second and tries a write
+/// from a second connection that gives up at once when another writer holds
+/// the store lock. It returns the time from before the move.
+struct LockProbeClock {
+    inner: teamwire_fakes::FakeClock,
+    probe: std::sync::Mutex<teamwire_store::Store>,
+    /// Each reading's time, and whether the probe's write committed then.
+    reads: std::sync::Mutex<Vec<(teamwire_core::Timestamp, bool)>>,
+}
+
+impl teamwire_core::Clock for LockProbeClock {
+    fn now(&self) -> teamwire_core::Timestamp {
+        let read = self.inner.now();
+        self.inner.advance(std::time::Duration::from_secs(1));
+        let committed = self
+            .probe
+            .lock()
+            .unwrap()
+            .write(|tx| {
+                tx.record_event(
+                    read,
+                    teamwire_core::EventType::WatchLine,
+                    None,
+                    None,
+                    &serde_json::json!({}),
+                )
+                .map(|_| ())
+            })
+            .is_ok();
+        self.reads.lock().unwrap().push((read, committed));
+        read
+    }
+
+    fn monotonic(&self) -> std::time::Instant {
+        self.inner.monotonic()
+    }
+}
+
+/// `close --role` compares a record's time with the newest amend note's
+/// (ADR 0046), so the record's time is read inside the write that stores
+/// it: then the order of the times is the order of the commits.
+#[test]
+fn the_record_time_is_read_under_the_store_lock() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let sha = repo.commit(&[("src/b.rs", "x\n")], "add b", start_secs() + 10);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    fx.write_report("api", &full_report(&[&sha]));
+    let team = teamwire_core::TeamName::parse(Fixture::TEAM).unwrap();
+    let probe = teamwire_store::Store::open_existing(fx.home.path(), &team).unwrap();
+    probe
+        .read(|tx| {
+            tx.connection().busy_timeout(std::time::Duration::ZERO)?;
+            Ok(())
+        })
+        .unwrap();
+    let clock = LockProbeClock {
+        inner: teamwire_fakes::FakeClock::new(),
+        probe: std::sync::Mutex::new(probe),
+        reads: std::sync::Mutex::new(Vec::new()),
+    };
+    let mut ctx = teamwire_store::Ctx {
+        home: fx.home.path(),
+        store: &mut fx.store,
+        registry: &fx.registry,
+        platform: &fx.platform,
+        clock: &clock,
+        config: &fx.config,
+    };
+    let report = run(&mut ctx, Some(&role("api")), VerifyOpts::default()).unwrap();
+    assert_eq!(report.records.len(), 1);
+    let stored = fx
+        .store
+        .read(|tx| tx.verify_records(&role("api")))
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap();
+    let recorded_at = stored.last().unwrap().recorded_at;
+    let reads = clock.reads.lock().unwrap().clone();
+    let at_record: Vec<bool> = reads
+        .iter()
+        .filter(|(t, _)| *t == recorded_at)
+        .map(|(_, committed)| *committed)
+        .collect();
+    assert_eq!(
+        at_record,
+        [false],
+        "the record's time was not read under the store lock: {reads:?}"
+    );
+}
