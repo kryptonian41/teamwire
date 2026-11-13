@@ -34,6 +34,7 @@ string_enum! {
         MemberReplaced => "member.replaced",
         MemberRemoved => "member.removed",
         MemberReprompted => "member.reprompted",
+        MemberWoken => "member.woken",
         MemberHandoff => "member.handoff",
         MemberCompleted => "member.completed",
         MemberCompletionRefused => "member.completion_refused",

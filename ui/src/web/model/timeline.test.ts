@@ -35,6 +35,12 @@ test("each example in the label table", () => {
   }
 });
 
+test("a member.woken row is labelled woken", () => {
+  // teamwire ADR 0043: a waking message starts a generation, apart from a reprompt.
+  const [l] = describeRows([ev("member.woken" as EventRow["type"], "impl", { generation: 3, message: "m012" })]);
+  expect([l!.label, l!.details]).toEqual(["impl woken", "generation 3"]);
+});
+
 test("a result row names the completion before it", () => {
   expect(line(38).label).toBe("ledger's result #2 being delivered");
   expect(line(21).label).toBe("ledger's result #1 being delivered");

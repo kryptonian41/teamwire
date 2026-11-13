@@ -79,6 +79,7 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
         | EventType::MemberReplaced
         | EventType::MemberRemoved
         | EventType::MemberReprompted
+        | EventType::MemberWoken
         | EventType::MemberHandoff
         | EventType::MemberCompletionRefused
         | EventType::MemberHeld

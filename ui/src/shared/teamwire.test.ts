@@ -76,6 +76,17 @@ describe("log and events additions", () => {
     expect(handoff.role).toBe("api");
     expect(handoff.data["generation"]).toBe(2);
   });
+  test("a member.woken event parses", () => {
+    // teamwire ADR 0043: a message that wakes a finished member starts a generation.
+    const changed = structuredClone(events);
+    changed.events[0]!.type = "member.woken" as (typeof changed.events)[number]["type"];
+    changed.events[0]!.role = "impl";
+    changed.events[0]!.data = { generation: 3, message: "m012" };
+    const parsed = EventsView.safeParse(changed);
+    expect(parsed.success).toBe(true);
+    expect(String(parsed.data?.events[0]?.type)).toBe("member.woken");
+    expect(parsed.data?.events[0]?.data["generation"]).toBe(3);
+  });
   test("an unknown event type fails the parse", () => {
     const changed = structuredClone(events);
     changed.events[0]!.type = "member.teleported";
