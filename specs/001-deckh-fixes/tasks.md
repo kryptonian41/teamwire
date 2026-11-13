@@ -54,7 +54,7 @@ before editing one.
 
 **Purpose**: Confirm the base and the commands before changing code.
 
-- [ ] T001 Confirm the worktree's code matches `develop` (`eda2e0b`) with `git diff --stat eda2e0b -- crates docs examples ui` (expect no output), and run `cargo test -p teamwire-watch --locked` once as the baseline; record both in your report (changes no file)
+- [X] T001 Confirm the worktree's code matches `develop` (`eda2e0b`) with `git diff --stat eda2e0b -- crates docs examples ui` (expect no output), and run `cargo test -p teamwire-watch --locked` once as the baseline; record both in your report (changes no file)
 
 ---
 
