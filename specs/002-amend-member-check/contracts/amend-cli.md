@@ -49,7 +49,7 @@ for a held note prints after the field lines:
 ```text
 amended api in team alpha: check (note m007)
   check: cargo test -p teamwire-store -> cargo test -p teamwire-store --test member
-  api: held for handoff (m007)
+api: held for handoff (m007)
 run `teamwire verify alpha --role api` again: close --role counts only a verify recorded after this amend
 ```
 
