@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Harness, HarnessErrorCode, Liveness, Pid, RunOutput, SessionId, SessionKind, SessionUsage,
-    TokenCounts,
+    Timestamp, TokenCounts, ToolRun,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
@@ -287,4 +287,33 @@ fn session_usage_reads_the_newest_total_under_the_turns_model() {
         codex.session_usage(&other, Some(&path)).unwrap(),
         Some(want)
     );
+}
+
+/// `response_item` lines in the shape of openai/codex's `models.rs`
+/// (`ResponseItem::FunctionCall`, `FunctionCallOutput`, `CustomToolCall`,
+/// `CustomToolCallOutput`, tagged by `type` in snake case), read from its
+/// published source. Codex is not installed here, so no live rollout was
+/// copied. An `exec_command` call starts at 10:00:30 and its output is the
+/// last line.
+const TOOL_FIXTURE: &str = include_str!("fixtures/rollout-tool.jsonl");
+
+/// The newest call whose `call_id` no later output names is the one that
+/// runs now. Once its output is written, no call runs.
+#[test]
+fn the_current_tool_is_the_newest_call_without_output() {
+    let dir = tempfile::tempdir().unwrap();
+    let (codex, _) = setup(dir.path());
+    rollout(dir.path(), ID, "cli", "/w");
+    let mut lines: Vec<String> = TOOL_FIXTURE.lines().map(str::to_owned).collect();
+    let output = lines.pop().unwrap();
+    append(dir.path(), ID, &lines);
+    assert_eq!(
+        codex.current_tool(&sid(ID), None).unwrap(),
+        Some(ToolRun {
+            name: "exec_command".to_owned(),
+            started_at: Timestamp::parse("2026-10-18T10:00:30.000Z").unwrap(),
+        })
+    );
+    append(dir.path(), ID, &[output]);
+    assert_eq!(codex.current_tool(&sid(ID), None).unwrap(), None);
 }
