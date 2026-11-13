@@ -153,6 +153,48 @@ fn a_handoff_opens_a_new_generation_span_with_the_new_session() {
     assert_eq!(attr(span, "session.id"), None);
 }
 
+/// ADR 0043 decision 9: a message that woke a finished member starts its
+/// next generation, so the span starts at the `member.woken` event.
+#[test]
+fn a_wake_opens_a_new_generation_span() {
+    let mut log = Log(Vec::new());
+    log.add(
+        1,
+        EventType::MemberStarted,
+        Some("api"),
+        None,
+        json!({"session_id": "sess-1"}),
+    );
+    log.add(
+        31,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(31), 1)),
+        json!({"status": "done", "generation": 1}),
+    );
+    log.add(
+        61,
+        EventType::MemberWoken,
+        Some("api"),
+        None,
+        json!({"generation": 2, "message": "m004"}),
+    );
+    let done = log.add(
+        91,
+        EventType::MemberCompleted,
+        Some("api"),
+        Some(Ulid::from_parts(at(91), 2)),
+        json!({"status": "done", "generation": 2}),
+    );
+    let spans = log.spans(&done);
+    let span = spans
+        .iter()
+        .find(|s| s.name == "teamwire.member.generation")
+        .unwrap();
+    assert_eq!(attr(span, "teamwire.generation"), Some(&Attr::Int(2)));
+    assert_eq!(span.end.saturating_since(span.start).as_secs(), 30);
+}
+
 #[test]
 fn a_launch_span_ends_at_the_event_that_settles_the_last_member() {
     let mut log = Log(Vec::new());

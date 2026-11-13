@@ -201,6 +201,22 @@ fn an_undelivered_result_with_no_visible_session_settles_and_says_so() {
     );
 }
 
+/// Guard (ADR 0043 decision 8): a message that woke a finished member
+/// bumped its generation, in teamwire-msg. From that state the watch follows
+/// the member's new generation and does not complete while it works.
+#[test]
+fn a_member_woken_by_a_message_is_tracked() {
+    let mut bed = Bed::new();
+    bed.add("impl");
+    bed.delivered("impl", CompletionStatus::Done);
+    // The state the waking message writes: the generation is one higher.
+    bed.reprompt("impl");
+    bed.working("impl");
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(3));
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 0, "{lines:?}");
+}
+
 #[test]
 fn undelivered_result_printed_once() {
     let mut bed = Bed::new();

@@ -255,6 +255,39 @@ fn an_undone_reprompt_is_not_counted() {
     assert_eq!(r.harder_than_class, 1);
 }
 
+/// Guard (ADR 0043 decision 9): a member woken twice by messages started two
+/// generations, but nobody reprompted it, so it is not harder than its class.
+#[test]
+fn a_woken_generation_is_not_counted_as_a_reprompt() {
+    let home = TestHome::new().unwrap();
+    let mut s = open(&home, "alpha");
+    member(
+        &mut s,
+        "api",
+        "claude-code",
+        &json!("cross_cutting"),
+        &json!({}),
+    );
+    ev(
+        &mut s,
+        10,
+        EventType::MemberWoken,
+        "api",
+        &json!({"generation": 2, "message": "m001"}),
+    );
+    ev(
+        &mut s,
+        20,
+        EventType::MemberWoken,
+        "api",
+        &json!({"generation": 3, "message": "m002"}),
+    );
+    let report = outcome_report(home.path());
+    let r = row(&report, "cross_cutting", "unset");
+    assert_eq!(r.reprompts, 0);
+    assert_eq!(r.harder_than_class, 0);
+}
+
 #[test]
 fn an_unclassified_member_is_never_harder_than_its_class() {
     let home = TestHome::new().unwrap();
