@@ -470,7 +470,7 @@ mod tests {
         };
         let text = render(&view, Some(&api));
         assert!(
-            text.contains("    tool: unknown (this harness does not report it)\n"),
+            text.contains("    tool: none reported\n"),
             "{text}"
         );
         // Without --role, or for a member that is not working, no tool line.
