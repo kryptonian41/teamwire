@@ -853,11 +853,17 @@ skeleton starts with
 and prints that line, so a launch stops at setup until the lead puts the
 repository's own setup command, or `true`, in its place.
 
-### `teamwire speckit draft <tasks.md> [--repo <dir>]`
+### `teamwire speckit draft <tasks.md> [--repo <dir>] [--exclude PATTERN]...`
 
 Reads a spec-kit `tasks.md` and prints text (ADR 0044, ADR 0047). It writes no file
 and no store row, and has no `--json`. `--repo` is the repository to search,
 by default the git top level of the folder that holds `tasks.md`.
+`--exclude PATTERN`, repeated, takes one glob each, as `amend --owns` does,
+matched as verify matches `owns`. A tracked file that matches one is left
+out of the mention search, such as a folder of archived records:
+`--exclude 'bench/**'` in teamwire's repository. Task paths still resolve
+against every tracked file. Nothing is excluded by default. A pattern that
+is not a valid glob is a usage error, exit 3.
 
 - A phase starts at `## Phase <n>: <title>`. A task line is `- [ ]`,
   `- [x]` or `- [X]`, then `T<digits>`, an optional `[P]` and an optional

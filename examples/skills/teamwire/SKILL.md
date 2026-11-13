@@ -124,8 +124,10 @@ team. The `plan-review` step goes before the implementers, and the
 
 For a feature built with GitHub's spec-kit, start from
 `teamwire preset speckit`, run `teamwire speckit draft <tasks.md>` once
-`tasks.md` exists, and read "Spec-kit features" in `reference.md`. That section says
-what the base branch must hold, how Claude Code, Codex and pi members run
+`tasks.md` exists, with `--exclude PATTERN` for each folder of archived
+records, such as `--exclude 'bench/**'` in teamwire's repository, and
+read "Spec-kit features" in `reference.md`. That section says what the base
+branch must hold, how Claude Code, Codex and pi members run
 spec-kit's commands, and what each brief says about questions, ticks,
 commits and `converge`. A team that removes spec-kit before the pull request
 follows the preset's REMOVE SPEC-KIT rule: the removal goes on the pull

@@ -380,3 +380,43 @@ fn every_name_that_is_no_path_is_printed_with_its_task() {
         );
     }
 }
+
+/// ADR 0047 rule 5: with no `--exclude`, an archived study that names a
+/// task path is a mention. `--exclude 'bench/**'` leaves it out of the
+/// search, and keeps the other mention and the task paths.
+#[test]
+fn exclude_leaves_matching_files_out_of_the_mention_search() {
+    let repo = repo_002();
+    let study = "bench/studies/s1/diff.patch";
+    let out = draft_002(repo.path(), &[]);
+    assert!(draft_paths(&out, "US1").contains(&study), "{out}");
+
+    let out = draft_002(repo.path(), &["--exclude", "bench/**", "--exclude", "z/"]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(!out.contains(study), "{out}");
+    assert!(us1.contains(&"docs/store.md"), "{out}");
+    assert!(
+        us1.contains(&"crates/teamwire-store/src/member.rs"),
+        "{out}"
+    );
+}
+
+/// A pattern that is not a valid glob is a usage error, never a pattern
+/// that matches nothing.
+#[test]
+fn an_invalid_exclude_pattern_exits_three() {
+    let repo = repo_002();
+    let home = tempfile::tempdir().unwrap();
+    let tasks = repo.path().join("specs/002-x/tasks.md");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["speckit", "draft", tasks.to_str().unwrap()])
+        .args(["--exclude", "bench/[a"])
+        .env_remove("HERDR_ENV")
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "{err}");
+    assert!(err.contains("bench/[a"), "{err}");
+}

@@ -11,10 +11,11 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Command, Platform};
+use teamwire_verify::Owns;
 
 use crate::cmd::shared::{REFUSED, fail, say};
 use crate::wiring::Wiring;
-use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs};
+use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, USAGE};
 
 // Paths, as `doctor_speckit.rs` attaches its parts.
 #[path = "speckit/mentions.rs"]
@@ -49,6 +50,15 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
             REFUSED,
         );
     }
+    // A pattern that is not a glob would match nothing and hide the mistake.
+    let excluded = Owns::new(&args.exclude);
+    if let Some(bad) = excluded.invalid.first() {
+        return fail(
+            COMMAND,
+            &format!("--exclude {bad} is not a valid glob"),
+            USAGE,
+        );
+    }
     let platform = wiring.platform.as_ref();
     let folder = feature_folder(&args.tasks);
     let root = match &args.repo {
@@ -73,11 +83,13 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         paths.push(read.paths);
     }
     let overlap = overlap::overlap(&list, &paths);
-    // The feature folder names every path, so it is never a mention.
+    // The feature folder names every path, so it is never a mention. The
+    // lead's --exclude patterns name folders of records, such as `bench/`.
     let skip = relative_dir(&root, &folder);
     let searched: Vec<String> = tracked
         .into_iter()
         .filter(|p| skip.as_ref().is_none_or(|dir| !p.starts_with(dir.as_str())))
+        .filter(|p| !excluded.matches(p))
         .collect();
     let found = mentions::Mentions::new(mentions::read_files(&root, &searched));
     let drafts = drafts(&list, &paths, &found);

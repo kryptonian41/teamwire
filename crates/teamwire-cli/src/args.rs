@@ -469,6 +469,12 @@ pub(crate) struct SpeckitDraftArgs {
     /// the git top level of the folder that holds `tasks.md`.
     #[arg(long, value_name = "DIR")]
     pub(crate) repo: Option<PathBuf>,
+    /// One glob of tracked files to leave out of the mention search, such
+    /// as a folder of archived records; repeat the flag for each. Matched
+    /// as verify matches `owns`. Task paths still resolve against every
+    /// tracked file.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) exclude: Vec<String>,
 }
 
 #[derive(Args)]
