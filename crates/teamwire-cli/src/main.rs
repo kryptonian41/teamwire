@@ -16,6 +16,7 @@ use clap::Parser;
 mod cmd {
     pub(crate) mod ack;
     pub(crate) mod afk;
+    pub(crate) mod amend;
     pub(crate) mod close;
     pub(crate) mod decisions;
     pub(crate) mod doctor;
@@ -61,11 +62,11 @@ mod wiring;
 const USAGE: u8 = 3;
 
 pub(crate) use args::{
-    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, Cli, CloseArgs, Command, DecisionsArgs, DoneArgs,
-    EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs,
-    InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand,
-    ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs,
-    SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, StatusArgs, TeamsArgs, UninstallArgs,
+    AckArgs, AfkArgs, AfkCommand, AfkStartArgs, AmendArgs, Cli, CloseArgs, Command, DecisionsArgs,
+    DoneArgs, EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget,
+    InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs,
+    MetricsCommand, ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
+    SendArgs, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, StatusArgs, TeamsArgs, UninstallArgs,
     VerifyArgs, WatchArgs,
 };
 
@@ -90,6 +91,7 @@ fn main() -> ExitCode {
         Command::Watch(a) => cmd::watch::run(a, global, &wiring),
         Command::Status(a) => cmd::status::run(a, global, &wiring),
         Command::Verify(a) => cmd::verify::run(a, global, &wiring),
+        Command::Amend(a) => cmd::amend::run(a, global, &wiring),
         Command::Close(a) => cmd::close::run(a, global, &wiring),
         Command::Send(a) => cmd::send::run(a, global, &wiring),
         Command::Resend(a) => cmd::resend::run(a, global, &wiring),

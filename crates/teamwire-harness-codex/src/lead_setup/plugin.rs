@@ -327,6 +327,14 @@ mod tests {
     }
 
     #[test]
+    fn the_codex_skill_names_amend() {
+        let shared = include_str!("../../../../examples/skills/teamwire/SKILL.md");
+        let files = PluginFiles::render(Path::new("/d"), &want(None), shared).unwrap();
+        let text = file(&files, "teamwire/skills/teamwire/SKILL.md");
+        assert!(text.contains("teamwire amend"), "{text}");
+    }
+
+    #[test]
     fn the_reference_file_is_the_compiled_in_text_and_changes_the_version() {
         let render = |reference: &str| {
             PluginFiles::render_with(Path::new("/x"), &want(None), SHARED, reference).unwrap()

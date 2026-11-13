@@ -216,7 +216,7 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
 
 /// The stdout line for one recipient. A message held for a member that
 /// asked for a handoff reads `held for handoff (<id>)` (ADR 0043).
-fn recipient_line(id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
+pub(crate) fn recipient_line(id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
     if is_held(d) {
         return format!("  {}: held for handoff ({id})\n", d.to);
     }

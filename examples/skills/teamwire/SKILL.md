@@ -823,7 +823,13 @@ until that file changes; any other flag needs one at its final HEAD. One whose
 verify FAILs for a reason outside its work, such as a dependency the shared
 environment lacks, gets that environment fixed and verify run again. Use
 `--unverified` on a finished member only when neither is possible, and tell
-the user which member and why.
+the user which member and why. A member whose check or owns is wrong, such
+as a check that runs files outside its work, gets
+`teamwire amend <team> --role <role> --check CMD --reason TEXT` (or
+`--owns PATTERN`, once per pattern, which replaces the whole list), then
+`teamwire verify <team> --role <role>` again, because a pass made before the
+amend no longer counts. The member gets the change as a note and runs its
+new check.
 
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
 worktree. Removing too early costs more: `verify` skips removed members, and
@@ -834,7 +840,7 @@ its latest start or reprompt. `--unverified` overrides both. A team with no
 closer yet gets no closer refusal, so a plan reviewer can go as soon as you
 have acted on its report. A
 commit after verify passed makes it refuse again until verify runs again, and
-so does an amend of the member's check or owns, even at the same HEAD. It
+so does `teamwire amend` of the member's check or owns, even at the same HEAD. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
 Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`
 gets past only that refusal, not the missing verify or closer. When
