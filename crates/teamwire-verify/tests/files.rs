@@ -270,6 +270,31 @@ fn a_tampered_message_is_reported_and_never_written_back_as_a_copy() {
     assert!(!comms(&fx, &id).exists());
 }
 
+/// The pages of the schema's tree, from page 1 of a `SQLite` file with
+/// 4096-byte pages: page 1 itself and, when it is an interior page (type 5,
+/// after the 100-byte file header), each child its cells and its right-most
+/// pointer name. The schema is small enough to be one level deep.
+fn schema_pages(db: &[u8]) -> Vec<u64> {
+    let byte = |at: usize| db.get(at).copied().unwrap_or_default();
+    let be16 = |at: usize| usize::from(u16::from_be_bytes([byte(at), byte(at + 1)]));
+    let be32 = |at: usize| {
+        u64::from(u32::from_be_bytes([
+            byte(at),
+            byte(at + 1),
+            byte(at + 2),
+            byte(at + 3),
+        ]))
+    };
+    let mut pages = vec![1];
+    if byte(100) == 5 {
+        pages.push(be32(108));
+        for i in 0..be16(103) {
+            pages.push(be32(be16(112 + 2 * i)));
+        }
+    }
+    pages
+}
+
 #[test]
 fn deep_reports_a_damaged_database_instead_of_an_ok() {
     use std::io::{Seek, SeekFrom, Write};
@@ -288,12 +313,17 @@ fn deep_reports_a_damaged_database_instead_of_an_ok() {
     fx.store.backup_to(&path).unwrap();
     let mut file = std::fs::OpenOptions::new().write(true).open(&path).unwrap();
     let size = file.metadata().unwrap().len();
-    // Leave page 1 (the schema) alone and scribble over the middle of every other page.
-    let mut at = 4096 + 200;
-    while at + 64 < size {
-        file.seek(SeekFrom::Start(at)).unwrap();
-        file.write_all(&[0xAB; 64]).unwrap();
-        at += 4096;
+    // Leave the schema's pages alone and scribble over the middle of every
+    // other page. The schema outgrew page 1, which is now the interior page
+    // of its tree: its leaves are the pages that page 1 points at.
+    let schema = schema_pages(&std::fs::read(&path).unwrap());
+    let mut page = 2;
+    while (page - 1) * 4096 + 200 + 64 < size {
+        if !schema.contains(&page) {
+            file.seek(SeekFrom::Start((page - 1) * 4096 + 200)).unwrap();
+            file.write_all(&[0xAB; 64]).unwrap();
+        }
+        page += 1;
     }
     file.sync_all().unwrap();
     // A fresh connection reads the pages as they are on disk now.
