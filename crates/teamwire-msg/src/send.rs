@@ -317,8 +317,9 @@ fn store_message(
     if !stored.duplicate {
         for recipient in &new.recipients {
             // A reprompt starts the next generation. Any other message to a
-            // member whose newest result is in its current generation wakes
-            // it, and that turn is a generation too (ADR 0043).
+            // member whose newest result is in its current generation, and
+            // whose turn has ended, wakes it, and that turn is a generation
+            // too (ADR 0043).
             // A member whose newest result asked for a handoff gets the
             // message held for the fresh session instead (decision 11).
             let kind = if new.kind == MessageType::Reprompt {

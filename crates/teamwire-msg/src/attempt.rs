@@ -5,7 +5,7 @@
 use serde_json::json;
 use teamwire_core::{
     Actor, DeliveryError, DeliveryErrorCode, DeliveryState, DisplayId, EventType, MemberState,
-    Message, MessageType, Recipient, Refusal, Route, TeamName, TeamState, Timestamp,
+    Message, MessageType, Recipient, Refusal, ReportState, Route, TeamName, TeamState, Timestamp,
 };
 use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
@@ -130,8 +130,11 @@ const HANDOFF_PREFIX: &str = "handoff:";
 
 /// Whether a message that is not a reprompt wakes `recipient`: a started
 /// member whose newest completion, of any status, is in its current
-/// generation. A completion whose summary starts with `handoff:` holds the
-/// message instead.
+/// generation and whose turn has ended. A completion still `pending` was
+/// written mid-turn by `done`: its turn-end hook delivers it from the
+/// current generation, so the message reaches that turn as a plain one. A
+/// completion whose summary starts with `handoff:` holds the message
+/// instead, before or after its turn ends.
 pub(crate) fn waking(
     tx: &Tx<'_>,
     recipient: &Recipient,
@@ -152,6 +155,7 @@ pub(crate) fn waking(
     Ok(match newest {
         None => Waking::Nothing,
         Some(c) if c.completion.summary.starts_with(HANDOFF_PREFIX) => Waking::Hold,
+        Some(c) if c.completion.report_state == ReportState::Pending => Waking::Nothing,
         Some(_) => Waking::Wake,
     })
 }

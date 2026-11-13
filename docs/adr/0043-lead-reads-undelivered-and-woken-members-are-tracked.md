@@ -89,7 +89,10 @@ and line on `develop` (`eda2e0b`), are in
    reprompt, to a member whose newest completion is in its current
    generation (`done`, `blocked` or `failed`) and whose summary does not
    start with `handoff:`, bumps the member's generation in the same write as
-   the message. The new generation ends when the member records `done`, like
+   the message. The completion's turn must have ended: a completion still
+   `pending` was written mid-turn by `done`, and its turn-end hook delivers
+   it from the current generation. So a message before that turn ends is a
+   plain message in the current generation. The new generation ends when the member records `done`, like
    any generation. A known delivery failure undoes the bump, and an
    `unconfirmed` delivery keeps it, as for a reprompt (REP-3).
 9. **A woken generation is its own event type (F3-f).** The bump writes
