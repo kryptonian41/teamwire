@@ -294,8 +294,11 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
-  // The call that runs now. pi names a call by `toolCallId`; without one,
-  // the tool's name stands in.
+  // The call that runs now. pi names a call by `toolCallId`, and a call
+  // another tool made carries `parentToolCallId`, on both `tool_call` and
+  // `tool_result` (pi 1.5.0, `@earendil-works/pi-coding-agent`
+  // `dist/core/extensions/types.d.ts`, `ToolCallEventBase` and
+  // `ToolResultEventBase`). Without an id, the tool's name stands in.
   const callKey = (event: any) => String(event.toolCallId ?? event.toolName);
   pi.on("tool_call", (event) => {
     if ((event as any).parentToolCallId) return;
