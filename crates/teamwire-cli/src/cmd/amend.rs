@@ -294,4 +294,35 @@ mod tests {
             );
         }
     }
+
+    /// A note held for the member's fresh session exits 0, and `send`'s
+    /// held line prints after the field lines, unindented like the other
+    /// delivery lines of amend.
+    #[test]
+    fn a_held_note_prints_the_held_line_after_the_fields() {
+        let team = TeamName::parse("alpha").unwrap();
+        let role = Role::parse("api").unwrap();
+        let held = report(
+            RecipientState::Undelivered,
+            Some(DeliveryErrorCode::HeldForHandoff),
+        );
+        let change = Change {
+            check: Some("cargo test -p teamwire-store --test member"),
+            owns: None,
+            reason: "the old check ran every test file",
+        };
+        let lines = [
+            "check: cargo test -p teamwire-store -> cargo test -p teamwire-store --test member"
+                .to_owned(),
+        ];
+        assert_eq!(exit_of(&held), 0);
+        assert_eq!(
+            output(&team, &role, &change, &lines, &held),
+            "amended api in team alpha: check (note m007)\n  \
+             check: cargo test -p teamwire-store -> cargo test -p teamwire-store --test member\n\
+             api: held for handoff (m007)\n\
+             run `teamwire verify alpha --role api` again: close --role counts only a verify \
+             recorded after this amend\n"
+        );
+    }
 }

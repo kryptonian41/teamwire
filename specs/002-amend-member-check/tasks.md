@@ -250,4 +250,4 @@ pass, with its guidance. Each commit names its task ids.
 
 ## Phase 8: Convergence
 
-- [ ] T024 Make amend's stdout line for a note held for handoff and contracts/amend-cli.md's held-note example agree on the line's indent (the code prints `api: held for handoff (m007)` unindented, as the contract's exit-4 example and docs/api/cli.md do; the held-note example indents it two spaces), and pin the held line in a test, per contracts/amend-cli.md Output (contradicts)
+- [X] T024 Make amend's stdout line for a note held for handoff and contracts/amend-cli.md's held-note example agree on the line's indent (the code prints `api: held for handoff (m007)` unindented, as the contract's exit-4 example and docs/api/cli.md do; the held-note example indents it two spaces), and pin the held line in a test, per contracts/amend-cli.md Output (contradicts)
