@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Fill, Harness, Liveness, Pid, PlaceState, SessionId, SessionUsage, Timestamp, TokenCounts,
+    ToolRun,
 };
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_pi::{Pi, PiConfig};
@@ -255,4 +256,33 @@ fn another_sessions_state_is_not_read() {
     );
     rig.run(77, STARTED_MS);
     assert_eq!(rig.pi().is_alive(&id(), T).unwrap(), Liveness::Unknown);
+}
+
+/// The member's extension writes `tool` into the state file when a call
+/// starts and drops it at the call's result. The tool comes from that field
+/// while the recorded process runs the session.
+#[test]
+fn the_current_tool_comes_from_the_state_file() {
+    let rig = Rig::new();
+    rig.run(77, STARTED_MS);
+    let file = rig
+        .agent_dir
+        .join(format!("sessions/teamwire/{ID}.teamwire.json"));
+    let started = STARTED_MS + 60_000;
+    std::fs::write(
+        &file,
+        format!(
+            r#"{{"pid":77,"started_at_ms":{STARTED_MS},"state":"working","tool":{{"name":"bash","started_at_ms":{started}}}}}"#
+        ),
+    )
+    .unwrap();
+    assert_eq!(
+        rig.pi().current_tool(&id(), None).unwrap(),
+        Some(ToolRun {
+            name: "bash".to_owned(),
+            started_at: Timestamp::from_unix_millis(started).unwrap(),
+        })
+    );
+    rig.state(ID, 77, STARTED_MS, "working");
+    assert_eq!(rig.pi().current_tool(&id(), None).unwrap(), None);
 }

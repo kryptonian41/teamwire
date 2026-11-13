@@ -186,3 +186,18 @@ fn a_member_without_a_token_or_a_contract_is_refused() {
     let err = pi().launch_spec(&m).unwrap_err();
     assert_eq!(err.code, HarnessErrorCode::Io);
 }
+
+/// The member's extension records the call that runs now, so `status --role`
+/// can say how long it has run: it stamps the call at `tool_call`, drops it
+/// at `tool_result`, and writes the newest one as `tool` in the state file.
+#[test]
+fn the_member_extension_stamps_and_clears_the_tool() {
+    let dir = tempfile::tempdir().unwrap();
+    let m = member(dir.path());
+    let spec = pi().launch_spec(&m).unwrap();
+    let ext = String::from_utf8(file(&spec, "pi-extension.ts").bytes.clone()).unwrap();
+    assert!(ext.contains("pi.on(\"tool_call\""), "{ext}");
+    assert!(ext.contains("toolRuns.set("), "{ext}");
+    assert!(ext.contains("toolRuns.delete("), "{ext}");
+    assert!(ext.contains("tool: newestTool()"), "{ext}");
+}
