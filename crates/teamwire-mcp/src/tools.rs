@@ -356,6 +356,13 @@ fn report_reply(report: &SendReport, watch: Option<Value>) -> Result<Reply, Tool
         .deliveries
         .iter()
         .map(|d| {
+            // A row held for a member that asked for a handoff reads as the
+            // seat text and the CLI word it (ADR 0043 decision 11).
+            if d.state == RecipientState::Undelivered
+                && d.reason == Some(teamwire_core::DeliveryErrorCode::HeldForHandoff)
+            {
+                return format!("{}: held for handoff", d.to);
+            }
             let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
             format!("{}: {}{reason}", d.to, state_word(d.state))
         })
@@ -420,8 +427,14 @@ mod tests {
         };
         let reply = report_reply(&report, None).unwrap();
         assert_eq!(reply.summary, "m012 api: held for handoff, web: handed_off");
-        assert_eq!(reply.value["deliveries"][0]["state"], "undelivered");
-        assert_eq!(reply.value["deliveries"][0]["reason"], "held_for_handoff");
+        assert_eq!(
+            reply.value.pointer("/deliveries/0/state"),
+            Some(&json!("undelivered"))
+        );
+        assert_eq!(
+            reply.value.pointer("/deliveries/0/reason"),
+            Some(&json!("held_for_handoff"))
+        );
     }
 
     #[test]
