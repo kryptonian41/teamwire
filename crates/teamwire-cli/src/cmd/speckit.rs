@@ -7,6 +7,7 @@
 
 use std::process::ExitCode;
 
+use crate::cmd::shared::{REFUSED, fail};
 use crate::wiring::Wiring;
 use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs};
 
@@ -26,6 +27,21 @@ pub(crate) fn run(args: &SpeckitArgs, global: &Global, wiring: &Wiring) -> ExitC
     }
 }
 
-fn draft(_args: &SpeckitDraftArgs, _global: &Global, _wiring: &Wiring) -> ExitCode {
+const COMMAND: &str = "speckit draft";
+
+fn draft(args: &SpeckitDraftArgs, _global: &Global, _wiring: &Wiring) -> ExitCode {
+    let shown = args.tasks.display();
+    let text = match std::fs::read_to_string(&args.tasks) {
+        Ok(text) => text,
+        Err(e) => return fail(COMMAND, &format!("cannot read {shown}: {e}"), REFUSED),
+    };
+    let list = parse::parse(&text);
+    if list.tasks.is_empty() {
+        return fail(
+            COMMAND,
+            &format!("{shown} has no task lines (- [ ] T<n> ...)"),
+            REFUSED,
+        );
+    }
     ExitCode::SUCCESS
 }
