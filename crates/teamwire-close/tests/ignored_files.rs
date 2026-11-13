@@ -227,3 +227,58 @@ fn task_md_stays_while_another_teams_worktree_needs_it() -> std::io::Result<()> 
     assert_eq!(std::fs::read_to_string(&exclude)?, "/TASK.md\n");
     Ok(())
 }
+
+/// Every line of the removal warning, deleted files and symlinks alike.
+fn removal(lines: impl IntoIterator<Item = (String, String)>) -> Vec<String> {
+    lines
+        .into_iter()
+        .filter(|(_, detail)| detail.starts_with("removal "))
+        .map(|(role, detail)| format!("{role}: {detail}"))
+        .collect()
+}
+
+/// A worktree that links `.venv` to the main checkout's copy: removing the
+/// worktree deletes the link and keeps the folder it points at, so the
+/// warning names the link and its target apart from the files it deletes.
+#[test]
+fn a_symlinked_ignored_folder_is_named_as_a_symlink_with_its_target() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[".env.local"])?;
+    let api = rig.member("api");
+    std::fs::write(rig.repo.join(".git/info/exclude"), "*.local\n.venv\n")?;
+    let target = rig.work.path().join("main-venv");
+    std::fs::create_dir_all(&target)?;
+    std::os::unix::fs::symlink(&target, api.cwd.join(".venv"))?;
+
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let lines = removal(plan.steps.into_iter().map(|s| (s.step, s.detail)));
+    assert_eq!(
+        lines,
+        [format!(
+            "api: removal deletes ignored files: .env.local; removes symlinks (targets kept): .venv -> {}",
+            target.display()
+        )]
+    );
+    Ok(())
+}
+
+/// A link whose target is gone is still a link: only the link goes, and the
+/// warning marks it broken. With no other ignored file, no "deletes" part.
+#[test]
+fn a_broken_symlink_is_marked_broken() -> std::io::Result<()> {
+    let mut rig = rig_with_ignored(&[])?;
+    let api = rig.member("api");
+    std::fs::write(rig.repo.join(".git/info/exclude"), ".venv\n")?;
+    let target = rig.work.path().join("gone-venv");
+    std::os::unix::fs::symlink(&target, api.cwd.join(".venv"))?;
+
+    let plan = plan_close(&rig.ctx(), CloseTarget::Team);
+    let lines = removal(plan.steps.into_iter().map(|s| (s.step, s.detail)));
+    assert_eq!(
+        lines,
+        [format!(
+            "api: removal removes symlinks (targets kept): .venv -> {} (broken)",
+            target.display()
+        )]
+    );
+    Ok(())
+}
