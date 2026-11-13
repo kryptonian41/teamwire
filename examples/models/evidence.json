@@ -2126,17 +2126,6 @@
     },
     {
       "task_class": "cross_cutting",
-      "model": "claude-fable-5-1",
-      "effort": null,
-      "rank": 2,
-      "claim": "Anthropic says to move to Fable 5.1 when evals on Opus 5.5 at xhigh or max still fall short on long-horizon agentic work.",
-      "source": "Anthropic: Choosing a model",
-      "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
-      "published": "2026-11-03",
-      "kind": "vendor"
-    },
-    {
-      "task_class": "cross_cutting",
       "model": "claude-fable-5-2",
       "effort": null,
       "rank": 2,
@@ -2266,17 +2255,6 @@
       "url": "https://arxiv.org/abs/2603.03683",
       "published": "2026-03-04",
       "kind": "benchmark"
-    },
-    {
-      "task_class": "concurrency_data_loss",
-      "model": "claude-fable-5-1",
-      "effort": null,
-      "rank": 1,
-      "claim": "No benchmark measures current models on races or data loss; Anthropic names Fable 5.1 for demanding reasoning when Opus 5.5 at xhigh or max still falls short.",
-      "source": "Anthropic: Choosing a model",
-      "url": "https://platform.claude.com/docs/en/about-claude/models/choosing-a-model",
-      "published": "2026-11-03",
-      "kind": "vendor"
     },
     {
       "task_class": "concurrency_data_loss",
@@ -2525,10 +2503,10 @@
       "model": "claude-fable-5-1",
       "effort": "low, medium and high",
       "rank": 4,
-      "claim": "On Anthropic's defect-search benchmark larger than one context window, Fable 5.1 alone cost $468 to $552 a run and took 15.2, 17.5 and 19.9 hours at low, medium and high; delegating parts to cheaper workers cost about half and scored 10 to 12 points lower.",
+      "claim": "On Anthropic's defect-search benchmark larger than one context window (about 22 million tokens, 130 planted defects, 10 runs per setting), Fable 5.1 alone scored a mean F1 of 0.829 (0.807 to 0.841) at low for $527 a run, 0.839 (0.817 to 0.856) at medium for $603, and 0.847 (0.829 to 0.861) at high for $716; with Sonnet 5.5 subagents it scored 0.825 for $172.",
       "source": "Anthropic: Optimizing for cost and intelligence",
       "url": "https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence",
-      "published": "2026-11-03",
+      "published": "2026-11-14",
       "kind": "vendor"
     },
     {
