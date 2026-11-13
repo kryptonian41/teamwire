@@ -62,7 +62,7 @@ in [research.md](research.md). The command's interface is in
 
 **Constraints**: AGENTS.md's hard rules, as the constitution's principle IV states them. No write transaction stays open during delivery or the file rewrite.
 
-**Scale/Scope**: 3 findings, 3 user stories, 9 crates touched (`teamwire-store`, `teamwire-msg`, `teamwire-verify`, `teamwire-close`, `teamwire-launch`, `teamwire-cli`, `teamwire-harness-codex`, `teamwire-harness-pi`, and `teamwire-mcp` only through its existing guard test). Files per story are in [research.md](research.md).
+**Scale/Scope**: 3 findings, 3 user stories, 10 crates touched (`teamwire-core`, `teamwire-store`, `teamwire-msg`, `teamwire-verify`, `teamwire-close`, `teamwire-launch`, `teamwire-cli`, `teamwire-harness-codex`, `teamwire-harness-pi`, and `teamwire-mcp` only through its existing guard test). Files per story are in [research.md](research.md).
 
 ## Constitution Check
 
@@ -103,6 +103,8 @@ specs/002-amend-member-check/
 
 ```text
 crates/
+├── teamwire-core/src/message.rs           # US1: AMEND_MARKER ("CHECK AMENDED:")
+├── teamwire-core/src/lib.rs               # US1: export AMEND_MARKER
 ├── teamwire-store/src/member.rs           # US1: Tx::set_member_scope
 ├── teamwire-msg/src/send.rs               # US1: send_with_write; send_with calls it
 ├── teamwire-msg/tests/send.rs             # US1: one-transaction test
@@ -113,6 +115,7 @@ crates/
 ├── teamwire-close/tests/remove.rs         # US1: close rule tests
 ├── teamwire-launch/src/contract.rs        # US1: rewrite_contract (or a new contract_rewrite.rs)
 ├── teamwire-launch/src/lib.rs             # US1: export rewrite_contract
+├── teamwire-launch/tests/contract_rewrite.rs       # US1: new
 ├── teamwire-launch/contracts/how_to_work.md        # US3: spell out the worktree commands
 ├── teamwire-launch/tests/contract_worktree_rule.rs # US3: expected text changes (line 22)
 ├── teamwire-launch/tests/role_table_git_bans.rs    # US3: new
