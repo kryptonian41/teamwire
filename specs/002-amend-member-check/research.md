@@ -178,8 +178,20 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
    an unknown flag (`lib.rs:242-244`). The compare lives in a new module,
    `crates/teamwire-verify/src/scope.rs`, because `lib.rs` already has 437
    lines.
-   - This is the plan's own decision. It keeps the user's rule exact: a pass
-     made with the old check never vouches for the new one.
+   - This is the plan's own decision. It keeps the user's rule exact only
+     when the order of the stored times is the order of the commits. So
+     both `amend` and `verify` take their time inside the store write that
+     commits them: the note's `created_at` and the record's `recorded_at`
+     are read from the clock inside that `Store::write`, which holds the
+     store's write lock (`BEGIN IMMEDIATE`). Then a verify that commits
+     before the amend has a time before the note's, and close does not
+     count it; a verify that commits after the amend re-reads the new
+     scope in that same write and raises `scope-changed` when it ran the
+     old one. A time read before the write could be later than the time of
+     a write that commits first, when both wait for the lock; the closer
+     showed close then counting a pass made with the old check (closer
+     report, finding 1). With both times read inside the writes, a pass
+     made with the old check does not count.
 6. **Who may be amended.** Every kind. The lead may message reviewers,
    closers and plan reviewers (`crates/teamwire-msg/src/rules.rs:228-233`,
    MSG-3), so the note reaches them as any member. Only a `started` member

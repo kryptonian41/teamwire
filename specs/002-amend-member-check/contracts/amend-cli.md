@@ -30,7 +30,7 @@ the member's seat rules file, and prints what changed.
 | 3 | Usage: no `--role`, no `--reason`, neither `--check` nor `--owns`, an empty or all-space `--reason` or `--check`, an empty `--owns` pattern (`--owns ''`; `amend` cannot clear the owns list), a bad team or role name. |
 | 4 | Scope and note saved; the note is `undelivered`. |
 | 5 | Scope and note saved; the note is `unconfirmed`. |
-| 6 | Store error; nothing changed. |
+| 6 | Either a store error with nothing changed, or a delivery still `pending` after the commit, with the scope and the note saved. The second case is as for `send` (`crates/teamwire-cli/src/cmd/send.rs:205`, `:252`): the delivery record could not be written, and stderr prints `send`'s `NOT RECORDED for <role>: ... run teamwire resend <team> <id>` line. |
 
 ## Output (stdout, exit 0)
 
@@ -41,6 +41,17 @@ run `teamwire verify alpha --role api` again: close --role counts only a verify 
 ```
 
 With `--owns`, an `owns:` line shows the old and new lists.
+
+When the member's newest result starts with `handoff:`, the note is held for
+the fresh session (ADR 0043). The exit stays 0, and `send`'s recipient line
+for a held note prints after the field lines:
+
+```text
+amended api in team alpha: check (note m007)
+  check: cargo test -p teamwire-store -> cargo test -p teamwire-store --test member
+  api: held for handoff (m007)
+run `teamwire verify alpha --role api` again: close --role counts only a verify recorded after this amend
+```
 
 On exit 4 or 5 the scope is saved. The scope line and the field lines print
 first, then the delivery line `send` prints for that recipient, then the

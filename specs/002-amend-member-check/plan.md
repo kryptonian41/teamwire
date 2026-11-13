@@ -25,7 +25,9 @@ its code.
   - `close --role` stops counting a verify record made at or before the
     newest `CHECK AMENDED:` note (`crates/teamwire-close/src/remove.rs:79-120`).
   - Verify flags `scope-changed` when the scope changed while it ran, so a
-    run that straddles an amend never passes.
+    run that straddles an amend does not pass. Both `amend` and `verify`
+    take their time inside the store write that commits them, so the order
+    of the times is the order of the commits (research.md US1 decision 5).
   - No event type, no schema change, no MCP tool, no `--json`.
   One new ADR records the decisions: 0046.
 - **US2 (F14).** Text only. The `speckit` preset, the skill reference and
@@ -122,10 +124,12 @@ crates/
 ├── teamwire-cli/src/args.rs               # US1: AmendArgs, Command::Amend
 ├── teamwire-cli/src/main.rs               # US1: `mod amend` in the `mod cmd` block (line 16) and the dispatch (line 92)
 ├── teamwire-cli/src/cmd/amend.rs          # US1: new
-├── teamwire-cli/tests/amend.rs            # US1: new
+├── teamwire-cli/tests/amend.rs            # US1: new, the command, owns, refusals, seat rules, records
+├── teamwire-cli/tests/amend_flow.rs       # US1: new, delivery exits 4 and 2, the woken member, SC-002
+├── teamwire-cli/tests/support/amend_rig.rs # US1: new, the rig both files share
 ├── teamwire-cli/tests/preset.rs           # US2: the removal rule test
 ├── teamwire-harness-codex/src/lead_setup/plugin.rs # US1: test, skill names amend
-└── teamwire-harness-pi/src/lead_setup.rs  # US1: test, skill names amend
+└── teamwire-harness-pi/tests/lead_setup.rs # US1: test, skill names amend
 examples/
 ├── presets/speckit.json                   # US2: REMOVE SPEC-KIT rule
 └── skills/
