@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain
+- [x] No [NEEDS CLARIFICATION] markers remain
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic (no implementation details)
@@ -36,5 +36,6 @@
   (`teamwire amend`, `teamwire verify`, `close --role`, the role table) are
   the user-facing interface, not implementation details. The spec names no
   crate, function or language.
-- Three [NEEDS CLARIFICATION] markers remain (two in Edge Cases, one in
-  FR-003). They wait for the parent's answers.
+- The three [NEEDS CLARIFICATION] markers (two in Edge Cases, one in
+  FR-003) were replaced with the parent's answers of 2026-11-13, recorded
+  in `## Clarifications`. Validation re-run: every item passes.

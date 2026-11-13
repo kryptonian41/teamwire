@@ -13,6 +13,14 @@ The source of every finding is
 Finding numbers F13, F14 and F15 below refer to that file. Team deckh's
 evidence is in `/Users/apoorvagarwal/.teamwire/archive/deckh-2026-11-13`.
 
+## Clarifications
+
+### Session 2026-11-13
+
+- Q: Does the amend note wake a member that has already recorded a result? → A: Yes, as every note does (ADR 0043). The note tells the member to run its new check and record its result again, and the watch tracks that turn.
+- Q: Does a verify record made before an amend still count for `close --role`? → A: No. `close --role` needs a verify that started after the newest amend note to that member. The amend note's text starts with the fixed marker `CHECK AMENDED:`, and `close` finds the note by that marker, the way `SPEC AMENDMENT:` notices are recognised today. No schema change. `amend` also prints that verify must run again. A pass made with the old check must never vouch for the new one.
+- Q: Does `--owns` replace the member's owns list or add to it? → A: It replaces the whole list, in the same shape as launch's `owns`. The note shows the old list and the new one.
+
 ## User Scenarios & Testing *(mandatory)*
 
 The users here are two people. The **lead** is the agent session that runs a
@@ -67,7 +75,16 @@ reason, and `teamwire log` shows that note.
    missing.
 6. **Given** the role is not a member of the team, or the team is closed,
    **Then** the command refuses, changes nothing and sends no note.
-7. **Given** a lead on Claude Code, Codex or pi reads its lead guidance,
+7. **Given** `impl`'s newest verify record at its head is `PASS`, made with
+   check A, **When** the lead amends the check to B and runs
+   `teamwire close <team> --role impl` without verifying again, **Then**
+   close refuses and says verify must run again after the amend. **When**
+   the lead then runs verify and it passes, **Then** close accepts `impl`.
+8. **Given** `impl` has recorded `done`, **When** the lead amends it,
+   **Then** the note wakes `impl` into a new generation, the note tells it
+   to run its new check and record its result again, and `amend` prints
+   that verify must run again.
+9. **Given** a lead on Claude Code, Codex or pi reads its lead guidance,
    **Then** the guidance names `teamwire amend` and when to use it.
 
 ---
@@ -156,15 +173,14 @@ the missing command.
 - `amend` names the same check the member already has. The command still
   sends the note with the reason; verify behaves as before.
 - `amend` targets a member that has already recorded a result, such as an
-  implementer that said `done` before the spec-kit removal.
-  [NEEDS CLARIFICATION: Does the amend note wake a finished member, as
-  every note does today (a new generation the watch tracks until the member
-  records a new result), or is it stored without being typed?]
+  implementer that said `done` before the spec-kit removal. The amend note
+  wakes the member as every note does (ADR 0043): a new generation starts,
+  the note tells the member to run its new check and record its result
+  again, and the watch tracks that turn until the new result.
 - `amend` targets a member whose newest record at its current head is a
-  `PASS` made with the old check.
-  [NEEDS CLARIFICATION: Does a verify record made before the amend still
-  count for `close --role` at the same head, or must a verify after the
-  amend pass first?]
+  `PASS` made with the old check. That record no longer counts for
+  `close --role`: close needs a verify that started after the newest amend
+  note, even at the same head.
 - `amend --owns` targets an implementer and the new list is empty. Verify
   then raises `no-owns`, as it does at launch for an empty list.
 - `amend --owns` names a pattern that is not a valid glob. Verify raises
@@ -192,16 +208,28 @@ the missing command.
   neither `--check` nor `--owns` is given, when `--reason` is missing or
   empty, when the team is not open, or when the role is not a member of the
   team. Each refusal names what is wrong.
-- **FR-003**: `--owns PATHS` MUST set the member's owns list.
-  [NEEDS CLARIFICATION: Does `--owns` replace the whole list, or add the
-  given patterns to the list the member already has?]
+- **FR-003**: `--owns PATHS` MUST replace the member's whole owns list,
+  in the same shape as launch's `owns`. It never adds to the old list.
 - **FR-004**: After `amend` exits 0, every `teamwire verify` that starts
   later MUST run the new check and judge the diff against the new owns.
 - **FR-005**: `amend` MUST leave every earlier verify record, waiver,
   completion and message unchanged.
-- **FR-006**: `amend` MUST send the member a `note` from the lead that
-  states each changed field's old and new value and the reason. The note
-  is the record of the change; `teamwire log` shows it like any note.
+- **FR-006**: `amend` MUST send the member a `note` from the lead whose
+  text starts with the fixed marker `CHECK AMENDED:` and states each
+  changed field's old and new value and the reason. The note is the record
+  of the change; `teamwire log` shows it like any note.
+- **FR-006a**: The amend note MUST tell the member to run its new check and
+  record its result again. A member that has already recorded a result is
+  woken by the note as by any note (ADR 0043), and the watch tracks that
+  turn.
+- **FR-006b**: `close --role` MUST refuse a member whose newest amend note
+  is newer than the start of the verify record it would accept, even at
+  the same head, and the refusal MUST say that verify must run again after
+  the amend. `close` MUST find the amend note by its marker, sender `lead`
+  and type `note`, with no schema change. The plan decides whether the
+  whole-team `close` applies the same rule.
+- **FR-006c**: `amend` MUST print that verify must run again before the
+  member can be closed.
 - **FR-007**: `amend` MUST NOT add an event type or change the store's
   schema version.
 - **FR-008**: `amend` MUST be a shell command only. The MCP server MUST NOT
@@ -246,9 +274,10 @@ the missing command.
 - **Member scope**: a member's check (one shell command, or none) and owns
   (a list of path patterns). Launch sets it. `amend` changes it. Verify
   reads it at the start of each run.
-- **Amend note**: a `note` message from the lead to the member. It holds
-  the old and new values of each changed field and the reason. It is the
-  only record of the change.
+- **Amend note**: a `note` message from the lead to the member. Its text
+  starts with `CHECK AMENDED:` and holds the old and new values of each
+  changed field and the reason. It is the only record of the change, and
+  `close` finds it by that marker.
 - **Verify record**: one row per verify run of a member: head, verdict,
   exit code, flags, log hash. `amend` never changes one.
 - **Seat rules**: the text launch writes into a member's system prompt for
@@ -275,7 +304,8 @@ the missing command.
 
 ## Assumptions
 
-- The note of FR-006 states the old value too, so the record of the change
+- The note of FR-006 states the old value too (confirmed by the answer on
+  `--owns`), so the record of the change
   stands on its own: the per-member verify log keeps only the newest run,
   so an earlier verify record does not show its check.
 - `--check` replaces the whole check command. Removing a check entirely is
