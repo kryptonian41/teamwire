@@ -18,7 +18,7 @@ use teamwire_core::{
     Refusal, RunOutput, SendRequest, Timestamp,
 };
 use teamwire_fakes::Fault;
-use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with};
+use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with, send_with_write};
 use teamwire_store::{Ctx, Store};
 
 use rig::{Rig, id, role, to};
@@ -1011,4 +1011,104 @@ fn crlf_and_bom_do_not_count_toward_the_limit() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.body, plain);
+}
+
+// ---- a store write inside the message's transaction (teamwire amend) ----
+
+fn lead_note(rig: &Rig, body: &str) -> SendRequest {
+    let req = rig.request("api", &["api"], MessageType::Note, body);
+    SendRequest {
+        actor: teamwire_core::Actor::parse("lead").unwrap(),
+        ..req
+    }
+}
+
+fn scope_of(rig: &Rig, name: &str) -> (Option<String>, Vec<String>) {
+    let m = rig
+        .store
+        .read(|tx| tx.member(&role(name)))
+        .unwrap()
+        .unwrap();
+    (m.check, m.owns)
+}
+
+fn delivery_rows(rig: &Rig) -> usize {
+    rig.store
+        .read(|tx| {
+            let mut n = 0;
+            for m in tx
+                .messages(&teamwire_store::MessageFilter::default())?
+                .items
+            {
+                n += tx.deliveries_of(&m.ulid)?.all_or_corrupt()?.len();
+            }
+            Ok(n)
+        })
+        .unwrap()
+}
+
+#[test]
+fn send_with_write_stores_the_message_and_the_write_together() {
+    // (a) The write and the message are both visible after the call.
+    let mut rig = team_rig();
+    let before = scope_of(&rig, "api");
+    let new_owns = vec!["b/".to_owned()];
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let report = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|tx| tx.set_member_scope(&role("api"), Some("cargo test -p b"), &new_owns),
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(
+        scope_of(&rig, "api"),
+        (Some("cargo test -p b".to_owned()), new_owns.clone()),
+        "the scope before was {before:?}"
+    );
+    assert_eq!(report.deliveries.len(), 1);
+    assert!(!nothing_stored(&rig));
+    assert_eq!(delivery_rows(&rig), 1);
+
+    // (b) A write that fails rolls the message back with it.
+    let mut rig = team_rig();
+    let before = scope_of(&rig, "api");
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let result = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|tx| {
+            tx.set_member_scope(&role("api"), Some("cargo test -p b"), &new_owns)?;
+            Err(teamwire_store::StoreError::Constraint("boom".to_owned()))
+        },
+        &mut |_| {},
+    );
+    assert!(
+        matches!(&result, Err(SendError::Store(teamwire_store::StoreError::Constraint(m))) if m == "boom"),
+        "{result:?}"
+    );
+    assert!(nothing_stored(&rig));
+    assert_eq!(delivery_rows(&rig), 0);
+    assert_eq!(scope_of(&rig, "api"), before);
+
+    // (c) A team that is not open runs no write and refuses as `send` does.
+    let mut rig = team_rig();
+    let now = rig.now();
+    rig.store
+        .write(|tx| tx.begin_close(now, Pid::new(4242)).map(|_| ()))
+        .unwrap();
+    let ran = std::cell::Cell::new(false);
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let result = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|_| {
+            ran.set(true);
+            Ok(())
+        },
+        &mut |_| {},
+    );
+    assert_eq!(refused(result), Some(Refusal::TeamClosed));
+    assert!(!ran.get());
+    assert!(nothing_stored(&rig));
 }

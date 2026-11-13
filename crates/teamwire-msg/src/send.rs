@@ -47,17 +47,16 @@ pub fn send(ctx: &mut Ctx<'_>, req: SendRequest) -> Result<SendReport, SendError
     send_with(ctx, req, &mut |_| {})
 }
 
-/// Sends one message. `on_stored` is called once the message is committed
-/// and before the first host call.
-///
-/// A refusal records a `message.refused` event and stores nothing. A key
-/// that already names a message from this sender resumes it: only the
-/// recipients still `pending` or `undelivered` are tried again, and a
-/// `pending` one only once its latest attempt began over a minute ago, as
-/// for `resend`; a younger one is `skipped`.
-pub fn send_with(
+/// `send_with`, and `also` runs inside the transaction that stores the
+/// message, so both are saved or neither is. `teamwire amend` changes the
+/// member's scope this way (ADR 0046): a scope change without its note would
+/// let `close --role` accept a pass made with the old check. An error from
+/// `also` rolls the message back and is returned. A closed team runs no
+/// `also`, and a resume of a stored key does not run it again.
+pub fn send_with_write(
     ctx: &mut Ctx<'_>,
     mut req: SendRequest,
+    also: &dyn Fn(&Tx<'_>) -> Result<(), StoreError>,
     on_stored: &mut dyn FnMut(&Stored),
 ) -> Result<SendReport, SendError> {
     // A file written on Windows has a byte-order mark and CRLF line ends,
@@ -92,7 +91,7 @@ pub fn send_with(
         recipients: checked.recipients,
     };
     let now = ctx.clock.now();
-    let stage = ctx.store.write(|tx| store_message(tx, now, &new))?;
+    let stage = ctx.store.write(|tx| store_message(tx, now, &new, also))?;
     let (stored, bumped) = match stage {
         Stage::Stored { stored, bumped } => (stored, bumped),
         Stage::Closed => {
@@ -169,6 +168,22 @@ pub fn send_with(
         deliveries,
         duplicate_of_key: stored.duplicate,
     })
+}
+
+/// Sends one message. `on_stored` is called once the message is committed
+/// and before the first host call.
+///
+/// A refusal records a `message.refused` event and stores nothing. A key
+/// that already names a message from this sender resumes it: only the
+/// recipients still `pending` or `undelivered` are tried again, and a
+/// `pending` one only once its latest attempt began over a minute ago, as
+/// for `resend`; a younger one is `skipped`.
+pub fn send_with(
+    ctx: &mut Ctx<'_>,
+    req: SendRequest,
+    on_stored: &mut dyn FnMut(&Stored),
+) -> Result<SendReport, SendError> {
+    send_with_write(ctx, req, &|_| Ok(()), on_stored)
 }
 
 /// Each recipient once, and a name that points back at the sender's own
@@ -300,6 +315,7 @@ fn store_message(
     tx: &Tx<'_>,
     at: Timestamp,
     new: &NewMessage,
+    also: &dyn Fn(&Tx<'_>) -> Result<(), StoreError>,
 ) -> Result<Stage, teamwire_store::StoreError> {
     let open = tx
         .reader()
@@ -309,6 +325,11 @@ fn store_message(
         return Ok(Stage::Closed);
     }
     let stored = tx.insert_message(at, new)?;
+    if !stored.duplicate {
+        // A resume stored nothing new, so the caller's write already ran
+        // with the first send.
+        also(tx)?;
+    }
     if new.kind == MessageType::Answer && !stored.duplicate {
         settle_question(tx, at, new)?;
     }
