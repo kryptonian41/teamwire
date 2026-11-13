@@ -53,12 +53,15 @@ the reader and its matching rule on 2026-11-10 and 2026-11-13.
    list per story plus one for setup and polish.
 4. **What counts as a mention.** A tracked file joins a draft when it holds
    one of these for a task path of that story:
-   - the exact path text;
+   - the exact path text, also right after a `/` or `./`, as in
+     `./apps/ai/harness/tools.py` or `$ROOT/apps/ai/harness/tools.py`;
    - a dotted module name of the path, any dotted suffix of the path
      without its extension with at least two parts, such as `harness.tools`
      for `apps/ai/harness/tools.py`;
    - the full file name with its extension as a whole token, such as
-     `tools.py`;
+     `tools.py`, or right after a `/` when the words before it end the path
+     too, so `harness/tools.py` counts for `apps/ai/harness/tools.py` and
+     `other/tools.py` does not;
    - a `.github/workflows/*.yml` or `*.yaml` file whose `on.<event>.paths`
      glob matches the path.
 

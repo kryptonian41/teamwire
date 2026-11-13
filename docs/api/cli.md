@@ -839,9 +839,9 @@ file outside the feature folder that names one of them:
 
 | Reason | Match |
 | --- | --- |
-| `names path <path>` | the exact path, as a whole token |
+| `names path <path>` | the exact path, as a whole token or right after a `/` (`./apps/x.py`, `$ROOT/apps/x.py`) |
 | `names module <a.b>` | a dotted suffix of the path without its extension, of at least two plain parts, such as `harness.tools` for `apps/ai/harness/tools.py` |
-| `names file <name.ext>` | the full file name with its extension, as a whole token |
+| `names file <name.ext>` | the full file name with its extension, as a whole token, or right after a `/` when the words before it end the path too (`harness/tools.py` for `apps/ai/harness/tools.py`, not `other/tools.py`) |
 | `CI paths glob <glob>` | an `on.<event>.paths` entry of a `.github/workflows/*.yml` or `*.yaml` file that matches the path |
 
 A bare stem such as `tools` never matches. A workflow the YAML reader

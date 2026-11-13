@@ -195,9 +195,14 @@ fn path_globs(doc: &Yaml) -> Vec<String> {
 }
 
 /// Why `text` mentions `path`: its exact text, a dotted module name, or its
-/// full file name, each as a whole token.
+/// full file name, each as a whole token (FR-014). The exact path also
+/// counts right after a `/`, as in `./apps/x.py` or `$ROOT/apps/x.py`. The
+/// file name also counts right after a `/` when the words before it end
+/// the path too, so `harness/tools.py` names `apps/ai/harness/tools.py`
+/// and `other/tools.py` does not.
 fn text_reason(text: &str, path: &str) -> Option<String> {
-    if has_token(text, path) {
+    let after_slash = |before: &str| before.ends_with('/');
+    if has_token_after(text, path, after_slash) {
         return Some(format!("names path {path}"));
     }
     if let Some(module) = dotted_names(path).into_iter().find(|m| has_token(text, m)) {
@@ -207,7 +212,23 @@ fn text_reason(text: &str, path: &str) -> Option<String> {
     let has_ext = name
         .rsplit_once('.')
         .is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty());
-    (has_ext && name != path && has_token(text, name)).then(|| format!("names file {name}"))
+    let ends_path = |before: &str| {
+        let Some(head) = before.strip_suffix('/') else {
+            return false;
+        };
+        // The words of the token before the name, back to its start.
+        let start = head
+            .char_indices()
+            .rev()
+            .find(|(_, c)| !joins(*c))
+            .map_or(0, |(i, c)| i + c.len_utf8());
+        let words = head.get(start..).unwrap_or("");
+        let words = words.trim_start_matches("./");
+        let tail = format!("{words}/{name}");
+        !words.is_empty() && (path == tail || path.ends_with(&format!("/{tail}")))
+    };
+    (has_ext && name != path && has_token_after(text, name, ends_path))
+        .then(|| format!("names file {name}"))
 }
 
 /// The dotted module names of `path`: every suffix of its parts, without
@@ -242,15 +263,22 @@ fn joins(c: char) -> bool {
 /// True when `needle` occurs in `text` as a whole token. A `.` after it ends
 /// a sentence, so it counts as a break unless a name character follows.
 fn has_token(text: &str, needle: &str) -> bool {
+    has_token_after(text, needle, |_| false)
+}
+
+/// `has_token`, where a match that a name character comes before also
+/// counts when `also(text before the match)` holds.
+fn has_token_after(text: &str, needle: &str, also: impl Fn(&str) -> bool) -> bool {
     if needle.is_empty() {
         return false;
     }
     text.match_indices(needle).any(|(at, _)| {
-        let before = text.get(..at).and_then(|s| s.chars().next_back());
+        let head = text.get(..at).unwrap_or("");
+        let before = head.chars().next_back();
         let rest = text.get(at + needle.len()..).unwrap_or("");
         let mut after = rest.chars();
         let next = after.next();
-        let free_before = before.is_none_or(|c| !joins(c));
+        let free_before = before.is_none_or(|c| !joins(c)) || also(head);
         let free_after = match next {
             None => true,
             Some('.') => after.next().is_none_or(|c| !c.is_ascii_alphanumeric()),
