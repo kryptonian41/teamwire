@@ -16,8 +16,8 @@ mod members;
 #[path = "../../teamwire-deliver/tests/support/rig.rs"]
 mod rig;
 
-use teamwire_core::EventType;
-use teamwire_report::on_tool_use;
+use teamwire_core::{EventType, TurnEndReply};
+use teamwire_report::{on_tool_use, on_turn_end};
 
 use kit::team;
 
@@ -132,4 +132,68 @@ fn a_short_message_the_host_never_took_is_still_reminded() {
     );
     let note = on_tool_use(&mut rig.ctx(), &api).unwrap();
     assert!(note.contains(&id), "{note}");
+}
+
+/// A message from the lead to `who`, held for a handoff (ADR 0043 decision
+/// 11): `undelivered` with `held_for_handoff`, never typed.
+fn held_from_lead(rig: &mut rig::Rig, who: &teamwire_core::Role) -> String {
+    let held = rig.message_from_lead(
+        who,
+        "one more thing",
+        teamwire_core::DeliveryState::Undelivered,
+    );
+    let recipient = teamwire_core::Recipient::Member(who.clone());
+    let at = kit::at(3);
+    rig.store
+        .write(|tx| {
+            let message = tx
+                .reader()
+                .message_by_display_id(&teamwire_core::DisplayId::parse(&held).unwrap())?
+                .unwrap();
+            tx.set_delivery_state(
+                at,
+                &message.ulid,
+                &recipient,
+                &teamwire_store::DeliveryUpdate {
+                    state: teamwire_core::DeliveryState::Undelivered,
+                    route: None,
+                    error: Some(teamwire_core::DeliveryError::new(
+                        teamwire_core::DeliveryErrorCode::HeldForHandoff,
+                        "the member's newest result asked for a handoff",
+                    )),
+                    attempts: 0,
+                },
+            )
+        })
+        .unwrap();
+    held
+}
+
+/// A held message waits for the fresh session: the old session's in-turn
+/// reminder never names it, so that session does no more work for it. The
+/// message beside it, left `undelivered` with no hold, is still named.
+#[test]
+fn a_message_held_for_a_handoff_is_not_reminded() {
+    let (mut rig, api) = team();
+    let held = held_from_lead(&mut rig, &api);
+    assert_eq!(on_tool_use(&mut rig.ctx(), &api), None);
+    let other = rig.message_from_lead(
+        &api,
+        "rebase on main",
+        teamwire_core::DeliveryState::Undelivered,
+    );
+    let note = on_tool_use(&mut rig.ctx(), &api).unwrap();
+    assert!(note.contains(&other) && !note.contains(&held), "{note}");
+}
+
+/// The old session's Stop hook does not hold its stop for a held message.
+#[test]
+fn a_message_held_for_a_handoff_does_not_hold_the_stop() {
+    let (mut rig, api) = team();
+    held_from_lead(&mut rig, &api);
+    assert_eq!(
+        on_turn_end(&mut rig.ctx(), &api, &kit::stop("api-1")),
+        TurnEndReply::Continue
+    );
+    assert!(rig.events(EventType::MemberHeld).is_empty());
 }
