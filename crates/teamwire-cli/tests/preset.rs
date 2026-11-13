@@ -1859,3 +1859,18 @@ fn the_speckit_preset_has_the_lead_read_the_checklist_before_the_implementer() {
         assert!(rules.contains(wanted), "{wanted}: {rules}");
     }
 }
+
+/// Some gates run only in CI (a SonarCloud scan, a deploy check). The closer
+/// task names the gate it runs locally and the gates it leaves to CI, and
+/// reports both, so a closer never claims a gate it did not run.
+#[test]
+fn the_closer_task_has_a_local_gate_and_a_ci_gate_slot_and_reports_both() {
+    let doc = preset_doc("closer");
+    let task = task_of(&doc, "closer");
+    assert!(task.contains("Local gate: CHANGEME"), "{task}");
+    assert!(task.contains("Gates left to CI: CHANGEME"), "{task}");
+    assert!(
+        task.contains("report which gate ran, with its exit code, and which gates were left to CI"),
+        "{task}"
+    );
+}

@@ -106,6 +106,19 @@ fn a_closer_undoes_a_revert_by_named_files_when_a_hook_refuses_reset() {
     assert!(text.contains("add `-e <path>` to `git clean`"));
 }
 
+/// A repository whose full gate runs only in CI gets a local gate and a list
+/// of gates left to CI; the closer runs the first and reports both.
+#[test]
+fn a_closer_runs_the_local_gate_and_reports_the_gates_left_to_ci() {
+    let text = render(MemberKind::Closer);
+    assert!(text.contains("local gate"), "{text}");
+    assert!(text.contains("left to CI"), "{text}");
+    assert!(
+        !text.contains("Run the full gate your brief names"),
+        "{text}"
+    );
+}
+
 /// The setup command is stored nowhere a member can read, and `sh -c` is forbidden.
 #[test]
 fn a_closer_takes_each_setup_from_its_brief_and_runs_it_without_a_wrapper() {
