@@ -115,7 +115,8 @@ and line on `develop` (`eda2e0b`), are in
 11. **A message to a member that asked for a handoff is held (F3-b).** When
     the member's newest completion in its current generation has a
     `handoff:` summary, the message's delivery row is written `undelivered`
-    with the error code `held_for_handoff`. Nothing is typed. `send` prints
+    with the error code `held_for_handoff`. Nothing is typed, and the old
+    session's own reminder and Stop hold never name the row. `send` prints
     `<role>: held for handoff (<id>)` and exits 0. `resend` refuses a held
     row and names `handoff` and `reprompt` (F3-e). `teamwire status` lists
     each held row on its own line, `held for handoff: <id> -> <role>`, and

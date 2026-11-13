@@ -1,7 +1,7 @@
 //! Unread messages: the in-turn reminder, and the list the Stop hook adds to
 //! its hold note. Each message id is reminded at most once (ADR 0003 point 8).
 
-use teamwire_core::{DeliveryState, Recipient, Role, Ulid};
+use teamwire_core::{DeliveryErrorCode, DeliveryState, Recipient, Role, Ulid};
 use teamwire_deliver::{AttemptHistory, line_holds_whole};
 use teamwire_store::{Ctx, StoreError};
 
@@ -15,7 +15,9 @@ pub(crate) struct Unread {
 
 /// Deliveries to `me` that are not read (`acked`) and whose reminder has not
 /// been sent. A `handed_off` message whose whole text the typed line carried
-/// is left out: the member already has all of it (ADR 0021). A `pending` delivery is still being sent by its sender, so it
+/// is left out: the member already has all of it (ADR 0021). So is a
+/// message held for a handoff: it waits for the fresh session, and the old
+/// one does no more work (ADR 0043 decision 11). A `pending` delivery is still being sent by its sender, so it
 /// counts only once it is stale: a sender that crashed after the commit
 /// would otherwise leave the message unnamed for good (ADR 0003 point 8).
 pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError> {
@@ -32,7 +34,17 @@ pub(crate) fn unread(ctx: &Ctx<'_>, me: &Role) -> Result<Vec<Unread>, StoreError
         )?;
         let now = ctx.clock.now();
         let mut out = Vec::new();
-        for d in deliveries.items.iter().filter(|d| d.reminded_at.is_none()) {
+        let held = |d: &teamwire_store::DeliveryRecord| {
+            d.delivery
+                .error
+                .as_ref()
+                .is_some_and(|e| e.code == DeliveryErrorCode::HeldForHandoff)
+        };
+        for d in deliveries
+            .items
+            .iter()
+            .filter(|d| d.reminded_at.is_none() && !held(d))
+        {
             let message = match tx.message(&d.delivery.message) {
                 Ok(found) => found,
                 Err(StoreError::Corrupt(why)) => {
