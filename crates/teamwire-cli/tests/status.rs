@@ -519,3 +519,109 @@ fn an_afk_team_with_no_members_still_shows_its_line() {
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
     assert!(run.out.contains("\nafk: budget ends "), "{}", run.out);
 }
+
+/// The lead's delivery row of message `id` (a display id).
+fn lead_row(bed: &Bed, id: &str) -> DeliveryState {
+    let id = teamwire_core::DisplayId::parse(id).unwrap();
+    bed.store
+        .read(|tx| {
+            let m = tx.message_by_display_id(&id)?.unwrap();
+            Ok(tx
+                .delivery(&m.ulid, &teamwire_core::Recipient::Lead)?
+                .unwrap()
+                .delivery
+                .state)
+        })
+        .unwrap()
+}
+
+/// The event types written after `seq`.
+fn events_after(bed: &Bed, seq: u64) -> Vec<teamwire_core::EventType> {
+    bed.store
+        .read(|tx| Ok(tx.events_after(seq, None, None)?.items))
+        .unwrap()
+        .into_iter()
+        .map(|e| e.kind)
+        .collect()
+}
+
+#[expect(
+    clippy::redundant_closure_for_method_calls,
+    reason = "`ReadTx::last_event_seq` as a path does not infer the transaction's lifetime for `Store::read`"
+)]
+fn last_seq(bed: &Bed) -> u64 {
+    bed.store.read(|tx| tx.last_event_seq()).unwrap()
+}
+
+/// ADR 0043 decision 2: the lead records a message it read from its file,
+/// and nothing is typed again.
+#[test]
+fn received_with_a_message_id_clears_it_from_status_without_typing() {
+    let bed = team();
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(shown.contains("m001 -> lead undelivered"), "{shown}");
+    let seq = last_seq(&bed);
+
+    let run = teamwire(&bed, &["received", "alpha", "m001"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(run.out, "m001 read\n");
+    assert_eq!(lead_row(&bed, "m001"), DeliveryState::Acked);
+    // Only the ack is written: no attempt, resend or hand-off of the message.
+    assert_eq!(
+        events_after(&bed, seq),
+        [teamwire_core::EventType::DeliveryAcked]
+    );
+    let shown = teamwire(&bed, &["status", "alpha"]).out;
+    assert!(!shown.contains("m001 -> lead"), "{shown}");
+}
+
+#[test]
+fn received_refuses_an_unknown_id_and_a_message_not_to_the_lead() {
+    let mut bed = team();
+    bed.send(teamwire_core::MessageType::Note, "api", None);
+    let before = sizes(&bed);
+    let unknown = teamwire(&bed, &["received", "alpha", "m099"]);
+    assert_eq!(unknown.code, 1, "{}{}", unknown.out, unknown.err);
+    assert_eq!(unknown.out, "m099: no such message\n");
+    let elsewhere = teamwire(&bed, &["received", "alpha", "m002"]);
+    assert_eq!(elsewhere.code, 1, "{}{}", elsewhere.out, elsewhere.err);
+    assert_eq!(elsewhere.out, "m002: not a message to the lead\n");
+    assert_eq!(sizes(&bed), before, "a refused received changed a file");
+}
+
+#[test]
+fn received_refuses_a_name_that_is_both_a_role_and_a_message_id() {
+    let mut bed = team();
+    bed.add("m001");
+    let run = teamwire(&bed, &["received", "alpha", "m001"]);
+    assert_eq!(run.code, 1, "{}{}", run.out, run.err);
+    assert_eq!(
+        run.out,
+        "m001: both a role and a message; nothing recorded\n"
+    );
+    assert_eq!(lead_row(&bed, "m001"), DeliveryState::Undelivered);
+}
+
+#[test]
+fn received_leaves_a_delivered_or_read_message_as_it_is() {
+    let mut bed = team();
+    let handed = bed.question("api", DeliveryState::HandedOff);
+    let read = bed.question("api", DeliveryState::Unconfirmed);
+    let at = teamwire_core::Clock::now(&bed.clock);
+    let read_id = teamwire_core::DisplayId::parse(&read).unwrap();
+    bed.store
+        .write(|tx| {
+            let m = tx.reader().message_by_display_id(&read_id)?.unwrap();
+            tx.ack_delivery(at, &m.ulid, &teamwire_core::Recipient::Lead)
+                .map(|_| ())
+        })
+        .unwrap();
+    let run = teamwire(&bed, &["received", "alpha", &handed, &read]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(
+        run.out,
+        format!("{handed} already delivered\n{read} already read\n")
+    );
+    assert_eq!(lead_row(&bed, &handed), DeliveryState::HandedOff);
+    assert_eq!(lead_row(&bed, &read), DeliveryState::Acked);
+}
