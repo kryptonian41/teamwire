@@ -2,7 +2,9 @@
 //! delivery row on the same message, added after every rule passed, and
 //! typed to the lead as a copy for its information.
 
-use teamwire_core::{Actor, DeliveryState, Message, MessageType, OneLine, Recipient, TeamName};
+use teamwire_core::{
+    Actor, DeliveryState, Message, MessageType, OneLine, Recipient, TeamName, Ulid,
+};
 use teamwire_deliver::{CommsCopy, HeldItem, lead_copy_line, message_line_to, with_held};
 use teamwire_store::Ctx;
 
@@ -35,14 +37,16 @@ pub(crate) fn is_lead_copy(message: &Message, recipients: &[Recipient]) -> bool 
 }
 
 /// The line typed to `recipient` for `message`: the copy line for the
-/// lead's copy, else the line `message_line_to` words.
+/// lead's copy, else the line `message_line_to` words. With it, the
+/// messages held for a handoff that a reprompt's line names, whose hold
+/// ends once the line is typed.
 pub(crate) fn line_for(
     ctx: &Ctx<'_>,
     team: &TeamName,
     message: &Message,
     recipient: &Recipient,
     comms: CommsCopy<'_>,
-) -> Result<OneLine, SendError> {
+) -> Result<(OneLine, Vec<Ulid>), SendError> {
     if message.sender == Actor::User && *recipient == Recipient::Lead {
         let rows = ctx
             .store
@@ -50,14 +54,15 @@ pub(crate) fn line_for(
         let all: Vec<Recipient> = rows.into_iter().map(|d| d.delivery.recipient).collect();
         if is_lead_copy(message, &all) {
             let members: Vec<Recipient> = all.into_iter().filter(is_member).collect();
-            return Ok(lead_copy_line(
+            let line = lead_copy_line(
                 team,
                 &message.display_id,
                 message.kind,
                 &message.body,
                 &members,
                 comms,
-            ));
+            );
+            return Ok((line, Vec::new()));
         }
     }
     let line = message_line_to(
@@ -70,7 +75,7 @@ pub(crate) fn line_for(
         comms,
     );
     if message.kind != MessageType::Reprompt || !matches!(recipient, Recipient::Member(_)) {
-        return Ok(line);
+        return Ok((line, Vec::new()));
     }
     // A reprompt in place of the handoff ends the hold, so its line names
     // what waited for the member (ADR 0043 decision 12).
@@ -83,7 +88,10 @@ pub(crate) fn line_for(
             sender: &m.sender,
         })
         .collect();
-    Ok(with_held(line, &items))
+    Ok((
+        with_held(line, &items),
+        held.iter().map(|m| m.ulid).collect(),
+    ))
 }
 
 /// The messages held for `recipient` because its newest result asked for a

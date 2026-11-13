@@ -350,7 +350,7 @@ pub(crate) fn deliver_one(
         path: &comms_path,
         written: comms_written,
     };
-    let line = crate::lead_copy::line_for(ctx, team, message, recipient, comms)?;
+    let (line, named) = crate::lead_copy::line_for(ctx, team, message, recipient, comms)?;
     let party = match recipient {
         Recipient::Lead => Party::Lead,
         Recipient::Member(role) => Party::Member(role.clone()),
@@ -429,7 +429,43 @@ pub(crate) fn deliver_one(
     {
         undo_bump(ctx, b);
     }
+    if record.delivery.state != DeliveryState::Undelivered && !named.is_empty() {
+        end_hold(ctx, recipient, &named);
+    }
     Ok(report_of(&record))
+}
+
+/// Ends the hold of the messages a reprompt's line named (ADR 0043 decision
+/// 12): each row still held becomes `handed_off`, because the member was
+/// told about it and reads it with `inbox`. A row that moved since is left
+/// alone. A failed write leaves the rows held, so the next reprompt names
+/// them again.
+fn end_hold(ctx: &mut Ctx<'_>, recipient: &Recipient, named: &[teamwire_core::Ulid]) {
+    let now = ctx.clock.now();
+    let ended = ctx.store.write(|tx| {
+        for ulid in named {
+            let Some(row) = tx.reader().delivery(ulid, recipient)? else {
+                continue;
+            };
+            if is_held(&row) {
+                tx.set_delivery_state(
+                    now,
+                    ulid,
+                    recipient,
+                    &DeliveryUpdate {
+                        state: DeliveryState::HandedOff,
+                        route: Some(Route::HostTyping),
+                        error: None,
+                        attempts: row.delivery.attempts,
+                    },
+                )?;
+            }
+        }
+        Ok(())
+    });
+    if let Err(e) = ended {
+        tracing::warn!(%recipient, error = %e, "could not end the hold of the messages a reprompt named");
+    }
 }
 
 /// A delivery state moves forward only: a copy that may have arrived

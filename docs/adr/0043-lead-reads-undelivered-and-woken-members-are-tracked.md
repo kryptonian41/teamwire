@@ -128,7 +128,10 @@ and line on `develop` (`eda2e0b`), are in
     fresh session's first line tells it to read them. A reprompt to a member
     with held rows types one more sentence after its own text:
     `Held for you, oldest first: <id> (<type> from <sender>), .... Read them with teamwire inbox.`
-    The reprompt's bump starts a new generation, which ends the hold.
+    The reprompt's bump starts a new generation, which ends the hold. Once
+    the reprompt's line is typed (`handed_off` or `unconfirmed`), each held
+    row it named becomes `handed_off`, so `status` stops listing it and a
+    later reprompt does not name it again.
 
 ## Superseded
 
