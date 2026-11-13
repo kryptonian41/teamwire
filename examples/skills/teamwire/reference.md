@@ -523,8 +523,12 @@ it. Then cut the implementer's branch from that branch.
   remain", and after three failed rounds of validation, and `clarify` can
   untick an item that regresses. So after the first question round the
   spec member re-runs `specify`'s validation and ticks each item that now
-  passes. Before the review, check that `requirements.md` has no unticked
-  item, or the implementer stops on it. `checklist` writes its items unticked, and spec-kit
+  passes. `specify` can still leave an item unticked on purpose, or after
+  three rounds, with the reason in the checklist's Notes. So before the
+  implementer launches, read `checklists/requirements.md`. For each
+  unticked item, either waive it in the implementer's brief (quote the item
+  and say proceed) or reprompt the spec member to fix it and commit.
+  Otherwise the implementer stops on it. `checklist` writes its items unticked, and spec-kit
   says only a reviewer ticks them. The reviewer-only rule is about the
   `checklist` command's checklists. So the user ticks those in
   `specs/NNN-name/checklists/*.md` at the review of `spec.md` and
