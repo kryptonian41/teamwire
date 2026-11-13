@@ -14,7 +14,7 @@
 pub mod fixture;
 
 use std::io::Write;
-use std::process::{Command, Stdio};
+use std::process::{ChildStdin, Command, Stdio};
 
 use fixture::{Fixture, MemberSetup};
 use teamwire_core::{
@@ -46,7 +46,8 @@ fn team() -> Fixture {
     fx
 }
 
-fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
+/// The hook as a harness starts it, with every standard stream piped.
+fn hook_command(fx: &Fixture, which: &str, env: &[(&str, &str)]) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_teamwire"));
     cmd.arg("--home")
         .arg(fx.home.path())
@@ -59,13 +60,23 @@ fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
     for (k, v) in env {
         cmd.env(k, v);
     }
-    let mut child = cmd.spawn().unwrap();
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    cmd
+}
+
+/// Writes a hook's standard input and closes it. A hook may exit without
+/// reading its input, and then the write finds the pipe closed. That is the
+/// hook's choice, and the test judges the hook by its exit code and output,
+/// so a closed pipe is no error here. Any other write error still is.
+fn feed(mut pipe: ChildStdin, input: &str) -> std::io::Result<()> {
+    match pipe.write_all(input.as_bytes()) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
+}
+
+fn hook(fx: &Fixture, which: &str, env: &[(&str, &str)], stdin: &str) -> Run {
+    let mut child = hook_command(fx, which, env).spawn().unwrap();
+    feed(child.stdin.take().unwrap(), stdin).unwrap();
     let out = child.wait_with_output().unwrap();
     Run {
         code: out.status.code().unwrap(),
@@ -220,6 +231,22 @@ fn a_missing_database_exits_zero_and_creates_nothing() {
     let run = hook(&fx, "claude-stop", &ghost, &stop_input("sess-1"));
     assert_eq!((run.code, run.out.as_str()), (0, ""));
     assert!(!fx.home.path().join("teams/ghost").exists());
+}
+
+/// A hook that leaves before it reads standard input, as it does for a team
+/// with no store, closes the pipe. Writing the input after that exit must
+/// not fail the test: a loaded machine runs the hook that fast now and then.
+#[test]
+fn a_hook_that_exits_before_reading_its_input_can_still_be_fed() {
+    let fx = Fixture::new();
+    let ghost = [("TEAMWIRE_TEAM", "ghost"), ("TEAMWIRE_ROLE", "api")];
+    let mut child = hook_command(&fx, "claude-stop", &ghost).spawn().unwrap();
+    let pipe = child.stdin.take().unwrap();
+    // The pipe is taken first, so `wait` cannot close it: the write below
+    // comes after the hook exited, every run.
+    assert_eq!(child.wait().unwrap().code(), Some(0));
+    let fed = feed(pipe, &stop_input("sess-1"));
+    assert!(fed.is_ok(), "{fed:?}");
 }
 
 #[test]
