@@ -77,8 +77,19 @@ fn git(dir: &Path, args: &[&str]) {
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let files: [(&str, &str); 9] = [
+    // T051's three files are tracked, as they are in deckh's repository,
+    // so they resolve (ADR 0047).
+    let files: [(&str, &str); 12] = [
         ("specs/001-deckh/tasks.md", TASKS),
+        (
+            "apps/copilot-runtime/src/routes/agent-paths.ts",
+            "export {};\n",
+        ),
+        (
+            "apps/copilot-runtime/src/routes/agent-paths.test.ts",
+            "test();\n",
+        ),
+        ("apps/copilot-runtime/src/app.test.ts", "test();\n"),
         ("README.md", "# deckh\n"),
         ("AGENTS.md", "rules\n"),
         ("docs/data-model.md", "the model\n"),
@@ -291,5 +302,21 @@ fn code_in_backticks_is_no_task_path() {
             !word.contains("to_owned") && !word.contains("CARGO_MANIFEST_DIR"),
             "{word}: {out}"
         );
+    }
+}
+
+/// ADR 0047 rule 2: an example glob that matches no tracked file and a
+/// template path are no task paths. A new file in a tracked folder is.
+#[test]
+fn a_task_path_must_resolve_in_the_repository() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(
+        us1.contains(&"crates/teamwire-cli/src/cmd/amend.rs"),
+        "{out}"
+    );
+    for word in ["crates/b/**", "crates/c/**", "specs/NNN-name/tasks.md"] {
+        assert!(!us1.contains(&word), "{word}: {out}");
     }
 }

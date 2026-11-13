@@ -106,8 +106,12 @@ fn teamwire(args: &[&str]) -> Run {
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let files: [(&str, &str); 12] = [
+    // `docs/` and `apps/copilot-runtime/src/` hold a tracked file, so the
+    // new files T002 and T006 write are in tracked folders (ADR 0047).
+    let files: [(&str, &str); 14] = [
         ("specs/001-x/tasks.md", TASKS),
+        ("docs/guide.md", "# guide\n"),
+        ("apps/copilot-runtime/src/app.ts", "export {};\n"),
         ("specs/001-x/plan.md", "Change `src/a.rs` and tools.py.\n"),
         ("src/a.rs", "fn a() {}\n"),
         ("src/b.rs", "fn b() {}\n"),

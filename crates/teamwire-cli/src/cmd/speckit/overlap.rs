@@ -28,16 +28,17 @@ pub(crate) struct Overlap {
     pub(crate) independent: Vec<(String, Vec<String>)>,
 }
 
-/// The words of `paths` that are repository paths (FR-013), with each glob
-/// (a path that holds `*`) replaced by the tracked files it matches, as
-/// verify's `owns` matches them. A glob that matches no tracked file stays
-/// as itself, like a path that does not exist yet.
+/// The words of `paths` that are repository paths (FR-013, ADR 0047), with
+/// each glob (a path that holds `*`) replaced by the tracked files it
+/// matches, as verify's `owns` matches them. A glob that matches no tracked
+/// file is no path.
 ///
-/// A word with a `/` is a path when it names a tracked file, a tracked
-/// folder (kept with a trailing `/`), or ends in an extension, as a file a
-/// task creates does. A word with no `/` is a path only when it names a
-/// tracked file at the repository's root, such as `README.md`: an event
-/// name such as `knit.progress` or a bare `lib.rs` is not.
+/// A word with a `/` is a path when it names a tracked file or a tracked
+/// folder (kept with a trailing `/`), or when it ends in an extension and
+/// its parent folder is tracked, as a file a task creates does. A word with
+/// no `/` is a path only when it names a tracked file at the repository's
+/// root, such as `README.md`: an event name such as `knit.progress` or a
+/// bare `lib.rs` is not.
 pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut add = |p: &str| {
@@ -56,11 +57,7 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
             continue;
         }
         let owns = Owns::new(std::slice::from_ref(path));
-        let matched: Vec<&String> = tracked.iter().filter(|t| owns.matches(t)).collect();
-        if matched.is_empty() {
-            add(path);
-        }
-        for m in matched {
+        for m in tracked.iter().filter(|t| owns.matches(t)) {
             add(m);
         }
     }
@@ -88,7 +85,16 @@ fn repo_path(word: &str, tracked: &[String]) -> Option<String> {
     if tracked.iter().any(|t| t.starts_with(&folder)) {
         return Some(folder);
     }
-    (!word.ends_with('/') && has_extension(word, 1)).then(|| word.to_owned())
+    if word.ends_with('/') || !has_extension(word, 1) {
+        return None;
+    }
+    // A new file counts only in a folder that already holds tracked files.
+    let parent = bare.rsplit_once('/').map_or("", |(dir, _)| dir);
+    let parent = format!("{parent}/");
+    tracked
+        .iter()
+        .any(|t| t.starts_with(&parent))
+        .then(|| word.to_owned())
 }
 
 /// True when `a` and `b` name the same file, or one is a folder (with a
@@ -209,6 +215,8 @@ mod tests {
         assert_eq!(o.independent, [("T005".to_owned(), strings(&["src/c.rs"]))]);
     }
 
+    /// A glob that matches no tracked file, `src/new/*.rs`, is no path
+    /// (ADR 0047 rule 2).
     #[test]
     fn a_star_token_expands_against_tracked_files() {
         let tracked = strings(&[
@@ -216,6 +224,7 @@ mod tests {
             "crates/x/src/cmd/speckit/two.rs",
             "crates/x/src/cmd/speckit/deep/three.rs",
             "crates/x/src/cmd/other.rs",
+            "src/b.rs",
         ]);
         let paths = strings(&["crates/x/src/cmd/speckit/*.rs", "src/new/*.rs", "src/a.rs"]);
         assert_eq!(
@@ -223,7 +232,6 @@ mod tests {
             strings(&[
                 "crates/x/src/cmd/speckit/one.rs",
                 "crates/x/src/cmd/speckit/two.rs",
-                "src/new/*.rs",
                 "src/a.rs"
             ])
         );
@@ -247,5 +255,35 @@ mod tests {
             "z/c/a::b.rs",
         ]);
         assert!(expand(&words, &tracked).is_empty());
+    }
+
+    /// ADR 0047 rule 2, from 002's `tasks.md`: an example glob that matches
+    /// no tracked file and a template path in an untracked folder are no
+    /// paths. A tracked file, a tracked folder and a new file in a tracked
+    /// folder are.
+    #[test]
+    fn a_path_must_resolve_against_the_tracked_files() {
+        let tracked = strings(&[
+            "crates/teamwire-cli/src/cmd/send.rs",
+            "specs/002-x/tasks.md",
+        ]);
+        let words = strings(&[
+            "crates/b/**",
+            "crates/c/**",
+            "specs/NNN-name/tasks.md",
+            "crates/teamwire-cli/src/cmd/send.rs",
+            "crates/teamwire-cli/src/",
+            "crates/teamwire-cli/src/cmd/amend.rs",
+            "specs/002-x/plan.md",
+        ]);
+        assert_eq!(
+            expand(&words, &tracked),
+            strings(&[
+                "crates/teamwire-cli/src/cmd/send.rs",
+                "crates/teamwire-cli/src/",
+                "crates/teamwire-cli/src/cmd/amend.rs",
+                "specs/002-x/plan.md",
+            ])
+        );
     }
 }

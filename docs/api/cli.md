@@ -864,8 +864,10 @@ by default the git top level of the folder that holds `tasks.md`.
   `[US<n>]`. A task with no story label is in "Setup and polish".
 - A path is a word, in backticks or not, without the punctuation around
   it. A word with `/` is a path when it does not start with `/`, is not in
-  a markdown link's `](...)`, and names a tracked file or folder or ends in
-  `.<ext>`. A word with no `/` is a path only when it names a tracked file
+  a markdown link's `](...)`, and names a tracked file or folder, or ends
+  in `.<ext>` in a folder that holds a tracked file, as a new file does
+  (ADR 0047). So the template path `specs/NNN-name/tasks.md` is no path
+  when no tracked file sits in `specs/NNN-name/`. A word with no `/` is a path only when it names a tracked file
   at the repository's root, such as `README.md`, so `knit.progress` and a
   bare `lib.rs` are not. A `:N` or `:N-M` line suffix is dropped, so
   `crates/x/src/send.rs:297-321` is `crates/x/src/send.rs`. A URL, a
@@ -884,7 +886,8 @@ by default the git top level of the folder that holds `tasks.md`.
   task line, heading or blank line.
 - A path that holds `*` is a glob over `git ls-files`, matched as verify
   matches `owns` (`*` stays in one segment, `**` crosses them). Each match
-  is a task path. A glob that matches nothing stays as itself.
+  is a task path. A glob that matches no tracked file, such as an example
+  `crates/b/**`, is no path.
 
 It prints, in order: a header with the counts of tasks, phases and stories;
 `Shared files between phases:` with one line per pair of phases that name a
