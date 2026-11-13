@@ -881,7 +881,7 @@ fn a_users_note_exits_0_when_only_the_lead_copy_fails() {
     assert!(stdout.contains("lead: undelivered"), "{stdout}");
     assert!(
         stderr.lines().any(|l| l
-            == "lead copy not delivered: m001; run teamwire resend alpha m001 --to lead"),
+            == "lead copy not delivered: m001; the lead's hook lists it at the lead's next tool call"),
         "{stderr}"
     );
     let log = rig.run(&["log", "alpha", "--json"], &Identity::Nobody);

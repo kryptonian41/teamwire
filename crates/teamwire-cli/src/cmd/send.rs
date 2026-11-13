@@ -130,7 +130,7 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
                     .position(|d| d.to == Recipient::Lead);
                 if let Some(hint) = copy
                     .map(|i| addressed.deliveries.remove(i))
-                    .and_then(|copy| lead_copy_hint(&team, &addressed.display_id, copy.state))
+                    .and_then(|copy| lead_copy_hint(&addressed.display_id, copy.state))
                 {
                     warn(&hint);
                 }
@@ -260,13 +260,20 @@ pub(crate) fn error_code(e: &SendError) -> u8 {
 }
 
 /// What `send` says on stderr when the lead's copy of a user's message did
-/// not reach the lead's pane, or `None` when it did.
-fn lead_copy_hint(team: &TeamName, id: &DisplayId, state: RecipientState) -> Option<String> {
-    matches!(
-        state,
-        RecipientState::Undelivered | RecipientState::Unconfirmed | RecipientState::Pending
-    )
-    .then(|| format!("lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead"))
+/// not reach the lead's pane, or `None` when it did. The line names no
+/// `resend` (ADR 0043): the lead's hook lists an `undelivered` copy, and a
+/// copy that may have been typed is listed by `teamwire status`, so a resend
+/// could type a second copy. The dashboard matches the line's start.
+fn lead_copy_hint(id: &DisplayId, state: RecipientState) -> Option<String> {
+    match state {
+        RecipientState::Undelivered => Some(format!(
+            "lead copy not delivered: {id}; the lead's hook lists it at the lead's next tool call"
+        )),
+        RecipientState::Unconfirmed | RecipientState::Pending => Some(format!(
+            "lead copy not delivered: {id}; it may have reached the lead's pane, and teamwire status lists it"
+        )),
+        RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => None,
+    }
 }
 
 #[cfg(test)]
@@ -414,7 +421,7 @@ mod tests {
         let id = DisplayId::parse("m002").unwrap();
         for state in [RecipientState::Unconfirmed, RecipientState::Pending] {
             assert_eq!(
-                lead_copy_hint(&team(), &id, state).as_deref(),
+                lead_copy_hint(&id, state).as_deref(),
                 Some(
                     "lead copy not delivered: m002; it may have reached the lead's pane, and teamwire status lists it"
                 ),
@@ -422,14 +429,11 @@ mod tests {
             );
         }
         assert_eq!(
-            lead_copy_hint(&team(), &id, RecipientState::Undelivered).as_deref(),
+            lead_copy_hint(&id, RecipientState::Undelivered).as_deref(),
             Some(
                 "lead copy not delivered: m002; the lead's hook lists it at the lead's next tool call"
             )
         );
-        assert_eq!(
-            lead_copy_hint(&team(), &id, RecipientState::HandedOff),
-            None
-        );
+        assert_eq!(lead_copy_hint(&id, RecipientState::HandedOff), None);
     }
 }

@@ -12,9 +12,8 @@ TALKING TO THE TEAM
 - When send prints NOT DELIVERED or UNCONFIRMED, the message is still
   stored. Do not send it again: a second send makes a second message.
   A member recipient is told about it at its next tool call or stop.
-  The lead is not, so retry a message to the lead once with the
-  team_resend tool or `{teamwire} resend {team} <message id>`, which
-  delivers the same message again.
+  The lead's hooks list a message to the lead that was never typed, so
+  do not resend it.
 - A message to you arrives as one line typed into your session. Read
   its full text with the teamwire MCP server's `team_inbox` tool (if
   your tools load on request, load it first), or with `{teamwire} inbox`.

@@ -23,11 +23,6 @@ pub(crate) use crate::launch::LEAD_PLUGIN_ID as PLUGIN_ID;
 /// well under the time a person waits for a turn to end.
 const HOOK_TIMEOUT_S: u64 = 10;
 
-/// The tools whose calls can be a member's work (ADR 0035). Claude Code runs
-/// the lead's tool hook for these only, so a read or a search starts no
-/// process.
-const TOOL_HOOK_MATCHER: &str = "Edit|Write|MultiEdit|NotebookEdit|Bash";
-
 /// The plugin's directory inside the marketplace.
 const PLUGIN_DIR: &str = "teamwire";
 
@@ -88,8 +83,12 @@ impl PluginFiles {
                         "command": hook(&["hook", "claude-lead-stop"]),
                         "timeout": HOOK_TIMEOUT_S,
                     }]}],
+                    // No matcher: the lead's tool hook runs on every tool
+                    // call (ADR 0043). It lists what was never typed into the
+                    // lead's pane, and the call that frees a blocked pane is
+                    // often the answer to an `AskUserQuestion` dialog, which
+                    // an edit-and-shell matcher never ran the hook for.
                     "PostToolUse": [{
-                        "matcher": TOOL_HOOK_MATCHER,
                         "hooks": [{
                             "type": "command",
                             "command": hook(&["hook", "lead-tool", "--harness", "claude-code"]),
@@ -339,7 +338,6 @@ mod tests {
                     "command": "/opt/bin/teamwire hook claude-lead-stop",
                     "timeout": 10}]}],
                 "PostToolUse": [{
-                    "matcher": "Edit|Write|MultiEdit|NotebookEdit|Bash",
                     "hooks": [{
                         "type": "command",
                         "command": "/opt/bin/teamwire hook lead-tool --harness claude-code",

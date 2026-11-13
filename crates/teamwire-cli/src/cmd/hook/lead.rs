@@ -21,8 +21,9 @@ use crate::wiring::{Wiring, claude_harness_id};
 const LEAD_HOOK_BUDGET: Duration = Duration::from_secs(5);
 
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
-/// team that has working members and no running watch, and each AFK team that
-/// nothing will wake. It reads stores and writes nothing.
+/// team that has working members and no running watch, each AFK team that
+/// nothing will wake, and each item never typed into the lead's pane (ADR
+/// 0043). It reads stores and writes nothing.
 pub(super) fn lead_stop_hook(
     harness: Option<&str>,
     global: &Global,
@@ -58,7 +59,7 @@ pub(super) fn lead_stop_in(
     let clock = wiring.clock;
     let at = home.to_path_buf();
     // Every store read, the lead harness's included, stays inside the bound.
-    let (teams, afk_notes) = within(LEAD_HOOK_BUDGET, move || {
+    let (teams, afk_notes, undelivered) = within(LEAD_HOOK_BUDGET, move || {
         let teams: Vec<_> =
             teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
                 .into_iter()
@@ -70,6 +71,7 @@ pub(super) fn lead_stop_in(
         (
             teams,
             teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
+            teamwire_report::undelivered_to_lead(&at, &turn.session, &*platform, &clock),
         )
     })?;
     let mut note: Vec<String> = teams
@@ -79,6 +81,7 @@ pub(super) fn lead_stop_in(
         })
         .collect();
     note.extend(afk_notes);
+    note.extend(undelivered);
     if note.is_empty() {
         return None;
     }
@@ -86,8 +89,9 @@ pub(super) fn lead_stop_in(
 }
 
 /// The lead's tool hook (ADR 0035): a note beside a tool's result when the
-/// lead did work that a member of its open team should do. The note never
-/// blocks the call.
+/// lead did work that a member of its open team should do, and the items
+/// never typed into the lead's pane (ADR 0043). The note never blocks the
+/// call.
 pub(super) fn lead_tool_hook(
     harness: Option<&str>,
     global: &Global,
@@ -116,11 +120,25 @@ pub(super) fn lead_tool_in(
     let call = lead_harness(harness, wiring)?
         .parse_tool_call(&input)
         .ok()?;
+    let platform = wiring.platform.clone();
+    let clock = wiring.clock;
     let at = home.to_path_buf();
-    let note = within(LEAD_HOOK_BUDGET, move || {
-        teamwire_report::lead_tool_note(&at, &call)
-    })??;
-    tool_note_reply(&note)
+    // The undelivered note is read on every call, not only for member work:
+    // the call that frees a blocked pane is often a dialog's answer. A
+    // subagent's note would reach the subagent, not the lead.
+    let (work, undelivered) = within(LEAD_HOOK_BUDGET, move || {
+        let undelivered = if call.subagent {
+            Vec::new()
+        } else {
+            teamwire_report::undelivered_to_lead(&at, &call.session, &*platform, &clock)
+        };
+        (teamwire_report::lead_tool_note(&at, &call), undelivered)
+    })?;
+    let note: Vec<String> = work.into_iter().chain(undelivered).collect();
+    if note.is_empty() {
+        return None;
+    }
+    tool_note_reply(&note.join("\n"))
 }
 
 /// The harness that parses a lead hook's input: the one `--harness` names,

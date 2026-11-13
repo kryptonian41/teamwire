@@ -17,7 +17,7 @@ describe("sendOutcome", () => {
     expect(sendOutcome(r(0, "", "m009"), "alpha")).toEqual({ ok: true, text: "sent" });
   });
   test("exit 0 with a lead copy line on stderr says the lead's copy was not delivered", () => {
-    const res = sendOutcome(r(0, "NOT DELIVERED to lead: not_at_input_prompt\nlead copy not delivered: m009; run teamwire resend alpha m009 --to lead"), "alpha");
+    const res = sendOutcome(r(0, "NOT DELIVERED to lead: not_at_input_prompt\nlead copy not delivered: m009; the lead's hook lists it at the lead's next tool call"), "alpha");
     expect(res).toEqual({ ok: true, text: "sent; the lead's copy was not delivered" });
   });
   test("a line that only mentions the phrase mid-line does not count", () => {
