@@ -10,13 +10,13 @@
 mod rig;
 
 use teamwire_core::{
-    CompletionStatus, DeliveryErrorCode, DeliveryState, EventType, FinalSource, MemberKind,
-    MessageType,
+    CompletionStatus, DeliveryErrorCode, DeliveryState, EventType, FinalSource, Liveness,
+    MemberKind, MessageType, PlaceState, ReportState, Ulid,
 };
 use teamwire_msg::send;
 use teamwire_store::NewCompletion;
 
-use rig::{Rig, id, role};
+use rig::{Rig, id, role, sid};
 
 fn team_rig() -> Rig {
     let mut rig = Rig::new();
@@ -33,9 +33,9 @@ fn generation(rig: &Rig, name: &str) -> u32 {
         .generation
 }
 
-/// `name` records a result with `status` and `summary` in its current
-/// generation.
-fn finish(rig: &mut Rig, name: &str, status: CompletionStatus, summary: &str) {
+/// `name` runs `done` with `status` and `summary` in its current generation,
+/// mid-turn: the result stays `pending` until the turn ends.
+fn done_mid_turn(rig: &mut Rig, name: &str, status: CompletionStatus, summary: &str) -> Ulid {
     let now = rig.now();
     let generation = generation(rig, name);
     rig.store
@@ -51,9 +51,21 @@ fn finish(rig: &mut Rig, name: &str, status: CompletionStatus, summary: &str) {
                     final_source: FinalSource::None,
                 },
             )
-            .map(|_| ())
+            .map(|c| c.ulid)
         })
+        .unwrap()
+}
+
+/// `name` records a result with `status` and `summary` in its current
+/// generation, and its turn ends: the result is delivered.
+fn finish(rig: &mut Rig, name: &str, status: CompletionStatus, summary: &str) {
+    let ulid = done_mid_turn(rig, name, status, summary);
+    let now = rig.now();
+    let delivered = rig
+        .store
+        .write(|tx| tx.deliver_completion_via_watch(now, &ulid))
         .unwrap();
+    assert!(delivered);
 }
 
 fn note(rig: &mut Rig, to: &str) {
@@ -104,6 +116,34 @@ fn the_woken_generation_is_recorded_as_member_woken() {
     assert_eq!(event.data.get("generation"), Some(&serde_json::json!(2)));
     assert_eq!(event.data.get("message"), Some(&serde_json::json!("m001")));
     assert!(rig.events(EventType::MemberReprompted).is_empty());
+}
+
+/// A member that ran `done` mid-turn still has its result `pending`: the
+/// turn-end hook delivers it from the current generation. A message then
+/// reaches that turn as a plain one and starts no generation, whether the
+/// session still works or is already idle.
+#[test]
+fn a_message_before_the_turn_ends_leaves_a_pending_result_in_its_generation() {
+    for state in [PlaceState::Working, PlaceState::Idle] {
+        let mut rig = Rig::new();
+        let place = rig.add_member("api", MemberKind::Implementer);
+        rig.add_member("web", MemberKind::Implementer);
+        done_mid_turn(&mut rig, "api", CompletionStatus::Done, "done");
+        rig.harness
+            .set_liveness(&sid("session-api"), Liveness::Alive(state));
+        rig.host.set_state(&place, state);
+        let before = generation(&rig, "api");
+        note(&mut rig, "api");
+        assert_eq!(generation(&rig, "api"), before, "{state:?}");
+        assert!(rig.events(EventType::MemberWoken).is_empty(), "{state:?}");
+        let latest = rig
+            .store
+            .read(|tx| tx.latest_completion(&role("api")))
+            .unwrap()
+            .unwrap();
+        assert_eq!(latest.completion.generation, before, "{state:?}");
+        assert_eq!(latest.completion.report_state, ReportState::Pending);
+    }
 }
 
 /// Guard: the base never bumps, so the first assert holds there too. It
