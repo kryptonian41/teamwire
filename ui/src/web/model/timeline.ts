@@ -82,6 +82,8 @@ const calm = (word: string): boolean => /^(WATCHING\b.*|TEAM-COMPLETE|COMPLETED)
 
 export function isProblem(row: EventRow): boolean {
   if (row.type === "watch.line") return strs(row.data, "events").some((w) => !calm(w));
+  // A message held for a member that asked for a handoff waits on purpose (ADR 0043 decision 11).
+  if (row.type === "delivery.undelivered" && str(row.data, "code") === "held_for_handoff") return false;
   if (PROBLEM_TYPES.has(row.type)) return true;
   if (row.type === "verify.recorded") {
     const v = str(row.data, "verdict");
