@@ -13,14 +13,16 @@
 //! never typed a second time, so a resend repairs a send that died anywhere.
 
 use teamwire_core::{
-    DeliveryError, DeliveryErrorCode, DeliveryState, Message, Recipient, Refusal, Remote, Route,
-    TeamName,
+    DeliveryError, DeliveryErrorCode, DeliveryState, EventType, Message, MessageType, Recipient,
+    Refusal, Remote, Route, TeamName,
 };
 use teamwire_store::{
     Ctx, DeliveryRecord, DeliveryUpdate, ReceivedMessage, Store, StoreError, StoredMessage,
 };
 
-use crate::attempt::{deliver_one, report_of};
+use crate::attempt::{
+    Bumped, Waking, bump, bump_again, deliver_one, earlier_bump, hold, is_held, report_of, waking,
+};
 use crate::send::write_copy;
 use crate::{RecipientReport, SendError};
 
@@ -80,8 +82,8 @@ fn deliver_in(
         clock: ctx.clock,
         config: ctx.config,
     };
-    let copy = match receive(&mut there, own, message, all) {
-        Ok(Some(copy)) => copy,
+    let (copy, bumped) = match receive(&mut there, own, message, all) {
+        Ok(Some(received)) => received,
         Ok(None) => {
             return tries
                 .iter()
@@ -97,20 +99,23 @@ fn deliver_in(
     tries
         .iter()
         .map(|t| {
-            let outcome = deliver_there(&mut there, team, &copy, t)?;
+            let outcome = deliver_there(&mut there, team, &copy, &bumped, t)?;
             mirror(ctx, message, t, outcome)
         })
         .collect()
 }
 
 /// Stores the recipient team's copy, or finds it from an earlier attempt.
-/// `None` when that team is not open.
+/// `None` when that team is not open. A new copy wakes or holds each member
+/// it reaches in the same write, by the rules of a message from that team
+/// itself (ADR 0043 decisions 8 and 11); the bumps come back to be undone
+/// on a known failure.
 fn receive(
     there: &mut Ctx<'_>,
     own: &TeamName,
     message: &Message,
     all: &[&DeliveryRecord],
-) -> Result<Option<StoredMessage>, SendError> {
+) -> Result<Option<(StoredMessage, Vec<Bumped>)>, SendError> {
     // The rules refuse a user's message to another team before it is stored.
     let sender = message
         .sender
@@ -129,7 +134,40 @@ fn receive(
             .collect(),
     };
     let now = there.clock.now();
-    Ok(there.store.write(|tx| tx.insert_received(now, &received))?)
+    Ok(there.store.write(|tx| {
+        let Some(mut copy) = tx.insert_received(now, &received)? else {
+            return Ok(None);
+        };
+        let mut bumped = Vec::new();
+        if copy.duplicate || copy.message.kind == MessageType::Reprompt {
+            return Ok(Some((copy, bumped)));
+        }
+        let mut held = false;
+        for row in &copy.deliveries {
+            let recipient = &row.delivery.recipient;
+            match waking(tx, recipient)? {
+                Waking::Wake => {
+                    let id = &copy.message.display_id;
+                    if let Some(b) = bump(tx, now, id, recipient, EventType::MemberWoken)? {
+                        bumped.push(b);
+                    }
+                }
+                Waking::Hold => {
+                    hold(tx, now, &copy.message.ulid, recipient)?;
+                    held = true;
+                }
+                Waking::Nothing => {}
+            }
+        }
+        if held {
+            // The rows read back as written, so the held ones are not typed.
+            copy.deliveries = tx
+                .reader()
+                .deliveries_of(&copy.message.ulid)?
+                .all_or_corrupt()?;
+        }
+        Ok(Some((copy, bumped)))
+    })?)
 }
 
 /// What became of one recipient in its own team.
@@ -140,12 +178,14 @@ struct Outcome {
 }
 
 /// Types the line for one recipient in its own team, unless that team's row
-/// says it already arrived. A row that an earlier attempt left behind gets
-/// its attempt counted there first, as a resend there would.
+/// says it already arrived or is held for a handoff. A row that an earlier
+/// attempt left behind gets its attempt counted there first, as a resend
+/// there would, and its wake is found or made again as `send` does.
 fn deliver_there(
     there: &mut Ctx<'_>,
     team: &TeamName,
     copy: &StoredMessage,
+    bumped: &[Bumped],
     t: &Try<'_>,
 ) -> Result<Outcome, SendError> {
     let local = remote_of(&t.row.delivery.recipient)
@@ -159,7 +199,7 @@ fn deliver_there(
             SendError::Internal(format!("the copy in team {team} has no row for {local}"))
         })?;
     let before = record.delivery.state;
-    if matches!(before, DeliveryState::HandedOff | DeliveryState::Acked) {
+    if matches!(before, DeliveryState::HandedOff | DeliveryState::Acked) || is_held(record) {
         return Ok(outcome_of(record));
     }
     let attempts = if copy.duplicate {
@@ -171,7 +211,16 @@ fn deliver_there(
     } else {
         record.delivery.attempts + 1
     };
-    deliver_one(there, team, &copy.message, &local, before, attempts, None)?;
+    let again = match (copy.duplicate, before) {
+        (true, DeliveryState::Undelivered) => bump_again(there, &copy.message, &local)?,
+        (true, _) => earlier_bump(there, &copy.message, &local)?,
+        (false, _) => None,
+    };
+    let bump = bumped
+        .iter()
+        .find(|b| b.recipient == local)
+        .or(again.as_ref());
+    deliver_one(there, team, &copy.message, &local, before, attempts, bump)?;
     let ulid = copy.message.ulid;
     let after = there
         .store

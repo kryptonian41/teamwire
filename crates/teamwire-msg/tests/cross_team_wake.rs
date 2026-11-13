@@ -91,12 +91,15 @@ fn a_message_from_another_team_wakes_a_finished_member() {
     finish(&mut t, "done");
     let before = generation(&t.beta);
     let report = finding_to_db(&mut t);
-    assert_eq!(report.deliveries[0].state, RecipientState::HandedOff);
+    assert_eq!(
+        report.deliveries.first().unwrap().state,
+        RecipientState::HandedOff
+    );
     assert_eq!(generation(&t.beta), before + 1);
     let events = woken(&t.beta);
     assert_eq!(events.len(), 1, "{events:?}");
     assert_eq!(
-        events[0].data.get("message"),
+        events.first().unwrap().data.get("message"),
         Some(&serde_json::json!("m001"))
     );
     assert_eq!(t.rig.host.submitted(&t.db).len(), 1);
@@ -121,7 +124,7 @@ fn a_message_from_another_team_is_held_for_a_handoff() {
         Some(DeliveryErrorCode::HeldForHandoff)
     );
     // The sender's row mirrors the hold.
-    let only = &report.deliveries[0];
+    let only = report.deliveries.first().unwrap();
     assert_eq!(only.state, RecipientState::Undelivered);
     assert_eq!(only.reason, Some(DeliveryErrorCode::HeldForHandoff));
 }

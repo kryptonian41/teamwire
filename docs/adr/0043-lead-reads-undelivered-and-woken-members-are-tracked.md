@@ -92,7 +92,9 @@ and line on `develop` (`eda2e0b`), are in
    the message. The completion's turn must have ended: a completion still
    `pending` was written mid-turn by `done`, and its turn-end hook delivers
    it from the current generation. So a message before that turn ends is a
-   plain message in the current generation. The new generation ends when the member records `done`, like
+   plain message in the current generation. A message from another team
+   follows the same rule, and the hold of decision 11, in the recipient's
+   team, when its copy there is stored. The new generation ends when the member records `done`, like
    any generation. A known delivery failure undoes the bump, and an
    `unconfirmed` delivery keeps it, as for a reprompt (REP-3).
 9. **A woken generation is its own event type (F3-f).** The bump writes
