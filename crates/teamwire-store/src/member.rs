@@ -252,6 +252,23 @@ impl Tx<'_> {
         exactly_one(rows, format!("member {role}"))
     }
 
+    /// Replaces the member's check and its whole owns list, for
+    /// `teamwire amend` (ADR 0046). No event: the amend's `CHECK AMENDED:`
+    /// note, stored in the same transaction, is the record of the change,
+    /// and the schema stays as it is.
+    pub fn set_member_scope(
+        &self,
+        role: &Role,
+        check: Option<&str>,
+        owns: &[String],
+    ) -> Result<(), StoreError> {
+        let rows = self.connection().execute(
+            "UPDATE members SET check_cmd = ?2, owns = ?3 WHERE role = ?1",
+            rusqlite::params![role.as_str(), check, json!(owns).to_string()],
+        )?;
+        exactly_one(rows, format!("member {role}"))
+    }
+
     /// Clears the stored branch after launch deleted it, so `status` does not
     /// show it and `close` does not list it as kept. No event (see
     /// `set_member_place`).
