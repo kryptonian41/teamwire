@@ -1,8 +1,6 @@
 //! Runs each member's check and the diff rules of ADR 0009: the diff base,
 //! `owns` matching, the per-language rules in `rules/`, the five verdicts,
-//! and waivers. A waiver counts at the HEAD it was recorded at; a waiver for
-//! a flag that names one file also counts at a later HEAD while that file is
-//! unchanged (ADR 0045). Also the report check used by completions.
+//! waivers (ADR 0045), and the report check used by completions.
 //!
 //! Never: change a member's worktree; count a waiver at another HEAD except
 //! a file flag's whose file is unchanged there; run a check except through
