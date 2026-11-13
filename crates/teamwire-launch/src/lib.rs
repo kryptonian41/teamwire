@@ -42,7 +42,7 @@ use teamwire_core::{
 };
 use teamwire_store::Ctx;
 
-pub use contract::{ContractParts, render_contract};
+pub use contract::{ContractParts, render_contract, rewrite_contract};
 pub use env::ValidateEnv;
 pub use handoff::{Handoff, HandoffError, HandoffPlan, open_handoff, plan_handoff};
 pub use handoff_order::{PlaceCloser, Said, hand_off};

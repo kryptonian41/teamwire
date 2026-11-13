@@ -26,7 +26,8 @@ HOW TO WORK
   `rm` it can stop at a permission dialog even with approvals turned off.
   Nobody answers that dialog: the command is denied after about two
   minutes, and your run stalls until then.
-- Never run `git worktree add`, `remove`, `move` or `prune`, and never
+- Never run `git worktree add`, `git worktree remove`, `git worktree move`
+  or `git worktree prune`, and never
   write into another member's directory. Every member's checkout is shared
   state: one member that removes a worktree can delete a teammate's
   checkout mid-run. If you need a second worktree, ask the parent as

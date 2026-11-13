@@ -146,7 +146,10 @@ this in the report, so the user can see which checks the run skipped.
   not sort the findings yourself: the owner checks each one against the
   code, fixes what holds, and answers the rest with evidence. Allow at most
   two fix rounds per owner. Never run the closer twice. Run
-  `teamwire verify <team> --role <owner>` after each fix round.
+  `teamwire verify <team> --role <owner>` after each fix round. When the
+  owner's check itself is wrong, run
+  `teamwire amend <team> --role <owner> --check CMD --reason TEXT` before
+  that verify, and add a `D` entry.
 - Add the integrator, with the plan's merge order in its task. On a
   conflict it aborts that merge and reports it. Reprompt the later branch's
   owner to merge the earlier branch into its own branch and resolve it, then

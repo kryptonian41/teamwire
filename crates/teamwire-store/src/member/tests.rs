@@ -581,3 +581,62 @@ fn only_a_started_member_can_hand_off() {
     }
     assert_eq!(count_events(&f.store, EventType::MemberHandoff), 0);
 }
+
+#[test]
+fn set_member_scope_updates_check_and_owns_only() {
+    let mut f = fixture();
+    let mut m = new_member("api");
+    m.check = Some("a".to_owned());
+    m.owns = vec!["x/".to_owned()];
+    m.branch = Some("api".to_owned());
+    let mut bare = new_member("web");
+    bare.check = None;
+    f.store
+        .write(|tx| {
+            tx.create_team(at(0), &new_team())?;
+            tx.insert_member(at(1), &m)?;
+            tx.insert_member(at(1), &bare)?;
+            tx.set_member_place(
+                &role("api"),
+                &Place {
+                    host: teamwire_core::HostId::from_static("herdr"),
+                    id: "w1:p1".to_owned(),
+                },
+            )
+        })
+        .unwrap();
+    let before = f.store.read(|tx| tx.member(&role("api"))).unwrap().unwrap();
+    let events_before = event_types(&f.store);
+    let new_owns = ["y/".to_owned(), "z/{c,d}/**".to_owned()];
+    f.store
+        .write(|tx| tx.set_member_scope(&role("api"), Some("b"), &new_owns))
+        .unwrap();
+    let after = f.store.read(|tx| tx.member(&role("api"))).unwrap().unwrap();
+    assert_eq!(after.check.as_deref(), Some("b"));
+    assert_eq!(after.owns, new_owns);
+    assert_eq!(
+        (&after.place, &after.branch, after.state, after.generation),
+        (
+            &before.place,
+            &before.branch,
+            before.state,
+            before.generation
+        )
+    );
+    // Like the other setters, the scope change writes no event.
+    assert_eq!(event_types(&f.store), events_before);
+
+    // A member that had no check gets one.
+    f.store
+        .write(|tx| tx.set_member_scope(&role("web"), Some("cargo test -p web"), &[]))
+        .unwrap();
+    let web = f.store.read(|tx| tx.member(&role("web"))).unwrap().unwrap();
+    assert_eq!(web.check.as_deref(), Some("cargo test -p web"));
+    assert!(web.owns.is_empty(), "{:?}", web.owns);
+
+    let err = f
+        .store
+        .write(|tx| tx.set_member_scope(&role("ghost"), Some("b"), &new_owns))
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Constraint(_)), "{err:?}");
+}

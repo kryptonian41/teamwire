@@ -3,8 +3,11 @@
 //! nobody has looked at yet. The member's row stays, marked removed.
 
 use serde_json::json;
-use teamwire_core::{Member, MemberKind, MemberState, Mode, Role, TeamState};
-use teamwire_store::{Ctx, TeamRow};
+use teamwire_core::{
+    AMEND_MARKER, Actor, Member, MemberKind, MemberState, MessageType, Mode, Recipient, Role,
+    TeamState, Timestamp,
+};
+use teamwire_store::{Ctx, MessageFilter, TeamRow};
 
 use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal, unplaced_refusal};
 use crate::{CloseOpts, CloseReport, StepOutcome, exclude, git, member_close, team_close};
@@ -107,7 +110,9 @@ fn verify_gap(ctx: &Ctx<'_>, team: &TeamRow, member: &Member) -> Option<String> 
             short(&newest.record.head_sha),
             short(&head)
         )),
-        Some(row) if row.record.verdict == "PASS" => None,
+        Some(row) if row.record.verdict == "PASS" => {
+            amended_after(ctx, team, member, &row.recorded_at, &short(&head))
+        }
         Some(row) => Some(format!(
             "{role}'s verify at HEAD {} is {}, not PASS. Fix what it flagged, or waive each \
              flag with `teamwire verify {} --role {role} --waive FLAG --reason TEXT`, then \
@@ -117,6 +122,40 @@ fn verify_gap(ctx: &Ctx<'_>, team: &TeamRow, member: &Member) -> Option<String> 
             team.name
         )),
     }
+}
+
+/// Why a `PASS` recorded at `recorded_at` no longer counts: the lead amended
+/// the member's check or owns at or after that time (ADR 0046), so the pass
+/// may have been made with the old check. Verify flags `scope-changed` on a
+/// run that straddles an amend, so a `PASS` recorded later ran the new scope.
+fn amended_after(
+    ctx: &Ctx<'_>,
+    team: &TeamRow,
+    member: &Member,
+    recorded_at: &Timestamp,
+    head: &str,
+) -> Option<String> {
+    let role = &member.role;
+    // No `limit`: it would keep the oldest rows, and the newest marker note
+    // can sit behind newer plain notes.
+    let filter = MessageFilter {
+        sender: Some(Actor::Lead),
+        recipient: Some(Recipient::Member(role.clone())),
+        kind: Some(MessageType::Note),
+        ..MessageFilter::default()
+    };
+    let notes = match ctx.store.read(|tx| tx.messages(&filter)?.all_or_corrupt()) {
+        Ok(notes) => notes,
+        Err(e) => return Some(format!("{role}'s notes from the lead cannot be read ({e})")),
+    };
+    let amend = notes.iter().rfind(|m| m.body.starts_with(AMEND_MARKER))?;
+    (*recorded_at <= amend.created_at).then(|| {
+        format!(
+            "{role}'s verify at HEAD {head} was recorded before the lead amended its check or \
+             owns ({}); run teamwire verify {} --role {role} again",
+            amend.display_id, team.name
+        )
+    })
 }
 
 fn step(name: &str, ok: bool, detail: impl Into<String>) -> StepOutcome {

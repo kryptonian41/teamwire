@@ -13,7 +13,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; handoff failed after it began to close the old place; install or uninstall made some changes and then failed |
+| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; handoff failed after it began to close the old place; install or uninstall made some changes and then failed; amend saved the change but could not rewrite the seat rules file |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered`; or a resume by `--key` skipped a recipient that another command may still be delivering |
@@ -28,11 +28,11 @@ an empty variable counts as unset for every command) with
 without `--add`; only `--dry-run` is allowed, because it creates nothing),
 `reopen`, `handoff` (except `--guide`), `afk start`, `received`, `watch` (with or without `--once`,
 because a single poll takes the lease and uses up announcement keys the lead's
-watch would then never print), `close` (except `--dry-run`) and
-`verify --waive`. Plain `verify` stays open, because the closer runs it. A
+watch would then never print), `close` (except `--dry-run`),
+`amend` and `verify --waive`. Plain `verify` stays open, because the closer runs it. A
 member must never be able to remove a peer, take the watch lease, start a
-team of its own, add members by mistake, or waive its own flags (ADR 0008,
-VER-5).
+team of its own, add members by mistake, amend its own check, or waive its
+own flags (ADR 0008, VER-5, ADR 0046).
 
 ### `teamwire launch [--add] [--dry-run] [--spec FILE]`
 
@@ -437,8 +437,9 @@ HEAD is still its base,
 lint, type, test or CI config changed outside `owns` (spec-kit's
 `.specify/memory/constitution.md` counts, in any repository),
 `asserts-removed:<path>` for a
-file that lost assert lines on net, and `head-moved` when HEAD changed while the
-check ran (no waiver clears it). A started worktree member whose folder is gone
+file that lost assert lines on net, `head-moved` when HEAD changed while the
+check ran, and `scope-changed` when `teamwire amend` changed the member's
+check or owns while verify ran (no waiver clears either). A started worktree member whose folder is gone
 is `FAIL`; a pane member with no check stays `SKIPPED`.
 The diff starts at the member's start commit, moved forward past a merge
 from its base branch (VER-2). A merge that fast-forwards moves nothing, so
@@ -459,11 +460,63 @@ checks every message hash. `--repair-files` rewrites missing or differing
 An `outbox/` copy is reported but never rewritten: the store keeps only its
 hash, not its bytes (STO-10).
 
+### `teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT`
+
+Changes one `started` member's check, owns or both (ADR 0046). `--check`
+replaces the check command. `--owns` is repeated, one whole pattern per flag,
+and the patterns given replace the whole owns list; a value is never split on
+commas, so `crates/{b,c}/**` stays one pattern. At least one of the two is
+required, and so is `--reason`. In one store transaction, amend saves the new
+values and stores a `note` from `lead` to the member whose text starts
+`CHECK AMENDED: <reason>`, then holds one line per changed field (`check: <old
+or (none)> -> <new>`, `owns: [<old>] -> [<new>]`) and tells the member to run
+its new check and record its result again. That note, shown by `teamwire
+log`, is the only record of the change: amend adds no event type and no
+schema change. The note is delivered as any note: it wakes a member that has
+recorded a result (ADR 0043), and it is held for the fresh session of a
+member whose newest result is a `handoff:`. Amend then rewrites the member's
+seat rules file, `<home>/teams/<team>/contract/<role>.md`, so a handoff or
+reopen session reads the new check and owns.
+
+Every `verify` that starts later runs the new check and judges the diff
+against the new owns. Earlier verify records, waivers, completions and
+messages do not change. `close --role` counts no verify record made at or
+before the newest amend note (CLS-9), so amend prints:
+
+```text
+amended api in team alpha: check (note m007)
+  check: cargo test -p teamwire-store -> cargo test -p teamwire-store --test member
+run `teamwire verify alpha --role api` again: close --role counts only a verify recorded after this amend
+```
+
+When the note was not handed off, the recipient's delivery line (`api:
+undelivered (no_live_process)`) follows the field lines. Exit 0 when the
+scope is saved, the note delivered or held, and the seat rules file
+rewritten; 4 or 5 when the note is `undelivered` or `unconfirmed`, with the
+scope saved; 2 when the scope and the note are saved but the seat rules file
+could not be rewritten (stderr: `error: amend: the seat rules file <path>
+could not be rewritten (<error>); the check and owns are saved; run the same
+amend again`), which wins over 4 and 5; 1 for a member session
+(`refused.identity`), an unknown role, a member not `started`, or a team not
+open; 3 for a missing `--role`, `--reason` or change, an empty or all-space
+`--reason` or `--check`, or an empty `--owns` pattern (amend cannot clear the
+owns list); 6 for a store error, with nothing changed. 6 also follows,
+as for `send`, when the note is still `pending` after the commit: the scope
+and the note are saved but the delivery record could not be written, and
+stderr prints `NOT RECORDED for <role>: the delivery record could not be
+written (store error); run teamwire resend <team> <id>`. Shell only: no MCP
+tool, no `--json`, no `--dry-run`.
+
 ### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock]`
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
 same checks plus CLS-5; `--stop` allows removing a busy member;
-`--unverified` overrides CLS-5 and prints why. A whole-team close, and its
+`--unverified` overrides CLS-5 and prints why. After `teamwire amend`,
+`--role` also refuses an implementer whose passing verify record was recorded
+at or before the newest amend note (`<role>'s verify at HEAD <sha7> was
+recorded before the lead amended its check or owns (<note id>); run teamwire
+verify <team> --role <role> again`), even at the same HEAD, until verify runs
+again (CLS-9). `--unverified` overrides it too. A whole-team close, and its
 `--dry-run`, first print on stderr `warning: no closer reported on team
 <team>, and <n> implementer branch(es) have commits; add one from teamwire
 preset closer, or close anyway if the user said so.` when no closer of the

@@ -335,3 +335,12 @@ fn apply_stops_at_the_first_failure_and_names_what_was_done() {
     assert!(e.done.is_empty());
     assert!(e.to_string().contains("no such package"), "{e}");
 }
+
+#[test]
+fn the_pi_skill_names_amend() {
+    let bed = Bed::new();
+    let shared = include_str!("../../../examples/skills/teamwire/SKILL.md");
+    let files = bed.pi().package_files(&want(), shared).unwrap();
+    let skill = file(&files, "skills/teamwire/SKILL.md");
+    assert!(skill.contains("teamwire amend"), "{skill}");
+}

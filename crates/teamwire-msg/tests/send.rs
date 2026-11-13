@@ -18,7 +18,7 @@ use teamwire_core::{
     Refusal, RunOutput, SendRequest, Timestamp,
 };
 use teamwire_fakes::Fault;
-use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with};
+use teamwire_msg::{RecipientState, SendError, SendReport, send, send_with, send_with_write};
 use teamwire_store::{Ctx, Store};
 
 use rig::{Rig, id, role, to};
@@ -1011,4 +1011,228 @@ fn crlf_and_bom_do_not_count_toward_the_limit() {
         .unwrap()
         .unwrap();
     assert_eq!(stored.body, plain);
+}
+
+// ---- a store write inside the message's transaction (teamwire amend) ----
+
+fn lead_note(rig: &Rig, body: &str) -> SendRequest {
+    let req = rig.request("api", &["api"], MessageType::Note, body);
+    SendRequest {
+        actor: teamwire_core::Actor::parse("lead").unwrap(),
+        ..req
+    }
+}
+
+fn scope_of(rig: &Rig, name: &str) -> (Option<String>, Vec<String>) {
+    let m = rig
+        .store
+        .read(|tx| tx.member(&role(name)))
+        .unwrap()
+        .unwrap();
+    (m.check, m.owns)
+}
+
+fn delivery_rows(rig: &Rig) -> usize {
+    rig.store
+        .read(|tx| {
+            let mut n = 0;
+            for m in tx
+                .messages(&teamwire_store::MessageFilter::default())?
+                .items
+            {
+                n += tx.deliveries_of(&m.ulid)?.all_or_corrupt()?.len();
+            }
+            Ok(n)
+        })
+        .unwrap()
+}
+
+#[test]
+fn send_with_write_stores_the_message_and_the_write_together() {
+    // (a) The write and the message are both visible after the call.
+    let mut rig = team_rig();
+    let before = scope_of(&rig, "api");
+    let new_owns = vec!["b/".to_owned()];
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let report = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|tx| tx.set_member_scope(&role("api"), Some("cargo test -p b"), &new_owns),
+        &mut |_| {},
+    )
+    .unwrap();
+    assert_eq!(
+        scope_of(&rig, "api"),
+        (Some("cargo test -p b".to_owned()), new_owns.clone()),
+        "the scope before was {before:?}"
+    );
+    assert_eq!(report.deliveries.len(), 1);
+    assert!(!nothing_stored(&rig));
+    assert_eq!(delivery_rows(&rig), 1);
+
+    // (b) A write that fails rolls the message back with it.
+    let mut rig = team_rig();
+    let before = scope_of(&rig, "api");
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let result = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|tx| {
+            tx.set_member_scope(&role("api"), Some("cargo test -p b"), &new_owns)?;
+            Err(teamwire_store::StoreError::Constraint("boom".to_owned()))
+        },
+        &mut |_| {},
+    );
+    assert!(
+        matches!(&result, Err(SendError::Store(teamwire_store::StoreError::Constraint(m))) if m == "boom"),
+        "{result:?}"
+    );
+    assert!(nothing_stored(&rig));
+    assert_eq!(delivery_rows(&rig), 0);
+    assert_eq!(scope_of(&rig, "api"), before);
+
+    // (c) A team that is not open runs no write and refuses as `send` does.
+    let mut rig = team_rig();
+    let now = rig.now();
+    rig.store
+        .write(|tx| tx.begin_close(now, Pid::new(4242)).map(|_| ()))
+        .unwrap();
+    let ran = std::cell::Cell::new(false);
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let result = send_with_write(
+        &mut rig.ctx(),
+        req,
+        &|_| {
+            ran.set(true);
+            Ok(())
+        },
+        &mut |_| {},
+    );
+    assert_eq!(refused(result), Some(Refusal::TeamClosed));
+    assert!(!ran.get());
+    assert!(nothing_stored(&rig));
+}
+
+/// A clock that stands for a verify that ran the member's old check and
+/// waits for the store lock. At each reading it moves time on one second
+/// and tries to commit that verify's PASS from a second connection, which
+/// gives up at once when another writer holds the lock. It returns the time
+/// from before the move, as a command that read the clock first and wrote
+/// later would hold it. The rival stops once the message is stored.
+struct RivalPassAtEachRead {
+    inner: teamwire_fakes::FakeClock,
+    rival: Mutex<Store>,
+    armed: std::sync::atomic::AtomicBool,
+    /// Each reading's time, and whether the rival's PASS committed then.
+    reads: Mutex<Vec<(Timestamp, bool)>>,
+}
+
+impl Clock for RivalPassAtEachRead {
+    fn now(&self) -> Timestamp {
+        let read = self.inner.now();
+        if !self.armed.load(std::sync::atomic::Ordering::SeqCst) {
+            return read;
+        }
+        self.inner.advance(Duration::from_secs(1));
+        let at = self.inner.now();
+        let pass = teamwire_store::NewVerifyRecord {
+            role: role("api"),
+            head_sha: FULL_SHA.to_owned(),
+            verdict: "PASS".to_owned(),
+            exit_code: Some(0),
+            seconds: Some(1),
+            flags: Vec::new(),
+            log_sha256: None,
+        };
+        let committed = self
+            .rival
+            .lock()
+            .unwrap()
+            .write(|tx| tx.insert_verify_record(at, &pass).map(|_| ()))
+            .is_ok();
+        self.reads.lock().unwrap().push((read, committed));
+        read
+    }
+
+    fn monotonic(&self) -> Instant {
+        self.inner.monotonic()
+    }
+}
+
+/// `close --role` counts a PASS only when its time is after the newest amend
+/// note's (ADR 0046). So a PASS made with the old check that commits before
+/// the note must carry a time at or before the note's, whatever order the
+/// two commands read the clock in. The note's time is read inside the write
+/// that stores it, under the store lock.
+#[test]
+fn a_pass_committed_before_the_amend_note_is_not_timed_after_it() {
+    let mut rig = team_rig();
+    let team = teamwire_core::TeamName::parse("alpha").unwrap();
+    let rival = Store::open_existing(rig.home.path(), &team).unwrap();
+    rival
+        .read(|tx| {
+            tx.connection().busy_timeout(Duration::ZERO)?;
+            Ok(())
+        })
+        .unwrap();
+    let clock = RivalPassAtEachRead {
+        inner: teamwire_fakes::FakeClock::new(),
+        rival: Mutex::new(rival),
+        armed: std::sync::atomic::AtomicBool::new(true),
+        reads: Mutex::new(Vec::new()),
+    };
+    let req = lead_note(&rig, "CHECK AMENDED: why");
+    let owns = vec!["b/".to_owned()];
+    let mut ctx = Ctx {
+        home: rig.home.path(),
+        store: &mut rig.store,
+        registry: &rig.registry,
+        platform: &rig.platform,
+        clock: &clock,
+        config: &rig.config,
+    };
+    let report = send_with_write(
+        &mut ctx,
+        req,
+        &|tx| tx.set_member_scope(&role("api"), Some("cargo test -p b"), &owns),
+        &mut |_| {
+            clock
+                .armed
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+        },
+    )
+    .unwrap();
+    let note = rig
+        .store
+        .read(|tx| tx.message_by_display_id(&report.display_id))
+        .unwrap()
+        .unwrap();
+    // Every PASS stored now committed during a reading before the note was
+    // stored.
+    let passes = rig
+        .store
+        .read(|tx| tx.verify_records(&role("api")))
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap();
+    let reads = clock.reads.lock().unwrap().clone();
+    for pass in &passes {
+        assert!(
+            pass.recorded_at <= note.created_at,
+            "a PASS committed before the note at {:?} carries a later time than the note's {:?}; \
+             close --role would count it (reads: {reads:?})",
+            pass.recorded_at,
+            note.created_at
+        );
+    }
+    let at_note: Vec<bool> = reads
+        .iter()
+        .filter(|(t, _)| *t == note.created_at)
+        .map(|(_, committed)| *committed)
+        .collect();
+    assert_eq!(
+        at_note,
+        [false],
+        "the note's time was not read under the store lock: {reads:?}"
+    );
 }

@@ -73,6 +73,11 @@ pub struct Member {
 ```rust
 pub enum MessageType { Notice, Finding, Question, Answer, Reprompt, Note }
 
+/// The first words of `teamwire amend`'s note. `close --role` finds the
+/// newest such note from `lead` to a member and counts no verify record made
+/// at or before it (CLS-9, ADR 0046).
+pub const AMEND_MARKER: &str = "CHECK AMENDED:";
+
 pub struct SendRequest {
     pub team: TeamName,
     pub actor: Actor,                 // proven identity, not a claim
@@ -713,7 +718,9 @@ Every `Tx` method that makes a lifecycle or message change also records the
 matching event. A few bookkeeping writes record none, because the closed event
 list has no type for them: `set_sleep_hold`, `set_member_place`,
 `set_member_session`, `set_member_token_hash`, `set_refs`, `set_gate_told_generation`,
-`set_completion_final`, `clear_member_branch`, `announce_once`, `heartbeat_watch_lease`, and the
+`set_completion_final`, `clear_member_branch`, `set_member_scope` (for `teamwire amend`:
+it replaces a member's `check_cmd` and whole `owns` list; its record is the
+`CHECK AMENDED:` note stored in the same transaction, ADR 0046), `announce_once`, `heartbeat_watch_lease`, and the
 metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit stops a claim before an event of an open minute), `commit_metric_export` and
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
@@ -792,6 +799,14 @@ pub fn prove_actor(ctx: &Ctx, env: &CallerEnv) -> Result<Actor, Refusal>;
 // variable set, `token_file` included (ADR 0040).
 pub fn adds_lead_copy(actor: &Actor, to: &[Recipient]) -> bool;   // the user's message to a member also goes to the lead
 pub fn send(ctx: &mut Ctx, req: SendRequest) -> Result<SendReport, SendError>;
+/// `send`, with `also` run inside the transaction that stores the message, so
+/// both are saved or neither is; delivery runs after the commit. A closed team
+/// runs no `also`; an error from it rolls the message back (`teamwire amend`).
+/// Every send reads the message's time inside that write, under the store
+/// lock, so the order of the times is the order of the commits (ADR 0046).
+pub fn send_with_write(ctx: &mut Ctx, req: SendRequest,
+    also: &dyn Fn(&Tx) -> Result<(), StoreError>, on_stored: &mut dyn FnMut(&Stored))
+    -> Result<SendReport, SendError>;
 pub fn inbox(ctx: &mut Ctx, me: &Role, all: bool) -> Result<Vec<InboxItem>, SendError>;
 pub fn ack(ctx: &mut Ctx, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckResult>, SendError>;
 pub fn resend(ctx: &mut Ctx, actor: &Actor, id: &DisplayId, to: Option<&[Recipient]>) -> Result<SendReport, SendError>;
@@ -809,10 +824,18 @@ pub fn on_tool_use(ctx: &mut Ctx, me: &Role) -> Option<String>;            // re
 pub fn validate(spec: &TeamSpec, add: bool, env: &ValidateEnv) -> Result<ValidPlan, Vec<SpecError>>;
 pub fn launch(ctx: &mut Ctx, plan: ValidPlan) -> LaunchReport;          // per-member outcomes
 pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, String>; // `teamwire user-key` (ADR 0040)
+/// Renders the member's seat rules again from its stored check and owns and
+/// writes `<home>/teams/<team>/contract/<role>.md` with `write_atomic`, mode
+/// 0644, so a handoff or reopen reads the scope `teamwire amend` set.
+pub fn rewrite_contract(platform: &dyn Platform, home: &Path, team: &TeamName,
+    member: &Member, teamwire_bin: &Path) -> Result<PathBuf, String>;
 
 // teamwire-verify
 pub fn run(ctx: &mut Ctx, role: Option<&Role>, opts: VerifyOpts) -> Result<VerifyReport, VerifyError>;
 pub fn waive(ctx: &mut Ctx, role: &Role, flag: &FlagId, reason: &str) -> Result<(), VerifyError>;
+// `run` re-reads the member's check and owns in the transaction that stores
+// each record; when they changed while the check ran, the record gets the
+// flag `scope-changed`, which no waiver clears (ADR 0046).
 
 // teamwire-close
 pub fn plan_close(ctx: &Ctx, target: CloseTarget) -> ClosePlan;          // for --dry-run

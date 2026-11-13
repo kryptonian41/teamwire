@@ -216,7 +216,7 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
 
 /// The stdout line for one recipient. A message held for a member that
 /// asked for a handoff reads `held for handoff (<id>)` (ADR 0043).
-fn recipient_line(id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
+pub(crate) fn recipient_line(id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
     if is_held(d) {
         return format!("  {}: held for handoff ({id})\n", d.to);
     }
@@ -232,7 +232,7 @@ fn is_held(d: &teamwire_msg::RecipientReport) -> bool {
 
 /// A pending recipient after the command ends means its delivery record
 /// could not be written; the exit code is 6 and this says why.
-fn pending_line(team: &TeamName, id: &DisplayId, to: &Recipient) -> String {
+pub(crate) fn pending_line(team: &TeamName, id: &DisplayId, to: &Recipient) -> String {
     format!(
         "NOT RECORDED for {to}: the delivery record could not be written (store error); run teamwire resend {team} {id}"
     )

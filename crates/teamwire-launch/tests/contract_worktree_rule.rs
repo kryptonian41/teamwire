@@ -19,7 +19,9 @@ fn every_kind_is_told_not_to_administer_worktrees() {
             owns: &[],
         });
         assert!(
-            text.contains("Never run `git worktree add`, `remove`, `move` or `prune`")
+            text.contains(
+                "Never run `git worktree add`, `git worktree remove`, `git worktree move`\n  or `git worktree prune`"
+            )
                 && text.contains("never\n  write into another member's directory")
                 && text.contains("report blocked to the\n  lead"),
             "{kind}"

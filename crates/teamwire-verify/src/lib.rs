@@ -30,6 +30,7 @@ mod inspect;
 mod owns;
 mod report;
 mod rules;
+mod scope;
 mod waivers;
 
 pub use files::{DeepReport, FileFinding, FileProblem, check_copies, deep_check, repair_copies};
@@ -360,19 +361,34 @@ fn verify_member(
             .and_then(|o| o.log.as_ref().map(|(p, _)| p.clone())),
         note: outcome.and_then(|o| o.note),
     };
-    let stored = NewVerifyRecord {
-        role: record.role.clone(),
-        head_sha: record.head_sha.clone().unwrap_or_else(|| "none".to_owned()),
-        verdict: verdict.as_str().to_owned(),
-        exit_code: record.exit_code,
-        seconds: record.seconds,
-        flags: record.flags.iter().map(|f| f.id.to_string()).collect(),
-        log_sha256,
-    };
-    let now = ctx.clock.now();
+    // The scope is read again in the transaction that stores the record, so
+    // an amend that came in while the check ran shows in this very row. The
+    // time is read there too, under the store lock, so the order of the
+    // stored times is the order of the commits: `close --role` compares
+    // this time with an amend note's (ADR 0046).
     ctx.store
-        .write(|tx| tx.insert_verify_record(now, &stored))?;
-    Ok(record)
+        .write(|tx| {
+            let mut record = record;
+            let stored_member = tx.reader().member(&member.role)?;
+            if let Some(flag) = stored_member.and_then(|now| scope::changed(member, &now)) {
+                record.flags.push(flag);
+                if record.verdict == Verdict::Pass {
+                    record.verdict = Verdict::Flagged;
+                }
+            }
+            let stored = NewVerifyRecord {
+                role: record.role.clone(),
+                head_sha: record.head_sha.clone().unwrap_or_else(|| "none".to_owned()),
+                verdict: record.verdict.as_str().to_owned(),
+                exit_code: record.exit_code,
+                seconds: record.seconds,
+                flags: record.flags.iter().map(|f| f.id.to_string()).collect(),
+                log_sha256,
+            };
+            tx.insert_verify_record(ctx.clock.now(), &stored)?;
+            Ok(record)
+        })
+        .map_err(VerifyError::from)
 }
 
 /// An implementer that recorded `done` while `HEAD` is still its base made no

@@ -49,6 +49,8 @@ pub(crate) enum Command {
     Status(StatusArgs),
     /// Run each member's check and the diff rules; print a verdict per member.
     Verify(VerifyArgs),
+    /// Change one running member's check or owns, and tell it.
+    Amend(AmendArgs),
     /// Close the team, or remove one member, in the fixed order.
     Close(CloseArgs),
     /// Send one message.
@@ -243,6 +245,26 @@ pub(crate) struct VerifyArgs {
     /// copies are reported, never rewritten.
     #[arg(long)]
     pub(crate) repair_files: bool,
+}
+
+#[derive(Args)]
+#[command(group(ArgGroup::new("change").required(true).multiple(true).args(["check", "owns"])))]
+pub(crate) struct AmendArgs {
+    pub(crate) team: String,
+    /// The member to amend.
+    #[arg(long, value_name = "R", required = true)]
+    pub(crate) role: String,
+    /// The new check command; it replaces the old one.
+    #[arg(long, value_name = "CMD")]
+    pub(crate) check: Option<String>,
+    /// One owns pattern; repeat the flag for each. The patterns given replace
+    /// the whole list. A value is never split on commas, so a brace glob
+    /// stays whole.
+    #[arg(long, value_name = "PATTERN")]
+    pub(crate) owns: Vec<String>,
+    /// Why. It starts the note the member gets.
+    #[arg(long, value_name = "TEXT", required = true)]
+    pub(crate) reason: String,
 }
 
 #[derive(Args)]

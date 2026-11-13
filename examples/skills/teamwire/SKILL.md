@@ -127,7 +127,9 @@ For a feature built with GitHub's spec-kit, start from
 `tasks.md` exists, and read "Spec-kit features" in `reference.md`. That section says
 what the base branch must hold, how Claude Code, Codex and pi members run
 spec-kit's commands, and what each brief says about questions, ticks,
-commits and `converge`.
+commits and `converge`. A team that removes spec-kit before the pull request
+follows the preset's REMOVE SPEC-KIT rule: the removal goes on the pull
+request branch, never on the implementer's own branch.
 
 The model and effort of each member are the largest cost lever in a run.
 "Choose each member's model" below says how to pick them.
@@ -281,11 +283,11 @@ needs `mode`, as the last column shows.
 
 | Kind | Does | May not | Set `mode` |
 | --- | --- | --- | --- |
-| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. | `worktree` (required) |
-| `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. A brief never offers it a worktree. It runs tests in its own clone. | Edit or commit anything. Propose fixes. Report style or naming. | `pane` |
-| `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for, then reports ranked findings, each with the brief's file and line. Start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. | `pane` (launch refuses `worktree`) |
-| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. | `pane` |
-| `closer` | Takes `teamwire verify` as the evidence for each member's check, and runs each other claimed check once per commit. Runs the local gate its task names once on each head that ships, the joined head when one exists, in a clone of its own, runs none of the gates left to CI, and reports both. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Use `git worktree add`, your checkout or a member's worktree. | `pane` |
+| `implementer` | Builds what its brief asks, with a test that fails without each change. Commits after each unit, with one progress line per commit. Says `done` only when its checks pass. | Edit files it does not own. Reformat code outside its task. Delete, skip or loosen a test or a check configuration, unless the brief says to. Fix a failing check more than twice. Run `git stash`, `git reset --hard` or `git checkout -- .`. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `worktree` (required) |
+| `reviewer` | Reads a finished diff against its brief. Reports ranked correctness, security and data-loss findings, each with file:line and a concrete failure. Looks for stubbed, empty or hard-coded code that makes a check pass. Give it the brief's path. A brief never offers it a worktree. It runs tests in its own clone. | Edit or commit anything. Propose fixes. Report style or naming. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` |
+| `plan_reviewer` | Reads the plan, the team spec, every brief and the code they point at, before any implementer starts. For each brief it writes what the brief asks for, then reports ranked findings, each with the brief's file and line. Start from `teamwire preset plan-review`. | Edit or commit anything. Propose fixes. Send messages. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` (launch refuses `worktree`) |
+| `investigator` | Answers a question from code, logs and data, and says what it ruled out. | Edit or commit anything. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. | `pane` |
+| `closer` | Takes `teamwire verify` as the evidence for each member's check, and runs each other claimed check once per commit. Runs the local gate its task names once on each head that ships, the joined head when one exists, in a clone of its own, runs none of the gates left to CI, and reports both. Takes each new test a member claims, and each fix of a finding that a reviewer reported and an owner fixed, reverts the fix, and confirms the test then fails. Names contradictions, grades each finding with its owner, and writes one integrated report. Start its task from `teamwire preset closer`. | Edit source, commit, or message any member. Run `git worktree add`, `git worktree remove`, `git worktree move` or `git worktree prune`. Use your checkout or a member's worktree. | `pane` |
 
 Without `kind`, a worktree member is an implementer and a pane member an
 investigator. Launch refuses an implementer in `pane` mode and a plan
@@ -823,7 +825,13 @@ until that file changes; any other flag needs one at its final HEAD. One whose
 verify FAILs for a reason outside its work, such as a dependency the shared
 environment lacks, gets that environment fixed and verify run again. Use
 `--unverified` on a finished member only when neither is possible, and tell
-the user which member and why.
+the user which member and why. A member whose check or owns is wrong, such
+as a check that runs files outside its work, gets
+`teamwire amend <team> --role <role> --check CMD --reason TEXT` (or
+`--owns PATTERN`, once per pattern, which replaces the whole list), then
+`teamwire verify <team> --role <role>` again, because a pass made before the
+amend no longer counts. The member gets the change as a note and runs its
+new check.
 
 An idle member costs no tokens, but it holds a tab and, for an implementer, a
 worktree. Removing too early costs more: `verify` skips removed members, and
@@ -833,7 +841,8 @@ any other member while a closer runs in the team and has not reported since
 its latest start or reprompt. `--unverified` overrides both. A team with no
 closer yet gets no closer refusal, so a plan reviewer can go as soon as you
 have acted on its report. A
-commit after verify passed makes it refuse again until verify runs again. It
+commit after verify passed makes it refuse again until verify runs again, and
+so does `teamwire amend` of the member's check or owns, even at the same HEAD. It
 also refuses a member that is busy or at a dialog, whose turn would be lost.
 Prompt it to commit and finish, or pass `--stop` and tell the user. `--stop`
 gets past only that refusal, not the missing verify or closer. When

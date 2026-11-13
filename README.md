@@ -258,6 +258,7 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire received` | Record that you read a result, or a message to you, that could not be typed into your pane. |
 | `teamwire log` | List every message with its delivery state. |
 | `teamwire verify` | Run each member's check and the diff rules, and print a verdict per member. |
+| `teamwire amend` | Change one running member's check or owns, tell it with a note, and rewrite its seat rules; verify must run again before `close --role`. |
 | `teamwire close` | Close the team, or remove one member, in a fixed safe order. |
 | `teamwire reopen` | Resume the lead and the members of a team whose sessions are gone. |
 | `teamwire teams` / `members` | List every team on this machine, or one team's roster. |

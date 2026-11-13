@@ -97,7 +97,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | --- | --- | --- |
 | `team.db` (with `-wal`, `-shm`) | teamwire only | Every record below |
 | `briefs/<role>.md` | launch | The brief as sent (a worktree member also gets a copy at `<worktree>/TASK.md`, listed as `/TASK.md` in the repository's `info/exclude` until the last worktree that needs it is closed) |
-| `contract/<role>.md` | launch | The rendered system-prompt contract |
+| `contract/<role>.md` | launch, amend | The rendered system-prompt contract; `teamwire amend` rewrites it with the member's new check and owns (ADR 0046) |
 | `members/<role>/settings.json`, `mcp.json` | launch | Per-run hooks, the member's identity variables (`env`), for Claude the compaction backstop (`autoCompactEnabled`, `autoCompactWindow`, ADR 0027), the merged `plugins` map as `enabledPlugins`, always holding `teamwire@teamwire: false` so a member never loads the lead's plugin (ADR 0017, ADR 0018), and its MCP server. Mode 0600; they hold the token, so they are never written into a worktree |
 | `setup/<role>.log` | launch | Output of the setup command |
 | `comms/<display-id>.md` | send | Full message text (copy; the store has the original) |
@@ -112,7 +112,7 @@ crate and listed in `docs/api/core.md`):
 | Table | One row per | Key columns |
 | --- | --- | --- |
 | `team` | team (single row) | `ulid`, `name`, `title`, `state` (`open`, `closing`, `closed`), `closing_pid`, `closing_pid_started_at`, `lead_session_id`, `lead_harness`, `lead_host`, `lead_kind`, `lead_route` (`sink` or `watch`), `sleep_hold_pid`, `sleep_hold_owned`, `created_at`, `afk_budget_ends_at` (set only on an AFK run's team: when its budget ends), `refs` (JSON array of `{provider, id}` ticket refs, ADR 0038) |
-| `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd`, `owns`, `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
+| `members` | member, never deleted | `role`, `title`, `kind`, `mode`, `harness`, `host`, `place`, `session_id`, `token_sha256`, `cwd`, `repo`, `branch`, `base`, `base_sha`, `check_cmd` and `owns` (set by launch, replaced by `teamwire amend`, ADR 0046), `deadline_s`, `state` (`creating`, `started`, `failed`, `removed`), `generation` (a reprompt or a handoff raises it), `gen_started_at`, `gate_told_generation`, `removed_at`, `removed_note` |
 | `messages` | message | `ulid`, `display_id` (unique), `sender` (`lead`, a role, or `role@team` / `lead@team` for another team's agent), `client_key` (unique with sender), `seq` (unique with sender), `type`, `re`, `commit_sha`, `body`, `body_sha256`, `created_at` |
 | `deliveries` | message and recipient | `recipient` (as `sender`), `state` (`pending`, `handed_off`, `unconfirmed`, `undelivered`, `acked`), `attempts`, `route`, `error_code`, `error_detail`, `reminded_at`, `acked_at` |
 | `completions` | completion | `ulid`, `role`, `generation`, `n` (unique with role), `status`, `summary`, `final_message`, `final_source`, `report_state` (`pending`, `delivering`, `delivered`, `undelivered`, `unconfirmed`), `delivering_since`, `route`, `reason`, `reason_detail`, `result_sha256` |

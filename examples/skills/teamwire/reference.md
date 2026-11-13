@@ -209,8 +209,9 @@ deleted or removed test and an added line that skips or silences a check.
 It flags `no-commits` when an implementer said `done` with no commit
 beyond its base, `no-owns` for an implementer with an empty `owns` list,
 `uncommitted:<path>` for each uncommitted path, `asserts-removed:<path>`
-for a file that lost assert lines, and `head-moved` when a commit landed
-while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
+for a file that lost assert lines, `head-moved` when a commit landed
+while the check ran, and `scope-changed` when `teamwire amend` changed
+the member's check or owns while verify ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
 `SKIPPED`. A brief may have asked for a flagged change, so read every
 flag, and let no branch merge past one you have not read.
 `teamwire verify <team> --role R --waive FLAG --reason TEXT`
@@ -221,8 +222,8 @@ current HEAD. A waiver for a flag that names one file (`test-deleted`,
 content changes, a merge or rebase included. Any other waiver,
 `uncommitted:<path>` included, ends at the next commit. Run verify again
 after each commit either way. `uncommitted:<path>` is
-one flag per path, so a waiver covers that path only. `head-moved` cannot
-be waived: run verify again. `--deep` adds the database
+one flag per path, so a waiver covers that path only. `head-moved` and
+`scope-changed` cannot be waived: run verify again. `--deep` adds the database
 integrity check and a check of every message hash.
 
 A commit on a member's branch that the member did not make raises
@@ -286,6 +287,7 @@ is gone, and nothing else. Run close again, and it continues from step 1.
 | Command | Does |
 | --- | --- |
 | `teamwire decisions [<team>] [--role R] [--ref REF] [--grep TEXT] [--json]` | The "Decisions I made" blocks of members' reports, for one team, a ticket ref, or a text search across running teams and archives. Reads only. |
+| `teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT` | Changes one running member's check, owns or both. `--owns` is repeated, one whole pattern per flag, and replaces the whole list. The member gets a note that starts `CHECK AMENDED:` with the old and new values and the reason, and its seat rules file is rewritten for a later handoff. `close --role` counts no verify recorded at or before that note, so run `teamwire verify <team> --role R` again. Exit 2 when the seat rules file could not be rewritten: run the same amend again. Exit 6 with `NOT RECORDED for <role>` on stderr means the scope and the note are saved but the delivery record is not: run `teamwire resend <team> <id>`, not the amend. A member session cannot run it. |
 | `teamwire export <team> [--out FILE]` | Every record as JSON lines. |
 | `teamwire metrics [<team>] [--since DURATION] [--json]` | Local metrics from the event rows, including tokens per member. A member whose session file holds no usage that teamwire reads shows no tokens, so read a missing count as not recorded, never as zero. After close, the team form reads the team's newest archive under `$TEAMWIRE_HOME/archive/`, but an archive put elsewhere with `--archive-to` is not read, so read it before you close in that case. The counter `teamwire.member.tokens` has the labels `team`, `role`, `kind`, `model`, `effort`, `task_class` (`unclassified` when the spec set none) and `type` (`input`, `output`, `cache_read`, `cache_creation`). A team whose results reach you as `COMPLETED` watch lines, because your host cannot type into your pane, records no tokens. |
 | `teamwire handoff <team> --role R [--dry-run]` | Gives a member a fresh session in the same seat, after it wrote its handoff document and recorded `done` with `handoff:`. Refuses a busy member, one at a dialog, or one with uncommitted work, with exit 1 and nothing changed. A missing or old handoff document gives a `warning:` line. Exit 2 after the old session was closed and the new one failed: run `teamwire reopen <team> --role R`. Exit 6 when the store cannot be read. `teamwire handoff --guide` prints the guide a member follows. |
@@ -441,6 +443,18 @@ spec-kit command, so write the form for the member's harness in its brief.
    Foundational branch first, then the stories in priority order.
 5. **Close.** The closer runs `converge` beside its usual checks. The
    owners fix what it finds.
+
+**Remove spec-kit on the pull request branch (REMOVE SPEC-KIT).** When the
+user wants spec-kit's files out of the pull request, cut the pull request
+branch from the implementer's last verified head, the head of its newest
+`PASS`, and make the removal commit there, never on the implementer's own
+branch. The implementer's check tests `specs/NNN-name/tasks.md`, so a
+removal on its branch fails every later verify, a `FAIL` takes no waiver,
+and `close --role` then refuses it. When the removal is already on the
+implementer's branch, run
+`teamwire amend <team> --role <role> --check CMD --reason TEXT` with a check
+that does not test `tasks.md`, such as its test command alone, then
+`teamwire verify <team> --role <role>` again.
 
 When the user brings a finished `tasks.md`, committed with its `spec.md` and
 `plan.md`, leave out the spec member, but the plan reviewer still runs

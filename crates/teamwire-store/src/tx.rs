@@ -40,9 +40,11 @@ use crate::error::StoreError;
 /// no type for them and none of them is a lifecycle or message change:
 /// `set_sleep_hold`, `set_member_place`, `set_member_session`,
 /// `set_member_token_hash`, `clear_member_branch`, `set_gate_told_generation`,
-/// `set_completion_final`, `announce_once`, `heartbeat_watch_lease`, and the
+/// `set_completion_final`, `announce_once`, `heartbeat_watch_lease`, the
 /// metric-export `claim_metric_export`, `commit_metric_export`,
-/// `release_metric_claim` (an event there would feed the export its own tail).
+/// `release_metric_claim` (an event there would feed the export its own tail),
+/// and `set_member_scope`, whose record is the `CHECK AMENDED:` note stored in
+/// the same transaction (ADR 0046).
 ///
 /// Data a hook or a launch adds to events, with no new event type: a hook
 /// puts `hook_ms` in the data of the events it writes (the source of

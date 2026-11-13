@@ -20,6 +20,12 @@ string_enum! {
     }
 }
 
+/// The first words of the note `teamwire amend` sends (ADR 0046). The note
+/// is the only record that a member's check or owns changed, so
+/// `close --role` finds it by this marker, from `lead`, of type `note`, and
+/// counts no verify record made at or before it.
+pub const AMEND_MARKER: &str = "CHECK AMENDED:";
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SendRequest {
     pub team: TeamName,
