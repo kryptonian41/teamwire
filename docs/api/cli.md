@@ -273,8 +273,8 @@ For that member, while it is `working`, `--role R` also prints
 `tool: <name>, running <duration>` (such as `tool: Bash, running 15m02s`):
 the tool call its session started and has no result for yet, read from
 the Claude Code transcript, the Codex rollout or the pi extension's state
-file. A harness that cannot tell prints
-`tool: unknown (this harness does not report it)`. `--json` carries it as
+file. A member between two calls, or on a harness that cannot tell,
+prints `tool: none reported`. `--json` carries it as
 the member's `current_tool`, `{"name", "started_at": "<RFC 3339>",
 "seconds"}`, or `null`; a plain `status` reads no transcript and leaves it
 `null`.

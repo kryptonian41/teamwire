@@ -182,7 +182,7 @@ fn render(view: &StatusView, role: Option<&Role>) -> String {
         }
         if role == Some(&m.role) && m.state.starts_with("working") {
             out.push(m.current_tool.as_ref().map_or_else(
-                || "    tool: unknown (this harness does not report it)".to_owned(),
+                || "    tool: none reported".to_owned(),
                 |t| format!("    tool: {}, running {}", t.name, run_time(t.seconds)),
             ));
         }
