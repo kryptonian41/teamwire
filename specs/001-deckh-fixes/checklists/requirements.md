@@ -59,3 +59,4 @@
   schema-11 answer and the lead-copy hint answer are under Clarifications,
   FR-001 and Assumptions. Each is testable. All 16 items still pass.
 - Re-validated after fix round 1 (2026-11-13): FR-009, FR-013, FR-014, SC-003, SC-005, AC10 and two edge cases changed to match the closer's findings C4, C5 and C16-C19. Every item still passes.
+- Re-validated after amendment 2 (2026-11-13): FR-013 gained the root-file rule (m018) and FR-014 the suffix rule for file names after a `/` (m020). Both are testable. Every item still passes.

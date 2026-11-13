@@ -542,9 +542,14 @@ change, not one that must.
   - A phase starts at a `## Phase <n>: <title>` heading.
   - A task line is `- [ ] T<digits>`, or `- [x]` or `- [X]`, then an
     optional `[P]`, an optional `[US<n>]`, and the description.
-  - A path is a token inside backticks, or a bare token, that contains a
-    `/` or ends in `.<ext>`, with trailing punctuation removed. URLs are
-    left out.
+  - A path is a token inside backticks, or a bare token, with trailing
+    punctuation removed, that FR-013 accepts. A token that holds `/` must
+    not start with `/`, must not be part of a markdown link's `](...)`
+    syntax, and must name a tracked file or directory or end in `.<ext>`.
+    A token with no `/` must name a tracked file at the repository root
+    exactly, such as `README.md`, `.gitignore` or `Cargo.toml`; so
+    `knit.progress` and `lib.rs` are not paths. URLs are left out. These
+    rules are the lead's rulings in fix round 1 (C4) and message m018.
   - A `:N` or `:N-M` suffix is stripped, so `send.rs:297-321` and `send.rs`
     are one file. This feature's own `tasks.md` has 53 such suffixes
     (analyze's count).
@@ -570,12 +575,16 @@ change, not one that must.
   the Platform runner the same way `doctor_speckit.rs:78-100` runs git.
 - **What counts as a mention.** A file mentions a task path when the file
   holds one of these:
-  - the exact path text;
+  - the exact path text, also right after any `/` or `./` prefix, such as
+    `./apps/ai/harness/tools.py` or `$ROOT/apps/ai/harness/tools.py`;
   - a dotted module name of the path: any dotted suffix of the path without
     its extension, with at least two parts, such as `harness.tools` for
     `apps/ai/harness/tools.py`;
   - the full file name with its extension, such as `tools.py`, as a whole
-    token;
+    token. After a `/`, the name counts only when the slash-joined text
+    that ends at it is a suffix of the task path: `harness/tools.py` and
+    `ai/harness/tools.py` count for `apps/ai/harness/tools.py`, and
+    `other/tools.py` does not (lead ruling, message m020);
   - a `paths:` glob in a `.github/workflows/*.yml` or `*.yaml` file that
     matches the path.
 
