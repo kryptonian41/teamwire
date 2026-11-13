@@ -1875,7 +1875,10 @@ fn the_speckit_preset_puts_the_removal_on_the_pr_branch_and_names_amend() {
         "teamwire amend <team> --role <role> --check",
     ] {
         assert!(rules.contains(wanted), "preset: {wanted}: {rules}");
-        assert!(reference.contains(wanted), "reference: {wanted}: {reference}");
+        assert!(
+            reference.contains(wanted),
+            "reference: {wanted}: {reference}"
+        );
     }
 }
 
