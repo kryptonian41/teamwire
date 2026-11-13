@@ -62,7 +62,7 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
 ### Decisions
 
 1. **Command shape.** `teamwire amend <team> --role R [--check CMD]
-   [--owns PATH]... --reason TEXT`. It follows `verify` and `close`
+   [--owns PATTERN]... --reason TEXT`. It follows `verify` and `close`
    (`crates/teamwire-cli/src/args.rs:229-275`, `crates/teamwire-cli/src/cmd/verify.rs`):
    - `team` is a positional `TeamName`; `--role` names one member.
    - clap enforces the shape: `--role` and `--reason` are required, and an
@@ -71,7 +71,8 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
    - `--owns` is repeated, one whole pattern per flag, with no
      `value_delimiter` (user answer; the other list flags split on commas,
      `args.rs:288`, which would break `crates/{a,b}/**`).
-   - An empty or all-space `--reason` or `--check` is exit 3, through
+   - An empty or all-space `--reason` or `--check`, and an empty `--owns`
+     pattern (`--owns ''`), are exit 3, through
      `fail("amend", ..., USAGE)`, as `verify` treats a bad team name
      (`cmd/verify.rs:24-27`).
    - A member session is refused with `refuse_member("amend")`
@@ -85,10 +86,17 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
    - A store error is exit 6.
    - Delivery of the note is reported as `send` reports it: exit 4 when the
      member is `undelivered`, 5 when `unconfirmed`
-     (`docs/api/cli.md:10-20`). The scope change is saved in both cases,
-     and the output says so.
+     (`docs/api/cli.md:10-20`). The scope change is saved in both cases.
+     stdout prints the scope line first, then `send`'s delivery line
+     (`contracts/amend-cli.md` "Output").
    - A failure to rewrite the seat rules file after the store write is exit
-     2 (partial), with the error and "run the same amend again".
+     2 (partial), with the error and "run the same amend again". Exit 2
+     wins over 4 and 5 in the same run, because a wrong seat rules file
+     misleads every later handoff; both the scope line and the delivery
+     line still print.
+   - `amend` cannot clear the owns list (lead decision on the plan review):
+     with one whole pattern per flag, an empty list has no flag shape, and
+     an empty pattern is refused.
    - No `--json`, so `ui/src/shared/teamwire.ts` does not change.
    - Rejected: refusing an amend that changes nothing. The note still
      records the reason, and refusing it gains nothing.
@@ -141,8 +149,21 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
    check or owns (<note id>); run teamwire verify <team> --role <role>
    again`. The refusal goes through the same `unchecked` list, so
    `--unverified` overrides it, as it overrides every CLS-5 reason.
+   - Together with decision 5, the rule as built is: a verify record counts
+     for `close --role` only when it was recorded after the newest amend
+     note and verify raised no `scope-changed` on it (a flagged record is
+     not `PASS` anyway). This equals the user's "a verify that started
+     after the amend" except for an amend that kept the same check and
+     owns: a run that started before such an amend and was recorded after
+     it counts, and it ran the very check the amend names, so nothing
+     unproven passes. T008's guard `a_pass_recorded_after_a_same_scope_amend_counts`
+     pins this.
    - A note that a user or the lead typed with `teamwire send` and that
      starts with the marker also counts. That only makes close stricter.
+   - `close` picks the newest marker note itself from the role's lead
+     notes, oldest first. It passes no `limit`, because `newest` acts only
+     with `limit` (`crates/teamwire-store/src/message.rs:51-53`) and a limit
+     could hide the newest marker note behind newer plain notes.
    - The whole-team `close` gets no rule, because it reads no verify record.
 5. **A verify that ran across an amend.** Verify reads the member row at its
    start and stores its record after the check (`lib.rs:323-371`). A verify
@@ -175,11 +196,16 @@ at the start of each run (`crates/teamwire-verify/src/lib.rs:285` and
 | --- | --- | --- |
 | `amend_changes_the_check_verify_runs_and_notes_the_member` | `crates/teamwire-cli/tests/amend.rs` | `teamwire amend` is not a command: clap exits 3 with "unrecognized subcommand". Assert the exit is 0, then that `verify --role api` writes the new check's command line at the top of `verify/api.log` (`$ <check>   # in ...`, `check.rs:48-54`) and that `inbox` of `api` holds a `note` from `lead` starting `CHECK AMENDED:`. |
 | `amend_replaces_owns_and_keeps_a_brace_glob_whole` | `crates/teamwire-cli/tests/amend.rs` | No command. After the fix: `--owns crates/a/ --owns 'crates/{b,c}/**'`, a commit under `crates/c/`, and verify raises no `outside-owns:` flag; `teamwire teams --json` shows exactly the two patterns. |
-| `amend_refuses_without_a_change_or_a_reason_and_changes_nothing` | `crates/teamwire-cli/tests/amend.rs` | No command. After the fix: exit 3 for no `--check`/`--owns`, no `--reason`, an empty `--reason`; exit 1 for an unknown role and a removed member; exit 1 `refused.identity` with `TEAMWIRE_ROLE` set; in each case the member row and `log` are unchanged. |
+| `amend_refuses_without_a_change_or_a_reason_and_changes_nothing` | `crates/teamwire-cli/tests/amend.rs` | The base also exits 3 (unknown subcommand), so this case fails on its stderr assert, not its exit code. After the fix: exit 3 for no `--check`/`--owns`, no `--reason`, an empty `--reason`, `--check ""`, `--owns ""`; exit 1 for an unknown role, a `creating`, `failed` or removed member, and a team not open; exit 1 `refused.identity` with `TEAMWIRE_ROLE` set; in each case the member row and `log` are unchanged. |
+| `an_amend_to_a_member_with_no_live_process_exits_4_and_keeps_the_change` | `crates/teamwire-cli/tests/amend.rs` | No command (exit 3, not 4). After the fix: the scope line, then `send`'s delivery line; the new owns are saved. |
+| `a_seat_rules_failure_exits_2_even_when_the_note_is_undelivered` | `crates/teamwire-cli/tests/amend.rs` | No command (exit 3, not 2). After the fix: exit 2 wins over 4. |
+| `the_deckh_f14_sequence_ends_with_close_role_without_unverified` | `crates/teamwire-cli/tests/amend.rs` | No command: the amend step exits 3, not 0. Covers SC-002 end to end on the fakes. |
+| `an_amend_note_wakes_a_done_member` | `crates/teamwire-cli/tests/amend.rs` | No command (exit 3, not 0). After the fix: a `member.woken` event for `api` (spec US1 scenario 8). |
 | `amend_rewrites_the_seat_rules_and_a_handoff_reads_them` | `crates/teamwire-cli/tests/amend.rs` | No command. After the fix: `<home>/teams/alpha/contract/api.md` holds the new check under "Your check", and a `teamwire handoff alpha --role api` after `done --summary "handoff: ..."` starts an agent whose `--append-system-prompt-file` names a file that holds the new check (the shape of `crates/teamwire-cli/tests/handoff.rs:217`). |
 | `amend_leaves_earlier_verify_records_unchanged` | `crates/teamwire-cli/tests/amend.rs` | No command. After the fix: the verify record from before the amend has the same head, verdict, exit code and log hash (`teamwire export` rows) as before it. |
 | `an_amend_note_makes_an_older_pass_not_count` | `crates/teamwire-close/tests/remove.rs` | On the base, `verify_gap` reads no message, so a `PASS` at HEAD followed by a stored `CHECK AMENDED:` note from `lead` still removes the member. The test expects the refusal text naming the note. Then a `PASS` at a later clock time removes it. Uses the file's `verify_at` helper (`remove.rs:44`) and `rig.clock`. |
 | `a_record_at_the_same_time_as_the_note_does_not_count` | `crates/teamwire-close/tests/remove.rs` | Same cause: on the base the `PASS` counts. Pins the "at or before" boundary with equal timestamps. |
+| `a_pass_recorded_after_a_same_scope_amend_counts` | `crates/teamwire-close/tests/remove.rs` | **Guard test**: passes on the base, where close reads no note. Pins that a record recorded after a same-scope amend note counts (decision 4). |
 | `a_note_without_the_marker_or_from_a_member_changes_nothing` | `crates/teamwire-close/tests/remove.rs` | **Guard test**: passes on the base, because the base reads no note at all. It pins that only a lead note with the marker counts. |
 | `scope_changed_flags_a_record_whose_member_was_amended_mid_run` | `crates/teamwire-verify/src/scope.rs` (unit test) | The module does not exist. The test gives the record step a member snapshot whose check differs from the stored row and expects the `scope-changed` flag and verdict `FLAGGED`; with equal values, no flag. |
 | `scope_changed_cannot_be_waived` | `crates/teamwire-verify/tests/verify.rs` | **Guard test**: passes on the base, because `waive` accepts only flags of the diff (`lib.rs:242-244`) and `scope-changed` is not one. Shape of `verify.rs:1285-1312` (`head-moved`): `waive(..., "scope-changed", ...)` returns `UnknownFlag`. It keeps the flag unwaivable after the fix. |
@@ -200,7 +226,7 @@ not exist on `7e78c1a`, and `verify_gap` reads no message
 
 | File | Change |
 | --- | --- |
-| `docs/api/cli.md` | New section `### teamwire amend <team> --role R [--check CMD] [--owns PATH]... --reason TEXT` after `verify` (line 429). Add `amend` to the lead-only list in "Lead commands" (lines 24-35). In `close` (line 462): `--role` also refuses after an amend until a verify recorded after the amend note. In `verify` (line 429-461): the `scope-changed` flag. |
+| `docs/api/cli.md` | New section `### teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT` after `verify` (line 429). Add `amend` to the lead-only list in "Lead commands" (lines 24-35). In "Exit codes", the exit-2 row (line 16) gains amend's partial case: the change saved, the seat rules file not rewritten. In `close` (line 462): `--role` also refuses after an amend until a verify recorded after the amend note. In `verify` (line 429-461): the `scope-changed` flag. |
 | `docs/api/core.md` | The new public items: `Tx::set_member_scope`, `teamwire_msg::send_with_write`, `teamwire_launch::rewrite_contract`, the `scope-changed` flag. |
 | `docs/requirements.md` | New rows: LCH-33 (amend: shape, refusals, one transaction, seat rules rewrite, shell only), VER-9 (verify uses the amended scope; `scope-changed`), CLS-9 (a record at or before the newest amend note does not count). |
 | `docs/ARCHITECTURE.md` | Data model table (line 100): `contract/<role>.md` is written by launch and amend. `members` row (line 115): `check_cmd` and `owns` are set by launch and changed by amend. |
@@ -315,7 +341,13 @@ follow.
    `git checkout -- .`."
 4. **The test** compares, for each kind in `MemberKind::ALL`, the set of
    bans from decision 1 with the set of backticked `git ` spans in that
-   kind's row of the role table. It fails on a ban missing from the row and
+   kind's row of the role table. It reads only the role table: the rows
+   after its header line ``| Kind | Does | May not | Set `mode` |``
+   (`SKILL.md:282`) and its separator, up to the first line that does not
+   start with `|`. It never reads another table. The preset-shapes table
+   also has a row that starts ``| `closer` |`` (`SKILL.md:123`), with
+   three cells and no "May not"; a lookup of the first matching row would
+   read that one (plan review F1). It fails on a ban missing from the row and
    on a row span the seat rules do not ban, and names the kind and the
    command.
 
@@ -323,8 +355,9 @@ follow.
 
 | Test | File | Fails on the base because |
 | --- | --- | --- |
-| `the_role_table_lists_every_git_ban_of_each_seat` | `crates/teamwire-launch/tests/role_table_git_bans.rs` (new) | On the base, the implementer, reviewer, plan_reviewer and investigator rows lack `git worktree add`, and the closer row lacks the others. It reads `examples/skills/teamwire/SKILL.md` from `CARGO_MANIFEST_DIR/../../examples`, as `crates/teamwire-cli/tests/preset.rs:376-383` does. On the base, `how_to_work.md`'s bare `remove`, `move`, `prune` spans are not `git` spans, so the test finds only `git worktree add` for them; the failure on the base is still the missing `git worktree add` in four rows. |
-| `a_row_that_names_a_git_command_no_seat_bans_fails` | same file | A unit check of the comparison: a row text with `git push` added against the implementer's bans fails with the kind and `git push`. Runs on the base once the helper exists; it proves direction two of FR-016 can fail. |
+| `the_role_table_lists_every_git_ban_of_each_seat` | `crates/teamwire-launch/tests/role_table_git_bans.rs` (new) | On the base, the implementer, reviewer, plan_reviewer and investigator rows lack `git worktree add`. The closer row matches on the base, because the base's `remove`, `move` and `prune` spans do not start with `git `. It reads `examples/skills/teamwire/SKILL.md` from `CARGO_MANIFEST_DIR/../../examples`, as `crates/teamwire-cli/tests/preset.rs:376-383` does. On the base, `how_to_work.md`'s bare `remove`, `move`, `prune` spans are not `git` spans, so the test finds only `git worktree add` for them; the failure on the base is still the missing `git worktree add` in four rows. |
+| `a_row_that_names_a_git_command_no_seat_bans_fails` | same file | **Guard test** of the test file's compare helper: passes on the base once the helper exists. A row text with `git push` added against the implementer's bans fails with the kind and `git push`; it proves direction two of FR-016 can fail. |
+| `a_closer_row_in_another_table_is_not_read` | same file | **Guard test** of the row lookup: passes on the base once the helper exists. A three-column table with a `closer` row before the role table is skipped. |
 
 ### Existing test whose expectation changes
 
@@ -333,11 +366,16 @@ follow.
   ``Never run `git worktree add`, `remove`, `move` or `prune` ``. It changes
   to the spelled-out text of decision 2. Its other two asserts
   (`never\n  write into another member's directory` and
-  `report blocked to the\n  lead`) stay; the new line wraps so they still
-  match. No assert is removed.
+  `report blocked to the\n  lead`) stay. No assert is removed.
 
-No other test pins that line: grep for ``remove`, `move` `` outside
-`target/`, `.worktrees/` and `bench/` finds only this test.
+No other test pins the changed text: grep for ``remove`, `move` `` outside
+`target/`, `.worktrees/` and `bench/` finds only this test. A third test
+pins a line break in the same bullet:
+`crates/teamwire-launch/src/contract/tests_findings.rs:296`
+(`ask the parent as\n  HOW THIS TEAM WORKS TOGETHER says`). So the fix
+splits only line 29 into two lines and re-flows nothing else; all three
+pinned breaks stay unchanged. A greedy re-flow at the file's width breaks
+two of them (plan review F6, checked in scratch by the plan reviewer).
 
 ### Guidance that changes in the same phase
 

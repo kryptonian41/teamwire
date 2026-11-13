@@ -15,7 +15,7 @@ Rules:
 
 - `amend --check CMD` sets `check_cmd` to `CMD`. `CMD` is not empty and not
   all spaces. A member with no check gets one.
-- `amend --owns PATH ...` replaces the whole `owns` array with the given
+- `amend --owns PATTERN ...` replaces the whole `owns` array with the given
   patterns, in the order given, each kept whole (no comma splitting).
 - A field the command does not name keeps its value.
 - `set_member_scope` writes no event, like the other member setters
@@ -46,7 +46,8 @@ role, and whose body starts with `CHECK AMENDED:`.
 Unchanged columns. Two new readings:
 
 - **Counts for close** only when its `recorded_at` is after the
-  `created_at` of the role's newest amend note (strictly later). With no
+  `created_at` of the role's newest amend note (strictly later) and verify
+  raised no `scope-changed` on it. With no
   amend note, the rule of CLS-5 applies as before.
 - **`scope-changed` flag**: the record step compares the `check_cmd` and
   `owns` it ran with against the row it re-reads in the storing
