@@ -3,9 +3,12 @@
 //! and a harness can render them its own way (LCH-17). The text names only
 //! `teamwire` commands and tools.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use teamwire_core::{LaunchSpec, MemberKind, Role, TeamName};
+use teamwire_core::{LaunchSpec, Member, MemberKind, Platform, Role, TeamName};
+
+use crate::member_parts::Dirs;
+use crate::member_steps::write_file;
 
 const HEAD: &str = include_str!("../contracts/head.md");
 const KIND_IMPLEMENTER: &str = include_str!("../contracts/kind_implementer.md");
@@ -119,6 +122,36 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         finish,
     ]
     .concat()
+}
+
+/// Writes the member's seat rules file again, `<team dir>/contract/<role>.md`,
+/// from its stored check and owns, for `teamwire amend` (ADR 0046). A
+/// handoff or reopen starts the fresh session from this file, so without the
+/// rewrite it would read the scope launch wrote. Returns the file's path.
+pub fn rewrite_contract(
+    platform: &dyn Platform,
+    home: &Path,
+    team: &TeamName,
+    member: &Member,
+    teamwire_bin: &Path,
+) -> Result<PathBuf, String> {
+    let dirs = Dirs {
+        team: home.join("teams").join(team.as_str()),
+    };
+    let role = &member.role;
+    let text = render_contract(&ContractParts {
+        team,
+        role,
+        kind: member.kind,
+        report_file: &dirs.report(role),
+        outbox_dir: &dirs.outbox(),
+        teamwire_bin,
+        check: member.check.as_deref(),
+        owns: &member.owns,
+    });
+    let path = dirs.contract(role);
+    write_file(platform, &path, text.as_bytes(), 0o644)?;
+    Ok(path)
 }
 
 #[cfg(test)]
