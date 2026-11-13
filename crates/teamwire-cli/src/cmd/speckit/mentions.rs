@@ -306,6 +306,29 @@ mod tests {
         );
     }
 
+    /// FR-014: the exact path counts after a `./` or any `/`, and the file
+    /// name counts after a `/` when the words before it are the end of the
+    /// task path. `other/tools.py` names some other `tools.py`.
+    #[test]
+    fn a_path_or_file_name_after_a_slash_prefix_is_a_mention() {
+        let m = Mentions::new(vec![
+            file("docs/a.md", "run ./apps/ai/harness/tools.py\n"),
+            file("docs/b.md", "cp $ROOT/apps/ai/harness/tools.py .\n"),
+            file("docs/c.md", "see harness/tools.py\n"),
+            file("docs/d.md", "see `ai/harness/tools.py`\n"),
+            file("docs/e.md", "see other/tools.py\n"),
+        ]);
+        assert_eq!(
+            found(&m, &["apps/ai/harness/tools.py"]),
+            [
+                pair("docs/a.md", "names path apps/ai/harness/tools.py"),
+                pair("docs/b.md", "names path apps/ai/harness/tools.py"),
+                pair("docs/c.md", "names file tools.py"),
+                pair("docs/d.md", "names file tools.py"),
+            ]
+        );
+    }
+
     #[test]
     fn a_workflow_paths_glob_is_a_mention_and_an_anchor_is_unread() {
         let replay = "on:\n  push:\n    paths:\n      - \"apps/ai/harness/**\"\n  pull_request:\n    paths: [\"docs/**\"]\n";
