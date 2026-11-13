@@ -188,13 +188,21 @@ fn a_talking_member_does_not_resend_a_message_that_was_not_delivered() {
         let text = render(kind);
         assert!(text.contains("NOT DELIVERED or UNCONFIRMED"), "{kind}");
         assert!(text.contains("Do not send it again"), "{kind}");
-        // Only a member recipient's hooks remind it; the lead gets a resend.
+        // A member recipient's hooks remind it, and the lead's hooks list
+        // what was never typed (ADR 0043), so nobody resends to the lead.
         assert!(
             text.contains("A member recipient is told about it"),
             "{kind}"
         );
         assert!(
-            text.contains("`/opt/x/teamwire resend demo <message id>`"),
+            !text.contains("`/opt/x/teamwire resend demo <message id>`"),
+            "{kind}"
+        );
+        let words = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            words.contains(
+                "The lead's hooks list a message to the lead that was never typed, so do not resend it."
+            ),
             "{kind}"
         );
     }

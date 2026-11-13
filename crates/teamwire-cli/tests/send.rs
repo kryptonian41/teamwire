@@ -891,6 +891,27 @@ fn a_users_note_exits_0_when_only_the_lead_copy_fails() {
     assert_eq!(row.get("to"), Some(&serde_json::json!(["api", "lead"])));
 }
 
+/// ADR 0043 decision 6: the lead's hook lists an undelivered copy, so the
+/// hint names the hook, and a resend would type a second copy.
+#[test]
+fn the_lead_copy_hint_names_the_hook_not_resend() {
+    let rig = live_rig();
+    // The lead has no live process in this rig, so its copy is `undelivered`.
+    let out = rig.run(
+        &[
+            "send", "alpha", "--from", "user", "--to", "api", "--type", "note", "--text", "hi",
+        ],
+        &Identity::User,
+    );
+    let stderr = text(&out.stderr);
+    let line = stderr
+        .lines()
+        .find(|l| l.starts_with("lead copy not delivered: m001"))
+        .unwrap_or(&stderr);
+    assert!(line.contains("the lead's hook lists it"), "{line}");
+    assert!(!line.contains("resend"), "{line}");
+}
+
 #[test]
 fn a_users_note_to_the_lead_counts_the_lead_in_the_exit_code() {
     let rig = live_rig();

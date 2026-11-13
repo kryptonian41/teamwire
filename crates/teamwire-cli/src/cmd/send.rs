@@ -128,18 +128,11 @@ pub(crate) fn run(args: &SendArgs, global: &Global, wiring: &Wiring) -> ExitCode
                     .deliveries
                     .iter()
                     .position(|d| d.to == Recipient::Lead);
-                if let Some(copy) = copy.map(|i| addressed.deliveries.remove(i))
-                    && matches!(
-                        copy.state,
-                        RecipientState::Undelivered
-                            | RecipientState::Unconfirmed
-                            | RecipientState::Pending
-                    )
+                if let Some(hint) = copy
+                    .map(|i| addressed.deliveries.remove(i))
+                    .and_then(|copy| lead_copy_hint(&team, &addressed.display_id, copy.state))
                 {
-                    warn(&format!(
-                        "lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead",
-                        id = addressed.display_id
-                    ));
+                    warn(&hint);
                 }
             }
             ExitCode::from(exit_of(&addressed))
@@ -264,6 +257,16 @@ pub(crate) fn error_code(e: &SendError) -> u8 {
         SendError::InvalidArgument(_) => USAGE,
         SendError::Store(_) => STORE,
     }
+}
+
+/// What `send` says on stderr when the lead's copy of a user's message did
+/// not reach the lead's pane, or `None` when it did.
+fn lead_copy_hint(team: &TeamName, id: &DisplayId, state: RecipientState) -> Option<String> {
+    matches!(
+        state,
+        RecipientState::Undelivered | RecipientState::Unconfirmed | RecipientState::Pending
+    )
+    .then(|| format!("lead copy not delivered: {id}; run teamwire resend {team} {id} --to lead"))
 }
 
 #[cfg(test)]
@@ -401,6 +404,32 @@ mod tests {
         assert_eq!(
             line,
             "no watch is running: start one with the teamwire_watch tool (team alpha)\n"
+        );
+    }
+
+    /// ADR 0043 decision 6: the lead's hook lists an `undelivered` copy, and
+    /// `status` lists one that may have been typed, so no hint names `resend`.
+    #[test]
+    fn the_lead_copy_hint_says_what_holds_for_each_state() {
+        let id = DisplayId::parse("m002").unwrap();
+        for state in [RecipientState::Unconfirmed, RecipientState::Pending] {
+            assert_eq!(
+                lead_copy_hint(&team(), &id, state).as_deref(),
+                Some(
+                    "lead copy not delivered: m002; it may have reached the lead's pane, and teamwire status lists it"
+                ),
+                "{state:?}"
+            );
+        }
+        assert_eq!(
+            lead_copy_hint(&team(), &id, RecipientState::Undelivered).as_deref(),
+            Some(
+                "lead copy not delivered: m002; the lead's hook lists it at the lead's next tool call"
+            )
+        );
+        assert_eq!(
+            lead_copy_hint(&team(), &id, RecipientState::HandedOff),
+            None
         );
     }
 }

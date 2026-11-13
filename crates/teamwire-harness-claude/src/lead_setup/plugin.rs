@@ -446,4 +446,18 @@ mod tests {
         );
         assert!(marketplace_update(&config).env.is_empty());
     }
+
+    /// ADR 0043 decision 4: the answer to an `AskUserQuestion` dialog frees a
+    /// blocked pane, so the lead's tool hook runs on every tool call.
+    #[test]
+    fn the_lead_tool_hook_runs_on_every_tool() {
+        let files = PluginFiles::render(Path::new("/h/claude-plugin"), &want(None)).unwrap();
+        let hooks = json_of(&files, "teamwire/hooks/hooks.json");
+        let entry = &hooks["hooks"]["PostToolUse"][0];
+        assert_eq!(
+            entry["hooks"][0]["command"],
+            "/opt/bin/teamwire hook lead-tool --harness claude-code"
+        );
+        assert!(entry.get("matcher").is_none(), "{entry}");
+    }
 }

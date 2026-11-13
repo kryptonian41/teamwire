@@ -393,3 +393,86 @@ fn the_tool_hook_is_silent_for_a_read_a_member_or_another_session() {
         assert_eq!((run.code, run.out.as_str()), (0, ""), "{input}");
     }
 }
+
+/// ADR 0043 decision 1: a question to the lead that a blocked pane refused
+/// is listed by the lead's tool hook and Stop hook on every lead harness,
+/// with its file, and the hooks type nothing.
+#[test]
+fn the_tool_and_stop_hooks_carry_the_undelivered_note() {
+    use teamwire_core::{
+        Actor, DeliveryError, DeliveryErrorCode, DeliveryState, MessageType, Recipient, Role,
+    };
+    use teamwire_store::{DeliveryUpdate, NewMessage};
+    let mut fx = team();
+    let at = teamwire_core::Clock::now(&fx.clock);
+    fx.store
+        .write(|tx| {
+            let stored = tx.insert_message(
+                at,
+                &NewMessage {
+                    sender: Actor::Member(Role::parse("api").unwrap()),
+                    kind: MessageType::Question,
+                    re: None,
+                    commit: None,
+                    body: "which base?".to_owned(),
+                    client_key: None,
+                    recipients: vec![Recipient::Lead],
+                },
+            )?;
+            tx.set_delivery_state(
+                at,
+                &stored.message.ulid,
+                &Recipient::Lead,
+                &DeliveryUpdate {
+                    state: DeliveryState::Undelivered,
+                    route: None,
+                    error: Some(DeliveryError::new(
+                        DeliveryErrorCode::SessionBlocked,
+                        "a dialog is open",
+                    )),
+                    attempts: 1,
+                },
+            )
+        })
+        .unwrap();
+    let before = events(&fx);
+    let comms = fx
+        .home
+        .path()
+        .join("teams")
+        .join("alpha")
+        .join("comms")
+        .join("m001.md")
+        .display()
+        .to_string();
+    // A read is no member work, so only the undelivered note can answer it.
+    let read = r#"{"session_id":"lead-1","hook_event_name":"PostToolUse","tool_name":"Read","tool_input":{"file_path":"/x"}}"#;
+    let pi_read = r#"{"session_id":"lead-1","tool_name":"read","tool_input":{"path":"/x"}}"#;
+    let pi_stop = r#"{"session_id":"lead-1","hold_active":false}"#;
+    for (harness, tool_input, stop_input) in [
+        ("claude-code", read, stop("lead-1", "")),
+        ("codex", read, stop("lead-1", "")),
+        ("pi", pi_read, pi_stop.to_owned()),
+    ] {
+        for (hook, input) in [
+            ("lead-tool", tool_input),
+            ("lead-stop", stop_input.as_str()),
+        ] {
+            let run = run_hook(
+                fx.home.path(),
+                &["hook", hook, "--harness", harness],
+                &[],
+                input,
+            );
+            assert_eq!(run.code, 0, "{harness} {hook}");
+            assert!(
+                run.out
+                    .contains("m001 (question from api) was never typed into your pane")
+                    && run.out.contains(&comms),
+                "{harness} {hook}: {}",
+                run.out
+            );
+        }
+    }
+    assert_eq!(events(&fx), before, "the hooks write nothing");
+}
