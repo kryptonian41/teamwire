@@ -247,3 +247,7 @@ pass, with its guidance. Each commit names its task ids.
 
 - [X] T022 Read the clock inside the `Store::write` that commits the row, for the amend note's `created_at` (`crates/teamwire-msg/src/send.rs:93`) and the verify record's `recorded_at` (`crates/teamwire-verify/src/lib.rs:364`), so the order of the times is the order of the commits; write a test that fails before the fix where a pass made with the old check commits between amend's clock read and amend's commit, and state the rule as built in ADR 0046 decision 5 and VER-9 per research.md US1 decision 5, FR-006b, US1/AC7 (partial)
 - [X] T023 When a delivery is still `pending` after the commit, print `send`'s `NOT RECORDED for <role>: ... run teamwire resend <team> <id>` line on stderr and exit 6, with a test, per contracts/amend-cli.md exit 6 (partial)
+
+## Phase 8: Convergence
+
+- [ ] T024 Make amend's stdout line for a note held for handoff and contracts/amend-cli.md's held-note example agree on the line's indent (the code prints `api: held for handoff (m007)` unindented, as the contract's exit-4 example and docs/api/cli.md do; the held-note example indents it two spaces), and pin the held line in a test, per contracts/amend-cli.md Output (contradicts)
