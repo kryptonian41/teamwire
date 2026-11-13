@@ -31,12 +31,25 @@ fn the_list_is_fixed_and_says_so() {
 fn every_alias_of_the_docs_resolves_to_its_current_model() {
     let catalog = catalog().unwrap();
     for (alias, id) in [
-        ("fable", "claude-fable-5-1"),
+        ("fable", "claude-fable-5-2"),
         ("opus", "claude-opus-5-5"),
         ("sonnet", "claude-sonnet-5-5"),
         ("haiku", "claude-haiku-5-5"),
     ] {
         assert_eq!(catalog.find(alias).map(|m| m.id.as_str()), Some(id));
+    }
+}
+
+#[test]
+fn fable_5_2_has_1m_and_effort_and_the_older_fables_stay_without_an_alias() {
+    let catalog = catalog().unwrap();
+    let newest = catalog.find("claude-fable-5-2").unwrap();
+    assert_eq!(newest.context_tokens, Some(1_000_000));
+    assert!(newest.thinking);
+    for id in ["claude-fable-5-1", "claude-fable-5"] {
+        let model = catalog.find(id).unwrap();
+        assert_eq!(model.id, id);
+        assert!(model.aliases.is_empty(), "{id}");
     }
 }
 

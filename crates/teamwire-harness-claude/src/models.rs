@@ -16,8 +16,13 @@ const TWO_HUNDRED_THOUSAND: u64 = 200_000;
 // The aliases and ids come from Claude Code's "Model configuration" page,
 // the table of model aliases and the table of effort levels:
 // https://code.claude.com/docs/en/model-config
-// Read on 2026-11-03 (again, for the 4.5 models). Refresh the list when that
-// page names a new model.
+// Read on 2026-11-03 (again, for the 4.5 models), and on 2026-11-13 for
+// Fable 5.2. Refresh the list when that page names a new model.
+//
+// The page says `fable` resolves to Fable 5.2 on the Anthropic API from
+// Claude Code v2.1.321, and to Fable 5 in Claude apps gateway sessions. Fable
+// 5.1 and Fable 5 stay reachable by id. The page gives every Fable model the
+// effort levels `low` to `max` and the native 1M window.
 //
 // Left out on purpose: `default`, `best` and `opusplan`, which are modes or
 // depend on the account rather than naming one model, and the `[1m]`
@@ -32,8 +37,9 @@ const TWO_HUNDRED_THOUSAND: u64 = 200_000;
 //
 // Each entry is the id, its alias if it has one, its context window, and
 // whether it takes an effort level.
-const MODELS: [(&str, Option<&str>, u64, bool); 14] = [
-    ("claude-fable-5-1", Some("fable"), ONE_MILLION, true),
+const MODELS: [(&str, Option<&str>, u64, bool); 15] = [
+    ("claude-fable-5-2", Some("fable"), ONE_MILLION, true),
+    ("claude-fable-5-1", None, ONE_MILLION, true),
     ("claude-fable-5", None, ONE_MILLION, true),
     ("claude-opus-5-5", Some("opus"), ONE_MILLION, true),
     ("claude-opus-5", None, ONE_MILLION, true),
