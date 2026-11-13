@@ -99,7 +99,18 @@ let sessionId: string | undefined;
 let running = false;
 // What a lead adds to its state file. A member adds nothing.
 let stateExtra: Record<string, unknown> = {};
+// The calls that started and have no result yet, by call id, oldest first.
+// Only the member's extension adds to it; the state file names the newest
+// as `tool`, so `status --role` can say how long it has run.
+const toolRuns = new Map<string, { name: string; started_at_ms: number }>();
+function newestTool() {
+  let newest: { name: string; started_at_ms: number } | undefined;
+  for (const run of toolRuns.values()) newest = run;
+  return newest;
+}
+let lastState = "idle";
 function writeState(state: string) {
+  lastState = state;
   if (!sessionId) return;
   try {
     mkdirSync(TW.stateDir, { recursive: true });
@@ -107,7 +118,13 @@ function writeState(state: string) {
     const tmp = `${file}.${process.pid}.tmp`;
     writeFileSync(
       tmp,
-      JSON.stringify({ pid: process.pid, started_at_ms: startedAtMs, state, ...stateExtra }),
+      JSON.stringify({
+        pid: process.pid,
+        started_at_ms: startedAtMs,
+        state,
+        tool: newestTool(),
+        ...stateExtra,
+      }),
     );
     renameSync(tmp, file);
   } catch {
@@ -181,6 +198,7 @@ function trackState(pi: ExtensionAPI, on: () => boolean, begin: (ctx: any) => vo
     if (!on()) return;
     sessionId = ctx.sessionManager.getSessionId();
     running = false;
+    toolRuns.clear();
     writeState("idle");
   });
   // A quit, or a switch to another session: this process no longer runs
@@ -195,6 +213,8 @@ function trackState(pi: ExtensionAPI, on: () => boolean, begin: (ctx: any) => vo
   });
   pi.on("agent_settled", () => {
     running = false;
+    // A settled run runs no call, even one whose result never came.
+    toolRuns.clear();
     writeState("idle");
   });
   // An extension's dialog waits for a person.
@@ -274,9 +294,19 @@ export default function (pi: ExtensionAPI) {
     };
   });
 
+  // The call that runs now. pi names a call by `toolCallId`; without one,
+  // the tool's name stands in.
+  const callKey = (event: any) => String(event.toolCallId ?? event.toolName);
+  pi.on("tool_call", (event) => {
+    if ((event as any).parentToolCallId) return;
+    toolRuns.set(callKey(event), { name: String(event.toolName), started_at_ms: Date.now() });
+    writeState(lastState);
+  });
+
   pi.on("tool_result", async (event, ctx) => {
     // A call another tool made is not one of the member's own.
     if (event.parentToolCallId) return;
+    if (toolRuns.delete(callKey(event))) writeState(lastState);
     const reply = await runHook(args("hook", "post-tool"), {
       session_id: ctx.sessionManager.getSessionId(),
       session_file: ctx.sessionManager.getSessionFile(),

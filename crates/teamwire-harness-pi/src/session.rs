@@ -12,6 +12,9 @@
 //! moment pi starts: `{"pid", "started_at_ms", "state"}`, where `state` is
 //! `idle`, `working`, `blocked` (an extension's dialog waits) or `ended` (pi
 //! quit or moved to another session). The lead's extension writes the same
+//! While a member's call runs, the file also holds `tool: {name,
+//! started_at_ms}`, the newest call with no result yet. The lead's extension
+//! writes the same
 //! file for the lead's session, with `"lead": true`, pi's `mode` (`tui` for
 //! the terminal UI) and `session_file`, because a lead's session file lives
 //! in pi's own folder for its cwd, not in `<sessions_dir>`.
@@ -22,7 +25,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use teamwire_core::{
     CallerSession, Fill, Liveness, Pid, PlaceState, Platform, SessionId, SessionKind, SessionUsage,
-    Timestamp, TokenCounts, platform::ProcessRef,
+    Timestamp, TokenCounts, ToolRun, platform::ProcessRef,
 };
 
 use crate::extension::{FILL_ENTRY, STATE_SUFFIX};
@@ -102,6 +105,8 @@ struct Recorded {
     /// pi's mode; `tui` is the terminal UI.
     mode: Option<String>,
     session_file: Option<PathBuf>,
+    /// The call that runs now, as the member's extension stamped it.
+    tool: Option<ToolRun>,
 }
 
 fn recorded(sessions_dir: &Path, session: &SessionId) -> Option<Recorded> {
@@ -135,6 +140,12 @@ fn read_recorded(file: &Path) -> Option<Recorded> {
         lead: doc.get("lead").and_then(Value::as_bool) == Some(true),
         mode: text("mode"),
         session_file: text("session_file").map(PathBuf::from),
+        tool: doc.get("tool").and_then(|t| {
+            Some(ToolRun {
+                name: t.get("name")?.as_str()?.to_owned(),
+                started_at: Timestamp::from_unix_millis(t.get("started_at_ms")?.as_i64()?)?,
+            })
+        }),
     })
 }
 
@@ -193,6 +204,18 @@ pub(crate) fn liveness(
         Some(_) => Liveness::Dead,
         None => Liveness::Unknown,
     }
+}
+
+/// The call `session` runs now, while the recorded process still runs the
+/// session: a dead process stamps no result, so its `tool` is not believed.
+pub(crate) fn current_tool(
+    platform: &dyn Platform,
+    sessions_dir: &Path,
+    session: &SessionId,
+) -> Option<ToolRun> {
+    recorded(sessions_dir, session)
+        .filter(|r| r.state.is_some() && platform.process_alive(r.process))
+        .and_then(|r| r.tool)
 }
 
 /// The fill from the newest `teamwire.fill` entry in the end of the file.

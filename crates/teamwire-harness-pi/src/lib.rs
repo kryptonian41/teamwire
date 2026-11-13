@@ -249,6 +249,20 @@ impl Harness for Pi {
         Ok(file.and_then(|f| session::context_fill(&f)))
     }
 
+    /// The member's extension stamps the call in the session's state file,
+    /// which lives in `sessions_dir` whatever the session's cwd.
+    fn current_tool(
+        &self,
+        s: &SessionId,
+        _cwd: Option<&Path>,
+    ) -> Result<Option<teamwire_core::ToolRun>, HarnessError> {
+        Ok(session::current_tool(
+            self.platform.as_ref(),
+            &self.config.sessions_dir(),
+            s,
+        ))
+    }
+
     fn session_usage(
         &self,
         s: &SessionId,

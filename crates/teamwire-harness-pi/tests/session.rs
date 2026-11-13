@@ -286,3 +286,19 @@ fn the_current_tool_comes_from_the_state_file() {
     rig.state(ID, 77, STARTED_MS, "working");
     assert_eq!(rig.pi().current_tool(&id(), None).unwrap(), None);
 }
+
+/// A pi process that died mid-call never cleared its `tool`, so a state file
+/// whose process is gone names no current call.
+#[test]
+fn a_dead_process_has_no_current_tool() {
+    let rig = Rig::new();
+    std::fs::write(
+        rig.agent_dir
+            .join(format!("sessions/teamwire/{ID}.teamwire.json")),
+        format!(
+            r#"{{"pid":77,"started_at_ms":{STARTED_MS},"state":"working","tool":{{"name":"bash","started_at_ms":{STARTED_MS}}}}}"#
+        ),
+    )
+    .unwrap();
+    assert_eq!(rig.pi().current_tool(&id(), None).unwrap(), None);
+}
