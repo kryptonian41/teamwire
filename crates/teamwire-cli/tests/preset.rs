@@ -1860,7 +1860,7 @@ fn the_speckit_preset_has_the_lead_read_the_checklist_before_the_implementer() {
     }
 }
 
-/// Some gates run only in CI (a SonarCloud scan, a deploy check). The closer
+/// Some gates run only in CI (a `SonarCloud` scan, a deploy check). The closer
 /// task names the gate it runs locally and the gates it leaves to CI, and
 /// reports both, so a closer never claims a gate it did not run.
 #[test]
