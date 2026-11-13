@@ -193,6 +193,14 @@ fn render(view: &StatusView) -> String {
             ));
         }
     }
+    // Held messages wait on purpose, so they sit outside the block above.
+    for h in &view.held_deliveries {
+        out.push(format!(
+            "held for handoff: {} -> {}",
+            h.display_id,
+            h.to.as_str()
+        ));
+    }
     if !view.unread_deliveries.is_empty() {
         out.push("deliveries handed off and not read:".to_owned());
         for d in &view.unread_deliveries {

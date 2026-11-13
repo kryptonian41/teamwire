@@ -26,8 +26,8 @@ pub use deliver::{deliver_line, deliver_line_within};
 pub use history::{AttemptHistory, PENDING_STALE};
 pub use lease::{WATCH_LEASE_STALE, watch_lease_is_dead};
 pub use lines::{
-    CommsCopy, WatchText, agent_text, lead_copy_line, line_holds_whole, message_line,
-    message_line_to, result_line, result_path, result_written, watch_text,
+    CommsCopy, HeldItem, WatchText, agent_text, lead_copy_line, line_holds_whole, message_line,
+    message_line_to, result_line, result_path, result_written, watch_text, with_held,
 };
 pub use locate::{locate, locate_session};
 

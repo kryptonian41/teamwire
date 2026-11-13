@@ -358,7 +358,7 @@ fn a_store_that_cannot_be_read_is_a_store_error() {
 
 /// Guard: a message held for the handoff is an `undelivered` row, which the
 /// fresh session's first line counts as unread, so the new session reads it
-/// (ADR 0043 decision 10).
+/// (ADR 0043 decision 11).
 #[test]
 fn a_handoff_first_line_counts_the_held_messages() {
     let rig = Rig::new();

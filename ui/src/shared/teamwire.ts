@@ -124,6 +124,12 @@ export const StuckDelivery = z.object({
   age_s: count,
 });
 
+/** Held for a member whose newest result asked for a handoff: stored, not typed, and not stuck. */
+export const HeldDelivery = z.object({
+  display_id: z.string(),
+  to: Party,
+});
+
 /** Handed to the recipient's session, not acknowledged after 10 minutes. */
 export const UnreadDelivery = z.object({
   display_id: z.string(),
@@ -171,6 +177,8 @@ export const StatusView = z.object({
   /** The last five messages, oldest first. The fixtures list them newest first, so do not rely on the order. */
   messages: z.array(MessageView),
   stuck_deliveries: z.array(StuckDelivery),
+  /** Older teamwire omits it. The "needs a look" panel reads only `stuck_deliveries`. */
+  held_deliveries: z.array(HeldDelivery).default([]),
   unread_deliveries: z.array(UnreadDelivery),
   unanswered_questions: z.array(UnansweredQuestion),
   undelivered_results: z.array(UndeliveredResult),
@@ -348,6 +356,7 @@ export type MemberView = z.infer<typeof MemberView>;
 export type LeadView = z.infer<typeof LeadView>;
 export type MessageView = z.infer<typeof MessageView>;
 export type StuckDelivery = z.infer<typeof StuckDelivery>;
+export type HeldDelivery = z.infer<typeof HeldDelivery>;
 export type UndeliveredResult = z.infer<typeof UndeliveredResult>;
 export type AfkView = z.infer<typeof AfkView>;
 export type StatusView = z.infer<typeof StatusView>;

@@ -618,7 +618,7 @@ fn an_undelivered_member_at_a_dialog_reads_working_at_a_dialog() {
 
 /// A message held for a member that asked for a handoff waits on purpose:
 /// it is listed on its own, not as a delivery that needs attention (ADR 0043
-/// decision 10).
+/// decision 11).
 #[test]
 fn a_held_message_is_listed_apart_from_stuck_deliveries() {
     let mut bed = Bed::new();

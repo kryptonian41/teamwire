@@ -4,8 +4,8 @@
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, DeliveryError, DeliveryState, DisplayId, EventType, MemberState, Message, MessageType,
-    Recipient, Refusal, Route, TeamName, TeamState, Timestamp,
+    Actor, DeliveryError, DeliveryErrorCode, DeliveryState, DisplayId, EventType, MemberState,
+    Message, MessageType, Recipient, Refusal, Route, TeamName, TeamState, Timestamp,
 };
 use teamwire_deliver::{AttemptHistory, CommsCopy, DeliveryOutcome, deliver_line};
 use teamwire_store::{Ctx, DeliveryRecord, DeliveryUpdate, Party, Tx};
@@ -120,11 +120,18 @@ pub(crate) enum Waking {
     /// The member's newest result is in its current generation: the message
     /// starts its next one, which the watch tracks (ADR 0043 decision 8).
     Wake,
+    /// That newest result asked for a handoff: the message waits, untyped,
+    /// for the fresh session or a reprompt (ADR 0043 decision 11).
+    Hold,
 }
+
+/// The summary prefix of a result that asks the lead for a handoff.
+const HANDOFF_PREFIX: &str = "handoff:";
 
 /// Whether a message that is not a reprompt wakes `recipient`: a started
 /// member whose newest completion, of any status, is in its current
-/// generation.
+/// generation. A completion whose summary starts with `handoff:` holds the
+/// message instead.
 pub(crate) fn waking(
     tx: &Tx<'_>,
     recipient: &Recipient,
@@ -138,15 +145,50 @@ pub(crate) fn waking(
     if member.state != MemberState::Started {
         return Ok(Waking::Nothing);
     }
-    let finished = tx
+    let newest = tx
         .reader()
         .latest_completion(role)?
-        .is_some_and(|c| c.completion.generation == member.generation);
-    Ok(if finished {
-        Waking::Wake
-    } else {
-        Waking::Nothing
+        .filter(|c| c.completion.generation == member.generation);
+    Ok(match newest {
+        None => Waking::Nothing,
+        Some(c) if c.completion.summary.starts_with(HANDOFF_PREFIX) => Waking::Hold,
+        Some(_) => Waking::Wake,
     })
+}
+
+/// The `undelivered` row of a message held for a handoff.
+pub(crate) fn is_held(row: &DeliveryRecord) -> bool {
+    row.delivery.state == DeliveryState::Undelivered
+        && row
+            .delivery
+            .error
+            .as_ref()
+            .is_some_and(|e| e.code == DeliveryErrorCode::HeldForHandoff)
+}
+
+/// Writes `recipient`'s new row as held: `undelivered` with
+/// `held_for_handoff`, no attempt and nothing typed. `inbox` still lists it,
+/// so the fresh session reads it, and a reprompt names it.
+pub(crate) fn hold(
+    tx: &Tx<'_>,
+    at: Timestamp,
+    message: &teamwire_core::Ulid,
+    recipient: &Recipient,
+) -> Result<(), teamwire_store::StoreError> {
+    tx.set_delivery_state(
+        at,
+        message,
+        recipient,
+        &DeliveryUpdate {
+            state: DeliveryState::Undelivered,
+            route: None,
+            error: Some(DeliveryError::new(
+                DeliveryErrorCode::HeldForHandoff,
+                "the member's newest result asked for a handoff",
+            )),
+            attempts: 0,
+        },
+    )
 }
 
 /// The bump an earlier, interrupted attempt of this reprompt left behind: the

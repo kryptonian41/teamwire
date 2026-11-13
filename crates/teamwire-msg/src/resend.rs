@@ -8,7 +8,7 @@ use teamwire_core::{
 use teamwire_deliver::AttemptHistory;
 use teamwire_store::{Ctx, DeliveryRecord};
 
-use crate::attempt::{bump_again, claim_attempt, deliver_one, earlier_bump, skipped};
+use crate::attempt::{bump_again, claim_attempt, deliver_one, earlier_bump, is_held, skipped};
 use crate::remote::{Try, deliver_to_team};
 use crate::send::{by_other_team, read_team, record_refusal, survive_error, team_name};
 use crate::{RecipientReport, SendError, SendReport};
@@ -73,6 +73,22 @@ pub fn resend(
             chosen.push(row);
         }
     }
+    // A held row waits for the handoff or a reprompt: a resend would type
+    // it into the old session (ADR 0043 decision 11).
+    let held: Vec<&DeliveryRecord> = rows.iter().filter(|r| wanted(r) && is_held(r)).collect();
+    if chosen.is_empty() && !held.is_empty() {
+        let team = team_name(ctx)?;
+        let why: Vec<String> = held
+            .iter()
+            .map(|r| {
+                let to = &r.delivery.recipient;
+                format!(
+                    "{id} -> {to}: held for handoff; run teamwire handoff {team} --role {to}, or reprompt {to}"
+                )
+            })
+            .collect();
+        return Err(SendError::NotResendable(why.join("; ")));
+    }
     if chosen.is_empty() {
         return Err(SendError::NotResendable(format!(
             "no recipient of {id} is undelivered, unconfirmed or pending for over 60 seconds"
@@ -134,7 +150,8 @@ fn resendable(
     now: Timestamp,
 ) -> Result<bool, SendError> {
     Ok(match row.delivery.state {
-        DeliveryState::Undelivered | DeliveryState::Unconfirmed => true,
+        DeliveryState::Undelivered => !is_held(row),
+        DeliveryState::Unconfirmed => true,
         DeliveryState::Pending => ctx
             .store
             .read(|tx| AttemptHistory::read(tx, message, &row.delivery.recipient))?

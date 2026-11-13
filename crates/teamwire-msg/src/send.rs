@@ -13,8 +13,8 @@ use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
 use crate::attempt::{
-    Bumped, Waking, bump, bump_again, claim_attempt, deliver_one, earlier_bump, report_of, skipped,
-    waking,
+    Bumped, Waking, bump, bump_again, claim_attempt, deliver_one, earlier_bump, hold, is_held,
+    report_of, skipped, waking,
 };
 use crate::remote::{Try, deliver_to_team};
 use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
@@ -110,11 +110,12 @@ pub fn send_with(
     let team = own;
     write_copy(ctx, &team, &message);
 
+    // A held row waits for the handoff or a reprompt, also on a resume.
     let to_try = |r: &DeliveryRecord| {
         matches!(
             r.delivery.state,
             DeliveryState::Pending | DeliveryState::Undelivered
-        )
+        ) && !is_held(r)
     };
     let mut deliveries = Vec::new();
     for record in &stored.deliveries {
@@ -312,22 +313,39 @@ fn store_message(
         settle_question(tx, at, new)?;
     }
     let mut bumped = Vec::new();
+    let mut held = Vec::new();
     if !stored.duplicate {
         for recipient in &new.recipients {
             // A reprompt starts the next generation. Any other message to a
             // member whose newest result is in its current generation wakes
             // it, and that turn is a generation too (ADR 0043).
+            // A member whose newest result asked for a handoff gets the
+            // message held for the fresh session instead (decision 11).
             let kind = if new.kind == MessageType::Reprompt {
                 EventType::MemberReprompted
-            } else if waking(tx, recipient)? == Waking::Wake {
-                EventType::MemberWoken
             } else {
-                continue;
+                match waking(tx, recipient)? {
+                    Waking::Wake => EventType::MemberWoken,
+                    Waking::Hold => {
+                        hold(tx, at, &stored.message.ulid, recipient)?;
+                        held.push(recipient.clone());
+                        continue;
+                    }
+                    Waking::Nothing => continue,
+                }
             };
             if let Some(b) = bump(tx, at, &stored.message.display_id, recipient, kind)? {
                 bumped.push(b);
             }
         }
+    }
+    let mut stored = stored;
+    if !held.is_empty() {
+        // The rows read back as written, so the report says `held`.
+        stored.deliveries = tx
+            .reader()
+            .deliveries_of(&stored.message.ulid)?
+            .all_or_corrupt()?;
     }
     Ok(Stage::Stored {
         stored: Box::new(stored),

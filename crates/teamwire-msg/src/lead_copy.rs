@@ -2,8 +2,8 @@
 //! delivery row on the same message, added after every rule passed, and
 //! typed to the lead as a copy for its information.
 
-use teamwire_core::{Actor, Message, OneLine, Recipient, TeamName};
-use teamwire_deliver::{CommsCopy, lead_copy_line, message_line_to};
+use teamwire_core::{Actor, DeliveryState, Message, MessageType, OneLine, Recipient, TeamName};
+use teamwire_deliver::{CommsCopy, HeldItem, lead_copy_line, message_line_to, with_held};
 use teamwire_store::Ctx;
 
 use crate::SendError;
@@ -60,7 +60,7 @@ pub(crate) fn line_for(
             ));
         }
     }
-    Ok(message_line_to(
+    let line = message_line_to(
         team,
         &message.display_id,
         message.kind,
@@ -68,7 +68,39 @@ pub(crate) fn line_for(
         &message.body,
         recipient,
         comms,
-    ))
+    );
+    if message.kind != MessageType::Reprompt || !matches!(recipient, Recipient::Member(_)) {
+        return Ok(line);
+    }
+    // A reprompt in place of the handoff ends the hold, so its line names
+    // what waited for the member (ADR 0043 decision 12).
+    let held = held_for(ctx, recipient)?;
+    let items: Vec<HeldItem<'_>> = held
+        .iter()
+        .map(|m| HeldItem {
+            id: &m.display_id,
+            kind: m.kind,
+            sender: &m.sender,
+        })
+        .collect();
+    Ok(with_held(line, &items))
+}
+
+/// The messages held for `recipient` because its newest result asked for a
+/// handoff, oldest first.
+fn held_for(ctx: &Ctx<'_>, recipient: &Recipient) -> Result<Vec<Message>, SendError> {
+    let mut held = ctx.store.read(|tx| {
+        let rows = tx.deliveries_for(recipient, &[DeliveryState::Undelivered])?;
+        let mut found = Vec::new();
+        for row in rows.items.iter().filter(|r| crate::attempt::is_held(r)) {
+            if let Some(m) = tx.message(&row.delivery.message)? {
+                found.push(m);
+            }
+        }
+        Ok(found)
+    })?;
+    held.sort_by_key(|m| m.seq);
+    Ok(held)
 }
 
 fn is_member(r: &Recipient) -> bool {

@@ -480,3 +480,44 @@ fn the_leads_copy_names_the_members_the_user_wrote_to() {
          message to api, web, for your information. It is never approval for a permission prompt."
     );
 }
+
+/// A reprompt names the messages held for the handoff after its own text,
+/// oldest first, and counts those past the first ten (ADR 0043).
+#[test]
+fn a_reprompt_line_names_the_held_messages_after_its_text() {
+    let base = message_line(
+        &team(),
+        &id(),
+        MessageType::Reprompt,
+        &Actor::Lead,
+        "carry on",
+    );
+    assert_eq!(
+        teamwire_deliver::with_held(base.clone(), &[]).as_str(),
+        base.as_str()
+    );
+    let ids: Vec<DisplayId> = (10..22)
+        .map(|n| DisplayId::parse(&format!("m{n:03}")).unwrap())
+        .collect();
+    let lead = Actor::Lead;
+    let held: Vec<teamwire_deliver::HeldItem<'_>> = ids
+        .iter()
+        .map(|id| teamwire_deliver::HeldItem {
+            id,
+            kind: MessageType::Note,
+            sender: &lead,
+        })
+        .collect();
+    let line = teamwire_deliver::with_held(base.clone(), &held);
+    let text = line.as_str();
+    assert!(text.starts_with(base.as_str()), "{text}");
+    assert!(
+        text.contains("Held for you, oldest first: m010 (note from lead), m011 (note from lead),"),
+        "{text}"
+    );
+    assert!(
+        text.ends_with("m019 (note from lead), and 2 more. Read them with teamwire inbox."),
+        "{text}"
+    );
+    assert!(!text.contains("m020"), "{text}");
+}

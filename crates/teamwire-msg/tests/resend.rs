@@ -517,7 +517,7 @@ fn a_row_that_may_have_arrived_stays_unconfirmed_when_the_team_closes_part_way()
 
 /// A message held for a member that asked for a handoff waits for the fresh
 /// session or a reprompt; a resend would type it into the old one (ADR 0043
-/// decision 10).
+/// decision 11).
 #[test]
 fn a_held_message_is_not_resent() {
     let mut rig = team_rig();

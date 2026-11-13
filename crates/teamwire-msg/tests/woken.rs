@@ -131,7 +131,7 @@ fn submits(rig: &Rig) -> usize {
 }
 
 /// A member whose newest result asks for a handoff gets its messages held
-/// for the fresh session: stored, not typed (ADR 0043 decision 10).
+/// for the fresh session: stored, not typed (ADR 0043 decision 11).
 #[test]
 fn a_message_to_a_member_with_a_handoff_result_is_held_not_typed() {
     let mut rig = team_rig();
@@ -190,4 +190,38 @@ fn a_reprompt_names_the_held_messages_after_its_text() {
     let body = typed.find("carry on here").unwrap();
     let held = typed.find("Held for you, oldest first: m001 (note from lead)");
     assert!(held.is_some_and(|h| h > body), "{typed}");
+}
+
+/// A resume by key tries `undelivered` rows again, but a held row keeps
+/// waiting for the handoff: nothing is typed.
+#[test]
+fn a_resume_by_key_leaves_a_held_row_held() {
+    let mut rig = team_rig();
+    finish(
+        &mut rig,
+        "api",
+        CompletionStatus::Done,
+        "handoff: next is T020",
+    );
+    let keyed = |rig: &Rig| {
+        let mut req = rig.request("lead", &["api"], MessageType::Note, "one more thing");
+        req.client_key = Some("note-1".to_owned());
+        req
+    };
+    let req = keyed(&rig);
+    let first = send(&mut rig.ctx(), req).unwrap();
+    let typed = submits(&rig);
+    let req = keyed(&rig);
+    let again = send(&mut rig.ctx(), req).unwrap();
+    assert!(again.duplicate_of_key);
+    assert_eq!(submits(&rig), typed, "nothing is typed");
+    let row = rig
+        .store
+        .read(|tx| tx.delivery(&first.id, &rig::to("api")))
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        row.delivery.error.map(|e| e.code),
+        Some(DeliveryErrorCode::HeldForHandoff)
+    );
 }

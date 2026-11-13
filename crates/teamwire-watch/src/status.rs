@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use teamwire_core::{
-    DeliveryState, Liveness, Member, MemberState, Recipient, ReportState, Role, SessionId,
-    Timestamp, one_line,
+    DeliveryErrorCode, DeliveryState, Liveness, Member, MemberState, Recipient, ReportState, Role,
+    SessionId, Timestamp, one_line,
 };
 use teamwire_deliver::{AttemptHistory, watch_lease_is_dead};
 use teamwire_store::{
@@ -16,8 +16,8 @@ use teamwire_store::{
 use crate::observe::{Activity, Listings, Seen, observe};
 use crate::text::result_path;
 use crate::{
-    LeadView, MemberView, MessageView, StatusView, StuckDelivery, UNREAD_AFTER, UnansweredQuestion,
-    UndeliveredResult, UnreadDelivery, WatchState, WatchView,
+    HeldDelivery, LeadView, MemberView, MessageView, StatusView, StuckDelivery, UNREAD_AFTER,
+    UnansweredQuestion, UndeliveredResult, UnreadDelivery, WatchState, WatchView,
 };
 
 /// The longest message excerpt status shows.
@@ -146,6 +146,19 @@ fn read_rows(tx: &ReadTx<'_>, ctx: &Ctx<'_>, now: Timestamp) -> Result<Rows, Sto
         let Some(message) = tx.message(&d.message)? else {
             continue;
         };
+        // A message held for a handoff waits on purpose, for the fresh
+        // session or a reprompt, so it needs no attention (ADR 0043).
+        if d.state == DeliveryState::Undelivered
+            && d.error
+                .as_ref()
+                .is_some_and(|e| e.code == DeliveryErrorCode::HeldForHandoff)
+        {
+            view.held_deliveries.push(HeldDelivery {
+                display_id: message.display_id,
+                to: d.recipient,
+            });
+            continue;
+        }
         let attempt = AttemptHistory::read(tx, &message, &d.recipient)?;
         if d.state == DeliveryState::Pending && !attempt.is_stale(now) {
             continue;

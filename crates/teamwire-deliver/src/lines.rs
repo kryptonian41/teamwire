@@ -93,6 +93,56 @@ pub fn message_line(
     )
 }
 
+/// One message held for a member that asked for a handoff (ADR 0043
+/// decision 12), as a reprompt's line names it.
+#[derive(Debug, Clone, Copy)]
+pub struct HeldItem<'a> {
+    pub id: &'a DisplayId,
+    pub kind: MessageType,
+    pub sender: &'a Actor,
+}
+
+/// The most held messages a reprompt's line names one by one; the rest are
+/// counted, and `teamwire inbox` lists them all.
+const HELD_NAMED: usize = 10;
+
+/// A reprompt's line with the messages held for the member appended, oldest
+/// first: `<line> Held for you, oldest first: m010 (answer from lead), ….
+/// Read them with teamwire inbox.` The reprompt's own text comes first, so
+/// the member reads the lead's instruction before the backlog. With nothing
+/// held the line is unchanged.
+pub fn with_held(line: OneLine, held: &[HeldItem<'_>]) -> OneLine {
+    if held.is_empty() {
+        return line;
+    }
+    let mut named: Vec<String> = held
+        .iter()
+        .take(HELD_NAMED)
+        .map(|h| {
+            format!(
+                "{} ({} from {})",
+                clean(h.id.as_str()),
+                clean(h.kind.as_str()),
+                clean(h.sender.as_str())
+            )
+        })
+        .collect();
+    let more = held.len().saturating_sub(HELD_NAMED);
+    if more > 0 {
+        named.push(format!("and {more} more"));
+    }
+    one_line(
+        &format!(
+            "{} Held for you, oldest first: {}. Read them with teamwire inbox.",
+            line.as_str(),
+            named.join(", ")
+        ),
+        // Ten names of a few dozen characters each fit well inside a
+        // second `LINE_CHARS`, so this cap only guards against a damaged row.
+        LINE_CHARS * 2,
+    )
+}
+
 /// The lead's stored copy of a message, `comms/<id>.md`, and whether it
 /// holds this message's text. A failed write leaves it missing or out of
 /// date.

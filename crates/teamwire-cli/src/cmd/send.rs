@@ -190,6 +190,8 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
     for d in &report.deliveries {
         say(&recipient_line(&report.display_id, d));
         match d.state {
+            // Held for the handoff, as the line says: nothing went wrong.
+            RecipientState::Undelivered if is_held(d) => {}
             RecipientState::Undelivered => warn(&format!(
                 "NOT DELIVERED to {}: {}",
                 d.to,
@@ -212,10 +214,20 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
     }
 }
 
-/// The stdout line for one recipient.
-fn recipient_line(_id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
+/// The stdout line for one recipient. A message held for a member that
+/// asked for a handoff reads `held for handoff (<id>)` (ADR 0043).
+fn recipient_line(id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
+    if is_held(d) {
+        return format!("  {}: held for handoff ({id})\n", d.to);
+    }
     let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
     format!("  {}: {}{reason}\n", d.to, state_word(d.state))
+}
+
+/// A recipient whose copy waits for its handoff or a reprompt.
+fn is_held(d: &teamwire_msg::RecipientReport) -> bool {
+    d.state == RecipientState::Undelivered
+        && d.reason == Some(teamwire_core::DeliveryErrorCode::HeldForHandoff)
 }
 
 /// A pending recipient after the command ends means its delivery record
@@ -242,7 +254,13 @@ fn state_word(state: RecipientState) -> &'static str {
 /// unconfirmed, or skipped in a resume by key because another command may
 /// still be delivering it.
 pub(crate) fn exit_of(report: &SendReport) -> u8 {
-    let any = |s| report.deliveries.iter().any(|d| d.state == s);
+    // A held recipient is where it should be, so it does not count.
+    let any = |s| {
+        report
+            .deliveries
+            .iter()
+            .any(|d| d.state == s && !is_held(d))
+    };
     if any(RecipientState::Pending) {
         STORE
     } else if any(RecipientState::Undelivered) {

@@ -241,11 +241,14 @@ result is `undelivered` or `unconfirmed` reads `working` while its session
 works and `working (at a dialog)` while it waits at a dialog mid-turn, as the
 watch counts it (ADR 0043); `prompted outside teamwire` means a prompt typed
 by hand, because any teamwire message to a finished member starts its next
-generation), generation, age against
+generation, unless the message is held for a handoff), generation, age against
 deadline, delivery state of its newest result, `ctx` (the context fill as
 `72% 720k`, or `-` when unknown), branch, title; then the last
 five messages, message ids that are `pending` over 60 s, `unconfirmed` or
-`undelivered`, and results the lead has not received: a member's newest
+`undelivered`, then one line per message held for a handoff,
+`held for handoff: <id> -> <role>`, outside "deliveries that need attention"
+(`--json`: `held_deliveries`, `[{"display_id", "to"}]`; a held row is not in
+`stuck_deliveries`), and results the lead has not received: a member's newest
 completion when it is `undelivered` or `unconfirmed` (ADR 0024); each names `reports/<role>.md` when the result file is missing or out of date. It also shows the team's watch
 (`running` with pid and heartbeat age, `stale`, or `none`), deliveries still
 `handed_off` to a member after 10 minutes, every question with no answer, and per member
@@ -574,6 +577,17 @@ delivering it; if it does not arrive, run teamwire resend <team> <id> after 60
 s` on stderr and exits 5. So only a crash after the host call can type the line
 a second time. That is the one duplicate ADR 0003 allows.
 
+A message that is not a reprompt, to a member whose newest result in its
+current generation has a summary starting `handoff:`, is held for the
+handoff (ADR 0043): its row is `undelivered` with `held_for_handoff`,
+nothing is typed, the recipient's line reads `<role>: held for handoff
+(<id>)` with no `NOT DELIVERED` line, and the command exits 0. A resume by
+`--key` leaves a held row as it is. `teamwire handoff` counts held messages
+in the fresh session's unread messages. A reprompt to that member types its
+own text and then `Held for you, oldest first: <id> (<type> from <sender>),
+.... Read them with teamwire inbox.`, naming the first ten and counting the
+rest; the reprompt starts the next generation, so later messages are typed.
+
 An `answer` with `--re <id>` settles question `<id>` for the answerer, in the
 same write as the answer: the question's delivery row to the sender becomes
 `acked` (ADR 0043). So a question to the lead that was never typed, and that
@@ -590,7 +604,10 @@ only. A caller with no member token that holds `TEAMWIRE_USER_KEY` is proven
 as the user, as for `send --from user` (ADR 0040), and resends only the
 user's own messages, the lead's copy included. For a recipient in another team it writes that team's copy if it is
 missing, and never types a line that team already handed off. Exit codes as
-for `send`.
+for `send`. A message held for a handoff is not resent: with no other
+recipient to retry, the command exits 1 with `refused.not_resendable: <id> ->
+<role>: held for handoff; run teamwire handoff <team> --role <role>, or
+reprompt <role>`.
 
 ### `teamwire user-key`
 

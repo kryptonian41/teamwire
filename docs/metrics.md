@@ -55,7 +55,7 @@ eight values.
 | `teamwire.messages.sent` | counter | `{message}` | `team`, `type`, `sender_kind` | Do members talk, and in which directions? |
 | `teamwire.messages.refused` | counter | `{message}` | `team`, `type`, `reason` | Which rules do agents trip over? |
 | `teamwire.deliveries` | counter | `{delivery}` | `team`, `route`, `outcome` (`handed_off`, `unconfirmed`, `undelivered`) | How reliable is each route? |
-| `teamwire.deliveries.undelivered` | counter | `{delivery}` | `team`, `code` | Why do deliveries fail? |
+| `teamwire.deliveries.undelivered` | counter | `{delivery}` | `team`, `code` | Why do deliveries fail? `code` `held_for_handoff` counts a message held for a member's handoff (ADR 0043), which is no failure |
 | `teamwire.delivery.duration` | histogram | `s` | `team`, `route`, `outcome` | How long from store to hand-off? |
 | `teamwire.delivery.attempts` | histogram | `{attempt}` | `team`, `route` | How often does the bounded retry fire? |
 | `teamwire.messages.acked` | counter | `{message}` | `team`, `type` | Do recipients read what they get? |

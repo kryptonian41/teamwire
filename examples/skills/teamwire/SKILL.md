@@ -859,6 +859,11 @@ yours:
   session in the same seat. Read any `warning:` line it prints. A handoff
   summary always starts with `handoff:`. Any other prefix, such as
   `nothing to do:` or `2 questions for the parent.`, comes after it.
+  Until you act, a message you send to that member is held, not typed:
+  `send` prints `<role>: held for handoff (<id>)` and exits 0, `status`
+  lists it as `held for handoff: <id> -> <role>`, and `resend` refuses it.
+  The fresh session reads held messages from its inbox. A reprompt in
+  place of the handoff names them after its own text.
 - Hand off a member that is past its handoff point before you send it a
   reprompt with findings, so the fixes run in a fresh context.
 

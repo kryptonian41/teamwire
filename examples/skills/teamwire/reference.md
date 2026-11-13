@@ -178,6 +178,18 @@ and `git log` instead. Read that warning, because the member may not have
 finished writing. The new session's first line says how many unread
 messages it has.
 
+Between that `done` and the handoff, every message to the member is held:
+stored as `undelivered` with the code `held_for_handoff`, and never typed
+into the old session. `send` prints `<role>: held for handoff (<id>)` and
+exits 0. `teamwire status` lists each one as
+`held for handoff: <id> -> <role>`, apart from the deliveries that need
+attention, and the dashboard does not flag it. `resend` refuses a held
+message and names `handoff` and `reprompt`. The fresh session counts held
+messages as unread and reads them with `teamwire inbox`. When you reprompt
+the member instead of handing it off, the reprompt's line ends with
+`Held for you, oldest first: <id> (<type> from <sender>), ....`, and the
+messages that follow the reprompt are typed as usual.
+
 If the command fails after it closed the old session, run
 `teamwire reopen <team> --role <role>` once the old session has ended. That
 resumes the old session, with its full context. The command writes the old

@@ -118,6 +118,7 @@ pub enum DeliveryErrorCode {
     RecipientRemoved, TeamClosed, NoHost,
     DeliveryInterrupted,  // left in `delivering` past `delivering_stale_s` (REP-14)
     BudgetExhausted,      // the turn-end hook's delivery budget ran out (ADR 0007)
+    HeldForHandoff,       // the recipient asked for a handoff; nothing was typed (ADR 0043)
 }
 
 /// Why a send was refused before anything was stored (MSG-1..MSG-3, MSG-9, MSG-14, MSG-15, MSG-20).
