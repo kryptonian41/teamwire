@@ -469,10 +469,7 @@ mod tests {
             ..StatusView::default()
         };
         let text = render(&view, Some(&api));
-        assert!(
-            text.contains("    tool: none reported\n"),
-            "{text}"
-        );
+        assert!(text.contains("    tool: none reported\n"), "{text}");
         // Without --role, or for a member that is not working, no tool line.
         assert!(!render(&view, None).contains("tool:"));
         let view = StatusView {
