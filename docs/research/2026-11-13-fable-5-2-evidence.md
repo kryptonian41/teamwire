@@ -14,14 +14,15 @@ claims only. The older claims are ten days older than it.
 
 ## What was added
 
-`examples/models/evidence.json` now holds 246 entries, 24 more than before.
+`examples/models/evidence.json` now holds 266 entries, 44 more than before.
 
-- 16 entries are Fable 5.2 rows.
-- 8 entries are comparison rows for other models. A comparison row is added
+- 17 entries are Fable 5.2 rows.
+- 27 entries are comparison rows for other models. A comparison row is added
   only in a source that is new to the file. It is the single best row that
-  source's page gives for a model the 2026-11-03 note already covers. Without
-  them, a new source would rank Fable 5.2 first against nothing. Each
-  comparison row's claim ends with "Added for comparison with Fable 5.2."
+  source's page gives for each model the 2026-11-03 note already covers. All
+  three new sources follow this rule. Without comparison rows, a new source
+  would rank Fable 5.2 first against nothing. Each comparison row's claim
+  ends with "Added for comparison with Fable 5.2."
 - In a source group that already existed, only Fable 5.2 rows were added, and
   the group was renumbered.
 
@@ -142,6 +143,15 @@ references, some of them before release.
   runs. The SWE-bench Pro subset counts 463 problems for Fable 5.2 and 478 for
   the older entries. The ranks still hold on either count (see "Groups
   re-ranked").
+- Limits of the SWE-bench Pro subset in particular, from the page's reference
+  3: the Fable 5.2 runs were graded in containers with no network access. The
+  page says the Opus 5.5 and Fable 5.1 figures set beside them were graded
+  with network access, "so only the problem set is matched, not the grading
+  setup". The page also calls the Fable 5.2 costs estimates, because they were
+  priced from each attempt's token totals, not request by request. One Fable
+  5.2 attempt at `high` was stopped by a safety monitor and counts as a
+  failure; without it, `high` would be 96.5%. The two Fable 5.2 claims in the
+  file state the grading and cost caveat.
 
 ### Anthropic: Choosing a model
 
@@ -165,9 +175,20 @@ Undated.
 - Says: Fable 5.2 supports all five effort levels, and the API default is
   `high`. Run an effort sweep on your own evals rather than carrying settings
   over from Fable 5.1.
-- Used for: this note only. The page names no task class for Fable 5.2, and
-  its advice gives no reason to rank Fable 5.2 against the other models in
-  any class.
+- Says: "Start with `high`. Most of the gain in capability is already present
+  at `high`, and above it, gains are uneven and depend on the task. Step up to
+  `xhigh` for your hardest long-running coding and agentic work, where you've
+  measured a gain." It says to reserve `max` for measuring the model's
+  ceiling, because `max` "runs slower and costs more than at `xhigh`, often
+  for only a small gain".
+- Informs `contained_feature`. "Long-running coding" is coding work, the kind
+  of advice the 2026-11-03 note mapped to `contained_feature` from this page.
+  The file adds one entry, Fable 5.2 at `xhigh`, worded as the page words it.
+  It ranks 3 in the page's `contained_feature` group, after the Opus 5.5 and
+  Sonnet 5.5 entries. The page gives this advice for the hardest work only,
+  and only "where you've measured a gain", so it is the step up from those
+  two starting points, not a first choice.
+- Limits: guidance, not a measurement.
 
 ### Terminal-Bench 4.1 leaderboard
 
@@ -178,9 +199,15 @@ Undated.
   rows (see "Older entries that are now out of date").
 - Fable 5.2 at `max` in Claude Code, dated 2026-11-09: 65.76% ±2.85, 330
   trials, $16,492.76.
-- Comparison rows, as the lead asked: Opus 5.5 at `max`, 65.76% ±3.11,
-  $4,718.65 (2026-09-22), and Fable 5.1 at `max`, 57.27% ±3.83, $6,243.50
-  (2026-09-01).
+- Comparison rows, by the rule in "What was added": the best row on the board
+  of each of the 21 other covered models the board shows. Examples: Opus 5.5
+  at `max`, 65.76% ±3.11, $4,718.65; Sonnet 5.5 at `max`, 63.94%; GPT-6.1 Sol
+  at `max`, 60.91%; GPT-6 Astra at `max`, 60.30%; Fable 5.1 at `xhigh`, 57.58%
+  ±3.31, $4,872.04. Fable 5.1's `max` row (57.27%) is below its `xhigh` row on
+  this board, so the file keeps `xhigh`. "New sources" below lists every row.
+- The board's rows for models no harness reaches, or for versions pi does not
+  list, are left out: Kimi K3.1 Pro, GLM-5.3-Flash, DeepSeek V4.1 Flash and V4
+  Pro, Hy4, Muse, Mistral, Qwen3.8, MiMo, Inkling, Gemini, Beam and Nemotron.
 - Informs `contained_feature`.
 - Limits: Fable 5.2 has one row, at `max` only. It ties Opus 5.5 at `max` for
   about 3.5 times the cost.
@@ -193,12 +220,13 @@ Undated.
 | Anthropic: Optimizing for cost and intelligence, `read_only_survey` (defect search) | Fable 5.2 takes ranks 1 to 3 (`high`, `medium`, `low`). The Fable 5.1 entry moves from 1 to 4, because every Fable 5.1 setting scored below Fable 5.2 at `low`. |
 | Anthropic: Choosing a model, `cross_cutting` | Fable 5.2 shares rank 2 with Fable 5.1. Both entries carry the same advice. |
 | Anthropic: Choosing a model, `concurrency_data_loss` | Fable 5.2 shares rank 1 with Fable 5.1. Opus 5.5 stays at 2. |
+| Anthropic effort documentation, `contained_feature` | Fable 5.2 `xhigh` enters at rank 3, after Opus 5.5 (1) and Sonnet 5.5 (2). No older entry moves. |
 
 ## New sources
 
 | Source in the file | Class | Entries, rank order |
 | --- | --- | --- |
-| Terminal-Bench 4.1 leaderboard | `contained_feature` | 1 Fable 5.2 `max` 65.76%; 1 Opus 5.5 `max` 65.76% (comparison); 2 Fable 5.1 `max` 57.27% (comparison) |
+| Terminal-Bench 4.1 leaderboard | `contained_feature` | 1 Fable 5.2 `max` 65.76%; then comparison rows: 1 Opus 5.5 `max` 65.76%; 2 Sonnet 5.5 `max` 63.94%; 3 GPT-6.1 Sol `max` 60.91%; 4 GPT-6 Astra `max` 60.30%; 5 Fable 5.1 `xhigh` 57.58%; 6 Opus 5 `xhigh` 53.33%; 6 GPT-6.1 Terra `max` 53.33%; 7 GPT-6 Sol `max` 50.30%; 8 Fable 5 `max` 44.85%; 9 GLM-5.3 `max` 41.21%; 10 Haiku 5.5 `max` 40.00%; 11 Grok 4.7 `xhigh` 38.79% (Grok Build harness); 12 GPT-5.6 Sol `max` 38.48%; 13 Opus 4.8 `max` 23.64%; 14 Kimi K3 `max` 23.03%; 15 GPT-5.6 Terra `max` 21.52%; 16 Grok 4.6 `high` 19.70% (Grok Build harness); 17 GPT-5.6 Luna `max` 17.58%; 18 GPT-6 Luna `max` 15.15%; 19 Sonnet 5 `max` 12.12%; 20 GPT-5.4 Mini `xhigh` 1.82% |
 | Introducing Claude Fable 5.2: FrontierCode 2.0 | `contained_feature` | 1 Fable 5.2 `xhigh` 49.1%; 2 Fable 5.2 `max` 45.6%; 3 Opus 5.5 `max` 45.5% (comparison); 4 Fable 5.2 `high` 45.3%; 5 GPT-6 Astra `max` 42.8% (comparison); 6 Fable 5.2 `medium` 37.6%; 7 Fable 5.2 `low` 34.2%; 8 Fable 5.1 `xhigh` 32.4% (comparison) |
 | Anthropic: Optimizing for cost and intelligence: internal agentic-coding benchmark | `contained_feature` | 1 Fable 5.2 `high` 93.5%; 2 Opus 5.5 `xhigh` 91.1% (comparison); 3 Fable 5.2 `low` 88.9%; 3 Fable 5.2 `medium` 88.9%; 4 Fable 5.1 `high` 85.7% (comparison); 5 Sonnet 5.5 `high` 77.8% (comparison) |
 
@@ -239,7 +267,9 @@ decides whether to refresh them.
   the board's 4.1 re-score. The board now shows Opus 5.5 at `max` as 65.76%
   ±3.11, where the file's 4.0 row has 64.85%. It shows Fable 5.1 at `max` as
   57.27% ±3.83, where the file's 4.0 row has 57.88%. Other rows moved too, for
-  example GPT-6 Astra at `high` from 57.88% to 60.00%.
+  example GPT-6 Astra at `high` from 57.88% to 60.00%. The board also now has
+  rows that the 4.0 group lacks, such as GPT-6.1 Terra (2026-10-26), Haiku 5.5
+  and Kimi K3. Those rows appear in the file only in the 4.1 group.
 - **Choosing a model.** The page now names Fable 5.2 where it named Fable 5.1.
   The two Fable 5.1 entries still quote the older wording.
 - **Defect search.** The page now prices Fable 5.1 alone at $527 to $716 a run.
@@ -278,6 +308,10 @@ preset should use Fable 5.2 is an open question for the lead.
   -Science, CyScenarioBench, CVE Rediscovery, protein design, WANDR, OSWorld,
   RoboDojo, AA-Briefcase, Remote Labor Index, Humanity's Last Exam and
   Chartography measure no task class the file covers.
+- **The release page's BenchCAD 2.1 and Fermat formalization charts.** Fable
+  5.2 scored 83.5 on BenchCAD 2.1 at `max` (hardware design), and its
+  1,000-agent team finished the Lean formalization in 30 hours, where Opus
+  5.5's reached 27%. Neither measures a task class the file covers.
 - **The release page's Python-to-Rust migration.** It was done by "an earlier
   version of Fable 5.2", and its number (26 times faster start-up) measures
   the result, not the model. The file does not carry it.
