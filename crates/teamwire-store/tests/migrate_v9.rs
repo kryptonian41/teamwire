@@ -148,11 +148,12 @@ const RAW_PLAN_REVIEWER: &str = "INSERT INTO members (role, title, kind, mode, h
     VALUES ('plan', 'Review the plan', 'plan_reviewer', 'pane', 'pi', 'herdr', '/r', 1200,
     'started', 1, '2026-10-01T00:00:05.000Z')";
 
-/// Version 10 adds ticket refs after this step, so a store opened here ends
-/// at version 10.
+/// Version 10 adds ticket refs after this step, and version 11 the
+/// `member.woken` event type (ADR 0043), so a store opened here ends at
+/// version 11.
 #[test]
-fn this_build_is_at_schema_version_10() {
-    assert_eq!(SCHEMA_VERSION, 10);
+fn this_build_is_at_schema_version_11() {
+    assert_eq!(SCHEMA_VERSION, 11);
 }
 
 #[test]

@@ -16,6 +16,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `member.refused` | launch turns a member away (AFK budget spent, team closing) | `reason`, `reason_code` (`afk_budget_spent`, `team_closed`), `launch`, `requested`, `dispatch`, `steps` |
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
+| `member.woken` | a message other than a reprompt raises the generation of a finished member (ADR 0043); not a reprompt, so no reprompt metric counts it | `generation`, `message`; an undo after a known delivery failure adds `undone: true` |
 | `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null when the harness picks its own id), `place` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |

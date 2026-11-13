@@ -169,7 +169,7 @@ names in `docs/metrics.md` section 1:
 
 ```
 team.created team.closing team.closed team.lead_adopted team.refs_added
-member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.handoff
+member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.woken member.handoff
 member.completed member.completion_refused member.held
 message.sent message.refused
 delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered delivery.recipient_stopped
@@ -706,7 +706,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 10: `crates/teamwire-store/src/schema/v1.sql` to `v10.sql`,
+The schema is version 11: `crates/teamwire-store/src/schema/v1.sql` to `v11.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -728,7 +728,10 @@ when launch creates the team, and `Tx::add_refs(at, refs)` appends the refs not 
 `team.refs_added`, or writes nothing when none is new (ADR 0038). It refuses with
 `StoreError::Constraint`, and appends nothing, when the team would hold more than `REFS_MAX` (20)
 refs, because two `--add` runs may each have passed `validate`'s check before either wrote. A
-read-only open of an older database reads `refs` as empty. The tables and columns are those in
+read-only open of an older database reads `refs` as empty. Version 11 (`src/schema/v11.sql`)
+rebuilds `events` with the `member.woken` type, as version 10 did, and keeps every row, every
+`seq` and the AUTOINCREMENT counter (ADR 0043). The step only goes forward: a database at
+version 11 cannot be opened by an older binary. The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

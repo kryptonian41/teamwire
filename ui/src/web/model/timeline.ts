@@ -157,6 +157,12 @@ export function describe(row: EventRow, resultN: number | null = null): { label:
       const g = num(d, "generation");
       return { label: who && `${who} reprompted`, details: g === null ? null : `generation ${g}` };
     }
+    // A message other than a reprompt woke a finished member: a new
+    // generation that teamwire tracks, not a reprompt (teamwire ADR 0043).
+    case "member.woken": {
+      const g = num(d, "generation");
+      return { label: who && `${who} woken`, details: g === null ? null : `generation ${g}` };
+    }
     case "member.handoff": {
       const g = num(d, "generation");
       const was = str(d, "old_session")?.slice(0, 8) ?? null;

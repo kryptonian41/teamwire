@@ -53,7 +53,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -95,6 +95,10 @@ pub const SCHEMA_V9_SQL: &str = include_str!("schema/v9.sql");
 /// `events` table rebuilt with the `team.refs_added` type in its CHECK list.
 /// Every row is kept.
 pub const SCHEMA_V10_SQL: &str = include_str!("schema/v10.sql");
+
+/// The DDL that takes version 10 to 11: `events` rebuilt with
+/// `member.woken` in its type list (ADR 0043).
+pub const SCHEMA_V11_SQL: &str = include_str!("schema/v11.sql");
 
 #[cfg(test)]
 mod tests {

@@ -292,7 +292,7 @@ export const DecisionsView = z.object({
 export const EventType = z.enum([
   "team.created", "team.closing", "team.closed", "team.lead_adopted", "team.refs_added",
   "member.creating", "member.started", "member.failed", "member.refused", "member.replaced",
-  "member.removed", "member.reprompted", "member.handoff", "member.completed", "member.completion_refused", "member.held",
+  "member.removed", "member.reprompted", "member.woken", "member.handoff", "member.completed", "member.completion_refused", "member.held",
   "message.sent", "message.refused",
   "delivery.handed_off", "delivery.unconfirmed", "delivery.undelivered", "delivery.acked",
   "delivery.reminded", "delivery.resent", "delivery.reentered", "delivery.recipient_stopped",

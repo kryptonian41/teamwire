@@ -106,7 +106,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `verify/<role>.log` | verify | Full check output |
 | `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 
-The database tables (schema version 10; exact DDL is owned by the store
+The database tables (schema version 11; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
