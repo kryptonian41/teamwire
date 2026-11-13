@@ -383,7 +383,10 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   part of a markdown link's `](...)` syntax, and either names a tracked
   file or directory or ends in a file extension. So a route such as
   `"/agui/deck_editor"`, an event name such as `knit.progress`, and an
-  absolute path are not paths. A directory token, such as `apps/ai`, counts
+  absolute path are not paths. A token with no `/` is a path only when it
+  names a tracked file at the repository root exactly, so `README.md`,
+  `.gitignore` and `Cargo.toml` are paths, and `knit.progress` and `lib.rs`
+  are not. A directory token, such as `apps/ai`, counts
   in the overlap table as a prefix of the files under it, and adds no file
   to the mention search.
 - **FR-014**: The command MUST print one draft `owns` list per user story,
@@ -393,10 +396,13 @@ further commit that changes the waived file makes verify `FLAGGED` again.
   mentions a task path when it holds the exact path text, a CI workflow
   `paths:` glob that matches the path, the path's dotted module name (such
   as `harness.tools` for `harness/tools.py`), or the path's full file name
-  with its extension (such as `tools.py`). The exact-path rule and the
-  file-name rule MUST also match right after a `/` or `./` prefix, so
-  `./apps/ai/harness/tools.py`, `$ROOT/apps/ai/harness/tools.py` and
-  `harness/tools.py` all mention `apps/ai/harness/tools.py`. The dotted
+  with its extension (such as `tools.py`). The exact-path rule MUST also
+  match right after any `/` or `./` prefix, so `./apps/ai/harness/tools.py`
+  and `$ROOT/apps/ai/harness/tools.py` mention `apps/ai/harness/tools.py`.
+  After a `/`, the file-name rule MUST count only when the slash-joined text
+  that ends at the name is a suffix of the task path. So `harness/tools.py`
+  and `ai/harness/tools.py` mention `apps/ai/harness/tools.py`, and
+  `other/tools.py` does not. The dotted
   module rule keeps its token boundary. A bare stem such as `tools` MUST
   NOT count.
 - **FR-015**: The command's output MUST label the `owns` list as a draft for
