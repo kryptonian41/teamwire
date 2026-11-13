@@ -117,13 +117,14 @@ team. The `plan-review` step goes before the implementers, and the
 | `dependent-tickets` | Tickets with real blocking edges. Waves follow the edges, and the integrator merges blockers first. |
 | `survey` | Read-only investigation across several areas. |
 | `contract-split` | Last resort: one feature split across implementers. Expect bugs where the parts meet. |
-| `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and `tasks.md`, a plan reviewer runs `analyze`, and one implementer runs `implement`. Read "Spec-kit features" in `reference.md` first. |
+| `speckit` | One feature built with GitHub's spec-kit commands. A spec member writes the spec, the plan and `tasks.md`, a plan reviewer runs `analyze`, and one implementer runs `implement`. `teamwire speckit draft <tasks.md>` lists the files phases and stories share and drafts each story's `owns`. Read "Spec-kit features" in `reference.md` first. |
 | `plan-review` | The first step, when a wrong plan would waste more than one implementer's work. One fresh agent reads the plan and every brief and reports what a member could not act on. Run it alone, fix the briefs, then add the implementers. |
 | `integrator` | The step after the last wave of a shape that joins branches. One implementer merges the branches in the plan's order and runs the full gate. It decides nothing. |
 | `closer` | The last step of every team that wrote code. One agent verifies the team's claims and writes one report. |
 
 For a feature built with GitHub's spec-kit, start from
-`teamwire preset speckit` and read "Spec-kit features" in `reference.md`. That section says
+`teamwire preset speckit`, run `teamwire speckit draft <tasks.md>` once
+`tasks.md` exists, and read "Spec-kit features" in `reference.md`. That section says
 what the base branch must hold, how Claude Code, Codex and pi members run
 spec-kit's commands, and what each brief says about questions, ticks,
 commits and `converge`.
@@ -174,6 +175,9 @@ spec and the code for it, and run no build and no test.
    yourself ("Changing the team while it runs" lists what each `--add` spec
    needs). The one planned overlap is a spec-kit split, where every story
    member owns the shared `tasks.md` ("Spec-kit features" in `reference.md`).
+   For a spec-kit feature, `teamwire speckit draft <tasks.md>` lists the
+   files each pair of phases and stories shares; split only stories it shows
+   as sharing none.
 4. No file the work must change is unowned. For each name the brief
    changes (a function, field, constant, route, env key, message text or
    rule), grep the whole repository for the name and for its old value, not
@@ -187,7 +191,11 @@ spec and the code for it, and run no build and no test.
    has no standing permission to edit outside `owns`, so otherwise it asks
    you, at a turn each time. In teamwire's own runs, a request to edit a file
    outside `owns` was the most common question members asked, mostly for a
-   caller, a doc or a test elsewhere.
+   caller, a doc or a test elsewhere. For a spec-kit feature, start from the
+   DRAFT `owns` lists that `teamwire speckit draft` prints: each file there
+   names a task path by its exact path, a dotted module name, its full file
+   name or a CI `paths:` glob. Check each draft, and keep the grep above for
+   the names a draft cannot see, such as a changed function or message text.
 5. Each content or product rule, such as which real people may appear, has
    one worked example, settled with the user. In five of teamwire's own runs,
    members decided the same question differently.

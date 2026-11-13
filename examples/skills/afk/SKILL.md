@@ -29,7 +29,9 @@ task asks for a spec-kit feature with no such reviewed spec, tell the user
 that the spec stage needs them, and stop before step 2. With a reviewed
 spec, follow "Spec-kit features" in the teamwire skill's `reference.md`
 from its finished `tasks.md` case: the plan reviewer, the build, the closer
-and the fix rounds run as usual.
+and the fix rounds run as usual. While the user is still here, run
+`teamwire speckit draft <tasks.md>` and show them its table of shared files
+and the split you plan, because nobody reviews the split once they leave.
 
 1. Check that your context says bypass permissions mode or auto mode is
    active. If it does not, tell the user to restart the session with

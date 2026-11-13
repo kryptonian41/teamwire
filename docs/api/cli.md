@@ -778,6 +778,50 @@ skeleton starts with
 and prints that line, so a launch stops at setup until the lead puts the
 repository's own setup command, or `true`, in its place.
 
+### `teamwire speckit draft <tasks.md> [--repo <dir>]`
+
+Reads a spec-kit `tasks.md` and prints text (ADR 0044). It writes no file
+and no store row, and has no `--json`. `--repo` is the repository to search,
+by default the git top level of the folder that holds `tasks.md`.
+
+- A phase starts at `## Phase <n>: <title>`. A task line is `- [ ]`,
+  `- [x]` or `- [X]`, then `T<digits>`, an optional `[P]` and an optional
+  `[US<n>]`. A task with no story label is in "Setup and polish".
+- A path is a word, in backticks or not, that holds `/` or ends in
+  `.<ext>`, without the punctuation around it. A `:N` or `:N-M` line suffix
+  is dropped, so `send.rs:297-321` is `send.rs`. A URL, a placeholder such
+  as `<role>.md` and a word made only of `/` and `.` are not paths. Outside
+  backticks the extension needs two characters, so `e.g.` is no path.
+- An indented line under a task line belongs to that task, until the next
+  task line, heading or blank line.
+- A path that holds `*` is a glob over `git ls-files`, matched as verify
+  matches `owns` (`*` stays in one segment, `**` crosses them). Each match
+  is a task path. A glob that matches nothing stays as itself.
+
+It prints, in order: a header with the counts of tasks, phases and stories;
+`Shared files between phases:` with one line per pair of phases that name a
+file in common; `Stories that share files:`, pairs joined by `; `; `Tasks
+that change no file:`; `Tasks whose files no other task names:`, each with
+its files; `Unread workflows:`; then
+`DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.`
+and one list per story, then `Setup and polish:`. An empty part reads
+`none`. Each list holds its task paths, `(task path)`, then every tracked
+file outside the feature folder that names one of them:
+
+| Reason | Match |
+| --- | --- |
+| `names path <path>` | the exact path, as a whole token |
+| `names module <a.b>` | a dotted suffix of the path without its extension, of at least two plain parts, such as `harness.tools` for `apps/ai/harness/tools.py` |
+| `names file <name.ext>` | the full file name with its extension, as a whole token |
+| `CI paths glob <glob>` | an `on.<event>.paths` entry of a `.github/workflows/*.yml` or `*.yaml` file that matches the path |
+
+A bare stem such as `tools` never matches. A workflow the YAML reader
+refuses, such as one with an anchor, is listed under `Unread workflows` with
+the reason, never counted as matching nothing. A missing or unreadable
+`tasks.md`, one with no task lines, a folder outside git with no `--repo`,
+or a failed `git ls-files` exits 1 and names the file or the folder. Exit 3
+is a usage error.
+
 ### `teamwire models [--harness ID] [--for CLASS] [--json]`
 
 Lists the models one harness can start a member on (ADR 0033). Reads only,

@@ -263,6 +263,7 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire teams` / `members` | List every team on this machine, or one team's roster. |
 | `teamwire lead --adopt` | Make a new session the lead of an existing team. |
 | `teamwire preset` | List the team shapes, or print one. |
+| `teamwire speckit draft` | Read a spec-kit `tasks.md`: the files phases and stories share, the tasks that can run apart, and a DRAFT `owns` list per story. |
 | `teamwire pr-watch` | Watch GitHub pull-request checks until every pull request is done. |
 | `teamwire metrics` / `export` | Local metrics from the event rows, or every record of a team as JSON lines. |
 | `teamwire afk start` | Create the team of an AFK run and take the sleep hold. The `/teamwire:afk` skill runs it. |

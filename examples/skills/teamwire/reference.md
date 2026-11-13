@@ -303,7 +303,10 @@ rewrites `comms/` copies that are missing or differ from the database.
 GitHub's spec-kit (https://github.com/github/spec-kit) writes a spec, a plan
 and a task list before any code. Each spec-kit command is a prompt file that
 one agent session follows. No spec-kit code reads `tasks.md`, and spec-kit
-runs no task in parallel. A teamwire team runs a spec-kit feature with
+runs no task in parallel. teamwire reads it: `teamwire speckit draft
+<tasks.md>` prints the files each pair of phases and stories shares, the
+tasks that change no file, the tasks whose files no other task names, and a
+DRAFT `owns` list per story (ADR 0044). A teamwire team runs a spec-kit feature with
 spec-kit's own commands, each in the seat whose rules fit it, and spec-kit
 stays unchanged. Start the team spec from `teamwire preset speckit`. These
 facts come from spec-kit 1.3.3.dev0 at commit c438494, the version that
@@ -589,8 +592,18 @@ it. Then cut the implementer's branch from that branch.
   read the constitution before the first change and follow it. `analyze`
   and `converge` report a conflict with it as CRITICAL.
 - **Split per story.** One implementer per user story only when the stories
-  after the Foundational phase touch disjoint files. Read the file paths in
-  the task lines to decide. Wave 1 is one member for Setup and
+  after the Foundational phase touch disjoint files. Run
+  `teamwire speckit draft specs/NNN-name/tasks.md` and decide from its
+  `Stories that share files` line: split only stories it does not name
+  together. Show the user that table, the tasks it lists as changing no
+  file or touching only their own files, and the split you recommend,
+  before you launch. Start each story member's `owns` from its DRAFT list:
+  a file there names a task path by its exact path, a dotted module name,
+  its full file name or a CI `paths:` glob. Check each list, and grep for
+  the names a draft cannot see, such as a changed function or message
+  text. The command reads a path with a `:12-30` line suffix as the path,
+  the indented lines under a task as that task's, and a `*` path as a glob
+  over the tracked files. Wave 1 is one member for Setup and
   Foundational. Wave 2 has one member per story, each with wave 1's branch
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
