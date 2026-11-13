@@ -294,6 +294,14 @@ pub trait Harness: Send + Sync {
     /// finds the session's own transcript. `Ok(None)` means unknown (none yet,
     /// or a compaction left none), never zero. Default `Ok(None)`.
     fn context_fill(&self, s: &SessionId, transcript: Option<&Path>) -> Result<Option<Fill>, HarnessError>;
+    /// The tool call the session runs now: the newest call with no result,
+    /// read without writing from the harness's own session record. `cwd` is
+    /// the session's working directory. `Ok(None)` means none runs, or the
+    /// harness cannot tell. Default `Ok(None)`. Claude Code reads the
+    /// transcript's newest `tool_use` with no `tool_result`, Codex the
+    /// rollout's newest `function_call` with no `function_call_output`, and
+    /// pi the `tool` field its member extension writes to the state file.
+    fn current_tool(&self, s: &SessionId, cwd: Option<&Path>) -> Result<Option<ToolRun>, HarnessError>;
     /// The session's token usage so far, per model, read without writing from
     /// the harness's own session file. `transcript` as for `context_fill`.
     /// `Ok(None)` means no reading. Default `Ok(None)`: the turn-end then
@@ -582,6 +590,9 @@ impl Fill {
     pub fn handoff_at(self, configured: Option<u64>) -> u64;  // configured, else DEFAULT_HANDOFF_PCT of the window
     pub fn past_handoff(self, configured: Option<u64>) -> bool; // tokens >= handoff_at
 }
+/// The tool call a session runs now (`Harness::current_tool`).
+pub struct ToolRun { pub name: String, pub started_at: Timestamp }
+
 /// Percent of the window at which a member is told to hand off when its spec sets no
 /// `context_handoff_tokens`. A rule of thumb: no published measurement backs 40% for Claude.
 pub const DEFAULT_HANDOFF_PCT: u64 = 40;

@@ -116,6 +116,18 @@ pub trait Harness: Send + Sync {
     ) -> Result<Option<Fill>, HarnessError> {
         Ok(None)
     }
+    /// The tool call the session runs now: the newest call with no result
+    /// yet, read without writing from the harness's own session record.
+    /// `cwd` is the session's working directory, for a harness that files
+    /// its sessions by it. `Ok(None)` means no call runs or the harness
+    /// cannot tell. The default is `Ok(None)`.
+    fn current_tool(
+        &self,
+        _s: &SessionId,
+        _cwd: Option<&Path>,
+    ) -> Result<Option<crate::ToolRun>, HarnessError> {
+        Ok(None)
+    }
     /// The session's token usage so far, per model, read without writing.
     /// `transcript` is the path a hook was handed; without it the harness
     /// finds the session's own file. `Ok(None)` means no reading. The
