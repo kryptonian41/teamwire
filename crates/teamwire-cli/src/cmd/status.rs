@@ -96,7 +96,9 @@ pub(crate) fn results_block(results: &[UndeliveredResult]) -> Vec<String> {
     out
 }
 
-fn render(view: &StatusView) -> String {
+/// The team's text. `role` is the member `--role` named, which also gets
+/// the tool call its session runs.
+fn render(view: &StatusView, _role: Option<&Role>) -> String {
     let mut out = Vec::new();
     let name = view.team.as_ref().map_or("?", TeamName::as_str);
     out.push(format!(
@@ -280,7 +282,7 @@ pub(crate) fn run(args: &StatusArgs, global: &Global, wiring: &Wiring) -> ExitCo
             Err(code) => return code,
         }
     } else {
-        render(&view)
+        render(&view, role.as_ref())
     };
     say(&text);
     if unreadable(&view) {
@@ -383,7 +385,7 @@ mod tests {
             }],
             ..StatusView::default()
         };
-        let text = render(&view);
+        let text = render(&view, None);
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines.contains(&"held for handoff: m004 -> impl"), "{text}");
         // The stuck block holds only the stuck row, indented under its head.
@@ -402,5 +404,55 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(block.len(), 1, "{text}");
         assert!(!text.contains("  m004"), "{text}");
+    }
+
+    fn member(role: &str, state: &str, tool: Option<u64>) -> teamwire_watch::MemberView {
+        teamwire_watch::MemberView {
+            role: Role::parse(role).unwrap(),
+            title: String::new(),
+            state: state.to_owned(),
+            generation: 1,
+            age_s: 1000,
+            deadline_s: 3600,
+            started_by: None,
+            older_build: false,
+            result: None,
+            branch: None,
+            resume_command: None,
+            context: None,
+            current_tool: tool.map(|seconds| teamwire_watch::ToolView {
+                name: "Bash".to_owned(),
+                started_at: teamwire_core::Timestamp::from_unix_millis(0).unwrap(),
+                seconds,
+            }),
+        }
+    }
+
+    #[test]
+    fn status_role_prints_how_long_the_tool_has_run() {
+        let api = Role::parse("api").unwrap();
+        let view = StatusView {
+            members: vec![member("api", "working", Some(902))],
+            ..StatusView::default()
+        };
+        let text = render(&view, Some(&api));
+        assert!(text.contains("    tool: Bash, running 15m02s\n"), "{text}");
+
+        let view = StatusView {
+            members: vec![member("api", "working", None)],
+            ..StatusView::default()
+        };
+        let text = render(&view, Some(&api));
+        assert!(
+            text.contains("    tool: unknown (this harness does not report it)\n"),
+            "{text}"
+        );
+        // Without --role, or for a member that is not working, no tool line.
+        assert!(!render(&view, None).contains("tool:"));
+        let view = StatusView {
+            members: vec![member("api", "quiet", None)],
+            ..StatusView::default()
+        };
+        assert!(!render(&view, Some(&api)).contains("tool:"));
     }
 }

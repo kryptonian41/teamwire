@@ -16,19 +16,20 @@ use teamwire_core::{
     FinalSource, Harness, HarnessCaps, HarnessError, HarnessId, Host, HostId, LaunchSpec,
     LeadRoute, Liveness, Member, MemberKind, MemberLaunch, MemberState, MessageType, Mode,
     Occupant, OtelConfig, Pid, Place, PlaceState, Recipient, Registry, ReportState, Role, Route,
-    ScreenState, SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd, Ulid,
+    ScreenState, SessionId, StartupOutcome, TeamName, ToolRun, TrustPolicy, TurnEnd, Ulid,
 };
 use teamwire_fakes::{FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_store::{Ctx, NewCompletion, NewMember, NewMessage, NewTeam, ResultOutcome, Store};
 use teamwire_watch::WatchMemory;
 
-/// The fake harness plus a context reading per session, which the fake
-/// cannot give. Every other call goes to the fake.
+/// The fake harness plus a context reading and a current tool call per
+/// session, which the fake cannot give. Every other call goes to the fake.
 #[derive(Debug)]
 struct FillHarness {
     inner: Arc<FakeHarness>,
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
     reads: Arc<Mutex<Vec<SessionId>>>,
+    tools: Arc<Mutex<HashMap<SessionId, ToolRun>>>,
 }
 
 impl Harness for FillHarness {
@@ -81,6 +82,13 @@ impl Harness for FillHarness {
         self.reads.lock().unwrap().push(s.clone());
         Ok(self.fills.lock().unwrap().get(s).copied())
     }
+    fn current_tool(
+        &self,
+        s: &SessionId,
+        _cwd: Option<&Path>,
+    ) -> Result<Option<ToolRun>, HarnessError> {
+        Ok(self.tools.lock().unwrap().get(s).cloned())
+    }
 }
 
 pub const TEAM: &str = "alpha";
@@ -99,6 +107,7 @@ pub struct Bed {
     pub host: Arc<FakeHost>,
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
     reads: Arc<Mutex<Vec<SessionId>>>,
+    tools: Arc<Mutex<HashMap<SessionId, ToolRun>>>,
     pub memory: WatchMemory,
     places: HashMap<String, Place>,
 }
@@ -139,10 +148,12 @@ impl Bed {
         let mut registry = Registry::new();
         let fills = Arc::new(Mutex::new(HashMap::new()));
         let reads = Arc::new(Mutex::new(Vec::new()));
+        let tools = Arc::new(Mutex::new(HashMap::new()));
         let wrapped = FillHarness {
             inner: harness.clone(),
             fills: fills.clone(),
             reads: reads.clone(),
+            tools: tools.clone(),
         };
         registry.add_harness(Arc::new(wrapped)).unwrap();
         registry.add_host(host.clone()).unwrap();
@@ -157,6 +168,7 @@ impl Bed {
             host,
             fills,
             reads,
+            tools,
             memory: WatchMemory::default(),
             places: HashMap::new(),
         }
@@ -344,6 +356,11 @@ impl Bed {
             .lock()
             .unwrap()
             .insert(Self::session(name), Fill { tokens, window });
+    }
+
+    /// What the harness reads as the tool call the member's session runs.
+    pub fn tool(&self, name: &str, run: ToolRun) {
+        self.tools.lock().unwrap().insert(Self::session(name), run);
     }
 
     /// How many times the harness was asked for the member's context fill.

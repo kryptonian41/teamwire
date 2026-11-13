@@ -21,10 +21,10 @@ use fixture::{Bed, role};
 use teamwire_core::TicketRef;
 use teamwire_core::{
     Actor, Clock as _, CompletionStatus, DeliveryState, MessageType, PlaceState, Recipient,
-    ReportState,
+    ReportState, ToolRun,
 };
 use teamwire_store::{Ctx, Store};
-use teamwire_watch::{StatusView, WatchState};
+use teamwire_watch::{StatusView, ToolView, WatchState};
 
 /// A hash of every file under `dir`, by path.
 fn hashes(dir: &Path) -> BTreeMap<String, u64> {
@@ -664,4 +664,51 @@ fn a_held_message_is_listed_apart_from_stuck_deliveries() {
     assert_eq!(view.held_deliveries.len(), 1, "{:?}", view.held_deliveries);
     assert_eq!(view.held_deliveries[0].display_id.as_str(), "m001");
     assert_eq!(view.held_deliveries[0].to, api);
+}
+
+/// F10: `--role` names the call a working member's session runs and how
+/// long it has run, by the watch's clock. Without `--role`, and for a member
+/// that is not working, status asks no harness for it.
+#[test]
+fn status_role_shows_the_current_tool_and_its_duration() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.add("web");
+    bed.working("api");
+    bed.blocked("web");
+    let started = bed.clock.now();
+    for name in ["api", "web"] {
+        bed.tool(
+            name,
+            ToolRun {
+                name: "Bash".to_owned(),
+                started_at: started,
+            },
+        );
+    }
+    bed.clock.advance(std::time::Duration::from_secs(900));
+    let tool_of = |view: &StatusView, name: &str| {
+        view.members
+            .iter()
+            .find(|m| m.role == role(name))
+            .unwrap()
+            .current_tool
+            .clone()
+    };
+    let view = status_of(&bed, Some("api"));
+    assert_eq!(
+        tool_of(&view, "api"),
+        Some(ToolView {
+            name: "Bash".to_owned(),
+            started_at: started,
+            seconds: 900,
+        })
+    );
+    assert_eq!(tool_of(&view, "web"), None, "only the member --role names");
+    assert_eq!(tool_of(&status_of(&bed, None), "api"), None, "no --role");
+    assert_eq!(
+        tool_of(&status_of(&bed, Some("web")), "web"),
+        None,
+        "a blocked member is not working"
+    );
 }

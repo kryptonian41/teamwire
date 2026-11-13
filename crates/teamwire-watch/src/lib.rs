@@ -77,6 +77,18 @@ pub struct MemberView {
     pub resume_command: Option<String>,
     /// The fill of the member's session; `None` when unknown.
     pub context: Option<ContextView>,
+    /// With `--role`, for a working member: the tool call its session runs
+    /// now. `None` otherwise, or when the harness cannot tell.
+    pub current_tool: Option<ToolView>,
+}
+
+/// A tool call that started and has no result yet, and how long it has run.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolView {
+    pub name: String,
+    pub started_at: Timestamp,
+    /// Whole seconds since `started_at`, by the watch's clock.
+    pub seconds: u64,
 }
 
 /// How full a member's context window is, and where it hands off.

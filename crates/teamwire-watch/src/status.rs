@@ -380,6 +380,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             branch: member.branch.clone(),
             resume_command: resume,
             context: crate::context::read(ctx, member, *configured),
+            current_tool: None,
         });
     }
     if let (Some(lead), Ok((harness, _))) = (view.lead.as_mut(), ctx.adapters(&Party::Lead))

@@ -108,6 +108,20 @@ describe("context output", () => {
   });
 });
 
+describe("current tool output", () => {
+  test("current_tool parses and is kept", () => {
+    const tool = { name: "Bash", started_at: "2026-11-13T07:00:09.5Z", seconds: 902 };
+    const member = { ...status[0]!.members[0]!, current_tool: tool };
+    const parsed = StatusAll.parse([{ ...status[0]!, members: [member] }]);
+    expect(parsed[0]!.members[0]!.current_tool).toEqual(tool);
+  });
+  test("a null current_tool and an older output without the key still parse", () => {
+    const member = { ...status[0]!.members[0]!, current_tool: null };
+    expect(StatusAll.parse([{ ...status[0]!, members: [member] }])[0]!.members[0]!.current_tool).toBeNull();
+    expect(StatusAll.parse(status)[0]!.members[0]!.current_tool).toBeUndefined();
+  });
+});
+
 describe("AFK output", () => {
   const afk = {
     budget_ends_at: "2026-10-20T08:00:00.000Z",
