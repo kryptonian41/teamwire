@@ -269,6 +269,15 @@ Code: `claude --resume <session-id> --settings ... --mcp-config ...
 no Stop hook, no identity and no MCP tools. The command carries the
 `--model` and `--effort` the member was launched with, when launch recorded
 them. A member started by an older build resumes on Claude's default.
+For that member, while it is `working`, `--role R` also prints
+`tool: <name>, running <duration>` (such as `tool: Bash, running 15m02s`):
+the tool call its session started and has no result for yet, read from
+the Claude Code transcript, the Codex rollout or the pi extension's state
+file. A harness that cannot tell prints
+`tool: unknown (this harness does not report it)`. `--json` carries it as
+the member's `current_tool`, `{"name", "started_at": "<RFC 3339>",
+"seconds"}`, or `null`; a plain `status` reads no transcript and leaves it
+`null`.
 
 ### `teamwire reopen <team> [--role R] [--dry-run]`
 

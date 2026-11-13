@@ -367,10 +367,19 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             }
             _ => None,
         };
+        let state = state_word(ctx, member, completion.as_ref(), seen, age, *unprompted);
+        // Only the member `--role` names, and only while it works: a member
+        // at rest runs no call, and a plain `status` reads no transcript.
+        let current_tool = match role {
+            Some(wanted) if *wanted == member.role && state.starts_with("working") => {
+                crate::tool::read(ctx, member, now)
+            }
+            _ => None,
+        };
         view.members.push(MemberView {
             role: member.role.clone(),
             title: member.title.clone(),
-            state: state_word(ctx, member, completion.as_ref(), seen, age, *unprompted),
+            state,
             generation: member.generation,
             age_s: seconds(age),
             deadline_s: member.deadline_s,
@@ -380,7 +389,7 @@ pub fn status_with(ctx: &Ctx<'_>, role: Option<&Role>) -> StatusView {
             branch: member.branch.clone(),
             resume_command: resume,
             context: crate::context::read(ctx, member, *configured),
-            current_tool: None,
+            current_tool,
         });
     }
     if let (Some(lead), Ok((harness, _))) = (view.lead.as_mut(), ctx.adapters(&Party::Lead))

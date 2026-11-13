@@ -25,6 +25,7 @@ mod poll;
 mod snapshot;
 mod status;
 mod text;
+mod tool;
 
 use std::path::PathBuf;
 use std::time::Duration;

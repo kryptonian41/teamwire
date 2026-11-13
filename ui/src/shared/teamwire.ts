@@ -67,6 +67,14 @@ export const ContextView = z.object({
   handoff_at: count,
 });
 
+/** A tool call that started and has no result yet, and how long it has run. */
+export const ToolView = z.object({
+  name: z.string(),
+  started_at: z.string(),
+  /** Whole seconds since `started_at`. */
+  seconds: count,
+});
+
 /** One member in `teamwire status --json`. Removed members are left out. */
 export const MemberView = z.object({
   role: z.string(),
@@ -92,6 +100,12 @@ export const MemberView = z.object({
   resume_command: z.string().nullable(),
   /** `null` when unknown. An older teamwire leaves the key out. */
   context: ContextView.nullish(),
+  /**
+   * Only set by `status <team> --role R`, for a working member: the call its
+   * session runs now. `null` when the harness cannot tell. An older teamwire
+   * leaves the key out.
+   */
+  current_tool: ToolView.nullish(),
 });
 
 export const LeadView = z.object({

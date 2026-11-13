@@ -50,6 +50,19 @@ fn minutes(seconds: u64) -> String {
     }
 }
 
+/// `42s`, `15m02s` or `1h05m02s`: how long a tool call has run, to the
+/// second, because a stuck call is told from a slow one by its minutes.
+fn run_time(seconds: u64) -> String {
+    let (h, m, s) = (seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    if h > 0 {
+        format!("{h}h{m:02}m{s:02}s")
+    } else if m > 0 {
+        format!("{m}m{s:02}s")
+    } else {
+        format!("{s}s")
+    }
+}
+
 /// `72% 720k`, or `-` when the fill is unknown.
 fn context_text(context: Option<ContextView>) -> String {
     context.map_or_else(
@@ -98,7 +111,7 @@ pub(crate) fn results_block(results: &[UndeliveredResult]) -> Vec<String> {
 
 /// The team's text. `role` is the member `--role` named, which also gets
 /// the tool call its session runs.
-fn render(view: &StatusView, _role: Option<&Role>) -> String {
+fn render(view: &StatusView, role: Option<&Role>) -> String {
     let mut out = Vec::new();
     let name = view.team.as_ref().map_or("?", TeamName::as_str);
     out.push(format!(
@@ -166,6 +179,12 @@ fn render(view: &StatusView, _role: Option<&Role>) -> String {
         }
         if let Some(command) = &m.resume_command {
             out.push(format!("    resume: {command}"));
+        }
+        if role == Some(&m.role) && m.state.starts_with("working") {
+            out.push(m.current_tool.as_ref().map_or_else(
+                || "    tool: unknown (this harness does not report it)".to_owned(),
+                |t| format!("    tool: {}, running {}", t.name, run_time(t.seconds)),
+            ));
         }
     }
     if !view.messages.is_empty() {
@@ -426,6 +445,13 @@ mod tests {
                 seconds,
             }),
         }
+    }
+
+    #[test]
+    fn a_run_time_counts_hours_minutes_and_seconds() {
+        assert_eq!(run_time(42), "42s");
+        assert_eq!(run_time(902), "15m02s");
+        assert_eq!(run_time(3902), "1h05m02s");
     }
 
     #[test]

@@ -650,6 +650,11 @@ Tell the user about `TEAM-STALLED`, and about a `BLOCKED` member at a login,
 update or trust dialog ("Watch lines" in `reference.md`). Other failures are
 yours to handle. Run `teamwire status` before acting on `SILENT` or
 `TEAM-STALLED`, because a member that shows `working` there is not stalled.
+For a member that has worked longer than you expect, run
+`teamwire status <team> --role R`. Its `tool:` line names the call its
+session runs and how long it has run, such as `tool: Bash, running 15m02s`.
+A call that runs far longer than the command should take is stuck: read
+the member's pane before you reprompt or replace it.
 
 ### What arrives when a member finishes
 
