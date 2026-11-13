@@ -393,6 +393,37 @@ mod tests {
 
     use super::*;
 
+    /// The summary says `held for handoff`, the words the seat text and the
+    /// CLI use, for a row held for a member that asked for a handoff (ADR
+    /// 0043 decision 11). The JSON keeps the state and its reason.
+    #[test]
+    fn a_held_row_reads_held_for_handoff_in_the_send_summary() {
+        let report = SendReport {
+            id: teamwire_core::Ulid::from_parts(FakeClock::new().now(), 1),
+            display_id: DisplayId::parse("m012").unwrap(),
+            seq: 12,
+            deliveries: vec![
+                teamwire_msg::RecipientReport {
+                    to: Recipient::Member(Role::parse("api").unwrap()),
+                    state: RecipientState::Undelivered,
+                    reason: Some(teamwire_core::DeliveryErrorCode::HeldForHandoff),
+                    attempts: None,
+                },
+                teamwire_msg::RecipientReport {
+                    to: Recipient::Member(Role::parse("web").unwrap()),
+                    state: RecipientState::HandedOff,
+                    reason: None,
+                    attempts: None,
+                },
+            ],
+            duplicate_of_key: false,
+        };
+        let reply = report_reply(&report, None).unwrap();
+        assert_eq!(reply.summary, "m012 api: held for handoff, web: handed_off");
+        assert_eq!(reply.value["deliveries"][0]["state"], "undelivered");
+        assert_eq!(reply.value["deliveries"][0]["reason"], "held_for_handoff");
+    }
+
     #[test]
     fn a_tool_call_that_meets_a_damaged_row_records_it_under_its_name() {
         let home = TestHome::new().unwrap();
