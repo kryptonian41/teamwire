@@ -881,6 +881,27 @@ fn an_undelivered_question_from_another_team_is_announced() {
     );
 }
 
+/// ADR 0043 decision 5: the line names the stored copy, so the lead can
+/// read a question that was never typed into its pane.
+#[test]
+fn an_undelivered_question_line_names_its_file() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.working("api");
+    bed.poll();
+    let id = bed.question("api", DeliveryState::Undelivered);
+    let line = bed.tick().unwrap();
+    let file = bed
+        .home
+        .path()
+        .join("teams")
+        .join("alpha")
+        .join("comms")
+        .join(format!("{id}.md"));
+    assert!(line.contains(&format!("comms/{id}.md")), "{line}");
+    assert!(line.contains(&file.display().to_string()), "{line}");
+}
+
 #[test]
 fn sleep_gap_resets_counters() {
     let mut bed = Bed::new();
