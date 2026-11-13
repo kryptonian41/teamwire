@@ -82,10 +82,11 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
     if ignored.is_empty() {
         return None;
     }
-    let (mut files, mut links) = (Vec::new(), Vec::new());
+    let (mut files, mut links, mut inside) = (Vec::new(), Vec::new(), Vec::new());
     for p in ignored.iter().take(IGNORED_SHOWN) {
         match link_text(&member.cwd, p) {
-            Some(link) => links.push(link),
+            Some((link, false)) => links.push(link),
+            Some((link, true)) => inside.push(link),
             None => files.push((*p).to_owned()),
         }
     }
@@ -99,6 +100,13 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
             links.join(", ")
         ));
     }
+    // The worktree's removal deletes these targets too.
+    if !inside.is_empty() {
+        parts.push(format!(
+            "removes symlinks and their targets in the worktree: {}",
+            inside.join(", ")
+        ));
+    }
     let more = ignored.len().saturating_sub(IGNORED_SHOWN);
     let more = if more > 0 {
         format!(", and {more} more")
@@ -109,8 +117,9 @@ pub(crate) fn ignored_warning(ctx: &Ctx<'_>, member: &Member) -> Option<String> 
 }
 
 /// `<path> -> <target>` when `path` in `cwd` is a symlink, with ` (broken)`
-/// when its target is gone; `None` for anything else. Reads only.
-fn link_text(cwd: &Path, path: &str) -> Option<String> {
+/// when its target is gone, and whether that target sits inside `cwd`;
+/// `None` for anything else. Reads only.
+fn link_text(cwd: &Path, path: &str) -> Option<(String, bool)> {
     let full = cwd.join(path.trim_end_matches('/'));
     if !std::fs::symlink_metadata(&full)
         .ok()?
@@ -125,7 +134,11 @@ fn link_text(cwd: &Path, path: &str) -> Option<String> {
     } else {
         ""
     };
-    Some(format!("{path} -> {}{broken}", target.display()))
+    let inside = std::fs::canonicalize(&full)
+        .ok()
+        .zip(std::fs::canonicalize(cwd).ok())
+        .is_some_and(|(to, root)| to.starts_with(root));
+    Some((format!("{path} -> {}{broken}", target.display()), inside))
 }
 
 /// How often a close checks whether the processes that ran in a closed place

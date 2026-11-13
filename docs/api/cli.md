@@ -532,8 +532,10 @@ For each worktree that holds ignored files, the dry run and the real run print
 the main checkout, is listed apart, because the removal deletes only the link:
 `; removes symlinks (targets kept): <path> -> <target>, ...`, with
 ` (broken)` after a link whose target is gone. When every path is a link, the
-line is `<role>: removal removes symlinks (targets kept): ...`. The 10-path
-limit counts both lists. The warning also comes before a single member's removal with
+line is `<role>: removal removes symlinks (targets kept): ...`. A link whose
+target sits inside the worktree loses that target too, so it is listed after
+`; removes symlinks and their targets in the worktree: <path> -> <target>, ...`.
+The 10-path limit counts every list. The warning also comes before a single member's removal with
 `teamwire close <team> --role <role>`. It leaves out the top-level build
 folders `target/` and `node_modules/`, and `TASK.md`. Close still removes the
 worktree.
