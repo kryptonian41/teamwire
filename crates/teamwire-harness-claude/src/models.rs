@@ -19,10 +19,11 @@ const TWO_HUNDRED_THOUSAND: u64 = 200_000;
 // Read on 2026-11-03 (again, for the 4.5 models), and on 2026-11-13 for
 // Fable 5.2. Refresh the list when that page names a new model.
 //
-// The page says `fable` resolves to Fable 5.2 on the Anthropic API from
-// Claude Code v2.1.321, and to Fable 5 in Claude apps gateway sessions. Fable
-// 5.1 and Fable 5 stay reachable by id. The page gives every Fable model the
-// effort levels `low` to `max` and the native 1M window.
+// The page says that, unless ANTHROPIC_DEFAULT_FABLE_MODEL is set, `fable`
+// resolves to Fable 5.2 everywhere except Claude apps gateway sessions, which
+// get Fable 5. This holds from Claude Code v2.1.321. Fable 5.1 and Fable 5
+// stay reachable by id. The page gives every Fable model the effort levels
+// `low` to `max` and the native 1M window.
 //
 // Left out on purpose: `default`, `best` and `opusplan`, which are modes or
 // depend on the account rather than naming one model, and the `[1m]`
