@@ -41,6 +41,21 @@ const TASKS: &str = "# Tasks: deckh
 - [ ] T061 Change `src/b.rs`.
 ";
 
+/// Lines of 002's `tasks.md` that gave wrong `owns` entries: code in
+/// backticks, example globs, partial paths and a template path (ADR 0047).
+const TASKS_002: &str = "# Tasks: 002
+
+## Phase 3: User Story 1 - amend (Priority: P1)
+
+- [X] T002 [P] [US1] Call `tx.set_member_scope(&role, Some(\"b\"), &[\"y/\".to_owned(), \"z/{c,d}/**\".to_owned()])` in `crates/teamwire-store/src/member.rs`.
+- [X] T005 [US1] Keep the callers (`crates/teamwire-cli/src/cmd/send.rs:86`).
+- [X] T010 [US1] Write the tests:
+  - `amend_keeps_a_brace_glob_whole`: `--owns src/ --owns 'crates/{b,c}/**'` exits 0.
+  - refuse as `cmd/verify.rs:24-31` does, as `contracts/amend-cli.md` says; the rendered `teamwire/skills/teamwire/SKILL.md` and the package file `skills/teamwire/SKILL.md` name `teamwire amend`.
+- [X] T011 [US1] Launch with check `test -s specs/NNN-name/tasks.md`, then write `crates/teamwire-cli/src/cmd/amend.rs` (new) and change `cmd/lib.rs`.
+- [X] T018 [US1] Read `examples/skills/teamwire/SKILL.md` from `Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md\")`.
+";
+
 fn git(dir: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
         .arg("-C")
@@ -194,4 +209,87 @@ fn a_brace_set_names_each_file() {
     assert!(shared.contains(&"  Phase 3 and Phase 4: src/b.rs"), "{out}");
     let us2 = block(&out, "US2:");
     assert!(us2.iter().any(|l| l.starts_with("  src/a.rs ")), "{out}");
+}
+
+/// The 002 fixture: the files the partial paths end, two files that both
+/// end `cmd/lib.rs`, a tracked `z/c/` for the code glob, and an archived
+/// study under `bench/` that names a task path.
+fn repo_002() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let files: [(&str, &str); 11] = [
+        ("specs/002-x/tasks.md", TASKS_002),
+        ("specs/002-x/contracts/amend-cli.md", "# amend\n"),
+        ("crates/teamwire-store/src/member.rs", "// member\n"),
+        ("crates/teamwire-cli/src/cmd/send.rs", "// send\n"),
+        ("crates/teamwire-cli/src/cmd/verify.rs", "// verify\n"),
+        ("crates/p/src/cmd/lib.rs", "// p\n"),
+        ("crates/q/src/cmd/lib.rs", "// q\n"),
+        ("examples/skills/teamwire/SKILL.md", "# skill\n"),
+        ("z/c/one.rs", "// one\n"),
+        (
+            "bench/studies/s1/diff.patch",
+            "+++ b/crates/teamwire-store/src/member.rs\n",
+        ),
+        (
+            "docs/store.md",
+            "See crates/teamwire-store/src/member.rs.\n",
+        ),
+    ];
+    for (path, text) in files {
+        let at = root.join(path);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    }
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+    dir
+}
+
+fn draft_002(repo: &Path, extra: &[&str]) -> String {
+    let home = tempfile::tempdir().unwrap();
+    let tasks = repo.join("specs/002-x/tasks.md");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["speckit", "draft", tasks.to_str().unwrap()])
+        .args(extra)
+        .env_remove("HERDR_ENV")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    text
+}
+
+/// The first word of each line of the DRAFT list `name`.
+fn draft_paths<'a>(out: &'a str, name: &str) -> Vec<&'a str> {
+    block(out, &format!("{name}:"))
+        .into_iter()
+        .filter_map(|l| l.split_whitespace().next())
+        .collect()
+}
+
+/// ADR 0047 rule 1: code in backticks is no path, so no draft holds it.
+#[test]
+fn code_in_backticks_is_no_task_path() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(
+        us1.contains(&"crates/teamwire-store/src/member.rs"),
+        "{out}"
+    );
+    for word in us1 {
+        assert!(
+            !word.contains("to_owned") && !word.contains("CARGO_MANIFEST_DIR"),
+            "{word}: {out}"
+        );
+    }
 }

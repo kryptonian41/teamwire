@@ -46,6 +46,9 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
         }
     };
     for path in paths {
+        if is_code(path) {
+            continue;
+        }
         if !path.contains('*') {
             if let Some(p) = repo_path(path, tracked) {
                 add(&p);
@@ -62,6 +65,14 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+/// True when `word` is code, not a path (ADR 0047 rule 1): it holds a quote,
+/// a bracket, a comma, a semicolon, a `!` or a `::`, as
+/// `"z/c/**".to_owned(` and `Path::new(env!(..))` do. The words are split
+/// at white space before this, so a word never holds one.
+fn is_code(word: &str) -> bool {
+    word.contains(['"', '\'', '(', ')', ',', ';', '!']) || word.contains("::")
 }
 
 /// `word` as a repository path, or `None` when it names none (see `expand`).
@@ -216,5 +227,25 @@ mod tests {
                 "src/a.rs"
             ])
         );
+    }
+
+    /// ADR 0047 rule 1, from the words 002's `tasks.md` gave: code in
+    /// backticks is no path. Each other word sits in the tracked folder
+    /// `z/c/`, so only this rule turns it away.
+    #[test]
+    fn a_word_that_holds_code_is_no_path() {
+        let tracked = strings(&["examples/skills/teamwire/SKILL.md", "z/c/one.rs"]);
+        let words = strings(&[
+            "z/c/**\".to_owned(",
+            "Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md",
+            "z/c/a\"b.rs",
+            "z/c/'a'.rs",
+            "z/c/f(x).rs",
+            "z/c/a.rs,z/c/b.rs",
+            "z/c/a;b.rs",
+            "z/c/a!.rs",
+            "z/c/a::b.rs",
+        ]);
+        assert!(expand(&words, &tracked).is_empty());
     }
 }

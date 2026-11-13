@@ -855,7 +855,7 @@ repository's own setup command, or `true`, in its place.
 
 ### `teamwire speckit draft <tasks.md> [--repo <dir>]`
 
-Reads a spec-kit `tasks.md` and prints text (ADR 0044). It writes no file
+Reads a spec-kit `tasks.md` and prints text (ADR 0044, ADR 0047). It writes no file
 and no store row, and has no `--json`. `--repo` is the repository to search,
 by default the git top level of the folder that holds `tasks.md`.
 
@@ -873,6 +873,10 @@ by default the git top level of the folder that holds `tasks.md`.
   and a word made only of `/` and `.` are not paths. Outside backticks the
   extension needs two characters, so `e.g.` is no path. A brace set such as
   `src/{a,b}.rs` names each file.
+- A word that holds `"`, `'`, `(`, `)`, `,`, `;`, `!` or `::`, after the
+  punctuation around it is taken off and a brace set is expanded, is code,
+  not a path (ADR 0047), such as `"z/c/**".to_owned(` or
+  `Path::new(env!("CARGO_MANIFEST_DIR")).join("../x.md`.
 - A folder, printed with a trailing `/`, shares with each file under it in
   the overlap table and the independent list, and adds no file to the
   mention search.
