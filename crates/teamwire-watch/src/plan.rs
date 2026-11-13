@@ -444,21 +444,50 @@ fn judge_completion(
         }
         ReportState::Undelivered => {
             let reason = c.reason.as_ref().map_or("unknown", |r| r.code.as_str());
-            env.announce(
-                result_key("UNDELIVERED", &c.ulid),
+            not_typed(
+                env,
+                info,
+                mm,
+                &c.ulid,
                 "UNDELIVERED",
-                format!("UNDELIVERED {role} {reason} Result: {path}"),
-            );
-            settle("undelivered")
+                &format!(" {reason}"),
+                &path,
+            )
+            .unwrap_or_else(|label| settle(&format!("undelivered{label}")))
         }
-        ReportState::Unconfirmed => {
-            env.announce(
-                result_key("UNCONFIRMED", &c.ulid),
-                "UNCONFIRMED",
-                format!("UNCONFIRMED {role} Result: {path}"),
-            );
-            settle("unconfirmed")
-        }
+        ReportState::Unconfirmed => not_typed(env, info, mm, &c.ulid, "UNCONFIRMED", "", &path)
+            .unwrap_or_else(|label| settle(&format!("unconfirmed{label}"))),
+    }
+}
+
+/// A result that was not typed into the lead's pane, or may not have been
+/// (ADR 0043 decision 7). The line is announced once per completion. A
+/// session that works, or waits at a dialog mid-turn, keeps the member
+/// waiting: `Ok` with that verdict. An idle or dead session settles it, and
+/// so does one the watch cannot see, as before: `Err` with what the
+/// settled label adds, ` (session not visible)` for a session not seen.
+fn not_typed(
+    env: &mut Env<'_>,
+    info: &MemberInfo,
+    mm: &mut MemberMemory,
+    completion: &Ulid,
+    name: &'static str,
+    reason: &str,
+    path: &str,
+) -> Result<Verdict, &'static str> {
+    let role = &info.member.role;
+    let seen = look(env, info, mm);
+    let unseen = matches!(seen, Some(Seen::Absent | Seen::NoInfo));
+    let note = if unseen { " (session not visible)" } else { "" };
+    env.announce(
+        result_key(name, completion),
+        name,
+        format!("{name} {role}{reason}{note} Result: {path}"),
+    );
+    match seen {
+        Some(Seen::Alive(Activity::Working | Activity::Blocked)) => Ok(Verdict::waiting()),
+        Some(Seen::Absent | Seen::NoInfo) => Err(" (session not visible)"),
+        Some(Seen::Alive(Activity::Idle)) | None => Err(""),
     }
 }
 

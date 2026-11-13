@@ -34,7 +34,9 @@ export function classifyState(word: string): StateCategory {
     if (status === "failed") return "failed";
     return "attention";
   }
-  if (word === "working" || word === "not started") return "active";
+  // `working (at a dialog)`: a member whose result was not typed is mid-turn
+  // at a dialog, which the watch counts as working (teamwire ADR 0043).
+  if (word === "working" || word === "working (at a dialog)" || word === "not started") return "active";
   if (word === "quiet") return "idle";
   if (word === "failed to start") return "failed";
   if (ATTENTION.has(word)) return "attention";

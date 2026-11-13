@@ -259,6 +259,18 @@ fn state_word(
             // member gone before it ran is dead, as the watch says.
             ReportState::Pending if seen == Seen::Absent => "died?".to_owned(),
             ReportState::Pending | ReportState::Delivering => "unreported".to_owned(),
+            // A result that was not typed does not settle a member whose
+            // session is mid-turn, as the watch counts it (ADR 0043).
+            ReportState::Undelivered | ReportState::Unconfirmed
+                if seen == Seen::Alive(Activity::Working) =>
+            {
+                "working".to_owned()
+            }
+            ReportState::Undelivered | ReportState::Unconfirmed
+                if seen == Seen::Alive(Activity::Blocked) =>
+            {
+                "working (at a dialog)".to_owned()
+            }
             ReportState::Undelivered => "undelivered".to_owned(),
             ReportState::Unconfirmed => "unconfirmed".to_owned(),
         };

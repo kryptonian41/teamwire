@@ -623,6 +623,12 @@ wave is due. A running watch picks up members added with `--add`, but a
 watch that printed `TEAM-COMPLETE` has exited, so start a new one after a
 later `--add`.
 
+A member whose result could not be typed into your pane, and whose session
+works again or waits at a dialog mid-turn, is still watched: `TEAM-COMPLETE`
+waits for it, and `teamwire status` shows it `working` or
+`working (at a dialog)`. Once its session is idle, dead or not visible, the
+member counts as stopped.
+
 If you end a turn while a member works and no watch runs, your Stop hook
 holds your stop once with the line below. While no watch runs, a member's
 result line also ends with

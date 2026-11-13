@@ -78,6 +78,8 @@ fn busy_team() -> Bed {
     bed.question("web", DeliveryState::Undelivered);
     let id = bed.complete("web", CompletionStatus::Failed);
     bed.finish(&id, ReportState::Undelivered, None);
+    // Its turn ended, so the result that was not typed settles it (ADR 0043).
+    bed.idle("web");
     bed
 }
 
