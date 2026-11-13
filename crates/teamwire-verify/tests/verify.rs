@@ -1311,3 +1311,71 @@ fn a_commit_made_during_the_check_flags_head_moved_and_no_waiver_clears_it() {
         "{waived:?}"
     );
 }
+
+#[test]
+fn an_amend_while_the_check_runs_flags_scope_changed() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let sha = repo.commit(&[("src/b.rs", "x\n")], "add b", start_secs() + 10);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    fx.write_report("api", &full_report(&[&sha]));
+    // The lead amends the member from another process while its check runs.
+    let home = fx.home.path().to_path_buf();
+    fx.platform.before_next_run("sh", move || {
+        let team = teamwire_core::TeamName::parse(Fixture::TEAM).unwrap();
+        let mut other = teamwire_store::Store::open(&home, &team).unwrap();
+        other
+            .write(|tx| tx.set_member_scope(&role("api"), Some("false"), &["src/".to_owned()]))
+            .unwrap();
+    });
+    let record = run_one(&mut fx, "api");
+    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
+    let flag = record
+        .flags
+        .iter()
+        .find(|f| f.id.as_str() == "scope-changed")
+        .unwrap();
+    assert_eq!(
+        flag.detail,
+        "the lead amended this member's check or owns while verify ran; run verify again"
+    );
+    assert!(!flag.waived);
+    // The stored row says the same as the printed record.
+    let stored = fx
+        .store
+        .read(|tx| tx.verify_records(&role("api")))
+        .unwrap()
+        .all_or_corrupt()
+        .unwrap();
+    let stored = stored.last().unwrap();
+    assert_eq!(stored.record.verdict, "FLAGGED");
+    assert!(
+        stored.record.flags.iter().any(|f| f == "scope-changed"),
+        "{:?}",
+        stored.record.flags
+    );
+    // The next run uses the amended check and raises no such flag.
+    let again = run_one(&mut fx, "api");
+    assert_eq!(again.verdict, Verdict::Fail, "{again:?}");
+    assert!(!flag_ids(&again).contains(&"scope-changed"), "{again:?}");
+}
+
+#[test]
+fn scope_changed_cannot_be_waived() {
+    let repo = repo_on_work(&[("src/lib.rs", LIB)]);
+    let sha = repo.commit(&[("src/b.rs", "x\n")], "add b", start_secs() + 10);
+    let mut fx = Fixture::new();
+    fx.add_member(&implementer("api", &repo, Some("true"), &["src/"]));
+    fx.write_report("api", &full_report(&[&sha]));
+    assert_eq!(run_one(&mut fx, "api").verdict, Verdict::Pass);
+    let waived = waive(
+        &mut fx.ctx(),
+        &role("api"),
+        &FlagId::new("scope-changed"),
+        "ok",
+    );
+    assert!(
+        matches!(waived, Err(VerifyError::UnknownFlag(_))),
+        "{waived:?}"
+    );
+}

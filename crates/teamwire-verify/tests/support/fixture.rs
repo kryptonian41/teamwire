@@ -29,6 +29,17 @@ pub struct TestPlatform {
     inner: FakePlatform,
     runs: Mutex<Vec<(Command, Duration)>>,
     scripted: Mutex<VecDeque<(String, RunOutput)>>,
+    before_next: Mutex<Option<(String, BeforeRun)>>,
+}
+
+/// Work a test does while verify waits for a command, such as a change to
+/// the store from another connection.
+pub struct BeforeRun(Box<dyn FnOnce() + Send>);
+
+impl std::fmt::Debug for BeforeRun {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("BeforeRun")
+    }
 }
 
 impl TestPlatform {
@@ -37,7 +48,14 @@ impl TestPlatform {
             inner: FakePlatform::new(),
             runs: Mutex::new(Vec::new()),
             scripted: Mutex::new(VecDeque::new()),
+            before_next: Mutex::new(None),
         }
+    }
+
+    /// Calls `work` once, when the next command of `program` starts and
+    /// before it runs.
+    pub fn before_next_run(&self, program: &str, work: impl FnOnce() + Send + 'static) {
+        *self.before_next.lock().unwrap() = Some((program.to_owned(), BeforeRun(Box::new(work))));
     }
 
     /// Every command passed to `run`, with its timeout, in order.
@@ -103,6 +121,17 @@ impl Platform for TestPlatform {
 
     fn run(&self, cmd: &Command, timeout: Duration) -> Result<RunOutput, PlatformError> {
         self.runs.lock().unwrap().push((cmd.clone(), timeout));
+        let hook = {
+            let mut slot = self.before_next.lock().unwrap();
+            if slot.as_ref().is_some_and(|(p, _)| *p == cmd.program) {
+                slot.take()
+            } else {
+                None
+            }
+        };
+        if let Some((_, BeforeRun(work))) = hook {
+            work();
+        }
         let mut scripted = self.scripted.lock().unwrap();
         if let Some(at) = scripted
             .iter()

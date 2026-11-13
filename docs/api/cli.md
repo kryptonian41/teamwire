@@ -437,8 +437,9 @@ HEAD is still its base,
 lint, type, test or CI config changed outside `owns` (spec-kit's
 `.specify/memory/constitution.md` counts, in any repository),
 `asserts-removed:<path>` for a
-file that lost assert lines on net, and `head-moved` when HEAD changed while the
-check ran (no waiver clears it). A started worktree member whose folder is gone
+file that lost assert lines on net, `head-moved` when HEAD changed while the
+check ran, and `scope-changed` when `teamwire amend` changed the member's
+check or owns while verify ran (no waiver clears either). A started worktree member whose folder is gone
 is `FAIL`; a pane member with no check stays `SKIPPED`.
 The diff starts at the member's start commit, moved forward past a merge
 from its base branch (VER-2). A merge that fast-forwards moves nothing, so

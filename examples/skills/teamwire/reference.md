@@ -209,8 +209,9 @@ deleted or removed test and an added line that skips or silences a check.
 It flags `no-commits` when an implementer said `done` with no commit
 beyond its base, `no-owns` for an implementer with an empty `owns` list,
 `uncommitted:<path>` for each uncommitted path, `asserts-removed:<path>`
-for a file that lost assert lines, and `head-moved` when a commit landed
-while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
+for a file that lost assert lines, `head-moved` when a commit landed
+while the check ran, and `scope-changed` when the lead amended the
+member's check or owns while verify ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
 `SKIPPED`. A brief may have asked for a flagged change, so read every
 flag, and let no branch merge past one you have not read.
 `teamwire verify <team> --role R --waive FLAG --reason TEXT`
@@ -221,8 +222,8 @@ current HEAD. A waiver for a flag that names one file (`test-deleted`,
 content changes, a merge or rebase included. Any other waiver,
 `uncommitted:<path>` included, ends at the next commit. Run verify again
 after each commit either way. `uncommitted:<path>` is
-one flag per path, so a waiver covers that path only. `head-moved` cannot
-be waived: run verify again. `--deep` adds the database
+one flag per path, so a waiver covers that path only. `head-moved` and
+`scope-changed` cannot be waived: run verify again. `--deep` adds the database
 integrity check and a check of every message hash.
 
 A commit on a member's branch that the member did not make raises
