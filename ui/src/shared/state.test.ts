@@ -6,6 +6,7 @@ test.each([
   ["done(failed)", "failed"],
   ["done(blocked)", "attention"],
   ["working", "active"],
+  ["working (at a dialog)", "active"],
   ["not started", "active"],
   ["quiet", "idle"],
   ["late", "attention"],

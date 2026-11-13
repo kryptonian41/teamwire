@@ -149,6 +149,58 @@ fn first_poll_says_watching_and_healthy_polls_say_nothing() {
     assert!(bed.ticks(10).is_empty());
 }
 
+/// spec is done, and impl's `done` could not be typed into the lead's pane.
+fn undelivered_then(bed: &mut Bed) {
+    bed.add("spec");
+    bed.add("impl");
+    bed.delivered("spec", CompletionStatus::Done);
+    let id = bed.complete("impl", CompletionStatus::Done);
+    bed.finish(
+        &id,
+        ReportState::Undelivered,
+        Some(DeliveryErrorCode::SessionBlocked),
+    );
+}
+
+/// ADR 0043 decision 7 (F2): a member whose result was not typed, and whose
+/// session works again, is not settled.
+#[test]
+fn an_undelivered_result_of_a_working_member_does_not_complete_the_team() {
+    let mut bed = Bed::new();
+    undelivered_then(&mut bed);
+    bed.working("impl");
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(3));
+    assert_eq!(count(&lines, "UNDELIVERED"), 1, "{lines:?}");
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 0, "{lines:?}");
+}
+
+/// Guard: an idle session has ended its turn, so the member is settled and
+/// one member never keeps the team open forever (WAT-6).
+#[test]
+fn an_undelivered_result_of_an_idle_member_still_settles() {
+    let mut bed = Bed::new();
+    undelivered_then(&mut bed);
+    bed.idle("impl");
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(3));
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+}
+
+#[test]
+fn an_undelivered_result_with_no_visible_session_settles_and_says_so() {
+    let mut bed = Bed::new();
+    undelivered_then(&mut bed);
+    bed.vanish("impl");
+    let mut lines: Vec<String> = bed.poll().into_iter().collect();
+    lines.extend(bed.ticks(3));
+    assert_eq!(count(&lines, "TEAM-COMPLETE"), 1, "{lines:?}");
+    assert!(
+        lines.iter().any(|l| l.contains("session not visible")),
+        "{lines:?}"
+    );
+}
+
 #[test]
 fn undelivered_result_printed_once() {
     let mut bed = Bed::new();

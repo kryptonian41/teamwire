@@ -581,3 +581,35 @@ fn a_failed_member_with_a_session_is_not_read_for_context() {
     assert_eq!(view.members[0].context, None);
     assert_eq!(bed.fill_reads("api"), 0);
 }
+
+/// A member's `done` that could not be typed, its session showing `state`.
+fn undelivered_member(state: PlaceState) -> Bed {
+    let mut bed = Bed::new();
+    bed.add("impl");
+    let id = bed.complete("impl", CompletionStatus::Done);
+    bed.finish(&id, ReportState::Undelivered, None);
+    bed.show("impl", state);
+    bed
+}
+
+fn word_of(bed: &Bed, name: &str) -> String {
+    status_of(bed, None)
+        .members
+        .into_iter()
+        .find(|m| m.role == role(name))
+        .unwrap()
+        .state
+}
+
+/// ADR 0043 decision 7: status counts the member as the watch does.
+#[test]
+fn an_undelivered_member_that_works_reads_working() {
+    let bed = undelivered_member(PlaceState::Working);
+    assert_eq!(word_of(&bed, "impl"), "working");
+}
+
+#[test]
+fn an_undelivered_member_at_a_dialog_reads_working_at_a_dialog() {
+    let bed = undelivered_member(PlaceState::Blocked);
+    assert_eq!(word_of(&bed, "impl"), "working (at a dialog)");
+}
