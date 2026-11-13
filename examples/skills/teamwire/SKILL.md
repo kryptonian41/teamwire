@@ -708,6 +708,13 @@ retries the same message to the recipients it did not reach, limited to the
 roles `--to` names, and never types a line twice. Each member's identity
 comes from its own token, so nobody can speak as another member or as you.
 
+A result or a message to you that could not be typed into your pane, for
+example while a dialog was open, is never typed again. Your hooks list it at
+your next tool call and turn end, with the file to read. Read the file, then
+run `teamwire received <team> <id>` for a message, or
+`teamwire received <team> <role>` for a result, so the hook and
+`teamwire status` stop listing it. Never resend it to yourself.
+
 A question to you arrives with its answer command:
 `teamwire send <team> --to <role> --type answer --re <id> --text "..."`.
 Messages between members do not wake you. Any message to you does, at a full

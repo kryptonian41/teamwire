@@ -593,16 +593,29 @@ A symlink or other non-regular file at the path is refused. Exit 0, or
 6 when the file cannot be written or read. `teamwire send --from user` needs
 the file's text in `TEAMWIRE_USER_KEY`.
 
-### `teamwire received <team> <ROLE>...`
+### `teamwire received <team> <ROLE|ID>...`
 
-Records that the lead read each member's newest result from its file, after
-the typing failed or stalled (ADR 0024). A result that is `undelivered` or
-`unconfirmed` becomes `delivered` with route `inbox`, and `status` stops
-listing it. Prints `<role> #<n> received` per marked result, or
-`<role> unchanged: its newest result is <state>` and changes nothing. A
-caller that carries a member identity is refused with `refused.identity`,
-exit 1. A role that names no member is refused, exit 1, after the other
-roles are marked.
+Records that the lead read each member's newest result, or each message to
+the lead, from its file, after the typing failed or stalled (ADR 0024, ADR
+0043). It types nothing into any pane. Roles and message ids mix in one run.
+
+- A role: a result that is `undelivered` or `unconfirmed` becomes `delivered`
+  with route `inbox`, and `status` stops listing it. Prints `<role> #<n>
+  received` per marked result, or `<role> unchanged: its newest result is
+  <state>` and changes nothing.
+- A message id (`m` and digits, such as `m008`): the lead's delivery of the
+  message moves from `undelivered`, `unconfirmed` or `pending` to `acked`,
+  and `status` and the lead's hook stop listing it. Prints `<id> read`. A
+  delivery already `handed_off` prints `<id> already delivered`, and one
+  already `acked` prints `<id> already read`; neither changes. An argument is
+  a message id only when no role of the team has that name.
+- Refused, exit 1, after the other arguments are recorded: a role that names
+  no member (`<role> refused: no member has this role`), `<id>: no such
+  message`, `<id>: not a message to the lead`, and `<id>: both a role and a
+  message; nothing recorded` when a role of the team has that name.
+
+A caller that carries a member identity is refused with `refused.identity`,
+exit 1.
 
 ### `teamwire log <team> [--role ROLE] [--json]`
 

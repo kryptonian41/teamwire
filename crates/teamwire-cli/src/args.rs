@@ -316,8 +316,9 @@ pub(crate) struct SendArgs {
 #[derive(Args)]
 pub(crate) struct ReceivedArgs {
     pub(crate) team: String,
-    /// The members whose newest result the lead read from its file.
-    #[arg(value_name = "ROLE", required = true)]
+    /// The members whose newest result, and the message ids (`m008`) of the
+    /// messages to the lead, that the lead read from its file.
+    #[arg(value_name = "ROLE|ID", required = true)]
     pub(crate) roles: Vec<String>,
 }
 
