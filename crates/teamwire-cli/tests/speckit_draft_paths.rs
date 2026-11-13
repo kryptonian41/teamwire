@@ -320,3 +320,31 @@ fn a_task_path_must_resolve_in_the_repository() {
         assert!(!us1.contains(&word), "{word}: {out}");
     }
 }
+
+/// ADR 0047 rule 3: `cmd/verify.rs` and `contracts/amend-cli.md` each end
+/// one tracked path and resolve to it. `cmd/lib.rs` ends two, and
+/// `teamwire/skills/teamwire/SKILL.md` ends none, so neither is a path.
+#[test]
+fn a_partial_path_resolves_only_when_it_is_a_unique_end() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    for path in [
+        "crates/teamwire-cli/src/cmd/verify.rs",
+        "specs/002-x/contracts/amend-cli.md",
+        "examples/skills/teamwire/SKILL.md",
+    ] {
+        assert!(us1.contains(&path), "{path}: {out}");
+    }
+    for word in [
+        "cmd/send.rs",
+        "cmd/verify.rs",
+        "cmd/lib.rs",
+        "contracts/amend-cli.md",
+        "skills/teamwire/SKILL.md",
+        "teamwire/skills/teamwire/SKILL.md",
+    ] {
+        assert!(!us1.contains(&word), "{word}: {out}");
+    }
+    assert!(!us1.iter().any(|p| p.ends_with("/cmd/lib.rs")), "{out}");
+}

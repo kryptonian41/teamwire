@@ -35,7 +35,8 @@ pub(crate) struct Overlap {
 ///
 /// A word with a `/` is a path when it names a tracked file or a tracked
 /// folder (kept with a trailing `/`), or when it ends in an extension and
-/// its parent folder is tracked, as a file a task creates does. A word with
+/// its parent folder is tracked, as a file a task creates does. Otherwise a
+/// word that is the end of exactly one tracked path is that path. A word with
 /// no `/` is a path only when it names a tracked file at the repository's
 /// root, such as `README.md`: an event name such as `knit.progress` or a
 /// bare `lib.rs` is not.
@@ -91,10 +92,17 @@ fn repo_path(word: &str, tracked: &[String]) -> Option<String> {
     // A new file counts only in a folder that already holds tracked files.
     let parent = bare.rsplit_once('/').map_or("", |(dir, _)| dir);
     let parent = format!("{parent}/");
-    tracked
-        .iter()
-        .any(|t| t.starts_with(&parent))
-        .then(|| word.to_owned())
+    if tracked.iter().any(|t| t.starts_with(&parent)) {
+        return Some(word.to_owned());
+    }
+    // A partial path, such as `cmd/send.rs`, is the one tracked path it
+    // ends at a `/`. When it ends several, the task did not say which.
+    let tail = format!("/{word}");
+    let mut ends = tracked.iter().filter(|t| t.ends_with(&tail));
+    match (ends.next(), ends.next()) {
+        (Some(only), None) => Some(only.clone()),
+        _ => None,
+    }
 }
 
 /// True when `a` and `b` name the same file, or one is a folder (with a
@@ -283,6 +291,39 @@ mod tests {
                 "crates/teamwire-cli/src/",
                 "crates/teamwire-cli/src/cmd/amend.rs",
                 "specs/002-x/plan.md",
+            ])
+        );
+    }
+
+    /// ADR 0047 rule 3, from 002's `tasks.md`: a partial path is the one
+    /// tracked path it ends, at a `/`. One that ends two tracked paths, or
+    /// none, is no path.
+    #[test]
+    fn a_partial_path_resolves_when_it_ends_one_tracked_path() {
+        let tracked = strings(&[
+            "crates/teamwire-cli/src/cmd/send.rs",
+            "crates/teamwire-cli/src/cmd/verify.rs",
+            "examples/skills/teamwire/SKILL.md",
+            "specs/002-x/contracts/amend-cli.md",
+            "crates/p/src/cmd/lib.rs",
+            "crates/q/src/cmd/lib.rs",
+        ]);
+        let words = strings(&[
+            "cmd/send.rs",
+            "cmd/verify.rs",
+            "skills/teamwire/SKILL.md",
+            "contracts/amend-cli.md",
+            "teamwire/skills/teamwire/SKILL.md",
+            "cmd/lib.rs",
+            "md/send.rs",
+        ]);
+        assert_eq!(
+            expand(&words, &tracked),
+            strings(&[
+                "crates/teamwire-cli/src/cmd/send.rs",
+                "crates/teamwire-cli/src/cmd/verify.rs",
+                "examples/skills/teamwire/SKILL.md",
+                "specs/002-x/contracts/amend-cli.md",
             ])
         );
     }

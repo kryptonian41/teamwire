@@ -867,7 +867,11 @@ by default the git top level of the folder that holds `tasks.md`.
   a markdown link's `](...)`, and names a tracked file or folder, or ends
   in `.<ext>` in a folder that holds a tracked file, as a new file does
   (ADR 0047). So the template path `specs/NNN-name/tasks.md` is no path
-  when no tracked file sits in `specs/NNN-name/`. A word with no `/` is a path only when it names a tracked file
+  when no tracked file sits in `specs/NNN-name/`. Otherwise a word that is
+  the end of exactly one tracked path, at a `/`, is that path:
+  `cmd/send.rs` is `crates/teamwire-cli/src/cmd/send.rs` when no other
+  tracked file ends in `/cmd/send.rs`. A word that ends several tracked
+  paths, or none, is no path. A word with no `/` is a path only when it names a tracked file
   at the repository's root, such as `README.md`, so `knit.progress` and a
   bare `lib.rs` are not. A `:N` or `:N-M` line suffix is dropped, so
   `crates/x/src/send.rs:297-321` is `crates/x/src/send.rs`. A URL, a
