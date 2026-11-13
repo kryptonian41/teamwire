@@ -16,7 +16,7 @@ use teamwire_core::{
 use teamwire_msg::{RecipientState, SendReport, send_with_write};
 use teamwire_store::Ctx;
 
-use crate::cmd::send::{error_code, exit_of, recipient_line};
+use crate::cmd::send::{error_code, exit_of, pending_line, recipient_line};
 use crate::cmd::shared::{
     Opening, PARTIAL, REFUSED, STORE, fail, refuse_member, say, warn, with_ctx_using,
 };
@@ -134,6 +134,9 @@ fn amend(ctx: &mut Ctx<'_>, team: &TeamName, role: &Role, change: &Change<'_>) -
             teamwire_launch::rewrite_contract(ctx.platform, ctx.home, team, &amended, &bin)
         });
     say(&output(team, role, change, &lines, &report));
+    for line in not_recorded(team, &report) {
+        warn(&line);
+    }
     match rewritten {
         Ok(_) => ExitCode::from(exit_of(&report)),
         Err(e) => {
@@ -222,4 +225,73 @@ fn output(
          recorded after this amend\n"
     ));
     out.concat()
+}
+
+/// `send`'s stderr line for each recipient still `pending` after the
+/// commit: its delivery record could not be written, so the exit is 6 with
+/// the scope and the note saved, and `teamwire resend` delivers the note.
+fn not_recorded(team: &TeamName, report: &SendReport) -> Vec<String> {
+    report
+        .deliveries
+        .iter()
+        .filter(|d| d.state == RecipientState::Pending)
+        .map(|d| pending_line(team, &report.display_id, &d.to))
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use teamwire_core::{DeliveryErrorCode, DisplayId};
+    use teamwire_msg::RecipientReport;
+
+    use super::*;
+
+    fn report(state: RecipientState, reason: Option<DeliveryErrorCode>) -> SendReport {
+        SendReport {
+            id: teamwire_core::Ulid::parse("01M466HBGM3C8KG2XPMZWRQCH4").unwrap(),
+            display_id: DisplayId::parse("m007").unwrap(),
+            seq: 7,
+            deliveries: vec![RecipientReport {
+                to: Recipient::parse("api").unwrap(),
+                state,
+                reason,
+                attempts: None,
+            }],
+            duplicate_of_key: false,
+        }
+    }
+
+    /// A note still `pending` after the commit exits 6 and says to resend
+    /// it, as `send` does; the scope and the note are already saved.
+    #[test]
+    fn a_pending_note_exits_6_and_names_resend() {
+        let team = TeamName::parse("alpha").unwrap();
+        let pending = report(RecipientState::Pending, None);
+        assert_eq!(exit_of(&pending), STORE);
+        assert_eq!(
+            not_recorded(&team, &pending),
+            [
+                "NOT RECORDED for api: the delivery record could not be written (store error); \
+              run teamwire resend alpha m007"
+            ]
+        );
+        for other in [
+            report(RecipientState::HandedOff, None),
+            report(
+                RecipientState::Undelivered,
+                Some(DeliveryErrorCode::NoLiveProcess),
+            ),
+            report(
+                RecipientState::Undelivered,
+                Some(DeliveryErrorCode::HeldForHandoff),
+            ),
+            report(RecipientState::Unconfirmed, None),
+        ] {
+            assert_eq!(
+                not_recorded(&team, &other),
+                Vec::<String>::new(),
+                "{other:?}"
+            );
+        }
+    }
 }

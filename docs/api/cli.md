@@ -500,8 +500,12 @@ amend again`), which wins over 4 and 5; 1 for a member session
 (`refused.identity`), an unknown role, a member not `started`, or a team not
 open; 3 for a missing `--role`, `--reason` or change, an empty or all-space
 `--reason` or `--check`, or an empty `--owns` pattern (amend cannot clear the
-owns list); 6 for a store error. Shell only: no MCP tool, no `--json`, no
-`--dry-run`.
+owns list); 6 for a store error, with nothing changed. 6 also follows,
+as for `send`, when the note is still `pending` after the commit: the scope
+and the note are saved but the delivery record could not be written, and
+stderr prints `NOT RECORDED for <role>: the delivery record could not be
+written (store error); run teamwire resend <team> <id>`. Shell only: no MCP
+tool, no `--json`, no `--dry-run`.
 
 ### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock]`
 

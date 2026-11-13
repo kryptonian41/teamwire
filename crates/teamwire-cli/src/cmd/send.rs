@@ -232,7 +232,7 @@ fn is_held(d: &teamwire_msg::RecipientReport) -> bool {
 
 /// A pending recipient after the command ends means its delivery record
 /// could not be written; the exit code is 6 and this says why.
-fn pending_line(team: &TeamName, id: &DisplayId, to: &Recipient) -> String {
+pub(crate) fn pending_line(team: &TeamName, id: &DisplayId, to: &Recipient) -> String {
     format!(
         "NOT RECORDED for {to}: the delivery record could not be written (store error); run teamwire resend {team} {id}"
     )
