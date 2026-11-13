@@ -102,6 +102,32 @@ pub struct CommsCopy<'a> {
     pub written: bool,
 }
 
+/// True when the member's result file is there and, if the completion
+/// recorded a hash, still holds that text.
+pub fn result_written(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> bool {
+    let outbox = team_dir.join("outbox").join(format!("{role}.md"));
+    std::fs::read(&outbox)
+        .is_ok_and(|bytes| sha256.is_none_or(|h| teamwire_store::sha256(&bytes) == *h))
+}
+
+/// The file the lead should open for a member's result, named in the
+/// watch's event and in the lead hook's note: its result file, unless that
+/// is missing or no longer holds the text whose hash the completion
+/// recorded. Then its report, which the member wrote itself, is the better
+/// pointer. The watch and the lead hook share this one rule.
+pub fn result_path(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> String {
+    let dir = if result_written(team_dir, role, sha256) {
+        "outbox"
+    } else {
+        "reports"
+    };
+    team_dir
+        .join(dir)
+        .join(format!("{role}.md"))
+        .display()
+        .to_string()
+}
+
 /// `message_line` for a known reader. A member reads the full text with
 /// `teamwire inbox` and answers a question from its own team; the lead has
 /// no inbox and no `TEAMWIRE_TEAM`, so its line points at the stored copy

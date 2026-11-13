@@ -27,7 +27,7 @@ pub use history::{AttemptHistory, PENDING_STALE};
 pub use lease::{WATCH_LEASE_STALE, watch_lease_is_dead};
 pub use lines::{
     CommsCopy, WatchText, agent_text, lead_copy_line, line_holds_whole, message_line,
-    message_line_to, result_line, watch_text,
+    message_line_to, result_line, result_path, result_written, watch_text,
 };
 pub use locate::{locate, locate_session};
 

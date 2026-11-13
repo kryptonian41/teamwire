@@ -1,11 +1,15 @@
 //! The lead's Stop hook (ADR 0018 point 5): which teams are working with
-//! nobody watching them.
+//! nobody watching them, and, for the Stop and tool hooks, what was never
+//! typed into the lead's pane (ADR 0043).
 
 use std::path::Path;
 
 use teamwire_core::harness::WatchStart;
-use teamwire_core::{Clock, MemberState, Platform, SessionId, TeamName, Timestamp};
-use teamwire_deliver::{WatchText, watch_lease_is_dead, watch_text};
+use teamwire_core::{
+    Clock, DeliveryState, MemberState, Platform, Recipient, ReportState, SessionId, TeamName,
+    Timestamp,
+};
+use teamwire_deliver::{WatchText, result_path, watch_lease_is_dead, watch_text};
 use teamwire_store::{OpenTeam, ReadTx, StoreError, TeamRead, open_teams};
 
 /// The teams under `home` that the lead of `session` should be watching and
@@ -172,12 +176,80 @@ pub fn watch_missing_note(team: &TeamName, start: WatchStart) -> String {
 }
 
 /// The lines the lead's hooks add to the lead's turn for each item that was
-/// never typed into the lead's pane (ADR 0043 decision 1).
+/// never typed into the lead's pane (ADR 0043 decision 1): every delivery to
+/// the lead in state `undelivered`, and every member's newest result whose
+/// report state is `Undelivered`. Each line names the file to read and the
+/// `teamwire received` command that clears it. The hooks add these lines as
+/// text and type nothing, so ADR 0003 point 7 holds. An `unconfirmed` row
+/// may have been typed, so it is left out; `teamwire status` lists it. A
+/// team that cannot be read is left out and logged, as above. The note
+/// needs no time and no process, so `platform` and `clock` go unused; they
+/// keep the shape of the other notes the hooks call.
 pub fn undelivered_to_lead(
-    _home: &Path,
-    _session: &SessionId,
+    home: &Path,
+    session: &SessionId,
     _platform: &dyn Platform,
     _clock: &dyn Clock,
 ) -> Vec<String> {
-    Vec::new()
+    led_by(home, session)
+        .into_iter()
+        .flat_map(|(name, read)| {
+            undelivered_lines(home, &name, read).unwrap_or_else(|e| {
+                tracing::warn!(team = %name, error = %e, "a team is left out of the undelivered note");
+                Vec::new()
+            })
+        })
+        .collect()
+}
+
+fn undelivered_lines(
+    home: &Path,
+    team: &TeamName,
+    read: TeamRead,
+) -> Result<Vec<String>, StoreError> {
+    let Some(open) = read? else {
+        return Ok(Vec::new());
+    };
+    let team_dir = home.join("teams").join(team.as_str());
+    open.store.read(|tx| {
+        let mut lines = Vec::new();
+        for record in tx
+            .deliveries_in_states(&[DeliveryState::Undelivered])?
+            .all_or_corrupt()?
+        {
+            let d = record.delivery;
+            if d.recipient != Recipient::Lead {
+                continue;
+            }
+            let Some(m) = tx.message(&d.message)? else {
+                continue;
+            };
+            let id = m.display_id.as_str();
+            let file = team_dir.join("comms").join(format!("{id}.md"));
+            lines.push(format!(
+                "teamwire: {id} ({} from {}) was never typed into your pane. Read {}, then run teamwire received {team} {id}.",
+                m.kind.as_str(),
+                m.sender.as_str(),
+                file.display()
+            ));
+        }
+        for record in tx
+            .completions_in_states(&[ReportState::Undelivered])?
+            .all_or_corrupt()?
+        {
+            let c = record.completion;
+            // Only the newest result counts: a newer one replaced it and
+            // overwrote its file (ADR 0024).
+            let newest = tx.latest_completion(&c.role)?.map(|r| r.completion.ulid);
+            if newest.as_ref() != Some(&c.ulid) {
+                continue;
+            }
+            let path = result_path(&team_dir, &c.role, record.result_sha256.as_ref());
+            lines.push(format!(
+                "teamwire: {}'s result #{} was never typed into your pane. Read {path}, then run teamwire received {team} {}.",
+                c.role, c.n, c.role
+            ));
+        }
+        Ok(lines)
+    })
 }

@@ -2,12 +2,11 @@
 //! "`teamwire watch`"). A key names one occurrence, so it carries the
 //! generation or episode number that makes the next occurrence a new key.
 
-use std::path::Path;
 use std::time::Duration;
 
 use teamwire_core::{Role, Timestamp, Ulid, one_line};
 
-pub(crate) use teamwire_deliver::agent_text;
+pub(crate) use teamwire_deliver::{agent_text, result_path, result_written};
 
 /// The longest one event may be. A poll joins several, so each is cut alone
 /// and a long summary cannot push a later event out of the line.
@@ -86,31 +85,6 @@ pub(crate) fn age(span: Duration) -> String {
     } else {
         format!("{s}s")
     }
-}
-
-/// True when the member's result file is there and, if the completion
-/// recorded a hash, still holds that text.
-pub(crate) fn result_written(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> bool {
-    let outbox = team_dir.join("outbox").join(format!("{role}.md"));
-    std::fs::read(&outbox)
-        .is_ok_and(|bytes| sha256.is_none_or(|h| teamwire_store::sha256(&bytes) == *h))
-}
-
-/// The file the lead should open for a member's result, printed in the
-/// event: its result file, unless that is missing or no longer holds the
-/// text whose hash the completion recorded. Then its report, which the
-/// member wrote itself, is the better pointer.
-pub(crate) fn result_path(team_dir: &Path, role: &Role, sha256: Option<&[u8; 32]>) -> String {
-    let dir = if result_written(team_dir, role, sha256) {
-        "outbox"
-    } else {
-        "reports"
-    };
-    team_dir
-        .join(dir)
-        .join(format!("{role}.md"))
-        .display()
-        .to_string()
 }
 
 /// The poll's time as its prefix carries it: `17:24:07Z`. A `Timestamp` is
