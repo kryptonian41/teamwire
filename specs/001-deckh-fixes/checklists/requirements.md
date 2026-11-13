@@ -58,3 +58,4 @@
 - Re-validated on 2026-11-13 after the lead's last change (m005): the
   schema-11 answer and the lead-copy hint answer are under Clarifications,
   FR-001 and Assumptions. Each is testable. All 16 items still pass.
+- Re-validated after fix round 1 (2026-11-13): FR-009, FR-013, FR-014, SC-003, SC-005, AC10 and two edge cases changed to match the closer's findings C4, C5 and C16-C19. Every item still passes.

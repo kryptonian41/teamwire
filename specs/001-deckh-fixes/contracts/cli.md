@@ -26,8 +26,8 @@ The command refuses an id in these cases:
 
 - **`m099: no such message`**
 - **`m005: not a message to the lead`**
-- **`m12: both a role and a message; nothing recorded`**, when a role of
-  the team is named `m12`
+- **`m012: both a role and a message; nothing recorded`**, when a role of
+  the team is named `m012`. A message id is `m` plus at least three digits.
 
 The command types nothing into any pane.
 
@@ -40,8 +40,10 @@ row for the answer's sender becomes `acked`.
 
 ```text
 $ teamwire send deckh --to impl --type note --text "..."
-impl: held for handoff (m012)
+  impl: held for handoff (m012)
 ```
+
+The line is indented like the other recipient lines of `send`.
 
 The exit code is 0. Nothing is typed.
 
@@ -51,7 +53,7 @@ A reprompt to that member types its own text and then one more sentence:
 ## `teamwire resend` of a held message (F3)
 
 ```text
-m012 -> impl: refused: held for handoff; run teamwire handoff deckh --role impl, or reprompt impl
+refused.not_resendable: m012 -> impl: held for handoff; run teamwire handoff deckh --role impl, or reprompt impl
 ```
 
 ## Watch lines (F1, F2)
@@ -120,11 +122,14 @@ held for handoff: m004 -> impl
 
 ```text
 tool: Bash, running 15m02s
-tool: unknown (this harness does not report it)
+tool: none reported
 ```
 
+The second line prints for a working member when the harness reports no
+current tool, or when the member is between two tool calls.
+
 - `status --json`: `members[].current_tool` is `{ "name": "Bash",
-  "started_at": "2026-11-10T14:12:26.311Z", "seconds": 902 }` or absent.
+  "started_at": "2026-11-10T14:12:26.311Z", "seconds": 902 }` or `null`.
   The dashboard mirrors it in `ui/src/shared/teamwire.ts`.
 
 ## `teamwire events --json` (F3)
@@ -148,7 +153,7 @@ report both, with the local gate's exit code.
 
 ```text
 kit: removal deletes ignored files: .env.local; removes symlinks (targets kept): apps/ai/.venv -> /Users/.../knit-3.0/apps/ai/.venv, node_modules -> ../../node_modules
-kit: removes symlinks (targets kept): old -> /gone (broken)
+kit: removal removes symlinks (targets kept): old -> /gone (broken)
 ```
 
 ## `teamwire verify` waivers (F12)
