@@ -1139,6 +1139,39 @@ fn agent_list_answers_while_an_agent_start_waits_for_readiness() {
     });
 }
 
+/// A call ends when its program exits, even while another process still
+/// holds the call's output. On macOS the standard library makes a pipe and
+/// marks it close-on-exec in two steps, so a process that another thread
+/// starts in between inherits the pipe. In the test above, the slow agent
+/// inherited the first `agent list` call's pipe that way, and waited for the
+/// `ready` file the test writes only after that call returns.
+#[test]
+fn a_call_ends_when_its_program_exits_while_another_holds_its_output() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = FakeHerdrEnv::new().unwrap();
+    // The background sleep keeps the program's standard output and error
+    // open after the program itself exits, as a leaked pipe does.
+    let claude = env.bin_dir().dir().join("claude");
+    std::fs::remove_file(&claude).unwrap();
+    std::fs::write(
+        &claude,
+        "#!/bin/sh\necho out\necho err >&2\nsleep 20 &\nexit 3\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&claude, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let began = std::time::Instant::now();
+    let out = env.run_claude(&[]).unwrap();
+    let took = began.elapsed();
+    assert_eq!(
+        (out.code, out.stdout.as_str(), out.stderr.as_str()),
+        (Some(3), "out\n", "err\n")
+    );
+    assert!(
+        took.as_secs() < 10,
+        "the call waited {took:?} for the sleep"
+    );
+}
+
 /// `agent prompt --wait` keeps the state lock while it waits for the agent,
 /// so killing it then is a kill while holding the lock.
 #[test]

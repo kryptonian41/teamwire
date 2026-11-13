@@ -271,16 +271,27 @@ impl FakeHerdrEnv {
         args: &[&str],
         extra: &[(&str, &str)],
     ) -> std::io::Result<CliOutput> {
-        let out = std::process::Command::new(self.bins.dir().join(program))
+        // The output goes to files, and the call ends when the program exits.
+        // With pipes, the call would end only when every holder of the pipe
+        // closes it. On macOS the standard library makes a pipe and marks it
+        // close-on-exec in two steps, so a process another thread starts in
+        // between inherits the pipe, and an agent that process starts keeps
+        // it for its whole life. A file is opened close-on-exec in one step.
+        let mut stdout = tempfile::tempfile()?;
+        let mut stderr = tempfile::tempfile()?;
+        let status = std::process::Command::new(self.bins.dir().join(program))
             .args(args)
             .env_clear()
             .envs(self.env())
             .envs(extra.iter().copied())
-            .output()?;
+            .stdin(std::process::Stdio::null())
+            .stdout(stdout.try_clone()?)
+            .stderr(stderr.try_clone()?)
+            .status()?;
         Ok(CliOutput {
-            code: out.status.code(),
-            stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+            code: status.code(),
+            stdout: read_back(&mut stdout)?,
+            stderr: read_back(&mut stderr)?,
         })
     }
 
@@ -383,6 +394,15 @@ impl FakeHerdrEnv {
 /// The file whose lock `FakeHerdrEnv` holds, under the world's root.
 fn owner_lock_path(root: &Path) -> PathBuf {
     root.join("owner.lock")
+}
+
+/// Everything a program wrote to `file`, from the start.
+fn read_back(file: &mut std::fs::File) -> std::io::Result<String> {
+    use std::io::{Read as _, Seek as _};
+    file.rewind()?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
 impl Drop for FakeHerdrEnv {
