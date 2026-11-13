@@ -298,7 +298,12 @@ fn question(env: &mut Env<'_>, q: &Question) {
     env.announce(
         question_key(name, &q.message),
         name,
-        format!("{name} {} from {}", q.display_id, q.sender),
+        format!(
+            "{name} {} from {} File: {}",
+            q.display_id,
+            q.sender,
+            q.file.display()
+        ),
     );
 }
 

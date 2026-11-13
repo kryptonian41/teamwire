@@ -836,6 +836,18 @@ fn unconfirmed_result_announced_once() {
     assert!(bed.ticks(10).is_empty());
 }
 
+/// The stored copy of message `id` that a question line names.
+fn comms(bed: &Bed, id: &str) -> String {
+    bed.home
+        .path()
+        .join("teams")
+        .join("alpha")
+        .join("comms")
+        .join(format!("{id}.md"))
+        .display()
+        .to_string()
+}
+
 #[test]
 fn unconfirmed_question_announced_once() {
     let mut bed = Bed::new();
@@ -845,7 +857,10 @@ fn unconfirmed_question_announced_once() {
     let id = bed.question("api", DeliveryState::Unconfirmed);
     let line = bed.tick().unwrap();
     assert!(
-        line.ends_with(&format!("QUESTION-UNCONFIRMED {id} from api")),
+        line.ends_with(&format!(
+            "QUESTION-UNCONFIRMED {id} from api File: {}",
+            comms(&bed, &id)
+        )),
         "{line}"
     );
     assert!(bed.ticks(10).is_empty());
@@ -860,7 +875,10 @@ fn an_undelivered_question_is_announced_once() {
     let id = bed.question("api", DeliveryState::Undelivered);
     let line = bed.tick().unwrap();
     assert!(
-        line.ends_with(&format!("QUESTION-UNDELIVERED {id} from api")),
+        line.ends_with(&format!(
+            "QUESTION-UNDELIVERED {id} from api File: {}",
+            comms(&bed, &id)
+        )),
         "{line}"
     );
     assert!(bed.ticks(10).is_empty());
@@ -876,7 +894,10 @@ fn an_undelivered_question_from_another_team_is_announced() {
     let id = bed.question_from(sender, DeliveryState::Undelivered);
     let line = bed.tick().unwrap();
     assert!(
-        line.ends_with(&format!("QUESTION-UNDELIVERED {id} from db@beta")),
+        line.ends_with(&format!(
+            "QUESTION-UNDELIVERED {id} from db@beta File: {}",
+            comms(&bed, &id)
+        )),
         "{line}"
     );
 }

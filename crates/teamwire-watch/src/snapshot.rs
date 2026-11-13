@@ -2,7 +2,7 @@
 //! rows agree with each other. No external call happens inside it.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use teamwire_core::{
     Actor, DeliveryState, EventType, Member, MemberKind, MemberState, MessageType, Recipient, Role,
@@ -55,6 +55,8 @@ pub(crate) struct Question {
     pub display_id: String,
     pub sender: Actor,
     pub state: DeliveryState,
+    /// The stored copy the lead reads, `<team dir>/comms/<id>.md`.
+    pub file: PathBuf,
 }
 
 pub(crate) struct Unread {
@@ -113,7 +115,7 @@ fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError
     })
 }
 
-fn questions(tx: &ReadTx<'_>) -> Result<Vec<Question>, StoreError> {
+fn questions(tx: &ReadTx<'_>, team_dir: &Path) -> Result<Vec<Question>, StoreError> {
     let mut found = Vec::new();
     let stuck = tx
         .deliveries_in_states(&[DeliveryState::Undelivered, DeliveryState::Unconfirmed])?
@@ -134,6 +136,9 @@ fn questions(tx: &ReadTx<'_>) -> Result<Vec<Question>, StoreError> {
                 display_id: message.display_id.to_string(),
                 sender: message.sender.clone(),
                 state: d.state,
+                file: team_dir
+                    .join("comms")
+                    .join(format!("{}.md", message.display_id)),
             });
         }
     }
@@ -222,12 +227,13 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
             .into_iter()
             .map(|a| a.key)
             .collect();
+        let questions = questions(tx, &team_dir)?;
         Ok(Some(Snapshot {
             team,
             team_dir,
             members,
             closer_missing,
-            questions: questions(tx)?,
+            questions,
             unread: unread(tx)?,
             unanswered: unanswered(tx)?,
             announced,
