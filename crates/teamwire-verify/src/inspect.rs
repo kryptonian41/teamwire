@@ -11,6 +11,9 @@ use crate::rules::Ruleset;
 pub(crate) struct RawFlag {
     pub(crate) id: String,
     pub(crate) detail: String,
+    /// The one file a file flag names, so its waiver can hold while that
+    /// file is unchanged (ADR 0045). `None` for every other flag.
+    pub(crate) path: Option<String>,
 }
 
 impl RawFlag {
@@ -18,6 +21,19 @@ impl RawFlag {
         Self {
             id: id.into(),
             detail: detail.into(),
+            path: None,
+        }
+    }
+
+    /// A flag about the one file `path`.
+    pub(crate) fn about(
+        path: impl Into<String>,
+        id: impl Into<String>,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            path: Some(path.into()),
+            ..Self::new(id, detail)
         }
     }
 }
@@ -42,19 +58,22 @@ pub(crate) fn inspect_diff(
             continue;
         }
         if status == 'D' && rules.is_test_file(&path) {
-            flags.push(RawFlag::new(
+            flags.push(RawFlag::about(
+                path.clone(),
                 format!("test-deleted:{path}"),
                 format!("test file deleted: {path}"),
             ));
         }
         if rules.is_check_config(&path) && !owns.matches(&path) {
-            flags.push(RawFlag::new(
+            flags.push(RawFlag::about(
+                path.clone(),
                 format!("config-changed:{path}"),
                 format!("check config changed outside owns: {path}"),
             ));
         }
         if !owns.is_empty() && !owns.matches(&path) {
-            flags.push(RawFlag::new(
+            flags.push(RawFlag::about(
+                path.clone(),
                 format!("outside-owns:{path}"),
                 format!("changed outside owns: {path}"),
             ));
@@ -117,7 +136,8 @@ fn scan_patch(patch: &str, rules: &Ruleset) -> (Vec<RawFlag>, Vec<FileState>) {
                 && !crate::is_task_file(&path)
             {
                 if let Some(rule) = rules.weakening(&path, added) {
-                    flags.push(RawFlag::new(
+                    flags.push(RawFlag::about(
+                        path.clone(),
                         format!("weakened:{path}:{}", file.new_line),
                         format!(
                             "check weakened ({rule}) in {path}:{}: {}",
@@ -174,7 +194,8 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
             if in_lint_section(&by_line, n, sections)
                 && !text_line(&text, n).is_some_and(sets_nothing)
             {
-                flags.push(RawFlag::new(
+                flags.push(RawFlag::about(
+                    new_path.clone(),
                     format!("weakened:{new_path}:{n}"),
                     format!("lint table changed in {new_path}:{n}"),
                 ));
@@ -189,7 +210,8 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
             if in_lint_section(&by_line, n, sections)
                 && !text_line(&text, n).is_some_and(sets_nothing)
             {
-                flags.push(RawFlag::new(
+                flags.push(RawFlag::about(
+                    old_path.clone(),
                     format!("lint-removed:{old_path}:{n}"),
                     format!("lint table line removed from {old_path}:{n}"),
                 ));
@@ -205,7 +227,8 @@ fn file_flags(git: &Git<'_>, base: &str, rules: &Ruleset, file: &FileState) -> V
 fn test_removed_flag(file: &FileState, path: &str, rules: &Ruleset) -> Option<RawFlag> {
     let deleted_test_file = file.new_path.is_none() && rules.is_test_file(path);
     (file.tests_removed > file.tests_added && !deleted_test_file).then(|| {
-        RawFlag::new(
+        RawFlag::about(
+            path,
             format!("test-removed:{path}"),
             format!(
                 "{} test marker(s) removed and {} added in {path}",
@@ -220,7 +243,8 @@ fn test_removed_flag(file: &FileState, path: &str, rules: &Ruleset) -> Option<Ra
 /// takes its asserts with it as it does its tests.
 fn asserts_removed_flag(file: &FileState, path: &str) -> Option<RawFlag> {
     (file.asserts_removed > file.asserts_added && file.new_path.is_some()).then(|| {
-        RawFlag::new(
+        RawFlag::about(
+            path,
             format!("asserts-removed:{path}"),
             format!(
                 "{} assert line(s) removed and {} added in {path}",

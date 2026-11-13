@@ -163,6 +163,20 @@ impl<'a> Git<'a> {
         self.stdout(&["show", &spec]).ok()
     }
 
+    /// The object id of `path` at `rev`: `Ok(None)` when no file has that
+    /// path there, `Err` when git does not know `rev`. Two equal ids mean
+    /// the same content (ADR 0045).
+    pub(crate) fn blob(&self, rev: &str, path: &str) -> Result<Option<String>, VerifyError> {
+        let out = self.stdout(&["ls-tree", "-z", "--full-tree", rev, "--", path])?;
+        // `<mode> <type> <id>\t<path>\0`, one entry for one path.
+        Ok(out
+            .split('\0')
+            .find(|e| !e.is_empty())
+            .and_then(|e| e.split('\t').next())
+            .and_then(|meta| meta.split(' ').nth(2))
+            .map(str::to_owned))
+    }
+
     /// Paths with uncommitted changes, `TASK.md` left out.
     pub(crate) fn uncommitted(&self) -> Result<Vec<String>, VerifyError> {
         let out = self.stdout(&["status", "--porcelain", "-z", "--untracked-files=all"])?;

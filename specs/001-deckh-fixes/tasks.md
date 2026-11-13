@@ -354,16 +354,16 @@ today.
 
 ### ADR for US4
 
-- [ ] T046 [US4] Write `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`. Record the F12 decision from `specs/001-deckh-fixes/research.md`. It supersedes ADR 0009 point 2 (`docs/adr/0009-verify-verdicts.md:30-33`) only for the flags that name one file: `test-deleted`, `config-changed`, `outside-owns`, `weakened`, `lint-removed`, `test-removed` and `asserts-removed`. State that a flag naming no file, `uncommitted:<path>` and `head-moved` keep the old rule, and that VER-5's record-at-HEAD rule for removal stays. Do not edit ADR 0009.
+- [X] T046 [US4] Write `docs/adr/0045-a-file-waiver-holds-until-the-file-changes.md`. Record the F12 decision from `specs/001-deckh-fixes/research.md`. It supersedes ADR 0009 point 2 (`docs/adr/0009-verify-verdicts.md:30-33`) only for the flags that name one file: `test-deleted`, `config-changed`, `outside-owns`, `weakened`, `lint-removed`, `test-removed` and `asserts-removed`. State that a flag naming no file, `uncommitted:<path>` and `head-moved` keep the old rule, and that VER-5's record-at-HEAD rule for removal stays. Do not edit ADR 0009.
 
 ### Tests for US4 (write first)
 
-- [ ] T047 [US4] Write the two failing tests in `crates/teamwire-verify/tests/verify.rs`, beside `the_spec_kit_constitution_is_check_config` (`verify.rs:382`), with the existing helpers (`repo_on_work`, `implementer`, `report_all_commits`, `run_one`, `flag_ids`, `waive`):
+- [X] T047 [US4] Write the two failing tests in `crates/teamwire-verify/tests/verify.rs`, beside `the_spec_kit_constitution_is_check_config` (`verify.rs:382`), with the existing helpers (`repo_on_work`, `implementer`, `report_all_commits`, `run_one`, `flag_ids`, `waive`):
   - `a_file_flag_waiver_holds_while_that_file_is_unchanged`: the deckh replay. A member with `owns = ["src/"]` changes `.specify/memory/constitution.md`. The lead waives `config-changed:.specify/memory/constitution.md` and `outside-owns:.specify/memory/constitution.md`. The member commits `src/b.rs`. Assert `verdict == Verdict::Pass` and both flags `waived`.
   - `a_waiver_for_a_deleted_file_holds_while_the_file_stays_deleted`: with `deleted_test()` (`verify.rs:529-540`), waive `test-deleted:tests/a.rs`, commit `src/more.rs`, assert the flag is `waived`.
 
   Run `cargo test -p teamwire-verify --locked --test verify a_file_flag_waiver_holds a_waiver_for_a_deleted_file` and see both fail on the verdict or `waived` assertion. These tests need no new name.
-- [ ] T048 [US4] Write five **guard** tests in `crates/teamwire-verify/tests/verify.rs` that keep the rest of the rule. They pass on `develop` and must still pass after T049:
+- [X] T048 [US4] Write five **guard** tests in `crates/teamwire-verify/tests/verify.rs` that keep the rest of the rule. They pass on `develop` and must still pass after T049:
   - `a_file_flag_waiver_ends_when_that_file_changes`: after the waivers of T047's first test, a commit changes the constitution again. The flags are not waived and the verdict is `Verdict::Flagged`.
   - `a_file_flag_waiver_ends_when_a_merge_changes_that_file`: a side branch made with `repo.git(&["checkout", "-b", ...])` changes the constitution, and the member merges it with `--no-ff`. The flags are not waived.
   - `a_waiver_at_a_commit_git_does_not_know_does_not_carry_over`: insert a waiver row with `tx.insert_waiver` and `head_sha` of forty `0`s for the constitution flag. The flag is not waived.
@@ -372,7 +372,7 @@ today.
 
 ### Implementation for US4
 
-- [ ] T049 [US4] Implement the rule, in one commit with its guidance:
+- [X] T049 [US4] Implement the rule, in one commit with its guidance:
   - In `crates/teamwire-verify/src/inspect.rs:11-23`, add `path: Option<String>` to `RawFlag`, keep `RawFlag::new` with `path: None`, and add `RawFlag::about(path, id, detail)`. Use `about` at the file-flag sites: `inspect.rs:45` (`test-deleted`), `:51` (`config-changed`), `:57` (`outside-owns`), `:120` and `:177` (`weakened`), `:192` (`lint-removed`, the old path), `:208` (`test-removed`) and `:223` (`asserts-removed`). Leave `bad-owns` at `:35`.
   - In `crates/teamwire-verify/src/git.rs`, beside `file_at` (`git.rs:161-164`), add `Git::blob(rev, path) -> Result<Option<String>, VerifyError>` that runs `git ls-tree -z --full-tree <rev> -- <path>`: `Ok(Some(id))` for the blob id, `Ok(None)` for empty output, `Err` when git does not know `rev`.
   - Add `crates/teamwire-verify/src/waivers.rs` with one function that returns the waived flag ids for a member at HEAD. Read the member's rows with `tx.all_waivers()` filtered by role (no store change). A flag is waived when a waiver for its id is at HEAD, or when it has a path and a waiver for its id at an older HEAD `w` has `blob(w, path) == blob(HEAD, path)`, both `Ok`. Declare the module in `crates/teamwire-verify/src/lib.rs:26-32`.

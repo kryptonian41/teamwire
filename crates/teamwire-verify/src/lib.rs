@@ -1,10 +1,12 @@
 //! Runs each member's check and the diff rules of ADR 0009: the diff base,
 //! `owns` matching, the per-language rules in `rules/`, the five verdicts,
-//! and waivers bound to a HEAD. Also the report check used by completions.
+//! and waivers. A waiver counts at the HEAD it was recorded at; a waiver for
+//! a flag that names one file also counts at a later HEAD while that file is
+//! unchanged (ADR 0045). Also the report check used by completions.
 //!
-//! Never: change a member's worktree; count a waiver for a HEAD other than
-//! the one it was recorded at; run a check except through `Platform::run`
-//! with the member's timeout.
+//! Never: change a member's worktree; count a waiver at another HEAD except
+//! a file flag's whose file is unchanged there; run a check except through
+//! `Platform::run` with the member's timeout.
 //!
 //! Three ways to switch a test off stay unflagged, because no line-by-line
 //! rule sees them: `#[cfg(not(test))]` (the rules have no path filter, so
@@ -30,6 +32,7 @@ mod inspect;
 mod owns;
 mod report;
 mod rules;
+mod waivers;
 
 pub use files::{DeepReport, FileFinding, FileProblem, check_copies, deep_check, repair_copies};
 pub use owns::Owns;
@@ -309,12 +312,7 @@ fn verify_member(
         Vec::new()
     };
     let waived: HashSet<String> = match &head {
-        Some(head) => ctx
-            .store
-            .read(|tx| tx.waivers(&member.role, head)?.all_or_corrupt())?
-            .into_iter()
-            .map(|w| w.flag_id)
-            .collect(),
+        Some(head) => waivers::waived_ids(ctx, &git, &member.role, head, &raised)?,
         None => HashSet::new(),
     };
     let mut flags: Vec<Flag> = raised

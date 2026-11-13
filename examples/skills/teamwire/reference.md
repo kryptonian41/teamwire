@@ -215,7 +215,12 @@ while the check ran. Verdicts are `PASS`, `FLAGGED`, `FAIL`, `NO-CHECK` and
 flag, and let no branch merge past one you have not read.
 `teamwire verify <team> --role R --waive FLAG --reason TEXT`
 waives one flag, named as verify prints it in brackets, at the member's
-current HEAD. A later commit needs a new waiver. `uncommitted:<path>` is
+current HEAD. A waiver for a flag that names one file (`test-deleted`,
+`config-changed`, `outside-owns`, `weakened`, `lint-removed`,
+`test-removed`, `asserts-removed`) holds at later HEADs until that file's
+content changes, a merge or rebase included. Any other waiver,
+`uncommitted:<path>` included, ends at the next commit. Run verify again
+after each commit either way. `uncommitted:<path>` is
 one flag per path, so a waiver covers that path only. `head-moved` cannot
 be waived: run verify again. `--deep` adds the database
 integrity check and a check of every message hash.

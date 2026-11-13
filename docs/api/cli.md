@@ -447,7 +447,13 @@ the merged commits count as the member's own and raise `outside-owns` and
 `git merge --no-ff --no-edit <sha>`.
 It writes a verify record with the HEAD sha. Exit 0 only when every checked
 member is `PASS`; else 2. `--waive` records a waiver for one flag of one
-member at its current HEAD. `--deep` also runs `PRAGMA integrity_check` and
+member at its current HEAD. A waiver for a flag that names one file
+(`test-deleted`, `config-changed`, `outside-owns`, `weakened`,
+`lint-removed`, `test-removed`, `asserts-removed`) also counts at a later
+HEAD while that file's content is the same as at the waived HEAD, compared
+by blob id (ADR 0045). Any change to the file ends it, a merge or rebase
+included, and so does a waived HEAD git no longer knows. Every other
+waiver, `uncommitted:<path>` included, counts only at its own HEAD. `--deep` also runs `PRAGMA integrity_check` and
 checks every message hash. `--repair-files` rewrites missing or differing
 `comms/` copies from the stored body (when that body still matches its hash).
 An `outbox/` copy is reported but never rewritten: the store keeps only its

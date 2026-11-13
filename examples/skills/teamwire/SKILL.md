@@ -816,8 +816,9 @@ Remove a member once it can no longer be useful, with
 | reviewer, plan reviewer, closer | Once you have read its report and acted on it. |
 | any member going the wrong way | At once, with `--unverified --stop`, then replace it. |
 
-A finished implementer whose verify is `FLAGGED` gets a waiver per flag at
-its final HEAD, with the message that approved it as the reason. One whose
+A finished implementer whose verify is `FLAGGED` gets a waiver per flag,
+with the message that approved it as the reason. A file flag's waiver holds
+until that file changes; any other flag needs one at its final HEAD. One whose
 verify FAILs for a reason outside its work, such as a dependency the shared
 environment lacks, gets that environment fixed and verify run again. Use
 `--unverified` on a finished member only when neither is possible, and tell

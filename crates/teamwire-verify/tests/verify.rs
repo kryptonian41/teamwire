@@ -1,5 +1,6 @@
 //! `verify`: the real exit code of the check, the diff base, the flags of the
-//! diff rules, the five verdicts and waivers bound to a HEAD.
+//! diff rules, the five verdicts, and waivers: bound to a HEAD, except that a
+//! file flag's waiver holds while that file is unchanged (ADR 0045).
 #![expect(
     clippy::redundant_closure_for_method_calls,
     reason = "a method path does not satisfy `Store::read`'s closure bound: it takes a reference to a type with its own lifetime"
@@ -843,12 +844,13 @@ fn a_waiver_makes_the_flagged_pass_a_pass_for_that_head_only() {
     assert_eq!(waiver.head_sha, repo.head());
     assert_eq!(waiver.reason, "the suite moved to src/");
 
-    // One more commit moves HEAD: the waiver does not carry over.
+    // One more commit moves HEAD and leaves tests/a.rs deleted: the waiver
+    // names that one file, so it carries over (ADR 0045).
     repo.commit(&[("src/more.rs", "fn m() {}\n")], "more", start_secs() + 9);
     report_all_commits(&fx, &repo, "api");
     let record = run_one(&mut fx, "api");
-    assert_eq!(record.verdict, Verdict::Flagged, "{record:?}");
-    assert!(!record.flags.first().unwrap().waived);
+    assert_eq!(record.verdict, Verdict::Pass, "{record:?}");
+    assert!(record.flags.first().unwrap().waived);
 }
 
 #[test]
