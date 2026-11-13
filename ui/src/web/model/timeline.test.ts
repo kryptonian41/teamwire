@@ -82,6 +82,12 @@ test("problem and routine rules", () => {
   expect(rows.filter((r) => isProblem(r) && isRoutine(r))).toEqual([]);
 });
 
+test("a message held for a handoff is not a problem row, another undelivered one is", () => {
+  expect(isProblem(ev("delivery.undelivered", "api", { code: "held_for_handoff", attempts: 0 }, "m012"))).toBe(false);
+  expect(isProblem(ev("delivery.undelivered", "api", { code: "host_other_session", attempts: 3 }, "m013"))).toBe(true);
+  expect(matchesFilter(ev("delivery.undelivered", "api", { code: "held_for_handoff" }), "messages")).toBe(true);
+});
+
 test("a watch line is a problem only when one of its words is an alert", () => {
   const watch = (...events: string[]) => isProblem(ev("watch.line", null, { events }));
   for (const calm of [["WATCHING"], ["WATCHING 3"], ["TEAM-COMPLETE"], ["COMPLETED"], ["WATCHING 2", "TEAM-COMPLETE"]]) {
