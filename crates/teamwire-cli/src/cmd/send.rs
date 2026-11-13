@@ -188,8 +188,7 @@ fn read_body(text: Option<&str>, file: Option<&std::path::Path>) -> Option<Strin
 pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
     say(&format!("{}\n", report.display_id));
     for d in &report.deliveries {
-        let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
-        say(&format!("  {}: {}{reason}\n", d.to, state_word(d.state)));
+        say(&recipient_line(&report.display_id, d));
         match d.state {
             RecipientState::Undelivered => warn(&format!(
                 "NOT DELIVERED to {}: {}",
@@ -211,6 +210,12 @@ pub(crate) fn print_report(team: &TeamName, report: &SendReport) {
             RecipientState::HandedOff | RecipientState::Acked | RecipientState::Skipped => {}
         }
     }
+}
+
+/// The stdout line for one recipient.
+fn recipient_line(_id: &DisplayId, d: &teamwire_msg::RecipientReport) -> String {
+    let reason = d.reason.map_or(String::new(), |r| format!(" ({r})"));
+    format!("  {}: {}{reason}\n", d.to, state_word(d.state))
 }
 
 /// A pending recipient after the command ends means its delivery record
@@ -351,6 +356,25 @@ mod tests {
         assert_eq!(
             line,
             "NOT RECORDED for api: the delivery record could not be written (store error); run teamwire resend alpha m007"
+        );
+    }
+
+    /// A message held for a member that asked for a handoff is where it
+    /// should be: the line says so and the command exits 0 (ADR 0043).
+    #[test]
+    fn a_held_recipient_reads_held_for_handoff_and_exits_0() {
+        let mut held = report(&[RecipientState::Undelivered]);
+        for d in &mut held.deliveries {
+            d.reason = Some(teamwire_core::DeliveryErrorCode::HeldForHandoff);
+        }
+        assert_eq!(exit_of(&held), 0);
+        let line = held
+            .deliveries
+            .first()
+            .map(|d| recipient_line(&held.display_id, d));
+        assert_eq!(
+            line.as_deref(),
+            Some(format!("  api: held for handoff ({})\n", held.display_id).as_str())
         );
     }
 

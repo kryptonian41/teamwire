@@ -358,4 +358,41 @@ mod tests {
         assert_eq!(context_text(Some(c)), "72% 720k");
         assert_eq!(context_text(None), "-");
     }
+
+    #[test]
+    fn held_rows_print_on_their_own_line() {
+        let id = |text: &str| teamwire_core::DisplayId::parse(text).unwrap();
+        let view = StatusView {
+            stuck_deliveries: vec![teamwire_watch::StuckDelivery {
+                display_id: id("m003"),
+                to: Recipient::parse("web").unwrap(),
+                state: teamwire_core::DeliveryState::Undelivered,
+                age_s: 120,
+            }],
+            held_deliveries: vec![teamwire_watch::HeldDelivery {
+                display_id: id("m004"),
+                to: Recipient::parse("impl").unwrap(),
+            }],
+            ..StatusView::default()
+        };
+        let text = render(&view);
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines.contains(&"held for handoff: m004 -> impl"), "{text}");
+        // The stuck block holds only the stuck row, indented under its head.
+        let head = lines
+            .iter()
+            .position(|l| *l == "deliveries that need attention:");
+        let block: Vec<&str> = head
+            .map(|h| {
+                lines
+                    .iter()
+                    .skip(h + 1)
+                    .take_while(|l| l.starts_with("  "))
+                    .copied()
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert_eq!(block.len(), 1, "{text}");
+        assert!(!text.contains("  m004"), "{text}");
+    }
 }

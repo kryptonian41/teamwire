@@ -615,3 +615,53 @@ fn an_undelivered_member_at_a_dialog_reads_working_at_a_dialog() {
     let bed = undelivered_member(PlaceState::Blocked);
     assert_eq!(word_of(&bed, "impl"), "working (at a dialog)");
 }
+
+/// A message held for a member that asked for a handoff waits on purpose:
+/// it is listed on its own, not as a delivery that needs attention (ADR 0043
+/// decision 10).
+#[test]
+fn a_held_message_is_listed_apart_from_stuck_deliveries() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    let now = bed.clock.now();
+    let api = Recipient::Member(role("api"));
+    bed.store
+        .write(|tx| {
+            let stored = tx.insert_message(
+                now,
+                &teamwire_store::NewMessage {
+                    sender: Actor::Lead,
+                    kind: MessageType::Note,
+                    re: None,
+                    commit: None,
+                    body: "one more thing".to_owned(),
+                    client_key: None,
+                    recipients: vec![api.clone()],
+                },
+            )?;
+            tx.set_delivery_state(
+                now,
+                &stored.message.ulid,
+                &api,
+                &teamwire_store::DeliveryUpdate {
+                    state: DeliveryState::Undelivered,
+                    route: None,
+                    error: Some(teamwire_core::DeliveryError::new(
+                        teamwire_core::DeliveryErrorCode::HeldForHandoff,
+                        "held for the handoff",
+                    )),
+                    attempts: 0,
+                },
+            )
+        })
+        .unwrap();
+    let view = status_of(&bed, None);
+    assert!(
+        view.stuck_deliveries.is_empty(),
+        "{:?}",
+        view.stuck_deliveries
+    );
+    assert_eq!(view.held_deliveries.len(), 1, "{:?}", view.held_deliveries);
+    assert_eq!(view.held_deliveries[0].display_id.as_str(), "m001");
+    assert_eq!(view.held_deliveries[0].to, api);
+}

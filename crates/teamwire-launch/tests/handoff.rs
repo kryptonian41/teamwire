@@ -355,3 +355,51 @@ fn a_store_that_cannot_be_read_is_a_store_error() {
     let why = plan_handoff(&ctx, &role("api"), None).unwrap_err();
     assert!(matches!(why, HandoffError::Store(_)), "{why}");
 }
+
+/// Guard: a message held for the handoff is an `undelivered` row, which the
+/// fresh session's first line counts as unread, so the new session reads it
+/// (ADR 0043 decision 10).
+#[test]
+fn a_handoff_first_line_counts_the_held_messages() {
+    let rig = Rig::new();
+    let mut store = running_team(&rig);
+    let now = rig.clock.now();
+    let api = teamwire_core::Recipient::Member(role("api"));
+    store
+        .write(|tx| {
+            let stored = tx.insert_message(
+                now,
+                &teamwire_store::NewMessage {
+                    sender: teamwire_core::Actor::Lead,
+                    kind: teamwire_core::MessageType::Note,
+                    re: None,
+                    commit: None,
+                    body: "one more thing".to_owned(),
+                    client_key: None,
+                    recipients: vec![api.clone()],
+                },
+            )?;
+            tx.set_delivery_state(
+                now,
+                &stored.message.ulid,
+                &api,
+                &teamwire_store::DeliveryUpdate {
+                    state: teamwire_core::DeliveryState::Undelivered,
+                    route: None,
+                    error: Some(teamwire_core::DeliveryError::new(
+                        teamwire_core::DeliveryErrorCode::HeldForHandoff,
+                        "held for the handoff",
+                    )),
+                    attempts: 0,
+                },
+            )
+        })
+        .unwrap();
+    let ctx = ctx(&rig, &mut store);
+    let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+    assert!(
+        plan.first_line.contains("1 unread message(s)"),
+        "{}",
+        plan.first_line
+    );
+}

@@ -9,7 +9,10 @@
 #[path = "support/rig.rs"]
 mod rig;
 
-use teamwire_core::{CompletionStatus, EventType, FinalSource, MemberKind, MessageType};
+use teamwire_core::{
+    CompletionStatus, DeliveryErrorCode, DeliveryState, EventType, FinalSource, MemberKind,
+    MessageType,
+};
 use teamwire_msg::send;
 use teamwire_store::NewCompletion;
 
@@ -121,4 +124,70 @@ fn a_known_delivery_failure_undoes_the_woken_generation() {
             .any(|e| e.data.get("undone") == Some(&serde_json::json!(true))),
         "{woken:?}"
     );
+}
+
+fn submits(rig: &Rig) -> usize {
+    rig.host.log().count_named("submit")
+}
+
+/// A member whose newest result asks for a handoff gets its messages held
+/// for the fresh session: stored, not typed (ADR 0043 decision 10).
+#[test]
+fn a_message_to_a_member_with_a_handoff_result_is_held_not_typed() {
+    let mut rig = team_rig();
+    finish(
+        &mut rig,
+        "api",
+        CompletionStatus::Done,
+        "handoff: next is T020",
+    );
+    let before = generation(&rig, "api");
+    let typed = submits(&rig);
+    let req = rig.request("lead", &["api"], MessageType::Note, "one more thing");
+    let report = send(&mut rig.ctx(), req).unwrap();
+    assert_eq!(submits(&rig), typed, "nothing is typed");
+    let row = rig
+        .store
+        .read(|tx| tx.delivery(&report.id, &rig::to("api")))
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.delivery.state, DeliveryState::Undelivered);
+    assert_eq!(
+        row.delivery.error.map(|e| e.code),
+        Some(DeliveryErrorCode::HeldForHandoff)
+    );
+    assert_eq!(
+        generation(&rig, "api"),
+        before,
+        "a held message wakes nothing"
+    );
+    assert!(rig.events(EventType::MemberWoken).is_empty());
+}
+
+/// A reprompt in place of the handoff types its own text, then names the
+/// held messages, oldest first.
+#[test]
+fn a_reprompt_names_the_held_messages_after_its_text() {
+    let mut rig = team_rig();
+    finish(
+        &mut rig,
+        "api",
+        CompletionStatus::Done,
+        "handoff: next is T020",
+    );
+    note(&mut rig, "api");
+    let req = rig.request("lead", &["api"], MessageType::Reprompt, "carry on here");
+    send(&mut rig.ctx(), req).unwrap();
+    let typed = rig
+        .host
+        .log()
+        .calls()
+        .into_iter()
+        .rfind(|c| c.name == "submit")
+        .unwrap()
+        .detail;
+    assert!(typed.contains("msg m002 reprompt from lead]"), "{typed}");
+    let body = typed.find("carry on here").unwrap();
+    let held = typed.find("Held for you, oldest first: m001 (note from lead)");
+    assert!(held.is_some_and(|h| h > body), "{typed}");
 }

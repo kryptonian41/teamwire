@@ -142,6 +142,10 @@ string_enum! {
         /// The turn-end hook's delivery budget ran out before this call, so
         /// nothing was typed (ADR 0007 point 6a).
         BudgetExhausted => "budget_exhausted",
+        /// The recipient's newest result asked for a handoff, so the message
+        /// waits for the fresh session or a reprompt and is not typed (ADR
+        /// 0043).
+        HeldForHandoff => "held_for_handoff",
     }
 }
 

@@ -139,6 +139,14 @@ describe("AFK output", () => {
   });
 });
 
+describe("held for handoff", () => {
+  test("held_deliveries parse and are kept", () => {
+    const held = [{ display_id: "m004", to: "impl" }];
+    const parsed = StatusAll.parse([{ ...status[0]!, held_deliveries: held }]);
+    expect(parsed[0]!.held_deliveries).toEqual(held);
+  });
+});
+
 describe("schemas refuse a changed shape", () => {
   test("a new delivery state fails the parse", () => {
     const changed = structuredClone(log);

@@ -112,6 +112,15 @@ pub struct StuckDelivery {
     pub age_s: u64,
 }
 
+/// A message held for a member that asked for a handoff: stored, not typed,
+/// and waiting for the fresh session or a reprompt (ADR 0043). It is not a
+/// delivery that needs attention.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeldDelivery {
+    pub display_id: DisplayId,
+    pub to: Recipient,
+}
+
 /// A delivery handed to its recipient's session that nobody acknowledged
 /// within `UNREAD_AFTER`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,6 +197,7 @@ pub struct StatusView {
     /// The last five messages.
     pub messages: Vec<MessageView>,
     pub stuck_deliveries: Vec<StuckDelivery>,
+    pub held_deliveries: Vec<HeldDelivery>,
     pub unread_deliveries: Vec<UnreadDelivery>,
     pub unanswered_questions: Vec<UnansweredQuestion>,
     pub undelivered_results: Vec<UndeliveredResult>,

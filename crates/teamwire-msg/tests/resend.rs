@@ -514,3 +514,38 @@ fn a_row_that_may_have_arrived_stays_unconfirmed_when_the_team_closes_part_way()
     assert_eq!(web.attempts, Some(1));
     assert_eq!(submits(&rig), 1);
 }
+
+/// A message held for a member that asked for a handoff waits for the fresh
+/// session or a reprompt; a resend would type it into the old one (ADR 0043
+/// decision 10).
+#[test]
+fn a_held_message_is_not_resent() {
+    let mut rig = team_rig();
+    let now = rig.now();
+    rig.store
+        .write(|tx| {
+            tx.insert_completion(
+                now,
+                &teamwire_store::NewCompletion {
+                    role: rig::role("api"),
+                    generation: 1,
+                    status: teamwire_core::CompletionStatus::Done,
+                    summary: "handoff: next is T020".to_owned(),
+                    final_message: None,
+                    final_source: teamwire_core::FinalSource::None,
+                },
+            )
+            .map(|_| ())
+        })
+        .unwrap();
+    let req = rig.request("lead", &["api"], MessageType::Note, "one more thing");
+    let sent = send(&mut rig.ctx(), req).unwrap();
+    let typed = submits(&rig);
+    let refused = resend(&mut rig.ctx(), &Actor::Lead, &sent.display_id, None).unwrap_err();
+    let text = refused.to_string();
+    assert!(
+        text.contains("handoff") && text.contains("reprompt"),
+        "{text}"
+    );
+    assert_eq!(submits(&rig), typed, "nothing is typed");
+}
