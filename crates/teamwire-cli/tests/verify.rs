@@ -137,10 +137,25 @@ fn a_flagged_pass_exits_two_until_the_flag_is_waived_for_that_head() {
     assert!(run.out.contains("(waived)"), "{}", run.out);
     assert!(run.out.contains("PASS"), "{}", run.out);
 
-    // The waiver does not follow a new commit.
+    // A commit that leaves src/lib.rs alone keeps the waiver of the flag
+    // that names that file (ADR 0045).
     let sha = repo.commit(&[("src/more.rs", "fn m() {}\n")], "more", start_secs() + 9);
     let text = std::fs::read_to_string(fx.team_dir().join("reports/api.md")).unwrap();
     fx.write_report("api", &format!("{text}- {} more\n", &sha[..7]));
+    let run = teamwire(&fx, &["verify", "alpha"]);
+    assert_eq!(run.code, 0, "{}", run.out);
+    assert!(run.out.contains("(waived)"), "{}", run.out);
+    assert!(run.out.contains("PASS"), "{}", run.out);
+
+    // A change to the waived file ends the waiver (ADR 0045), even one that
+    // keeps the flagged line.
+    let sha = repo.commit(
+        &[("src/lib.rs", "#[allow(dead_code)]\nfn a() {}\nfn b() {}\n")],
+        "edit lib",
+        start_secs() + 12,
+    );
+    let text = std::fs::read_to_string(fx.team_dir().join("reports/api.md")).unwrap();
+    fx.write_report("api", &format!("{text}- {} edit lib\n", &sha[..7]));
     let run = teamwire(&fx, &["verify", "alpha"]);
     assert_eq!(run.code, 2, "{}", run.out);
     assert!(run.out.contains("FLAGGED"), "{}", run.out);
