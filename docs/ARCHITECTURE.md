@@ -49,7 +49,7 @@ and no host (ADP-1).
 | --- | --- |
 | `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `LeadSetup`, `Host`, `Platform` and `Clock` traits, the lead setup's shared apply loop (ADR 0031), the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
 | `teamwire-store` | Opens a team's SQLite database with the required settings, runs migrations, and offers typed transactions for every table. The only code that writes state. |
-| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, and the sleep hold (`caffeinate` on macOS). |
+| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, file locks (`flock`, through `Platform::lock_file`), and the sleep hold (`caffeinate` on macOS). |
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
@@ -104,8 +104,9 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
-| `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
-| `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
+| `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
+| `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
+| `$TEAMWIRE_HOME/locks/user-key.lock` | `teamwire user-key` | An empty file, made if missing and never deleted. A run holds the kernel's `flock` on it, through `Platform::lock_file`, from its first look at `user.key` to its write, so two runs at once agree on one key. The wait has no limit. The lock ends with the holder's open file, so a killed run holds nothing (ADR 0040) |
 
 The database tables (schema version 11; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):

@@ -412,6 +412,15 @@ pub trait Platform: Send + Sync {
     /// for a platform that writes no files; the lead setup's `apply` uses them.
     fn create_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
     fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError>;
+    /// The kernel's exclusive `flock` on the file `path`. The file and its
+    /// folder are made when missing, and the file is never written. A free
+    /// lock is taken at once. A busy one is tried every 50 ms until `wait`
+    /// runs out, then the call fails with `PlatformErrorCode::TimedOut`
+    /// ("timed_out"). A `wait` too large for the clock has no limit. Dropping
+    /// the guard releases the lock, and so does the holder's death. Default
+    /// `Unsupported`. Launch's and close's exclude, worktree and user-key
+    /// locks all go through it.
+    fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError>;
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
@@ -420,6 +429,13 @@ pub trait Platform: Send + Sync {
 impl RunOutput {
     pub fn failure_text(&self) -> String;    // the one-line reason a failed command gives
     pub fn stdout_trimmed(&self) -> String;
+}
+
+/// The guard `lock_file` returns. Core does no I/O, so the guard is a box
+/// that only the platform fills: an open file, for the real platform.
+pub struct FileLock { /* private */ }
+impl FileLock {
+    pub fn new(held: impl Send + 'static) -> Self;   // releases the lock when `held` drops
 }
 
 pub trait SleepHold {
