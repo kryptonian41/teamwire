@@ -9,7 +9,7 @@ use teamwire_store::{CloseEnd, Ctx, TeamRow};
 
 use crate::facts::{self, live};
 use crate::member_close::{close_place, ignored_warning, kept_branches, remove_worktree};
-use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, exclude, git, hold};
+use crate::{CloseOpts, CloseReport, StepOutcome, archive, delete, exclude, hold, worktree_lock};
 
 /// `close --clear-stale-lock`: clears a lock whose owner is dead, and nothing
 /// else. A live owner is never cleared.
@@ -301,13 +301,18 @@ impl Seq<'_, '_> {
                 Ok(note) => notes.push(note),
                 Err(why) => problems.push(why),
             }
-            if let Some(repo) = &member.repo {
+            // One prune per repository: it forgets every gone worktree of
+            // that repository at once, and each prune waits for the
+            // worktree lock on its own.
+            if let Some(repo) = &member.repo
+                && !repos.contains(&repo.as_path())
+            {
                 repos.push(repo);
             }
         }
         for repo in repos {
             // Forget worktree records whose directory is gone; never a force.
-            git::run(self.ctx.platform, repo, &["worktree", "prune"]).ok();
+            worktree_lock::prune(self.ctx.platform, self.ctx.home, repo);
         }
         let alive: Vec<&Member> = live(&members).collect();
         notes.extend(exclude::take_back(self.ctx, &alive));

@@ -23,10 +23,13 @@ use teamwire_store::{Ctx, NewMember, NewTeam, Store, TeamRow};
 pub const TEAM: &str = "alpha";
 pub const LEAD_PID: u32 = 4242;
 
-/// Runs real processes for `run`; every other call goes to the fake.
+/// Runs real processes for `run`, and keeps the arguments of each one so a
+/// test can count its git calls; every other call goes to the fake.
 #[derive(Debug, Default)]
 pub struct GitPlatform {
     pub inner: FakePlatform,
+    /// The arguments of every command `run` started, in order.
+    pub ran: std::sync::Mutex<Vec<Vec<String>>>,
 }
 
 impl Platform for GitPlatform {
@@ -40,6 +43,7 @@ impl Platform for GitPlatform {
         self.inner.env_of(pid, var)
     }
     fn run(&self, cmd: &Command, _timeout: Duration) -> Result<RunOutput, PlatformError> {
+        self.ran.lock().unwrap().push(cmd.args.clone());
         let mut c = std::process::Command::new(&cmd.program);
         c.args(&cmd.args);
         if let Some(dir) = &cmd.cwd {

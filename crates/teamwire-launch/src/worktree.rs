@@ -1,7 +1,8 @@
 //! Making and taking back a member's git worktree (LCH-8, LCH-24). git is
 //! always run through `Platform::run`, and the host's own worktree command
 //! is never used (INV-23). Every change to the repository's shared
-//! `info/exclude` holds the exclude lock that close also takes.
+//! `info/exclude` holds the exclude lock that close also takes, and every
+//! `git worktree add` or `remove` holds the worktree lock close also takes.
 
 use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
@@ -12,6 +13,7 @@ use teamwire_core::{Platform, exclude};
 
 use crate::WorktreePlan;
 use crate::git::{failure_text, run, stdout_of};
+use crate::worktree_lock::lock_worktrees;
 
 /// What launch made, so a failure can take exactly that back.
 #[derive(Debug, Clone)]
@@ -45,8 +47,14 @@ pub(crate) fn start_commit(platform: &dyn Platform, w: &WorktreePlan) -> Result<
     Ok(sha)
 }
 
-/// `git worktree add`, at the recorded start commit.
-pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Result<Made, String> {
+/// `git worktree add`, at the recorded start commit, under the worktree
+/// lock.
+pub(crate) fn add(
+    platform: &dyn Platform,
+    home: &Path,
+    w: &WorktreePlan,
+    sha: &str,
+) -> Result<Made, String> {
     if w.reuse {
         return Ok(Made {
             repo: w.repo.clone(),
@@ -64,7 +72,10 @@ pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Resul
     } else {
         vec!["worktree", "add", "-b", &w.branch, &path, sha]
     };
-    let out = run(platform, &w.repo, &args)?;
+    let out = {
+        let _lock = lock_worktrees(platform, home, &w.repo)?;
+        run(platform, &w.repo, &args)?
+    };
     if !out.success() {
         return Err(format!("git worktree add failed: {}", failure_text(&out)));
     }
@@ -76,12 +87,15 @@ pub(crate) fn add(platform: &dyn Platform, w: &WorktreePlan, sha: &str) -> Resul
 }
 
 /// Takes the worktree back without force, so uncommitted work is never
-/// thrown away. Returns what happened, in words, whether the worktree is
-/// still there, and whether the branch launch created was deleted.
-pub(crate) fn remove(platform: &dyn Platform, made: &Made) -> (String, bool, bool) {
+/// thrown away, under the worktree lock. Returns what happened, in words,
+/// whether the worktree is still there, and whether the branch launch
+/// created was deleted.
+pub(crate) fn remove(platform: &dyn Platform, home: &Path, made: &Made) -> (String, bool, bool) {
     let path = made.path.display().to_string();
     let mut left = true;
-    let mut note = match run(platform, &made.repo, &["worktree", "remove", &path]) {
+    let removed = lock_worktrees(platform, home, &made.repo)
+        .and_then(|_lock| run(platform, &made.repo, &["worktree", "remove", &path]));
+    let mut note = match removed {
         Ok(out) if out.success() => {
             left = false;
             format!("worktree {path} removed")

@@ -10,7 +10,9 @@ use teamwire_core::{
 use teamwire_store::{Ctx, MessageFilter, TeamRow};
 
 use crate::facts::{self, Busy, busy_refusal, busy_state, dirty_refusal, unplaced_refusal};
-use crate::{CloseOpts, CloseReport, StepOutcome, exclude, git, member_close, team_close};
+use crate::{
+    CloseOpts, CloseReport, StepOutcome, exclude, git, member_close, team_close, worktree_lock,
+};
 
 /// What stands between this member and removal.
 #[derive(Debug, Default)]
@@ -314,7 +316,7 @@ fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
         return Ok(format!("{role} has no worktree"));
     };
     let note = member_close::remove_worktree(ctx, member)?;
-    git::run(ctx.platform, repo, &["worktree", "prune"]).ok();
+    worktree_lock::prune(ctx.platform, ctx.home, repo);
     let mut notes = vec![note];
     notes.extend(member.branch.as_ref().map(|b| format!("branch {b} kept")));
     notes.extend(exclude::take_back(ctx, &[member]));

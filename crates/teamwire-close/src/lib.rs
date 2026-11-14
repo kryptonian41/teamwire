@@ -2,7 +2,8 @@
 //! under the close lock, with the archive (`SQLite` backup API and
 //! `SHA256SUMS`) and the sleep-hold release last. After the worktrees go,
 //! close takes back the `info/exclude` lines launch added that no remaining
-//! worktree needs, under the exclude lock launch also takes.
+//! worktree needs, under the exclude lock launch also takes. Each `git
+//! worktree remove` and `prune` holds the worktree lock launch also takes.
 //!
 //! Never: remove a worktree with force; delete a branch; remove a busy
 //! member without `--stop`; remove an unverified implementer without
@@ -31,6 +32,7 @@ mod member_close;
 mod plan;
 mod remove;
 mod team_close;
+mod worktree_lock;
 
 pub use handoff::{close_handoff_place, handoff_refusals};
 pub use plan::plan_close_with;

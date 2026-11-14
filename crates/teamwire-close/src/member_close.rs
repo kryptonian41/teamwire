@@ -11,11 +11,12 @@ use teamwire_core::{
 use teamwire_store::{Ctx, Party};
 
 use crate::facts::{self, Detached, Rescue};
-use crate::git;
+use crate::{git, worktree_lock};
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 
-/// `git worktree remove` for one member, without force; the branch stays.
+/// `git worktree remove` for one member, without force, under the worktree
+/// lock; the branch stays.
 pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, String> {
     let role = &member.role;
     let Some(repo) = &member.repo else {
@@ -33,7 +34,8 @@ pub(crate) fn remove_worktree(ctx: &Ctx<'_>, member: &Member) -> Result<String, 
         return Err(why);
     }
     let path = member.cwd.display().to_string();
-    let out = git::run(ctx.platform, repo, &["worktree", "remove", &path])
+    let out = worktree_lock::lock_worktrees(ctx.platform, ctx.home, repo)
+        .and_then(|_lock| git::run(ctx.platform, repo, &["worktree", "remove", &path]))
         .map_err(|e| format!("{role}: {e}"))?;
     if out.success() {
         Ok(format!("{role}'s worktree {path} removed"))

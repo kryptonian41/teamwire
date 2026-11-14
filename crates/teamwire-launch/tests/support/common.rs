@@ -114,6 +114,16 @@ pub(crate) fn make_repo(parent: &Path, name: &str) -> PathBuf {
     repo
 }
 
+/// The worktree lock file launch and close take for the repository whose
+/// git common directory (`<repo>/.git` for a main checkout) is `common`.
+pub(crate) fn worktree_lock(home: &Path, common: &Path) -> PathBuf {
+    use sha2::Digest as _;
+    let key = std::fs::canonicalize(common).unwrap();
+    let digest = sha2::Sha256::digest(key.to_string_lossy().as_bytes());
+    home.join("locks")
+        .join(format!("worktree-{}.lock", hex::encode(digest)))
+}
+
 #[derive(Debug)]
 pub(crate) struct Rig {
     pub(crate) home: TestHome,
