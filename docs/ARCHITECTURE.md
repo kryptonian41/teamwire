@@ -105,6 +105,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
 | `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
+| `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 
 The database tables (schema version 11; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
