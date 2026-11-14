@@ -1812,6 +1812,37 @@ fn the_speckit_guidance_states_afk_untested_parts_and_the_tested_build() {
     );
 }
 
+/// ADR 0047 rule 5: archived records name paths but are not live files, so
+/// the preset's BUILD rule, the implementer's note and the AFK skill each
+/// tell the lead to leave them out of the draft's mention search, as the
+/// lead skill does.
+#[test]
+fn the_speckit_draft_runs_pass_exclude_for_archived_records() {
+    let doc = preset_doc("speckit");
+    let build = doc["_rules"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(Value::as_str)
+        .find(|r| r.starts_with("BUILD."))
+        .map(flat)
+        .unwrap();
+    let impl_note = flat(
+        doc["children"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["role"] == "impl")
+            .and_then(|m| m["_note"].as_str())
+            .unwrap(),
+    );
+    let afk = flat(&example("skills/afk/SKILL.md"));
+    let needed = "`--exclude '<folder>/**'` for each folder of archived records";
+    for (place, text) in [("BUILD rule", &build), ("impl note", &impl_note), ("afk", &afk)] {
+        assert!(text.contains(needed), "{place} lacks {needed}: {text}");
+    }
+}
+
 /// ADR 0042 records what the review changed, and what is deferred, inside
 /// the repository; ADR 0041 keeps its words and points to it.
 #[test]
