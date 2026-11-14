@@ -853,19 +853,31 @@ skeleton starts with
 and prints that line, so a launch stops at setup until the lead puts the
 repository's own setup command, or `true`, in its place.
 
-### `teamwire speckit draft <tasks.md> [--repo <dir>]`
+### `teamwire speckit draft <tasks.md> [--repo <dir>] [--exclude PATTERN]...`
 
-Reads a spec-kit `tasks.md` and prints text (ADR 0044). It writes no file
+Reads a spec-kit `tasks.md` and prints text (ADR 0044, ADR 0047). It writes no file
 and no store row, and has no `--json`. `--repo` is the repository to search,
 by default the git top level of the folder that holds `tasks.md`.
+`--exclude PATTERN`, repeated, takes one glob each, as `amend --owns` does,
+matched as verify matches `owns`. A tracked file that matches one is left
+out of the mention search, such as a folder of archived records:
+`--exclude 'bench/**'` in teamwire's repository. Task paths still resolve
+against every tracked file. Nothing is excluded by default. A pattern that
+is not a valid glob is a usage error, exit 3.
 
 - A phase starts at `## Phase <n>: <title>`. A task line is `- [ ]`,
   `- [x]` or `- [X]`, then `T<digits>`, an optional `[P]` and an optional
   `[US<n>]`. A task with no story label is in "Setup and polish".
 - A path is a word, in backticks or not, without the punctuation around
   it. A word with `/` is a path when it does not start with `/`, is not in
-  a markdown link's `](...)`, and names a tracked file or folder or ends in
-  `.<ext>`. A word with no `/` is a path only when it names a tracked file
+  a markdown link's `](...)`, and names a tracked file or folder, or ends
+  in `.<ext>` in a folder that holds a tracked file, as a new file does
+  (ADR 0047). So the template path `specs/NNN-name/tasks.md` is no path
+  when no tracked file sits in `specs/NNN-name/`. Otherwise a word that is
+  the end of exactly one tracked path, at a `/`, is that path:
+  `cmd/send.rs` is `crates/teamwire-cli/src/cmd/send.rs` when no other
+  tracked file ends in `/cmd/send.rs`. A word that ends several tracked
+  paths, or none, is no path. A word with no `/` is a path only when it names a tracked file
   at the repository's root, such as `README.md`, so `knit.progress` and a
   bare `lib.rs` are not. A `:N` or `:N-M` line suffix is dropped, so
   `crates/x/src/send.rs:297-321` is `crates/x/src/send.rs`. A URL, a
@@ -873,6 +885,10 @@ by default the git top level of the folder that holds `tasks.md`.
   and a word made only of `/` and `.` are not paths. Outside backticks the
   extension needs two characters, so `e.g.` is no path. A brace set such as
   `src/{a,b}.rs` names each file.
+- A word that holds `"`, `'`, `(`, `)`, `,`, `;`, `!` or `::`, after the
+  punctuation around it is taken off and a brace set is expanded, is code,
+  not a path (ADR 0047), such as `"z/c/**".to_owned(` or
+  `Path::new(env!("CARGO_MANIFEST_DIR")).join("../x.md`.
 - A folder, printed with a trailing `/`, shares with each file under it in
   the overlap table and the independent list, and adds no file to the
   mention search.
@@ -880,13 +896,21 @@ by default the git top level of the folder that holds `tasks.md`.
   task line, heading or blank line.
 - A path that holds `*` is a glob over `git ls-files`, matched as verify
   matches `owns` (`*` stays in one segment, `**` crosses them). Each match
-  is a task path. A glob that matches nothing stays as itself.
+  is a task path. A glob that matches no tracked file, such as an example
+  `crates/b/**`, is no path.
 
 It prints, in order: a header with the counts of tasks, phases and stories;
 `Shared files between phases:` with one line per pair of phases that name a
 file in common; `Stories that share files:`, pairs joined by `; `; `Tasks
 that change no file:`; `Tasks whose files no other task names:`, each with
-its files; `Unread workflows:`; then
+its files; `Unread workflows:`; `Names that are not repository paths:`,
+with one line per task, `<task id>: <word>, <word>`, of each word with a `/`
+that ADR 0047 turned away (code, a word that does not resolve, a glob that
+matches nothing, a partial path that ends several tracked paths or none),
+which no list holds, so the lead can check it for a new file in a new
+folder. A word that only does not resolve, such as a file in a folder the
+feature creates, still counts in the overlap table and the two task lines,
+so two tasks that write it share it; code counts nowhere. Then
 `DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.`
 and one list per story, then `Setup and polish:`. An empty part reads
 `none`. Each list holds its task paths, `(task path)`, then every tracked

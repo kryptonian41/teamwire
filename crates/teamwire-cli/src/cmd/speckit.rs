@@ -1,6 +1,6 @@
 //! `teamwire speckit draft`: reads a spec-kit `tasks.md` and prints the
 //! files phases and stories share, the tasks that can run apart, and a DRAFT
-//! `owns` list per story (ADR 0044).
+//! `owns` list per story (ADR 0044, ADR 0047).
 //!
 //! Never: write a file or a store row, or call the network. Git is asked
 //! only for the tracked files. The lists are drafts for the lead to check.
@@ -11,10 +11,11 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use teamwire_core::{Command, Platform};
+use teamwire_verify::Owns;
 
 use crate::cmd::shared::{REFUSED, fail, say};
 use crate::wiring::Wiring;
-use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs};
+use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, USAGE};
 
 // Paths, as `doctor_speckit.rs` attaches its parts.
 #[path = "speckit/mentions.rs"]
@@ -49,6 +50,15 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
             REFUSED,
         );
     }
+    // A pattern that is not a glob would match nothing and hide the mistake.
+    let excluded = Owns::new(&args.exclude);
+    if let Some(bad) = excluded.invalid.first() {
+        return fail(
+            COMMAND,
+            &format!("--exclude {bad} is not a valid glob"),
+            USAGE,
+        );
+    }
     let platform = wiring.platform.as_ref();
     let folder = feature_folder(&args.tasks);
     let root = match &args.repo {
@@ -62,17 +72,31 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         Ok(files) => files,
         Err(why) => return fail(COMMAND, &why, REFUSED),
     };
-    let paths: Vec<Vec<String>> = list
-        .tasks
-        .iter()
-        .map(|t| overlap::expand(&t.paths, &tracked))
-        .collect();
-    let overlap = overlap::overlap(&list, &paths);
-    // The feature folder names every path, so it is never a mention.
+    // The drafts hold only repository paths. The overlap also counts the
+    // words that do not resolve, such as the files of a folder the feature
+    // creates, so tasks that write one file still share it.
+    let mut paths: Vec<Vec<String>> = Vec::new();
+    let mut shared: Vec<Vec<String>> = Vec::new();
+    // Each task's words that are no repository path, for the lead to check.
+    let mut not_paths: Vec<(String, Vec<String>)> = Vec::new();
+    for task in &list.tasks {
+        let read = overlap::expand(&task.paths, &tracked);
+        let mut counted = read.paths.clone();
+        counted.extend(read.unresolved);
+        shared.push(counted);
+        if !read.not_paths.is_empty() {
+            not_paths.push((task.id.clone(), read.not_paths));
+        }
+        paths.push(read.paths);
+    }
+    let overlap = overlap::overlap(&list, &shared);
+    // The feature folder names every path, so it is never a mention. The
+    // lead's --exclude patterns name folders of records, such as `bench/`.
     let skip = relative_dir(&root, &folder);
     let searched: Vec<String> = tracked
         .into_iter()
         .filter(|p| skip.as_ref().is_none_or(|dir| !p.starts_with(dir.as_str())))
+        .filter(|p| !excluded.matches(p))
         .collect();
     let found = mentions::Mentions::new(mentions::read_files(&root, &searched));
     let drafts = drafts(&list, &paths, &found);
@@ -81,6 +105,7 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         list: &list,
         overlap: &overlap,
         unread: &found.unread,
+        not_paths: &not_paths,
         drafts: &drafts,
     }));
     ExitCode::SUCCESS

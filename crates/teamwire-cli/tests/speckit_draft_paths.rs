@@ -41,6 +41,29 @@ const TASKS: &str = "# Tasks: deckh
 - [ ] T061 Change `src/b.rs`.
 ";
 
+/// Lines of 002's `tasks.md` that gave wrong `owns` entries: code in
+/// backticks, example globs, partial paths and a template path (ADR 0047).
+const TASKS_002: &str = "# Tasks: 002
+
+## Phase 3: User Story 1 - amend (Priority: P1)
+
+- [X] T002 [P] [US1] Call `tx.set_member_scope(&role, Some(\"b\"), &[\"y/\".to_owned(), \"z/{c,d}/**\".to_owned()])` in `crates/teamwire-store/src/member.rs`.
+- [X] T005 [US1] Keep the callers (`crates/teamwire-cli/src/cmd/send.rs:86`).
+- [X] T010 [US1] Write the tests:
+  - `amend_keeps_a_brace_glob_whole`: `--owns src/ --owns 'crates/{b,c}/**'` exits 0.
+  - refuse as `cmd/verify.rs:24-31` does, as `contracts/amend-cli.md` says; the rendered `teamwire/skills/teamwire/SKILL.md` and the package file `skills/teamwire/SKILL.md` name `teamwire amend`.
+- [X] T011 [US1] Launch with check `test -s specs/NNN-name/tasks.md`, then write `crates/teamwire-cli/src/cmd/amend.rs` (new) and change `cmd/lib.rs`.
+- [X] T018 [US1] Read `examples/skills/teamwire/SKILL.md` from `Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md\")`, and call `z/c/f(x).rs`.
+
+## Phase 4: User Story 2 - new folder (Priority: P2)
+
+- [ ] T030 [US2] Write `crates/new/src/tools.py`.
+
+## Phase 5: User Story 3 - again (Priority: P3)
+
+- [ ] T031 [US3] Change `crates/new/src/tools.py` again.
+";
+
 fn git(dir: &Path, args: &[&str]) {
     let out = std::process::Command::new("git")
         .arg("-C")
@@ -62,8 +85,19 @@ fn git(dir: &Path, args: &[&str]) {
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let files: [(&str, &str); 9] = [
+    // T051's three files are tracked, as they are in deckh's repository,
+    // so they resolve (ADR 0047).
+    let files: [(&str, &str); 12] = [
         ("specs/001-deckh/tasks.md", TASKS),
+        (
+            "apps/copilot-runtime/src/routes/agent-paths.ts",
+            "export {};\n",
+        ),
+        (
+            "apps/copilot-runtime/src/routes/agent-paths.test.ts",
+            "test();\n",
+        ),
+        ("apps/copilot-runtime/src/app.test.ts", "test();\n"),
         ("README.md", "# deckh\n"),
         ("AGENTS.md", "rules\n"),
         ("docs/data-model.md", "the model\n"),
@@ -194,4 +228,238 @@ fn a_brace_set_names_each_file() {
     assert!(shared.contains(&"  Phase 3 and Phase 4: src/b.rs"), "{out}");
     let us2 = block(&out, "US2:");
     assert!(us2.iter().any(|l| l.starts_with("  src/a.rs ")), "{out}");
+}
+
+/// The 002 fixture: the files the partial paths end, two files that both
+/// end `cmd/lib.rs`, a tracked `z/c/` so that the code word `z/c/f(x).rs`
+/// sits in a tracked folder and only rule 1 turns it away, and an archived
+/// study under `bench/` that names a task path.
+fn repo_002() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let files: [(&str, &str); 11] = [
+        ("specs/002-x/tasks.md", TASKS_002),
+        ("specs/002-x/contracts/amend-cli.md", "# amend\n"),
+        ("crates/teamwire-store/src/member.rs", "// member\n"),
+        ("crates/teamwire-cli/src/cmd/send.rs", "// send\n"),
+        ("crates/teamwire-cli/src/cmd/verify.rs", "// verify\n"),
+        ("crates/p/src/cmd/lib.rs", "// p\n"),
+        ("crates/q/src/cmd/lib.rs", "// q\n"),
+        ("examples/skills/teamwire/SKILL.md", "# skill\n"),
+        ("z/c/one.rs", "// one\n"),
+        (
+            "bench/studies/s1/diff.patch",
+            "+++ b/crates/teamwire-store/src/member.rs\n",
+        ),
+        (
+            "docs/store.md",
+            "See crates/teamwire-store/src/member.rs.\n",
+        ),
+    ];
+    for (path, text) in files {
+        let at = root.join(path);
+        std::fs::create_dir_all(at.parent().unwrap()).unwrap();
+        std::fs::write(at, text).unwrap();
+    }
+    git(root, &["init", "-q", "-b", "main"]);
+    git(root, &["add", "-A"]);
+    git(root, &["commit", "-q", "-m", "fixture"]);
+    dir
+}
+
+fn draft_002(repo: &Path, extra: &[&str]) -> String {
+    let home = tempfile::tempdir().unwrap();
+    let tasks = repo.join("specs/002-x/tasks.md");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["speckit", "draft", tasks.to_str().unwrap()])
+        .args(extra)
+        .env_remove("HERDR_ENV")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{text}{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    text
+}
+
+/// The first word of each line of the DRAFT list `name`.
+fn draft_paths<'a>(out: &'a str, name: &str) -> Vec<&'a str> {
+    block(out, &format!("{name}:"))
+        .into_iter()
+        .filter_map(|l| l.split_whitespace().next())
+        .collect()
+}
+
+/// ADR 0047 rule 1: code in backticks is no path, so no draft holds it.
+/// `z/c/f(x).rs` would pass rule 2, as a new file in the tracked `z/c/`.
+#[test]
+fn code_in_backticks_is_no_task_path() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(
+        us1.contains(&"crates/teamwire-store/src/member.rs"),
+        "{out}"
+    );
+    for word in us1 {
+        assert!(
+            !word.contains("to_owned")
+                && !word.contains("CARGO_MANIFEST_DIR")
+                && word != "z/c/f(x).rs",
+            "{word}: {out}"
+        );
+    }
+}
+
+/// ADR 0047 rule 2: an example glob that matches no tracked file and a
+/// template path are no task paths. A new file in a tracked folder is.
+#[test]
+fn a_task_path_must_resolve_in_the_repository() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(
+        us1.contains(&"crates/teamwire-cli/src/cmd/amend.rs"),
+        "{out}"
+    );
+    for word in ["crates/b/**", "crates/c/**", "specs/NNN-name/tasks.md"] {
+        assert!(!us1.contains(&word), "{word}: {out}");
+    }
+}
+
+/// ADR 0047 rule 3: `cmd/verify.rs` and `contracts/amend-cli.md` each end
+/// one tracked path and resolve to it. `cmd/lib.rs` ends two, and
+/// `teamwire/skills/teamwire/SKILL.md` ends none, so neither is a path.
+#[test]
+fn a_partial_path_resolves_only_when_it_is_a_unique_end() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let us1 = draft_paths(&out, "US1");
+    for path in [
+        "crates/teamwire-cli/src/cmd/verify.rs",
+        "specs/002-x/contracts/amend-cli.md",
+        "examples/skills/teamwire/SKILL.md",
+    ] {
+        assert!(us1.contains(&path), "{path}: {out}");
+    }
+    for word in [
+        "cmd/send.rs",
+        "cmd/verify.rs",
+        "cmd/lib.rs",
+        "contracts/amend-cli.md",
+        "skills/teamwire/SKILL.md",
+        "teamwire/skills/teamwire/SKILL.md",
+    ] {
+        assert!(!us1.contains(&word), "{word}: {out}");
+    }
+    assert!(!us1.iter().any(|p| p.ends_with("/cmd/lib.rs")), "{out}");
+}
+
+/// ADR 0047 rule 4: each word with a `/` that rules 1 to 3 turn away is
+/// printed with its task id, and no draft holds it. A route, which ADR 0044
+/// already turned away, is not printed.
+#[test]
+fn every_name_that_is_no_path_is_printed_with_its_task() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let names = block(&out, "Names that are not repository paths:");
+    assert_eq!(
+        names,
+        [
+            "  T002: &[\"y/\".to_owned(, z/c/**\".to_owned(, z/d/**\".to_owned(",
+            "  T010: crates/b/**, crates/c/**, teamwire/skills/teamwire/SKILL.md",
+            "  T011: specs/NNN-name/tasks.md, cmd/lib.rs",
+            "  T018: Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md, z/c/f(x).rs",
+            "  T030: crates/new/src/tools.py",
+            "  T031: crates/new/src/tools.py",
+        ],
+        "{out}"
+    );
+    let drafts: Vec<&str> = out
+        .lines()
+        .skip_while(|l| !l.starts_with("DRAFT owns lists."))
+        .collect();
+    for word in ["crates/b/**", "specs/NNN-name/tasks.md", "cmd/lib.rs"] {
+        assert!(
+            !drafts
+                .iter()
+                .any(|l| l.split_whitespace().next() == Some(word)),
+            "{word}: {out}"
+        );
+    }
+}
+
+/// ADR 0047 rule 5: with no `--exclude`, an archived study that names a
+/// task path is a mention. `--exclude 'bench/**'` leaves it out of the
+/// search, and keeps the other mention and the task paths.
+#[test]
+fn exclude_leaves_matching_files_out_of_the_mention_search() {
+    let repo = repo_002();
+    let study = "bench/studies/s1/diff.patch";
+    let out = draft_002(repo.path(), &[]);
+    assert!(draft_paths(&out, "US1").contains(&study), "{out}");
+
+    let out = draft_002(repo.path(), &["--exclude", "bench/**", "--exclude", "z/"]);
+    let us1 = draft_paths(&out, "US1");
+    assert!(!out.contains(study), "{out}");
+    assert!(us1.contains(&"docs/store.md"), "{out}");
+    assert!(
+        us1.contains(&"crates/teamwire-store/src/member.rs"),
+        "{out}"
+    );
+}
+
+/// A pattern that is not a valid glob is a usage error, never a pattern
+/// that matches nothing.
+#[test]
+fn an_invalid_exclude_pattern_exits_three() {
+    let repo = repo_002();
+    let home = tempfile::tempdir().unwrap();
+    let tasks = repo.path().join("specs/002-x/tasks.md");
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
+        .arg("--home")
+        .arg(home.path())
+        .args(["speckit", "draft", tasks.to_str().unwrap()])
+        .args(["--exclude", "bench/[a"])
+        .env_remove("HERDR_ENV")
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(3), "{err}");
+    assert!(err.contains("bench/[a"), "{err}");
+}
+
+/// A new file in a new folder fails rule 2, yet two tasks that write it
+/// still share it in the overlap, and neither changes no file. No draft
+/// holds it: the lead adds it from the names list.
+#[test]
+fn a_name_in_a_new_folder_counts_in_the_overlap_but_in_no_draft() {
+    let repo = repo_002();
+    let out = draft_002(repo.path(), &[]);
+    let shared = block(&out, "Shared files between phases:");
+    assert!(
+        shared.contains(&"  Phase 4 and Phase 5: crates/new/src/tools.py"),
+        "{out}"
+    );
+    assert!(
+        line(&out, "Stories that share files:").contains("US2 and US3 (crates/new/src/tools.py)"),
+        "{out}"
+    );
+    let no_file = line(&out, "Tasks that change no file:");
+    assert!(
+        !no_file.contains("T030") && !no_file.contains("T031"),
+        "{out}"
+    );
+    for story in ["US2", "US3"] {
+        assert!(
+            !draft_paths(&out, story).contains(&"crates/new/src/tools.py"),
+            "{story}: {out}"
+        );
+    }
 }

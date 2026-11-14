@@ -1,6 +1,6 @@
 //! The text `teamwire speckit draft` prints (`docs/api/cli.md`): the shared
-//! files, the tasks that can run apart, the unread workflows and the DRAFT
-//! `owns` lists.
+//! files, the tasks that can run apart, the unread workflows, the names
+//! that are no repository path and the DRAFT `owns` lists.
 
 use super::mentions::{Found, Unread};
 use super::overlap::Overlap;
@@ -9,6 +9,10 @@ use super::parse::TaskList;
 /// The label before the lists. The lead checks each list before a launch.
 pub(crate) const DRAFT_LABEL: &str =
     "DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.";
+
+/// The head of the words that are no repository path. They go in no
+/// draft; the lead checks each for a new file in a new folder.
+pub(crate) const NOT_PATHS: &str = "Names that are not repository paths";
 
 /// One DRAFT `owns` list: its name (`US1`, or `Setup and polish`) and its
 /// files with their reasons.
@@ -23,6 +27,8 @@ pub(crate) struct Report<'a> {
     pub(crate) list: &'a TaskList,
     pub(crate) overlap: &'a Overlap,
     pub(crate) unread: &'a [Unread],
+    /// Each task id with its words that are no repository path (ADR 0047).
+    pub(crate) not_paths: &'a [(String, Vec<String>)],
     pub(crate) drafts: &'a [Draft],
 }
 
@@ -100,6 +106,16 @@ pub(crate) fn render(r: &Report<'_>) -> String {
     out.push(format!("Unread workflows: {}", or_none(&unread.join(", "))));
     out.push(String::new());
 
+    if r.not_paths.is_empty() {
+        out.push(format!("{NOT_PATHS}: none"));
+    } else {
+        out.push(format!("{NOT_PATHS}:"));
+        for (id, names) in r.not_paths {
+            out.push(format!("  {id}: {}", names.join(", ")));
+        }
+    }
+    out.push(String::new());
+
     out.push(DRAFT_LABEL.to_owned());
     for d in r.drafts {
         out.push(format!("{}:", d.name));
@@ -143,6 +159,7 @@ mod tests {
             list: &list,
             overlap: &overlap,
             unread: &[],
+            not_paths: &[],
             drafts: &drafts,
         });
         assert_eq!(
@@ -156,6 +173,8 @@ mod tests {
              Tasks whose files no other task names: none\n\
              \n\
              Unread workflows: none\n\
+             \n\
+             Names that are not repository paths: none\n\
              \n\
              DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.\n\
              US1:\n  \
@@ -187,11 +206,45 @@ mod tests {
             list: &list,
             overlap: &overlap,
             unread: &[],
+            not_paths: &[],
             drafts: &[],
         });
         assert!(
             text.contains(
                 "Stories that share files: US1 and US2 (a.rs, b.rs); US1 and US3 (c.rs)\n"
+            ),
+            "{text}"
+        );
+    }
+
+    /// ADR 0047 rule 4: each task's names that are no repository path, by
+    /// task id.
+    #[test]
+    fn names_that_are_no_path_are_listed_by_task() {
+        let list = parse("- [ ] T010 [US1] x\n- [ ] T011 [US1] y\n");
+        let not_paths = [
+            (
+                "T010".to_owned(),
+                vec!["crates/b/**".to_owned(), "crates/c/**".to_owned()],
+            ),
+            (
+                "T011".to_owned(),
+                vec!["specs/NNN-name/tasks.md".to_owned()],
+            ),
+        ];
+        let text = render(&Report {
+            tasks_path: "t.md",
+            list: &list,
+            overlap: &Overlap::default(),
+            unread: &[],
+            not_paths: &not_paths,
+            drafts: &[],
+        });
+        assert!(
+            text.contains(
+                "\nNames that are not repository paths:\n  \
+                 T010: crates/b/**, crates/c/**\n  \
+                 T011: specs/NNN-name/tasks.md\n\n"
             ),
             "{text}"
         );

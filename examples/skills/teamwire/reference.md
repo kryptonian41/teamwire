@@ -626,7 +626,18 @@ it. Then cut the implementer's branch from that branch.
   the names a draft cannot see, such as a changed function or message
   text. The command reads a path with a `:12-30` line suffix as the path,
   the indented lines under a task as that task's, and a `*` path as a glob
-  over the tracked files. Wave 1 is one member for Setup and
+  over the tracked files. A path must resolve in the repository: a tracked
+  file or folder, a new file in a tracked folder, a glob that matches a
+  tracked file, or a partial path such as `cmd/send.rs` that ends exactly
+  one tracked path. Code in backticks is no path (ADR 0047). Each word with
+  a `/` that the command turns away is listed under `Names that are not
+  repository paths`, with its task id, and is in no draft. Check each one:
+  a new file in a new folder is listed there, and you add it to an `owns`
+  list yourself. Such a file still counts in the overlap table, so two
+  tasks that write it are not split apart. Pass `--exclude PATTERN`, once per glob, for each folder
+  of archived records, which name paths but are not live files: in
+  teamwire's own repository, `--exclude 'bench/**'`. Nothing is excluded
+  by default. Wave 1 is one member for Setup and
   Foundational. Wave 2 has one member per story, each with wave 1's branch
   as its `base` and its own phase as its scope. Polish comes last, on a
   branch cut from the integrator's branch once the stories are merged.
