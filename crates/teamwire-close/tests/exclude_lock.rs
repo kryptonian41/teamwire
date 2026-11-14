@@ -138,9 +138,20 @@ fn the_lock_file_stays_after_the_close_and_no_lock_folder_or_pid_file_is_made() 
         File::open(&lock).unwrap().try_lock().is_ok(),
         "the close released the lock"
     );
-    let left: Vec<PathBuf> = std::fs::read_dir(lock.parent().unwrap())
+    // The worktree lock close holds around `git worktree remove` sits beside it.
+    let common = std::fs::canonicalize(rig.repo.join(".git")).unwrap();
+    let digest = Sha256::digest(common.to_string_lossy().as_bytes());
+    let worktree_lock = lock.with_file_name(format!("worktree-{}.lock", hex::encode(digest)));
+    assert!(
+        File::open(&worktree_lock).unwrap().try_lock().is_ok(),
+        "the close released the worktree lock"
+    );
+    let mut left: Vec<PathBuf> = std::fs::read_dir(lock.parent().unwrap())
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
-    assert_eq!(left, [lock]);
+    left.sort();
+    let mut want = vec![lock, worktree_lock];
+    want.sort();
+    assert_eq!(left, want);
 }
