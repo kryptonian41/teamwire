@@ -197,9 +197,12 @@ spec and the code for it, and run no build and no test.
    outside `owns` was the most common question members asked, mostly for a
    caller, a doc or a test elsewhere. For a spec-kit feature, start from the
    DRAFT `owns` lists that `teamwire speckit draft` prints: each file there
-   names a task path by its exact path, a dotted module name, its full file
-   name or a CI `paths:` glob. Check each draft, and keep the grep above for
-   the names a draft cannot see, such as a changed function or message text.
+   names a task path by its exact path, a partial path such as
+   `cmd/send.rs`, a dotted module name or a CI `paths:` glob. The draft
+   does not search bare file names, so grep the repository for a changed
+   file's name yourself when it is distinctive. Check each draft, and keep
+   the grep above for the names a draft cannot see, such as a changed
+   function or message text.
    Check its `Names that are not repository paths` too: a new file in a new
    folder is listed there, not in a draft, so add it to an `owns` list
    yourself.

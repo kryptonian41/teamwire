@@ -621,10 +621,12 @@ it. Then cut the implementer's branch from that branch.
   together. Show the user that table, the tasks it lists as changing no
   file or touching only their own files, and the split you recommend,
   before you launch. Start each story member's `owns` from its DRAFT list:
-  a file there names a task path by its exact path, a dotted module name,
-  its full file name or a CI `paths:` glob. Check each list, and grep for
-  the names a draft cannot see, such as a changed function or message
-  text. The command reads a path with a `:12-30` line suffix as the path,
+  a file there names a task path by its exact path, a partial path such
+  as `cmd/send.rs`, a dotted module name or a CI `paths:` glob. The
+  draft does not search bare file names, so grep the repository for a
+  changed file's name yourself when it is distinctive (ADR 0048). Check
+  each list, and grep for the names a draft cannot see, such as a changed
+  function or message text. The command reads a path with a `:12-30` line suffix as the path,
   the indented lines under a task as that task's, and a `*` path as a glob
   over the tracked files. A path must resolve in the repository: a tracked
   file or folder, a new file in a tracked folder, a glob that matches a

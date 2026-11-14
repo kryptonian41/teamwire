@@ -920,10 +920,12 @@ file outside the feature folder that names one of them:
 | --- | --- |
 | `names path <path>` | the exact path, as a whole token or right after a `/` (`./apps/x.py`, `$ROOT/apps/x.py`) |
 | `names module <a.b>` | a dotted suffix of the path without its extension, of at least two plain parts, such as `harness.tools` for `apps/ai/harness/tools.py` |
-| `names file <name.ext>` | the full file name with its extension, as a whole token, or right after a `/` when the words before it end the path too (`harness/tools.py` for `apps/ai/harness/tools.py`, not `other/tools.py`) |
+| `names path <partial path>` | a partial path that holds a `/` and ends the task path, as a whole token, printed without a leading `./` (`harness/tools.py` for `apps/ai/harness/tools.py`, not `other/tools.py`) |
 | `CI paths glob <glob>` | an `on.<event>.paths` entry of a `.github/workflows/*.yml` or `*.yaml` file that matches the path |
 
-A bare stem such as `tools` never matches. A workflow the YAML reader
+A bare stem such as `tools` never matches, and neither does the bare file
+name such as `tools.py` or `lib.rs` on its own (ADR 0048): a real
+repository holds many files of one name. A workflow the YAML reader
 refuses, such as one with an anchor, is listed under `Unread workflows` with
 the reason, never counted as matching nothing. A missing or unreadable
 `tasks.md`, one with no task lines, a folder outside git with no `--repo`,

@@ -108,7 +108,7 @@ fn repo() -> tempfile::TempDir {
     let root = dir.path();
     // `docs/` and `apps/copilot-runtime/src/` hold a tracked file, so the
     // new files T002 and T006 write are in tracked folders (ADR 0047).
-    let files: [(&str, &str); 14] = [
+    let files: [(&str, &str); 16] = [
         ("specs/001-x/tasks.md", TASKS),
         ("docs/guide.md", "# guide\n"),
         ("apps/copilot-runtime/src/app.ts", "export {};\n"),
@@ -125,6 +125,8 @@ fn repo() -> tempfile::TempDir {
             "TARGETS = [\"tools.py\", \"other.py\"]\n",
         ),
         ("apps/ai/notes.txt", "the tools module is old\n"),
+        ("docs/exact.md", "See `apps/ai/harness/tools.py`.\n"),
+        ("docs/suffix.md", "Run ./harness/tools.py first.\n"),
         (".github/workflows/replay.yml", REPLAY),
         (".github/workflows/odd.yml", ODD),
         ("crates/x/src/cmd/speckit/one.rs", "// one\n"),
@@ -249,21 +251,35 @@ fn a_file_naming_the_dotted_module_is_added() {
     );
 }
 
+/// ADR 0048: the test names only the bare file name `tools.py`, so it is
+/// not added. A file that names the exact path, or a partial path that
+/// holds a `/` and ends the task path, still is.
 #[test]
-fn a_test_naming_the_full_file_name_is_added() {
+fn a_test_naming_only_the_bare_file_name_is_not_added() {
     let repo = repo();
     let run = draft(repo.path());
-    let line = entry(&run.out, "US1", "apps/ai/tests/test_targets.py");
     assert!(
-        line.is_some_and(|l| l.ends_with("(names file tools.py)")),
+        entry(&run.out, "US1", "apps/ai/tests/test_targets.py").is_none(),
+        "{}",
+        run.out
+    );
+    let exact = entry(&run.out, "US1", "docs/exact.md");
+    assert!(
+        exact.is_some_and(|l| l.ends_with("(names path apps/ai/harness/tools.py)")),
+        "{}",
+        run.out
+    );
+    let suffix = entry(&run.out, "US1", "docs/suffix.md");
+    assert!(
+        suffix.is_some_and(|l| l.ends_with("(names path harness/tools.py)")),
         "{}",
         run.out
     );
 }
 
 /// Guard: passes on the stub, which prints nothing. The same fixture holds
-/// the dotted-module and full-name cases, so a run that lists those proves
-/// the command looked at this file too.
+/// the dotted-module and partial-path cases, so a run that lists those
+/// proves the command looked at this file too.
 #[test]
 fn a_file_naming_only_the_bare_stem_is_not_added() {
     let repo = repo();
