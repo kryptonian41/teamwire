@@ -349,8 +349,16 @@ fn write_rules(setup: &PlatformSetup<'_>) {
 /// A free lock is taken at once and its file and folder are made, a busy
 /// one fails with `TimedOut` once the wait runs out, and a dropped guard
 /// frees it. The file is never written. Both guards are opened in this one
-/// thread, so the rules also prove that two opens of one process wait for
-/// each other, as two threads of launch do.
+/// thread, so the rules prove that two opens of one process refuse each
+/// other. The rules never check that a waiting taker gets the lock once the
+/// holder lets go. The real platform's waiting is proven in
+/// `crates/teamwire-platform/tests/lock.rs`, by
+/// `a_second_taker_waits_until_the_first_guard_drops` and
+/// `a_wait_too_large_for_the_clock_waits_as_long_as_the_holder_holds`. The
+/// fake's waiting is proven by the tests in
+/// `crates/teamwire-launch/tests/worktree_lock.rs` and
+/// `crates/teamwire-close/tests/worktree_lock.rs` that hold a lock, let it
+/// go, and check that the waiting launch or close then goes on.
 fn lock_rules(setup: &PlatformSetup<'_>) {
     let (p, dir) = (setup.platform, setup.dir);
     let folder = dir.join("contract-locks");
