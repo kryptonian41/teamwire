@@ -81,6 +81,18 @@ pub trait Platform: Send + Sync {
     fn remove_dir_all(&self, _path: &Path) -> Result<(), PlatformError> {
         Err(PlatformError::unsupported())
     }
+    /// Takes the kernel's exclusive `flock` on the file `path`, making the
+    /// file and its folder when they are missing. The file is never written
+    /// and never deleted. A free lock is taken at once. A busy one is tried
+    /// again every 50 ms until `wait` has passed, and the call then fails
+    /// with `TimedOut`. A `wait` too large for the clock waits as long as
+    /// the holder holds. The lock ends when the guard drops or the process
+    /// dies, so a holder that is killed holds nothing. Each call opens the
+    /// file anew, so two threads of one process wait for each other too.
+    /// The default refuses, for a platform that writes no files.
+    fn lock_file(&self, _path: &Path, _wait: Duration) -> Result<FileLock, PlatformError> {
+        Err(PlatformError::unsupported())
+    }
     fn sleep_hold(&self) -> Option<&dyn SleepHold>;
     fn free_bytes(&self, path: &Path) -> Result<u64, PlatformError>;
     fn on_network_fs(&self, path: &Path) -> Result<bool, PlatformError>;
@@ -226,6 +238,29 @@ impl RunOutput {
     }
 }
 
+/// A lock that `Platform::lock_file` took. Dropping the guard releases the
+/// lock. Core does no I/O, so it holds only a box. What is inside belongs to
+/// the platform that took the lock: an open file, for the real one.
+#[must_use = "the lock is released as soon as the guard drops"]
+pub struct FileLock {
+    _held: Box<dyn Send>,
+}
+
+impl FileLock {
+    /// A guard that releases the lock when `held` drops.
+    pub fn new(held: impl Send + 'static) -> Self {
+        Self {
+            _held: Box::new(held),
+        }
+    }
+}
+
+impl fmt::Debug for FileLock {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileLock").finish_non_exhaustive()
+    }
+}
+
 /// A sleep hold process (`caffeinate` on macOS), as recorded on the team.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HoldInfo {
@@ -279,6 +314,8 @@ string_enum! {
         /// The disk is full.
         NoSpace => "no_space",
         Io => "io",
+        /// A wait ran out: `lock_file` found the lock busy for all of it.
+        TimedOut => "timed_out",
         Unsupported => "unsupported",
         Other => "other",
     }

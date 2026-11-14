@@ -1,7 +1,7 @@
 //! Operating-system facts behind the `Platform` and `Clock` traits: pid
 //! liveness, a process's start time and environment, running a command in
-//! its own process group with a timeout, atomic file writes, free space, and
-//! the sleep hold (`caffeinate` on macOS).
+//! its own process group with a timeout, atomic file writes, file locks
+//! (`flock`), free space, and the sleep hold (`caffeinate` on macOS).
 //!
 //! Never: kill a sleep hold the user started; leave a timed-out process
 //! group running. This is the only crate that spawns processes, reads the
@@ -15,12 +15,13 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use teamwire_core::{
-    Clock, Command, Pid, Platform, PlatformError, PlatformErrorCode, RunOutput, SleepHold,
-    Timestamp,
+    Clock, Command, FileLock, Pid, Platform, PlatformError, PlatformErrorCode, RunOutput,
+    SleepHold, Timestamp,
 };
 use time::OffsetDateTime;
 
 mod files;
+mod lock;
 mod process;
 mod run;
 mod sleephold;
@@ -82,6 +83,10 @@ macro_rules! platform_impl {
 
             fn remove_dir_all(&self, path: &Path) -> Result<(), PlatformError> {
                 files::remove_dir_all(path)
+            }
+
+            fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+                lock::lock_file(path, wait)
             }
 
             fn sleep_hold(&self) -> Option<&dyn SleepHold> {
