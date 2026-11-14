@@ -26,11 +26,23 @@ use crate::git::stdout_of;
 /// worktree lock: 300 s. Each holder runs one git call, which the git
 /// timeout ends after 120 s, so the wait covers one slow holder and
 /// others queued ahead of this one.
+///
+/// shortcut: each locked git call waits the full 300 s on its own and
+/// prints nothing meanwhile, so a stopped (Ctrl-Z) or hung holder costs a
+/// launch 300 s for every worktree member; share one deadline across a
+/// run's calls and say who holds the lock if a stuck holder is ever seen.
 const LOCK_TRIES: u32 = 6000;
 const LOCK_PAUSE: Duration = Duration::from_millis(50);
 
 /// A held worktree lock. Dropping it closes the file, which releases the
 /// lock.
+///
+/// shortcut: the lock ends with this process, not with the git call it
+/// covers. git runs in a process group of its own, so when teamwire is
+/// killed mid-call the lock is freed while git still writes
+/// `.git/worktrees/`, and a second launch can race it; let the git child
+/// inherit the locked file, or kill its group when teamwire dies, if a
+/// launch is ever seen failing right after another was killed.
 pub(crate) struct WorktreeLock {
     _file: File,
 }
