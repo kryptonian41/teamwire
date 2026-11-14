@@ -360,7 +360,8 @@ fn run_member(
     // 2. The worktree.
     if let (Some(w), Some(sha)) = (&m.worktree, &base_sha) {
         made.worktree = Some(
-            worktree::add(ctx.platform, w, sha).map_err(|e| Stop::fail(ReasonCode::Worktree, e))?,
+            worktree::add(ctx.platform, ctx.home, w, sha)
+                .map_err(|e| Stop::fail(ReasonCode::Worktree, e))?,
         );
         steps.mark(ctx, "worktree");
     }

@@ -29,17 +29,12 @@ const WATCH: Duration = Duration::from_secs(1);
 /// The worktree lock file for the repository whose git common directory
 /// (`<repo>/.git` for a main checkout) is `common`.
 fn worktree_lock(rig: &Rig, common: &Path) -> PathBuf {
-    use sha2::{Digest, Sha256};
-    let key = std::fs::canonicalize(common).unwrap();
-    let digest = Sha256::digest(key.to_string_lossy().as_bytes());
-    rig.home
-        .path()
-        .join("locks")
-        .join(format!("worktree-{}.lock", hex::encode(digest)))
+    common::worktree_lock(rig.home.path(), common)
 }
 
 /// Holds the lock at `path` through an open file of the test's own, as
 /// another teamwire process would. Dropping the file releases the lock.
+#[cfg(test)]
 fn hold(path: &Path) -> std::fs::File {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     if !path.exists() {

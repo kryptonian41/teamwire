@@ -32,6 +32,7 @@ mod spec;
 mod user_key;
 mod validate;
 mod worktree;
+mod worktree_lock;
 
 use std::path::PathBuf;
 

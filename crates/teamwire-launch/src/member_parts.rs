@@ -99,7 +99,7 @@ pub(crate) fn undo(ctx: &mut Ctx<'_>, m: &PlannedMember, made: &Progress) -> (St
         }
     }
     if let Some(w) = &made.worktree {
-        let (note, still_there, branch_deleted) = worktree::remove(ctx.platform, w);
+        let (note, still_there, branch_deleted) = worktree::remove(ctx.platform, ctx.home, w);
         left = still_there;
         notes.push(note);
         // A deleted branch must not stay in the member row: `status` would

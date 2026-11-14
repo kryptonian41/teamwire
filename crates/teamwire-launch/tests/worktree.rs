@@ -318,14 +318,24 @@ fn two_launches_on_one_repository_at_once_keep_both_sets_of_lines() {
         std::fs::File::open(&lock).unwrap().try_lock().is_ok(),
         "both launches released the lock"
     );
-    let left: Vec<std::path::PathBuf> = std::fs::read_dir(lock.parent().unwrap())
+    let worktree_lock = common::worktree_lock(rig.home.path(), &repo.join(".git"));
+    assert!(
+        std::fs::File::open(&worktree_lock)
+            .unwrap()
+            .try_lock()
+            .is_ok(),
+        "both launches released the worktree lock"
+    );
+    let mut left: Vec<std::path::PathBuf> = std::fs::read_dir(lock.parent().unwrap())
         .unwrap()
         .map(|e| e.unwrap().path())
         .collect();
+    left.sort();
+    let mut want = vec![lock, worktree_lock];
+    want.sort();
     assert_eq!(
-        left,
-        [lock],
-        "the lock file stays, and no lock folder or pid file is made"
+        left, want,
+        "the lock files stay, and no lock folder or pid file is made"
     );
 }
 
