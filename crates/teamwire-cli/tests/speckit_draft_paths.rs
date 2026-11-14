@@ -53,7 +53,7 @@ const TASKS_002: &str = "# Tasks: 002
   - `amend_keeps_a_brace_glob_whole`: `--owns src/ --owns 'crates/{b,c}/**'` exits 0.
   - refuse as `cmd/verify.rs:24-31` does, as `contracts/amend-cli.md` says; the rendered `teamwire/skills/teamwire/SKILL.md` and the package file `skills/teamwire/SKILL.md` name `teamwire amend`.
 - [X] T011 [US1] Launch with check `test -s specs/NNN-name/tasks.md`, then write `crates/teamwire-cli/src/cmd/amend.rs` (new) and change `cmd/lib.rs`.
-- [X] T018 [US1] Read `examples/skills/teamwire/SKILL.md` from `Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md\")`.
+- [X] T018 [US1] Read `examples/skills/teamwire/SKILL.md` from `Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md\")`, and call `z/c/f(x).rs`.
 
 ## Phase 4: User Story 2 - new folder (Priority: P2)
 
@@ -231,7 +231,8 @@ fn a_brace_set_names_each_file() {
 }
 
 /// The 002 fixture: the files the partial paths end, two files that both
-/// end `cmd/lib.rs`, a tracked `z/c/` for the code glob, and an archived
+/// end `cmd/lib.rs`, a tracked `z/c/` so that the code word `z/c/f(x).rs`
+/// sits in a tracked folder and only rule 1 turns it away, and an archived
 /// study under `bench/` that names a task path.
 fn repo_002() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
@@ -296,6 +297,7 @@ fn draft_paths<'a>(out: &'a str, name: &str) -> Vec<&'a str> {
 }
 
 /// ADR 0047 rule 1: code in backticks is no path, so no draft holds it.
+/// `z/c/f(x).rs` would pass rule 2, as a new file in the tracked `z/c/`.
 #[test]
 fn code_in_backticks_is_no_task_path() {
     let repo = repo_002();
@@ -307,7 +309,9 @@ fn code_in_backticks_is_no_task_path() {
     );
     for word in us1 {
         assert!(
-            !word.contains("to_owned") && !word.contains("CARGO_MANIFEST_DIR"),
+            !word.contains("to_owned")
+                && !word.contains("CARGO_MANIFEST_DIR")
+                && word != "z/c/f(x).rs",
             "{word}: {out}"
         );
     }
@@ -371,7 +375,7 @@ fn every_name_that_is_no_path_is_printed_with_its_task() {
             "  T002: &[\"y/\".to_owned(, z/c/**\".to_owned(, z/d/**\".to_owned(",
             "  T010: crates/b/**, crates/c/**, teamwire/skills/teamwire/SKILL.md",
             "  T011: specs/NNN-name/tasks.md, cmd/lib.rs",
-            "  T018: Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md",
+            "  T018: Path::new(env!(\"CARGO_MANIFEST_DIR\")).join(\"../../examples/skills/teamwire/SKILL.md, z/c/f(x).rs",
             "  T030: crates/new/src/tools.py",
             "  T031: crates/new/src/tools.py",
         ],
