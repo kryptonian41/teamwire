@@ -3,8 +3,9 @@
 //! --from user` is accepted only from a process that holds it.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use teamwire_core::Platform;
+use teamwire_core::{FileLock, Platform};
 use teamwire_store::user_key_path;
 
 /// The key file under `home`, made when it is missing or empty. A file that
@@ -17,7 +18,7 @@ pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, 
     use std::os::unix::fs::PermissionsExt as _;
     let path = user_key_path(home);
     let shown = path.display();
-    let _lock = lock_user_key(home)?;
+    let _lock = lock_user_key(platform, home)?;
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_file() => {
             let text =
@@ -40,27 +41,17 @@ pub fn ensure_user_key(platform: &dyn Platform, home: &Path) -> Result<PathBuf, 
     Ok(path)
 }
 
-/// The kernel's `flock` on `<home>/locks/user-key.lock`, a file made if
-/// missing and never deleted. Without it a second run could find the first
-/// run's empty file and write a key over the one the first run then wrote.
-/// The lock ends with the open file, so a run that is killed holds nothing.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the user-key lock file is only ever locked, never written"
-)]
-fn lock_user_key(home: &Path) -> Result<std::fs::File, String> {
-    let locks = home.join("locks");
-    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
-    let path = locks.join("user-key.lock");
-    let lock = std::fs::OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
-    lock.lock()
-        .map_err(|e| format!("cannot take the lock {}: {e}", path.display()))?;
-    Ok(lock)
+/// The kernel's `flock` on `<home>/locks/user-key.lock`, which
+/// `Platform::lock_file` makes if missing and never deletes. Without it a
+/// second run could find the first run's empty file and write a key over
+/// the one the first run then wrote. The lock ends with the open file, so a
+/// run that is killed holds nothing. The wait has no limit: a run waits for
+/// the run ahead of it to write its key.
+fn lock_user_key(platform: &dyn Platform, home: &Path) -> Result<FileLock, String> {
+    let path = home.join("locks").join("user-key.lock");
+    platform
+        .lock_file(&path, Duration::MAX)
+        .map_err(|e| e.detail)
 }
 
 /// A new empty file with mode 0600 at `path`. `write_atomic` keeps the mode

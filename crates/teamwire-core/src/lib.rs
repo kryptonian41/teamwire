@@ -64,7 +64,7 @@ pub use names::{
     Address, DisplayId, HarnessId, HostId, NameError, Pid, Place, Role, SessionId, TeamName, Ulid,
 };
 pub use platform::{
-    Clock, Command, HoldInfo, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome,
+    Clock, Command, FileLock, HoldInfo, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome,
     RunOutput, SleepHold,
 };
 pub use registry::{Registry, RegistryError};

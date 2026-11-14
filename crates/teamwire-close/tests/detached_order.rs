@@ -67,6 +67,13 @@ impl Platform for AgentAtRemoval<'_> {
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
         self.inner.write_atomic(path, bytes)
     }
+    fn lock_file(
+        &self,
+        path: &Path,
+        wait: Duration,
+    ) -> Result<teamwire_core::FileLock, PlatformError> {
+        self.inner.lock_file(path, wait)
+    }
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {
         self.inner.sleep_hold()
     }

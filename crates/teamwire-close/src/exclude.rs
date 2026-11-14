@@ -9,12 +9,13 @@
 //! `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>.lock`.
 
 use std::collections::BTreeMap;
-use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use teamwire_core::{EventType, Member, Mode, Platform, Role, exclude};
+use teamwire_core::{
+    EventType, FileLock, Member, Mode, Platform, PlatformErrorCode, Role, exclude,
+};
 use teamwire_store::Ctx;
 
 use crate::git;
@@ -22,10 +23,9 @@ use crate::git;
 /// The line every teamwire worktree's brief needs (LCH-24).
 const TASK_MD: &str = "/TASK.md";
 
-/// How often, and how long apart, close tries for another process's lock:
-/// a holder only reads and rewrites one small file.
-const LOCK_TRIES: u32 = 200;
-const LOCK_PAUSE: Duration = Duration::from_millis(50);
+/// How long close waits for another process's lock: a holder only reads
+/// and rewrites one small file.
+const LOCK_WAIT: Duration = Duration::from_secs(10);
 
 /// Takes back, from each repository `members` worked in, every line launch
 /// recorded for them and `/TASK.md`, unless a remaining linked worktree of
@@ -106,7 +106,7 @@ fn recorded(ctx: &Ctx<'_>, role: &Role) -> Result<Vec<(PathBuf, Vec<String>)>, S
 /// running now is either seen here or adds its line back itself.
 fn take_back_file(ctx: &Ctx<'_>, file: &Path, repo: &Path, lines: &[String]) -> Option<String> {
     let shown = file.display();
-    let _lock = match lock_exclude(ctx.home, file) {
+    let _lock = match lock_exclude(ctx.platform, ctx.home, file) {
         Ok(lock) => lock,
         Err(why) => return Some(format!("{why}; its lines are left in place")),
     };
@@ -193,44 +193,26 @@ fn canonical(file: &Path) -> PathBuf {
     }
 }
 
-/// A held lock on one `info/exclude`. Dropping it closes the file, which
-/// releases the lock.
-struct ExcludeLock {
-    _file: File,
-}
-
 /// The lock launch takes too (teamwire-launch's worktree.rs): the kernel's
-/// `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>.lock`, a
-/// file made if missing and never deleted. The lock ends with the open file,
-/// so a holder that is killed leaves nothing held; waiting is bounded.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the exclude lock file is only ever locked, never written"
-)]
-fn lock_exclude(home: &Path, file: &Path) -> Result<ExcludeLock, String> {
-    let locks = home.join("locks");
-    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
+/// `flock` on `$TEAMWIRE_HOME/locks/exclude-<sha256 of the path>.lock`,
+/// which `Platform::lock_file` makes if missing and never deletes. The lock
+/// ends with the open file, so a holder that is killed leaves nothing held;
+/// waiting is bounded. Dropping the guard releases the lock.
+fn lock_exclude(platform: &dyn Platform, home: &Path, file: &Path) -> Result<FileLock, String> {
     let digest = Sha256::digest(canonical(file).to_string_lossy().as_bytes());
-    let path = locks.join(format!("exclude-{}.lock", hex::encode(digest)));
-    let lock = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
-    for _ in 0..LOCK_TRIES {
-        match lock.try_lock() {
-            Ok(()) => return Ok(ExcludeLock { _file: lock }),
-            Err(TryLockError::WouldBlock) => std::thread::sleep(LOCK_PAUSE),
-            Err(TryLockError::Error(e)) => {
-                return Err(format!("cannot take the lock {}: {e}", path.display()));
-            }
+    let path = home
+        .join("locks")
+        .join(format!("exclude-{}.lock", hex::encode(digest)));
+    platform.lock_file(&path, LOCK_WAIT).map_err(|e| {
+        if e.code == PlatformErrorCode::TimedOut {
+            format!(
+                "another teamwire process held the lock {} on {} for {} s",
+                path.display(),
+                file.display(),
+                LOCK_WAIT.as_secs()
+            )
+        } else {
+            e.detail
         }
-    }
-    Err(format!(
-        "another teamwire process held the lock {} on {} for {} s",
-        path.display(),
-        file.display(),
-        (LOCK_PAUSE * LOCK_TRIES).as_secs()
-    ))
+    })
 }

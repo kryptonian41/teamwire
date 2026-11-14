@@ -1,9 +1,11 @@
 //! `FakePlatform`: an in-process `Platform` with environments per pid, free
 //! space, a network-filesystem flag and a sleep hold that records its life.
 //! It writes real files (in a directory the test owns) so that a test can
-//! read them back, and it never starts a process.
+//! read them back, takes real `flock` locks so that a test's threads wait
+//! for each other, and it never starts a process.
 
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fs::TryLockError;
 use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -12,8 +14,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use teamwire_core::{
-    Command, HoldInfo, Pid, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome, RunOutput,
-    SleepHold, Timestamp,
+    Command, FileLock, HoldInfo, Pid, Platform, PlatformError, PlatformErrorCode, ReleaseOutcome,
+    RunOutput, SleepHold, Timestamp,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
@@ -368,6 +370,63 @@ fn mode_of(target: &Path) -> u32 {
     std::fs::metadata(target).map_or(0o644, |meta| meta.permissions().mode() & 0o7777)
 }
 
+/// How long apart the fake's tries for a busy lock are, as on the real
+/// platform.
+const LOCK_PAUSE: Duration = Duration::from_millis(50);
+
+/// The real kernel `flock` on the real `path`, as the real platform takes
+/// it, so a test's threads and processes wait for each other. The fake
+/// never reads a clock: it counts the time it slept, so a lock it waits for
+/// gives up a little later than `wait`. The error details are the real
+/// platform's texts.
+fn take_lock(path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+    let named = |what: String, e: &std::io::Error| PlatformError {
+        detail: format!("{what}: {e}"),
+        ..io_to_platform(e)
+    };
+    if let Some(dir) = path.parent().filter(|dir| !dir.as_os_str().is_empty()) {
+        std::fs::create_dir_all(dir)
+            .map_err(|e| named(format!("cannot make {}", dir.display()), &e))?;
+    }
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the fake Platform is the lock_file stand-in for tests; a lock file is never written"
+    )]
+    let opened = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path);
+    let file = opened.map_err(|e| named(format!("cannot open the lock {}", path.display()), &e))?;
+    let mut slept = Duration::ZERO;
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(FileLock::new(file)),
+            Err(TryLockError::WouldBlock) if slept < wait => {
+                let pause = LOCK_PAUSE.min(wait.saturating_sub(slept));
+                std::thread::sleep(pause);
+                slept = slept.saturating_add(pause);
+            }
+            Err(TryLockError::WouldBlock) => {
+                return Err(PlatformError::new(
+                    PlatformErrorCode::TimedOut,
+                    format!(
+                        "the lock {} stayed busy for {} ms",
+                        path.display(),
+                        wait.as_millis()
+                    ),
+                ));
+            }
+            Err(TryLockError::Error(e)) => {
+                return Err(named(
+                    format!("cannot take the lock {}", path.display()),
+                    &e,
+                ));
+            }
+        }
+    }
+}
+
 #[expect(
     clippy::disallowed_methods,
     reason = "the fake platform is what stands in for Platform::write_atomic, so it does the temp-file-then-rename itself"
@@ -489,6 +548,12 @@ impl Platform for FakePlatform {
             return Err(err);
         }
         std::fs::remove_dir_all(path).map_err(|e| io_to_platform(&e))
+    }
+
+    fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+        self.log
+            .record("lock_file", CallKind::Write, path.display().to_string());
+        take_lock(path, wait)
     }
 
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {
