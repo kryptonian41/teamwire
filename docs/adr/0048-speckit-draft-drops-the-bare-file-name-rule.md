@@ -28,9 +28,11 @@ lists did not change in either run. The user decided on 2026-11-14.
    name is distinctive, and adds what it finds by hand.
 2. **These rules stay, from ADR 0044 decision 4:** the exact path, also
    right after a `/` or `./`; a partial path that holds a `/` and is the end
-   of the task path, such as `harness/tools.py` for
-   `apps/ai/harness/tools.py`, never `other/tools.py`; the dotted module
-   name; a CI workflow's `on.<event>.paths` glob that matches the path.
+   of the task path, when the task path's file name has an extension, such
+   as `harness/tools.py` for `apps/ai/harness/tools.py`, never
+   `other/tools.py`, and never `x/Makefile` for `crates/x/Makefile`; the
+   dotted module name; a CI workflow's `on.<event>.paths` glob that matches
+   the path.
 3. **A partial path prints as a path.** Its reason is `names path
    <partial path>`, such as `names path harness/tools.py`, with a leading
    `./` left off. The reason `names file <name>` is gone, so no line tells
