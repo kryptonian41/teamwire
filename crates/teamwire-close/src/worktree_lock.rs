@@ -5,35 +5,33 @@
 //! delete entries of `.git/worktrees/`, which a launch's `git worktree add`
 //! running at the same time reads, and git takes no lock there itself.
 //!
-//! The lock ends with the open file, so a holder that is killed leaves
-//! nothing held; the file is made if missing and never deleted. Close holds
-//! it around one git call only, never during a store write, and never
-//! together with the exclude lock, so the two locks cannot deadlock.
+//! `Platform::lock_file` takes the lock: it ends with the open file, so a
+//! holder that is killed leaves nothing held, and the file is made if
+//! missing and never deleted. Close holds it around one git call only,
+//! never during a store write, and never together with the exclude lock, so
+//! the two locks cannot deadlock.
 
-use std::fs::{File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use sha2::{Digest, Sha256};
-use teamwire_core::Platform;
+use teamwire_core::{FileLock, Platform, PlatformErrorCode};
 
 use crate::git;
 
-/// How often, and how long apart, close tries for another process's
-/// worktree lock: 300 s. Each holder runs one git call, which the git
-/// timeout ends after 120 s, so the wait covers one slow holder and
-/// others queued ahead of this one.
+/// How long close waits for another process's worktree lock: 300 s. Each
+/// holder runs one git call, which the git timeout ends after 120 s, so the
+/// wait covers one slow holder and others queued ahead of this one.
 ///
 /// shortcut: each locked git call waits the full 300 s on its own and
 /// prints nothing meanwhile, so a stopped (Ctrl-Z) or hung holder costs a
 /// team close 300 s for every worktree member's remove and 300 s more for
 /// the prune; share one deadline across a close's calls and say who holds
 /// the lock if a stuck holder is ever seen.
-const LOCK_TRIES: u32 = 6000;
-const LOCK_PAUSE: Duration = Duration::from_millis(50);
+const LOCK_WAIT: Duration = Duration::from_secs(300);
 
-/// A held worktree lock. Dropping it closes the file, which releases the
-/// lock.
+/// Takes the worktree lock of the repository `repo` belongs to. Dropping
+/// the guard closes the file, which releases the lock.
 ///
 /// shortcut: the lock ends with this process, not with the git call it
 /// covers. git runs in a process group of its own, so when teamwire is
@@ -41,46 +39,28 @@ const LOCK_PAUSE: Duration = Duration::from_millis(50);
 /// `.git/worktrees/`, and a launch can race it; let the git child inherit
 /// the locked file, or kill its group when teamwire dies, if a launch is
 /// ever seen failing right after a close was killed.
-pub(crate) struct WorktreeLock {
-    _file: File,
-}
-
-/// Takes the worktree lock of the repository `repo` belongs to.
-#[expect(
-    clippy::disallowed_methods,
-    reason = "the worktree lock file is only ever locked, never written"
-)]
 pub(crate) fn lock_worktrees(
     platform: &dyn Platform,
     home: &Path,
     repo: &Path,
-) -> Result<WorktreeLock, String> {
+) -> Result<FileLock, String> {
     let common = common_dir(platform, repo)?;
-    let locks = home.join("locks");
-    std::fs::create_dir_all(&locks).map_err(|e| format!("cannot make {}: {e}", locks.display()))?;
     let digest = Sha256::digest(common.to_string_lossy().as_bytes());
-    let path = locks.join(format!("worktree-{}.lock", hex::encode(digest)));
-    let lock = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(&path)
-        .map_err(|e| format!("cannot open the lock {}: {e}", path.display()))?;
-    for _ in 0..LOCK_TRIES {
-        match lock.try_lock() {
-            Ok(()) => return Ok(WorktreeLock { _file: lock }),
-            Err(TryLockError::WouldBlock) => std::thread::sleep(LOCK_PAUSE),
-            Err(TryLockError::Error(e)) => {
-                return Err(format!("cannot take the lock {}: {e}", path.display()));
-            }
+    let path = home
+        .join("locks")
+        .join(format!("worktree-{}.lock", hex::encode(digest)));
+    platform.lock_file(&path, LOCK_WAIT).map_err(|e| {
+        if e.code == PlatformErrorCode::TimedOut {
+            format!(
+                "another teamwire process held the worktree lock {} on {} for {} s",
+                path.display(),
+                common.display(),
+                LOCK_WAIT.as_secs()
+            )
+        } else {
+            e.detail
         }
-    }
-    Err(format!(
-        "another teamwire process held the worktree lock {} on {} for {} s",
-        path.display(),
-        common.display(),
-        (LOCK_PAUSE * LOCK_TRIES).as_secs()
-    ))
+    })
 }
 
 /// `git worktree prune`, never with force, under the worktree lock. A prune
