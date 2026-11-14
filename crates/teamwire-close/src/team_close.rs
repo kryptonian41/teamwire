@@ -301,7 +301,12 @@ impl Seq<'_, '_> {
                 Ok(note) => notes.push(note),
                 Err(why) => problems.push(why),
             }
-            if let Some(repo) = &member.repo {
+            // One prune per repository: it forgets every gone worktree of
+            // that repository at once, and each prune waits for the
+            // worktree lock on its own.
+            if let Some(repo) = &member.repo
+                && !repos.contains(&repo.as_path())
+            {
                 repos.push(repo);
             }
         }

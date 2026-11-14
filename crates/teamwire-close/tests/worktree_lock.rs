@@ -157,3 +157,34 @@ fn a_member_removal_prunes_no_worktree_entry_while_another_process_holds_the_wor
     let target = CloseTarget::Member(Role::parse("rev").unwrap());
     closes_only_once_the_lock_is_free(rig, target, &entry);
 }
+
+#[test]
+fn a_team_close_prunes_a_repository_once_after_all_its_removes() {
+    let mut rig = Rig::new();
+    rig.add_worktree_member("a", MemberKind::Implementer);
+    rig.add_worktree_member("b", MemberKind::Implementer);
+    let report = close_observed(
+        &mut rig.ctx(),
+        CloseTarget::Team,
+        CloseOpts::default(),
+        &|_| {},
+    );
+    assert_eq!(report.stopped_at, None, "{report:?}");
+    let ran = rig.platform.ran.lock().unwrap();
+    // The position in `ran` of each call that holds `words` in a row.
+    let calls = |words: [&str; 2]| -> Vec<usize> {
+        ran.iter()
+            .enumerate()
+            .filter(|(_, args)| args.windows(2).any(|w| w == words))
+            .map(|(at, _)| at)
+            .collect()
+    };
+    let (removes, prunes) = (calls(["worktree", "remove"]), calls(["worktree", "prune"]));
+    assert_eq!(removes.len(), 2, "{ran:?}");
+    assert_eq!(prunes.len(), 1, "one prune for one repository: {ran:?}");
+    let prune = prunes.first().unwrap();
+    assert!(
+        removes.iter().all(|r| r < prune),
+        "the prune runs after both removes: {ran:?}"
+    );
+}
