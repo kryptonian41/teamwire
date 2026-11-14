@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use teamwire_core::platform::{Command, RunOutput, SleepHold};
-use teamwire_core::{Pid, Platform, PlatformError};
+use teamwire_core::{FileLock, Pid, Platform, PlatformError};
 use teamwire_fakes::{FakePlatform, TestHome};
 
 /// The fake platform, except that the first write pauses before it starts,
@@ -35,6 +35,9 @@ impl Platform for FirstWritePauses {
             std::thread::sleep(Duration::from_millis(300));
         }
         self.inner.write_atomic(path, bytes)
+    }
+    fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+        self.inner.lock_file(path, wait)
     }
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {
         self.inner.sleep_hold()

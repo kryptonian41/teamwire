@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use teamwire_core::{
-    Clock, Command, Config, Harness, HoldInfo, Host, Pid, Platform, PlatformError, Registry,
-    RunOutput, SleepHold, TeamName,
+    Clock, Command, Config, FileLock, Harness, HoldInfo, Host, Pid, Platform, PlatformError,
+    Registry, RunOutput, SleepHold, TeamName,
 };
 use teamwire_fakes::{FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_launch::{LaunchReport, SpecError, ValidPlan, ValidateEnv, parse_spec, validate};
@@ -59,6 +59,9 @@ impl Platform for GitPlatform {
     }
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
         self.inner.write_atomic(path, bytes)
+    }
+    fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+        self.inner.lock_file(path, wait)
     }
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {
         self.inner.sleep_hold()

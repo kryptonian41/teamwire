@@ -24,8 +24,8 @@ use std::time::Duration;
 use common::{GitPlatform, Rig, member_row, pane_member, team_spec, with, worktree_member};
 use serde_json::json;
 use teamwire_core::{
-    Clock, Command, Event, EventType, HarnessId, HostId, LeadRoute, MemberState, Pid, Platform,
-    PlatformError, RunOutput, SessionId, SessionKind, SleepHold, TeamName,
+    Clock, Command, Event, EventType, FileLock, HarnessId, HostId, LeadRoute, MemberState, Pid,
+    Platform, PlatformError, RunOutput, SessionId, SessionKind, SleepHold, TeamName,
 };
 use teamwire_fakes::{FakeClock, FakeHarness};
 use teamwire_launch::LaunchOutcome;
@@ -168,6 +168,9 @@ impl Platform for SlowSetup<'_> {
     }
     fn write_atomic(&self, path: &Path, bytes: &[u8]) -> Result<(), PlatformError> {
         self.inner.write_atomic(path, bytes)
+    }
+    fn lock_file(&self, path: &Path, wait: Duration) -> Result<FileLock, PlatformError> {
+        self.inner.lock_file(path, wait)
     }
     fn sleep_hold(&self) -> Option<&dyn SleepHold> {
         self.inner.sleep_hold()

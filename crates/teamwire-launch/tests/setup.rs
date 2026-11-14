@@ -634,6 +634,13 @@ mod close_lock {
         ) -> Result<(), teamwire_core::PlatformError> {
             self.inner.write_atomic(path, bytes)
         }
+        fn lock_file(
+            &self,
+            path: &std::path::Path,
+            wait: std::time::Duration,
+        ) -> Result<teamwire_core::FileLock, teamwire_core::PlatformError> {
+            self.inner.lock_file(path, wait)
+        }
         fn sleep_hold(&self) -> Option<&dyn teamwire_core::SleepHold> {
             self.inner.sleep_hold()
         }
