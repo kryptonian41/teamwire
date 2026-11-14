@@ -3,7 +3,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use teamwire_core::{Command, HoldInfo, Pid, Platform, ReleaseOutcome, RunOutput, SleepHold};
+use teamwire_core::{
+    Command, HoldInfo, Pid, Platform, PlatformErrorCode, ReleaseOutcome, RunOutput, SleepHold,
+};
 
 use super::{fail, ok, require};
 
@@ -237,6 +239,7 @@ pub fn platform_contract(setup: &PlatformSetup<'_>) {
     }
 
     write_rules(setup);
+    lock_rules(setup);
 
     let free = ok("free_bytes", p.free_bytes(setup.dir));
     require("free_bytes of a real directory is more than zero", free > 0);
@@ -341,6 +344,41 @@ fn write_rules(setup: &PlatformSetup<'_>) {
     let entries = std::fs::read_dir(dir).map(Iterator::count).unwrap_or(0);
     require("write_atomic leaves no temporary file behind", entries == 1);
     mode_rules(setup);
+}
+
+/// A free lock is taken at once and its file and folder are made, a busy
+/// one fails with `TimedOut` once the wait runs out, and a dropped guard
+/// frees it. The file is never written. Both guards are opened in this one
+/// thread, so the rules also prove that two opens of one process wait for
+/// each other, as two threads of launch do.
+fn lock_rules(setup: &PlatformSetup<'_>) {
+    let (p, dir) = (setup.platform, setup.dir);
+    let folder = dir.join("contract-locks");
+    let path = folder.join("a.lock");
+    let first = ok("lock_file", p.lock_file(&path, Duration::ZERO));
+    require(
+        "lock_file makes the lock file and its folder",
+        path.is_file(),
+    );
+    match p.lock_file(&path, Duration::from_millis(100)) {
+        Err(e) if e.code == PlatformErrorCode::TimedOut => {}
+        other => fail(
+            "a busy lock fails with TimedOut once the wait runs out",
+            other,
+        ),
+    }
+    drop(first);
+    let again = ok(
+        "lock_file once the guard has dropped",
+        p.lock_file(&path, Duration::ZERO),
+    );
+    drop(again);
+    require(
+        "lock_file never writes the lock file",
+        std::fs::read(&path).is_ok_and(|bytes| bytes.is_empty()),
+    );
+    ok("remove_file", std::fs::remove_file(&path));
+    ok("remove_dir", std::fs::remove_dir(&folder));
 }
 
 /// A replaced file keeps its mode, and a new file is 0644.
