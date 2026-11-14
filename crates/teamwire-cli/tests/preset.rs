@@ -1838,7 +1838,11 @@ fn the_speckit_draft_runs_pass_exclude_for_archived_records() {
     );
     let afk = flat(&example("skills/afk/SKILL.md"));
     let needed = "`--exclude '<folder>/**'` for each folder of archived records";
-    for (place, text) in [("BUILD rule", &build), ("impl note", &impl_note), ("afk", &afk)] {
+    for (place, text) in [
+        ("BUILD rule", &build),
+        ("impl note", &impl_note),
+        ("afk", &afk),
+    ] {
         assert!(text.contains(needed), "{place} lacks {needed}: {text}");
     }
 }
