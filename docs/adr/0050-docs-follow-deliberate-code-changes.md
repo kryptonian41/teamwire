@@ -30,6 +30,8 @@ Status: accepted, 2026-11-16. Supersedes these sentences, and no others:
 - ADR 0042, decision 4 (lines 50-52), "except `committed`, which compares
   the working tree with it, and `feature pointer`, which asks git what it
   ignores", as the only lines that look at the disk.
+- ADR 0043, decision 12 (line 130), the quoted ending "Read them with
+  teamwire inbox." of the held-messages sentence a reprompt types.
 
 ## Context
 
@@ -64,6 +66,7 @@ behaviour.
    | 0008, decision 1 | The member token is 256 random bits, as 64 lowercase hex characters (`crates/teamwire-launch/src/member.rs:275-280`). The store still keeps only its SHA-256 | this ADR |
    | 0018, decision 1 | The plugin carries three skills: `teamwire`, `afk` and `promptwire`, the skill that picks vendor domain skills for a member's brief when the `promptwire` tool is installed (`crates/teamwire-harness-claude/src/lead_setup/plugin.rs:106-109`; test `the_eight_files_name_the_binary_and_the_hook`) | commit `456cccf2`; this ADR |
    | 0042, decision 4 | Three more spec-kit lines look at the disk. `spec-kit events` also warns for a `.codex/config.toml` or `.codex/hooks.json` that is only on disk, because Codex launch refuses it there (`crates/teamwire-cli/src/cmd/doctor_speckit/extensions.rs:147-157`; test `a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there`). `spec-kit constitution` adds a note when the copy on disk differs, and its level still comes from the commit (`crates/teamwire-cli/src/cmd/doctor_speckit.rs:319-324`). `spec-kit integrations` looks at the disk only to choose between two warning texts (`crates/teamwire-cli/src/cmd/doctor_speckit/integrations.rs:148, 174`). Only the `events` line changes its level because of the disk | `docs/api/cli.md` `teamwire doctor`; the module note at `crates/teamwire-cli/src/cmd/doctor_speckit.rs:7-8`; STO-17 |
+   | 0043, decision 12 | A reprompt to a member with held rows types `Held for you, oldest first: <id> (<type> from <sender>), .... Read them with the team_inbox tool or the inbox command your contract names.` A member's shell may have no `teamwire` on its PATH, so the sentence names no bare command (`crates/teamwire-deliver/src/lines.rs` `with_held`; test `crates/teamwire-deliver/tests/lines.rs` `a_reprompt_line_names_the_held_messages_after_its_text`) | commit `3978207f`; `docs/api/cli.md` (the held-messages line of a reprompt); this ADR |
 
 2. **Requirement rows follow the code.** These rows of `docs/requirements.md`
    now say what the program does, and each names this ADR or the ADR that made
