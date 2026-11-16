@@ -254,7 +254,11 @@ fn a_member_woken_after_its_result_is_told_to_record_done_again() {
     rig.write_report(&api, "Found it.\n\nDecisions I made: none\n");
     rig.complete_now(&api);
     assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
-    assert_eq!(rig.typed_to_lead().len(), 1, "the first result was delivered");
+    assert_eq!(
+        rig.typed_to_lead().len(),
+        1,
+        "the first result was delivered"
+    );
 
     // A message to a finished member starts a new generation (ADR 0043), and
     // the watch waits for a result in it, even when nothing changed.
