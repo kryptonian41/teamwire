@@ -1,5 +1,5 @@
-//! Rules every kind of member is told: never administer git worktrees, and
-//! record a result again after a message wakes it.
+//! Rules every kind of member is told: never administer git worktrees,
+//! record a result again after a message wakes it, and who runs the full gate.
 
 use std::path::Path;
 
@@ -55,5 +55,41 @@ fn every_kind_is_told_to_record_done_again_after_a_message_wakes_it() {
             ),
             "{kind}"
         );
+    }
+}
+
+/// The closer runs only the local gate its brief names (`kind_closer.md`), so
+/// no member is told that the closer runs the whole suite.
+#[test]
+fn every_kind_is_told_who_runs_the_full_gate() {
+    for kind in MemberKind::ALL {
+        let text = render_contract(&ContractParts {
+            team: &TeamName::parse("demo").unwrap(),
+            role: &Role::parse("api").unwrap(),
+            kind: *kind,
+            report_file: Path::new("/h/teams/demo/reports/api.md"),
+            outbox_dir: Path::new("/h/teams/demo/outbox"),
+            teamwire_bin: Path::new("/opt/x/teamwire"),
+            check: None,
+            owns: &[],
+        });
+        assert!(!text.contains("or the\n  closer runs those once"), "{kind}");
+        assert!(
+            text.contains(
+                "unless the brief says so; the integrator runs\n  the full gate on a joined branch, \
+                 the closer runs the local gate its\n  brief names, and CI runs the rest."
+            ),
+            "{kind}"
+        );
+        if *kind == MemberKind::Implementer {
+            assert!(!text.contains("or the closer runs the rest once"), "{text}");
+            assert!(
+                text.contains(
+                    "The\n  integrator runs the full gate on a joined branch, the closer runs the\n  \
+                     local gate its brief names, and CI runs the rest."
+                ),
+                "{text}"
+            );
+        }
     }
 }

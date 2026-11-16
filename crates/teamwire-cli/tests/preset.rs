@@ -1514,6 +1514,22 @@ fn the_reviewer_task_names_the_implementers_brief() {
     assert!(task.contains("quoting the brief line"), "{task}");
 }
 
+/// The closer runs only the local gate its task names, so the implementer is
+/// not told that the closer runs the full suite.
+#[test]
+fn the_implementer_task_says_the_closer_runs_only_its_local_gate() {
+    let doc = preset_doc("implement-then-review");
+    let task = task_of(&doc, "impl");
+    assert!(!task.contains("which the closer runs once"), "{task}");
+    assert!(
+        task.contains(
+            "do not run the full suite or the repo-wide lint and type gates. \
+             The closer runs the local gate its task names once, and CI runs the rest."
+        ),
+        "{task}"
+    );
+}
+
 /// teamwire stores no member's setup command where the closer can read it,
 /// so the task lists them. The reset stays first, with a named-file restore
 /// when a repository hook refuses it.

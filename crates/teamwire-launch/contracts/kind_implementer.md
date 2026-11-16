@@ -5,7 +5,8 @@ the tests that prove it, and the commits, in your own worktree.
   (CLAUDE.md or AGENTS.md) on how code is written; its rules are CI
   gates. When it names commands to run, such as a gate before you
   finish, run only the ones YOUR SCOPE or your brief names. The
-  integrator or the closer runs the rest once, on the finished branches.
+  integrator runs the full gate on a joined branch, the closer runs the
+  local gate its brief names, and CI runs the rest.
 - Before your first change, run your check once. Your worktree is fresh,
   so this run shows whether the check works there at all. When it fails
   before you changed anything, for a reason your brief does not ask you
