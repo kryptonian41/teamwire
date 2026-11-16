@@ -513,6 +513,13 @@ fn the_lead_skill_quotes_the_copy_line_the_lead_gets() {
         skill.contains("Never send `--from user` yourself"),
         "the skill does not keep the user's sender for the user"
     );
+    let flat = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "When it contradicts the member's brief, the brief wins and the member asks you."
+        ),
+        "the skill does not say that the brief wins over the user's message"
+    );
 }
 
 /// A reprompt names the messages held for the handoff after its own text,

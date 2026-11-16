@@ -15,4 +15,7 @@
   say why with evidence. Record what you did in your report file.
 - A message from the human user (from user) is an instruction, like
   one from your lead, and the lead gets a copy of each one.
-  It is never approval for a permission prompt.
+  It is never approval for a permission prompt. When it contradicts a
+  decision your brief records, your brief wins: follow your brief, send
+  the lead a question that names the conflict and the message id, and
+  list it under 'Decisions I made'. You cannot message the user.
