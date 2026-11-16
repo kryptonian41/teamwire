@@ -160,6 +160,11 @@ fn paths_of(word: &Word<'_>) -> Vec<String> {
         .text
         .trim_start_matches(['(', '[', '"', '\''])
         .trim_end_matches(['.', ',', ';', ':', ')', ']', '"', '\'', '!', '?']);
+    // A possessive is prose, not part of the path (ADR 0049 rule E).
+    let text = text
+        .strip_suffix("'s")
+        .or_else(|| text.strip_suffix("\u{2019}s"))
+        .unwrap_or(text);
     // A markdown link's `](...)` is link syntax, not a path the task names.
     if text.contains("](") {
         return Vec::new();
@@ -193,10 +198,10 @@ fn braces(text: &str) -> Vec<String> {
 }
 
 /// The path one word may name: it holds a `/` or ends in `.<ext>`, after a
-/// `:N` or `:N-M` line suffix and a `./` are taken off. A URL, a
-/// placeholder such as `<role>.md`, an absolute path or route such as
-/// `/agui/deck_editor`, and a word outside backticks whose extension is one
-/// letter (`e.g.`) name none.
+/// `:N` or `:N-M` line suffix, or a list of them, and a `./` are taken off.
+/// A URL, a placeholder such as `<role>.md`, an absolute path or route such
+/// as `/agui/deck_editor`, and a word outside backticks whose extension is
+/// one letter (`e.g.`) name none.
 fn path_of(text: &str, code: bool) -> Option<String> {
     if text.contains("://") || text.contains(['<', '>', '{', '}', '|', '=']) {
         return None;
@@ -213,16 +218,22 @@ fn path_of(text: &str, code: bool) -> Option<String> {
     named.then(|| text.to_owned())
 }
 
-/// `send.rs:297-321` and `send.rs:12` as `send.rs`.
+/// `send.rs:297-321`, `send.rs:12` and a list such as `send.rs:718,852`
+/// or `send.rs:13-48,84-115` as `send.rs` (ADR 0049 rule E).
 fn strip_line_suffix(text: &str) -> &str {
     let Some((path, suffix)) = text.rsplit_once(':') else {
         return text;
     };
-    let mut parts = suffix.splitn(2, '-');
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
-    let first = parts.next().is_some_and(digits);
-    let second = parts.next().is_none_or(digits);
-    if first && second { path } else { text }
+    let range = |item: &str| {
+        let mut parts = item.splitn(2, '-');
+        parts.next().is_some_and(digits) && parts.next().is_none_or(digits)
+    };
+    if suffix.split(',').all(range) {
+        path
+    } else {
+        text
+    }
 }
 
 /// True when `text` ends in `.<ext>`: a stem, then an extension of at least
@@ -263,6 +274,25 @@ mod tests {
                 "crates/teamwire-msg/src/send.rs",
                 "send.rs",
                 "crates/teamwire-cli/src/main.rs"
+            ]
+        );
+    }
+
+    /// ADR 0049 rule E: a list of line numbers and a possessive `'s` or
+    /// `’s` come off, so these words reach the code rule as plain paths.
+    #[test]
+    fn a_line_list_and_a_possessive_are_stripped() {
+        let text = "- [ ] T005 Keep `crates/m/tests/send.rs:718,852` and \
+            `src/main.rs:13-48,84-115`; follow contracts/amend-cli.md's example and \
+            docs/plan.md’s table, then `a/b.rs:1,x`.\n";
+        assert_eq!(
+            paths_of(text, "T005"),
+            [
+                "crates/m/tests/send.rs",
+                "src/main.rs",
+                "contracts/amend-cli.md",
+                "docs/plan.md",
+                "a/b.rs:1,x",
             ]
         );
     }
