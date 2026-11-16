@@ -624,7 +624,12 @@ it. Then cut the implementer's branch from that branch.
   a file there names a task path by its exact path, a partial path such
   as `cmd/send.rs`, a dotted module name or a CI `paths:` glob. The
   draft does not search bare file names, so grep the repository for a
-  changed file's name yourself when it is distinctive (ADR 0048). Check
+  changed file's name yourself when it is distinctive (ADR 0048). The
+  draft finds a root file only through a relative link such as
+  `../../AGENTS.md`, so grep for a changed root file's name yourself.
+  Check its `Bare names read as root files` too: a bare name such as
+  `AGENTS.md` may mean a file in a folder the task names earlier in the
+  line (ADR 0049). Check
   each list, and grep for the names a draft cannot see, such as a changed
   function or message text. The command reads a path with a `:12-30` line suffix as the path,
   the indented lines under a task as that task's, and a `*` path as a glob
