@@ -1966,7 +1966,10 @@ fn the_closer_task_has_a_local_gate_and_a_ci_gate_slot_and_reports_both() {
 }
 
 /// Every text that sends the closer to work names its local gate and the
-/// gates left to CI, as the closer preset does, never "the full gate".
+/// gates left to CI, as the closer preset does, never "the full gate". The
+/// AFK skill is the exception: an AFK run pushes nothing, so no CI runs after
+/// it, and its branch must pass the full gate (ADR 0025 point 10). So the AFK
+/// closer's local gate slot holds the full gate.
 #[test]
 fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
     for name in ["implement-then-review", "parallel-tickets"] {
@@ -1982,6 +1985,21 @@ fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
         );
     }
     let skill = example("skills/afk/SKILL.md");
-    assert!(!skill.contains("repository's full gate on each branch"));
-    assert!(skill.contains("local gate its task names on each branch"));
+    assert!(skill.contains("repository's full gate on each branch"));
+    assert!(!skill.contains("local gate its task names on each branch"));
+    let afk = flat(&skill);
+    assert!(
+        afk.contains(
+            "Its `Local gate:` slot holds the full gate, such as `scripts/gate.sh`, and its \
+             `Gates left to CI:` slot holds `none`, because an AFK run pushes nothing."
+        ),
+        "{afk}"
+    );
+    assert!(
+        afk.contains(
+            "Only a gate that needs a service this machine lacks, such as SonarCloud, \
+             goes in the CI slot, with a `D` entry and a line under **Risks**."
+        ),
+        "{afk}"
+    );
 }
