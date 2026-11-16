@@ -112,9 +112,13 @@ fn speckit_names(checks: &[Check]) -> Vec<&str> {
 
 #[test]
 fn outside_a_spec_kit_repository_doctor_prints_no_spec_kit_line() {
-    // A git repository without `.specify/`.
+    // A git repository without `.specify/`, with a commit, so git resolves
+    // `HEAD` and only the missing `.specify/` keeps the lines out. A Claude
+    // Code folder alone does not make a spec-kit repository.
     let bed = Bed::healthy();
-    std::fs::create_dir_all(bed.home.path().join(".git")).unwrap();
+    let root = bed.home.path();
+    git(root, &["init", "-q"]);
+    put_committed(root, ".claude/settings.json", "{}\n");
     assert_eq!(speckit_names(&bed.checks()), Vec::<&str>::new());
 
     // A `.specify/` outside any git repository.
