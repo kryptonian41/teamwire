@@ -101,9 +101,14 @@ behaviour.
 - The comment at the top of `crates/teamwire-msg/src/inbox.rs` no longer
   calls `inbox` and `ack` the only way to reach `acked`.
 - This ADR covers only sentences where the code is right on purpose. It
-  leaves alone the re-audit rows where the code should change, and the
-  questions the user decides: ADR 0025 point 10 (whether an AFK closer runs
-  the full gate) and PAR-9 (whether AFK runs ship for Codex and pi leads).
+  leaves alone the re-audit rows where the code should change.
+- This ADR changes neither ADR 0025 point 10 nor PAR-9, because the user
+  decided both on 2026-11-16 without a new ADR. ADR 0025 point 10 holds as
+  written: the AFK skill now makes an AFK closer run the full gate (commit
+  `b3862918`). PAR-9 is settled by ADR 0025 point 12. An AFK run needs a
+  Claude Code lead, as a deliberate exception to the rule that every lead
+  feature ships for Claude Code, Codex and pi. Requirement row AFK-2 records
+  that exception.
 - The same failure-mode row still says the team is set back to `open`. When
   the final store write fails, the code can leave the team `closing`
   instead. That is a code question, so this ADR does not change the row's
