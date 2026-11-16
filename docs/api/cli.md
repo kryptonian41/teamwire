@@ -913,7 +913,7 @@ feature creates, still counts in the overlap table and the two task lines,
 so two tasks that write it share it; code counts nowhere. Then
 `DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.`
 and one list per story, then `Setup and polish:`. An empty part reads
-`none`. Each list holds its task paths, `(task path)`, then every tracked
+`none`, and so does a list with no file: `Setup and polish: none`. Each list holds its task paths, `(task path)`, then every tracked
 file outside the feature folder that names one of them:
 
 | Reason | Match |

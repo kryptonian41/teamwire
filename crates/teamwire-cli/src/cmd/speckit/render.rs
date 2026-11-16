@@ -118,6 +118,10 @@ pub(crate) fn render(r: &Report<'_>) -> String {
 
     out.push(DRAFT_LABEL.to_owned());
     for d in r.drafts {
+        if d.files.is_empty() {
+            out.push(format!("{}: none", d.name));
+            continue;
+        }
         out.push(format!("{}:", d.name));
         let width = d.files.iter().map(|f| f.path.len()).max().unwrap_or(0);
         for f in &d.files {

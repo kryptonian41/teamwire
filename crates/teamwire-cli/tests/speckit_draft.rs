@@ -340,3 +340,25 @@ fn the_drafts_are_labelled_as_drafts() {
     assert!(entry(&run.out, "US1", "src/a.rs").is_some_and(|l| l.ends_with("(task path)")));
     assert!(entry(&run.out, "Setup and polish", "docs/notes.md").is_some());
 }
+
+#[test]
+fn an_empty_draft_list_reads_none() {
+    let repo = repo();
+    let tasks = repo.path().join("specs/001-x/no-setup-path.md");
+    std::fs::write(
+        &tasks,
+        "# Tasks: x\n\n## Phase 1: Setup\n\n- [ ] T001 Read the plan.\n\n\
+         ## Phase 2: User Story 1 - a (Priority: P1)\n\n- [ ] T002 [US1] Change `src/a.rs`.\n\n\
+         ## Phase 3: User Story 2 - b (Priority: P2)\n\n- [ ] T003 [US2] Think it over.\n",
+    )
+    .unwrap();
+    let run = teamwire(&["speckit", "draft", tasks.to_str().unwrap()]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(entry(&run.out, "US1", "src/a.rs").is_some(), "{}", run.out);
+    assert!(run.out.contains("\nUS2: none\n"), "{}", run.out);
+    assert!(
+        run.out.ends_with("\nSetup and polish: none\n"),
+        "{}",
+        run.out
+    );
+}
