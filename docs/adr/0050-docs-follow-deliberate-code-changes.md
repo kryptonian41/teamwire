@@ -6,6 +6,10 @@ Status: accepted, 2026-11-16. Supersedes these sentences, and no others:
   only that the recipient read the message through `inbox` or `ack`".
 - ADR 0022, decision 4 (line 37), "`acked` keeps its meaning, as ADR 0021
   point 3 says", where it carries that same sentence.
+- ADR 0009, decision 3 (lines 34-36), the words "(and `close`)": the
+  whole-team close does not check verify records.
+- ADR 0045, decision 4 (lines 52-54), the words "and `close`" in "removing a
+  member, and `close`, accept only a record at the member's HEAD now".
 
 ## Context
 
@@ -28,6 +32,8 @@ behaviour.
    | --- | --- | --- |
    | 0021, decision 3 | `acked` says that the recipient took the message in by one of its own actions: `inbox`, `ack`, the lead's `teamwire received <id>` for a row that was never typed (`crates/teamwire-report/src/received.rs:96-99`), or an answer whose `re` names the message (`crates/teamwire-msg/src/send.rs:387-405`). Each writes `delivery.acked`, and `teamwire.messages.unread` counts none of them | ADR 0043, decisions 2 and 3; DEL-19 |
    | 0022, decision 4 | The same as the row above. ADR 0022's own rule still adds no way to reach `acked` | ADR 0043, decisions 2 and 3 |
+   | 0009, decision 3 | Only `close --role` accepts a verify record, and only one whose sha equals the member's HEAD now (`crates/teamwire-close/src/remove.rs:86-127`). The whole-team close reads no verify record: `team_plan` (`crates/teamwire-close/src/plan.rs`) checks busy, unplaced and dirty members and the AFK report, and the only verify step in `crates/teamwire-close/src/team_close.rs` (`verify_archive`) checks the archive by content | ADR 0046, decision 4; CLS-9 |
+   | 0045, decision 4 | The same as the row above. A carried waiver still does not replace a new verify run for `close --role` | ADR 0046, decision 4; CLS-9 |
 
 2. **Requirement rows follow the code.** These rows of `docs/requirements.md`
    now say what the program does, and each names this ADR or the ADR that made
@@ -36,6 +42,7 @@ behaviour.
    | Row | Changed by |
    | --- | --- |
    | MSG-11 (what sets `acked`) | ADR 0043, decisions 2 and 3; this ADR |
+   | INV-28 (the whole-team close reads no verify record) | ADR 0046, decision 4; this ADR |
 
 ## Consequences
 
