@@ -64,11 +64,21 @@ pub(crate) fn claim_attempt(
     }
 }
 
-/// The report for a row this command left to another.
+/// The report for a row this command did not try: it was already reached,
+/// or it waits for a handoff.
 pub(crate) fn skipped(row: &DeliveryRecord) -> RecipientReport {
     RecipientReport {
         state: RecipientState::Skipped,
         ..report_of(row)
+    }
+}
+
+/// The report for a row this command left to another command, which may
+/// still be delivering it.
+pub(crate) fn busy(row: &DeliveryRecord) -> RecipientReport {
+    RecipientReport {
+        busy: true,
+        ..skipped(row)
     }
 }
 
@@ -517,5 +527,6 @@ pub(crate) fn report_of(record: &DeliveryRecord) -> RecipientReport {
             })
             .map(|e| e.code),
         attempts: Some(d.attempts),
+        busy: false,
     }
 }

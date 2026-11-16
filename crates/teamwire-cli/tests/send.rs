@@ -1042,3 +1042,91 @@ fn status_events_and_export_name_the_user_as_the_sender() {
         "{message}"
     );
 }
+
+/// Stores a finding from `scout` to `api` and `web`, as a send that left
+/// `api` undelivered and `web` in `web_state`, and returns its display id.
+fn tried_once(rig: &Rig, web_state: teamwire_core::DeliveryState) -> String {
+    let new = NewMessage {
+        sender: Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "x".to_owned(),
+        client_key: None,
+        recipients: vec![
+            Recipient::parse("api").unwrap(),
+            Recipient::parse("web").unwrap(),
+        ],
+    };
+    let failed = |state| teamwire_store::DeliveryUpdate {
+        state,
+        route: None,
+        error: Some(teamwire_core::DeliveryError::new(
+            teamwire_core::DeliveryErrorCode::HostStalled,
+            "x",
+        )),
+        attempts: 1,
+    };
+    let mut store = rig.store();
+    let stored = store.write(|tx| tx.insert_message(at(), &new)).unwrap();
+    store
+        .write(|tx| {
+            let ulid = &stored.message.ulid;
+            let undelivered = failed(teamwire_core::DeliveryState::Undelivered);
+            tx.set_delivery_state(at(), ulid, &Recipient::parse("api").unwrap(), &undelivered)?;
+            tx.set_delivery_state(
+                at(),
+                ulid,
+                &Recipient::parse("web").unwrap(),
+                &failed(web_state),
+            )
+        })
+        .unwrap();
+    stored.message.display_id.to_string()
+}
+
+#[test]
+fn a_resend_that_loses_a_row_to_another_command_says_skipped_and_exits_5() {
+    let rig = live_rig();
+    rig.add_member("web", MemberKind::Implementer, false);
+    let id = tried_once(&rig, teamwire_core::DeliveryState::Undelivered);
+    // While this resend claims api's row, another command moves web's row,
+    // so the resend leaves web to that command.
+    rig.store()
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER web_moved AFTER UPDATE ON deliveries
+                     WHEN NEW.recipient = 'api'
+                     BEGIN UPDATE deliveries SET attempts = attempts + 1
+                     WHERE recipient = 'web'; END;",
+                )
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let out = rig.run(&["resend", "alpha", &id], &LEAD);
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert!(stdout.contains("api: handed_off"), "{stdout}");
+    assert!(stdout.contains("web: skipped"), "{stdout}");
+    assert!(
+        stderr.contains(&format!(
+            "SKIPPED for web: another command may still be delivering it; if it does not \
+             arrive, run teamwire resend alpha {id} after 60 s"
+        )),
+        "{stderr}"
+    );
+    assert_eq!(out.status.code(), Some(5), "{stdout} / {stderr}");
+}
+
+#[test]
+fn a_resend_that_skips_a_reached_row_says_nothing_of_it_and_exits_0() {
+    let rig = live_rig();
+    rig.add_member("web", MemberKind::Implementer, false);
+    let id = tried_once(&rig, teamwire_core::DeliveryState::HandedOff);
+    let out = rig.run(&["resend", "alpha", &id], &LEAD);
+    let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
+    assert!(stdout.contains("api: handed_off"), "{stdout}");
+    assert!(stdout.contains("web: skipped"), "{stdout}");
+    assert!(!stderr.contains("SKIPPED"), "{stderr}");
+    assert_eq!(out.status.code(), Some(0), "{stdout} / {stderr}");
+}

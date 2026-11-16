@@ -256,6 +256,7 @@ mod tests {
                 state,
                 reason,
                 attempts: None,
+                busy: false,
             }],
             duplicate_of_key: false,
         }
