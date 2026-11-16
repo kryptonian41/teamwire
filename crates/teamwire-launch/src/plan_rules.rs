@@ -1,4 +1,6 @@
-//! The planning rules of LCH-18. They warn; they never refuse.
+//! The planning rules of LCH-18 and ADR 0009 point 5. They warn; they never refuse.
+
+use std::path::Path;
 
 use globset::Glob;
 use teamwire_core::{MemberKind, MemberState};
@@ -25,6 +27,33 @@ fn owns_overlap(a: &str, b: &str) -> bool {
     hit(a, b) || hit(b, a)
 }
 
+/// The directory a one-star `owns` pattern lists, when it has a subdirectory
+/// that `*` cannot reach (ADR 0009 point 5): the literal segments before the
+/// first `*`, read in the member's repository. `None` for a pattern with
+/// `**`, without `*`, or over a directory that is missing or has no
+/// subdirectory. `.git` does not count, because git never lists it.
+fn one_star_hides_subdirectories(repo: &Path, pattern: &str) -> Option<String> {
+    let pattern = pattern.trim_start_matches("./");
+    if !pattern.contains('*') || pattern.contains("**") {
+        return None;
+    }
+    let dir: Vec<&str> = pattern
+        .split('/')
+        .take_while(|segment| !segment.contains('*'))
+        .collect();
+    let has_subdirectory = std::fs::read_dir(repo.join(dir.join("/")))
+        .ok()?
+        .filter_map(Result::ok)
+        .any(|e| e.file_name() != ".git" && e.file_type().is_ok_and(|t| t.is_dir()));
+    has_subdirectory.then(|| {
+        if dir.is_empty() {
+            "the repository root".to_owned()
+        } else {
+            format!("{}/", dir.join("/"))
+        }
+    })
+}
+
 pub(crate) fn planning_warnings(
     cx: &Cx<'_>,
     members: &[PlannedMember],
@@ -45,6 +74,18 @@ pub(crate) fn planning_warnings(
             "role {}: an implementer without {missing} cannot be verified",
             m.spec.role
         ));
+    }
+    for m in &implementers {
+        let repo = m.worktree.as_ref().map_or(&m.cwd, |w| &w.repo);
+        for pattern in &m.spec.owns {
+            if let Some(dir) = one_star_hides_subdirectories(repo, pattern) {
+                warnings.push(format!(
+                    "role {}: owns pattern {pattern} has * but no **, and {dir} has subdirectories; \
+                     * matches within one path segment, so files under them are outside owns",
+                    m.spec.role
+                ));
+            }
+        }
     }
     for (i, a) in implementers.iter().enumerate() {
         for b in implementers.iter().skip(i + 1) {
