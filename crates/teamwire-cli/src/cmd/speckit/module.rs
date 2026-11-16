@@ -2,7 +2,7 @@
 //! line that does not import it. Most files that name a module only import
 //! it, and listing each one buried the files the lead needed.
 
-use super::mentions::token_starts;
+use super::reason::token_starts;
 
 /// True when `text` holds `module` as a whole token on at least one line
 /// that is not a Python import of it. The whole line decides, so a comment

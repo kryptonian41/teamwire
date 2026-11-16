@@ -26,8 +26,12 @@ mod module;
 mod overlap;
 #[path = "speckit/parse.rs"]
 mod parse;
+#[path = "speckit/reason.rs"]
+mod reason;
 #[path = "speckit/render.rs"]
 mod render;
+#[path = "speckit/resolve.rs"]
+mod resolve;
 #[path = "speckit/root.rs"]
 mod root;
 
@@ -86,7 +90,7 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
     // Each task's bare words read as root files, for the lead to check.
     let mut bare_roots: Vec<(String, Vec<String>)> = Vec::new();
     for task in &list.tasks {
-        let read = overlap::expand(&task.paths, &tracked);
+        let read = resolve::expand(&task.paths, &tracked);
         let mut counted = read.paths.clone();
         counted.extend(read.unresolved);
         shared.push(counted);

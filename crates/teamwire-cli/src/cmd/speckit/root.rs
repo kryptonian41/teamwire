@@ -3,7 +3,7 @@
 //! bare name, and a bare name, `@AGENTS.md` or `apps/ai/AGENTS.md` most
 //! often means a nested file of that name.
 
-use super::mentions::{ends_token, joins};
+use super::reason::{ends_token, joins};
 
 /// The first relative link in `text`, the text of the tracked file `file`,
 /// that names the root file `name`, as written, such as `../../AGENTS.md`:
