@@ -660,8 +660,8 @@ nothing is typed, the recipient's line reads `<role>: held for handoff
 `--key` leaves a held row as it is. `teamwire handoff` counts held messages
 in the fresh session's unread messages. A reprompt to that member types its
 own text and then `Held for you, oldest first: <id> (<type> from <sender>),
-.... Read them with teamwire inbox.`, naming the first ten and counting the
-rest; the reprompt starts the next generation, so later messages are typed.
+.... Read them with the team_inbox tool or the inbox command your contract
+names.`, naming the first ten and counting the rest; the reprompt starts the next generation, so later messages are typed.
 
 An `answer` with `--re <id>` settles question `<id>` for the answerer, in the
 same write as the answer: the question's delivery row to the sender becomes
