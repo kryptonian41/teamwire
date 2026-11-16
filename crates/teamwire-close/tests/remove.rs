@@ -1063,3 +1063,25 @@ fn a_note_without_the_marker_or_from_a_member_changes_nothing() {
     assert!(report.refusals.is_empty(), "{report:?}");
     assert_eq!(rig.member("api").state, MemberState::Removed);
 }
+
+#[test]
+fn only_a_pass_after_the_newest_of_two_amend_notes_counts() {
+    // Amend, verify PASS, amend again: the PASS sits between the two notes,
+    // so the newest note makes it not count.
+    let mut rig = verified_implementer();
+    tick(&rig);
+    note_to(&mut rig, "lead", "api", AMEND_NOTE);
+    tick(&rig);
+    let head = head_of(&rig, "api");
+    verify_at(&mut rig, "api", &head, "PASS", &[]);
+    tick(&rig);
+    let second = note_to(&mut rig, "lead", "api", AMEND_NOTE);
+    let short: String = head.chars().take(7).collect();
+    let report = remove(&mut rig, "api", CloseOpts::default());
+    let want = format!(
+        "api's verify at HEAD {short} was recorded before the lead amended its check or owns \
+         ({second}); run teamwire verify alpha --role api again"
+    );
+    assert!(report.refusals.contains(&want), "{report:?}");
+    assert_eq!(rig.member("api").state, MemberState::Started);
+}
