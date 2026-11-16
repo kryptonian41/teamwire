@@ -53,7 +53,7 @@ pub(crate) fn report_refusal(ctx: &Ctx<'_>, team: &TeamRow) -> Option<String> {
         .into_iter()
         .filter(|name| {
             let name = comparable(name);
-            !headings.iter().any(|h| *h == name)
+            !headings.contains(&name)
         })
         .collect();
     (!lacking.is_empty()).then(|| {
