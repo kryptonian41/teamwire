@@ -20,12 +20,20 @@ use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, USAGE};
 // Paths, as `doctor_speckit.rs` attaches its parts.
 #[path = "speckit/mentions.rs"]
 mod mentions;
+#[path = "speckit/module.rs"]
+mod module;
 #[path = "speckit/overlap.rs"]
 mod overlap;
 #[path = "speckit/parse.rs"]
 mod parse;
+#[path = "speckit/reason.rs"]
+mod reason;
 #[path = "speckit/render.rs"]
 mod render;
+#[path = "speckit/resolve.rs"]
+mod resolve;
+#[path = "speckit/root.rs"]
+mod root;
 
 pub(crate) fn run(args: &SpeckitArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     match &args.command {
@@ -79,13 +87,18 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
     let mut shared: Vec<Vec<String>> = Vec::new();
     // Each task's words that are no repository path, for the lead to check.
     let mut not_paths: Vec<(String, Vec<String>)> = Vec::new();
+    // Each task's bare words read as root files, for the lead to check.
+    let mut bare_roots: Vec<(String, Vec<String>)> = Vec::new();
     for task in &list.tasks {
-        let read = overlap::expand(&task.paths, &tracked);
+        let read = resolve::expand(&task.paths, &tracked);
         let mut counted = read.paths.clone();
         counted.extend(read.unresolved);
         shared.push(counted);
         if !read.not_paths.is_empty() {
             not_paths.push((task.id.clone(), read.not_paths));
+        }
+        if !read.bare_roots.is_empty() {
+            bare_roots.push((task.id.clone(), read.bare_roots));
         }
         paths.push(read.paths);
     }
@@ -106,6 +119,7 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         overlap: &overlap,
         unread: &found.unread,
         not_paths: &not_paths,
+        bare_roots: &bare_roots,
         drafts: &drafts,
     }));
     ExitCode::SUCCESS

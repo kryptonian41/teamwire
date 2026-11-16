@@ -200,7 +200,11 @@ spec and the code for it, and run no build and no test.
    names a task path by its exact path, a partial path such as
    `cmd/send.rs`, a dotted module name or a CI `paths:` glob. The draft
    does not search bare file names, so grep the repository for a changed
-   file's name yourself when it is distinctive. Check each draft, and keep
+   file's name yourself when it is distinctive. The draft finds a root file
+   only through a relative link such as `../../AGENTS.md`, so grep for a
+   changed root file's name yourself. Check its `Bare names read as root
+   files` too: a bare name such as `AGENTS.md` may mean a file in a folder
+   the task names earlier in the line. Check each draft, and keep
    the grep above for the names a draft cannot see, such as a changed
    function or message text.
    Check its `Names that are not repository paths` too: a new file in a new

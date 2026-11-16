@@ -1,7 +1,8 @@
 //! The tracked files that mention a task path (ADR 0044 decisions 4 to 6,
-//! ADR 0048): by the exact path, a partial path that holds a `/`, a dotted
-//! module name of at least two parts, or a workflow's `on.<event>.paths`
-//! glob. Never a bare stem, and never the bare file name alone.
+//! ADR 0048, ADR 0049): by the exact path, a partial path that holds a
+//! `/`, a dotted module name of a Python file on a line that does not import
+//! it, or a workflow's `on.<event>.paths` glob. Never a bare stem, and never
+//! the bare file name alone.
 
 use std::path::Path;
 use std::time::Duration;
@@ -138,10 +139,11 @@ impl Mentions {
             if paths.contains(&file.path) {
                 continue;
             }
-            let by_text = file
-                .text
-                .as_deref()
-                .and_then(|text| searched.iter().find_map(|p| text_reason(text, p)));
+            let by_text = file.text.as_deref().and_then(|text| {
+                searched
+                    .iter()
+                    .find_map(|p| super::reason::text_reason(&file.path, text, p))
+            });
             let reason = by_text.or_else(|| self.glob_reason(&file.path, &searched));
             if let Some(reason) = reason {
                 out.push(Found {
@@ -195,112 +197,6 @@ fn path_globs(doc: &Yaml) -> Vec<String> {
     out
 }
 
-/// Why `text` mentions `path`: its exact text, a dotted module name, or a
-/// partial path, each as a whole token (FR-014). The exact path also counts
-/// right after a `/`, as in `./apps/x.py` or `$ROOT/apps/x.py`. A partial
-/// path holds a `/` and ends the task path, so `harness/tools.py` names
-/// `apps/ai/harness/tools.py` and `other/tools.py` does not. The bare file
-/// name alone never counts (ADR 0048): `lib.rs` or `SKILL.md` names too
-/// many files of a real repository.
-fn text_reason(text: &str, path: &str) -> Option<String> {
-    let after_slash = |before: &str| before.ends_with('/');
-    if has_token_after(text, path, after_slash) {
-        return Some(format!("names path {path}"));
-    }
-    if let Some(module) = dotted_names(path).into_iter().find(|m| has_token(text, m)) {
-        return Some(format!("names module {module}"));
-    }
-    partial_path(text, path).map(|tail| format!("names path {tail}"))
-}
-
-/// The first partial path of `path` in `text`: its file name right after a
-/// `/`, where the words of the token before the name end `path` too. A
-/// leading `./` is left off the partial path it returns.
-fn partial_path(text: &str, path: &str) -> Option<String> {
-    let name = path.rsplit('/').next().unwrap_or(path);
-    let has_ext = name
-        .rsplit_once('.')
-        .is_some_and(|(stem, ext)| !stem.is_empty() && !ext.is_empty());
-    if !has_ext || name == path {
-        return None;
-    }
-    text.match_indices(name).find_map(|(at, _)| {
-        let head = text.get(..at)?.strip_suffix('/')?;
-        // The words of the token before the name, back to its start.
-        let start = head
-            .char_indices()
-            .rev()
-            .find(|(_, c)| !joins(*c))
-            .map_or(0, |(i, c)| i + c.len_utf8());
-        let words = head.get(start..)?.trim_start_matches("./");
-        let tail = format!("{words}/{name}");
-        let ends_path = path == tail || path.ends_with(&format!("/{tail}"));
-        let rest = text.get(at + name.len()..)?;
-        (!words.is_empty() && ends_path && ends_token(rest)).then_some(tail)
-    })
-}
-
-/// The dotted module names of `path`: every suffix of its parts, without
-/// the extension, of at least two parts, each part a plain identifier.
-/// `apps/ai/harness/tools.py` gives `harness.tools`, `ai.harness.tools` and
-/// `apps.ai.harness.tools`. A single part, the bare stem, is never one.
-fn dotted_names(path: &str) -> Vec<String> {
-    let stem = match path.rsplit_once('.') {
-        Some((stem, ext)) if !ext.contains('/') => stem,
-        _ => path,
-    };
-    let parts: Vec<&str> = stem.split('/').collect();
-    let plain =
-        |p: &&str| !p.is_empty() && p.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    let mut out = Vec::new();
-    for start in (0..parts.len().saturating_sub(1)).rev() {
-        let tail = parts.get(start..).unwrap_or_default();
-        if !tail.iter().all(plain) {
-            break;
-        }
-        out.push(tail.join("."));
-    }
-    out
-}
-
-/// A character that continues a name or a path, so a match next to it is
-/// part of a longer word.
-fn joins(c: char) -> bool {
-    c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/' | '.')
-}
-
-/// True when `needle` occurs in `text` as a whole token. A `.` after it ends
-/// a sentence, so it counts as a break unless a name character follows.
-fn has_token(text: &str, needle: &str) -> bool {
-    has_token_after(text, needle, |_| false)
-}
-
-/// `has_token`, where a match that a name character comes before also
-/// counts when `also(text before the match)` holds.
-fn has_token_after(text: &str, needle: &str, also: impl Fn(&str) -> bool) -> bool {
-    if needle.is_empty() {
-        return false;
-    }
-    text.match_indices(needle).any(|(at, _)| {
-        let head = text.get(..at).unwrap_or("");
-        let before = head.chars().next_back();
-        let rest = text.get(at + needle.len()..).unwrap_or("");
-        let free_before = before.is_none_or(|c| !joins(c)) || also(head);
-        free_before && ends_token(rest)
-    })
-}
-
-/// True when `rest`, the text after a match, starts with a break. A `.`
-/// counts as a break unless a name character follows it.
-fn ends_token(rest: &str) -> bool {
-    let mut after = rest.chars();
-    match after.next() {
-        None => true,
-        Some('.') => after.next().is_none_or(|c| !c.is_ascii_alphanumeric()),
-        Some(c) => !joins(c),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,8 +246,9 @@ mod tests {
 
     /// ADR 0048: a shared bare name such as `lib.rs` matches many files, so
     /// a file that holds only that name is not a mention. The exact path, a
-    /// partial path with a `/` that ends the task path, the dotted module
-    /// and a matching CI glob still are.
+    /// partial path with a `/` that ends the task path and a matching CI
+    /// glob still are. `x.src.lib` is no module name: the path is not
+    /// Python (ADR 0049 rule A).
     #[test]
     fn a_file_naming_only_the_bare_file_name_is_not_a_mention() {
         let ci = "on:\n  push:\n    paths: [\"crates/x/src/**\"]\n";
@@ -369,7 +266,6 @@ mod tests {
             [
                 pair("docs/path.md", "names path crates/x/src/lib.rs"),
                 pair("docs/tail.md", "names path src/lib.rs"),
-                pair("docs/module.md", "names module x.src.lib"),
                 pair(".github/workflows/ci.yml", "CI paths glob crates/x/src/**"),
             ]
         );
@@ -439,20 +335,5 @@ mod tests {
             file("src/x/one.rs", "// one\n"),
         ]);
         assert!(found(&m, &["src/tools.rs", "src/x/*.rs"]).is_empty());
-    }
-
-    #[test]
-    fn a_dotted_name_needs_two_plain_parts() {
-        assert_eq!(
-            dotted_names("apps/ai/harness/tools.py"),
-            ["harness.tools", "ai.harness.tools", "apps.ai.harness.tools"]
-        );
-        assert_eq!(
-            dotted_names("crates/teamwire-cli/src/main.rs"),
-            ["src.main"]
-        );
-        assert!(dotted_names("tools.py").is_empty());
-        assert!(has_token("uses harness.tools.", "harness.tools"));
-        assert!(!has_token("uses harness.tools.x", "harness.tools"));
     }
 }

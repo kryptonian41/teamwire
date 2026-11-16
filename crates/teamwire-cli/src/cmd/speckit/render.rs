@@ -14,6 +14,11 @@ pub(crate) const DRAFT_LABEL: &str =
 /// draft; the lead checks each for a new file in a new folder.
 pub(crate) const NOT_PATHS: &str = "Names that are not repository paths";
 
+/// The head of the bare task words read as root files (ADR 0049 rule C).
+/// They stay in the drafts; the lead checks each, since a bare name may
+/// mean a file in a folder the task names earlier in the line.
+pub(crate) const BARE_ROOTS: &str = "Bare names read as root files";
+
 /// One DRAFT `owns` list: its name (`US1`, or `Setup and polish`) and its
 /// files with their reasons.
 pub(crate) struct Draft {
@@ -29,6 +34,8 @@ pub(crate) struct Report<'a> {
     pub(crate) unread: &'a [Unread],
     /// Each task id with its words that are no repository path (ADR 0047).
     pub(crate) not_paths: &'a [(String, Vec<String>)],
+    /// Each task id with its bare words read as root files (ADR 0049).
+    pub(crate) bare_roots: &'a [(String, Vec<String>)],
     pub(crate) drafts: &'a [Draft],
 }
 
@@ -106,15 +113,17 @@ pub(crate) fn render(r: &Report<'_>) -> String {
     out.push(format!("Unread workflows: {}", or_none(&unread.join(", "))));
     out.push(String::new());
 
-    if r.not_paths.is_empty() {
-        out.push(format!("{NOT_PATHS}: none"));
-    } else {
-        out.push(format!("{NOT_PATHS}:"));
-        for (id, names) in r.not_paths {
-            out.push(format!("  {id}: {}", names.join(", ")));
+    for (head, by_task) in [(NOT_PATHS, r.not_paths), (BARE_ROOTS, r.bare_roots)] {
+        if by_task.is_empty() {
+            out.push(format!("{head}: none"));
+        } else {
+            out.push(format!("{head}:"));
+            for (id, names) in by_task {
+                out.push(format!("  {id}: {}", names.join(", ")));
+            }
         }
+        out.push(String::new());
     }
-    out.push(String::new());
 
     out.push(DRAFT_LABEL.to_owned());
     for d in r.drafts {
@@ -160,6 +169,7 @@ mod tests {
             overlap: &overlap,
             unread: &[],
             not_paths: &[],
+            bare_roots: &[],
             drafts: &drafts,
         });
         assert_eq!(
@@ -175,6 +185,8 @@ mod tests {
              Unread workflows: none\n\
              \n\
              Names that are not repository paths: none\n\
+             \n\
+             Bare names read as root files: none\n\
              \n\
              DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.\n\
              US1:\n  \
@@ -207,6 +219,7 @@ mod tests {
             overlap: &overlap,
             unread: &[],
             not_paths: &[],
+            bare_roots: &[],
             drafts: &[],
         });
         assert!(
@@ -238,6 +251,7 @@ mod tests {
             overlap: &Overlap::default(),
             unread: &[],
             not_paths: &not_paths,
+            bare_roots: &[],
             drafts: &[],
         });
         assert!(
@@ -245,6 +259,41 @@ mod tests {
                 "\nNames that are not repository paths:\n  \
                  T010: crates/b/**, crates/c/**\n  \
                  T011: specs/NNN-name/tasks.md\n\n"
+            ),
+            "{text}"
+        );
+    }
+
+    /// ADR 0049 rule C: each task's bare words read as root files, by task
+    /// id, right after the names that are no repository path.
+    #[test]
+    fn bare_names_read_as_root_files_are_listed_by_task() {
+        let list = parse("- [ ] T004 x\n- [ ] T065 y\n");
+        let bare_roots = [
+            (
+                "T004".to_owned(),
+                vec!["AGENTS.md".to_owned(), "CLAUDE.md".to_owned()],
+            ),
+            (
+                "T065".to_owned(),
+                vec!["sonar-project.properties".to_owned()],
+            ),
+        ];
+        let text = render(&Report {
+            tasks_path: "t.md",
+            list: &list,
+            overlap: &Overlap::default(),
+            unread: &[],
+            not_paths: &[],
+            bare_roots: &bare_roots,
+            drafts: &[],
+        });
+        assert!(
+            text.contains(
+                "Names that are not repository paths: none\n\n\
+                 Bare names read as root files:\n  \
+                 T004: AGENTS.md, CLAUDE.md\n  \
+                 T065: sonar-project.properties\n\n"
             ),
             "{text}"
         );

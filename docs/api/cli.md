@@ -855,7 +855,8 @@ repository's own setup command, or `true`, in its place.
 
 ### `teamwire speckit draft <tasks.md> [--repo <dir>] [--exclude PATTERN]...`
 
-Reads a spec-kit `tasks.md` and prints text (ADR 0044, ADR 0047). It writes no file
+Reads a spec-kit `tasks.md` and prints text (ADR 0044, ADR 0047, ADR 0048,
+ADR 0049). It writes no file
 and no store row, and has no `--json`. `--repo` is the repository to search,
 by default the git top level of the folder that holds `tasks.md`.
 `--exclude PATTERN`, repeated, takes one glob each, as `amend --owns` does,
@@ -877,10 +878,26 @@ is not a valid glob is a usage error, exit 3.
   the end of exactly one tracked path, at a `/`, is that path:
   `cmd/send.rs` is `crates/teamwire-cli/src/cmd/send.rs` when no other
   tracked file ends in `/cmd/send.rs`. A word that ends several tracked
-  paths, or none, is no path. A word with no `/` is a path only when it names a tracked file
-  at the repository's root, such as `README.md`, so `knit.progress` and a
-  bare `lib.rs` are not. A `:N` or `:N-M` line suffix is dropped, so
-  `crates/x/src/send.rs:297-321` is `crates/x/src/send.rs`. A URL, a
+  paths, or none, is no path.
+- A word that is not tracked, that a tracked folder would take as a new
+  file, and that one or more tracked paths end has two readings, so it is
+  no path (ADR 0049). In teamwire's repository `tests/preset.rs` could be a
+  new file in the root `tests/` or the tracked
+  `crates/teamwire-cli/tests/preset.rs`. It is printed under `Names that are
+  not repository paths` as `tests/preset.rs (also ends
+  crates/teamwire-cli/tests/preset.rs)`, or `(also ends <first> and <n>
+  more)` when it ends several, with the first in sorted order. It counts in
+  the overlap as a word that does not resolve does, and goes in no list.
+- A word with no `/` is a path only when it names a tracked file at the
+  repository's root, such as `README.md`, so `knit.progress` and a bare
+  `lib.rs` are not. Each such word is also printed under `Bare names read
+  as root files` (ADR 0049), because a bare name may mean a file in a
+  folder the task names earlier in the line.
+- A `:N` or `:N-M` line suffix, or a list of them such as `:718,852` or
+  `:13-48,84-115`, is dropped, so `crates/x/src/send.rs:297-321` is
+  `crates/x/src/send.rs`. A trailing `'s` or `’s` is dropped too, so
+  `contracts/amend-cli.md's` is `contracts/amend-cli.md` (ADR 0049). Both
+  come off before the code rule below. A URL, a
   placeholder such as `<role>.md`, a route such as `"/agui/deck_editor"`
   and a word made only of `/` and `.` are not paths. Outside backticks the
   extension needs two characters, so `e.g.` is no path. A brace set such as
@@ -911,6 +928,10 @@ which no list holds, so the lead can check it for a new file in a new
 folder. A word that only does not resolve, such as a file in a folder the
 feature creates, still counts in the overlap table and the two task lines,
 so two tasks that write it share it; code counts nowhere. Then
+`Bare names read as root files:`, in the same shape, with each word with no
+`/` that resolved to a root file, such as `T004: AGENTS.md, CLAUDE.md`.
+These words stay in the overlap and the lists. The lead checks each,
+because the task may mean a file of that name in a folder it names. Then
 `DRAFT owns lists. Check each one before you launch: these are drafts, not final lists.`
 and one list per story, then `Setup and polish:`. An empty part reads
 `none`. Each list holds its task paths, `(task path)`, then every tracked
@@ -918,14 +939,19 @@ file outside the feature folder that names one of them:
 
 | Reason | Match |
 | --- | --- |
-| `names path <path>` | the exact path, as a whole token or right after a `/` (`./apps/x.py`, `$ROOT/apps/x.py`) |
-| `names module <a.b>` | a dotted suffix of the path without its extension, of at least two plain parts, such as `harness.tools` for `apps/ai/harness/tools.py` |
+| `names path <path>` | the exact path, as a whole token or right after a `/` (`./apps/x.py`, `$ROOT/apps/x.py`), for a path that holds a `/` |
+| `names path <link>` | for a root file, such as `AGENTS.md`, only one or more `./` or `../` segments right before the name that lead from the folder of the file that holds them to the root: `../../AGENTS.md` in `apps/ai/CLAUDE.md`, `./AGENTS.md` in `README.md`. The link is printed as written (ADR 0049) |
+| `names module <a.b>` | for a `.py` path, a dotted suffix of the path without its extension, of at least two plain parts, such as `harness.tools` for `apps/ai/harness/tools.py`, on at least one line that is not an import line. The whole line decides: a line that imports the module or a module under it, such as `import M`, `import a, M`, `from M import X`, `from M.sub import Y` or `from P import N` where `P.N` is `M`, holds no match that counts, even in a comment after the import. A comment or a string on its own line, a doc or a line of `.importlinter` counts (ADR 0049) |
 | `names path <partial path>` | a partial path that holds a `/` and ends the task path, as a whole token, when the task path's file name has an extension (so `x/Makefile` never names `crates/x/Makefile`), printed without a leading `./` (`harness/tools.py` for `apps/ai/harness/tools.py`, not `other/tools.py`) |
 | `CI paths glob <glob>` | an `on.<event>.paths` entry of a `.github/workflows/*.yml` or `*.yaml` file that matches the path |
 
 A bare stem such as `tools` never matches, and neither does the bare file
 name such as `tools.py` or `lib.rs` on its own (ADR 0048): a real
-repository holds many files of one name. A workflow the YAML reader
+repository holds many files of one name. For the same reason a root file is
+never matched by its bare name, by `@AGENTS.md` or by a path to a nested
+file such as `apps/ai/AGENTS.md` (ADR 0049), and a file that only imports a
+changed module is not listed. Grep for a changed root file's name, and for a
+renamed or removed name, yourself. A workflow the YAML reader
 refuses, such as one with an anchor, is listed under `Unread workflows` with
 the reason, never counted as matching nothing. A missing or unreadable
 `tasks.md`, one with no task lines, a folder outside git with no `--repo`,
