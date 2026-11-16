@@ -81,9 +81,26 @@ behaviour.
    | MCP-3 (the inbox resource is deferred, `docs/api/mcp.md`) | this ADR |
    | SEC-3 (pi members load the lead package, which does nothing there, `crates/teamwire-harness-pi/src/lead_extension.rs:1-3`) | ADR 0030, consequences; this ADR |
 
+3. **A failure-mode row follows the code.** In `docs/failure-modes.md`, the
+   row "A whole-team close fails after its places are closed" no longer says
+   the watch reports `DIED` for every member. The watch never looks at a
+   member whose result was delivered (`crates/teamwire-watch/src/plan.rs:356-360`),
+   and `DIED` needs three absent polls in a row
+   (`crates/teamwire-watch/src/plan.rs:495-511`) with a usable host listing
+   (`crates/teamwire-watch/src/observe.rs:66-72`). WAT-6 and ADR 0043
+   decision 7 call that settling deliberate.
+
 ## Consequences
 
 - No existing file under `docs/adr/` changes. A reader of an old ADR finds
   the replacement here.
 - The comment at the top of `crates/teamwire-msg/src/inbox.rs` no longer
   calls `inbox` and `ack` the only way to reach `acked`.
+- This ADR covers only sentences where the code is right on purpose. It
+  leaves alone the re-audit rows where the code should change, and the
+  questions the user decides: ADR 0025 point 10 (whether an AFK closer runs
+  the full gate) and PAR-9 (whether AFK runs ship for Codex and pi leads).
+- The same failure-mode row still says the team is set back to `open`. When
+  the final store write fails, the code can leave the team `closing`
+  instead. That is a code question, so this ADR does not change the row's
+  words about it.
