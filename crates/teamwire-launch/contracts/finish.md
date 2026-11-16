@@ -24,6 +24,12 @@ a teammate's message that changes your result. Put what you did in the
 summary, such as the pull request URL. Running it again is the only
 way the parent hears about the new result.
 
+A teamwire message that reaches you after you recorded your completion
+and stopped, from the parent, the user or a teammate, starts a new turn
+that the parent's watch follows, even when the message asks for nothing.
+Record your completion again before you stop, with what you did or why
+nothing changed. Without it the watch reports you as silent.
+
 NEVER write anything into the team's outbox/ directory ({outbox_dir}).
 That path belongs to teamwire and is rewritten when you finish, so
 anything you put there is destroyed.

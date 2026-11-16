@@ -44,8 +44,12 @@ pub(crate) fn gap_note(gaps: &ReportGaps, report: &Path, next: &str) -> String {
 
 /// What a member held at its stop for unread messages does next. A message
 /// can change a result the member already recorded, and only a new `done`
-/// carries the change to the lead.
-pub(crate) const READ_THEN_STOP: &str = "If one changes your result, update your report and record done again; otherwise stop, and a result you already recorded goes to the lead.";
+/// carries the change to the lead. A message to a member that already
+/// finished starts a new generation (ADR 0043), and the watch waits for a
+/// result in it, so such a member records `done` again even when nothing
+/// changed. The note says "turn" because a member does not see generations;
+/// a second `done` in one generation does no harm.
+pub(crate) const READ_THEN_STOP: &str = "If one changes your result, update your report and record done again; otherwise stop, and a result you recorded in this turn goes to the lead. If you recorded no result in this turn, record done again before you stop, even when nothing changed.";
 
 /// The reminder of unread messages, with the tool and the command that read
 /// them. The tool comes first: a member's shell may have no `teamwire` on its
