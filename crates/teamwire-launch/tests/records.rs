@@ -162,10 +162,10 @@ impl Host for SpawnWatch {
         self.inner.capabilities()
     }
     fn spawn(&self, req: &SpawnRequest, timeout: Duration) -> Result<Place, HostError> {
-        self.at_first_spawn
-            .lock()
-            .unwrap()
-            .get_or_insert_with(|| self.folder.is_dir());
+        // A poisoned lock leaves `None`, which fails the test's assert.
+        if let Ok(mut seen) = self.at_first_spawn.lock() {
+            seen.get_or_insert_with(|| self.folder.is_dir());
+        }
         self.inner.spawn(req, timeout)
     }
     fn submit(&self, place: &Place, text: &OneLine, timeout: Duration) -> Result<(), HostError> {
