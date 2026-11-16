@@ -1985,9 +1985,16 @@ fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
         );
     }
     let skill = example("skills/afk/SKILL.md");
-    assert!(skill.contains("repository's full gate on each branch"));
     assert!(!skill.contains("local gate its task names on each branch"));
     let afk = flat(&skill);
+    // The closer contract runs the local gate only on each head that ships:
+    // a branch that no integrator joins, and the joined branch.
+    assert!(
+        afk.contains(
+            "the full gate on each branch that no integrator joins and on the joined branch"
+        ),
+        "{afk}"
+    );
     assert!(
         afk.contains(
             "Its `Local gate:` slot holds the full gate, such as `scripts/gate.sh`, and its \
