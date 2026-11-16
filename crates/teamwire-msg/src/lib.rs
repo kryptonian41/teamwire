@@ -125,6 +125,12 @@ pub struct RecipientReport {
     pub reason: Option<DeliveryErrorCode>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub attempts: Option<u32>,
+    /// A `skipped` recipient that another command may still be delivering:
+    /// this command lost the row to it, or the row's latest attempt began
+    /// under 60 s ago with no outcome since. The CLI prints `SKIPPED` for it
+    /// and exits 5 (MSG-5). False for a row that was already reached.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub busy: bool,
 }
 
 /// The output of `team_send` and `team_resend` (`docs/api/mcp.md`).

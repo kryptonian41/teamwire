@@ -150,3 +150,31 @@ fn a_report_heading_may_leave_out_the_comma() {
     );
     assert!(refusals(&mut rig).is_empty());
 }
+
+#[test]
+fn a_heading_that_only_contains_a_name_does_not_count() {
+    for (name, heading, near) in [
+        ("Verified", "Verified", "Not verified"),
+        ("Risks", "Risks", "No risks"),
+        ("Cost", "Cost", "Costume"),
+        ("The result", "THE RESULT", "THE RESULT SO FAR"),
+    ] {
+        let mut rig = afk_rig();
+        let text = FULL.replace(&format!("## {heading}\n"), &format!("## {near}\n"));
+        assert_ne!(text, FULL, "{name}: the fixture holds `## {heading}`");
+        rig.team_file("afk/REPORT.md", &text);
+        let why = refusals(&mut rig);
+        assert_eq!(why.len(), 1, "{near}: {why:?}");
+        assert!(why[0].ends_with(&format!("for: {name}")), "{near}: {why:?}");
+    }
+}
+
+#[test]
+fn a_heading_may_carry_a_number_and_trailing_spaces() {
+    let mut rig = afk_rig();
+    let text = FULL
+        .replace("## Verified\n", "## 4. Verified  \n")
+        .replace("## Cost\n", "### 8) Cost\n");
+    rig.team_file("afk/REPORT.md", &text);
+    assert!(refusals(&mut rig).is_empty());
+}

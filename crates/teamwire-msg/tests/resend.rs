@@ -549,3 +549,65 @@ fn a_held_message_is_not_resent() {
     );
     assert_eq!(submits(&rig), typed, "nothing is typed");
 }
+
+fn report_of<'r>(report: &'r SendReport, name: &str) -> &'r teamwire_msg::RecipientReport {
+    report.deliveries.iter().find(|d| d.to == to(name)).unwrap()
+}
+
+#[test]
+fn a_row_another_command_holds_is_busy_and_a_reached_one_is_not() {
+    // Lost to another command at the claim.
+    let mut rig = team_rig();
+    let display = tried_once(&mut rig, DeliveryState::Undelivered);
+    trigger(
+        &mut rig,
+        "CREATE TRIGGER web_moved AFTER UPDATE ON deliveries
+         WHEN NEW.recipient = 'api'
+         BEGIN UPDATE deliveries SET attempts = attempts + 1 WHERE recipient = 'web'; END;",
+    );
+    let report = resend(&mut rig.ctx(), &Actor::Lead, &display, None).unwrap();
+    let web = report_of(&report, "web");
+    assert_eq!((web.state, web.busy), (RecipientState::Skipped, true));
+    assert!(!report_of(&report, "api").busy);
+
+    // Still pending from an attempt that began under 60 s ago.
+    let mut rig = team_rig();
+    let at = rig.now();
+    let new = NewMessage {
+        sender: Actor::parse("scout").unwrap(),
+        kind: MessageType::Finding,
+        re: None,
+        commit: None,
+        body: "x".to_owned(),
+        client_key: None,
+        recipients: vec![to("api"), to("web")],
+    };
+    let stored = rig.store.write(|tx| tx.insert_message(at, &new)).unwrap();
+    let failed = teamwire_store::DeliveryUpdate {
+        state: DeliveryState::Undelivered,
+        route: None,
+        error: Some(teamwire_core::DeliveryError::new(
+            DeliveryErrorCode::HostStalled,
+            "x",
+        )),
+        attempts: 1,
+    };
+    rig.store
+        .write(|tx| tx.set_delivery_state(at, &stored.message.ulid, &to("api"), &failed))
+        .unwrap();
+    rig.clock.advance(Duration::from_secs(10));
+    let display = stored.message.display_id;
+    let report = resend(&mut rig.ctx(), &Actor::Lead, &display, None).unwrap();
+    let web = report_of(&report, "web");
+    assert_eq!((web.state, web.busy), (RecipientState::Skipped, true));
+    assert_eq!(submits(&rig), 1);
+
+    // Already reached: skipped, and nobody is delivering it.
+    let mut rig = team_rig();
+    let display = tried_once(&mut rig, DeliveryState::HandedOff);
+    let report = resend(&mut rig.ctx(), &Actor::Lead, &display, None).unwrap();
+    let web = report_of(&report, "web");
+    assert_eq!((web.state, web.busy), (RecipientState::Skipped, false));
+    let json = serde_json::to_value(web).unwrap();
+    assert!(json.get("busy").is_none(), "{json}");
+}

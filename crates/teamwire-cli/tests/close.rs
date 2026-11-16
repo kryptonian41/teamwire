@@ -392,6 +392,59 @@ fn a_step_that_fails_is_exit_two_with_the_state_intact_and_a_rerun_finishes() {
     assert_eq!(rerun.code, 0, "{}{}", rerun.out, rerun.err);
 }
 
+/// Runs `sql` on the team's store, as a write. Tests use it to make the store
+/// refuse a write the close needs.
+fn alter_store(rig: &Rig, sql: &str) {
+    let mut store =
+        Store::open_existing(rig.home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
+    store
+        .write(|tx| tx.connection().execute_batch(sql).map_err(Into::into))
+        .unwrap();
+}
+
+#[test]
+fn a_close_that_cannot_give_its_lock_back_says_so_and_names_the_way_past() {
+    let rig = Rig::new();
+    rig.launch(&pane_spec(rig.work.path()));
+    // The store refuses to put a closing team back to `open`, so the close
+    // cannot give its lock back after a step fails.
+    alter_store(
+        &rig,
+        "CREATE TRIGGER keep_closing BEFORE UPDATE OF state ON team \
+         WHEN OLD.state = 'closing' AND NEW.state = 'open' \
+         BEGIN SELECT RAISE(ABORT, 'the disk is full'); END;",
+    );
+    // The archive's parent is a file, so the archive step fails.
+    let blocker = rig.work.path().join("blocker");
+    std::fs::write(&blocker, "a file\n").unwrap();
+    let inside = blocker.join("archives");
+    let run = rig.teamwire(
+        &["close", "alpha", "--archive-to", inside.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(run.code, 2, "{}{}", run.out, run.err);
+    assert_eq!(rig.team_state(), TeamState::Closing);
+    assert!(
+        run.err.contains(
+            "close stopped at archive, and the close lock could not be given back, so the \
+             team is still closing and a new close is refused; fix that, then run `teamwire \
+             close alpha --clear-stale-lock` and then `teamwire close alpha` again"
+        ),
+        "{}",
+        run.err
+    );
+    assert!(!run.err.contains("open again"), "{}", run.err);
+
+    // The store takes writes again. The commands the message named finish
+    // the close.
+    alter_store(&rig, "DROP TRIGGER keep_closing;");
+    let cleared = rig.teamwire(&["close", "alpha", "--clear-stale-lock"], None);
+    assert_eq!(cleared.code, 0, "{}{}", cleared.out, cleared.err);
+    assert_eq!(rig.team_state(), TeamState::Open);
+    let rerun = rig.teamwire(&["close", "alpha"], None);
+    assert_eq!(rerun.code, 0, "{}{}", rerun.out, rerun.err);
+}
+
 #[test]
 fn keep_state_leaves_the_directory_and_archive_to_names_the_parent() {
     let rig = Rig::new();

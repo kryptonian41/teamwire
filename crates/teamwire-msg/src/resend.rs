@@ -8,7 +8,9 @@ use teamwire_core::{
 use teamwire_deliver::AttemptHistory;
 use teamwire_store::{Ctx, DeliveryRecord};
 
-use crate::attempt::{bump_again, claim_attempt, deliver_one, earlier_bump, is_held, skipped};
+use crate::attempt::{
+    bump_again, busy, claim_attempt, deliver_one, earlier_bump, is_held, skipped,
+};
 use crate::remote::{Try, deliver_to_team};
 use crate::send::{by_other_team, read_team, record_refusal, survive_error, team_name};
 use crate::{RecipientReport, SendError, SendReport};
@@ -16,7 +18,8 @@ use crate::{RecipientReport, SendError, SendReport};
 /// Retries `id` to its `undelivered`, `unconfirmed` or stale `pending`
 /// recipients, or only to those named in `to`. Only the sender or the lead
 /// may resend. A recipient that was reached, or is not yet resendable, is
-/// reported as `skipped`.
+/// reported as `skipped`. One that another command may still be delivering,
+/// a `pending` row it is typing or a row it claimed first, is also `busy`.
 pub fn resend(
     ctx: &mut Ctx<'_>,
     actor: &Actor,
@@ -103,7 +106,13 @@ pub fn resend(
     let mut deliveries: Vec<RecipientReport> = Vec::new();
     for row in rows.iter().filter(|r| wanted(r)) {
         if !is_chosen(row) {
-            deliveries.push(skipped(row));
+            // A `pending` row that is not chosen began its latest attempt
+            // under 60 s ago: another command is still delivering it.
+            deliveries.push(if row.delivery.state == DeliveryState::Pending {
+                busy(row)
+            } else {
+                skipped(row)
+            });
             continue;
         }
         if row.delivery.recipient.other_team().is_some() {
@@ -117,7 +126,7 @@ pub fn resend(
         for row in group.iter().copied().filter(|r| is_chosen(r)) {
             match claim_attempt(ctx, actor, &message, row) {
                 Ok(Some(attempts)) => tries.push(Try { row, attempts }),
-                Ok(None) => deliveries.push(skipped(row)),
+                Ok(None) => deliveries.push(busy(row)),
                 Err(e) => deliveries.push(survive_error(Err(e), row, row.delivery.attempts + 1)?),
             }
         }
@@ -162,7 +171,7 @@ fn resendable(
 
 /// One more attempt for one row: the attempt is claimed, counted and written
 /// as `delivery.resent` first, then the line is delivered. A row another
-/// command claimed first is `skipped`.
+/// command claimed first is `skipped` and `busy`.
 fn retry(
     ctx: &mut Ctx<'_>,
     actor: &Actor,
@@ -173,7 +182,7 @@ fn retry(
     let recipient = &row.delivery.recipient;
     let before = row.delivery.state;
     let Some(attempts) = claim_attempt(ctx, actor, message, row)? else {
-        return Ok(skipped(row));
+        return Ok(busy(row));
     };
     // A reprompt that failed cleanly was undone, so its next try starts the
     // generation again. One that may have arrived kept its generation. One

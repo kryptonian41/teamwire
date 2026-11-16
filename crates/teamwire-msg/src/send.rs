@@ -13,8 +13,8 @@ use teamwire_deliver::watch_lease_is_dead;
 use teamwire_store::{Ctx, DeliveryRecord, NewMessage, StoreError, TeamRow, Tx};
 
 use crate::attempt::{
-    Bumped, Waking, bump, bump_again, claim_attempt, deliver_one, earlier_bump, hold, is_held,
-    report_of, skipped, waking,
+    Bumped, Waking, bump, bump_again, busy, claim_attempt, deliver_one, earlier_bump, hold,
+    is_held, report_of, waking,
 };
 use crate::remote::{Try, deliver_to_team};
 use crate::{RecipientReport, RecipientState, SendError, SendReport, rules};
@@ -154,7 +154,7 @@ pub fn send_with_write(
             }
             match claim_attempt(ctx, &actor, &message, row) {
                 Ok(Some(attempts)) => tries.push(Try { row, attempts }),
-                Ok(None) => deliveries.push(skipped(row)),
+                Ok(None) => deliveries.push(busy(row)),
                 Err(e) => deliveries.push(survive_error(Err(e), row, row.delivery.attempts + 1)?),
             }
         }
@@ -243,7 +243,7 @@ fn try_recipient(
     let state = record.delivery.state;
     let attempts = if duplicate {
         let Some(attempts) = claim_attempt(ctx, actor, message, record)? else {
-            return Ok(skipped(record));
+            return Ok(busy(record));
         };
         attempts
     } else {
@@ -311,6 +311,7 @@ pub(crate) fn survive_error(
         state,
         reason,
         attempts: Some(attempts),
+        busy: false,
     })
 }
 

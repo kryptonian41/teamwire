@@ -709,3 +709,110 @@ fn a_resend_that_fails_in_the_other_teams_store_leaves_its_row_there() {
     );
     assert!(store_errors(&t.rig.store).is_empty());
 }
+
+#[test]
+fn a_resend_that_loses_a_row_in_another_team_to_another_command_marks_it_busy() {
+    let mut t = two_teams();
+    let at = t.rig.now();
+    let stored = t
+        .rig
+        .store
+        .write(|tx| {
+            tx.insert_message(
+                at,
+                &NewMessage {
+                    sender: Actor::Member(role("api")),
+                    kind: MessageType::Finding,
+                    re: None,
+                    commit: None,
+                    body: "two of beta".to_owned(),
+                    client_key: None,
+                    recipients: vec![to("db@beta"), to("scout@beta")],
+                },
+            )
+        })
+        .unwrap();
+    t.rig.clock.advance(Duration::from_secs(61));
+    // While this resend claims db's row, another command moves scout's row.
+    t.rig
+        .store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER scout_moved AFTER UPDATE ON deliveries
+                     WHEN NEW.recipient = 'db@beta'
+                     BEGIN UPDATE deliveries SET attempts = attempts + 1
+                     WHERE recipient = 'scout@beta'; END;",
+                )
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let actor = Actor::Member(role("api"));
+    let report = resend(&mut t.rig.ctx(), &actor, &stored.message.display_id, None).unwrap();
+    let of = |name: &str| {
+        report
+            .deliveries
+            .iter()
+            .find(|d| d.to == to(name))
+            .unwrap()
+            .clone()
+    };
+    let scout = of("scout@beta");
+    assert_eq!((scout.state, scout.busy), (RecipientState::Skipped, true));
+    assert!(!of("db@beta").busy);
+    assert!(t.typed("scout").is_empty());
+}
+
+#[test]
+fn a_resume_by_key_that_loses_a_row_in_another_team_marks_it_busy() {
+    let mut t = two_teams();
+    let at = t.rig.now();
+    t.rig
+        .store
+        .write(|tx| {
+            tx.insert_message(
+                at,
+                &NewMessage {
+                    sender: Actor::Member(role("api")),
+                    kind: MessageType::Finding,
+                    re: None,
+                    commit: None,
+                    body: "two of beta".to_owned(),
+                    client_key: Some("k-1".to_owned()),
+                    recipients: vec![to("db@beta"), to("scout@beta")],
+                },
+            )
+        })
+        .unwrap();
+    t.rig.clock.advance(Duration::from_secs(61));
+    // While the resume claims db's row, another command moves scout's row.
+    t.rig
+        .store
+        .write(|tx| {
+            tx.connection()
+                .execute_batch(
+                    "CREATE TRIGGER scout_moved AFTER UPDATE ON deliveries
+                     WHEN NEW.recipient = 'db@beta'
+                     BEGIN UPDATE deliveries SET attempts = attempts + 1
+                     WHERE recipient = 'scout@beta'; END;",
+                )
+                .map_err(Into::into)
+        })
+        .unwrap();
+    let mut req = t.rig.request(
+        "api",
+        &["db@beta", "scout@beta"],
+        MessageType::Finding,
+        "two of beta",
+    );
+    req.client_key = Some("k-1".to_owned());
+    let report = send(&mut t.rig.ctx(), req).unwrap();
+    assert!(report.duplicate_of_key);
+    let scout = report
+        .deliveries
+        .iter()
+        .find(|d| d.to == to("scout@beta"))
+        .unwrap();
+    assert_eq!((scout.state, scout.busy), (RecipientState::Skipped, true));
+    assert!(t.typed("scout").is_empty());
+}
