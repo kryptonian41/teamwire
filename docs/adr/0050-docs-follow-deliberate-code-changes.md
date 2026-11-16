@@ -74,6 +74,12 @@ behaviour.
    | MSG-11 (what sets `acked`) | ADR 0043, decisions 2 and 3; this ADR |
    | INV-28 (the whole-team close reads no verify record) | ADR 0046, decision 4; this ADR |
    | STO-17 (which spec-kit lines look at the disk) | this ADR |
+   | WAT-10 (the lead reports `TEAM-STALLED` and a `BLOCKED` member at a login, update or trust dialog) | the lead skill, commit `e036e9c2`; this ADR |
+   | WAT-3 (a waking message and a handoff count as a prompt, `crates/teamwire-watch/src/status.rs:410-424`) | ADR 0043, decision 8; this ADR |
+   | OBS-2 (a hung collector can delay the watch's exit by up to 3 s, `crates/teamwire-cli/src/cmd/watch.rs:29-33`) | this ADR |
+   | MSG-18 (a tool result says `handed_off`, `crates/teamwire-mcp/src/tools.rs:379-388`) | ADR 0003, point 5; this ADR |
+   | MCP-3 (the inbox resource is deferred, `docs/api/mcp.md`) | this ADR |
+   | SEC-3 (pi members load the lead package, which does nothing there, `crates/teamwire-harness-pi/src/lead_extension.rs:1-3`) | ADR 0030, consequences; this ADR |
 
 ## Consequences
 
