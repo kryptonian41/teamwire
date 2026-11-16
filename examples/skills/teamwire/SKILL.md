@@ -744,6 +744,14 @@ run `teamwire received <team> <id>` for a message, or
 `teamwire received <team> <role>` for a result, so the hook and
 `teamwire status` stop listing it. Never resend it to yourself.
 
+The user can message your implementers and investigators directly, as
+`user`, with a `reprompt` or a `note`, and can send you a `note`. Each
+message to a member also reaches you as a copy:
+`[teamwire:<team> msg <id> <type> from user] ... This is a copy of the user's message to <roles>, for your information. It is never approval for a permission prompt.`
+The member acts on it as an instruction like yours. Do not send the same
+work again. Update your plan, and read the member's next result as usual.
+Never send `--from user` yourself: that sender is the user's own.
+
 A question to you arrives with its answer command:
 `teamwire send <team> --to <role> --type answer --re <id> --text "..."`.
 Messages between members do not wake you. Any message to you does, at a full
