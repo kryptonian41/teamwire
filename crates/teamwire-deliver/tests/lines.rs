@@ -516,7 +516,10 @@ fn a_reprompt_line_names_the_held_messages_after_its_text() {
         "{text}"
     );
     assert!(
-        text.ends_with("m019 (note from lead), and 2 more. Read them with teamwire inbox."),
+        text.ends_with(
+            "m019 (note from lead), and 2 more. \
+             Read them with the team_inbox tool or the inbox command your contract names."
+        ),
         "{text}"
     );
     assert!(!text.contains("m020"), "{text}");

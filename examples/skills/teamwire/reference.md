@@ -533,8 +533,9 @@ it. Then cut the implementer's branch from that branch.
   > questions. Send no question message, and never decide a spec-kit
   > question yourself, even when no answer has come. Write the questions
   > under the heading 'Questions for the parent' in your report, record
-  > `teamwire done --status blocked --summary "N questions for the parent. ..."`
-  > with your count (`1 question for the parent.` for one), and stop until
+  > your completion with status `blocked` and the summary
+  > `N questions for the parent. ...` with your count
+  > (`1 question for the parent.` for one), and stop until
   > the lead reprompts you with the answers.
 - **Checklists.** `specify` writes `checklists/requirements.md` itself and
   ticks each item that passes its validation. An item stays unticked while

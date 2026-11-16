@@ -1073,6 +1073,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
             .contains("> At spec-kit's question stops, this brief replaces your seat's rule on"),
         "the reference lacks the override line"
     );
+    // A member's shell may have no `teamwire` on its PATH, so the override
+    // line, which the spec member reads, names the completion, not a bare
+    // command. The quote marks that start each line of the block are dropped.
+    let unquoted = flat.replace(" > ", " ");
+    let (_, override_line) = unquoted
+        .split_once("At spec-kit's question stops,")
+        .unwrap();
+    let (override_line, _) = override_line
+        .split_once("reprompts you with the answers.")
+        .unwrap();
+    assert!(
+        override_line.contains(
+            "record your completion with status `blocked` and the summary \
+             `N questions for the parent. ...` with your count"
+        ) && !override_line.contains("teamwire done"),
+        "the override line names a bare teamwire: {override_line}"
+    );
     assert!(
         skill.contains("Spec-kit's `specs/` folder"),
         "the skill does not say where spec-kit's files go"
