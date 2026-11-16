@@ -206,7 +206,7 @@ What each guarantee rests on:
 | Ids never repeat | ULID plus counter rows under the write lock | MSG-4 |
 | Gaps are visible | Per-sender `seq` assigned in the insert transaction | MSG-6 |
 | Content is unchanged | SHA-256 checked on every read and by `verify` | MSG-7 |
-| "Read" is never claimed falsely | Only the recipient's own `inbox` or `ack` sets `acked` | MSG-11 |
+| "Read" is never claimed falsely | Only the recipient's own action sets `acked`: `inbox`, `ack`, the lead's `teamwire received <id>`, or an answer to the message | MSG-11, DEL-19 |
 | No wrong-session typing | Two agreeing views, checked again right before the send | DEL-1..DEL-5, INV-1 |
 | No forged lines | Every agent-supplied string is one printable line, capped | DEL-11, INV-20 |
 
