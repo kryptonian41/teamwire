@@ -310,3 +310,28 @@ fn a_root_file_is_named_only_by_a_relative_link_to_the_root() {
         assert!(entry(&out, setup, file).is_none(), "{file}: {out}");
     }
 }
+
+/// Rule C: each bare task word that resolves to a root file is printed by
+/// task, and it still counts in the overlap and the drafts.
+#[test]
+fn a_bare_task_word_read_as_a_root_file_is_printed() {
+    let repo = repo();
+    let out = draft(repo.path());
+    assert_eq!(
+        block(&out, "Bare names read as root files:"),
+        [
+            "  T001: AGENTS.md, CLAUDE.md",
+            "  T008: AGENTS.md, sonar-project.properties",
+        ],
+        "{out}"
+    );
+    let shared = block(&out, "Shared files between phases:");
+    assert!(
+        shared.contains(&"  Phase 1 and Phase 4: AGENTS.md"),
+        "{out}"
+    );
+    assert!(
+        entry(&out, "Setup and polish", "AGENTS.md").is_some_and(|l| l.ends_with("(task path)")),
+        "{out}"
+    );
+}

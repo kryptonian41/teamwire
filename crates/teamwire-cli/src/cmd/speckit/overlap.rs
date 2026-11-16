@@ -42,6 +42,10 @@ pub(crate) struct Expanded {
     /// folder's files land here, so they still count in the overlap, though
     /// no draft holds them. Code counts nowhere.
     pub(crate) unresolved: Vec<String>,
+    /// The words with no `/` that resolved to a root file, each once
+    /// (ADR 0049 rule C). They stay in `paths`. The lead checks each,
+    /// since a bare name may mean a file in a folder the task names.
+    pub(crate) bare_roots: Vec<String>,
 }
 
 /// How one word reads against the tracked files.
@@ -86,6 +90,9 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Expanded {
             Read::Paths(found) => {
                 for p in &found {
                     add(&mut out.paths, p);
+                }
+                if !word.contains(['/', '*']) {
+                    add(&mut out.bare_roots, word);
                 }
             }
             Read::Code if word.contains('/') => add(&mut out.not_paths, word),
@@ -484,5 +491,17 @@ mod tests {
             ])
         );
         assert_eq!(got.unresolved, strings(&["tests/preset.rs", "tests/x.rs"]));
+    }
+
+    /// ADR 0049 rule C: a bare word that names a root file stays a path and
+    /// is also kept for the lead. A word with a `/`, a glob and a bare word
+    /// that names no root file are not kept.
+    #[test]
+    fn a_bare_word_read_as_a_root_file_is_kept_for_the_lead() {
+        let tracked = strings(&["AGENTS.md", "README.md", "apps/x.rs"]);
+        let words = strings(&["AGENTS.md", "lib.rs", "apps/x.rs", "*.md", "AGENTS.md"]);
+        let got = expand(&words, &tracked);
+        assert_eq!(got.bare_roots, strings(&["AGENTS.md"]));
+        assert_eq!(got.paths, strings(&["AGENTS.md", "apps/x.rs", "README.md"]));
     }
 }

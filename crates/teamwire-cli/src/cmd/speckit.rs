@@ -83,6 +83,8 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
     let mut shared: Vec<Vec<String>> = Vec::new();
     // Each task's words that are no repository path, for the lead to check.
     let mut not_paths: Vec<(String, Vec<String>)> = Vec::new();
+    // Each task's bare words read as root files, for the lead to check.
+    let mut bare_roots: Vec<(String, Vec<String>)> = Vec::new();
     for task in &list.tasks {
         let read = overlap::expand(&task.paths, &tracked);
         let mut counted = read.paths.clone();
@@ -90,6 +92,9 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         shared.push(counted);
         if !read.not_paths.is_empty() {
             not_paths.push((task.id.clone(), read.not_paths));
+        }
+        if !read.bare_roots.is_empty() {
+            bare_roots.push((task.id.clone(), read.bare_roots));
         }
         paths.push(read.paths);
     }
@@ -110,6 +115,7 @@ fn draft(args: &SpeckitDraftArgs, _global: &Global, wiring: &Wiring) -> ExitCode
         overlap: &overlap,
         unread: &found.unread,
         not_paths: &not_paths,
+        bare_roots: &bare_roots,
         drafts: &drafts,
     }));
     ExitCode::SUCCESS
