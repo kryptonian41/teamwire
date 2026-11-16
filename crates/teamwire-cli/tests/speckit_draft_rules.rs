@@ -241,3 +241,32 @@ fn a_partial_path_with_two_readings_is_no_path() {
         "{out}"
     );
 }
+
+/// Rule A: a file that names `shared.db.enums` only on import lines is not
+/// added. A file that also names it in a comment is, and so is the import
+/// linter config that names the module on its own line. A task path that
+/// is not Python, such as `agents/x/prompts/system.md`, has no module name.
+#[test]
+fn a_module_counts_only_outside_import_lines_and_only_for_python() {
+    let repo = repo();
+    let out = draft(repo.path());
+    for file in [
+        "apps/ai/x/only_import.py",
+        "apps/ai/x/import_as.py",
+        "apps/ai/x/import_list.py",
+        "apps/ai/live_turn.py",
+    ] {
+        assert!(!out.contains(file), "{file}: {out}");
+    }
+    assert!(
+        entry(&out, "US1", "apps/ai/x/commented.py")
+            .is_some_and(|l| l.ends_with("(names module shared.db.enums)")),
+        "{out}"
+    );
+    assert!(
+        entry(&out, "US1", "apps/ai/.importlinter").is_some_and(
+            |l| l.ends_with("(names module gateway.agent_sessions.schemas.agent_sessions)")
+        ),
+        "{out}"
+    );
+}

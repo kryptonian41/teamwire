@@ -20,6 +20,8 @@ use crate::{Global, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, USAGE};
 // Paths, as `doctor_speckit.rs` attaches its parts.
 #[path = "speckit/mentions.rs"]
 mod mentions;
+#[path = "speckit/module.rs"]
+mod module;
 #[path = "speckit/overlap.rs"]
 mod overlap;
 #[path = "speckit/parse.rs"]

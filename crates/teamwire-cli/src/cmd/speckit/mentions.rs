@@ -1,7 +1,8 @@
 //! The tracked files that mention a task path (ADR 0044 decisions 4 to 6,
-//! ADR 0048): by the exact path, a partial path that holds a `/`, a dotted
-//! module name of at least two parts, or a workflow's `on.<event>.paths`
-//! glob. Never a bare stem, and never the bare file name alone.
+//! ADR 0048, ADR 0049): by the exact path, a partial path that holds a
+//! `/`, a dotted module name of a Python file on a line that does not import
+//! it, or a workflow's `on.<event>.paths` glob. Never a bare stem, and never
+//! the bare file name alone.
 
 use std::path::Path;
 use std::time::Duration;
@@ -207,7 +208,10 @@ fn text_reason(text: &str, path: &str) -> Option<String> {
     if has_token_after(text, path, after_slash) {
         return Some(format!("names path {path}"));
     }
-    if let Some(module) = dotted_names(path).into_iter().find(|m| has_token(text, m)) {
+    if let Some(module) = dotted_names(path)
+        .into_iter()
+        .find(|m| super::module::named(text, m))
+    {
         return Some(format!("names module {module}"));
     }
     partial_path(text, path).map(|tail| format!("names path {tail}"))
@@ -244,10 +248,11 @@ fn partial_path(text: &str, path: &str) -> Option<String> {
 /// the extension, of at least two parts, each part a plain identifier.
 /// `apps/ai/harness/tools.py` gives `harness.tools`, `ai.harness.tools` and
 /// `apps.ai.harness.tools`. A single part, the bare stem, is never one.
+/// Only a Python file has module names (ADR 0049 rule A): the dotted name
+/// of `prompts/system.md` matched attribute access, not an import.
 fn dotted_names(path: &str) -> Vec<String> {
-    let stem = match path.rsplit_once('.') {
-        Some((stem, ext)) if !ext.contains('/') => stem,
-        _ => path,
+    let Some(stem) = path.strip_suffix(".py") else {
+        return Vec::new();
     };
     let parts: Vec<&str> = stem.split('/').collect();
     let plain =
@@ -269,25 +274,30 @@ fn joins(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/' | '.')
 }
 
-/// True when `needle` occurs in `text` as a whole token. A `.` after it ends
-/// a sentence, so it counts as a break unless a name character follows.
-fn has_token(text: &str, needle: &str) -> bool {
-    has_token_after(text, needle, |_| false)
+/// True when `needle` occurs in `text` as a whole token, or after a name
+/// character when `also(text before the match)` holds.
+fn has_token_after(text: &str, needle: &str, also: impl Fn(&str) -> bool) -> bool {
+    token_starts(text, needle, also).next().is_some()
 }
 
-/// `has_token`, where a match that a name character comes before also
+/// Where each match of `needle` in `text` starts, as a whole token. A `.`
+/// after it ends a sentence, so it counts as a break unless a name
+/// character follows. A match that a name character comes before also
 /// counts when `also(text before the match)` holds.
-fn has_token_after(text: &str, needle: &str, also: impl Fn(&str) -> bool) -> bool {
-    if needle.is_empty() {
-        return false;
-    }
-    text.match_indices(needle).any(|(at, _)| {
-        let head = text.get(..at).unwrap_or("");
-        let before = head.chars().next_back();
-        let rest = text.get(at + needle.len()..).unwrap_or("");
-        let free_before = before.is_none_or(|c| !joins(c)) || also(head);
-        free_before && ends_token(rest)
-    })
+pub(crate) fn token_starts<'a>(
+    text: &'a str,
+    needle: &'a str,
+    also: impl Fn(&str) -> bool + 'a,
+) -> impl Iterator<Item = usize> + 'a {
+    text.match_indices(needle)
+        .filter(move |(at, _)| {
+            let head = text.get(..*at).unwrap_or("");
+            let before = head.chars().next_back();
+            let rest = text.get(at + needle.len()..).unwrap_or("");
+            let free_before = before.is_none_or(|c| !joins(c)) || also(head);
+            !needle.is_empty() && free_before && ends_token(rest)
+        })
+        .map(|(at, _)| at)
 }
 
 /// True when `rest`, the text after a match, starts with a break. A `.`
@@ -350,8 +360,9 @@ mod tests {
 
     /// ADR 0048: a shared bare name such as `lib.rs` matches many files, so
     /// a file that holds only that name is not a mention. The exact path, a
-    /// partial path with a `/` that ends the task path, the dotted module
-    /// and a matching CI glob still are.
+    /// partial path with a `/` that ends the task path and a matching CI
+    /// glob still are. `x.src.lib` is no module name: the path is not
+    /// Python (ADR 0049 rule A).
     #[test]
     fn a_file_naming_only_the_bare_file_name_is_not_a_mention() {
         let ci = "on:\n  push:\n    paths: [\"crates/x/src/**\"]\n";
@@ -369,7 +380,6 @@ mod tests {
             [
                 pair("docs/path.md", "names path crates/x/src/lib.rs"),
                 pair("docs/tail.md", "names path src/lib.rs"),
-                pair("docs/module.md", "names module x.src.lib"),
                 pair(".github/workflows/ci.yml", "CI paths glob crates/x/src/**"),
             ]
         );
@@ -447,12 +457,11 @@ mod tests {
             dotted_names("apps/ai/harness/tools.py"),
             ["harness.tools", "ai.harness.tools", "apps.ai.harness.tools"]
         );
-        assert_eq!(
-            dotted_names("crates/teamwire-cli/src/main.rs"),
-            ["src.main"]
-        );
+        assert!(dotted_names("crates/teamwire-cli/src/main.rs").is_empty());
+        assert!(dotted_names("agents/x/prompts/system.md").is_empty());
         assert!(dotted_names("tools.py").is_empty());
-        assert!(has_token("uses harness.tools.", "harness.tools"));
-        assert!(!has_token("uses harness.tools.x", "harness.tools"));
+        let whole = |text: &str| has_token_after(text, "harness.tools", |_| false);
+        assert!(whole("uses harness.tools."));
+        assert!(!whole("uses harness.tools.x"));
     }
 }
