@@ -100,13 +100,9 @@ enum Lock {
     Unknown,
 }
 
-#[expect(
-    clippy::redundant_closure_for_method_calls,
-    reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
-)]
 fn lock_after_stop(ctx: &teamwire_store::Ctx<'_>) -> Lock {
-    match ctx.store.read(|tx| tx.team()) {
-        Ok(Some(team)) if team.state == TeamState::Closing => Lock::Kept,
+    match ctx.store.read(|tx| Ok(tx.team()?.map(|team| team.state))) {
+        Ok(Some(TeamState::Closing)) => Lock::Kept,
         Ok(Some(_)) => Lock::GivenBack,
         Ok(None) | Err(_) => Lock::Unknown,
     }
