@@ -1073,6 +1073,23 @@ fn the_reference_says_how_each_harness_runs_spec_kit() {
             .contains("> At spec-kit's question stops, this brief replaces your seat's rule on"),
         "the reference lacks the override line"
     );
+    // A member's shell may have no `teamwire` on its PATH, so the override
+    // line, which the spec member reads, names the completion, not a bare
+    // command. The quote marks that start each line of the block are dropped.
+    let unquoted = flat.replace(" > ", " ");
+    let (_, override_line) = unquoted
+        .split_once("At spec-kit's question stops,")
+        .unwrap();
+    let (override_line, _) = override_line
+        .split_once("reprompts you with the answers.")
+        .unwrap();
+    assert!(
+        override_line.contains(
+            "record your completion with status `blocked` and the summary \
+             `N questions for the parent. ...` with your count"
+        ) && !override_line.contains("teamwire done"),
+        "the override line names a bare teamwire: {override_line}"
+    );
     assert!(
         skill.contains("Spec-kit's `specs/` folder"),
         "the skill does not say where spec-kit's files go"
@@ -1514,6 +1531,22 @@ fn the_reviewer_task_names_the_implementers_brief() {
     assert!(task.contains("quoting the brief line"), "{task}");
 }
 
+/// The closer runs only the local gate its task names, so the implementer is
+/// not told that the closer runs the full suite.
+#[test]
+fn the_implementer_task_says_the_closer_runs_only_its_local_gate() {
+    let doc = preset_doc("implement-then-review");
+    let task = task_of(&doc, "impl");
+    assert!(!task.contains("which the closer runs once"), "{task}");
+    assert!(
+        task.contains(
+            "do not run the full suite or the repo-wide lint and type gates. \
+             The closer runs the local gate its task names once, and CI runs the rest."
+        ),
+        "{task}"
+    );
+}
+
 /// teamwire stores no member's setup command where the closer can read it,
 /// so the task lists them. The reset stays first, with a named-file restore
 /// when a repository hook refuses it.
@@ -1933,7 +1966,10 @@ fn the_closer_task_has_a_local_gate_and_a_ci_gate_slot_and_reports_both() {
 }
 
 /// Every text that sends the closer to work names its local gate and the
-/// gates left to CI, as the closer preset does, never "the full gate".
+/// gates left to CI, as the closer preset does, never "the full gate". The
+/// AFK skill is the exception: an AFK run pushes nothing, so no CI runs after
+/// it, and its branch must pass the full gate (ADR 0025 point 10). So the AFK
+/// closer's local gate slot holds the full gate.
 #[test]
 fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
     for name in ["implement-then-review", "parallel-tickets"] {
@@ -1949,6 +1985,21 @@ fn the_closer_runs_the_local_gate_in_every_preset_and_the_afk_skill() {
         );
     }
     let skill = example("skills/afk/SKILL.md");
-    assert!(!skill.contains("repository's full gate on each branch"));
-    assert!(skill.contains("local gate its task names on each branch"));
+    assert!(skill.contains("repository's full gate on each branch"));
+    assert!(!skill.contains("local gate its task names on each branch"));
+    let afk = flat(&skill);
+    assert!(
+        afk.contains(
+            "Its `Local gate:` slot holds the full gate, such as `scripts/gate.sh`, and its \
+             `Gates left to CI:` slot holds `none`, because an AFK run pushes nothing."
+        ),
+        "{afk}"
+    );
+    assert!(
+        afk.contains(
+            "Only a gate that needs a service this machine lacks, such as SonarCloud, \
+             goes in the CI slot, with a `D` entry and a line under **Risks**."
+        ),
+        "{afk}"
+    );
 }

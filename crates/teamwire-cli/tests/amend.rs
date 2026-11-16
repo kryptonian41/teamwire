@@ -80,7 +80,10 @@ fn amend_changes_the_check_verify_runs_and_notes_the_member() {
             .starts_with("CHECK AMENDED: A runs every test file\n")
     );
     assert!(
-        notes[0].body.contains("record your result again"),
+        notes[0].body.contains(
+            "Run it yourself, then record your result again with team_done \
+             or the done command your contract names."
+        ),
         "{}",
         notes[0].body
     );

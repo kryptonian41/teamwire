@@ -30,7 +30,7 @@
       "owns": [
         "CHANGEME/path/"
       ],
-      "task": "<what to build, with acceptance criteria, as units>. <which files you own>. Commit after each unit. Run only your check and the tests you write; do not run the full suite or the repo-wide lint and type gates, which the closer runs once. Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
+      "task": "<what to build, with acceptance criteria, as units>. <which files you own>. Commit after each unit. Run only your check and the tests you write; do not run the full suite or the repo-wide lint and type gates. The closer runs the local gate its task names once, and CI runs the rest. Use the tdd skill for each unit; test only at these seams: CHANGEME. If a check fails and the cause is not clear from its output, use the diagnosing-bugs skill before your second fix attempt. Start your report file with a summary of at most ten lines: the outcome, then what the lead must decide."
     },
     {
       "_launch_after": "impl reports done",

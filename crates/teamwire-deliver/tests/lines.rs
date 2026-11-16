@@ -481,6 +481,47 @@ fn the_leads_copy_names_the_members_the_user_wrote_to() {
     );
 }
 
+/// The lead skill quotes the copy line so the lead knows a message from the
+/// user when one arrives. The quote's fixed tail is the one the program types.
+#[test]
+fn the_lead_skill_quotes_the_copy_line_the_lead_gets() {
+    let skill = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/skills/teamwire/SKILL.md"),
+    )
+    .unwrap();
+    let to = [Recipient::parse("api").unwrap()];
+    let line = lead_copy_line(
+        &team(),
+        &id(),
+        MessageType::Reprompt,
+        "use port 8080",
+        &to,
+        CommsCopy {
+            path: Path::new("/c/m014.md"),
+            written: false,
+        },
+    );
+    let (_, tail) = line.as_str().split_once("use port 8080. ").unwrap();
+    let quoted = tail.replace("to api,", "to <roles>,");
+    assert!(
+        skill.contains(&format!(
+            "`[teamwire:<team> msg <id> <type> from user] ... {quoted}`"
+        )),
+        "the skill does not quote: {quoted}"
+    );
+    assert!(
+        skill.contains("Never send `--from user` yourself"),
+        "the skill does not keep the user's sender for the user"
+    );
+    let flat = skill.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        flat.contains(
+            "When it contradicts the member's brief, the brief wins and the member asks you."
+        ),
+        "the skill does not say that the brief wins over the user's message"
+    );
+}
+
 /// A reprompt names the messages held for the handoff after its own text,
 /// oldest first, and counts those past the first ten (ADR 0043).
 #[test]
@@ -516,7 +557,10 @@ fn a_reprompt_line_names_the_held_messages_after_its_text() {
         "{text}"
     );
     assert!(
-        text.ends_with("m019 (note from lead), and 2 more. Read them with teamwire inbox."),
+        text.ends_with(
+            "m019 (note from lead), and 2 more. \
+             Read them with the team_inbox tool or the inbox command your contract names."
+        ),
         "{text}"
     );
     assert!(!text.contains("m020"), "{text}");

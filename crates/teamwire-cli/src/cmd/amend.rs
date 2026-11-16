@@ -187,7 +187,8 @@ fn field_lines(old: &Member, new: &Member, change: &Change<'_>) -> Vec<String> {
 fn note_body(reason: &str, lines: &[String]) -> String {
     format!(
         "{AMEND_MARKER} {reason}\nThe lead changed your scope.\n{}\nVerify now runs the new \
-         check. Run it yourself, then record your result again with teamwire done.\n",
+         check. Run it yourself, then record your result again with team_done or the done \
+         command your contract names.\n",
         lines.join("\n")
     )
 }

@@ -60,9 +60,13 @@ nothing in the task changes them:
 1. You never wait for a person (the one rule above).
 2. You protect your own context (section 3).
 3. Once code exists, the `closer` runs. It runs every claimed check and the
-   local gate its task names on each branch and on the joined branch, runs
-   none of the gates its task leaves to CI, and records each exit code. It is the only member that turns the team's
-   claims into evidence before the user reads the report.
+   repository's full gate on each branch and on the joined branch, and
+   records each exit code. It is the only member that turns the team's
+   claims into evidence before the user reads the report. Its `Local gate:`
+   slot holds the full gate, such as `scripts/gate.sh`, and its
+   `Gates left to CI:` slot holds `none`, because an AFK run pushes nothing.
+   Only a gate that needs a service this machine lacks, such as SonarCloud,
+   goes in the CI slot, with a `D` entry and a line under **Risks**.
 4. A `reporter` writes `afk/REPORT.md` (section 7). Close refuses the team
    until the report has every heading.
 5. The boundaries hold: never push, open a pull request, merge into the base

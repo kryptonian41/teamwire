@@ -249,6 +249,35 @@ fn unread_messages_hold_once_and_do_not_use_up_the_report_hold() {
 }
 
 #[test]
+fn a_member_woken_after_its_result_is_told_to_record_done_again() {
+    let (mut rig, api) = team();
+    rig.write_report(&api, "Found it.\n\nDecisions I made: none\n");
+    rig.complete_now(&api);
+    assert_eq!(reply(&mut rig, &api), TurnEndReply::Continue);
+    assert_eq!(
+        rig.typed_to_lead().len(),
+        1,
+        "the first result was delivered"
+    );
+
+    // A message to a finished member starts a new generation (ADR 0043), and
+    // the watch waits for a result in it, even when nothing changed.
+    rig.store
+        .write(|tx| tx.bump_generation(kit::at(9), &api, "woken").map(|_| ()))
+        .unwrap();
+    rig.unread_from_lead(&api, "fyi, no action needed");
+    let note = held_note(reply(&mut rig, &api));
+    assert!(
+        note.contains(
+            "otherwise stop, and a result you recorded in this turn goes to the lead. \
+             If you recorded no result in this turn, record done again before you stop, \
+             even when nothing changed."
+        ),
+        "{note}"
+    );
+}
+
+#[test]
 fn gaps_and_unread_messages_share_one_note() {
     let (mut rig, api) = team();
     let id = rig.unread_from_lead(&api, "look at this");

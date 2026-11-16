@@ -108,7 +108,9 @@ const HELD_NAMED: usize = 10;
 
 /// A reprompt's line with the messages held for the member appended, oldest
 /// first: `<line> Held for you, oldest first: m010 (answer from lead), ….
-/// Read them with teamwire inbox.` The reprompt's own text comes first, so
+/// Read them with the team_inbox tool or the inbox command your contract
+/// names.` A member's shell may have no `teamwire` on its PATH, so the line
+/// names no bare command. The reprompt's own text comes first, so
 /// the member reads the lead's instruction before the backlog. With nothing
 /// held the line is unchanged.
 pub fn with_held(line: OneLine, held: &[HeldItem<'_>]) -> OneLine {
@@ -133,7 +135,7 @@ pub fn with_held(line: OneLine, held: &[HeldItem<'_>]) -> OneLine {
     }
     one_line(
         &format!(
-            "{} Held for you, oldest first: {}. Read them with teamwire inbox.",
+            "{} Held for you, oldest first: {}. Read them with the team_inbox tool or the inbox command your contract names.",
             line.as_str(),
             named.join(", ")
         ),

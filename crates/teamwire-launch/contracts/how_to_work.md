@@ -7,8 +7,9 @@ HOW TO WORK
 - Run only your check, the tests and checks your brief names, the
   tests you write yourself, and, as a closer, the checks your
   teammates claimed. Do not run the whole suite or a
-  repo-wide type gate unless the brief says so; the integrator or the
-  closer runs those once, on the finished branches. Minutes-long runs
+  repo-wide type gate unless the brief says so; the integrator runs
+  the full gate on a joined branch, the closer runs the local gate its
+  brief names, and CI runs the rest. Minutes-long runs
   with nothing committed are the most common way a child wastes its
   budget.
 - If your role writes code, commit after each unit of work. Your branch
