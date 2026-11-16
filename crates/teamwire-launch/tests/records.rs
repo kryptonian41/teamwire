@@ -20,9 +20,17 @@
 )]
 mod common;
 
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use common::{Rig, launch_one, pane_member, role_events, team_spec, with};
 use serde_json::json;
-use teamwire_core::{Role, SessionId};
+use teamwire_core::{
+    Address, Harness, Host, HostCaps, HostError, Key, Occupant, OneLine, Place, PlaceState,
+    Registry, Role, SessionId, SpawnRequest,
+};
+use teamwire_fakes::FakeHost;
 
 #[test]
 fn a_started_member_records_its_model_and_effort() {
@@ -137,10 +145,80 @@ fn member_creating_records_the_task_class_or_null() {
     assert!(unset["task_class"].is_null());
 }
 
+/// The fake host, which notes whether a folder exists when the first member
+/// is spawned. A member may write its report as soon as it starts, so a
+/// check made after launch returns cannot show the order (LCH-31).
+struct SpawnWatch {
+    inner: Arc<FakeHost>,
+    folder: PathBuf,
+    at_first_spawn: Mutex<Option<bool>>,
+}
+
+impl Host for SpawnWatch {
+    fn id(&self) -> teamwire_core::HostId {
+        self.inner.id()
+    }
+    fn capabilities(&self) -> HostCaps {
+        self.inner.capabilities()
+    }
+    fn spawn(&self, req: &SpawnRequest, timeout: Duration) -> Result<Place, HostError> {
+        // A poisoned lock leaves `None`, which fails the test's assert.
+        if let Ok(mut seen) = self.at_first_spawn.lock() {
+            seen.get_or_insert_with(|| self.folder.is_dir());
+        }
+        self.inner.spawn(req, timeout)
+    }
+    fn submit(&self, place: &Place, text: &OneLine, timeout: Duration) -> Result<(), HostError> {
+        self.inner.submit(place, text, timeout)
+    }
+    fn state(&self, place: &Place, timeout: Duration) -> Result<PlaceState, HostError> {
+        self.inner.state(place, timeout)
+    }
+    fn occupant(&self, place: &Place, timeout: Duration) -> Result<Occupant, HostError> {
+        self.inner.occupant(place, timeout)
+    }
+    fn read_tail(&self, place: &Place, lines: u16, timeout: Duration) -> Result<String, HostError> {
+        self.inner.read_tail(place, lines, timeout)
+    }
+    fn send_keys(&self, place: &Place, keys: &[Key], timeout: Duration) -> Result<(), HostError> {
+        self.inner.send_keys(place, keys, timeout)
+    }
+    fn close(&self, place: &Place, expected: &Address, timeout: Duration) -> Result<(), HostError> {
+        self.inner.close(place, expected, timeout)
+    }
+    fn list(&self, timeout: Duration) -> Result<Vec<Place>, HostError> {
+        self.inner.list(timeout)
+    }
+    fn live_agent_names(&self, timeout: Duration) -> Result<Vec<String>, HostError> {
+        self.inner.live_agent_names(timeout)
+    }
+    fn place_env_var(&self) -> Option<&'static str> {
+        self.inner.place_env_var()
+    }
+}
+
 #[test]
 fn launch_makes_the_reports_folder_before_the_first_member_writes() {
-    let rig = Rig::new();
+    let mut rig = Rig::new();
+    let watch = Arc::new(SpawnWatch {
+        inner: Arc::clone(&rig.host),
+        folder: rig.home.path().join("teams/demo/reports"),
+        at_first_spawn: Mutex::new(None),
+    });
+    let mut registry = Registry::new();
+    registry
+        .add_harness(Arc::clone(&rig.harness) as Arc<dyn Harness>)
+        .unwrap();
+    registry
+        .add_host(Arc::clone(&watch) as Arc<dyn Host>)
+        .unwrap();
+    rig.registry = registry;
     let (report, _store) = launch_one(&rig, "demo", "a", false);
+    assert_eq!(
+        *watch.at_first_spawn.lock().unwrap(),
+        Some(true),
+        "the reports folder must exist when the first member starts"
+    );
     assert!(
         matches!(
             report.members.first().map(|m| &m.outcome),

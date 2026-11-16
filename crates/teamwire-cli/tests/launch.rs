@@ -503,6 +503,81 @@ fn the_unverifiable_implementer_warning_names_what_is_missing() {
     }
 }
 
+/// ADR 0009 point 5: `*` stops at `/`, so `crates/*.rs` misses every file
+/// in a subdirectory of `crates/`. Launch warns only where such a
+/// subdirectory exists.
+#[test]
+fn an_owns_pattern_with_one_star_over_a_directory_with_subdirectories_warns() {
+    let rig = Rig::new();
+    let repo = rig.repo();
+    std::fs::create_dir_all(repo.join("crates/a/src")).unwrap();
+    std::fs::create_dir_all(repo.join("docs")).unwrap();
+    write_file(&repo.join("crates/a/src/lib.rs"), "\n");
+    write_file(&repo.join("docs/guide.md"), "\n");
+    // A repository whose only subdirectory is `.git`: git never lists it.
+    let solo = rig.work.path().join("solo");
+    std::fs::create_dir_all(&solo).unwrap();
+    write_file(&solo.join("a.json"), "{}\n");
+    write_file(&solo.join(".gitignore"), ".worktrees/\n");
+    for args in [
+        &["init", "-q", "-b", "main"][..],
+        &["add", "-A"],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "first",
+        ],
+    ] {
+        let out = command("git")
+            .arg("-C")
+            .arg(&solo)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}", text(&out.stderr));
+    }
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "web", "title": "Work web", "kind": "implementer", "mode": "worktree",
+         "repo": solo, "task": "build", "check": "true", "owns": ["*.json"]},
+        {"role": "api", "title": "Work api", "kind": "implementer", "mode": "worktree",
+         "repo": repo, "task": "build", "check": "true",
+         "owns": ["crates/*.rs", "docs/*.md", "crates/**/*.rs", "src/", "./*.toml",
+                  "missing/*.rs"]}]});
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let err = text(&out.stderr);
+    for line in [
+        "role api: owns pattern crates/*.rs has * but no **, and crates/ has subdirectories; \
+         * matches within one path segment, so files under them are outside owns",
+        "role api: owns pattern ./*.toml has * but no **, and the repository root has \
+         subdirectories; * matches within one path segment, so files under them are outside owns",
+    ] {
+        assert!(err.contains(line), "{err}");
+    }
+    for quiet in [
+        "docs/*.md",
+        "crates/**/*.rs",
+        "src/",
+        "missing/*.rs",
+        "*.json",
+    ] {
+        assert!(
+            !err.contains(&format!("owns pattern {quiet} ")),
+            "{quiet}: {err}"
+        );
+    }
+}
+
 #[test]
 fn the_empty_launch_line_names_the_spec_file_the_user_passed() {
     let mut rig = Rig::new();
