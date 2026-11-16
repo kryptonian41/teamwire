@@ -109,7 +109,10 @@ behaviour.
   Claude Code lead, as a deliberate exception to the rule that every lead
   feature ships for Claude Code, Codex and pi. Requirement row AFK-2 records
   that exception.
-- The same failure-mode row still says the team is set back to `open`. When
-  the final store write fails, the code can leave the team `closing`
-  instead. That is a code question, so this ADR does not change the row's
-  words about it.
+- The same failure-mode row now says what happens when the close cannot
+  give its lock back. The team stays `closing`, and `teamwire close` tells
+  the user to run `teamwire close <team> --clear-stale-lock` and then close
+  again (`crates/teamwire-cli/src/cmd/close.rs:140-158`). That outcome is
+  not deliberate. The team should go back to `open`, and the re-audit row
+  FM2.33b tracks that code fix. This ADR records today's behaviour only, and
+  supersedes no sentence about it.
