@@ -34,9 +34,11 @@ pub(crate) struct Expanded {
     /// The repository paths, each once.
     pub(crate) paths: Vec<String>,
     /// The words with a `/` that rules 1 to 3 turned away, each once. The
-    /// lead checks them for a new file in a new folder.
+    /// lead checks them for a new file in a new folder. A word with two
+    /// readings carries a note on the tracked path it also ends.
     pub(crate) not_paths: Vec<String>,
-    /// The words of `not_paths` that only rule 2 or 3 turned away. A new
+    /// The words of `not_paths`, without a note, that only rule 2 or 3 or
+    /// ADR 0049 rule D turned away. A new
     /// folder's files land here, so they still count in the overlap, though
     /// no draft holds them. Code counts nowhere.
     pub(crate) unresolved: Vec<String>,
@@ -50,6 +52,10 @@ enum Read {
     /// A word that does not resolve (rules 2 and 3): the lead sees it, and
     /// the overlap counts it, when it holds a `/`.
     Unresolved,
+    /// A word that could be a new file or a tracked path it ends (ADR 0049
+    /// rule D). It reads as `Unresolved`, and the lead sees this note, such
+    /// as `(also ends crates/c/tests/preset.rs)`, after it.
+    TwoReadings(String),
     /// A word ADR 0044 already turned away, such as a word with no
     /// extension that names no tracked folder.
     Skip,
@@ -62,8 +68,9 @@ enum Read {
 ///
 /// A word with a `/` is a path when it names a tracked file or a tracked
 /// folder (kept with a trailing `/`), or when it ends in an extension and
-/// its parent folder is tracked, as a file a task creates does. Otherwise a
-/// word that is the end of exactly one tracked path is that path. A word with
+/// its parent folder is tracked, as a file a task creates does, and no
+/// tracked path ends in it (ADR 0049 rule D). Otherwise a word that is the
+/// end of exactly one tracked path is that path. A word with
 /// no `/` is a path only when it names a tracked file at the repository's
 /// root, such as `README.md`: an event name such as `knit.progress` or a
 /// bare `lib.rs` is not.
@@ -84,6 +91,10 @@ pub(crate) fn expand(paths: &[String], tracked: &[String]) -> Expanded {
             Read::Code if word.contains('/') => add(&mut out.not_paths, word),
             Read::Unresolved if word.contains('/') => {
                 add(&mut out.not_paths, word);
+                add(&mut out.unresolved, word);
+            }
+            Read::TwoReadings(note) => {
+                add(&mut out.not_paths, &format!("{word} {note}"));
                 add(&mut out.unresolved, word);
             }
             Read::Code | Read::Unresolved | Read::Skip => {}
@@ -141,18 +152,28 @@ fn repo_path(word: &str, tracked: &[String]) -> Read {
     if word.ends_with('/') || !has_extension(word, 1) {
         return Read::Skip;
     }
+    // A partial path, such as `cmd/send.rs`, is the one tracked path it
+    // ends at a `/`. When it ends several, the task did not say which.
+    let tail = format!("/{word}");
+    let mut ends: Vec<&String> = tracked.iter().filter(|t| t.ends_with(&tail)).collect();
     // A new file counts only in a folder that already holds tracked files.
     let parent = bare.rsplit_once('/').map_or("", |(dir, _)| dir);
     let parent = format!("{parent}/");
     if tracked.iter().any(|t| t.starts_with(&parent)) {
-        return one(word.to_owned());
+        // `tests/preset.rs` may be a new file in the root `tests/`, or the
+        // tracked `crates/c/tests/preset.rs`. The task did not say which,
+        // so the lead decides (ADR 0049 rule D).
+        ends.sort();
+        return match ends.as_slice() {
+            [] => one(word.to_owned()),
+            [first] => Read::TwoReadings(format!("(also ends {first})")),
+            [first, rest @ ..] => {
+                Read::TwoReadings(format!("(also ends {first} and {} more)", rest.len()))
+            }
+        };
     }
-    // A partial path, such as `cmd/send.rs`, is the one tracked path it
-    // ends at a `/`. When it ends several, the task did not say which.
-    let tail = format!("/{word}");
-    let mut ends = tracked.iter().filter(|t| t.ends_with(&tail));
-    match (ends.next(), ends.next()) {
-        (Some(only), None) => one(only.clone()),
+    match ends.as_slice() {
+        [only] => one((*only).clone()),
         _ => Read::Unresolved,
     }
 }
@@ -436,5 +457,32 @@ mod tests {
                 "cmd/lib.rs"
             ])
         );
+    }
+
+    /// ADR 0049 rule D: a word the new-file rule would accept, and that a
+    /// tracked path also ends, has two readings, so it is no path. It is
+    /// kept for the lead with the first such path and the count of the
+    /// rest, and it still counts in the overlap. A word no tracked path
+    /// ends stays a new file.
+    #[test]
+    fn a_partial_path_with_two_readings_is_no_path() {
+        let tracked = strings(&[
+            "tests/fakes/a.rs",
+            "crates/c/tests/preset.rs",
+            "crates/d/tests/x.rs",
+            "crates/a/tests/x.rs",
+            "crates/b/tests/x.rs",
+        ]);
+        let words = strings(&["tests/preset.rs", "tests/x.rs", "tests/brand_new.rs"]);
+        let got = expand(&words, &tracked);
+        assert_eq!(got.paths, strings(&["tests/brand_new.rs"]));
+        assert_eq!(
+            got.not_paths,
+            strings(&[
+                "tests/preset.rs (also ends crates/c/tests/preset.rs)",
+                "tests/x.rs (also ends crates/a/tests/x.rs and 2 more)",
+            ])
+        );
+        assert_eq!(got.unresolved, strings(&["tests/preset.rs", "tests/x.rs"]));
     }
 }

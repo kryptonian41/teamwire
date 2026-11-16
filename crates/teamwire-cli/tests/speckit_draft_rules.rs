@@ -201,3 +201,43 @@ fn a_line_list_and_a_possessive_leave_the_path() {
     );
     assert!(!out.contains(":718,852") && !out.contains("md's"), "{out}");
 }
+
+/// Rule D: `tests/preset.rs` could be a new file in the tracked root folder
+/// `tests/`, or the tracked `crates/c/tests/preset.rs`. It has two readings,
+/// so it is no path: it is printed with the tracked path it also ends, it
+/// goes in no draft, and it still counts in the overlap. `tests/x.rs` ends
+/// three tracked paths. `tests/brand_new.rs` ends none, so it stays a new
+/// file.
+#[test]
+fn a_partial_path_with_two_readings_is_no_path() {
+    let repo = repo();
+    let out = draft(repo.path());
+    let names = block(&out, "Names that are not repository paths:");
+    assert!(
+        names.contains(&"  T002: tests/preset.rs (also ends crates/c/tests/preset.rs)"),
+        "{out}"
+    );
+    assert!(
+        names.contains(&"  T006: tests/x.rs (also ends crates/a/tests/x.rs and 2 more)"),
+        "{out}"
+    );
+    for word in ["tests/preset.rs", "tests/x.rs", "crates/c/tests/preset.rs"] {
+        assert!(
+            !drafts(&out)
+                .iter()
+                .any(|l| l.split_whitespace().next() == Some(word)),
+            "{word}: {out}"
+        );
+    }
+    assert!(
+        entry(&out, "US2", "tests/brand_new.rs").is_some_and(|l| l.ends_with("(task path)")),
+        "{out}"
+    );
+    let shared = block(&out, "Shared files between phases:");
+    assert!(
+        shared
+            .iter()
+            .any(|l| l.starts_with("  Phase 2 and Phase 3:") && l.contains("tests/preset.rs")),
+        "{out}"
+    );
+}
