@@ -153,7 +153,7 @@ pub(super) fn events_check(base: &Base<'_>) -> Check {
             codex_committed = true;
             codex.push(format!("{file} is in {at}"));
         } else if base.root.join(file).exists() {
-            codex.push(format!("{file} is on disk"));
+            codex.push(format!("{file} is on disk but not in {at}"));
         }
     }
     if hooks.is_empty() && codex.is_empty() {
