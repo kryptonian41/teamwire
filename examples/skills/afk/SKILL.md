@@ -60,8 +60,8 @@ nothing in the task changes them:
 1. You never wait for a person (the one rule above).
 2. You protect your own context (section 3).
 3. Once code exists, the `closer` runs. It runs every claimed check and the
-   repository's full gate on each branch and on the joined branch, and
-   records each exit code. It is the only member that turns the team's
+   full gate on each branch that no integrator joins and on the joined
+   branch, and records each exit code. It is the only member that turns the team's
    claims into evidence before the user reads the report. Its `Local gate:`
    slot holds the full gate, such as `scripts/gate.sh`, and its
    `Gates left to CI:` slot holds `none`, because an AFK run pushes nothing.
