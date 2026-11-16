@@ -1,7 +1,11 @@
 //! The contract text a member's system prompt carries. The words live in
 //! `contracts/*.md`, so a test can check that every recorded rule is there
-//! and a harness can render them its own way (LCH-17). The text names only
-//! `teamwire` commands and tools.
+//! and a harness can render them its own way (LCH-17). Every `teamwire`
+//! command the text names starts with the launching binary's path, and the
+//! text names no harness, host or retired tool. It names other tools'
+//! commands only as bans, such as `pnpm install`, `sh -c` and
+//! `git worktree add`, and as steps of a seat's own work, such as the
+//! reviewer's and the closer's `git clone`.
 
 use std::path::{Path, PathBuf};
 
