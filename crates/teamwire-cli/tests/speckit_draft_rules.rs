@@ -75,7 +75,7 @@ fn git(dir: &Path, args: &[&str]) {
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path();
-    let files: [(&str, &str); 30] = [
+    let files: [(&str, &str); 31] = [
         ("specs/001-x/tasks.md", TASKS),
         ("specs/001-x/contracts/amend-cli.md", "# amend\n"),
         ("crates/m/tests/send.rs", "// send\n"),
@@ -99,6 +99,11 @@ fn repo() -> tempfile::TempDir {
         ),
         ("apps/ai/x/import_as.py", "import shared.db.enums as e\n"),
         ("apps/ai/x/import_list.py", "import os, shared.db.enums\n"),
+        (
+            "apps/ai/x/import_comment.py",
+            "from shared.db.enums import X  # see shared.db.enums for values\n\
+             import shared.db.enums  # shared.db.enums\n",
+        ),
         (
             "apps/ai/x/commented.py",
             "from shared.db.enums import ReportVisibility\n\n# see shared.db.enums for the values\n",
@@ -254,6 +259,7 @@ fn a_module_counts_only_outside_import_lines_and_only_for_python() {
         "apps/ai/x/only_import.py",
         "apps/ai/x/import_as.py",
         "apps/ai/x/import_list.py",
+        "apps/ai/x/import_comment.py",
         "apps/ai/live_turn.py",
     ] {
         assert!(!out.contains(file), "{file}: {out}");

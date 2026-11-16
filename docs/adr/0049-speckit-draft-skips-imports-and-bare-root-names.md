@@ -55,10 +55,16 @@ the measured options on 2026-11-16.
 A. **A module name counts only outside import lines.** Only a task path
    that ends in `.py` has dotted module names. A module name counts as a
    mention only when one of its whole-token matches sits on a line that is
-   not an import of it. An import line, after leading white space, is
-   `import M`, `import M as m`, `import a, M` or `from M import X`. A match
-   in `from M.sub import Y` is no whole token. Any other line counts, such
-   as a comment, a doc, a string or a line of `.importlinter`.
+   not an import line. The whole line decides, so a match in a comment
+   after the import on the same line does not count. An import line, after
+   leading white space, imports the module or a module under it:
+   `import M`, `import M as m`, `import a, M`, `import M.sub`,
+   `from M import X`, `from M.sub import Y`, or `from P import N` where
+   `P.N` is `M`. The line `from M import (X,` and the `Y)` under it hold
+   no match that counts. A line that starts with `from M` but holds no
+   `import` after it, such as prose, is no import line. Any other line
+   counts, such as a comment or a string on its own line, a doc or a line
+   of `.importlinter`.
 B. **A root file is mentioned only by a relative link to the root.** For a
    task path with no `/`, an occurrence counts only when one or more `./` or
    `../` segments come right before the name, and that relative path,
@@ -133,7 +139,10 @@ E. **A line list and a possessive come off before the code rule.** A list
   `Tasks that change no file: T058, T067`, the share of
   `apps/ai/gateway/decks/tools.py` by T035 and T043, and
   `apps/ai/.importlinter`, `.github/workflows/evals-harness-replay.yml` and
-  `apps/ai/tests/test_harness_targets.py` in the drafts. Spec 001's run
-  prints 607 lines and spec 002's prints 273.
+  `apps/ai/tests/test_harness_targets.py` in the drafts. deckh's count does
+  not depend on teamwire's own files. Spec 001's run printed 607 lines and
+  spec 002's printed 273, measured at 33be2d62, before this ADR existed.
+  This ADR and later docs name task paths of those lists, so later runs
+  print a few lines more.
 - `docs/api/cli.md`, the lead skill and its reference describe the rules,
   the new section and what the lead must grep for.
