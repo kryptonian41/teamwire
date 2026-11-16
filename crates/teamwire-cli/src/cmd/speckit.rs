@@ -28,6 +28,8 @@ mod overlap;
 mod parse;
 #[path = "speckit/render.rs"]
 mod render;
+#[path = "speckit/root.rs"]
+mod root;
 
 pub(crate) fn run(args: &SpeckitArgs, global: &Global, wiring: &Wiring) -> ExitCode {
     match &args.command {

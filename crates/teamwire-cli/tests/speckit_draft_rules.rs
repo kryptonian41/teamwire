@@ -270,3 +270,43 @@ fn a_module_counts_only_outside_import_lines_and_only_for_python() {
         "{out}"
     );
 }
+
+/// Rule B: the root file `AGENTS.md` is named only by a relative link that
+/// resolves to the root, such as `../../AGENTS.md` in `apps/ai/CLAUDE.md`.
+/// A link to another folder, a bare word, `@AGENTS.md` and a path to a
+/// nested `AGENTS.md` are not. A CI paths glob still counts.
+#[test]
+fn a_root_file_is_named_only_by_a_relative_link_to_the_root() {
+    let repo = repo();
+    let out = draft(repo.path());
+    let setup = "Setup and polish";
+    assert!(
+        entry(&out, setup, "apps/ai/CLAUDE.md")
+            .is_some_and(|l| l.ends_with("(names path ../../AGENTS.md)")),
+        "{out}"
+    );
+    assert!(
+        entry(&out, setup, "GUIDE.md").is_some_and(|l| l.ends_with("(names path ./AGENTS.md)")),
+        "{out}"
+    );
+    assert!(
+        entry(&out, setup, "apps/x/deep/far.md")
+            .is_some_and(|l| l.ends_with("(names path ../../../AGENTS.md)")),
+        "{out}"
+    );
+    assert!(
+        entry(&out, setup, ".github/workflows/rules.yml")
+            .is_some_and(|l| l.ends_with("(CI paths glob AGENTS.md)")),
+        "{out}"
+    );
+    for file in [
+        "apps/web/CLAUDE.md",
+        "apps/x/CLAUDE.md",
+        "docs/x.md",
+        "CONTRIBUTING.md",
+        "apps/ai/AGENTS.md",
+        "apps/x/deep/over.md",
+    ] {
+        assert!(entry(&out, setup, file).is_none(), "{file}: {out}");
+    }
+}

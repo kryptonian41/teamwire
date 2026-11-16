@@ -139,10 +139,11 @@ impl Mentions {
             if paths.contains(&file.path) {
                 continue;
             }
-            let by_text = file
-                .text
-                .as_deref()
-                .and_then(|text| searched.iter().find_map(|p| text_reason(text, p)));
+            let by_text = file.text.as_deref().and_then(|text| {
+                searched
+                    .iter()
+                    .find_map(|p| text_reason(&file.path, text, p))
+            });
             let reason = by_text.or_else(|| self.glob_reason(&file.path, &searched));
             if let Some(reason) = reason {
                 out.push(Found {
@@ -196,14 +197,19 @@ fn path_globs(doc: &Yaml) -> Vec<String> {
     out
 }
 
-/// Why `text` mentions `path`: its exact text, a dotted module name, or a
-/// partial path, each as a whole token (FR-014). The exact path also counts
-/// right after a `/`, as in `./apps/x.py` or `$ROOT/apps/x.py`. A partial
-/// path holds a `/` and ends the task path, so `harness/tools.py` names
-/// `apps/ai/harness/tools.py` and `other/tools.py` does not. The bare file
-/// name alone never counts (ADR 0048): `lib.rs` or `SKILL.md` names too
-/// many files of a real repository.
-fn text_reason(text: &str, path: &str) -> Option<String> {
+/// Why `text`, the text of the tracked file `file`, mentions `path`: its
+/// exact text, a dotted module name, or a partial path, each as a whole
+/// token (FR-014). The exact path also counts right after a `/`, as in
+/// `./apps/x.py` or `$ROOT/apps/x.py`. A partial path holds a `/` and ends
+/// the task path, so `harness/tools.py` names `apps/ai/harness/tools.py`
+/// and `other/tools.py` does not. The bare file name alone never counts
+/// (ADR 0048): `lib.rs` or `SKILL.md` names too many files of a real
+/// repository. A root file counts only through a relative link that
+/// resolves to the root (ADR 0049 rule B).
+fn text_reason(file: &str, text: &str, path: &str) -> Option<String> {
+    if !path.contains('/') {
+        return super::root::link(file, text, path).map(|link| format!("names path {link}"));
+    }
     let after_slash = |before: &str| before.ends_with('/');
     if has_token_after(text, path, after_slash) {
         return Some(format!("names path {path}"));
@@ -270,7 +276,7 @@ fn dotted_names(path: &str) -> Vec<String> {
 
 /// A character that continues a name or a path, so a match next to it is
 /// part of a longer word.
-fn joins(c: char) -> bool {
+pub(crate) fn joins(c: char) -> bool {
     c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '/' | '.')
 }
 
@@ -302,7 +308,7 @@ pub(crate) fn token_starts<'a>(
 
 /// True when `rest`, the text after a match, starts with a break. A `.`
 /// counts as a break unless a name character follows it.
-fn ends_token(rest: &str) -> bool {
+pub(crate) fn ends_token(rest: &str) -> bool {
     let mut after = rest.chars();
     match after.next() {
         None => true,
