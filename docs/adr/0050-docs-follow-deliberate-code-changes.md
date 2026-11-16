@@ -80,6 +80,7 @@ behaviour.
    | MSG-18 (a tool result says `handed_off`, `crates/teamwire-mcp/src/tools.rs:379-388`) | ADR 0003, point 5; this ADR |
    | MCP-3 (the inbox resource is deferred, `docs/api/mcp.md`) | this ADR |
    | SEC-3 (pi members load the lead package, which does nothing there, `crates/teamwire-harness-pi/src/lead_extension.rs:1-3`) | ADR 0030, consequences; this ADR |
+   | LCH-17 (the contract also names other tools' commands, as bans and as a seat's own steps, `crates/teamwire-launch/contracts/how_to_work.md:4-5, 24, 29-30`, `kind_reviewer.md:8`, `kind_closer.md:30`) | this ADR |
 
 3. **A failure-mode row follows the code.** In `docs/failure-modes.md`, the
    row "A whole-team close fails after its places are closed" no longer says
