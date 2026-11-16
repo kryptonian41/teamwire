@@ -232,10 +232,9 @@ fn a_constitution_not_in_head_and_a_pointer_git_does_not_ignore_warn_and_name_th
     assert!(detail.contains("/speckit-constitution"), "{detail}");
     assert!(detail.contains("commit it"), "{detail}");
     assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
-    assert!(
-        detail_of(&checks, "spec-kit feature pointer").contains(".specify/feature.json"),
-        "{checks:?}"
-    );
+    let detail = detail_of(&checks, "spec-kit feature pointer");
+    assert!(detail.contains(".specify/feature.json"), "{checks:?}");
+    assert!(detail.contains("members who start from HEAD ("), "{detail}");
 }
 
 #[test]
@@ -273,6 +272,21 @@ fn a_git_that_cannot_answer_warns_and_names_the_file_and_git_status() {
         assert!(detail.contains(file), "{name}: {detail}");
         assert!(detail.contains("run `git status` in"), "{name}: {detail}");
     }
+    let detail = detail_of(&after, "spec-kit feature pointer");
+    assert!(detail.contains("HEAD (b529e55)"), "{detail}");
+
+    // `check-ignore` cannot start at all.
+    let fake = fake_git(&mut bed, &[CONSTITUTION_FILE]);
+    fake.queue_run(Ok(answer(FILLED)));
+    fake.queue_run(Err(PlatformError::new(PlatformErrorCode::NotFound, "gone")));
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "spec-kit feature pointer"), Level::Warn);
+    let detail = detail_of(&checks, "spec-kit feature pointer");
+    assert!(
+        detail.contains("could not ask git whether it ignores"),
+        "{detail}"
+    );
+    assert!(detail.contains("HEAD (b529e55)"), "{detail}");
 }
 
 #[test]
@@ -880,11 +894,14 @@ fn base_names_the_commit_the_lines_read_and_every_line_names_it() {
     let out = teamwire_with(&bed, &path, root, &["--base", "main"]).out;
     let at = format!("main ({})", short("main"));
     for name in [
+        "spec-kit version",
         "spec-kit committed",
         "spec-kit constitution",
         "spec-kit integrations",
         "spec-kit git extension",
+        "spec-kit hooks",
         "spec-kit events",
+        "spec-kit feature pointer",
         "spec-kit workflows",
     ] {
         let line = line_of(&out, name);
@@ -1324,7 +1341,10 @@ fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
     put(root, ".codex/hooks.json", "{}\n");
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Warn);
-    assert!(detail.contains(".codex/hooks.json is on disk"), "{detail}");
+    assert!(
+        detail.contains(".codex/hooks.json is on disk but not in HEAD ("),
+        "{detail}"
+    );
     assert!(detail.contains("Codex member"), "{detail}");
     assert!(
         detail.ends_with("remove it from the repository"),

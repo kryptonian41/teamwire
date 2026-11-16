@@ -240,6 +240,7 @@ impl<'a> Base<'a> {
 /// member's copy differs and must stay out of commits. Ignore rules apply to
 /// the disk, so this line asks git about the working tree. `--no-index`
 /// finds the rule even for a tracked file, which plain `check-ignore` skips.
+/// Whether the pointer is tracked comes from the commit, so every form names it.
 fn feature_pointer_check(base: &Base<'_>) -> Check {
     let name = "spec-kit feature pointer";
     let hint = git_status_hint(&base.root);
@@ -254,27 +255,33 @@ fn feature_pointer_check(base: &Base<'_>) -> Check {
                 base.name
             ),
         ),
-        Ok(out) if out.exit_code == 0 => {
-            Check::pass(name, format!("git ignores {FEATURE_POINTER}"))
-        }
+        Ok(out) if out.exit_code == 0 => Check::pass(
+            name,
+            format!("git ignores {FEATURE_POINTER}, which is not tracked in {at}"),
+        ),
         Ok(out) if out.exit_code == 1 => Check::warn(
             name,
             format!(
-                "git does not ignore {FEATURE_POINTER}, so members would commit their feature \
-                 pointer; add `feature.json` to .specify/.gitignore, then commit on {}",
+                "git does not ignore {FEATURE_POINTER}, so members who start from {at} would \
+                 commit their feature pointer; add `feature.json` to .specify/.gitignore, then \
+                 commit on {}",
                 base.name
             ),
         ),
         Ok(out) => Check::warn(
             name,
             format!(
-                "git check-ignore could not tell whether it ignores {FEATURE_POINTER} ({}); {hint}",
+                "git check-ignore could not tell whether it ignores {FEATURE_POINTER} ({}), so \
+                 doctor cannot tell whether members who start from {at} would commit it; {hint}",
                 git_said(&out)
             ),
         ),
         Err(e) => Check::warn(
             name,
-            format!("could not ask git whether it ignores {FEATURE_POINTER}: {e}; {hint}"),
+            format!(
+                "could not ask git whether it ignores {FEATURE_POINTER}: {e}, so doctor cannot \
+                 tell whether members who start from {at} would commit it; {hint}"
+            ),
         ),
     }
 }
