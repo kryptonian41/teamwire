@@ -72,22 +72,56 @@ pub(crate) fn run(args: &CloseArgs, global: &Global, wiring: &Wiring) -> ExitCod
 /// have done part of its work (one worktree removed, the next refused).
 const DESTRUCTIVE: [&str; 3] = ["remove_worktrees", "close_places", "release_hold"];
 
+/// How `teamwire-close` starts the detail of a destructive step whose re-check
+/// under the lock refused (CLS-3). That re-check runs before the step touches
+/// anything, so such a step removed nothing.
+const RECHECK_REFUSED: &str = "the world changed under the lock: ";
+
+/// Whether `outcome` is a destructive step that refused at its re-check.
+fn refused_at_recheck(outcome: &StepOutcome) -> bool {
+    !outcome.ok && outcome.detail.starts_with(RECHECK_REFUSED)
+}
+
 /// What state a stopped close leaves. Once the `finish` step is done the team
 /// is `closed`, so "the state is intact" would be wrong: the team is closed and
 /// only the archive or the deletion is left. Before that, the state is intact
 /// only when no destructive step ran; otherwise the team is open again with
 /// some worktrees, places or the hold already gone, and a rerun finishes them.
+/// A step that refused at its re-check did not run.
 fn stopped_message(report: &CloseReport, step: &str, team: &TeamName) -> String {
     let finished = report.steps.iter().any(|s| s.step == "finish" && s.ok);
     let ran: Vec<&str> = DESTRUCTIVE
         .into_iter()
-        .filter(|d| report.steps.iter().any(|s| s.step == *d))
+        .filter(|d| {
+            report
+                .steps
+                .iter()
+                .any(|s| s.step == *d && !refused_at_recheck(s))
+        })
         .collect();
+    let refused = report
+        .steps
+        .iter()
+        .any(|s| s.step == step && refused_at_recheck(s));
     if finished {
         format!(
             "close stopped at {step}: the team is already marked closed and its state \
              directory is still there; fix that, then run `teamwire close {team}` again to \
              archive it afresh and delete it"
+        )
+    } else if refused && ran.is_empty() {
+        format!(
+            "close stopped at {step}: {step} refused at its re-check under the lock and \
+             removed nothing, so the team is open again with its state intact; fix that, then \
+             run the close again"
+        )
+    } else if refused {
+        format!(
+            "close stopped at {step}: {step} refused at its re-check under the lock and \
+             removed nothing, but the team is open again with {} already run, and close does \
+             not undo that; fix the problem, then run `teamwire close {team}` again to finish \
+             the job",
+            ran.join(", ")
         )
     } else if ran.is_empty() {
         format!(
@@ -278,6 +312,44 @@ mod tests {
         assert!(
             text.contains("remove_worktrees, close_places, release_hold already ran"),
             "{text}"
+        );
+    }
+
+    #[test]
+    fn a_destructive_step_refused_at_its_recheck_is_not_named_as_ran() {
+        let team = TeamName::parse("alpha").unwrap();
+        // The text teamwire-close writes when the re-check under the lock
+        // refuses a destructive step before it touches anything.
+        let refused = |step: &str| StepOutcome {
+            step: step.to_owned(),
+            ok: false,
+            detail: "the world changed under the lock: api is busy: its current turn is lost \
+                     if its place closes. Wait for it, or remove it alone with --role api --stop"
+                .to_owned(),
+        };
+        let mut first = report(&[("lock", true), ("archive", true), ("verify_archive", true)]);
+        first.steps.push(refused("remove_worktrees"));
+        let text = stopped_message(&first, "remove_worktrees", &team);
+        assert_eq!(
+            text,
+            "close stopped at remove_worktrees: remove_worktrees refused at its re-check under \
+             the lock and removed nothing, so the team is open again with its state intact; \
+             fix that, then run the close again"
+        );
+        let mut second = report(&[
+            ("lock", true),
+            ("archive", true),
+            ("verify_archive", true),
+            ("remove_worktrees", true),
+        ]);
+        second.steps.push(refused("close_places"));
+        let text = stopped_message(&second, "close_places", &team);
+        assert_eq!(
+            text,
+            "close stopped at close_places: close_places refused at its re-check under the \
+             lock and removed nothing, but the team is open again with remove_worktrees \
+             already run, and close does not undo that; fix the problem, then run `teamwire \
+             close alpha` again to finish the job"
         );
     }
 
