@@ -1,5 +1,5 @@
 //! `inbox` and `ack`: a member reads its messages once (DEL-13). Reading
-//! marks a delivery `acked`, the only way it reaches that state (MSG-11).
+//! marks a delivery `acked`, one of the recipient's own actions that do so (MSG-11).
 
 use serde_json::json;
 use teamwire_core::{DeliveryState, DisplayId, EventType, Recipient, Role};
