@@ -273,8 +273,12 @@ pane.
 A `warning:` line never stops the handoff. One names each flag of yours that
 the new lead does not get. One says your newest permission mode is one the
 new lead cannot be started with, so it starts with no permission flag; set
-the mode again in the new lead if you need it. One says the document is older than the note, so
-check that the document is current. One says a sleep hold was not moved.
+the mode again in the new lead if you need it. One says your arguments could
+not be read, so the new lead starts with no flag carried from them. A Codex
+or pi lead then starts without your approval flags, so run `--dry-run` first
+and hand off by hand when it prints that line. One says the document is
+older than the note, so check that the document is current. One says a sleep
+hold was not moved.
 When your pane does not close, a warning says so after every team moved.
 End your turn at once, and the user closes the pane.
 

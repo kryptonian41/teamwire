@@ -193,7 +193,17 @@ pub(crate) fn plan<'r>(
     } else {
         None
     };
-    let old_args = old_args(ctx.platform, harness, &old);
+    let mut warnings = Vec::new();
+    let old_args = old_args(ctx.platform, harness, &old).unwrap_or_else(|| {
+        // A Codex or pi lead's approval flags live only in its arguments, so
+        // the user must hear that none of them reach the new lead.
+        warnings.push(
+            "the old lead's arguments could not be read, so the new lead starts with no flag \
+             carried from them"
+                .to_owned(),
+        );
+        Vec::new()
+    });
     let start = |adopt_first: bool| {
         let prompt = first_prompt(
             &caps,
@@ -233,7 +243,7 @@ pub(crate) fn plan<'r>(
         )));
     }
     // The harness's own warnings are said with the plan's, on a dry run too.
-    let mut warnings = spec.warnings;
+    warnings.extend(spec.warnings);
     document_checks(&files, &mut warnings)?;
     let old_place = locate_session(ctx.platform, ctx.clock, &old, harness, host).map_err(|e| {
         refused(format!(
@@ -308,16 +318,17 @@ fn lead_folder(
     Ok(cwd)
 }
 
-/// The old lead process's arguments, or none when its process or its
+/// The old lead process's arguments, or `None` when its process or its
 /// arguments cannot be read.
-fn old_args(platform: &dyn Platform, harness: &dyn Harness, old: &SessionId) -> Vec<String> {
+fn old_args(
+    platform: &dyn Platform,
+    harness: &dyn Harness,
+    old: &SessionId,
+) -> Option<Vec<String>> {
     let pids = harness
         .processes_for_session(old, LIST_TIMEOUT)
         .unwrap_or_default();
-    pids.iter()
-        .min()
-        .and_then(|pid| platform.args_of(*pid))
-        .unwrap_or_default()
+    pids.iter().min().and_then(|pid| platform.args_of(*pid))
 }
 
 /// The handoff document must exist. One older than the note may describe

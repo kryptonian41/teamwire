@@ -831,7 +831,12 @@ The steps run in this order, one line on stdout for each:
    handoff document `$TEAMWIRE_HOME/handoffs/<session>/handoff.md` cannot be
    read, and when the locator cannot find the old lead's pane. The locator
    refusal names the locator's reason code. A document older than the note
-   gives a `warning:` line, and the command goes on.
+   gives a `warning:` line, and the command goes on. When the old lead's
+   arguments cannot be read, because its process or its argument list cannot
+   be read, the line `warning: the old lead's arguments could not be read, so
+   the new lead starts with no flag carried from them` says so, and the
+   command goes on. A Codex or pi lead then starts without the approval flags
+   of the old one.
 3. `--dry-run` stops here and changes nothing (below).
 4. Open the new pane with `Host::split_run` beside the old pane, in the old
    lead's folder, with the label `lead · <team title>` (`+N` when the lead
@@ -878,11 +883,12 @@ Exit codes:
 | 3 | A usage error |
 | 6 | An open team's store could not be read while finding the caller |
 
-`--dry-run` prints `teams:`, `old pane:`, `handoff document:`, the label and
-folder of the pane it would open, one `environment: NAME=value` line for each
-variable the new pane gets, `new session:` (the chosen id, or the one
-its harness picks), `command:` with the new lead's command line, and one
-`not passed on:` line per dropped flag. It ends with `dry run: no pane was
+`--dry-run` first prints on stderr the `warning:` lines of step 2 and the
+harness's lead-start warnings of step 4. It then prints `teams:`,
+`old pane:`, `handoff document:`, the label and folder of the pane it would
+open, one `environment: NAME=value` line for each variable the new pane gets,
+`new session:` (the chosen id, or the one its harness picks), `command:` with
+the new lead's command line, and one `not passed on:` line per dropped flag. It ends with `dry run: no pane was
 opened and no team changed`. It opens every store read-only.
 
 `--handoff-guide` prints what the handoff document must hold, with its licence

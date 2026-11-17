@@ -118,7 +118,9 @@ Claude Code, Codex or pi.
 
 15. **Each harness carries the old lead's flags by an allow list.** The old
     flags come from the old lead process's own arguments
-    (`Platform::args_of`). A flag a harness does not know is dropped and named
+    (`Platform::args_of`). When that process or its arguments cannot be
+    read, no flag is carried, and a `warning:` line says so, also on
+    `--dry-run`. A flag a harness does not know is dropped and named
     in `LeadStartSpec::dropped`, by name only, because a value can be a
     secret. Each harness carries at least its permission, model and effort or
     thinking flags. The Claude Code harness takes the permission mode and the

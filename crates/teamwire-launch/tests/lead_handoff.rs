@@ -74,14 +74,21 @@ fn team(rig: &Rig, name: &str, title: &str, away: bool) {
 
 /// The old lead runs in a pane of its own, with its handoff document.
 fn old_lead(rig: &Rig) -> Place {
+    old_lead_with(
+        rig,
+        Some(&["fake-claude", "--resume", OLD, "--keep", "--drop-me"]),
+    )
+}
+
+/// `old_lead`, whose process reports `args`, or no arguments at all.
+fn old_lead_with(rig: &Rig, args: Option<&[&str]>) -> Place {
     rig.harness
         .add_session(sid(OLD), vec![Pid::new(OLD_PID)], alive());
     rig.harness.set_session_cwd(sid(OLD), rig.work.path());
     rig.platform.inner.set_alive(Pid::new(OLD_PID), true);
-    rig.platform.inner.set_args(
-        Pid::new(OLD_PID),
-        &["fake-claude", "--resume", OLD, "--keep", "--drop-me"],
-    );
+    if let Some(args) = args {
+        rig.platform.inner.set_args(Pid::new(OLD_PID), args);
+    }
     let place = rig.host.add_place(
         "",
         PlaceState::Idle,
@@ -852,4 +859,37 @@ fn the_harness_warnings_are_said_on_a_handoff_and_on_a_dry_run() {
     let (said, result) = run(&rig);
     assert_eq!(result, Ok(()), "{}", text(&said));
     assert!(said.contains(&want), "{}", text(&said));
+}
+
+#[test]
+fn old_lead_arguments_that_cannot_be_read_are_said_on_a_handoff_and_on_a_dry_run() {
+    let want = Said::Warning(
+        "warning: the old lead's arguments could not be read, so the new lead starts with no \
+         flag carried from them"
+            .to_owned(),
+    );
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    old_lead_with(&rig, None);
+    let (said, result) = run_with(&rig, false, true);
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    assert!(said.contains(&want), "{}", text(&said));
+
+    new_session_starts(&rig);
+    let (said, result) = run(&rig);
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    assert!(said.contains(&want), "{}", text(&said));
+    assert_eq!(rig.harness.lead_starts()[0].old_args, Vec::<String>::new());
+
+    // Arguments that read give no such line.
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    old_lead(&rig);
+    let (said, result) = run_with(&rig, false, true);
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    assert!(
+        !text(&said).contains("could not be read"),
+        "{}",
+        text(&said)
+    );
 }
