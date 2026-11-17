@@ -260,12 +260,13 @@ with `--model <id>[1m]` avoids it.
 | 1 | The handoff document is missing | Nothing | Run `teamwire lead --handoff-guide`, write the document, and run the command again |
 | 1 | Your pane cannot be located | Nothing | Read the locator's code in the line. Hand off by hand when you cannot fix it |
 | 2 | The new pane could not be opened, or the new session did not show in it | Nothing. The command closed the new pane | You are still the lead. Carry on, or run the command again |
-| 2 | A team's write failed, or a new Codex lead did not adopt every team within 180 seconds | Some teams moved and some did not. Both panes stay open | The new lead runs `teamwire lead --adopt <team>` for each team the output names. Then end your turn, and the user closes your pane |
+| 2 | A team's write failed, or a new Codex lead did not adopt every team within 180 seconds | Some teams moved and some did not. Both panes stay open | The new lead runs `teamwire lead --adopt <team>` for each team the output names. That command also moves the team's sleep hold to the new lead. Then end your turn, and the user closes your pane |
 | 6 | An open team's store cannot be read | Nothing | Run `teamwire doctor` |
 
 To hand off by hand, start a fresh lead session in a new pane. Its first
 message points at your handoff document and tells it to run
-`teamwire lead --adopt <team>` for each team. The printed command of the
+`teamwire lead --adopt <team>` for each team. That command records the new
+lead and moves the team's sleep hold to it. The printed command of the
 host refusal is such a start. Then end your turn, and the user closes your
 pane.
 

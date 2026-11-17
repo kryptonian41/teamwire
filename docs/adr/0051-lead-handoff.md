@@ -84,7 +84,8 @@ Claude Code, Codex or pi.
 
 10. **Adoption reuses `team.lead_adopted`** with its present data
     (`old_session`, `new_session`, `lead_cwd`). No event type is added, and
-    `teamwire lead --adopt` keeps working as before.
+    `teamwire lead --adopt` records the adoption as before. It now also
+    moves an open team's sleep hold to the adopting lead (decision 16).
 
 11. **The command records the adoption where it can.** Claude Code and pi let
     teamwire choose the new session's id (`choose_session_id`). The command
@@ -139,8 +140,10 @@ Claude Code, Codex or pi.
     that pane and exits 2. A failure after one team moved rolls nothing back:
     both panes stay open, the output names the teams that moved and the teams
     that did not, and the new lead takes the rest with `teamwire lead --adopt`.
-    Each team that moved still gets its sleep hold moved to its new lead, so
-    the hold does not end with the old lead's pane.
+    Each team the command moved gets its sleep hold moved to its new lead
+    before the command exits. `teamwire lead --adopt` moves the hold of each
+    open team the new lead takes by hand. So no team's hold ends with the old
+    lead's pane.
 
 17. **`teamwire lead --missed` lists what the old lead may have missed.** The
     window of a team starts 120 seconds before the old lead's `handoff.md` was

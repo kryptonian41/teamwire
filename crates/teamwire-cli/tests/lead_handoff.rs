@@ -17,9 +17,10 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use teamwire_core::{HarnessId, HostId, LeadRoute, Pid, SessionId, SessionKind, TeamName};
 use teamwire_fakes::{FakeHerdrEnv, TestHome};
-use teamwire_store::{NewTeam, Store};
+use teamwire_store::{CloseEnd, NewTeam, Store, TeamRow};
 
 const OLD: &str = "6f1c2d3e-0000-4000-8000-0000000000aa";
+const NEW: &str = "6f1c2d3e-0000-4000-8000-0000000000cc";
 
 struct Rig {
     herdr: FakeHerdrEnv,
@@ -95,6 +96,16 @@ impl Rig {
     /// The old lead: `fake-claude` with the old session, started in a pane
     /// the way a user starts a lead, and its handoff document.
     fn old_lead(&self) -> String {
+        let pane = self.claude_in_pane(OLD);
+        let dir = self.home.path().join("handoffs").join(OLD);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("handoff.md"), "# handoff\n").unwrap();
+        pane
+    }
+
+    /// `fake-claude` running `session` in a new pane, once its session file
+    /// is written.
+    fn claude_in_pane(&self, session: &str) -> String {
         let made = self
             .herdr
             .run(&[
@@ -115,14 +126,11 @@ impl Rig {
                 "pane",
                 "run",
                 &pane,
-                &format!("claude --session-id {OLD} --verbose"),
+                &format!("claude --session-id {session} --verbose"),
             ])
             .unwrap();
         assert_eq!(ran.code, Some(0), "{ran:?}");
-        self.pid_of(OLD);
-        let dir = self.home.path().join("handoffs").join(OLD);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("handoff.md"), "# handoff\n").unwrap();
+        self.pid_of(session);
         pane
     }
 
@@ -143,17 +151,19 @@ impl Rig {
         }
     }
 
+    fn lead(&self) -> SessionId {
+        self.row().lead_session.unwrap()
+    }
+
     #[expect(
         clippy::redundant_closure_for_method_calls,
         reason = "`ReadTx::team` as a path does not infer the transaction's lifetime for `Store::read`"
     )]
-    fn lead(&self) -> SessionId {
+    fn row(&self) -> TeamRow {
         Store::open_read_only(self.home.path(), &TeamName::parse("alpha").unwrap())
             .unwrap()
             .read(|tx| tx.team())
             .unwrap()
-            .unwrap()
-            .lead_session
             .unwrap()
     }
 
@@ -341,4 +351,56 @@ fn lead_takes_exactly_one_action_and_dry_run_only_with_handoff() {
         let run = rig.teamwire(args);
         assert_eq!(run.code, 3, "{args:?}: {}{}", run.out, run.err);
     }
+}
+
+#[test]
+fn a_lead_that_adopts_an_open_team_by_hand_takes_over_its_sleep_hold() {
+    let rig = Rig::new();
+    rig.team();
+    rig.old_lead();
+    rig.claude_in_pane(NEW);
+    let new_pid = rig.pid_of(NEW);
+
+    let run = rig.teamwire_as(NEW, &["lead", "--adopt", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(rig.lead().as_str(), NEW);
+    let hold = rig.row().sleep_hold;
+    if !cfg!(target_os = "macos") {
+        assert!(hold.is_none(), "{hold:?}");
+        assert!(
+            run.err.contains("warning: no sleep hold on this platform"),
+            "{}",
+            run.err
+        );
+        return;
+    }
+    // The hold waits on the new lead's process, so it outlives the old pane.
+    assert!(hold.is_some(), "the team has no sleep hold: {}", run.err);
+    let hold = hold.unwrap();
+    assert!(hold.owned, "{hold:?}");
+    let args = teamwire_platform::native().args_of(hold.pid).unwrap();
+    assert_eq!(args[1..], ["-ims", "-w", &new_pid.get().to_string()]);
+    assert!(!run.err.contains("SLEEP HOLD"), "{}", run.err);
+}
+
+#[test]
+fn a_lead_that_adopts_a_closed_team_starts_no_sleep_hold() {
+    let rig = Rig::new();
+    rig.team();
+    rig.claude_in_pane(NEW);
+    let mut store = Store::open(rig.home.path(), &TeamName::parse("alpha").unwrap()).unwrap();
+    let at = teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000).unwrap();
+    store
+        .write(|tx| {
+            assert!(tx.begin_close(at, Pid::new(1))?);
+            assert!(tx.finish_close(at, &CloseEnd::Completed)?);
+            Ok(())
+        })
+        .unwrap();
+
+    let run = rig.teamwire_as(NEW, &["lead", "--adopt", "alpha"]);
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert_eq!(rig.lead().as_str(), NEW);
+    assert_eq!(rig.row().sleep_hold, None);
+    assert!(!run.err.contains("sleep hold"), "{}", run.err);
 }

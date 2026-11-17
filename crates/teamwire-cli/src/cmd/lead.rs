@@ -1,4 +1,5 @@
-//! `teamwire lead`: `--adopt` records this session as the team's lead;
+//! `teamwire lead`: `--adopt` records this session as the team's lead and
+//! moves the team's sleep hold to it;
 //! `--handoff` hands every open team this session leads to a fresh lead
 //! session in a pane beside this one (ADR 0051); `--handoff-guide` prints
 //! what the old lead writes first; `--missed` lists what the old lead may
@@ -10,13 +11,14 @@
 
 use std::process::ExitCode;
 
-use teamwire_core::{Config, HandoffFiles, TeamName};
+use teamwire_core::{Config, HandoffFiles, SessionId, TeamName, TeamState};
 use teamwire_launch::{
     HandoffError, LeadCaller, LeadHandoffCtx, LeadHandoffOpts, LeadHandoffWaits, LeadSeat, Said,
-    find_lead, lead_hand_off,
+    ensure_hold, find_lead, lead_hand_off,
 };
-use teamwire_msg::adopt_lead;
+use teamwire_msg::{SendError, adopt_lead};
 use teamwire_report::lead_missed;
+use teamwire_store::{Ctx, Party};
 
 use crate::cmd::send::error_code;
 use crate::cmd::shared::{
@@ -125,20 +127,45 @@ fn adopt(team: &str, global: &Global, wiring: &Wiring) -> ExitCode {
         Err(e) => return fail("lead", &e.to_string(), USAGE),
     };
     let outcome = with_ctx(global, wiring, &team, "lead", |ctx| {
-        adopt_lead(ctx, &caller_env(Some("lead".to_owned())))
+        let report = adopt_lead(ctx, &caller_env(Some("lead".to_owned())))?;
+        let warnings = hold_for(ctx, &team, &report.new);
+        Ok::<_, SendError>((report, warnings))
     });
     match outcome {
         Err(code) => code,
         Ok(Err(e)) => fail("lead", &e.to_string(), error_code(&e)),
-        Ok(Ok(report)) => {
+        Ok(Ok((report, warnings))) => {
             let old = report.old.map_or("none".to_owned(), |s| s.to_string());
             say(&format!(
                 "team {team}: lead session changed from {old} to {}\n",
                 report.new
             ));
+            for w in warnings {
+                warn(&format!("warning: {w}"));
+            }
             ExitCode::SUCCESS
         }
     }
+}
+
+/// The sleep hold waits on the lead's own process, so an open team's hold
+/// moves to the lead that adopted it. Otherwise the hold ends with the old
+/// lead's pane while the team still works. A closed team gets none: close
+/// released its hold, and nothing would release a new one.
+fn hold_for(ctx: &mut Ctx<'_>, team: &TeamName, session: &SessionId) -> Vec<String> {
+    let mut warnings = Vec::new();
+    let read = ctx.store.read(|tx| Ok(tx.team()?.map(|t| t.state)));
+    if !matches!(read, Ok(Some(TeamState::Open))) {
+        return warnings;
+    }
+    match ctx.adapters(&Party::Lead) {
+        Ok((harness, _)) => {
+            let harness = harness.id();
+            ensure_hold(ctx, team, (&harness, Some(session)), &mut warnings);
+        }
+        Err(e) => warnings.push(format!("the sleep hold was not moved: {e}")),
+    }
+    warnings
 }
 
 fn handoff(dry_run: bool, global: &Global, wiring: &Wiring) -> ExitCode {

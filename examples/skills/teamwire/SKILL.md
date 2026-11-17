@@ -285,7 +285,8 @@ a pull request until I agree.
 ```
 
 The new session runs `teamwire lead --adopt <team>` for each team it takes
-over, so results reach it and not the old session.
+over, so results reach it and not the old session. The command also moves
+the team's sleep hold to the new session's process.
 
 ## Roles: every member has one
 

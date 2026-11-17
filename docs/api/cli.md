@@ -804,7 +804,11 @@ The command takes exactly one of the four actions. `--dry-run` goes only with
 
 `--adopt <team>`, run from a new lead session, records that session as the
 team's lead and prints the old and new session ids (ADR 0008). The line reads
-`team <team>: lead session changed from <old> to <new>`.
+`team <team>: lead session changed from <old> to <new>`. For an open team,
+the command then moves the team's sleep hold to the caller's process, as
+launch does (ADR 0051). A hold that cannot be moved is a `warning:` line, and
+the exit code stays 0. A team that is not open gets no hold, because close
+released its hold and nothing would release a new one.
 
 `--handoff` hands every open team the calling session leads to a fresh lead
 session in a pane beside the caller's (ADR 0051). The old lead runs it as the
@@ -870,7 +874,7 @@ Exit codes:
 | --- | --- |
 | 0 | Every led team has the new lead, and the old pane was closed or a warning said why not |
 | 1 | Refused, and nothing changed: a refusal of step 1 or step 2 |
-| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed or the Codex wait ran out: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move |
+| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed or the Codex wait ran out: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move, which also moves that team's sleep hold to the new lead |
 | 3 | A usage error |
 | 6 | An open team's store could not be read while finding the caller |
 
