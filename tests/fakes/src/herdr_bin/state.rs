@@ -55,6 +55,10 @@ pub(crate) struct Pane {
     #[serde(default)]
     pub(crate) label: Option<String>,
     pub(crate) agent: Option<AgentRec>,
+    /// The `--env` pairs of the `pane split` that made the pane. `pane run`
+    /// hands them to the program it starts.
+    #[serde(default)]
+    pub(crate) env: Vec<(String, String)>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]

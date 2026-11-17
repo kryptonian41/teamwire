@@ -10,6 +10,7 @@ mod args;
 mod faults;
 mod layout;
 mod pane_files;
+mod run;
 mod shapes;
 mod state;
 mod syntax;
@@ -178,6 +179,8 @@ fn dispatch(ctx: &mut Ctx<'_>, args: &Args, fault: Option<&Action>) -> Result<Va
         "agent read" => agent::read(ctx, args),
         "agent send-keys" => agent::send_keys(ctx, args),
         "pane close" => layout::pane_close(ctx, args),
+        "pane split" => layout::pane_split(ctx, args),
+        "pane run" => run::pane_run(ctx, args),
         "pane list" => Ok(layout::pane_list(ctx, args)),
         "pane get" => layout::pane_get(ctx, args),
         "workspace create" => Ok(layout::workspace_create(ctx, args)),
@@ -282,6 +285,8 @@ pub fn run(argv: &[String]) -> ExitCode {
             std::io::Write::write_all(&mut std::io::stdout().lock(), screen.as_bytes()).ok();
             ExitCode::SUCCESS
         }
+        // Real herdr 0.9.5 prints nothing for `pane run` and exits 0.
+        Ok(_) if command == "pane run" => ExitCode::SUCCESS,
         Ok(result) => {
             print_ok(&command, result);
             ExitCode::SUCCESS

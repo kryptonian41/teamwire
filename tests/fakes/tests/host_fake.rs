@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, Pid, Place,
-    PlaceState, SessionId, SpawnRequest, sanitize::one_line,
+    PlaceState, SessionId, SpawnRequest, SplitRequest, sanitize::one_line,
 };
 use teamwire_fakes::{CallKind, FakeHost, Fault};
 
@@ -300,4 +300,32 @@ fn a_gone_place_holds_no_live_agent_for_spawn_or_the_name_list() {
     assert!(h.live_agent_names(T).unwrap().is_empty());
     h.spawn(&req("tw_demo_api"), T).unwrap();
     assert_eq!(h.live_agent_names(T).unwrap(), ["tw_demo_api"]);
+}
+
+#[test]
+fn a_split_pane_keeps_its_request_and_answers_its_faults() {
+    let h = FakeHost::new();
+    let beside = h.add_place("tw_demo_api", PlaceState::Idle, occ("s", 1));
+    let want = SplitRequest {
+        label: "lead \u{b7} Demo".into(),
+        cwd: "/work".into(),
+        argv: vec!["claude".into(), "go".into()],
+        env: vec![("TEAMWIRE_HOME".into(), "/h".into())],
+    };
+    let new = h.split_run(&beside, &want, T).unwrap();
+    assert_eq!(h.split_request_of(&new), Some(want.clone()));
+    assert_eq!(h.split_request_of(&beside), None);
+    h.inject(
+        "split_run",
+        Fault::Fail(HostError::new(HostErrorCode::Other, "down")),
+        1,
+    );
+    assert_eq!(
+        h.split_run(&beside, &want, T).unwrap_err().code,
+        HostErrorCode::Other
+    );
+    // A pane the host already lost counts as closed.
+    h.close_pane(&new, T).unwrap();
+    assert_eq!(h.split_request_of(&new), None);
+    h.close_pane(&new, T).unwrap();
 }

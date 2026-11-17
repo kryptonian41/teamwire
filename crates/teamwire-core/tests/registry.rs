@@ -7,8 +7,8 @@ use teamwire_core::{CallerSession, HarnessId};
 use teamwire_core::{
     DeliveryError, DeliveryErrorCode, Harness, HarnessCaps, HarnessError, Host, HostErrorCode,
     HostId, Key, LaunchSpec, Liveness, MemberLaunch, NoHost, OtelConfig, Pid, Place, Registry,
-    RegistryError, Role, ScreenState, SessionId, SpawnRequest, StartupOutcome, TeamName,
-    TrustPolicy, TurnEnd, one_line,
+    RegistryError, Role, ScreenState, SessionId, SpawnRequest, SplitRequest, StartupOutcome,
+    TeamName, TrustPolicy, TurnEnd, one_line,
 };
 
 #[derive(Debug)]
@@ -126,7 +126,7 @@ fn no_host_does_nothing_and_says_not_found() {
     let t = Duration::from_secs(1);
     let caps = host.capabilities();
     assert!(!caps.can_type && !caps.reports_state && !caps.knows_session_of_place);
-    assert!(!caps.sets_env_at_spawn && !caps.guards_dialogs);
+    assert!(!caps.sets_env_at_spawn && !caps.guards_dialogs && !caps.splits_pane);
     assert_eq!(host.id().as_str(), NoHost::ID);
 
     let place = Place {
@@ -146,6 +146,20 @@ fn no_host_does_nothing_and_says_not_found() {
     assert_eq!(
         host.spawn(&spawn, t).unwrap_err().code,
         HostErrorCode::NotFound
+    );
+    let split = SplitRequest {
+        label: "lead".to_owned(),
+        cwd: "/tmp".into(),
+        argv: vec!["true".to_owned()],
+        env: Vec::new(),
+    };
+    assert_eq!(
+        host.split_run(&place, &split, t).unwrap_err().code,
+        HostErrorCode::Unsupported
+    );
+    assert_eq!(
+        host.close_pane(&place, t).unwrap_err().code,
+        HostErrorCode::Unsupported
     );
     assert_eq!(
         host.submit(&place, &line, t).unwrap_err().code,

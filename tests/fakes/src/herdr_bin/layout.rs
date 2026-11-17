@@ -16,6 +16,7 @@ fn add_pane(state: &mut State, ws: &str, tab: &str, cwd: &str) -> String {
         cwd: cwd.to_owned(),
         label: None,
         agent: None,
+        env: Vec::new(),
     });
     id
 }
@@ -151,6 +152,34 @@ fn find_pane<'a>(ctx: &'a Ctx<'_>, id: &str) -> Result<&'a Pane, CliError> {
 
 pub(super) fn pane_get(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     let pane = find_pane(ctx, args.operand(0).unwrap_or_default())?;
+    Ok(json!({ "type": "pane_info", "pane": pane_info(ctx, pane) }))
+}
+
+/// A new pane in the tab of the pane it splits, as herdr makes one, with the
+/// split's working directory (else the split pane's) and its `--env` pairs.
+/// The fake ignores `--direction` and `--ratio`: it draws no layout.
+pub(super) fn pane_split(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
+    let target = args
+        .operand(0)
+        .or_else(|| args.value("pane"))
+        .ok_or_else(|| fail("invalid_params", "fake-herdr splits only a named pane"))?
+        .to_owned();
+    let old = find_pane(ctx, &target)?.clone();
+    let mut env = Vec::new();
+    for pair in args.all("env") {
+        let (key, value) = pair
+            .split_once('=')
+            .ok_or_else(|| fail("invalid_params", format!("--env {pair} is not KEY=VALUE")))?;
+        env.push((key.to_owned(), value.to_owned()));
+    }
+    let cwd = args
+        .value("cwd")
+        .map_or_else(|| old.cwd.clone(), str::to_owned);
+    let id = add_pane(ctx.state, &old.workspace_id, &old.tab_id, &cwd);
+    if let Some(p) = ctx.state.panes.iter_mut().find(|p| p.pane_id == id) {
+        p.env = env;
+    }
+    let pane = find_pane(ctx, &id)?;
     Ok(json!({ "type": "pane_info", "pane": pane_info(ctx, pane) }))
 }
 

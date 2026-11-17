@@ -14,6 +14,7 @@ mod cli;
 mod errors;
 mod shapes;
 mod spawn;
+mod split;
 
 use std::fmt;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Address, Clock, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine,
-    Place, PlaceState, Platform, SessionId, SpawnRequest, SubmitAck,
+    Place, PlaceState, Platform, SessionId, SpawnRequest, SplitRequest, SubmitAck,
 };
 
 /// How often `agent start` tries, and how long it waits between tries,
@@ -167,6 +168,7 @@ impl Host for Herdr {
             // Identity reaches the member through the harness config (ADR 0008).
             sets_env_at_spawn: false,
             guards_dialogs: true,
+            splits_pane: true,
         }
     }
 
@@ -258,5 +260,18 @@ impl Host for Herdr {
 
     fn place_env_var(&self) -> Option<&'static str> {
         Some("HERDR_PANE_ID")
+    }
+
+    fn split_run(
+        &self,
+        beside: &Place,
+        req: &SplitRequest,
+        timeout: Duration,
+    ) -> Result<Place, HostError> {
+        split::split_run(self, beside, req, timeout)
+    }
+
+    fn close_pane(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+        split::close_pane(self, place, timeout)
     }
 }

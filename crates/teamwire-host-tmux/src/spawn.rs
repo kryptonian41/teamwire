@@ -127,7 +127,10 @@ impl Tmux {
 
     /// Writes `export KEY='value'` lines to a file in a new directory only the
     /// current user can enter, and returns the directory.
-    fn write_env_file(&self, env: &[(String, String)]) -> Result<std::path::PathBuf, HostError> {
+    pub(crate) fn write_env_file(
+        &self,
+        env: &[(String, String)],
+    ) -> Result<std::path::PathBuf, HostError> {
         use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
         let io = |what: &str, e: &dyn fmt::Display| {
             HostError::new(HostErrorCode::Other, format!("{what}: {e}"))
@@ -176,7 +179,7 @@ impl Tmux {
 }
 
 /// A name `sh` accepts in `export NAME=...`.
-fn is_env_name(name: &str) -> bool {
+pub(crate) fn is_env_name(name: &str) -> bool {
     let mut chars = name.chars();
     chars
         .next()
@@ -186,7 +189,7 @@ fn is_env_name(name: &str) -> bool {
 
 /// The words that load the environment file in `dir`, remove `dir`, and then
 /// run the program that follows them.
-fn env_wrapper(dir: &std::path::Path) -> Vec<String> {
+pub(crate) fn env_wrapper(dir: &std::path::Path) -> Vec<String> {
     let dir = dir.display().to_string();
     vec![
         "sh".to_owned(),

@@ -20,6 +20,7 @@ const CHOICES: &[(&str, &[&str])] = &[
     ),
     ("format", &["text", "ansi"]),
     ("until", &["idle", "working", "blocked", "done", "unknown"]),
+    ("direction", &["right", "down"]),
 ];
 
 const SHAPES: &[Shape] = &[
@@ -84,6 +85,29 @@ const SHAPES: &[Shape] = &[
         usage: "usage: herdr pane list [--workspace ID]",
         operands: 0..=0,
         flags: &["workspace"],
+        required_flags: &[],
+    },
+    Shape {
+        command: "pane split",
+        usage: "usage: herdr pane split [OPTIONS] [PANE_ID]",
+        operands: 0..=1,
+        flags: &[
+            "pane",
+            "current",
+            "direction",
+            "ratio",
+            "cwd",
+            "env",
+            "focus",
+            "no-focus",
+        ],
+        required_flags: &[],
+    },
+    Shape {
+        command: "pane run",
+        usage: "usage: herdr pane run <PANE_ID> <COMMAND>...",
+        operands: 2..=usize::MAX,
+        flags: &[],
         required_flags: &[],
     },
     Shape {

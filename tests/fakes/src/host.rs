@@ -9,11 +9,13 @@ use std::time::Duration;
 
 use teamwire_core::{
     Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Place,
-    PlaceState, SpawnRequest, SubmitAck,
+    PlaceState, SpawnRequest, SplitRequest, SubmitAck,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
 use crate::meeting::Meeting;
+
+mod split;
 
 /// What can go wrong with one call. Scripted per method name with
 /// `FakeHost::inject`.
@@ -25,7 +27,8 @@ pub enum Fault {
     /// `HostErrorCode::Timeout`, as an adapter does when its timer fires.
     Hang,
     /// The host does the work and then reports failure, so a caller that
-    /// retries would do it twice. For `spawn`, `submit`, `send_keys` and `close`.
+    /// retries would do it twice. For `spawn`, `submit`, `send_keys`,
+    /// `close`, `split_run` and `close_pane`.
     AcceptedButFail(HostError),
     /// `occupant` reports this instead of the truth, once per firing.
     WrongOccupant(Occupant),
@@ -51,6 +54,8 @@ struct PlaceRec {
     keys: Vec<Key>,
     /// The whole request of a place `spawn` made; none for one a test added.
     request: Option<SpawnRequest>,
+    /// The request of a place `split_run` made.
+    split: Option<SplitRequest>,
 }
 
 #[derive(Debug)]
@@ -88,6 +93,7 @@ impl FakeHost {
             submit_ack: SubmitAck::Submitted,
             sets_env_at_spawn: false,
             guards_dialogs: true,
+            splits_pane: true,
         }
     }
 
@@ -133,7 +139,8 @@ impl FakeHost {
 
     /// Fires `fault` on the next `times` calls of the method `op`
     /// (`"spawn"`, `"submit"`, `"state"`, `"occupant"`, `"read_tail"`,
-    /// `"send_keys"`, `"close"`, `"list"`, `"live_agent_names"`). Faults for
+    /// `"send_keys"`, `"close"`, `"list"`, `"live_agent_names"`,
+    /// `"split_run"`, `"close_pane"`). Faults for
     /// one method fire in the order they were injected.
     pub fn inject(&self, op: &'static str, fault: Fault, times: u32) {
         lock(&self.state).faults.push((op, fault, times));
@@ -196,6 +203,7 @@ impl FakeHost {
                 submitted: Vec::new(),
                 keys: Vec::new(),
                 request: None,
+                split: None,
             },
         );
         st.order.push(id.clone());
@@ -482,9 +490,12 @@ impl Host for FakeHost {
         self.log.record("list", CallKind::Read, "");
         self.before("list")?;
         let st = lock(&self.state);
+        // A place with no name holds no teamwire agent (a split pane), and
+        // herdr and tmux list only those that do.
         Ok(st
             .order
             .iter()
+            .filter(|id| st.places.get(*id).is_some_and(|r| !r.name.is_empty()))
             .map(|id| Place {
                 host: self.id.clone(),
                 id: id.clone(),
@@ -500,7 +511,7 @@ impl Host for FakeHost {
             .order
             .iter()
             .filter_map(|id| st.places.get(id))
-            .filter(|r| r.state != PlaceState::Gone)
+            .filter(|r| r.state != PlaceState::Gone && !r.name.is_empty())
             .map(|r| r.name.clone())
             .collect();
         names.extend(st.foreign_agents.iter().cloned());
@@ -521,5 +532,18 @@ impl Host for FakeHost {
             Some(extra) => format!("{id}@{extra}"),
             None => id,
         })
+    }
+
+    fn split_run(
+        &self,
+        beside: &Place,
+        req: &SplitRequest,
+        _timeout: Duration,
+    ) -> Result<Place, HostError> {
+        self.split_beside(beside, req)
+    }
+
+    fn close_pane(&self, place: &Place, _timeout: Duration) -> Result<(), HostError> {
+        self.close_split(place)
     }
 }

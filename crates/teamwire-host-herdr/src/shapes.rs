@@ -127,6 +127,17 @@ pub(crate) fn agent_list(result: Value) -> Result<Vec<AgentInfo>, HostError> {
     parse::<AgentListEnvelope>("agent list", result).map(|e| e.agents)
 }
 
+/// `pane_info`, as `pane split` gives it.
+#[derive(Debug, Deserialize)]
+struct PaneEnvelope {
+    pane: PaneRef,
+}
+
+/// The id of the pane `pane split` made.
+pub(crate) fn split_pane(result: Value) -> Result<String, HostError> {
+    parse::<PaneEnvelope>("pane split", result).map(|e| e.pane.pane_id)
+}
+
 pub(crate) fn new_tab(result: Value) -> Result<NewTab, HostError> {
     let c: Created = parse("workspace or tab create", result)?;
     Ok(NewTab {

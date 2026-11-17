@@ -15,11 +15,12 @@ const START_SLACK: Duration = Duration::from_secs(10);
 /// herdr accepts an `agent start` timeout above this and up to `MAX_START_MS`.
 const MIN_START_MS: u64 = 3_001;
 const MAX_START_MS: u64 = 300_000;
-/// The longest any other call in a spawn may take.
-const LAYOUT_TIMEOUT: Duration = Duration::from_secs(30);
-/// The one call a spawn may make after its deadline: closing the pane of an
-/// agent that failed to start. Leaving it open would leave an agent behind.
-const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
+/// The longest any other call in a spawn or a split may take.
+pub(crate) const LAYOUT_TIMEOUT: Duration = Duration::from_secs(30);
+/// The one call a spawn or a split may make after its deadline: closing the
+/// pane of a program that failed to start. Leaving it open would leave a
+/// pane behind.
+pub(crate) const CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The kinds herdr detects that this adapter passes through; any other
 /// program name starts `claude`.
@@ -52,7 +53,11 @@ fn left(host: &Herdr, deadline: Instant) -> Duration {
 
 /// The timeout of one call: `ask`, or what is left of the caller's timeout
 /// when that is less. `Timeout` when nothing is left.
-fn budget(host: &Herdr, deadline: Instant, ask: Duration) -> Result<Duration, HostError> {
+pub(crate) fn budget(
+    host: &Herdr,
+    deadline: Instant,
+    ask: Duration,
+) -> Result<Duration, HostError> {
     let left = left(host, deadline).min(ask);
     if left.is_zero() {
         return Err(out_of_time());

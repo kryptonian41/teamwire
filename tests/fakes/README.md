@@ -25,12 +25,15 @@ calls" (`log.count(CallKind::Write) == 0`).
 
 - `FakeHost::inject(op, Fault, times)` and `inject_always(op, Fault)`, where
   `op` is a method name (`"spawn"`, `"submit"`, `"state"`, `"occupant"`,
-  `"read_tail"`, `"send_keys"`, `"close"`, `"list"`, `"live_agent_names"`).
+  `"read_tail"`, `"send_keys"`, `"close"`, `"list"`, `"live_agent_names"`,
+  `"split_run"`, `"close_pane"`).
   `Fault::Fail(HostError)` (any `HostErrorCode`), `Fault::Hang` (returns
   `Timeout`, changes nothing), `Fault::AcceptedButFail(HostError)` (does the
   work, then reports failure), `Fault::WrongOccupant(Occupant)`,
   `Fault::ChangeOccupantAfter(Occupant)` (the occupant changes between two
   calls). Busy twice then success is `inject("spawn", Fail(Busy), 2)`.
+  A place `split_run` made has no name, so `list` and `live_agent_names`
+  leave it out, as herdr and tmux do; `split_request_of` gives its request.
 - `FakePlatform`: `set_started` (a pid's start time; unknown until set),
   `reuse_pid` (a new process, with a new start time, got a pid),
   `fail_env_reads`, `set_free_bytes` (low disk),
@@ -219,7 +222,7 @@ binary, which the end-to-end and crash tests run. `FakeBinDir`
 refuses to build a `PATH` that could reach a real `herdr` or `claude`.
 
 Commands (herdr's own names and flags): `agent start|prompt|get|list|read|send-keys`,
-`pane close|list|get|rename`, `workspace create|get|list|rename`,
+`pane close|list|get|rename|split|run`, `workspace create|get|list|rename`,
 `tab create|rename`. Output is herdr's envelope: success is
 `{"id":"cli:agent:get","result":{..,"type":"agent_info"}}` on stdout, exit 0;
 failure is `{"error":{"code":..,"message":..},"id":"cli:agent:get"}` on stderr,
@@ -235,7 +238,8 @@ takes `visible`, `recent`, `recent-unwrapped` or `detection`; `--format` takes
 `WorkspaceInfo`) carry the fields of `herdr api schema --json` (protocol 22).
 Result types: `agent_started` (with `argv`), `agent_info`, `agent_list`,
 `agent_prompted`, `pane_info`, `pane_list`, `workspace_created|info|list`,
-`tab_created|info`, and `ok` for `send-keys` and `pane close`. Exit 2 with code `fake_misconfigured` on stderr
+`tab_created|info`, and `ok` for `send-keys` and `pane close`. `pane run`
+prints nothing and exits 0, as real herdr 0.9.5 does. Exit 2 with code `fake_misconfigured` on stderr
 means the fake itself is broken: no `FAKE_HERDR_STATE`, or a `FAKE_HERDR_FAULTS`
 file that is missing, is not valid JSON, or has a key the fake does not know.
 
@@ -275,6 +279,18 @@ carries `agent`, `agent_session` and `agent_status` of the pane's agent, as
 from the session file `fake-claude` wrote (else the id on its command line).
 `pane close` ends the agent and, as herdr does, closes an emptied tab and an
 emptied workspace.
+
+`pane split <pane> [--cwd PATH] [--env KEY=VALUE]... [--no-focus]` adds a
+pane to the split pane's tab and keeps its `--env` pairs; it ignores
+`--direction` and `--ratio`. `pane run <pane> <command>...` joins its words
+with spaces and starts `sh -c "exec <line>"` in the pane, with the
+environment `agent start` gives plus the split's pairs. It records the
+program as an unnamed `claude` agent, so `agent get <pane>` reports the
+session `fake-claude` writes, as real herdr detects an agent a user started.
+It refuses a line over 1,023 bytes with `command_too_long`: macOS refuses a
+terminal line of 1,024 bytes, and real herdr rejects such a command first
+(the code is the fake's own). It refuses a pane whose program still runs
+with `fake_pane_occupied`, because the fake cannot type into a program.
 
 Each call takes a kernel lock on `<state file>.lock` for as long as it works
 on the state, and waits up to five seconds for it. The kernel frees the lock

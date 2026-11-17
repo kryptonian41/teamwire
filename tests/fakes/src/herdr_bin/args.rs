@@ -18,6 +18,7 @@ const VALUE_FLAGS: &[&str] = &[
     "tab",
     "format",
     "env",
+    "ratio",
 ];
 
 #[derive(Debug, Default)]
@@ -25,6 +26,8 @@ pub(crate) struct Args {
     /// Words that are not flags: the command, then its operands.
     pub(crate) words: Vec<String>,
     values: BTreeMap<String, String>,
+    /// Every value of a flag given more than once, such as `--env`, in order.
+    repeated: BTreeMap<String, Vec<String>>,
     switches: BTreeSet<String>,
     /// Everything after a bare `--`: the agent's own arguments.
     pub(crate) tail: Vec<String>,
@@ -43,6 +46,10 @@ impl Args {
                 Some(flag) if VALUE_FLAGS.contains(&flag) => {
                     if let Some(value) = iter.next() {
                         out.values.insert(flag.to_owned(), value.clone());
+                        out.repeated
+                            .entry(flag.to_owned())
+                            .or_default()
+                            .push(value.clone());
                     }
                 }
                 Some(flag) => {
@@ -69,8 +76,14 @@ impl Args {
         self.words.get(2 + n).map(String::as_str)
     }
 
+    /// The last value of `flag`.
     pub(crate) fn value(&self, flag: &str) -> Option<&str> {
         self.values.get(flag).map(String::as_str)
+    }
+
+    /// Every value of `flag`, in the order given.
+    pub(crate) fn all(&self, flag: &str) -> &[String] {
+        self.repeated.get(flag).map_or(&[], Vec::as_slice)
     }
 
     /// The name of every flag the call used, value flags and switches.
@@ -108,6 +121,14 @@ mod tests {
         assert_eq!(a.value("kind"), Some("claude"));
         assert_eq!(a.millis("timeout"), Some(90000));
         assert_eq!(a.tail, ["-n", "tw_a_b", "--x"]);
+    }
+
+    #[test]
+    fn a_flag_given_twice_keeps_both_values() {
+        let a = parse("pane split w1:p1 --env A=1 --env B=2 --no-focus");
+        assert_eq!(a.all("env"), ["A=1", "B=2"]);
+        assert_eq!(a.value("env"), Some("B=2"));
+        assert!(a.all("cwd").is_empty());
     }
 
     #[test]

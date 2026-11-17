@@ -60,6 +60,16 @@ fn fake_host_without_typing_or_state_passes_host_contract() {
 }
 
 #[test]
+fn fake_host_that_cannot_split_panes_passes_host_contract() {
+    let host = FakeHost::new();
+    host.set_caps(HostCaps {
+        splits_pane: false,
+        ..FakeHost::caps()
+    });
+    run_host_contract(&host);
+}
+
+#[test]
 #[should_panic(expected = "contract violated: list must succeed")]
 fn host_contract_fails_for_a_host_whose_list_breaks() {
     let host = FakeHost::new();

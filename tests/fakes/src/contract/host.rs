@@ -3,7 +3,9 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use teamwire_core::{Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnRequest, one_line};
+use teamwire_core::{
+    Address, Host, HostErrorCode, Key, Place, PlaceState, SpawnRequest, SplitRequest, one_line,
+};
 
 use super::{fail, ok, require};
 
@@ -136,6 +138,7 @@ pub fn host_contract(setup: &HostSetup<'_>) {
     }
 
     unknown_place_rules(setup);
+    split_rules(setup, &place);
 
     match host.close(&place, &address("someone_else"), t) {
         Err(e) if e.code == HostErrorCode::NotFound => {}
@@ -201,6 +204,69 @@ fn unknown_place_rules(setup: &HostSetup<'_>) {
         Ok(PlaceState::Gone) => {}
         other => not_found("state", other.err().map(|e| e.code)),
     }
+}
+
+/// `split_run` and `close_pane`, beside the live place `beside`. The split
+/// runs the program of the setup's own request, so it keeps running until
+/// its pane is closed.
+fn split_rules(setup: &HostSetup<'_>, beside: &Place) {
+    let (host, t) = (setup.host, setup.timeout);
+    let base = (setup.request)(&address("s1"));
+    let req = SplitRequest {
+        label: "lead \u{b7} contract".to_owned(),
+        cwd: base.cwd,
+        argv: base.argv,
+        env: base.env,
+    };
+    if !host.capabilities().splits_pane {
+        match host.split_run(beside, &req, t) {
+            Err(e) if e.code == HostErrorCode::Unsupported => {}
+            other => fail(
+                "split_run on a host that cannot split panes is unsupported",
+                other,
+            ),
+        }
+        return;
+    }
+    let missing = Place {
+        host: host.id(),
+        id: "contract-no-such-place".to_owned(),
+    };
+    require(
+        "split_run beside a place that does not exist is not_found",
+        host.split_run(&missing, &req, t).err().map(|e| e.code) == Some(HostErrorCode::NotFound),
+    );
+    let names = |what: &str| {
+        let mut all = ok(what, host.live_agent_names(t));
+        all.sort();
+        all
+    };
+    let before = setup.lists_agent_names.then(|| names("live_agent_names"));
+    let new = ok("split_run", host.split_run(beside, &req, t));
+    require("a split pane belongs to this host", new.host == host.id());
+    require("a split pane is a new place", new != *beside);
+    require(
+        "list() leaves out a split pane, which holds no agent name",
+        !ok("list", host.list(t)).contains(&new),
+    );
+    if let Some(before) = before {
+        let after = names("live_agent_names");
+        if after != before {
+            fail(
+                "a split pane adds no name to live_agent_names()",
+                (before, after),
+            );
+        }
+    }
+    ok("close_pane", host.close_pane(&new, t));
+    ok(
+        "close_pane of a pane that is already gone",
+        host.close_pane(&new, t),
+    );
+    require(
+        "close_pane leaves the place it split beside",
+        ok("list", host.list(t)).contains(beside),
+    );
 }
 
 fn screen_shows(setup: &HostSetup<'_>, place: &Place, text: &str) -> bool {

@@ -10,6 +10,7 @@ use thiserror::Error;
 use crate::names::{Address, HostId, Pid, Place, SessionId};
 use crate::sanitize::OneLine;
 use crate::secret::RedactedEnv;
+use crate::split::SplitRequest;
 use crate::strings::string_enum;
 
 pub trait Host: Send + Sync {
@@ -52,6 +53,25 @@ pub trait Host: Send + Sync {
     fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String> {
         read(self.place_env_var()?)
     }
+    /// Splits `beside` and runs `req.argv` in the new pane, which gets
+    /// `req.label`. The new pane holds no teamwire agent name. The default
+    /// is `Unsupported`.
+    fn split_run(
+        &self,
+        _beside: &Place,
+        _req: &SplitRequest,
+        _timeout: Duration,
+    ) -> Result<Place, HostError> {
+        Err(HostError::unsupported())
+    }
+    /// Closes a pane that holds no teamwire agent name. The method checks
+    /// nothing about the occupant. The caller may close only a pane it opened
+    /// with `split_run` in the same command, or a pane whose occupant it has
+    /// proven with the locator right before this call. A pane that is already
+    /// gone counts as closed. The default is `Unsupported`.
+    fn close_pane(&self, _place: &Place, _timeout: Duration) -> Result<(), HostError> {
+        Err(HostError::unsupported())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,6 +90,9 @@ pub struct HostCaps {
     /// The host itself refuses to type into a session that
     /// shows a dialog (herdr `agent_blocked`). tmux does not.
     pub guards_dialogs: bool,
+    /// The host offers `split_run` and `close_pane`: it can run a plain
+    /// command in a new pane beside another, and close that pane.
+    pub splits_pane: bool,
 }
 
 string_enum! {
@@ -256,6 +279,7 @@ impl Host for NoHost {
             submit_ack: SubmitAck::None,
             sets_env_at_spawn: false,
             guards_dialogs: false,
+            splits_pane: false,
         }
     }
 

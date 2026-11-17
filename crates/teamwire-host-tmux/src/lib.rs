@@ -17,6 +17,7 @@ mod call;
 mod keys;
 mod pane;
 mod spawn;
+mod split;
 mod tree;
 
 use std::fmt;
@@ -26,7 +27,7 @@ use std::time::Duration;
 
 use teamwire_core::{
     Address, Host, HostCaps, HostError, HostErrorCode, HostId, Key, Occupant, OneLine, Pid, Place,
-    PlaceState, Platform, SpawnRequest, SubmitAck,
+    PlaceState, Platform, SpawnRequest, SplitRequest, SubmitAck,
 };
 
 use call::{Failure, Socket, call};
@@ -195,6 +196,7 @@ impl Host for Tmux {
             submit_ack: SubmitAck::None,
             sets_env_at_spawn: true,
             guards_dialogs: false,
+            splits_pane: true,
         }
     }
 
@@ -402,6 +404,19 @@ impl Host for Tmux {
         let pane = read("TMUX_PANE").filter(|p| !p.is_empty())?;
         let socket = read("TMUX").and_then(|t| pane::socket_of_client(&t).map(str::to_owned));
         Some(pane::place_id(&pane, socket.as_deref().unwrap_or_default()))
+    }
+
+    fn split_run(
+        &self,
+        beside: &Place,
+        req: &SplitRequest,
+        timeout: Duration,
+    ) -> Result<Place, HostError> {
+        self.split_beside(beside, req, timeout)
+    }
+
+    fn close_pane(&self, place: &Place, timeout: Duration) -> Result<(), HostError> {
+        self.close_split(place, timeout)
     }
 }
 

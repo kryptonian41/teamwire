@@ -61,11 +61,18 @@ const CODEX_SCRIPT: &str = r#"printf '› \n  gpt-5 · ? for shortcuts\n'
 printf '{"status":"idle","seq":1}' > "$FAKE_PANE_DIR/status.json"
 exec sleep 300"#;
 
+/// Starts `program` with `args` as the program of `pane`, its screen in the
+/// pane directory `dir`, and returns its process id.
 #[expect(
     clippy::disallowed_methods,
     reason = "fake-herdr is the fake terminal host: starting the agent process is its whole job"
 )]
-fn spawn_agent(dir: &Path, pane: &Pane, kind: &str, tail: &[String]) -> Result<u32, CliError> {
+pub(super) fn spawn_in_pane(
+    dir: &Path,
+    pane: &Pane,
+    program: &Path,
+    args: &[String],
+) -> Result<u32, CliError> {
     std::fs::create_dir_all(dir).map_err(|e| fail("internal_error", e.to_string()))?;
     let screen = std::fs::OpenOptions::new()
         .append(true)
@@ -75,15 +82,8 @@ fn spawn_agent(dir: &Path, pane: &Pane, kind: &str, tail: &[String]) -> Result<u
     let screen_err = screen
         .try_clone()
         .map_err(|e| fail("internal_error", e.to_string()))?;
-    let mut cmd = if kind == "codex" {
-        let mut sh = std::process::Command::new("sh");
-        sh.args(["-c", CODEX_SCRIPT]);
-        sh
-    } else {
-        let mut claude = std::process::Command::new(claude_program());
-        claude.args(tail);
-        claude
-    };
+    let mut cmd = std::process::Command::new(program);
+    cmd.args(args);
     cmd.env_clear();
     // A cleared environment plus the pane's HERDR_* variables. A real pane
     // also has the login environment, so this is stricter on purpose: a member's identity
@@ -109,6 +109,8 @@ fn spawn_agent(dir: &Path, pane: &Pane, kind: &str, tail: &[String]) -> Result<u
         .env("HERDR_PANE_ID", &pane.pane_id)
         .env("HERDR_TAB_ID", &pane.tab_id)
         .env("HERDR_WORKSPACE_ID", &pane.workspace_id);
+    // The `--env` pairs of the split that made the pane, as herdr sets them.
+    cmd.envs(pane.env.iter().map(|(k, v)| (k, v)));
     if Path::new(&pane.cwd).is_dir() {
         cmd.current_dir(&pane.cwd);
     }
@@ -171,7 +173,15 @@ pub(super) fn start(ctx: &mut Ctx<'_>, args: &Args) -> Result<Value, CliError> {
     }
     let dir = pane_dir(ctx.state_path, &pane_id);
     std::fs::remove_dir_all(&dir).ok();
-    let pid = spawn_agent(&dir, &pane, kind, &args.tail)?;
+    let (program, agent_args) = if kind == "codex" {
+        (
+            PathBuf::from("sh"),
+            vec!["-c".to_owned(), CODEX_SCRIPT.to_owned()],
+        )
+    } else {
+        (claude_program(), args.tail.clone())
+    };
+    let pid = spawn_in_pane(&dir, &pane, &program, &agent_args)?;
     let hint = args
         .tail
         .windows(2)
@@ -391,6 +401,7 @@ pub(super) fn add_unnamed_agent(ctx: &mut Ctx<'_>) -> Value {
         cwd: "/tmp".to_owned(),
         label: None,
         agent: Some(agent.clone()),
+        env: Vec::new(),
     };
     ctx.state.panes.push(pane.clone());
     let dir = pane_dir(ctx.state_path, &pane_id);
