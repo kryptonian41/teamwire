@@ -65,6 +65,10 @@ macro_rules! platform_impl {
                 process::parent_of(pid)
             }
 
+            fn args_of(&self, pid: Pid) -> Option<Vec<String>> {
+                process::args_of(pid)
+            }
+
             fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
                 process::env_of(pid, var)
             }

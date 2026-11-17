@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::config::OtelConfig;
 use crate::host::{Host, HostError, PlaceState};
 use crate::lead_setup::LeadSetup;
+use crate::lead_start::{LeadStart, LeadStartSpec};
 use crate::member::{Member, MemberKind};
 use crate::models::ModelCatalog;
 use crate::names::{Address, HarnessId, Pid, Place, Role, SessionId, TeamName};
@@ -40,6 +41,12 @@ pub trait Harness: Send + Sync {
     /// per-run files, because the lead loads the teamwire plugin itself. The
     /// default is `Unsupported`.
     fn lead_resume_argv(&self, _s: &SessionId) -> Result<Vec<String>, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
+    /// The command line that starts a fresh interactive lead session like
+    /// `old`, with `prompt` as its first prompt. The default is
+    /// `Unsupported`.
+    fn lead_start(&self, _req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
         Err(HarnessError::unsupported())
     }
     /// The lead setup `teamwire install`, `uninstall` and `doctor` reach
@@ -219,6 +226,11 @@ pub struct HarnessCaps {
     /// How a lead on this harness starts `teamwire watch`. Every text that
     /// tells a lead to start a watch is worded from it.
     pub watch_start: WatchStart,
+    /// The full sentence that tells a lead on this harness to load the
+    /// teamwire skill, as the harness's lead file words it. Empty for a
+    /// harness that cannot lead. Never read back from JSON.
+    #[serde(skip_deserializing)]
+    pub load_skill: &'static str,
     /// `Harness::box_holds_text` can tell anything. Delivery on a host that
     /// guards dialogs reads the screen only when it can, so a harness that
     /// cannot costs no extra read. Delivery gives a harness that reads the

@@ -1,4 +1,4 @@
-//! `pid_alive`, `process_started` and `env_of`, against children the test
+//! `pid_alive`, `process_started`, `env_of` and `args_of`, against children the test
 //! starts itself.
 
 #![expect(
@@ -140,6 +140,27 @@ fn env_of_reads_a_variable_of_a_same_user_child() {
     });
     let got = native().env_of(child.pid(), "TW_T03_ENV").unwrap();
     assert_eq!(got.as_deref(), Some("hello=world"));
+}
+
+#[test]
+fn args_of_reads_each_argument_of_a_child_as_it_got_it() {
+    let child = Sleeper::start(|cmd| {
+        // A second test filter, which matches no test: libtest still runs
+        // `sleeper_entry`.
+        cmd.arg("a value with spaces");
+    });
+    let exe = std::env::current_exe().unwrap().display().to_string();
+    assert_eq!(
+        native().args_of(child.pid()),
+        Some(vec![
+            exe,
+            "--exact".to_owned(),
+            "sleeper_entry".to_owned(),
+            "--test-threads=1".to_owned(),
+            "a value with spaces".to_owned(),
+        ])
+    );
+    assert_eq!(native().args_of(Pid::new(0)), None);
 }
 
 #[test]

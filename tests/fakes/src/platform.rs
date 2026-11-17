@@ -128,6 +128,8 @@ struct State {
     envs: HashMap<(Pid, String), String>,
     /// Each pid's parent and program name, as `parent_of` reports them.
     parents: HashMap<Pid, (Pid, String)>,
+    /// Each pid's arguments, as `args_of` reports them.
+    args: HashMap<Pid, Vec<String>>,
     env_fault: Option<PlatformError>,
     run_queue: VecDeque<Result<RunOutput, PlatformError>>,
     runs: Vec<(Command, Duration)>,
@@ -168,6 +170,7 @@ impl FakePlatform {
                 started: HashMap::new(),
                 envs: HashMap::new(),
                 parents: HashMap::new(),
+                args: HashMap::new(),
                 env_fault: None,
                 run_queue: VecDeque::new(),
                 runs: Vec::new(),
@@ -225,6 +228,13 @@ impl FakePlatform {
         lock(&self.state)
             .envs
             .insert((pid, var.to_owned()), value.to_owned());
+    }
+
+    /// Makes `args_of(pid)` report `args`, `argv[0]` first.
+    pub fn set_args(&self, pid: Pid, args: &[&str]) {
+        lock(&self.state)
+            .args
+            .insert(pid, args.iter().map(|a| (*a).to_owned()).collect());
     }
 
     /// Makes `parent_of(pid)` report `parent`, a program named `name`.
@@ -457,6 +467,11 @@ impl Platform for FakePlatform {
         self.log
             .record("parent_of", CallKind::Read, pid.to_string());
         lock(&self.state).parents.get(&pid).cloned()
+    }
+
+    fn args_of(&self, pid: Pid) -> Option<Vec<String>> {
+        self.log.record("args_of", CallKind::Read, pid.to_string());
+        lock(&self.state).args.get(&pid).cloned()
     }
 
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {

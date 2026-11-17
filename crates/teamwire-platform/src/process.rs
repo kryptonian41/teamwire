@@ -79,6 +79,30 @@ pub(crate) fn env_of(pid: Pid, var: &str) -> Result<Option<String>, PlatformErro
     Ok(environ.iter().find_map(|entry| value_of(entry, var)))
 }
 
+/// The arguments of the process with this pid, read from the kernel
+/// (`sysinfo`), which gives each one as the process got it, spaces and all.
+/// `None` when no such process exists, or the kernel hides its arguments
+/// (an empty list).
+pub(crate) fn args_of(pid: Pid) -> Option<Vec<String>> {
+    nix_pid(pid)?;
+    let target = sysinfo::Pid::from_u32(pid.get());
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[target]),
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    let args = system.process(target)?.cmd();
+    if args.is_empty() {
+        return None;
+    }
+    Some(
+        args.iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect(),
+    )
+}
+
 fn value_of(entry: &OsString, var: &str) -> Option<String> {
     let text = entry.to_string_lossy();
     let (key, value) = text.split_once('=')?;

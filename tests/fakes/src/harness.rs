@@ -98,6 +98,7 @@ impl FakeHarness {
             session_env_via_config: true,
             reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
+            load_skill: "Load the fake teamwire skill.",
             reads_input_box: false,
             runs_afk: true,
         }

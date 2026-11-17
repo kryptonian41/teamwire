@@ -18,6 +18,7 @@ mod hook;
 mod launch;
 mod lead_extension;
 pub mod lead_setup;
+mod lead_start;
 mod models;
 mod screen;
 mod session;
@@ -31,9 +32,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
-    SessionId, SessionUsage, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
+    LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid,
+    Place, Platform, Role, ScreenState, SessionId, SessionUsage, StartupOutcome, TeamName,
+    ToolCall, TrustPolicy, TurnEnd,
 };
 
 use crate::lead_extension::LEAD_SESSION_VAR;
@@ -118,6 +120,7 @@ impl Harness for Pi {
             // model as a message (ADR 0030).
             reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::ExtensionTool,
+            load_skill: "Load the `teamwire` skill with `/skill:teamwire`.",
             reads_input_box: true,
             // AFK-2 still refuses a pi lead (ADR 0030 point 8).
             runs_afk: false,
@@ -165,6 +168,10 @@ impl Harness for Pi {
             "--session-id".to_owned(),
             s.as_str().to_owned(),
         ])
+    }
+
+    fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
+        lead_start::lead_start(&self.config.pi_bin, req)
     }
 
     fn lead_setup_missing(&self) -> Option<String> {

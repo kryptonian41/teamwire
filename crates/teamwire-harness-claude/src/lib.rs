@@ -18,6 +18,7 @@ mod fill;
 mod hook;
 mod launch;
 mod lead_setup;
+mod lead_start;
 mod models;
 mod screen;
 mod session;
@@ -37,8 +38,9 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
-    LeadSetup, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform,
-    Role, ScreenState, SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    LeadSetup, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig,
+    Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome, TeamName, ToolCall,
+    TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -116,6 +118,7 @@ impl Harness for ClaudeCode {
             session_env_via_config: true,
             reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
+            load_skill: "Load the `teamwire:teamwire` skill with your Skill tool.",
             reads_input_box: true,
             runs_afk: true,
         }
@@ -143,6 +146,10 @@ impl Harness for ClaudeCode {
             "--resume".to_owned(),
             s.as_str().to_owned(),
         ])
+    }
+
+    fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
+        lead_start::lead_start(&self.config.claude_bin, &self.config.claude_dir, req)
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {

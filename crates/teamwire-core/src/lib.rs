@@ -20,6 +20,7 @@ pub mod harness;
 pub mod host;
 pub mod lead_handoff;
 pub mod lead_setup;
+pub mod lead_start;
 pub mod member;
 pub mod message;
 pub mod models;
@@ -57,6 +58,7 @@ pub use lead_setup::{
     ApplyError, CheckOutcome, DoctorCheck, LeadChange, LeadCommand, LeadPlan, LeadSetup,
     LeadSetupError, LeadStatus, LeadStep, LeadTarget,
 };
+pub use lead_start::{CarryRules, LeadStart, LeadStartSpec, carry};
 pub use member::{Member, MemberKind, MemberState, Mode};
 pub use message::{
     AMEND_MARKER, Delivery, DeliveryError, DeliveryErrorCode, DeliveryState, Message, MessageType,

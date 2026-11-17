@@ -16,6 +16,7 @@
 mod hook;
 mod launch;
 pub mod lead_setup;
+mod lead_start;
 mod models;
 mod screen;
 mod session;
@@ -30,9 +31,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec, Liveness,
-    MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Platform, Role, ScreenState,
-    SessionId, SessionUsage, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
+    LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid,
+    Place, Platform, Role, ScreenState, SessionId, SessionUsage, StartupOutcome, TeamName,
+    ToolCall, TrustPolicy, TurnEnd,
 };
 
 /// Where Codex keeps its files, and how to start it.
@@ -101,6 +103,7 @@ impl Harness for CodexCli {
             // Codex has no tool that streams a command's output to the model.
             reads_watch_lines: false,
             watch_start: teamwire_core::harness::WatchStart::BackgroundCommand,
+            load_skill: "Invoke the `teamwire:teamwire` skill with `$teamwire:teamwire`.",
             reads_input_box: false,
             runs_afk: false,
         }
@@ -129,6 +132,10 @@ impl Harness for CodexCli {
             "resume".to_owned(),
             s.as_str().to_owned(),
         ])
+    }
+
+    fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
+        lead_start::lead_start(&self.config.codex_bin, req)
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
