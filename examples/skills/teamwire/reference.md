@@ -246,6 +246,11 @@ seconds unless the call sets a longer `timeout`.
 label and folder, the new command line and each flag it leaves out. It
 changes nothing.
 
+A lead on Opus 4.6 or Sonnet 4.6 whose 1M window was chosen in settings or
+with `/model`, and not with `--model`, starts its new lead on the 200K window,
+because the transcript does not record the `[1m]` suffix. Starting the lead
+with `--model <id>[1m]` avoids it.
+
 | Exit | Cause | What changed | What to do |
 | --- | --- | --- | --- |
 | 1 | A member's session or a background session ran it | Nothing | Run it from your own interactive lead session |

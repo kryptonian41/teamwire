@@ -160,6 +160,10 @@ Claude Code, Codex or pi.
   turn. A failed close is a warning that tells the old lead to end its turn.
 - A new Codex lead depends on following its first prompt to adopt each team.
   If it does not, the command times out with both panes open.
+- A lead on Opus 4.6 or Sonnet 4.6 whose 1M window was chosen in settings or
+  with `/model`, and not with `--model`, starts its new lead on the 200K
+  window, because the transcript does not record the `[1m]` suffix. Starting
+  the lead with `--model <id>[1m]` avoids it.
 - `--missed` may list an item the new lead has already seen. The new lead
   checks each one against the document.
 - No live run checked the handoff on Codex or pi, or on a real herdr or tmux
