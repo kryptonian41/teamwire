@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use teamwire_core::{Clock, Config, HostError, Place, SessionId, TeamName};
+use teamwire_core::{Clock, Config, HarnessId, HostError, Place, SessionId, TeamName};
 use teamwire_deliver::locate_session;
 use teamwire_store::{Ctx, Store};
 
@@ -61,6 +61,12 @@ pub struct LeadHandoffOpts {
     /// The state directory the caller named (`--home` or `TEAMWIRE_HOME`),
     /// passed to the new lead as `TEAMWIRE_HOME`.
     pub home_env: Option<PathBuf>,
+    /// The config folder variable of each harness that the caller's own
+    /// environment sets, such as `CLAUDE_CONFIG_DIR`, with the harness it
+    /// belongs to. The new pane's environment comes from the host's server,
+    /// not from the old lead, so the new lead gets its own harness's one, or
+    /// it would keep its session files where the proof does not look.
+    pub harness_env: Vec<(HarnessId, String, PathBuf)>,
     /// Say what would happen, and change nothing.
     pub dry_run: bool,
     pub waits: LeadHandoffWaits,
@@ -77,7 +83,7 @@ pub fn lead_hand_off(
     say: &mut dyn FnMut(Said),
 ) -> Result<(), HandoffError> {
     let seat = find_lead(ctx, caller)?;
-    let planned = plan(ctx, seat, opts.home_env.as_deref())?;
+    let planned = plan(ctx, seat, opts)?;
     for w in &planned.warnings {
         say(Said::Warning(format!("warning: {w}")));
     }
@@ -181,6 +187,11 @@ fn dry_run(planned: &Planned<'_>, say: &mut dyn FnMut(Said)) {
         planned.split.label,
         planned.split.cwd.display()
     )));
+    // The pane gets only `TEAMWIRE_HOME` and a harness's config folder, both
+    // paths, so the values are no secret.
+    for (name, value) in &planned.split.env {
+        say(Said::Line(format!("environment: {name}={value}")));
+    }
     say(Said::Line(format!(
         "new session: {}",
         planned.new_session.as_ref().map_or_else(

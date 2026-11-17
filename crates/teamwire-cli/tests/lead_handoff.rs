@@ -50,6 +50,11 @@ impl Rig {
 
     /// Runs the binary as the Claude Code session `session`.
     fn teamwire_as(&self, session: &str, args: &[&str]) -> Run {
+        self.teamwire_env(session, &[], args)
+    }
+
+    /// `teamwire_as`, with `extra` added to the environment.
+    fn teamwire_env(&self, session: &str, extra: &[(&str, &str)], args: &[&str]) -> Run {
         let out = std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
             .args(args)
             .env_clear()
@@ -57,6 +62,7 @@ impl Rig {
             .env("TEAMWIRE_HOME", self.home.path())
             .env("HERDR_ENV", "1")
             .env("CLAUDE_CODE_SESSION_ID", session)
+            .envs(extra.iter().copied())
             .stdin(std::process::Stdio::null())
             .output()
             .unwrap();
@@ -285,6 +291,24 @@ fn a_dry_run_names_the_plan_and_changes_nothing() {
     }
     assert!(rig.calls_of("pane split").is_empty());
     assert_eq!(rig.lead().as_str(), OLD);
+
+    // The new pane gets the config folder of the lead's own harness only.
+    let run = rig.teamwire_env(
+        OLD,
+        &[
+            ("CLAUDE_CONFIG_DIR", "/cfg/claude"),
+            ("CODEX_HOME", "/cfg/codex"),
+        ],
+        &["lead", "--handoff", "--dry-run"],
+    );
+    assert_eq!(run.code, 0, "{}{}", run.out, run.err);
+    assert!(
+        run.out
+            .contains("environment: CLAUDE_CONFIG_DIR=/cfg/claude"),
+        "{}",
+        run.out
+    );
+    assert!(!run.out.contains("CODEX_HOME"), "{}", run.out);
 }
 
 #[test]

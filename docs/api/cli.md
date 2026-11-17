@@ -833,7 +833,10 @@ The steps run in this order, one line on stdout for each:
    lead's folder, with the label `lead · <team title>` (`+N` when the lead
    leads N more teams). The new lead's first prompt is a command-line
    argument. The new pane gets `TEAMWIRE_HOME` when the caller named a state
-   directory. Each flag of the old lead that the harness does not carry gives
+   directory. It also gets the config folder variable of the lead's own
+   harness (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR`) when
+   the command's environment sets it, because the new pane's environment
+   comes from the host's server, not from the old lead. Each flag of the old lead that the harness does not carry gives
    one `warning:` line, by name only.
 5. Prove, for a harness that chooses the session id (Claude Code, pi). The
    command waits up to 90 seconds, or `spawn_timeout_s` when that is lower,
@@ -869,7 +872,8 @@ Exit codes:
 | 6 | An open team's store could not be read while finding the caller |
 
 `--dry-run` prints `teams:`, `old pane:`, `handoff document:`, the label and
-folder of the pane it would open, `new session:` (the chosen id, or the one
+folder of the pane it would open, one `environment: NAME=value` line for each
+variable the new pane gets, `new session:` (the chosen id, or the one
 its harness picks), `command:` with the new lead's command line, and one
 `not passed on:` line per dropped flag. It ends with `dry run: no pane was
 opened and no team changed`. It opens every store read-only.

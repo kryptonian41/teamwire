@@ -45,6 +45,10 @@ pub(crate) struct Wiring {
     /// Where pi keeps its files and how to start it: doctor reads herdr's
     /// pi integration from the directory.
     pub(crate) pi: PiConfig,
+    /// The config folder variable of each harness that this command's own
+    /// environment sets, with its harness: a lead handoff passes the lead
+    /// harness's one to the new lead (ADR 0051).
+    pub(crate) harness_env: Vec<(HarnessId, String, PathBuf)>,
 }
 
 /// The environment facts wiring reads, gathered in one place so tests can
@@ -137,7 +141,25 @@ pub(crate) fn wire_with_home(
         lead_host,
         claude,
         pi,
+        harness_env: harness_env(env),
     })
+}
+
+/// `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `PI_CODING_AGENT_DIR`, each that
+/// is set and not empty, with its harness. teamwire's own test overrides
+/// (`TEAMWIRE_CLAUDE_DIR`, `TEAMWIRE_CODEX_HOME`) are not the harness's.
+fn harness_env(env: &WiringEnv) -> Vec<(HarnessId, String, PathBuf)> {
+    [
+        (ClaudeCode::ID, "CLAUDE_CONFIG_DIR", &env.claude_config_dir),
+        (CodexCli::ID, "CODEX_HOME", &env.codex_home),
+        (Pi::ID, "PI_CODING_AGENT_DIR", &env.pi_agent_dir),
+    ]
+    .into_iter()
+    .filter_map(|(id, name, dir)| {
+        dir.as_ref()
+            .map(|d| (HarnessId::from_static(id), name.to_owned(), d.clone()))
+    })
+    .collect()
 }
 
 /// `TEAMWIRE_LEAD_HARNESS` when it names a harness of this binary, else the
@@ -592,6 +614,36 @@ mod tests {
         let c = claude_config(&e);
         assert_eq!(c.claude_dir, PathBuf::from("/tmp/c"));
         assert_eq!(c.claude_json, PathBuf::from("/tmp/c/.claude.json"));
+    }
+
+    #[test]
+    fn a_handoff_gets_each_config_folder_the_environment_sets_with_its_harness() {
+        let mut e = env(None);
+        assert!(harness_env(&e).is_empty());
+        e.claude_config_dir = Some(PathBuf::from("/cfg"));
+        e.pi_agent_dir = Some(PathBuf::from("/pi"));
+        e.claude_dir = Some(PathBuf::from("/tmp/c"));
+        assert_eq!(
+            harness_env(&e),
+            [
+                (
+                    HarnessId::from_static(ClaudeCode::ID),
+                    "CLAUDE_CONFIG_DIR".to_owned(),
+                    PathBuf::from("/cfg")
+                ),
+                (
+                    HarnessId::from_static(Pi::ID),
+                    "PI_CODING_AGENT_DIR".to_owned(),
+                    PathBuf::from("/pi")
+                ),
+            ]
+        );
+        e.codex_home = Some(PathBuf::from("/codex"));
+        assert!(harness_env(&e).contains(&(
+            HarnessId::from_static(CodexCli::ID),
+            "CODEX_HOME".to_owned(),
+            PathBuf::from("/codex")
+        )));
     }
 
     #[test]

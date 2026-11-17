@@ -17,6 +17,7 @@ use teamwire_deliver::locate_session;
 use teamwire_store::{Store, TeamRow, open_teams};
 
 use crate::handoff::HandoffError;
+use crate::lead_handoff::LeadHandoffOpts;
 use crate::lead_prompt::{FirstPrompt, first_prompt};
 
 const LIST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -162,12 +163,13 @@ pub(crate) struct Planned<'r> {
     pub(crate) warnings: Vec<String>,
 }
 
-/// Runs every check of step 2 and builds the new lead's start. `home_env`
-/// is the state directory the caller named, passed on to the new lead.
+/// Runs every check of step 2 and builds the new lead's start. The new
+/// pane gets the state directory the caller named and the config folder of
+/// the lead's own harness, from `opts`.
 pub(crate) fn plan<'r>(
     ctx: &LeadHandoffCtx<'r>,
     seat: LeadSeat,
-    home_env: Option<&Path>,
+    opts: &LeadHandoffOpts,
 ) -> Result<Planned<'r>, HandoffError> {
     let refused = |why: String| HandoffError::Refused(why);
     let harness = ctx
@@ -239,8 +241,13 @@ pub(crate) fn plan<'r>(
         ))
     })?;
     let mut env = Vec::new();
-    if let Some(home) = home_env {
+    if let Some(home) = &opts.home_env {
         env.push(("TEAMWIRE_HOME".to_owned(), home.display().to_string()));
+    }
+    for (harness, name, value) in &opts.harness_env {
+        if *harness == seat.harness {
+            env.push((name.clone(), value.display().to_string()));
+        }
     }
     let title = seat.teams.first().map_or("", |t| t.title.as_str());
     let split = SplitRequest {

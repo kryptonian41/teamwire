@@ -154,6 +154,7 @@ fn handoff(dry_run: bool, global: &Global, wiring: &Wiring) -> ExitCode {
     let named = global.home.is_some() || env("TEAMWIRE_HOME").is_some();
     let opts = LeadHandoffOpts {
         home_env: named.then(|| home.clone()),
+        harness_env: wiring.harness_env.clone(),
         dry_run,
         waits: LeadHandoffWaits::of(&config),
     };

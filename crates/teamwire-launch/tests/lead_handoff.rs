@@ -22,15 +22,15 @@
 )]
 mod common;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use common::Rig;
 use teamwire_core::harness::WatchStart;
 use teamwire_core::{
-    Clock, Config, HarnessCaps, HarnessError, HostCaps, HostError, HostErrorCode, Liveness,
-    Occupant, Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
+    Clock, Config, HarnessCaps, HarnessError, HarnessId, HostCaps, HostError, HostErrorCode,
+    Liveness, Occupant, Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
 };
 use teamwire_fakes::{FakeHarness, FakeHost, Fault};
 use teamwire_launch::{
@@ -156,6 +156,16 @@ fn waits() -> LeadHandoffWaits {
 }
 
 fn run_with(rig: &Rig, is_member: bool, dry_run: bool) -> (Vec<Said>, Result<(), HandoffError>) {
+    run_opts(rig, is_member, dry_run, Vec::new())
+}
+
+/// `run_with`, with the config folders the caller's environment sets.
+fn run_opts(
+    rig: &Rig,
+    is_member: bool,
+    dry_run: bool,
+    harness_env: Vec<(HarnessId, String, PathBuf)>,
+) -> (Vec<Said>, Result<(), HandoffError>) {
     let ctx = LeadHandoffCtx {
         home: rig.home.path(),
         registry: &rig.registry,
@@ -170,6 +180,7 @@ fn run_with(rig: &Rig, is_member: bool, dry_run: bool) -> (Vec<Said>, Result<(),
     };
     let opts = LeadHandoffOpts {
         home_env: Some(rig.home.path().to_path_buf()),
+        harness_env,
         dry_run,
         waits: waits(),
     };
@@ -773,4 +784,54 @@ fn the_proof_wait_ends_before_a_two_minute_command_limit() {
         ..Config::default()
     };
     assert_eq!(LeadHandoffWaits::of(&lower).prove, Duration::from_secs(60));
+}
+
+/// The config folder of the fake harness, and one of another harness.
+fn config_folders() -> Vec<(HarnessId, String, PathBuf)> {
+    vec![
+        (
+            HarnessId::from_static(FakeHarness::ID),
+            "FAKE_CONFIG_DIR".to_owned(),
+            PathBuf::from("/cfg/fake"),
+        ),
+        (
+            HarnessId::from_static("other"),
+            "OTHER_CONFIG_DIR".to_owned(),
+            PathBuf::from("/cfg/other"),
+        ),
+    ]
+}
+
+#[test]
+fn the_new_pane_gets_the_config_folder_of_the_leads_own_harness() {
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    let old = old_lead(&rig);
+    new_session_starts(&rig);
+    let (said, result) = run_opts(&rig, false, false, config_folders());
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    let (_, req) = split_pane(&rig, &old);
+    assert_eq!(
+        req.env,
+        [
+            (
+                "TEAMWIRE_HOME".to_owned(),
+                rig.home.path().display().to_string()
+            ),
+            ("FAKE_CONFIG_DIR".to_owned(), "/cfg/fake".to_owned()),
+        ]
+    );
+
+    // The dry run names what the new pane would get.
+    let dry = Rig::new();
+    team(&dry, "alpha", "Fix the prompts", false);
+    old_lead(&dry);
+    let (said, result) = run_opts(&dry, false, true, config_folders());
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    let all = text(&said);
+    assert!(
+        all.contains("environment: FAKE_CONFIG_DIR=/cfg/fake"),
+        "{all}"
+    );
+    assert!(!all.contains("OTHER_CONFIG_DIR"), "{all}");
 }
