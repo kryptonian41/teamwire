@@ -5,7 +5,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use teamwire_core::{HarnessId, HostId, NoHost, Pid, Platform, Registry, RegistryError};
+use teamwire_core::{
+    HarnessId, HostId, LEAD_HANDOFF_SETTING, LeadHandoffSetting, NoHost, Pid, Platform, Registry,
+    RegistryError,
+};
 
 use crate::cmd::doctor::pick_host;
 use teamwire_harness_claude::ClaudeCode;
@@ -30,7 +33,8 @@ pub(crate) fn claude_harness_id() -> HarnessId {
 
 /// The adapters and the platform one command runs with.
 pub(crate) struct Wiring {
-    pub(crate) registry: Registry,
+    /// Shared, so a hook's bounded worker thread can look up a harness.
+    pub(crate) registry: Arc<Registry>,
     pub(crate) platform: Arc<dyn Platform>,
     pub(crate) clock: SystemClock,
     pub(crate) lead_harness: HarnessId,
@@ -126,7 +130,7 @@ pub(crate) fn wire_with_home(
     registry.add_host(Arc::new(NoHost))?;
     let lead_host = lead_host(env, &|pid| platform.parent_of(pid));
     Ok(Wiring {
-        registry,
+        registry: Arc::new(registry),
         platform,
         clock: SystemClock,
         lead_harness: lead_harness(env),
@@ -224,6 +228,23 @@ fn pi_exclude_providers(
         .filter(|name| !name.is_empty())
         .map(str::to_owned)
         .collect()
+}
+
+/// `TEAMWIRE_LEAD_HANDOFF_TOKENS` in the environment, else the same key in
+/// `<home>/config.toml`, the way `pi_exclude_providers` reads its key. `home`
+/// is the state directory the command already resolved. An empty value counts
+/// as unset.
+pub(crate) fn lead_handoff_setting(
+    home: &Path,
+    env: &dyn Fn(&str) -> Option<String>,
+) -> LeadHandoffSetting {
+    let value = env(LEAD_HANDOFF_SETTING)
+        .filter(|v| !v.trim().is_empty())
+        .or_else(|| {
+            let file = std::fs::read_to_string(home.join("config.toml")).ok()?;
+            file_setting(&file, LEAD_HANDOFF_SETTING)
+        });
+    LeadHandoffSetting::parse(value.as_deref())
 }
 
 /// The value of `KEY = value` on one line of `config.toml`, in double quotes,

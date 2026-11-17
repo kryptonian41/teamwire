@@ -60,9 +60,10 @@ fn bed(session: Option<&str>) -> Bed {
         Arc::new(FakeHarness::with_id(HarnessId::from_static("fake-b"))),
     );
     let mut wiring = real_wiring();
-    wiring.registry = Registry::new();
-    wiring.registry.add_harness(a.clone()).unwrap();
-    wiring.registry.add_harness(b.clone()).unwrap();
+    let mut registry = Registry::new();
+    registry.add_harness(a.clone()).unwrap();
+    registry.add_harness(b.clone()).unwrap();
+    wiring.registry = Arc::new(registry);
     let mut store = Store::open(home.path(), &team).unwrap();
     let now = FakeClock::new().now();
     store
@@ -300,7 +301,7 @@ fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
     let mut bed = bed(None);
     let lead = lead_harness_of(bed.home.path(), &bed.team);
     assert_eq!(lead.as_ref().map(HarnessId::as_str), Some("fake-a"));
-    bed.wiring.registry = Registry::new();
+    bed.wiring.registry = Arc::new(Registry::new());
     assert_eq!(
         lead_watch_start(lead.as_ref(), &bed.wiring),
         WatchStart::MonitoredCommand

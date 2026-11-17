@@ -18,6 +18,7 @@ pub mod event;
 pub mod exclude;
 pub mod harness;
 pub mod host;
+pub mod lead_handoff;
 pub mod lead_setup;
 pub mod member;
 pub mod message;
@@ -47,6 +48,9 @@ pub use harness::{
 pub use host::{
     Host, HostCaps, HostError, HostErrorCode, Key, NoHost, Occupant, PlaceState, SpawnRequest,
     SubmitAck,
+};
+pub use lead_handoff::{
+    HandoffFiles, LEAD_HANDOFF_SETTING, LeadHandoffSetting, MIN_LEAD_HANDOFF_TOKENS,
 };
 pub use lead_setup::{
     ApplyError, CheckOutcome, DoctorCheck, LeadChange, LeadCommand, LeadPlan, LeadSetup,

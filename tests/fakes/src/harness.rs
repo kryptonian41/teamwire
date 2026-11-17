@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 use teamwire_core::Key;
 use teamwire_core::{
-    CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
+    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
     HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, Liveness, MemberLaunch,
     ModelCatalog, OneLine, OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind,
     StartupOutcome, TeamName, TrustPolicy, TurnEnd,
@@ -68,6 +68,7 @@ struct State {
     cwds: HashMap<SessionId, PathBuf>,
     setup_missing: Option<String>,
     models: Option<Result<ModelCatalog, HarnessError>>,
+    fills: HashMap<SessionId, Result<Fill, HarnessError>>,
 }
 
 /// An in-process `Harness`.
@@ -121,6 +122,7 @@ impl FakeHarness {
                 cwds: HashMap::new(),
                 setup_missing: None,
                 models: None,
+                fills: HashMap::new(),
             }),
             lead: None,
         }
@@ -200,6 +202,12 @@ impl FakeHarness {
     /// `Unsupported`, as an adapter without a model list does.
     pub fn set_models(&self, models: Result<ModelCatalog, HarnessError>) {
         lock(&self.state).models = Some(models);
+    }
+
+    /// What `context_fill` reports for `id`, whatever transcript it is
+    /// handed. A session with none set has no reading (`Ok(None)`).
+    pub fn set_fill(&self, id: SessionId, fill: Result<Fill, HarnessError>) {
+        lock(&self.state).fills.insert(id, fill);
     }
 
     /// Lines `push` accepted, per session.
@@ -454,6 +462,15 @@ impl Harness for FakeHarness {
             .models
             .clone()
             .unwrap_or_else(|| Err(HarnessError::unsupported()))
+    }
+
+    fn context_fill(
+        &self,
+        s: &SessionId,
+        _transcript: Option<&std::path::Path>,
+    ) -> Result<Option<Fill>, HarnessError> {
+        self.log.record("context_fill", CallKind::Read, s.as_str());
+        lock(&self.state).fills.get(s).cloned().transpose()
     }
 
     fn push(&self, s: &SessionId, line: &OneLine, _timeout: Duration) -> Result<(), HostError> {

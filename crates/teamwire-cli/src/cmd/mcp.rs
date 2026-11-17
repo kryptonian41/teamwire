@@ -57,7 +57,7 @@ pub(crate) fn run(args: &McpArgs, global: &Global, _wiring: &Wiring) -> ExitCode
     };
     let env = ServerEnv {
         home,
-        registry: Arc::new(owned.registry),
+        registry: owned.registry,
         platform: owned.platform,
         clock: Arc::new(owned.clock),
         config: Config::default(),

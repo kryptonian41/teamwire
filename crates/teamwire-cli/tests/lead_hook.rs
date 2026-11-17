@@ -476,3 +476,105 @@ fn the_tool_and_stop_hooks_carry_the_undelivered_note() {
     }
     assert_eq!(events(&fx), before, "the hooks write nothing");
 }
+
+/// A Claude transcript for `session` under `claude_dir` whose newest
+/// main-chain request read `tokens` on a 1M-window model.
+fn transcript(claude_dir: &std::path::Path, session: &str, tokens: u64) {
+    let dir = claude_dir.join("projects").join("-work");
+    std::fs::create_dir_all(&dir).unwrap();
+    let line = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "model": "claude-opus-5-5",
+            "usage": { "input_tokens": 0, "cache_read_input_tokens": tokens, "cache_creation_input_tokens": 0 }
+        }
+    });
+    std::fs::write(dir.join(format!("{session}.jsonl")), format!("{line}\n")).unwrap();
+}
+
+fn context_of(run: &Run) -> String {
+    let reply: serde_json::Value = serde_json::from_str(&run.out).unwrap();
+    reply["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// ADR 0051: past its handoff point the lead is told once beside a tool's
+/// result, joined with any other note, and its next stop is held once with
+/// one more line. Neither hook writes the store.
+#[test]
+fn a_lead_past_its_point_is_noted_once_then_held_once() {
+    let fx = team();
+    let claude = tempfile::tempdir().unwrap();
+    transcript(claude.path(), "lead-1", 412_000);
+    let dir = claude.path().display().to_string();
+    let env = [("TEAMWIRE_CLAUDE_DIR", dir.as_str())];
+    let before = events(&fx);
+    let args = ["hook", "lead-tool", "--harness", "claude-code"];
+    let build =
+        r#"{"session_id":"lead-1","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#;
+    let run = run_hook(fx.home.path(), &args, &env, build);
+    assert_eq!(run.code, 0);
+    let note = context_of(&run);
+    let lines: Vec<&str> = note.lines().collect();
+    assert_eq!(lines.len(), 2, "both notes in one reply: {note}");
+    assert!(
+        lines[0].starts_with("[teamwire:alpha] You lead team alpha"),
+        "{note}"
+    );
+    assert!(
+        lines[1].starts_with(
+            "[teamwire] Your context holds 412k tokens, 41% of a 1000k window. Your handoff point is 400k. Finish the step you are on."
+        ),
+        "{note}"
+    );
+    let read = r#"{"session_id":"lead-1","tool_name":"Read","tool_input":{"file_path":"/x"}}"#;
+    let again = run_hook(fx.home.path(), &args, &env, read);
+    assert_eq!((again.code, again.out.as_str()), (0, ""), "noted once");
+    assert!(fx.home.path().join("handoffs/lead-1/noted").is_file());
+
+    let held = hook(&fx, &env, &stop("lead-1", ""));
+    let lines = context_of(&held);
+    assert!(lines.contains("no watch is running"), "{lines}");
+    assert!(
+        lines.ends_with(
+            "[teamwire] Your context passed its handoff point. If you are not waiting for the user's answer, run `teamwire lead --handoff-guide` now and follow it. If you are waiting for the user, stop again and hand off after the answer."
+        ),
+        "{lines}"
+    );
+    let second = hook(&fx, &env, &stop("lead-1", ""));
+    assert!(!context_of(&second).contains("handoff point"), "held once");
+    assert_eq!(events(&fx), before, "the hooks write no store");
+}
+
+#[test]
+fn the_setting_off_in_the_environment_or_config_file_silences_the_note() {
+    let fx = team();
+    let claude = tempfile::tempdir().unwrap();
+    transcript(claude.path(), "lead-1", 900_000);
+    let dir = claude.path().display().to_string();
+    let read = r#"{"session_id":"lead-1","tool_name":"Read","tool_input":{"file_path":"/x"}}"#;
+    let args = ["hook", "lead-tool", "--harness", "claude-code"];
+    let off = [
+        ("TEAMWIRE_CLAUDE_DIR", dir.as_str()),
+        ("TEAMWIRE_LEAD_HANDOFF_TOKENS", "off"),
+    ];
+    let run = run_hook(fx.home.path(), &args, &off, read);
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    std::fs::write(
+        fx.home.path().join("config.toml"),
+        "TEAMWIRE_LEAD_HANDOFF_TOKENS = \"off\"\n",
+    )
+    .unwrap();
+    let env = [("TEAMWIRE_CLAUDE_DIR", dir.as_str())];
+    let run = run_hook(fx.home.path(), &args, &env, read);
+    assert_eq!((run.code, run.out.as_str()), (0, ""));
+    // The environment wins over the file.
+    let set = [
+        ("TEAMWIRE_CLAUDE_DIR", dir.as_str()),
+        ("TEAMWIRE_LEAD_HANDOFF_TOKENS", "850000"),
+    ];
+    let run = run_hook(fx.home.path(), &args, &set, read);
+    assert!(context_of(&run).contains("Your handoff point is 850k."));
+}

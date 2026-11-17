@@ -1,9 +1,12 @@
 //! The lead's hooks: the Stop hook (ADR 0018 point 5) and the tool hook
 //! (ADR 0035). Each runs in the lead's own session on every harness that can
-//! lead, reads stores, writes nothing, and gives up inside one time bound.
+//! lead, reads stores, writes no store, and gives up inside one time bound.
+//! The only files they write are the two empty markers of the lead's own
+//! handoff (ADR 0051), outside every store.
 
 use std::io::Read;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::harness::WatchStart;
@@ -13,7 +16,7 @@ use teamwire_store::Store;
 use super::{STDIN_LIMIT, tool_note_reply, within};
 use crate::Global;
 use crate::cmd::shared::{carries_member_identity, state_home};
-use crate::wiring::{Wiring, claude_harness_id};
+use crate::wiring::{Wiring, claude_harness_id, lead_handoff_setting};
 
 /// The lead's hooks run on every stop, and on most tool calls, of every
 /// session where the lead's setup is on, so a slow disk or a locked store
@@ -23,7 +26,8 @@ const LEAD_HOOK_BUDGET: Duration = Duration::from_secs(5);
 /// The lead's Stop hook (ADR 0018 point 5): hold the stop once, naming each
 /// team that has working members and no running watch, each AFK team that
 /// nothing will wake, and each item never typed into the lead's pane (ADR
-/// 0043). It reads stores and writes nothing.
+/// 0043), and the lead's own handoff once after its note (ADR 0051). It
+/// reads stores and writes no store.
 pub(super) fn lead_stop_hook(
     harness: Option<&str>,
     global: &Global,
@@ -59,7 +63,7 @@ pub(super) fn lead_stop_in(
     let clock = wiring.clock;
     let at = home.to_path_buf();
     // Every store read, the lead harness's included, stays inside the bound.
-    let (teams, afk_notes, undelivered) = within(LEAD_HOOK_BUDGET, move || {
+    let (teams, afk_notes, undelivered, handoff) = within(LEAD_HOOK_BUDGET, move || {
         let teams: Vec<_> =
             teamwire_report::teams_without_watch(&at, &turn.session, &*platform, &clock)
                 .into_iter()
@@ -68,10 +72,12 @@ pub(super) fn lead_stop_in(
                     (team, lead)
                 })
                 .collect();
+        let setting = lead_handoff_setting(&at, &|key| std::env::var(key).ok());
         (
             teams,
             teamwire_report::afk_hold_notes(&at, &turn.session, &*platform, &clock),
             teamwire_report::undelivered_to_lead(&at, &turn.session, &*platform, &clock),
+            teamwire_report::lead_handoff_hold(&at, &turn.session, &*platform, &setting),
         )
     })?;
     let mut note: Vec<String> = teams
@@ -82,6 +88,7 @@ pub(super) fn lead_stop_in(
         .collect();
     note.extend(afk_notes);
     note.extend(undelivered);
+    note.extend(handoff);
     if note.is_empty() {
         return None;
     }
@@ -117,24 +124,38 @@ pub(super) fn lead_tool_in(
 ) -> Option<Vec<u8>> {
     let mut input = Vec::new();
     stdin.read_to_end(&mut input).ok()?;
-    let call = lead_harness(harness, wiring)?
+    let id = lead_harness_id(harness)?;
+    let call = wiring
+        .registry
+        .harness(&id)
+        .ok()?
         .parse_tool_call(&input)
         .ok()?;
     let platform = wiring.platform.clone();
     let clock = wiring.clock;
+    let registry = Arc::clone(&wiring.registry);
     let at = home.to_path_buf();
     // The undelivered note is read on every call, not only for member work:
     // the call that frees a blocked pane is often a dialog's answer. A
-    // subagent's note would reach the subagent, not the lead.
-    let (work, undelivered) = within(LEAD_HOOK_BUDGET, move || {
+    // subagent's note would reach the subagent, not the lead. The handoff
+    // note reads the lead's transcript, so it too stays inside the bound.
+    let (work, undelivered, handoff) = within(LEAD_HOOK_BUDGET, move || {
         let undelivered = if call.subagent {
             Vec::new()
         } else {
             teamwire_report::undelivered_to_lead(&at, &call.session, &*platform, &clock)
         };
-        (teamwire_report::lead_tool_note(&at, &call), undelivered)
+        let setting = lead_handoff_setting(&at, &|key| std::env::var(key).ok());
+        let handoff = registry.harness(&id).ok().and_then(|lead| {
+            teamwire_report::lead_handoff_note(&at, &call, lead, &*platform, &setting)
+        });
+        (
+            teamwire_report::lead_tool_note(&at, &call),
+            undelivered,
+            handoff,
+        )
     })?;
-    let note: Vec<String> = work.into_iter().chain(undelivered).collect();
+    let note: Vec<String> = work.into_iter().chain(undelivered).chain(handoff).collect();
     if note.is_empty() {
         return None;
     }
@@ -144,11 +165,15 @@ pub(super) fn lead_tool_in(
 /// The harness that parses a lead hook's input: the one `--harness` names,
 /// else Claude Code, whose plugin wrote the Stop hook before the flag existed.
 fn lead_harness<'w>(harness: Option<&str>, wiring: &'w Wiring) -> Option<&'w dyn Harness> {
-    let id = match harness {
-        Some(id) => HarnessId::parse(id).ok()?,
-        None => claude_harness_id(),
-    };
-    wiring.registry.harness(&id).ok()
+    wiring.registry.harness(&lead_harness_id(harness)?).ok()
+}
+
+/// The id `lead_harness` looks up.
+fn lead_harness_id(harness: Option<&str>) -> Option<HarnessId> {
+    match harness {
+        Some(id) => HarnessId::parse(id).ok(),
+        None => Some(claude_harness_id()),
+    }
 }
 
 /// The team's recorded lead harness, or `None` when the team cannot be read.

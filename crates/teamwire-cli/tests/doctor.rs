@@ -51,6 +51,14 @@ mod wiring {
     pub(crate) use teamwire_harness_claude::{ClaudeConfig, SKILL_TEXT};
     pub(crate) use teamwire_harness_pi::PiConfig;
 
+    /// The tests pass the setting in `Inputs`; the real reader is not compiled here.
+    pub(crate) fn lead_handoff_setting(
+        _home: &std::path::Path,
+        _env: &dyn Fn(&str) -> Option<String>,
+    ) -> teamwire_core::LeadHandoffSetting {
+        teamwire_core::LeadHandoffSetting::Unset
+    }
+
     pub(crate) struct Wiring {
         pub(crate) platform: Arc<dyn Platform>,
         pub(crate) claude: ClaudeConfig,
@@ -125,6 +133,8 @@ struct Bed {
     claude_help: String,
     /// The environment variables that are set.
     env_names: Vec<String>,
+    /// What `TEAMWIRE_LEAD_HANDOFF_TOKENS` says.
+    lead_handoff: teamwire_core::LeadHandoffSetting,
     registry: Registry,
     clock: FakeClock,
     /// What `codex plugin list --json` prints; the Codex adapter has a
@@ -164,6 +174,7 @@ impl Bed {
             host: Host::Herdr,
             claude_help: ALL_FLAGS.to_owned(),
             env_names: Vec::new(),
+            lead_handoff: teamwire_core::LeadHandoffSetting::Unset,
             registry: Registry::new(),
             clock: FakeClock::new(),
             codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
@@ -344,6 +355,7 @@ impl Bed {
             base: self.base.clone(),
             git,
             env_names: self.env_names.clone(),
+            lead_handoff: self.lead_handoff.clone(),
         })
     }
 
@@ -891,6 +903,7 @@ fn the_old_setup_is_checked_even_when_the_entry_cannot_be_worked_out() {
         base: "HEAD".to_owned(),
         git: &bed.platform,
         env_names: Vec::new(),
+        lead_handoff: teamwire_core::LeadHandoffSetting::Unset,
     });
     assert_eq!(level_of(&checks, "old lead setup"), Level::Pass);
     assert_eq!(
@@ -1338,4 +1351,43 @@ fn pi_on_path_has_its_lead_package_checked() {
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "pi lead package"), Level::Warn);
     assert!(detail_of(&checks, "pi lead package").contains("teamwire install --harness pi"));
+}
+
+/// ADR 0051 decision 6: a lead handoff setting that is not a whole number or
+/// `off`, or one below the floor, is a warning that names the value. Any
+/// other setting prints no line.
+#[test]
+fn a_bad_or_low_lead_handoff_setting_is_a_warning() {
+    use teamwire_core::LeadHandoffSetting;
+    let mut bed = Bed::healthy();
+    bed.lead_handoff = LeadHandoffSetting::parse(Some("40%"));
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "lead handoff"), Level::Warn);
+    assert!(
+        detail_of(&checks, "lead handoff").starts_with(
+            "TEAMWIRE_LEAD_HANDOFF_TOKENS is \"40%\", which is neither a whole number of tokens nor off"
+        ),
+        "{checks:?}"
+    );
+    bed.lead_handoff = LeadHandoffSetting::Tokens(0);
+    let checks = bed.checks();
+    assert_eq!(level_of(&checks, "lead handoff"), Level::Warn);
+    assert!(
+        detail_of(&checks, "lead handoff").starts_with(
+            "TEAMWIRE_LEAD_HANDOFF_TOKENS is 0, below the floor of 200000, so it counts as 200000"
+        ),
+        "{checks:?}"
+    );
+    for fine in [
+        LeadHandoffSetting::Unset,
+        LeadHandoffSetting::Off,
+        LeadHandoffSetting::Tokens(200_000),
+    ] {
+        bed.lead_handoff = fine.clone();
+        let checks = bed.checks();
+        assert!(
+            !checks.iter().any(|c| c.name == "lead handoff"),
+            "{fine:?}: {checks:?}"
+        );
+    }
 }

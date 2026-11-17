@@ -19,6 +19,7 @@ mod decisions;
 mod done;
 mod final_message;
 mod handoff;
+mod lead_handoff;
 mod lead_stop;
 mod lead_tool;
 mod note;
@@ -35,6 +36,7 @@ pub use decisions::{
 };
 pub use done::{done, done_with_status, hash_token, parse_status, token_matches};
 pub use handoff::handoff_note;
+pub use lead_handoff::{lead_handoff_hold, lead_handoff_note};
 pub use lead_stop::{afk_hold_notes, teams_without_watch, undelivered_to_lead, watch_missing_note};
 pub use lead_tool::lead_tool_note;
 pub use received::{Received, mark_received};

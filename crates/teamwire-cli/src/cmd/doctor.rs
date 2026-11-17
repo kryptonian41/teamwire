@@ -10,7 +10,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::Duration;
 
-use teamwire_core::{CheckOutcome, Clock, Command, LeadCommand, LeadTarget, Platform, Registry};
+use teamwire_core::{
+    CheckOutcome, Clock, Command, LEAD_HANDOFF_SETTING, LeadCommand, LeadHandoffSetting,
+    LeadTarget, MIN_LEAD_HANDOFF_TOKENS, Platform, Registry,
+};
 
 use crate::Global;
 use crate::cmd::doctor_speckit::speckit_checks;
@@ -19,7 +22,7 @@ pub(crate) use crate::cmd::host_pick::{Host, HostPick, pick_host};
 use crate::cmd::install::wanted_command;
 use crate::cmd::lead_setup_check::{self, HarnessInputs, on_path, version_check};
 use crate::cmd::shared::{PARTIAL, home_or_refuse, say};
-use crate::wiring::{ClaudeConfig, PiConfig, SKILL_TEXT, Wiring};
+use crate::wiring::{ClaudeConfig, PiConfig, SKILL_TEXT, Wiring, lead_handoff_setting};
 
 /// Launch refuses to start below this much free space (LCH-2).
 const MIN_FREE_BYTES: u64 = 200 * 1024 * 1024;
@@ -123,6 +126,8 @@ pub(crate) struct Inputs<'a> {
     /// The names of the environment variables that are set, never their
     /// values (SEC-1).
     pub(crate) env_names: Vec<String>,
+    /// `TEAMWIRE_LEAD_HANDOFF_TOKENS`, from the environment or `config.toml`.
+    pub(crate) lead_handoff: LeadHandoffSetting,
 }
 
 /// The nearest directory at or above `path` that exists, so a state
@@ -335,6 +340,29 @@ fn credential_check(inputs: &Inputs<'_>) -> Check {
     )
 }
 
+/// A warning when the lead handoff setting (ADR 0051) does not do what it
+/// says: a value that is not a whole number or `off`, or a count below the
+/// floor. Any other setting prints no line.
+fn lead_handoff_check(setting: &LeadHandoffSetting) -> Option<Check> {
+    let floor = MIN_LEAD_HANDOFF_TOKENS;
+    let detail = match setting {
+        LeadHandoffSetting::Invalid(value) => format!(
+            "{LEAD_HANDOFF_SETTING} is {value:?}, which is neither a whole number of tokens nor \
+             off, so it counts as unset: a lead is told to hand off at 40% of its window, and \
+             never below {floor} tokens"
+        ),
+        LeadHandoffSetting::Tokens(tokens) if *tokens < floor => format!(
+            "{LEAD_HANDOFF_SETTING} is {tokens}, below the floor of {floor}, so it counts as \
+             {floor}: a fresh lead already holds about 98,000 tokens and would be told to hand \
+             off again at once"
+        ),
+        LeadHandoffSetting::Tokens(_) | LeadHandoffSetting::Unset | LeadHandoffSetting::Off => {
+            return None;
+        }
+    };
+    Some(Check::warn("lead handoff", detail))
+}
+
 /// Every check, in the order `doctor` prints them.
 pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     let mut checks = disk_checks(inputs);
@@ -347,6 +375,7 @@ pub(crate) fn diagnose(inputs: &Inputs<'_>) -> Vec<Check> {
     checks.extend(speckit_checks(inputs));
     checks.extend(binary_checks(inputs));
     checks.push(credential_check(inputs));
+    checks.extend(lead_handoff_check(&inputs.lead_handoff));
     checks.extend(harness_checks(inputs, lead_setup_check::lead_checks));
     checks
 }
@@ -377,6 +406,7 @@ pub(crate) fn inputs<'w>(
         std::env::var("TMUX").ok().as_deref(),
         &|pid| wiring.platform.parent_of(pid),
     );
+    let lead_handoff = lead_handoff_setting(&home, &|key| std::env::var(key).ok());
     let inputs = Inputs {
         host: Host::from_id(pick.id),
         home,
@@ -397,6 +427,7 @@ pub(crate) fn inputs<'w>(
             .filter(|(_, v)| !v.is_empty())
             .filter_map(|(k, _)| k.into_string().ok())
             .collect(),
+        lead_handoff,
     };
     (inputs, pick)
 }
