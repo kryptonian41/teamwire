@@ -17,6 +17,16 @@ decision log, and carry on. A turn that ends on a question to the user ends
 the run, because nothing will wake you again. Section 1 is the only place
 you may stop for the user.
 
+## Taking over a run after a lead handoff
+
+When your first prompt says you take over from another lead session, the run
+is already going. Skip section 1, because the team, the task file and the
+sleep hold already exist. Read the handoff document first, as the prompt
+says. Then read `afk/decisions.md` in the team directory: roster entry `D1`
+and every later roster entry, so you add no member the old lead ruled out.
+The one rule still holds. When your own context passes its handoff point,
+hand off again without asking anyone.
+
 ## 1. Preflight, while the user may still be at the keyboard
 
 A spec-kit feature runs AFK only from a `spec.md`, `plan.md` and `tasks.md`

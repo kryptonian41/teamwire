@@ -916,6 +916,20 @@ teamwire sets no compaction for a Codex or pi member, so hand it off at its
 `CONTEXT` line. "Context handoff" in `reference.md` holds the handoff point,
 what the command does, its refusals and how to recover a failed handoff.
 
+### When your own context runs high
+
+Once your context passes its handoff point, your tool hook adds a
+`[teamwire]` note with the numbers. Your Stop hook then holds your next stop
+once. Hand off without asking the user, at a turn end where you wait on
+members. If you wait for the user's answer, hand off after you have it. Run
+`teamwire lead --handoff-guide` and write the handoff document it names.
+Then run `teamwire lead --handoff` as the last action of your turn. It starts
+a fresh lead session in a pane beside yours, gives it every team you lead,
+moves the sleep hold and closes your pane. The new lead loads this skill,
+reads the document, runs `teamwire status` for each team and
+`teamwire lead --missed`, and starts the watches. "Lead handoff" in
+`reference.md` holds the point, the setting, each refusal and the recovery.
+
 ## After the last wave: integrate, then verify
 
 Start once the last planned member has reported. `TEAM-COMPLETE` after wave 1
@@ -1050,6 +1064,6 @@ teams. "Close" in `reference.md` lists each step.
 ## Reference
 
 `reference.md`, next to this file, holds "Setting up a machine", "How it fits
-together", "Watch lines", "Messages", "Reopen", "Context handoff", "Verify
-flags", "Pull request lines", "Close" and "Other commands". Its first lines
-say when to read each.
+together", "Watch lines", "Messages", "Reopen", "Context handoff", "Lead
+handoff", "Verify flags", "Pull request lines", "Close" and "Other commands".
+Its first lines say when to read each.

@@ -9,6 +9,7 @@ Read this when:
 - `send` refuses a message: "Messages";
 - a member or a whole team you cannot reach: "Reopen";
 - a member passes its handoff point or a handoff fails: "Context handoff";
+- your own context passes its handoff point, or `teamwire lead --handoff` fails: "Lead handoff";
 - a `verify` flag you do not know: "Verify flags";
 - a pr-watch line: "Pull request lines";
 - a close that refused: "Close";
@@ -199,6 +200,80 @@ error says `reopen` has nothing to resume.
 A Claude Code member that passes its point and gets no handoff compacts its
 own context at twice that point. teamwire sets no compaction for Codex and pi
 members, so hand them off at the `CONTEXT` line.
+
+## Lead handoff
+
+Your own answers get worse as your context fills, as a member's do. Your
+handoff point is 40% of your model's window, and never below 200,000 tokens.
+A fresh lead already holds about 98,000 tokens once this skill has loaded,
+so a lower point would make every new lead hand off again at once. On a
+1,000,000-token window the point is 400,000. On a 200,000-token window it is
+200,000, so the note never fires there. A lead that leads no open team, such
+as a lead that is still planning, is never told.
+
+The setting `TEAMWIRE_LEAD_HANDOFF_TOKENS` moves the point. teamwire reads
+it from the environment first, then from `$TEAMWIRE_HOME/config.toml`, as in
+`TEAMWIRE_LEAD_HANDOFF_TOKENS = "300000"`. The value is a token count or
+`off`. A count below 200,000 counts as 200,000. A value such as `40%` counts
+as no setting. `teamwire doctor` prints a `warn` line for either case.
+
+Past the point, your tool hook adds one note, and your Stop hook holds one
+stop. teamwire records each as an empty file, `noted` and `held`, in
+`$TEAMWIRE_HOME/handoffs/<session id>/`, so neither comes twice. The handoff
+document goes in the same folder as `handoff.md`, never in a repository.
+`teamwire lead --handoff-guide` prints its path and its ten sections.
+
+`teamwire lead --handoff` runs these steps in order. Run it as the last
+action of a turn, because it closes the pane it runs in.
+
+1. It finds the open teams this session leads.
+2. It refuses, with nothing changed, when a check in the table below fails.
+3. It opens a pane beside yours, in the same tab, labelled
+   `lead · <team title>`, with `+N` for N more teams. It starts a fresh lead
+   session there, with its first prompt as a command-line argument.
+4. On Claude Code and pi, it waits until the new session shows in that pane,
+   then records the new session as the lead of each team. A new Codex lead
+   picks its own session id, so its first prompt tells it to run
+   `teamwire lead --adopt <team>` for each team. The command waits up to
+   180 seconds for that.
+5. It moves the sleep hold to the new lead and prints the result.
+6. It closes your pane.
+
+`--dry-run` prints the teams, your pane, the document path, the new pane's
+label and folder, the new command line and each flag it leaves out. It
+changes nothing.
+
+| Exit | Cause | What changed | What to do |
+| --- | --- | --- | --- |
+| 1 | A member's session or a background session ran it | Nothing | Run it from your own interactive lead session |
+| 1 | This session leads no open team | Nothing | Nothing needs a handoff |
+| 1 | The led teams record different lead harnesses or hosts, the session id is not a safe folder name, your folder is not known or is gone, or the harness cannot start a lead | Nothing | Hand off by hand, as below |
+| 1 | The host cannot split a pane, or is `none` | Nothing | Run the printed command in a new pane yourself |
+| 1 | The handoff document is missing | Nothing | Run `teamwire lead --handoff-guide`, write the document, and run the command again |
+| 1 | Your pane cannot be located | Nothing | Read the locator's code in the line. Hand off by hand when you cannot fix it |
+| 2 | The new pane could not be opened, or the new session did not show in it | Nothing. The command closed the new pane | You are still the lead. Carry on, or run the command again |
+| 2 | A team's write failed, or a new Codex lead did not adopt every team within 180 seconds | Some teams moved and some did not. Both panes stay open | The new lead runs `teamwire lead --adopt <team>` for each team the output names. Then end your turn, and the user closes your pane |
+| 6 | An open team's store cannot be read | Nothing | Run `teamwire doctor` |
+
+To hand off by hand, start a fresh lead session in a new pane. Its first
+message points at your handoff document and tells it to run
+`teamwire lead --adopt <team>` for each team. The printed command of the
+host refusal is such a start. Then end your turn, and the user closes your
+pane.
+
+A `warning:` line never stops the handoff. One names each flag of yours that
+the new lead does not get. One says the document is older than the note, so
+check that the document is current. One says a sleep hold was not moved.
+When your pane does not close, a warning says so after every team moved.
+End your turn at once, and the user closes the pane.
+
+The new lead reads the document, then runs `teamwire lead --missed`. That
+command lists each result and message that reached you from 120 seconds
+before you last wrote the document until the team moved, with the file to
+read. It may list an item the document already covers. When another watch
+still holds a team, the new lead waits 15 seconds and starts its watch once
+more. Your old session stays resumable with your harness's own resume
+command.
 
 ## Verify flags
 
