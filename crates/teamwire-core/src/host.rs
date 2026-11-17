@@ -221,6 +221,21 @@ impl SpawnRequest {
     }
 }
 
+impl SplitRequest {
+    /// The pane of a fresh lead after a lead handoff (ADR 0051), labelled
+    /// like a lead's tab: `lead · <team title>` for one team, and
+    /// `lead · <team title> +N` when the lead leads N more teams. The title is
+    /// the first led team's by name.
+    pub fn lead_label(first_team_title: &str, more_teams: usize) -> String {
+        let label = format!("lead{LABEL_SEPARATOR}{first_team_title}");
+        if more_teams == 0 {
+            label
+        } else {
+            format!("{label} +{more_teams}")
+        }
+    }
+}
+
 impl fmt::Debug for SpawnRequest {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("SpawnRequest")

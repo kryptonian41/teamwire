@@ -7,6 +7,18 @@ use teamwire_core::{HostError, Occupant, Place, PlaceState, SplitRequest};
 use super::FakeHost;
 use crate::calls::{CallKind, lock};
 
+/// What a test runs after each successful split, such as starting a fake
+/// session in the new pane.
+type SplitFn = Box<dyn Fn(&FakeHost, &Place, &SplitRequest) + Send + Sync>;
+
+pub(super) struct SplitHook(SplitFn);
+
+impl std::fmt::Debug for SplitHook {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SplitHook")
+    }
+}
+
 impl FakeHost {
     pub(super) fn split_beside(
         &self,
@@ -38,7 +50,19 @@ impl FakeHost {
             r.env.clone_from(&req.env);
             r.split = Some(req.clone());
         });
+        if late_error.is_none()
+            && let Some(SplitHook(hook)) = &*lock(&self.on_split)
+        {
+            hook(self, &place, req);
+        }
         Self::finish(place, late_error)
+    }
+
+    /// Runs `hook` after each split that succeeds, with the new place and
+    /// its request, once the host's own state is unlocked. A test starts the
+    /// new pane's fake session here, since it learns the place only now.
+    pub fn on_split(&self, hook: impl Fn(&Self, &Place, &SplitRequest) + Send + Sync + 'static) {
+        *lock(&self.on_split) = Some(SplitHook(Box::new(hook)));
     }
 
     pub(super) fn close_split(&self, place: &Place) -> Result<(), HostError> {

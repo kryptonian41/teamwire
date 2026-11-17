@@ -77,6 +77,7 @@ pub struct FakeHost {
     next: AtomicU64,
     state: Mutex<State>,
     reads: Meeting,
+    on_split: Mutex<Option<split::SplitHook>>,
 }
 
 impl FakeHost {
@@ -116,6 +117,7 @@ impl FakeHost {
                 faults: Vec::new(),
             }),
             reads: Meeting::default(),
+            on_split: Mutex::new(None),
         }
     }
 

@@ -54,6 +54,9 @@ impl Platform for GitPlatform {
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError> {
         self.inner.env_of(pid, var)
     }
+    fn args_of(&self, pid: Pid) -> Option<Vec<String>> {
+        self.inner.args_of(pid)
+    }
     fn run(&self, cmd: &Command, _timeout: Duration) -> Result<RunOutput, PlatformError> {
         real_run(cmd)
     }
