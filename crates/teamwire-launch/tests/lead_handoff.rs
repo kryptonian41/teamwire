@@ -107,6 +107,16 @@ fn write_document(home: &Path) {
     std::fs::write(dir.join("handoff.md"), "# handoff\n").unwrap();
 }
 
+/// Sets the modification time of `path` to `secs` after the epoch.
+fn modified_at(path: &Path, secs: u64) {
+    std::fs::File::options()
+        .write(true)
+        .open(path)
+        .unwrap()
+        .set_modified(std::time::UNIX_EPOCH + Duration::from_secs(secs))
+        .unwrap();
+}
+
 /// The new pane's command starts the session its argv names, as a real
 /// harness does once the pane's shell runs it.
 fn new_session_starts(rig: &Rig) {
@@ -654,8 +664,12 @@ fn a_document_older_than_the_note_gives_a_warning_and_the_handoff_goes_on() {
     team(&rig, "alpha", "Fix the prompts", false);
     old_lead(&rig);
     new_session_starts(&rig);
-    std::thread::sleep(Duration::from_millis(20));
-    std::fs::write(rig.home.path().join("handoffs/lead-session/noted"), "").unwrap();
+    let dir = rig.home.path().join("handoffs").join(OLD);
+    std::fs::write(dir.join("noted"), "").unwrap();
+    // Whole seconds apart, so a file system that keeps whole-second times
+    // still orders them.
+    modified_at(&dir.join("handoff.md"), 1_000);
+    modified_at(&dir.join("noted"), 1_010);
     let (said, result) = run(&rig);
     assert_eq!(result, Ok(()), "{}", text(&said));
     assert!(
