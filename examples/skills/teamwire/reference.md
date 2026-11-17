@@ -243,9 +243,13 @@ seconds unless the call sets a longer `timeout`.
 5. It moves the sleep hold to the new lead and prints the result.
 6. It closes your pane.
 
-`--dry-run` prints the teams, your pane, the document path, the new pane's
-label and folder, the new command line and each flag it leaves out. It
-changes nothing.
+`--dry-run` first prints each `warning:` line the handoff would print: a
+document older than the note, arguments of yours that cannot be read, and
+the harness's own warnings, such as a permission mode the new lead cannot be
+started with. It then prints the teams, your pane, the document path, the new
+pane's label and folder, one `environment:` line for each variable the new
+pane gets, the `new session:` line, the new command line and each flag it
+leaves out. It changes nothing.
 
 A lead on Opus 4.6 or Sonnet 4.6 whose 1M window was chosen in settings or
 with `/model`, and not with `--model`, starts its new lead on the 200K window,

@@ -620,6 +620,7 @@ fn a_dry_run_says_the_plan_and_changes_nothing() {
                 .display()
         ),
         format!("in {}", rig.work.path().display()),
+        "new session: ".to_owned(),
         "command: fake-claude --session-id ".to_owned(),
         "not passed on: --drop-me".to_owned(),
         "dry run: no pane was opened and no team changed".to_owned(),
