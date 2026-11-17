@@ -1,6 +1,8 @@
 //! `teamwire lead`: `--adopt` records this session as the team's lead;
 //! `--handoff` hands every open team this session leads to a fresh lead
-//! session in a pane beside this one (ADR 0051).
+//! session in a pane beside this one (ADR 0051); `--handoff-guide` prints
+//! what the old lead writes first; `--missed` lists what the old lead may
+//! have been handed while it handed off.
 //!
 //! The order of the handoff's steps lives in `teamwire_launch::lead_hand_off`.
 //! This file parses, calls it, prints what it says and maps its error to an
@@ -8,12 +10,13 @@
 
 use std::process::ExitCode;
 
-use teamwire_core::{Config, TeamName};
+use teamwire_core::{Config, HandoffFiles, TeamName};
 use teamwire_launch::{
-    HandoffError, LeadCaller, LeadHandoffCtx, LeadHandoffOpts, LeadHandoffWaits, Said,
-    lead_hand_off,
+    HandoffError, LeadCaller, LeadHandoffCtx, LeadHandoffOpts, LeadHandoffWaits, LeadSeat, Said,
+    find_lead, lead_hand_off,
 };
 use teamwire_msg::adopt_lead;
+use teamwire_report::lead_missed;
 
 use crate::cmd::send::error_code;
 use crate::cmd::shared::{
@@ -23,10 +26,96 @@ use crate::cmd::shared::{
 use crate::wiring::Wiring;
 use crate::{Global, LeadArgs, USAGE};
 
+/// teamwire's guide for a lead's handoff document, adapted from the same
+/// mattpocock-skills `handoff` skill as the member guide. `{{DOCUMENT}}` and
+/// `{{TEAMS}}` are filled in for the caller.
+const GUIDE: &str = include_str!("lead_handoff_guide.md");
+
 pub(crate) fn run(args: &LeadArgs, global: &Global, wiring: &Wiring) -> ExitCode {
-    match &args.adopt {
-        Some(team) => adopt(team, global, wiring),
-        None => handoff(args.dry_run, global, wiring),
+    if let Some(team) = &args.adopt {
+        return adopt(team, global, wiring);
+    }
+    if args.handoff {
+        return handoff(args.dry_run, global, wiring);
+    }
+    let home = match home_or_refuse("lead", global) {
+        Ok(home) => home,
+        Err(code) => return code,
+    };
+    let config = Config::default();
+    let ctx = handoff_ctx(&home, wiring, &config);
+    let env = caller_lookup;
+    let seat = match find_lead(&ctx, &caller(&env)) {
+        Ok(seat) => seat,
+        Err(e) => return exit(&e),
+    };
+    if args.missed {
+        missed(&home, &seat)
+    } else {
+        guide(&home, &seat)
+    }
+}
+
+fn caller_lookup(name: &str) -> Option<String> {
+    std::env::var(name).ok().filter(|v| !v.is_empty())
+}
+
+fn caller(env: &dyn Fn(&str) -> Option<String>) -> LeadCaller<'_> {
+    LeadCaller {
+        env,
+        is_member: carries_member_identity(),
+    }
+}
+
+fn handoff_ctx<'a>(
+    home: &'a std::path::Path,
+    wiring: &'a Wiring,
+    config: &'a Config,
+) -> LeadHandoffCtx<'a> {
+    LeadHandoffCtx {
+        home,
+        registry: &wiring.registry,
+        platform: &*wiring.platform,
+        clock: &wiring.clock,
+        config,
+    }
+}
+
+fn exit(e: &HandoffError) -> ExitCode {
+    match e {
+        HandoffError::Store(_) => fail("lead", &e.to_string(), STORE),
+        HandoffError::Refused(why) => fail("lead", why, REFUSED),
+        HandoffError::Partial(why) => fail("lead", why, PARTIAL),
+    }
+}
+
+fn guide(home: &std::path::Path, seat: &LeadSeat) -> ExitCode {
+    let Some(files) = HandoffFiles::of(home, &seat.session) else {
+        return fail(
+            "lead",
+            &format!(
+                "the session id {} is not a safe folder name, so it has no handoff folder",
+                seat.session
+            ),
+            REFUSED,
+        );
+    };
+    let teams: Vec<String> = seat.names().iter().map(ToString::to_string).collect();
+    say(&GUIDE
+        .replace("{{DOCUMENT}}", &files.document.display().to_string())
+        .replace("{{TEAMS}}", &teams.join(", ")));
+    ExitCode::SUCCESS
+}
+
+fn missed(home: &std::path::Path, seat: &LeadSeat) -> ExitCode {
+    match lead_missed(home, &seat.session, &seat.names()) {
+        Ok(lines) => {
+            for line in lines {
+                say_line(&line);
+            }
+            ExitCode::SUCCESS
+        }
+        Err(e) => fail("lead", &format!("the store could not be read: {e}"), STORE),
     }
 }
 
@@ -58,18 +147,8 @@ fn handoff(dry_run: bool, global: &Global, wiring: &Wiring) -> ExitCode {
         Err(code) => return code,
     };
     let config = Config::default();
-    let ctx = LeadHandoffCtx {
-        home: &home,
-        registry: &wiring.registry,
-        platform: &*wiring.platform,
-        clock: &wiring.clock,
-        config: &config,
-    };
-    let env = |name: &str| std::env::var(name).ok().filter(|v| !v.is_empty());
-    let caller = LeadCaller {
-        env: &env,
-        is_member: carries_member_identity(),
-    };
+    let ctx = handoff_ctx(&home, wiring, &config);
+    let env = caller_lookup;
     // The new lead's shell does not have this command's flags, so a state
     // directory the caller named is passed to it.
     let named = global.home.is_some() || env("TEAMWIRE_HOME").is_some();
@@ -78,14 +157,12 @@ fn handoff(dry_run: bool, global: &Global, wiring: &Wiring) -> ExitCode {
         dry_run,
         waits: LeadHandoffWaits::of(&config),
     };
-    let result = lead_hand_off(&ctx, &caller, &opts, &mut |said| match said {
+    let result = lead_hand_off(&ctx, &caller(&env), &opts, &mut |said| match said {
         Said::Line(text) => say_line(&text),
         Said::Warning(text) => warn(&text),
     });
     match result {
         Ok(()) => ExitCode::SUCCESS,
-        Err(e @ HandoffError::Store(_)) => fail("lead", &e.to_string(), STORE),
-        Err(HandoffError::Refused(why)) => fail("lead", &why, REFUSED),
-        Err(HandoffError::Partial(why)) => fail("lead", &why, PARTIAL),
+        Err(e) => exit(&e),
     }
 }

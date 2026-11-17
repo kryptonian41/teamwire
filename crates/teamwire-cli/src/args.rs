@@ -386,7 +386,15 @@ pub(crate) struct DecisionsArgs {
 }
 
 #[derive(Args)]
-#[command(group(ArgGroup::new("action").required(true).args(["adopt", "handoff"])))]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each field is one command-line flag of `teamwire lead`"
+)]
+#[command(group(
+    ArgGroup::new("action")
+        .required(true)
+        .args(["adopt", "handoff", "handoff_guide", "missed"])
+))]
 pub(crate) struct LeadArgs {
     /// Record the calling session as this team's lead.
     #[arg(long, value_name = "TEAM")]
@@ -396,10 +404,17 @@ pub(crate) struct LeadArgs {
     /// it closes this pane.
     #[arg(long)]
     pub(crate) handoff: bool,
+    /// Print what the handoff document holds and where to write it.
+    #[arg(long)]
+    pub(crate) handoff_guide: bool,
+    /// For a new lead after a handoff: list each result and message that
+    /// may have reached the old lead while it handed off. Reads only.
+    #[arg(long)]
+    pub(crate) missed: bool,
     /// With --handoff: print the teams, the panes and the new lead's command
     /// line, and change nothing.
     // `requires = "handoff"` would count the switch's default as given.
-    #[arg(long, conflicts_with = "adopt")]
+    #[arg(long, conflicts_with_all = ["adopt", "handoff_guide", "missed"])]
     pub(crate) dry_run: bool,
 }
 
