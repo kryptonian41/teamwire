@@ -234,8 +234,9 @@ seconds unless the call sets a longer `timeout`.
 3. It opens a pane beside yours, in the same tab, labelled
    `lead · <team title>`, with `+N` for N more teams. It starts a fresh lead
    session there, with its first prompt as a command-line argument.
-4. On Claude Code and pi, it waits up to 90 seconds until the new session
-   shows in that pane, then records the new session as the lead of each team. A new Codex lead
+4. On Claude Code and pi, it waits up to 90 seconds, or `spawn_timeout_s`
+   when that is lower, until the new session shows in that pane, then
+   records the new session as the lead of each team. A new Codex lead
    picks its own session id, so its first prompt tells it to run
    `teamwire lead --adopt <team>` for each team. The command waits up to
    180 seconds for that.
