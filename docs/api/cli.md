@@ -808,8 +808,10 @@ team's lead and prints the old and new session ids (ADR 0008). The line reads
 
 `--handoff` hands every open team the calling session leads to a fresh lead
 session in a pane beside the caller's (ADR 0051). The old lead runs it as the
-last action of a turn, because the command closes the pane it runs in. The
-steps run in this order, one line on stdout for each:
+last action of a turn, because the command closes the pane it runs in. Where
+the caller's harness limits how long a command may run, the caller gives it at
+least 240 seconds, because the Codex wait of step 7 lasts up to 180 seconds.
+The steps run in this order, one line on stdout for each:
 
 1. Find the caller. The command finds the caller's session through each open
    team's lead harness and collects the open teams that session leads, sorted
@@ -834,8 +836,9 @@ steps run in this order, one line on stdout for each:
    directory. Each flag of the old lead that the harness does not carry gives
    one `warning:` line, by name only.
 5. Prove, for a harness that chooses the session id (Claude Code, pi). The
-   command waits up to `spawn_timeout_s` for the locator to find the new
-   session in the new pane. On a failure it closes the new pane and exits 2.
+   command waits up to 90 seconds, or `spawn_timeout_s` when that is lower,
+   for the locator to find the new session in the new pane. The 90 seconds
+   end before the 120-second default limit of Claude Code's Bash tool. On a failure it closes the new pane and exits 2.
    No team has changed.
 6. Adopt. For each led team, one store write checks that the team is still
    open and still led by the old session, then records the new lead and

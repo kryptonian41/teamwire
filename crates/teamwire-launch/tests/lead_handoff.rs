@@ -29,8 +29,8 @@ use std::time::Duration;
 use common::Rig;
 use teamwire_core::harness::WatchStart;
 use teamwire_core::{
-    Clock, HarnessCaps, HarnessError, HostCaps, HostError, HostErrorCode, Liveness, Occupant, Pid,
-    Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
+    Clock, Config, HarnessCaps, HarnessError, HostCaps, HostError, HostErrorCode, Liveness,
+    Occupant, Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
 };
 use teamwire_fakes::{FakeHarness, FakeHost, Fault};
 use teamwire_launch::{
@@ -715,4 +715,20 @@ fn an_old_pane_that_does_not_close_gives_a_warning_after_the_teams_moved() {
         "{}",
         text(&said)
     );
+}
+
+#[test]
+fn the_proof_wait_ends_before_a_two_minute_command_limit() {
+    // Claude Code's Bash tool stops a command after 120 s by default, so the
+    // proof gives up by 90 s and still closes the new pane and says why.
+    let config = Config::default();
+    assert_eq!(config.spawn_timeout_s, 150);
+    let waits = LeadHandoffWaits::of(&config);
+    assert_eq!(waits.prove, Duration::from_secs(90));
+    assert_eq!(waits.adopt, Duration::from_secs(180));
+    let lower = Config {
+        spawn_timeout_s: 60,
+        ..Config::default()
+    };
+    assert_eq!(LeadHandoffWaits::of(&lower).prove, Duration::from_secs(60));
 }

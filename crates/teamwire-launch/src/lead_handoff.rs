@@ -23,6 +23,12 @@ use crate::lead_plan::{LeadCaller, LeadHandoffCtx, Planned, find_lead, plan};
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The longest wait for the new session to show in the new pane. The old
+/// lead runs this command through its own shell tool, and Claude Code's Bash
+/// tool stops a command after 120 seconds by default. A wait that ends by 90
+/// seconds leaves time to close the new pane and print why before that.
+const MAX_PROVE_WAIT: Duration = Duration::from_secs(90);
+
 /// How long the handoff waits, and how often it looks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LeadHandoffWaits {
@@ -37,12 +43,13 @@ pub struct LeadHandoffWaits {
 
 impl LeadHandoffWaits {
     /// Proving waits as long as launch waits for one agent
-    /// (`Config::spawn_timeout_s`); adopting waits 180 seconds.
+    /// (`Config::spawn_timeout_s`), but never past `MAX_PROVE_WAIT`;
+    /// adopting waits 180 seconds.
     #[must_use]
     pub fn of(config: &Config) -> Self {
         Self {
             pause: Duration::from_millis(500),
-            prove: Duration::from_secs(config.spawn_timeout_s),
+            prove: Duration::from_secs(config.spawn_timeout_s).min(MAX_PROVE_WAIT),
             adopt: Duration::from_secs(180),
         }
     }

@@ -89,11 +89,17 @@ Claude Code, Codex or pi.
 11. **The command records the adoption where it can.** Claude Code and pi let
     teamwire choose the new session's id (`choose_session_id`). The command
     first proves, with the locator, that the new session runs in the new pane.
+    The proof waits at most 90 seconds, or `spawn_timeout_s` when that is
+    lower. The old lead runs the command through its own shell tool, and
+    Claude Code's Bash tool stops a command after 120 seconds by default, so a
+    longer proof could be cut off before it closes the new pane and says why.
     Then it writes the adoption itself, one `Store::write` per team, and no
     write transaction is open during a host call. Codex picks its own id, so a
     new Codex lead runs `teamwire lead --adopt <team>` itself as its first
     step, and the command waits up to 180 seconds for every team to name a
-    lead other than the old session.
+    lead other than the old session. The lead guide tells the old lead to give
+    the command a time limit of at least 240 seconds where its harness limits
+    how long a command may run.
 
 12. **The first prompt is a command-line argument.** A typed first line is
     limited to 600 characters and can arrive before the session is ready.

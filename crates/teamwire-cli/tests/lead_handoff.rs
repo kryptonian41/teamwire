@@ -249,6 +249,7 @@ fn the_guide_names_the_callers_document_and_teams_and_carries_the_licence() {
         "10. **Skills to load**".to_owned(),
         "Redact secrets".to_owned(),
         "run `teamwire lead --handoff` as the last action of your turn".to_owned(),
+        "give this command a limit of\nat least 240 seconds".to_owned(),
         "mattpocock-skills 1.3.1".to_owned(),
         "MIT License".to_owned(),
         "Copyright (c) 2026 Matt Pocock".to_owned(),

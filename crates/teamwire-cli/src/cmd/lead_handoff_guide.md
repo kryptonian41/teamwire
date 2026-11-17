@@ -35,8 +35,11 @@ paste them. Redact secrets: tokens, keys, passwords and personal data.
 If the user is present, tell them in one line that you are handing off,
 and where the document is.
 
-Then run `teamwire lead --handoff` as the last action of your turn. It
-opens the new lead's pane, gives it your teams, and closes your pane.
+Then run `teamwire lead --handoff` as the last action of your turn. Where
+your harness limits how long a command may run, give this command a limit of
+at least 240 seconds. Claude Code's Bash tool, for example, stops a command
+after 120 seconds unless the call sets a longer `timeout`. The command opens
+the new lead's pane, gives it your teams, and closes your pane.
 To see what it will do first, run `teamwire lead --handoff --dry-run`.
 
 ---

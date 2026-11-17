@@ -224,15 +224,18 @@ document goes in the same folder as `handoff.md`, never in a repository.
 `teamwire lead --handoff-guide` prints its path and its ten sections.
 
 `teamwire lead --handoff` runs these steps in order. Run it as the last
-action of a turn, because it closes the pane it runs in.
+action of a turn, because it closes the pane it runs in. Where your harness
+limits how long a command may run, give the command a limit of at least 240
+seconds. Claude Code's Bash tool, for example, stops a command after 120
+seconds unless the call sets a longer `timeout`.
 
 1. It finds the open teams this session leads.
 2. It refuses, with nothing changed, when a check in the table below fails.
 3. It opens a pane beside yours, in the same tab, labelled
    `lead · <team title>`, with `+N` for N more teams. It starts a fresh lead
    session there, with its first prompt as a command-line argument.
-4. On Claude Code and pi, it waits until the new session shows in that pane,
-   then records the new session as the lead of each team. A new Codex lead
+4. On Claude Code and pi, it waits up to 90 seconds until the new session
+   shows in that pane, then records the new session as the lead of each team. A new Codex lead
    picks its own session id, so its first prompt tells it to run
    `teamwire lead --adopt <team>` for each team. The command waits up to
    180 seconds for that.
