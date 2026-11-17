@@ -255,7 +255,7 @@ pub trait Host: Send + Sync {
     /// `pane split --direction right --no-focus`, `pane rename`, then
     /// `pane run` of `sh '<folder>/run'`, a private run file that removes its
     /// folder and `exec`s the command, because herdr refuses a `pane run`
-    /// line past the terminal's 1,024-byte limit on macOS. A failure after
+    /// line of 1,024 bytes or more on macOS. A failure after
     /// the split closes the new pane. tmux runs `split-window` with the
     /// environment through the private env file (ADR 0013) and sets the pane
     /// title. Default `Unsupported`.

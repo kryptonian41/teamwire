@@ -352,8 +352,8 @@ number of times) and counts `agent_not_ready` as started (LCH-13),
 one workspace per team and one tab per member, and labels set once at launch.
 For a lead handoff the adapter runs `pane split`, `pane rename` and `pane run`,
 and `pane close` for the old lead's pane. `pane run` types only
-`sh '<folder>/run'`, a private run file, because herdr refuses a line past the
-terminal's 1,024-byte limit on macOS (ADR 0051).
+`sh '<folder>/run'`, a private run file, because herdr refuses a line of
+1,024 bytes or more on macOS (ADR 0051).
 
 Adding another harness (Gemini CLI, opencode) or a host means one crate
 that implements a trait and passes that trait's contract suite in
