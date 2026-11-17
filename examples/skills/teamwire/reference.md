@@ -279,9 +279,11 @@ When your pane does not close, a warning says so after every team moved.
 End your turn at once, and the user closes the pane.
 
 The new lead reads the document, then runs `teamwire lead --missed`. That
-command lists each result and message that reached you from 120 seconds
-before you last wrote the document until the team moved, with the file to
-read. It may list an item the document already covers. When another watch
+command lists each result and message to the lead that was made by the time
+the team moved, with the file to read. It leaves an item out only when the
+item last reached a lead more than 120 seconds before you last wrote the
+document. An item that reached a lead after the team moved is still listed.
+It may list an item the document already covers. When another watch
 still holds a team, the new lead waits 15 seconds and starts its watch once
 more. Your old session stays resumable with your harness's own resume
 command.

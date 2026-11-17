@@ -348,3 +348,31 @@ fn the_newest_handoff_to_this_session_sets_the_window() {
         )]
     );
 }
+
+#[test]
+fn an_item_made_before_the_adoption_and_delivered_after_it_is_still_listed() {
+    let mut rig = Rig::new();
+    rig.adopt();
+    // Both were made before the handoff, and both reached a lead after it.
+    rig.result(50, Some(65));
+    rig.message(
+        56,
+        &[(57, DeliveryState::HandedOff), (70, DeliveryState::Acked)],
+    );
+    rig.document(55);
+    assert_eq!(
+        rig.missed(),
+        [
+            format!(
+                "team alpha: api's result #1 (done), result.delivered at {}: read {}",
+                rig.at(65),
+                rig.outbox()
+            ),
+            format!(
+                "team alpha: message m001 (finding from api), delivery.acked at {}: read {}",
+                rig.at(70),
+                rig.comms("m001")
+            ),
+        ]
+    );
+}
