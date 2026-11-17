@@ -263,6 +263,7 @@ than one chat, so a team pays off only when its parts are truly independent.
 | `teamwire reopen` | Resume the lead and the members of a team whose sessions are gone. |
 | `teamwire teams` / `members` | List every team on this machine, or one team's roster. |
 | `teamwire lead --adopt` | Make a new session the lead of an existing team. |
+| `teamwire lead --handoff` | Hand every team this lead leads to a fresh lead session in a pane beside it, when the lead's context is full. `--handoff-guide` says what to write first, and `--missed` lists what the old lead may have missed. |
 | `teamwire preset` | List the team shapes, or print one. |
 | `teamwire speckit draft` | Read a spec-kit `tasks.md`: the files phases and stories share, the tasks that can run apart, and a DRAFT `owns` list per story. |
 | `teamwire pr-watch` | Watch GitHub pull-request checks until every pull request is done. |

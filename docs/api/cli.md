@@ -13,7 +13,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | --- | --- |
 | 0 | Success |
 | 1 | Refused by a rule; nothing changed |
-| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; handoff failed after it began to close the old place; install or uninstall made some changes and then failed; amend saved the change but could not rewrite the seat rules file |
+| 2 | Partial: launch started some members; reopen refused or failed on a session; verify found a member not clean; close stopped at a step; handoff failed after it began to close the old place; lead handoff failed at or after opening the new pane; install or uninstall made some changes and then failed; amend saved the change but could not rewrite the seat rules file |
 | 3 | Usage error |
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered`; or a resume by `--key` skipped a recipient that another command may still be delivering |
@@ -316,8 +316,8 @@ tab is not closed. Nothing is typed
 into a reopened session. A member that was killed mid-turn sits idle until the
 lead sends it a `reprompt` or a `note`.
 
-The lead's folder is the newest `lead_cwd` that `launch` or `lead --adopt`
-recorded. For a team with none, the harness reads it from the session's live
+The lead's folder is the newest `lead_cwd` that `launch`, `lead --adopt` or
+`lead --handoff` recorded. For a team with none, the harness reads it from the session's live
 record, then from its transcript. A resume only finds a session from that
 folder. A lead whose folder is the user's home directory is refused, because
 reopen would answer the folder-trust dialog for it (LCH-15).
@@ -797,10 +797,97 @@ polls asks only for new rows. Without `--json`, it prints one line per row:
 A store that cannot be opened, such as one with a schema newer than this
 binary, prints the error and exits 6.
 
-### `teamwire lead --adopt <team>`
+### `teamwire lead --adopt <team> | --handoff [--dry-run] | --handoff-guide | --missed`
 
-Run from a new lead session. Records that session as the team's lead and
-prints the old and new session ids (ADR 0008).
+The command takes exactly one of the four actions. `--dry-run` goes only with
+`--handoff`. Any other mix is a usage error, exit 3.
+
+`--adopt <team>`, run from a new lead session, records that session as the
+team's lead and prints the old and new session ids (ADR 0008). The line reads
+`team <team>: lead session changed from <old> to <new>`.
+
+`--handoff` hands every open team the calling session leads to a fresh lead
+session in a pane beside the caller's (ADR 0051). The old lead runs it as the
+last action of a turn, because the command closes the pane it runs in. The
+steps run in this order, one line on stdout for each:
+
+1. Find the caller. The command finds the caller's session through each open
+   team's lead harness and collects the open teams that session leads, sorted
+   by name. It refuses a member's session, a background session, a session
+   that leads no open team, and led teams that record different lead
+   harnesses or hosts.
+2. Refuse before anything changes. The command refuses a session id that is
+   no safe folder name, an old lead folder that is not known or is gone, a
+   harness that cannot build a lead start, and a host that cannot open a pane
+   beside the old one. The host refusal prints the command line a user can
+   run by hand, with a first prompt that tells the new lead to run
+   `teamwire lead --adopt` for each team. The command also refuses when the
+   handoff document `$TEAMWIRE_HOME/handoffs/<session>/handoff.md` cannot be
+   read, and when the locator cannot find the old lead's pane. The locator
+   refusal names the locator's reason code. A document older than the note
+   gives a `warning:` line, and the command goes on.
+3. `--dry-run` stops here and changes nothing (below).
+4. Open the new pane with `Host::split_run` beside the old pane, in the old
+   lead's folder, with the label `lead · <team title>` (`+N` when the lead
+   leads N more teams). The new lead's first prompt is a command-line
+   argument. The new pane gets `TEAMWIRE_HOME` when the caller named a state
+   directory. Each flag of the old lead that the harness does not carry gives
+   one `warning:` line, by name only.
+5. Prove, for a harness that chooses the session id (Claude Code, pi). The
+   command waits up to `spawn_timeout_s` for the locator to find the new
+   session in the new pane. On a failure it closes the new pane and exits 2.
+   No team has changed.
+6. Adopt. For each led team, one store write checks that the team is still
+   open and still led by the old session, then records the new lead and
+   writes `team.lead_adopted`. The line reads
+   `team <team>: lead is now session <new>`.
+7. For a harness that picks its own session id (Codex), steps 5 and 6 are
+   skipped. The new lead's first prompt tells it to run
+   `teamwire lead --adopt <team>` for each team, and the command waits up to
+   180 seconds until no led team names the old session.
+8. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
+   hold that cannot be taken is a `warning:` line.
+9. Report the teams, the new pane, the document path, and that this session
+   is no longer the lead.
+10. Locate the old session again and close its pane with `Host::close_pane`.
+    A close that fails is a `warning:` line that tells the old lead to end
+    its turn and the user to close the pane.
+
+Exit codes:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Every led team has the new lead, and the old pane was closed or a warning said why not |
+| 1 | Refused, and nothing changed: a refusal of step 1 or step 2 |
+| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed or the Codex wait ran out: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move |
+| 3 | A usage error |
+| 6 | An open team's store could not be read while finding the caller |
+
+`--dry-run` prints `teams:`, `old pane:`, `handoff document:`, the label and
+folder of the pane it would open, `new session:` (the chosen id, or the one
+its harness picks), `command:` with the new lead's command line, and one
+`not passed on:` line per dropped flag. It ends with `dry run: no pane was
+opened and no team changed`. It opens every store read-only.
+
+`--handoff-guide` prints what the handoff document must hold, with its licence
+notice, and fills in the caller's document path and led teams. It refuses the
+callers that `--handoff` refuses in step 1.
+
+`--missed`, run by the new lead, only reads. It refuses the same callers as
+`--handoff-guide`. For each open team the caller leads, it finds the newest `team.lead_adopted` event that names the caller as
+`new_session`. The window starts 120 seconds before the old session's
+`handoff.md` was last written, and ends at that event. When the document is
+gone, the window starts one hour before the event, and a line says so. The
+command lists each result and each message to the lead created by the end of
+the window, unless its newest delivery event (`result.delivered`,
+`delivery.handed_off`, `delivery.acked` or `delivery.resent`) is before the
+window. An item with no delivery event is listed. Each line reads
+`team <team>: <role>'s result #<n> (<status>), <when>: read <path>` or
+`team <team>: message <id> (<type> from <sender>), <when>: read <path>`, where
+`<when>` is `<event type> at <time>` or `not delivered`. A team with no such
+event prints `team <team>: no handoff to this session is recorded`. With
+nothing listed, one line says nothing was missed. A store that cannot be read
+exits 6.
 
 ### `teamwire pr-watch [--deliver TEAM] -R OWNER/REPO [-i SECONDS] PR...`
 

@@ -47,9 +47,9 @@ and no host (ADP-1).
 
 | Crate | What it does |
 | --- | --- |
-| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `LeadSetup`, `Host`, `Platform` and `Clock` traits, the lead setup's shared apply loop (ADR 0031), the capability record, the adapter registry keyed by string ids, and the text sanitiser. No I/O. |
+| `teamwire-core` | Shared types (team, member, message, completion, event), the error codes, the `Harness`, `LeadSetup`, `Host`, `Platform` and `Clock` traits, the lead setup's shared apply loop (ADR 0031), the capability record, the adapter registry keyed by string ids, the text sanitiser, and the lead handoff's point and file paths (`Fill::lead_handoff_at`, `HandoffFiles`, ADR 0051). No I/O. |
 | `teamwire-store` | Opens a team's SQLite database with the required settings, runs migrations, and offers typed transactions for every table. The only code that writes state. |
-| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, file locks (`flock`, through `Platform::lock_file`), and the sleep hold (`caffeinate` on macOS). |
+| `teamwire-platform` | Operating-system facts: pid liveness, a process's environment and arguments, running a command in its own process group with a timeout, atomic file writes, creating and removing directories, file locks (`flock`, through `Platform::lock_file`), and the sleep hold (`caffeinate` on macOS). |
 | `teamwire-host-herdr` | The `Host` trait for herdr, through herdr's JSON CLI. Also sets herdr labels once at launch. |
 | `teamwire-host-tmux` | The `Host` trait for tmux. |
 | `teamwire-harness-claude` | The `Harness` trait for Claude Code: launch argv, session files, `claude agents --json`, background-session detection, per-run `settings.json` and `mcp.json`, Stop and PostToolUse hook input, trust dialog. |
@@ -57,8 +57,8 @@ and no host (ADP-1).
 | `teamwire-harness-pi` | The `Harness` trait for pi: launch argv, the generated pi extension that runs the member hooks inside pi, the member's token file, the TUI screen, and session files for liveness and context fill (ADR 0029); the lead package that `teamwire install` adds, whose extension runs the lead's MCP server, Stop hook, tool hook and watch, and the lead's session from the state file that extension writes (ADR 0030). |
 | `teamwire-deliver` | Finds a session's current place (ADR 0006), types a line through the host with the retry rules of ADR 0003, and records the outcome. Formats and sanitises every typed line. Reads one message's events into the state of its latest attempt to a recipient (`AttemptHistory`: started, stale, in flight, stops, unread). |
 | `teamwire-msg` | The six message types and their rules; send, inbox, ack and log. |
-| `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. |
-| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. It runs the order of `teamwire handoff` in `hand_off` (ADR 0032), with close's checks and place close passed in by the CLI. |
+| `teamwire-report` | Completions (`done`), the report check, result files, delivery of results to the lead, and the harness-neutral part of the turn-end and in-turn hooks. It also words the lead's handoff note and held stop, and lists what `teamwire lead --missed` shows (ADR 0051). |
+| `teamwire-launch` | Spec validation, worktrees, setup, the contract text (data files, one per member kind), spawning members, the sleep hold. It runs the order of `teamwire handoff` in `hand_off` (ADR 0032), with close's checks and place close passed in by the CLI, and the order of `teamwire lead --handoff` in `lead_hand_off` (ADR 0051). |
 | `teamwire-verify` | Runs checks, diffs from the start commit, applies the per-language rules, writes verify records and waivers. |
 | `teamwire-close` | Whole-team close and single-member removal, in the fixed order, with the archive. |
 | `teamwire-watch` | The watch loop and the status view. Both derive each member's state the same way, except that status reads an idle `"dispatch": false` member quiet at once (WAT-3) and measures ages in wall time, because only a running watch measures sleeps. |
@@ -104,6 +104,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `outbox/<role>.md` | report | Result file for the newest completion, marked generated |
 | `reports/<role>.md` | the member | The member's own long report |
 | `verify/<role>.log` | verify | Full check output |
+| `$TEAMWIRE_HOME/handoffs/<session id>/` | the old lead, the lead's hooks | `handoff.md`, the document an old lead writes for the new lead; `noted` and `held`, two empty marker files the lead's tool hook and Stop hook write with `Platform::write_atomic`, so the note and the held stop each come once (ADR 0051). A session id that is not a safe folder name has no folder. Nothing deletes it |
 | `$TEAMWIRE_HOME/locks/exclude-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, while they rewrite `info/exclude`, waiting at most 10 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 | `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 | `$TEAMWIRE_HOME/locks/user-key.lock` | `teamwire user-key` | An empty file, made if missing and never deleted. A run holds the kernel's `flock` on it, through `Platform::lock_file`, from its first look at `user.key` to its write, so two runs at once agree on one key. The wait has no limit. The lock ends with the holder's open file, so a killed run holds nothing (ADR 0040) |
@@ -243,7 +244,8 @@ Principles, each with the requirement it serves:
   stderr. A failure inside the turn-end work is logged on stderr as a warning.
   A store error with code busy, full, corrupt or io also leaves a `store.error`
   row when the store is reachable (REP-10). The lead's Stop hook stays silent
-  (`docs/api/cli.md`).
+  (`docs/api/cli.md`). The lead's two hooks open stores read-only and write
+  only the two marker files of the lead handoff (ADR 0051).
 - **Refuse rather than guess.** An unknown busy state refuses close; a
   missing view refuses delivery; a newer schema refuses to open (CLS-1, DEL-2,
   STO-6). `close --role --stop` still accepts an unknown busy state
@@ -317,6 +319,7 @@ its name:
 | Can I find the lead's place from two views? | host `knows_session_of_place` or pid tree, plus harness processes | yes | yes (pid tree) | no; lead route is `watch` |
 | Is there a turn-end hook for completions? | harness `turn_end_hook` | yes | yes | yes |
 | Can the host tell working from idle? | host `reports_state`, else harness listing | host | harness listing | harness listing |
+| Can a lead handoff open the new lead beside the old one? | host `splits_pane`, plus harness `lead_start` | yes | yes | no; the command prints the line to run by hand |
 
 Claude Code specifics that the adapter owns:
 
@@ -347,6 +350,10 @@ herdr specifics that the adapter owns: the JSON result and error envelope,
 number of times) and counts `agent_not_ready` as started (LCH-13),
 `agent prompt`, `agent get` for the session in a pane,
 one workspace per team and one tab per member, and labels set once at launch.
+For a lead handoff the adapter runs `pane split`, `pane rename` and `pane run`,
+and `pane close` for the old lead's pane. `pane run` types only
+`sh '<folder>/run'`, a private run file, because herdr refuses a line past the
+terminal's 1,024-byte limit on macOS (ADR 0051).
 
 Adding another harness (Gemini CLI, opencode) or a host means one crate
 that implements a trait and passes that trait's contract suite in

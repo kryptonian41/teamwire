@@ -250,6 +250,23 @@ pub trait Host: Send + Sync {
     /// Default: the value of `place_env_var`. tmux joins `TMUX_PANE` with the
     /// server named by `TMUX`, as `%<n>@<socket path>`.
     fn place_from_env(&self, read: &dyn Fn(&str) -> Option<String>) -> Option<String>;
+    /// Split `beside` and run `req.argv` in the new pane, which gets
+    /// `req.label` and holds no teamwire agent name (ADR 0051). herdr runs
+    /// `pane split --direction right --no-focus`, `pane rename`, then
+    /// `pane run` of `sh '<folder>/run'`, a private run file that removes its
+    /// folder and `exec`s the command, because herdr refuses a `pane run`
+    /// line past the terminal's 1,024-byte limit on macOS. A failure after
+    /// the split closes the new pane. tmux runs `split-window` with the
+    /// environment through the private env file (ADR 0013) and sets the pane
+    /// title. Default `Unsupported`.
+    fn split_run(&self, beside: &Place, req: &SplitRequest, timeout: Duration) -> Result<Place, HostError>;
+    /// Close a pane that holds no teamwire agent name. The method checks
+    /// nothing about the occupant. The caller may close only a pane it opened
+    /// with `split_run` in the same command, or a pane whose occupant it has
+    /// proven with the locator right before this call. A pane that is already
+    /// gone counts as closed. herdr `pane close`, tmux `kill-pane`. Default
+    /// `Unsupported`.
+    fn close_pane(&self, place: &Place, timeout: Duration) -> Result<(), HostError>;
 }
 
 pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
@@ -259,7 +276,10 @@ pub struct HostCaps { pub can_type: bool, pub reports_state: bool,
                       pub sets_env_at_spawn: bool,
                       /// The host itself refuses to type into a session that
                       /// shows a dialog (herdr `agent_blocked`). tmux does not.
-                      pub guards_dialogs: bool }
+                      pub guards_dialogs: bool,
+                      /// The host offers `split_run` and `close_pane` (herdr,
+                      /// tmux). `NoHost` does not.
+                      pub splits_pane: bool }
 pub enum PlaceState { Idle, Working, Blocked, Gone, Unknown }
 pub struct Occupant { pub session: Option<SessionId>, pub pids: Vec<Pid> }
 pub struct HostError { pub code: HostErrorCode, pub detail: String }
@@ -283,6 +303,16 @@ pub trait Harness: Send + Sync {
     /// argv that resumes the lead's own session: a plain resume with no per-run
     /// files, because the lead loads the teamwire plugin itself. Default `Unsupported`.
     fn lead_resume_argv(&self, s: &SessionId) -> Result<Vec<String>, HarnessError>;
+    /// The command line that starts a fresh interactive lead session like
+    /// `req.old_session`, with `req.prompt` as its first prompt (ADR 0051).
+    /// The harness carries the old lead's flags by its own `CarryRules` and
+    /// names each flag it drops. Claude Code: `claude --session-id <new>
+    /// <carried> <prompt>`, where the old transcript's newest permission mode
+    /// and main-chain model win over the old flags. Codex: `codex --no-daemon
+    /// <carried> <prompt>`, and a chosen id is refused with `BadInput`. pi:
+    /// `pi --session-id <new> <carried> -- <prompt>`. Claude Code and pi
+    /// refuse a missing id. Default `Unsupported`.
+    fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError>;
     /// The lead setup `install`, `uninstall` and `doctor` reach this harness's
     /// lead through (ADR 0031). Default `None`, for a harness that cannot lead.
     fn lead_setup(&self) -> Option<&dyn LeadSetup>;
@@ -366,7 +396,12 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// harness screens from `Host::read_tail_styled` (ADR 0031)
                          pub reads_input_box: bool,
                          /// A lead on this harness can start an AFK run (AFK-2, ADR 0031)
-                         pub runs_afk: bool }
+                         pub runs_afk: bool,
+                         /// The full sentence that tells a lead on this harness to load
+                         /// the teamwire skill, from the harness's lead file; empty for a
+                         /// harness that cannot lead. The first prompt of a lead handoff
+                         /// uses it (ADR 0051). Never read back from JSON
+                         pub load_skill: &'static str }
 /// MonitoredCommand: the lead runs the command under a tool that hands it each
 /// line (Claude Code's Monitor). BackgroundCommand: the lead runs it with
 /// `--deliver` in the background (Codex, ADR 0023). ExtensionTool: the lead
@@ -401,6 +436,11 @@ pub trait Platform: Send + Sync {
     /// START_TIME_SLACK of the recorded time. A reused pid is not the process.
     fn process_alive(&self, process: ProcessRef) -> bool { /* default: pid_alive, then compare start times when both are known */ }
     fn env_of(&self, pid: Pid, var: &str) -> Result<Option<String>, PlatformError>;
+    /// The arguments the process `pid` was started with, `argv[0]` first,
+    /// each as the process got it (the kernel's own list, so a value with a
+    /// space comes back whole). None when no process has the pid, or this
+    /// platform cannot tell. Default None.
+    fn args_of(&self, pid: Pid) -> Option<Vec<String>> { None }
     /// Run in a new process group; on timeout kill the group; exit 124.
     /// Children start one at a time, so no child inherits another's pipes.
     /// Output is kept as it is read: if a process the child left behind
@@ -610,6 +650,7 @@ impl Fill {
     pub fn pct(self) -> u64;                       // whole percent, rounded down; 0 for an empty window
     pub fn handoff_at(self, configured: Option<u64>) -> u64;  // configured, else DEFAULT_HANDOFF_PCT of the window
     pub fn past_handoff(self, configured: Option<u64>) -> bool; // tokens >= handoff_at
+    pub fn lead_handoff_at(self, configured: Option<u64>) -> u64; // configured, else DEFAULT_HANDOFF_PCT of the window; never below MIN_LEAD_HANDOFF_TOKENS
 }
 /// The tool call a session runs now (`Harness::current_tool`).
 pub struct ToolRun { pub name: String, pub started_at: Timestamp }
@@ -617,6 +658,60 @@ pub struct ToolRun { pub name: String, pub started_at: Timestamp }
 /// Percent of the window at which a member is told to hand off when its spec sets no
 /// `context_handoff_tokens`. A rule of thumb: no published measurement backs 40% for Claude.
 pub const DEFAULT_HANDOFF_PCT: u64 = 40;
+
+/// The lowest point at which a lead is told to hand off (ADR 0051). A fresh
+/// lead holds about 98,000 tokens, so a lower point would tell every new lead
+/// to hand off again at once.
+pub const MIN_LEAD_HANDOFF_TOKENS: u64 = 200_000;
+/// The environment variable, and the `config.toml` key, of the lead's point.
+pub const LEAD_HANDOFF_SETTING: &str = "TEAMWIRE_LEAD_HANDOFF_TOKENS";
+/// Unset: DEFAULT_HANDOFF_PCT of the window. Off: never told. Tokens: a count;
+/// below the floor counts as the floor. Invalid: neither a whole number nor
+/// `off` (such as `40%`); counts as Unset, and `teamwire doctor` names it.
+pub enum LeadHandoffSetting { Unset, Off, Tokens(u64), Invalid(String) }
+impl LeadHandoffSetting {
+    pub fn parse(value: Option<&str>) -> Self;  // empty is Unset; `off` in any case; digits may group with `_` or `,`
+    pub fn is_off(&self) -> bool;
+    pub fn tokens(&self) -> Option<u64>;        // the configured count, when one is given
+}
+/// The files of one lead's handoff, in `$TEAMWIRE_HOME/handoffs/<old session
+/// id>/`. Core builds the paths and touches no file. Nothing deletes the folder.
+pub struct HandoffFiles { pub dir: PathBuf,
+                          pub document: PathBuf,   // handoff.md, written by the old lead
+                          pub noted: PathBuf,      // empty marker: the note was given
+                          pub held: PathBuf }      // empty marker: the stop was held once
+impl HandoffFiles {
+    /// None when the session id is not a safe single path component: only
+    /// ASCII letters, digits, `-`, `_` and `.`, and no leading `.`.
+    pub fn of(home: &Path, session: &SessionId) -> Option<Self>;
+}
+
+/// One command to run in a new pane (`Host::split_run`). `Debug` hides the
+/// values in `env`, as `SpawnRequest` does.
+pub struct SplitRequest { pub label: String, pub cwd: PathBuf,
+                          pub argv: Vec<String>, pub env: Vec<(String, String)> }
+impl SplitRequest {
+    pub fn lead_label(first_team_title: &str, more_teams: usize) -> String;  // "lead · <title>", "lead · <title> +N"
+}
+/// What `Harness::lead_start` takes. `old_args` is the old lead process's
+/// arguments, `argv[0]` first, or empty when they cannot be read.
+/// `new_session` is Some when `choose_session_id` is true.
+pub struct LeadStart { pub old_session: SessionId, pub old_args: Vec<String>,
+                       pub new_session: Option<SessionId>, pub prompt: String }
+/// The new lead's argv, with the prompt last, and each old flag not carried,
+/// by name only: a value can hold a secret (`pi --api-key`).
+pub struct LeadStartSpec { pub argv: Vec<String>, pub dropped: Vec<String> }
+/// An allow list of old flags. `keyed` carries a flag only with a value that
+/// starts as given (Codex `-c model_reasoning_effort=`). `replaced` names the
+/// flags the new start sets itself, such as the session to resume, and
+/// whether each takes a value; they are neither carried nor dropped.
+pub struct CarryRules<'a> { pub switches: &'a [&'a str], pub with_value: &'a [&'a str],
+                            pub keyed: &'a [(&'a str, &'a str)],
+                            pub replaced: &'a [(&'a str, bool)] }
+/// The carried flags in their order, and the dropped flag names. A flag's
+/// value is the next word unless that word is a flag. A word that is no flag
+/// is never carried or shown. Everything after `--` is the old prompt.
+pub fn carry(old_args: &[String], rules: &CarryRules<'_>) -> (Vec<String>, Vec<String>);
 
 impl MemberLaunch { pub fn home_from_member_dir(&self) -> Option<String>;
                      pub fn scratch_dir(&self) -> Option<PathBuf>; }  // <home>/scratch/<team>/<role>; every harness sets TEAMWIRE_SCRATCH to it
