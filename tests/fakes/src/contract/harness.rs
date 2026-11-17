@@ -3,8 +3,8 @@
 use std::time::Duration;
 
 use teamwire_core::{
-    Harness, HarnessErrorCode, HostErrorCode, IdentityChannel, Liveness, MemberLaunch, OtelConfig,
-    ScreenState, SessionId, is_secret_name, one_line,
+    Harness, HarnessErrorCode, HostErrorCode, IdentityChannel, LeadStart, Liveness, MemberLaunch,
+    OtelConfig, ScreenState, SessionId, is_secret_name, one_line,
 };
 
 use super::{fail, ok, require};
@@ -52,6 +52,7 @@ pub fn harness_contract(setup: &HarnessSetup<'_>) {
     );
 
     launch_rules(setup);
+    lead_start_rules(setup);
 
     let end = ok("parse_turn_end", h.parse_turn_end(&setup.turn_end_stdin));
     require(
@@ -218,6 +219,58 @@ fn launch_rules(setup: &HarnessSetup<'_>) {
             .iter()
             .any(|a| a.contains(m.session_id.as_str())),
     );
+}
+
+/// A harness that can lead builds a fresh lead's command line (ADR 0051).
+/// A harness that cannot lead may refuse with `unsupported`.
+fn lead_start_rules(setup: &HarnessSetup<'_>) {
+    let h = setup.harness;
+    let caps = h.capabilities();
+    let prompt = "You are a teamwire lead. Read the handoff document in full.";
+    let new = SessionId::parse("6f1c2d3e-0000-4000-8000-00000000c0de").ok();
+    let req = LeadStart {
+        old_session: setup.unknown_session.clone(),
+        old_args: Vec::new(),
+        new_session: new.filter(|_| caps.choose_session_id),
+        prompt: prompt.to_owned(),
+    };
+    let spec = match h.lead_start(&req) {
+        Err(e) if e.code == HarnessErrorCode::Unsupported && h.lead_setup().is_none() => return,
+        other => ok("lead_start of a harness that can lead", other),
+    };
+    require(
+        "a harness that can lead says how to load the teamwire skill",
+        !caps.load_skill.is_empty(),
+    );
+    require("lead_start gives an argv", spec.argv.len() > 1);
+    require(
+        "lead_start puts the prompt last, as one word",
+        spec.argv.last().map(String::as_str) == Some(prompt),
+    );
+    if let Some(new) = &req.new_session {
+        require(
+            "a harness that chooses session ids puts the new id in the lead's argv",
+            spec.argv.iter().any(|a| a.contains(new.as_str())),
+        );
+    }
+    require(
+        "a fresh lead never resumes the old session",
+        !spec
+            .argv
+            .iter()
+            .any(|a| a.contains(req.old_session.as_str())),
+    );
+    require(
+        "with no old arguments, lead_start drops nothing",
+        spec.dropped.is_empty(),
+    );
+    let secrets: Vec<&(String, String)> = setup
+        .member
+        .identity
+        .iter()
+        .filter(|(k, _)| is_secret_name(k))
+        .collect();
+    no_secret_in_argv("lead_start", &spec.argv, &secrets);
 }
 
 /// Any user on the machine can read a process's argv, so a secret never goes

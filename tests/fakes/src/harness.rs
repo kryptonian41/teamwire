@@ -11,13 +11,15 @@ use serde_json::{Value, json};
 use teamwire_core::Key;
 use teamwire_core::{
     CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
-    HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, Liveness, MemberLaunch,
-    ModelCatalog, OneLine, OtelConfig, Pid, Place, Role, ScreenState, SessionId, SessionKind,
-    StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    HostError, IdentityChannel, LaunchFile, LaunchSpec, LeadSetup, LeadStart, LeadStartSpec,
+    Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid, Place, Role, ScreenState,
+    SessionId, SessionKind, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 
 use crate::calls::{CallKind, CallLog, lock};
 use crate::lead_setup::FakeLeadSetup;
+
+mod lead_start;
 
 /// The title of Claude Code's plain folder-trust dialog, as in Claude Code
 /// 2.1.x. The dialog lists "No, exit" (preselected) and "Yes, I trust this
@@ -69,6 +71,9 @@ struct State {
     setup_missing: Option<String>,
     models: Option<Result<ModelCatalog, HarnessError>>,
     fills: HashMap<SessionId, Result<Fill, HarnessError>>,
+    lead_starts: Vec<LeadStart>,
+    lead_start_drops: Vec<String>,
+    lead_start_fault: Option<HarnessError>,
 }
 
 /// An in-process `Harness`.
@@ -124,6 +129,9 @@ impl FakeHarness {
                 setup_missing: None,
                 models: None,
                 fills: HashMap::new(),
+                lead_starts: Vec::new(),
+                lead_start_drops: Vec::new(),
+                lead_start_fault: None,
             }),
             lead: None,
         }
@@ -324,6 +332,10 @@ impl Harness for FakeHarness {
             "--resume".to_owned(),
             s.as_str().to_owned(),
         ])
+    }
+
+    fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
+        self.build_lead_start(req)
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {

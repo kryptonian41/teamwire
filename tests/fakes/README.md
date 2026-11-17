@@ -42,7 +42,9 @@ calls" (`log.count(CallKind::Write) == 0`).
   `fail_hold_start`; `FakePlatform::without_sleep_hold()` is the Linux shape.
 - `FakeHarness`: `add_session` with `Liveness::Dead`, two pids for one
   session, `set_background_caller`, `fail_listing`, `set_caps` (for example
-  `turn_end_hook: false`).
+  `turn_end_hook: false`), `fail_lead_start`, `set_lead_start_drops` (old
+  arguments a fresh lead's command line leaves out); `lead_starts` lists
+  each request.
 
 ## Contract suites
 
@@ -148,6 +150,12 @@ adapter reads) writes the session file `live_session` refers to.
 `harness_contract` requires every file in `launch_spec().files` to be under
 `member.member_dir` (`settings.json` and `mcp.json` go there). The contract
 and brief files are not in `files`: launch writes them itself.
+
+A harness with a lead setup must build a fresh lead's command line
+(`lead_start`, ADR 0051): the prompt is the last word, a chosen session id is
+in it, the old session's id is not, nothing is dropped when there are no old
+arguments, and `capabilities().load_skill` is not empty. A harness with no
+lead setup may answer `unsupported`.
 
 ### `platform_contract(&PlatformSetup)`
 
