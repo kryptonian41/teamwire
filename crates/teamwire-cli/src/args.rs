@@ -63,7 +63,8 @@ pub(crate) enum Command {
     Log(LogArgs),
     /// The "Decisions I made" blocks of members' reports. Reads only.
     Decisions(DecisionsArgs),
-    /// Record this session as the team's lead.
+    /// Record this session as the team's lead, or hand this lead's teams to
+    /// a fresh lead session.
     Lead(LeadArgs),
     /// Watch GitHub pull-request checks until every PR is done.
     #[command(name = "pr-watch")]
@@ -385,10 +386,21 @@ pub(crate) struct DecisionsArgs {
 }
 
 #[derive(Args)]
+#[command(group(ArgGroup::new("action").required(true).args(["adopt", "handoff"])))]
 pub(crate) struct LeadArgs {
     /// Record the calling session as this team's lead.
     #[arg(long, value_name = "TEAM")]
-    pub(crate) adopt: String,
+    pub(crate) adopt: Option<String>,
+    /// Hand every open team this session leads to a fresh lead session in a
+    /// pane beside this one (ADR 0051). Run it as the last action of a turn:
+    /// it closes this pane.
+    #[arg(long)]
+    pub(crate) handoff: bool,
+    /// With --handoff: print the teams, the panes and the new lead's command
+    /// line, and change nothing.
+    // `requires = "handoff"` would count the switch's default as given.
+    #[arg(long, conflicts_with = "adopt")]
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Args)]
