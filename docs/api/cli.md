@@ -849,7 +849,9 @@ The steps run in this order, one line on stdout for each:
    `teamwire lead --adopt <team>` for each team, and the command waits up to
    180 seconds until no led team names the old session.
 8. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
-   hold that cannot be taken is a `warning:` line.
+   hold that cannot be taken is a `warning:` line. When step 6 or step 7
+   exits 2, the command first moves the hold of each team whose recorded
+   lead is no longer the old session, to that lead.
 9. Report the teams, the new pane, the document path, and that this session
    is no longer the lead.
 10. Locate the old session again and close its pane with `Host::close_pane`.

@@ -123,14 +123,7 @@ pub(crate) fn wait_for_adoption(
         Ok(moved)
     });
     found.map_err(|_| {
-        let moved: Vec<(TeamName, SessionId)> = names
-            .iter()
-            .filter_map(|t| {
-                lead_of(ctx.home, t)
-                    .filter(|l| l != old)
-                    .map(|l| (t.clone(), l))
-            })
-            .collect();
+        let moved = moved_teams(ctx, planned);
         let rest: Vec<TeamName> = names
             .iter()
             .filter(|t| !moved.iter().any(|(m, _)| m == *t))
@@ -147,6 +140,21 @@ pub(crate) fn wait_for_adoption(
             ),
         )
     })
+}
+
+/// Each led team whose recorded lead is no longer the old session, with that
+/// lead, read without a write.
+pub(crate) fn moved_teams(
+    ctx: &LeadHandoffCtx<'_>,
+    planned: &Planned<'_>,
+) -> Vec<(TeamName, SessionId)> {
+    let old = &planned.seat.session;
+    planned
+        .seat
+        .names()
+        .into_iter()
+        .filter_map(|t| lead_of(ctx.home, &t).filter(|l| l != old).map(|l| (t, l)))
+        .collect()
 }
 
 /// The lead session a team records now, read without a write.

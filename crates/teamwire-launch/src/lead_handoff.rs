@@ -18,7 +18,7 @@ use teamwire_store::{Ctx, Store};
 use crate::handoff::HandoffError;
 use crate::handoff_order::Said;
 use crate::hold::ensure_hold;
-use crate::lead_adopt::{adopt_all, wait_for_adoption};
+use crate::lead_adopt::{adopt_all, moved_teams, wait_for_adoption};
 use crate::lead_plan::{LeadCaller, LeadHandoffCtx, Planned, find_lead, plan};
 
 const HOST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -106,19 +106,34 @@ pub fn lead_hand_off(
         planned.old_place.id,
         planned.split.argv.first().map_or("", String::as_str)
     )));
-    let moved = if let Some(new) = &planned.new_session {
+    let adopted = if let Some(new) = &planned.new_session {
         prove(ctx, &planned, new, &new_place, opts.waits)?;
         say(Said::Line(format!(
             "session {new} runs in pane {}",
             new_place.id
         )));
-        adopt_all(ctx, &planned, new, &new_place)?
+        adopt_all(ctx, &planned, new, &new_place)
     } else {
         say(Said::Line(format!(
             "waiting up to {} s for the new lead to adopt each team",
             opts.waits.adopt.as_secs()
         )));
-        wait_for_adoption(ctx, &planned, &new_place, opts.waits)?
+        wait_for_adoption(ctx, &planned, &new_place, opts.waits)
+    };
+    let moved = match adopted {
+        Ok(moved) => moved,
+        Err(e) => {
+            // A team that moved before the failure must not keep a hold that
+            // waits on the old lead's process, which ends with its pane.
+            let mut warnings = Vec::new();
+            for (team, session) in moved_teams(ctx, &planned) {
+                hold(ctx, &planned, &team, &session, &mut warnings);
+            }
+            for w in warnings {
+                say(Said::Warning(format!("warning: {w}")));
+            }
+            return Err(e);
+        }
     };
     let mut warnings = Vec::new();
     for (team, session) in &moved {

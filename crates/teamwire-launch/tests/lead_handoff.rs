@@ -339,7 +339,8 @@ fn the_first_prompt_points_at_the_document_and_names_each_team() {
 
 /// A harness that picks its own session id, like Codex: the new lead
 /// adopts each team itself, and the command waits for that.
-fn picks_its_own_id(rig: &Rig, adopts: bool) {
+/// The new lead picks its own session id, and adopts the teams in `adopts`.
+fn picks_its_own_id(rig: &Rig, adopts: &'static [&'static str]) {
     rig.harness.set_caps(HarnessCaps {
         choose_session_id: false,
         watch_start: WatchStart::BackgroundCommand,
@@ -363,22 +364,19 @@ fn picks_its_own_id(rig: &Rig, adopts: bool) {
                     pids: vec![Pid::new(NEW_PID)],
                 },
             );
-            if adopts {
-                for name in ["alpha", "beta"] {
-                    let mut store =
-                        Store::open_existing(&home, &TeamName::parse(name).unwrap()).unwrap();
-                    store
-                        .write(|tx| {
-                            tx.adopt_lead(
-                                teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000)
-                                    .unwrap(),
-                                &new,
-                                SessionKind::Interactive,
-                            )
-                            .map(|_| ())
-                        })
-                        .unwrap();
-                }
+            for name in adopts {
+                let mut store =
+                    Store::open_existing(&home, &TeamName::parse(name).unwrap()).unwrap();
+                store
+                    .write(|tx| {
+                        tx.adopt_lead(
+                            teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000).unwrap(),
+                            &new,
+                            SessionKind::Interactive,
+                        )
+                        .map(|_| ())
+                    })
+                    .unwrap();
             }
         });
 }
@@ -389,7 +387,7 @@ fn a_lead_that_picks_its_own_id_adopts_each_team_and_the_command_waits_for_it() 
     team(&rig, "alpha", "Fix the prompts", false);
     team(&rig, "beta", "Second team", false);
     let old = old_lead(&rig);
-    picks_its_own_id(&rig, true);
+    picks_its_own_id(&rig, &["alpha", "beta"]);
 
     let (said, result) = run(&rig);
     assert_eq!(result, Ok(()), "{}", text(&said));
@@ -425,7 +423,7 @@ fn a_lead_that_never_adopts_leaves_both_panes_open() {
     team(&rig, "alpha", "Fix the prompts", false);
     team(&rig, "beta", "Second team", false);
     let old = old_lead(&rig);
-    picks_its_own_id(&rig, false);
+    picks_its_own_id(&rig, &[]);
 
     let (said, result) = run(&rig);
     let Err(HandoffError::Partial(why)) = result else {
@@ -536,6 +534,50 @@ fn a_team_that_cannot_move_stops_the_handoff_with_both_panes_open() {
         1,
         "no pane closed: {:?}",
         host_writes(&rig)
+    );
+    // alpha moved, so its sleep hold now waits on the new lead's process.
+    assert!(
+        hold_starts(&rig).contains(&NEW_PID.to_string()),
+        "{:?} {}",
+        hold_starts(&rig),
+        text(&said)
+    );
+}
+
+/// The lead process of each sleep hold started so far.
+fn hold_starts(rig: &Rig) -> Vec<String> {
+    rig.platform
+        .inner
+        .log()
+        .calls()
+        .into_iter()
+        .filter(|c| c.name == "hold_start")
+        .map(|c| c.detail)
+        .collect()
+}
+
+#[test]
+fn a_lead_that_adopts_some_teams_moves_their_sleep_hold_and_leaves_both_panes_open() {
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    team(&rig, "beta", "Second team", false);
+    old_lead(&rig);
+    picks_its_own_id(&rig, &["alpha"]);
+
+    let (said, result) = run(&rig);
+    let Err(HandoffError::Partial(why)) = result else {
+        panic!("{result:?} {}", text(&said));
+    };
+    assert!(
+        why.contains("Moved to the new lead: alpha. Still led by this session: beta"),
+        "{why}"
+    );
+    assert_eq!(lead_of(&rig, "beta"), Some(sid(OLD)));
+    assert_eq!(
+        hold_starts(&rig),
+        vec![NEW_PID.to_string()],
+        "only alpha's hold moves: {}",
+        text(&said)
     );
 }
 

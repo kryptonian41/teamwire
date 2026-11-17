@@ -130,6 +130,8 @@ Claude Code, Codex or pi.
     that pane and exits 2. A failure after one team moved rolls nothing back:
     both panes stay open, the output names the teams that moved and the teams
     that did not, and the new lead takes the rest with `teamwire lead --adopt`.
+    Each team that moved still gets its sleep hold moved to its new lead, so
+    the hold does not end with the old lead's pane.
 
 17. **`teamwire lead --missed` lists what the old lead may have missed.** The
     window of a team starts 120 seconds before the old lead's `handoff.md` was
