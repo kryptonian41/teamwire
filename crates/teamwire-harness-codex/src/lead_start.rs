@@ -47,5 +47,9 @@ pub(crate) fn lead_start(codex_bin: &str, req: &LeadStart) -> Result<LeadStartSp
     let mut argv = vec![codex_bin.to_owned(), "--no-daemon".to_owned()];
     argv.extend(carried);
     argv.push(req.prompt.clone());
-    Ok(LeadStartSpec { argv, dropped })
+    Ok(LeadStartSpec {
+        argv,
+        dropped,
+        warnings: Vec::new(),
+    })
 }

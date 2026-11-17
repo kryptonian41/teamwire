@@ -36,7 +36,11 @@ impl FakeHarness {
             }
         }
         argv.push(req.prompt.clone());
-        Ok(LeadStartSpec { argv, dropped })
+        Ok(LeadStartSpec {
+            argv,
+            dropped,
+            warnings: state.lead_start_warnings.clone(),
+        })
     }
 
     /// Each request `lead_start` got, oldest first.
@@ -48,6 +52,11 @@ impl FakeHarness {
     /// other old argument after the program is carried.
     pub fn set_lead_start_drops(&self, words: &[&str]) {
         lock(&self.state).lead_start_drops = words.iter().map(|w| (*w).to_owned()).collect();
+    }
+
+    /// Warnings `lead_start` gives with every command line from now on.
+    pub fn set_lead_start_warnings(&self, lines: &[&str]) {
+        lock(&self.state).lead_start_warnings = lines.iter().map(|w| (*w).to_owned()).collect();
     }
 
     /// `lead_start` fails with `err` until cleared.

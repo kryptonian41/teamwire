@@ -394,3 +394,11 @@ fn a_failing_platform_contract_still_releases_the_hold_it_started() {
         "{events:?}"
     );
 }
+
+#[test]
+#[should_panic(expected = "each lead_start warning is one non-empty line")]
+fn harness_contract_fails_when_a_lead_start_warning_spans_lines() {
+    let harness = FakeHarness::new();
+    harness.set_lead_start_warnings(&["first line\nsecond line"]);
+    harness_contract(&harness_setup(&harness));
+}

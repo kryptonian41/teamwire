@@ -307,8 +307,10 @@ pub trait Harness: Send + Sync {
     /// `req.old_session`, with `req.prompt` as its first prompt (ADR 0051).
     /// The harness carries the old lead's flags by its own `CarryRules` and
     /// names each flag it drops. Claude Code: `claude --session-id <new>
-    /// <carried> <prompt>`, where the old transcript's newest permission mode
-    /// and main-chain model win over the old flags. Codex: `codex --no-daemon
+    /// <carried> <prompt>`, where the old transcript's newest main-chain model
+    /// wins over the old flags, and so does its newest permission mode. A
+    /// newest mode `claude --permission-mode` does not accept passes no
+    /// permission flag at all, drops each old one, and gives a warning. Codex: `codex --no-daemon
     /// <carried> <prompt>`, and a chosen id is refused with `BadInput`. pi:
     /// `pi --session-id <new> <carried> -- <prompt>`. Claude Code and pi
     /// refuse a missing id. Default `Unsupported`.
@@ -700,7 +702,10 @@ pub struct LeadStart { pub old_session: SessionId, pub old_args: Vec<String>,
                        pub new_session: Option<SessionId>, pub prompt: String }
 /// The new lead's argv, with the prompt last, and each old flag not carried,
 /// by name only: a value can hold a secret (`pi --api-key`).
-pub struct LeadStartSpec { pub argv: Vec<String>, pub dropped: Vec<String> }
+/// `warnings` are one line each, printed as `warning:` lines by `teamwire lead
+/// --handoff` and its dry run, and never a secret; the contract checks both.
+pub struct LeadStartSpec { pub argv: Vec<String>, pub dropped: Vec<String>,
+                           pub warnings: Vec<String> }
 /// An allow list of old flags. `keyed` carries a flag only with a value that
 /// starts as given (Codex `-c model_reasoning_effort=`). `replaced` names the
 /// flags the new start sets itself, such as the session to resume, and

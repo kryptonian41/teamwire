@@ -121,7 +121,16 @@ Claude Code, Codex or pi.
     in `LeadStartSpec::dropped`, by name only, because a value can be a
     secret. Each harness carries at least its permission, model and effort or
     thinking flags. The Claude Code harness takes the permission mode and the
-    model from the old transcript when they changed during the session.
+    model from the old transcript when they changed during the session. The
+    newest `permissionMode` value decides. When `claude --permission-mode`
+    does not accept it, such as `default`, the new lead gets no permission
+    flag at all, neither from an older transcript line nor from the old
+    arguments. Each old permission flag is named in `dropped`, and
+    `LeadStartSpec::warnings` names the value, which the command prints as a
+    `warning:` line.
+    - Beaten: skipping a newest value outside the list and taking an older
+      one. A user who went from `acceptEdits` back to the default mode would
+      get a new lead that accepts edits again.
     - Beaten: a deny list. A flag added in a later release would be carried
       without anyone deciding it should be.
 

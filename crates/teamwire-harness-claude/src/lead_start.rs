@@ -43,7 +43,7 @@ const MODE: &str = "--permission-mode";
 const MODEL: &str = "--model";
 
 /// The values `claude --permission-mode` accepts. A transcript value outside
-/// them would make `claude` exit at once, so it never wins.
+/// them would make `claude` exit at once, so it is never passed.
 const MODES: [&str; 6] = [
     "acceptEdits",
     "auto",
@@ -64,10 +64,23 @@ pub(crate) fn lead_start(
             "a Claude Code lead start needs the new session's id",
         )
     })?;
-    let (mut carried, dropped) = carry(&req.old_args, &RULES);
+    let (mut carried, mut dropped) = carry(&req.old_args, &RULES);
+    let mut warnings = Vec::new();
     let (mode, model) = transcript_values(claude_dir, &req.old_session);
-    if let Some(mode) = mode {
-        carried = with_mode(carried, &mode);
+    // The newest mode decides. A newer mode outside the list must not let an
+    // older, wider one win, so then no permission flag is passed at all.
+    match mode {
+        Some(mode) if MODES.contains(&mode.as_str()) => carried = with_mode(carried, &mode),
+        Some(mode) => {
+            let (kept, gone) = without_permission_flags(carried);
+            carried = kept;
+            dropped.extend(gone);
+            warnings.push(format!(
+                "the old session's newest permission mode {mode:?} is not one `claude \
+                 --permission-mode` accepts, so the new lead starts with no permission flag"
+            ));
+        }
+        None => {}
     }
     if let Some(model) = model {
         carried = with_model(carried, &model);
@@ -79,11 +92,15 @@ pub(crate) fn lead_start(
     ];
     argv.extend(carried);
     argv.push(req.prompt.clone());
-    Ok(LeadStartSpec { argv, dropped })
+    Ok(LeadStartSpec {
+        argv,
+        dropped,
+        warnings,
+    })
 }
 
-/// The newest valid `permissionMode` and the newest model of a main-chain
-/// assistant line, from the end of the old session's transcript.
+/// The newest `permissionMode`, whatever its value, and the newest model of
+/// a main-chain assistant line, from the end of the old session's transcript.
 fn transcript_values(claude_dir: &Path, session: &SessionId) -> (Option<String>, Option<String>) {
     let Some(tail) = find_transcript(claude_dir, session).and_then(|f| tail_lines(&f)) else {
         return (None, None);
@@ -104,7 +121,6 @@ fn transcript_values(claude_dir: &Path, session: &SessionId) -> (Option<String>,
             mode = doc
                 .get("permissionMode")
                 .and_then(Value::as_str)
-                .filter(|m| MODES.contains(m))
                 .map(str::to_owned);
         }
         // An API error is written as an assistant line with model
@@ -135,6 +151,23 @@ fn with_mode(carried: Vec<String>, mode: &str) -> Vec<String> {
     }
     out.extend([MODE.to_owned(), mode.to_owned()]);
     out
+}
+
+/// `carried` without any permission flag, and the names of the flags it
+/// took out, each once.
+fn without_permission_flags(carried: Vec<String>) -> (Vec<String>, Vec<String>) {
+    let mut gone: Vec<String> = Vec::new();
+    for flag in [DANGER, ALLOW_DANGER, MODE] {
+        let named = carried
+            .iter()
+            .any(|a| a == flag || a.strip_prefix(flag).is_some_and(|r| r.starts_with('=')));
+        if named {
+            gone.push(flag.to_owned());
+        }
+    }
+    let mut out = without_flag(carried, MODE);
+    out.retain(|a| a != DANGER && a != ALLOW_DANGER);
+    (out, gone)
 }
 
 /// `carried` with the transcript's model. An old `--model` value that starts

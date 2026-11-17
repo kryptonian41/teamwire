@@ -271,6 +271,14 @@ fn lead_start_rules(setup: &HarnessSetup<'_>) {
         .filter(|(k, _)| is_secret_name(k))
         .collect();
     no_secret_in_argv("lead_start", &spec.argv, &secrets);
+    // The command prints each warning as one `warning:` line.
+    require(
+        "each lead_start warning is one non-empty line",
+        spec.warnings
+            .iter()
+            .all(|w| !w.trim().is_empty() && !w.contains('\n')),
+    );
+    no_secret_in_argv("lead_start warnings", &spec.warnings, &secrets);
 }
 
 /// Any user on the machine can read a process's argv, so a secret never goes

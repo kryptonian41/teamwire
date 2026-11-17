@@ -58,5 +58,9 @@ pub(crate) fn lead_start(pi_bin: &str, req: &LeadStart) -> Result<LeadStartSpec,
     // pi reads a message that starts with `@` as a file to attach, and `--`
     // ends its options, so the prompt is always a message.
     argv.extend(["--".to_owned(), req.prompt.clone()]);
-    Ok(LeadStartSpec { argv, dropped })
+    Ok(LeadStartSpec {
+        argv,
+        dropped,
+        warnings: Vec::new(),
+    })
 }

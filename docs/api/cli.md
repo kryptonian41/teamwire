@@ -317,8 +317,8 @@ into a reopened session. A member that was killed mid-turn sits idle until the
 lead sends it a `reprompt` or a `note`.
 
 The lead's folder is the newest `lead_cwd` that `launch`, `lead --adopt` or
-`lead --handoff` recorded. For a team with none, the harness reads it from the session's live
-record, then from its transcript. A resume only finds a session from that
+`lead --handoff` recorded. For a team with none, the harness reads it from the
+session's live record, then from its transcript. A resume only finds a session from that
 folder. A lead whose folder is the user's home directory is refused, because
 reopen would answer the folder-trust dialog for it (LCH-15).
 
@@ -836,13 +836,16 @@ The steps run in this order, one line on stdout for each:
    directory. It also gets the config folder variable of the lead's own
    harness (`CLAUDE_CONFIG_DIR`, `CODEX_HOME` or `PI_CODING_AGENT_DIR`) when
    the command's environment sets it, because the new pane's environment
-   comes from the host's server, not from the old lead. Each flag of the old lead that the harness does not carry gives
-   one `warning:` line, by name only.
+   comes from the host's server, not from the old lead. Each flag of the old
+   lead that the harness does not carry gives one `warning:` line, by name
+   only. Each warning of the harness's lead start, such as a permission mode
+   the new lead cannot be started with, gives one `warning:` line too, also
+   on `--dry-run`.
 5. Prove, for a harness that chooses the session id (Claude Code, pi). The
    command waits up to 90 seconds, or `spawn_timeout_s` when that is lower,
    for the locator to find the new session in the new pane. The 90 seconds
-   end before the 120-second default limit of Claude Code's Bash tool. On a failure it closes the new pane and exits 2.
-   No team has changed.
+   end before the 120-second default limit of Claude Code's Bash tool. On a
+   failure it closes the new pane and exits 2. No team has changed.
 6. Adopt. For each led team, one store write checks that the team is still
    open and still led by the old session, then records the new lead and
    writes `team.lead_adopted`. The line reads
@@ -883,8 +886,8 @@ notice, and fills in the caller's document path and led teams. It refuses the
 callers that `--handoff` refuses in step 1.
 
 `--missed`, run by the new lead, only reads. It refuses the same callers as
-`--handoff-guide`. For each open team the caller leads, it finds the newest `team.lead_adopted` event that names the caller as
-`new_session`. The window starts 120 seconds before the old session's
+`--handoff-guide`. For each open team the caller leads, it finds the newest
+`team.lead_adopted` event that names the caller as `new_session`. The window starts 120 seconds before the old session's
 `handoff.md` was last written, and ends at that event. When the document is
 gone, the window starts one hour before the event, and a line says so. The
 command lists each result and each message to the lead created by the end of

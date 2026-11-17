@@ -232,7 +232,8 @@ pub(crate) fn plan<'r>(
             LaunchSpec::shell_line(&by_hand)
         )));
     }
-    let mut warnings = Vec::new();
+    // The harness's own warnings are said with the plan's, on a dry run too.
+    let mut warnings = spec.warnings;
     document_checks(&files, &mut warnings)?;
     let old_place = locate_session(ctx.platform, ctx.clock, &old, harness, host).map_err(|e| {
         refused(format!(

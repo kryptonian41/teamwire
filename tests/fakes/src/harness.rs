@@ -73,6 +73,7 @@ struct State {
     fills: HashMap<SessionId, Result<Fill, HarnessError>>,
     lead_starts: Vec<LeadStart>,
     lead_start_drops: Vec<String>,
+    lead_start_warnings: Vec<String>,
     lead_start_fault: Option<HarnessError>,
 }
 
@@ -131,6 +132,7 @@ impl FakeHarness {
                 fills: HashMap::new(),
                 lead_starts: Vec::new(),
                 lead_start_drops: Vec::new(),
+                lead_start_warnings: Vec::new(),
                 lead_start_fault: None,
             }),
             lead: None,

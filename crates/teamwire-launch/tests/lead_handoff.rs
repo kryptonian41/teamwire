@@ -835,3 +835,21 @@ fn the_new_pane_gets_the_config_folder_of_the_leads_own_harness() {
     );
     assert!(!all.contains("OTHER_CONFIG_DIR"), "{all}");
 }
+
+#[test]
+fn the_harness_warnings_are_said_on_a_handoff_and_on_a_dry_run() {
+    let want = Said::Warning("warning: the old mode cannot be passed".to_owned());
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    old_lead(&rig);
+    rig.harness
+        .set_lead_start_warnings(&["the old mode cannot be passed"]);
+    let (said, result) = run_with(&rig, false, true);
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    assert!(said.contains(&want), "{}", text(&said));
+
+    new_session_starts(&rig);
+    let (said, result) = run(&rig);
+    assert_eq!(result, Ok(()), "{}", text(&said));
+    assert!(said.contains(&want), "{}", text(&said));
+}

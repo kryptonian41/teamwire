@@ -167,9 +167,65 @@ fn a_mode_changed_away_from_bypass_keeps_the_right_to_switch_back() {
 }
 
 #[test]
-fn a_mode_claude_does_not_accept_leaves_the_old_flags() {
+fn a_newest_mode_claude_does_not_accept_passes_no_permission_flag() {
+    // The user went from acceptEdits back to the default mode. The newest
+    // mode decides, so the older acceptEdits never comes back.
     let dir = tempfile::tempdir().unwrap();
-    transcript(dir.path(), &[user("default")]);
+    transcript(
+        dir.path(),
+        &[
+            user("acceptEdits"),
+            assistant("claude-opus-5-5", false),
+            user("default"),
+        ],
+    );
+    let spec = claude(dir.path()).lead_start(&request("claude")).unwrap();
+    assert_eq!(
+        spec.argv,
+        [
+            "claude",
+            "--session-id",
+            NEW,
+            "--model",
+            "claude-opus-5-5",
+            PROMPT
+        ]
+    );
+    assert!(spec.dropped.is_empty(), "{:?}", spec.dropped);
+    assert_eq!(spec.warnings.len(), 1, "{:?}", spec.warnings);
+    assert!(
+        spec.warnings.iter().any(|w| w.contains("\"default\"")),
+        "{:?}",
+        spec.warnings
+    );
+
+    // An old bypass flag and an older bypass line give no bypass either.
+    let dir = tempfile::tempdir().unwrap();
+    transcript(dir.path(), &[user("bypassPermissions"), user("default")]);
+    let spec = claude(dir.path())
+        .lead_start(&request(
+            "claude --dangerously-skip-permissions --allow-dangerously-skip-permissions \
+             --permission-mode=plan",
+        ))
+        .unwrap();
+    assert_eq!(spec.argv, ["claude", "--session-id", NEW, PROMPT]);
+    assert_eq!(
+        spec.dropped,
+        words(
+            "--dangerously-skip-permissions --allow-dangerously-skip-permissions --permission-mode"
+        )
+    );
+    assert!(
+        spec.warnings.iter().any(|w| w.contains("\"default\"")),
+        "{:?}",
+        spec.warnings
+    );
+}
+
+#[test]
+fn with_no_mode_in_the_transcript_the_old_flags_decide() {
+    let dir = tempfile::tempdir().unwrap();
+    transcript(dir.path(), &[assistant("claude-opus-5-5", false)]);
     let spec = claude(dir.path())
         .lead_start(&request("claude --dangerously-skip-permissions"))
         .unwrap();
@@ -180,9 +236,12 @@ fn a_mode_claude_does_not_accept_leaves_the_old_flags() {
             "--session-id",
             NEW,
             "--dangerously-skip-permissions",
+            "--model",
+            "claude-opus-5-5",
             PROMPT
         ]
     );
+    assert!(spec.warnings.is_empty(), "{:?}", spec.warnings);
 }
 
 #[test]

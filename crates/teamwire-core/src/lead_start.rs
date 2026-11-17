@@ -24,7 +24,8 @@ pub struct LeadStart {
     pub prompt: String,
 }
 
-/// A fresh lead's command line, and the old flags it leaves out.
+/// A fresh lead's command line, the old flags it leaves out, and what the
+/// harness has to say about it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LeadStartSpec {
     /// The program and its arguments; the prompt is the last one.
@@ -32,6 +33,10 @@ pub struct LeadStartSpec {
     /// Each old flag that was not carried, by name only. A value is never
     /// shown, because it can hold a secret (`pi --api-key`).
     pub dropped: Vec<String>,
+    /// One line each, printed as a `warning:` line by `teamwire lead
+    /// --handoff` and its dry run, such as a permission mode from the old
+    /// transcript that the new lead cannot be started with. Never a secret.
+    pub warnings: Vec<String>,
 }
 
 /// Which old flags a harness carries to a new lead.
