@@ -134,7 +134,7 @@ impl SleepHold for MacOs {
     }
 
     fn start(&self, lead_pid: Pid) -> Result<HoldInfo, PlatformError> {
-        let pid = spawn_caffeinate(lead_pid)?;
+        let pid = spawn_caffeinate(lead_pid, "caffeinate")?;
         Ok(HoldInfo { pid, owned: true })
     }
 
@@ -216,17 +216,24 @@ fn wait_gone(pid: Pid) -> Result<ReleaseOutcome, PlatformError> {
 ///
 /// The hold's standard streams go to `/dev/null`, so it keeps no pipe of
 /// this run open. A missing `caffeinate` is found before the shell forks,
-/// because a background command that cannot start still gives a pid.
-fn spawn_caffeinate(lead_pid: Pid) -> Result<Pid, PlatformError> {
-    let script = "command -v caffeinate >/dev/null 2>&1 || exit 127\n\
-                  caffeinate -ims -w \"$1\" </dev/null >/dev/null 2>&1 &\n\
+/// because a background command that cannot start still gives a pid. The
+/// program is a parameter so a test can name one that does not exist.
+fn spawn_caffeinate(lead_pid: Pid, program: &str) -> Result<Pid, PlatformError> {
+    let script = "command -v \"$2\" >/dev/null 2>&1 || exit 127\n\
+                  \"$2\" -ims -w \"$1\" </dev/null >/dev/null 2>&1 &\n\
                   echo $!";
-    let cmd = Command::new("/bin/sh").args(["-c", script, "teamwire-hold", &lead_pid.to_string()]);
+    let cmd = Command::new("/bin/sh").args([
+        "-c",
+        script,
+        "teamwire-hold",
+        &lead_pid.to_string(),
+        program,
+    ]);
     let out = run_command(&cmd, START_TIMEOUT)?;
     if out.exit_code == NOT_FOUND_EXIT {
         return Err(PlatformError::new(
             PlatformErrorCode::NotFound,
-            "starting caffeinate: caffeinate was not found",
+            format!("starting caffeinate: {program} was not found"),
         ));
     }
     let text = String::from_utf8_lossy(&out.stdout);
@@ -246,6 +253,17 @@ fn spawn_caffeinate(lead_pid: Pid) -> Result<Pid, PlatformError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_missing_caffeinate_is_not_found_and_gives_no_pid() {
+        // A pid that a background command which never ran would print must
+        // not reach the team's record as a hold.
+        let started = spawn_caffeinate(Pid::new(1), "/nonexistent/caffeinate");
+        assert!(
+            matches!(&started, Err(e) if e.code == PlatformErrorCode::NotFound),
+            "{started:?}"
+        );
+    }
 
     #[test]
     #[expect(
