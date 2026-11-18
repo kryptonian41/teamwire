@@ -221,3 +221,50 @@ fn an_unanswerable_call_prints_nothing_and_is_closed() {
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].state, DialogState::Unanswerable);
 }
+
+/// `input` with the key `key` taken out.
+fn without(key: &str) -> String {
+    let mut doc: Value = serde_json::from_str(&rmdir()).unwrap();
+    doc.as_object_mut().unwrap().remove(key);
+    doc.to_string()
+}
+
+#[test]
+fn a_bad_hook_input_prints_nothing_and_records_nothing() {
+    let bed = bed();
+    let wait = Duration::from_millis(300);
+    let other_session = stdin(
+        "0b7a1d3e-0000-4000-8000-000000000000",
+        "Bash",
+        &json!({"command": "rmdir /usr"}),
+    );
+    // Over the size limit: production reads through `take(STDIN_LIMIT)`, so
+    // the hook sees the input cut at the limit, in the middle of the command.
+    let huge = stdin(SESSION, "Bash", &json!({"command": "x".repeat(2 << 20)}));
+    let limit = usize::try_from(super::STDIN_LIMIT).unwrap();
+    let cut = &huge.as_bytes()[..limit];
+    let cases: [(&str, Vec<u8>); 6] = [
+        ("malformed JSON", b"{\"session_id\": ".to_vec()),
+        ("no tool_input", without("tool_input").into_bytes()),
+        (
+            "no hook_event_name",
+            without("hook_event_name").into_bytes(),
+        ),
+        ("no session_id", without("session_id").into_bytes()),
+        ("over the size limit", cut.to_vec()),
+        ("another session", other_session.into_bytes()),
+    ];
+    for (name, input) in cases {
+        let reply = permission_hook_in(
+            bed.home.path(),
+            &bed.team,
+            &bed.role,
+            Some(TOKEN),
+            &bed.wiring,
+            &mut &input[..],
+            wait,
+        );
+        assert_eq!(reply, None, "{name}");
+    }
+    assert_eq!(rows_of(&bed, EventType::DialogOpened), 0);
+}
