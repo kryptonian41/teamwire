@@ -25,7 +25,7 @@ use teamwire_core::{
     DialogState, EventType, HarnessId, HostId, MemberKind, MemberState, Mode, PermissionRequest,
     Timestamp, Ulid,
 };
-use teamwire_fakes::{ClaudeScript, Step};
+use teamwire_fakes::{ClaudeScript, PLAIN_TRUST_TEXT, Step, TRUST_OPTION_TEXT};
 use teamwire_store::NewMember;
 
 /// A caller's name, its environment, and whether its refusal gets past
@@ -241,12 +241,38 @@ fn an_answer_to_a_dialog_that_changed_types_nothing_and_answers_nothing() {
     typed_nothing(&rig, &from);
 }
 
+/// A rig whose member prints `screen` in its first turn and then works for a
+/// minute, so the screen shows a dialog that no permission hook recorded.
+fn drawing(screen: &str) -> (Rig, Mark) {
+    let script = ClaudeScript {
+        turns: vec![vec![Step::Print(screen.to_owned()), Step::SleepMs(60_000)]],
+        ..ClaudeScript::default()
+    };
+    let rig = Rig::with_script(&script);
+    let from = launched(&rig, "working");
+    (rig, from)
+}
+
+fn show(rig: &Rig) -> Run {
+    let run = rig.teamwire_with(&["dialog", "show", "alpha", "--role", "api"], None, &LEAD);
+    assert_eq!(run.code, 0, "{}", run.all());
+    run
+}
+
 #[test]
 fn an_answer_to_a_trust_dialog_is_refused() {
-    // A trust, login or update dialog has no permission hook, so no dialog
+    // Claude Code runs no permission hook for a trust dialog, so no dialog
     // is ever recorded for it: any id the lead names is not one of its.
-    let rig = Rig::new();
-    let from = launched(&rig, "done");
+    let trust = format!("{PLAIN_TRUST_TEXT}\n\u{276f} No, exit\n  {TRUST_OPTION_TEXT}");
+    let (rig, from) = drawing(&trust);
+    let shown = show(&rig);
+    assert!(
+        shown
+            .out
+            .starts_with("api (claude-code on herdr): at a trust dialog\n"),
+        "{}",
+        shown.out
+    );
     let made_up = Ulid::parse("01JDQ8M3W4X5Y6Z7A8B9C0D1E2").unwrap();
     let run = answer(&rig, &made_up.to_string(), "--approve", "ok", &LEAD);
     assert_eq!(run.code, 1, "{}", run.all());
