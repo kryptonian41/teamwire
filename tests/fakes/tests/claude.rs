@@ -1046,3 +1046,142 @@ fn a_step_that_leaves_a_child_in_the_background_ends_with_the_owner() {
     }
     panic!("the background child {background} outlived its agent");
 }
+
+/// A settings file whose only `PermissionRequest` hook saves its stdin to
+/// `$TMPDIR/permission-stdin.json` and prints `reply`.
+fn permission_settings(env: &FakeHerdrEnv, reply: &str) -> String {
+    let hook = format!("cat > \"$TMPDIR/permission-stdin.json\"; printf '%s' '{reply}'");
+    let doc = json!({
+        "env": identity(),
+        "hooks": { "PermissionRequest": [{ "hooks": [{ "type": "command", "command": hook, "timeout": 110 }] }] },
+    });
+    env.write_file("member-settings.json", &doc.to_string())
+        .unwrap()
+        .display()
+        .to_string()
+}
+
+fn rmdir_step(timeout_ms: Option<u64>) -> Step {
+    Step::Permission {
+        tool: "Bash".to_owned(),
+        input: json!({ "command": "rmdir /usr", "description": "Remove the /usr directory if empty" }),
+        timeout_ms,
+    }
+}
+
+/// The outcomes of `session`'s permission steps, once the first is written
+/// and the turn has ended. `agent prompt --wait` returns at the dialog.
+fn outcomes(env: &FakeHerdrEnv, session: &str) -> Vec<Value> {
+    let begun = Instant::now();
+    while env.permission_outcomes(session).is_empty()
+        || agent_status(env).as_deref() == Some("working")
+    {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the dialog never ended"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    env.permission_outcomes(session)
+}
+
+fn screen(env: &FakeHerdrEnv) -> String {
+    env.run(&["agent", "read", "tw_demo_api", "--lines", "40"])
+        .unwrap()
+        .stdout
+}
+
+const ALLOW: &str = r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#;
+
+#[test]
+fn a_permission_step_runs_the_hook_and_acts_on_allow() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![
+        rmdir_step(None),
+        Step::Print("after the call".into()),
+    ]))
+    .unwrap();
+    let settings = permission_settings(&env, ALLOW);
+    start(&env, &settings, "perm-allow");
+    prompt(&env, "remove it");
+    assert_eq!(
+        outcomes(&env, "perm-allow"),
+        [json!({ "by": "hook", "decision": "allow", "message": null })]
+    );
+    let stdin: Value =
+        serde_json::from_str(&wait_for_file(&tmp(&env, "permission-stdin.json"))).unwrap();
+    assert_eq!(stdin.get("hook_event_name").unwrap(), "PermissionRequest");
+    assert_eq!(stdin.get("session_id").unwrap(), "perm-allow");
+    assert_eq!(stdin.get("tool_name").unwrap(), "Bash");
+    assert_eq!(stdin.pointer("/tool_input/command").unwrap(), "rmdir /usr");
+    assert_eq!(stdin.get("permission_mode").unwrap(), "bypassPermissions");
+    assert_eq!(stdin.get("permission_suggestions").unwrap(), &json!([]));
+    let text = screen(&env);
+    assert!(text.contains("Do you want to proceed?"), "{text}");
+    assert!(text.contains("Allowed by PermissionRequest hook"), "{text}");
+    assert!(text.contains("after the call"), "{text}");
+}
+
+#[test]
+fn a_permission_step_shows_the_deny_reason() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![rmdir_step(None)])).unwrap();
+    let deny = r#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"DIALOG DENIED: not /usr"}}}"#;
+    let settings = permission_settings(&env, deny);
+    start(&env, &settings, "perm-deny");
+    prompt(&env, "remove it");
+    assert_eq!(
+        outcomes(&env, "perm-deny"),
+        [json!({ "by": "hook", "decision": "deny", "message": "DIALOG DENIED: not /usr" })]
+    );
+    let text = screen(&env);
+    assert!(text.contains("Denied by PermissionRequest hook"), "{text}");
+    assert!(text.contains("Reason: DIALOG DENIED: not /usr"), "{text}");
+}
+
+#[test]
+fn a_permission_step_with_no_decision_times_out() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![rmdir_step(Some(300))]))
+        .unwrap();
+    let settings = permission_settings(&env, "");
+    start(&env, &settings, "perm-quiet");
+    prompt(&env, "remove it");
+    assert_eq!(
+        outcomes(&env, "perm-quiet"),
+        [json!({ "by": "timeout", "decision": "deny", "message": null })]
+    );
+    assert!(screen(&env).contains("Not run \u{b7} permission denied"));
+}
+
+#[test]
+fn a_key_at_a_permission_step_is_recorded() {
+    let mut env = FakeHerdrEnv::new().unwrap();
+    env.set_script(&script(vec![rmdir_step(Some(20_000))]))
+        .unwrap();
+    let settings = permission_settings(&env, "");
+    start(&env, &settings, "perm-key");
+    env.run(&["agent", "prompt", "tw_demo_api", "remove it"])
+        .unwrap();
+    let begun = Instant::now();
+    while agent_status(&env).as_deref() != Some("blocked") {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the dialog never opened"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    env.run(&["agent", "send-keys", "tw_demo_api", "1"])
+        .unwrap();
+    while env.permission_outcomes("perm-key").is_empty() {
+        assert!(
+            begun.elapsed() < Duration::from_secs(10),
+            "the key never answered the dialog"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(
+        env.permission_outcomes("perm-key"),
+        [json!({ "by": "key", "decision": "allow", "message": null })]
+    );
+}

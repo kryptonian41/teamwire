@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::fsutil;
 
 /// One thing `fake-claude` does during a turn.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Step {
     /// Run `sh -c <command>` with the settings file's `env` applied, as
@@ -21,6 +21,17 @@ pub enum Step {
     /// in `background_tasks`, and a non-empty list means the session is
     /// paused, not finished. Cleared at the next prompt.
     BackgroundTasks(Vec<String>),
+    /// Ask permission for one call, as Claude Code does: draw the dialog,
+    /// run each `PermissionRequest` hook from `--settings`, and act on its
+    /// decision. A key typed while it waits answers the dialog instead, and
+    /// with no answer it denies after `timeout_ms` (default 120000). The
+    /// outcome is written to `<claude dir>/permission/<session>-<n>.json`.
+    Permission {
+        tool: String,
+        input: serde_json::Value,
+        #[serde(default)]
+        timeout_ms: Option<u64>,
+    },
 }
 
 /// What happens at the start, before the first prompt.
@@ -54,7 +65,7 @@ pub enum Fault {
     ExitWithoutStop,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Script {
     /// Steps for the first prompt, the second, and so on. The last list
     /// repeats for every later prompt. With no lists, a turn does nothing but
