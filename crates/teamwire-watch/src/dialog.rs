@@ -2,7 +2,11 @@
 //! permission dialog the member's hook recorded, and one per blocked episode
 //! for any other dialog, named by its kind.
 
-use teamwire_core::{DialogKind, Role, clock_time, shown};
+use std::time::Duration;
+
+use teamwire_core::{
+    DialogKind, DialogState, PERMISSION_COUNTDOWN, Role, Timestamp, clock_time, shown,
+};
 use teamwire_store::DialogRecord;
 
 use crate::text::agent_text;
@@ -25,6 +29,20 @@ pub(crate) fn dialog_line(role: &Role, dialog: &DialogRecord) -> String {
         dialog.id,
         clock_time(dialog.expires_at)
     )
+}
+
+/// True while a dialog whose hook gave up can still be denied by the
+/// harness's own countdown. The hook stops waiting before the countdown
+/// ends, and the dialog stays on the screen for the time in between. The
+/// member then moves again without anyone, so it is not stuck yet. One poll
+/// more than the countdown covers a host that reports the closed dialog a
+/// moment late. A dialog still on the screen after that has no countdown,
+/// and only a person can answer it.
+pub(crate) fn countdown_runs(dialogs: &[DialogRecord], now: Timestamp, poll: Duration) -> bool {
+    let settled_after = PERMISSION_COUNTDOWN.saturating_add(poll);
+    dialogs.iter().any(|d| {
+        d.state == DialogState::Expired && now.saturating_since(d.opened_at) < settled_after
+    })
 }
 
 /// `BLOCKED <role> <kind>` for a dialog no pending record covers.

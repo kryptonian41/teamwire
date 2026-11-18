@@ -167,6 +167,60 @@ fn after_the_hook_gives_up_the_member_counts_as_stuck_again() {
 }
 
 #[test]
+fn an_expired_dialog_inside_the_harness_countdown_is_not_a_stall() {
+    // The hook gives up at 100 s, and the harness denies the call on its
+    // own at 120 s, so the member moves again without the lead.
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.blocked("api");
+    bed.screen_kind("api", DialogKind::Permission);
+    bed.dialog("api", "rmdir /usr", Duration::from_secs(100));
+    // Polls from 0 to 120 s: at the last two the dialog has expired and is
+    // still on the screen.
+    let mut lines = polls(&mut bed, 6);
+    let events = all(&lines);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+    assert!(
+        !events.iter().any(|e| e.contains("cannot answer it")),
+        "{events:?}"
+    );
+    assert_eq!(bed.kind_reads(), 0, "the watch read the screen too early");
+    // 140 s is one poll past the countdown. A dialog still on the screen
+    // then has no countdown, so only a person can answer it.
+    lines.extend(bed.ticks(1));
+    let events = all(&lines);
+    assert!(
+        events.contains(&"BLOCKED api permission (teamwire cannot answer it)".to_owned()),
+        "{events:?}"
+    );
+    assert!(
+        events.contains(&"TEAM-STALLED api".to_owned()),
+        "{events:?}"
+    );
+}
+
+#[test]
+fn a_member_the_harness_denied_after_its_hook_gave_up_prints_no_stall() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.blocked("api");
+    bed.screen_kind("api", DialogKind::Permission);
+    bed.dialog("api", "rmdir /usr", Duration::from_secs(100));
+    let mut lines = polls(&mut bed, 6);
+    // The harness's countdown ended: it denied the call, and the member's
+    // turn goes on.
+    bed.working("api");
+    lines.extend(bed.ticks(3));
+    let events = all(&lines);
+    assert_eq!(count(&lines, "TEAM-STALLED"), 0, "{lines:?}");
+    assert_eq!(count(&lines, "BLOCKED"), 1, "{lines:?}");
+    assert!(
+        !events.iter().any(|e| e.contains("cannot answer it")),
+        "{events:?}"
+    );
+}
+
+#[test]
 fn a_restarted_watch_inside_an_announced_episode_reads_no_screen() {
     let mut bed = Bed::new();
     bed.add("api");

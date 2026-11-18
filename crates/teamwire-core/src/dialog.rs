@@ -84,6 +84,10 @@ pub struct PermissionDecision {
 pub const PERMISSION_WAIT: Duration = Duration::from_secs(100);
 /// The hook's `timeout` in the member settings: above the wait, below 120 s.
 pub const PERMISSION_HOOK_TIMEOUT_S: u64 = 110;
+/// How long Claude Code shows a dialog with a countdown before it denies the
+/// call on its own. The hook stops waiting before this, so for the time in
+/// between the dialog is still on the screen and the member needs nobody.
+pub const PERMISSION_COUNTDOWN: Duration = Duration::from_secs(120);
 /// How long `dialog answer` waits for the hook to take the answer.
 pub const ANSWER_TAKE_WAIT: Duration = Duration::from_secs(5);
 /// The largest tool input, as JSON bytes, that the lead may answer.

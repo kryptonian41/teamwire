@@ -75,8 +75,11 @@ message must never approve a permission prompt (DEL-15).
    `dialog answer` types into a pane or sends a message.
 10. **A pending dialog waits for the lead.** A member with a pending
     recorded dialog counts as waiting for the lead, like a member in a
-    question round, so it never makes the watch print `TEAM-STALLED`. Once
-    its hook gives up, it counts as stuck as before.
+    question round, so it never makes the watch print `TEAM-STALLED`. The
+    hook gives up at 100 s, and Claude Code's own countdown denies the call
+    at 120 s. For the time in between the dialog is still on the screen and
+    the member needs nobody. So the member counts as stuck again only when
+    the dialog is still there one poll after the 120 s.
 
 WAT-10's source column names this ADR, because ADR 0050 decision 2 lists
 WAT-10.
@@ -94,7 +97,8 @@ WAT-10.
 - The lead has 80 to 100 s from the watch line to answer. A busy lead misses
   it, and Claude Code then denies the call on its own, as before.
 - A dialog from an ask rule has no countdown. After the hook gives up, it
-  waits for a person in the pane, as before.
+  waits for a person in the pane, as before. The watch says so one poll
+  after 120 s, which is 40 s later than the hook's 100 s.
 - Members launched before this change have no hook. Their dialogs print
   `BLOCKED <role> permission (teamwire cannot answer it)` until a handoff or
   relaunch gives them one.

@@ -11,7 +11,7 @@ use teamwire_core::{
 };
 use teamwire_store::{CompletionRecord, Ctx, Party};
 
-use crate::dialog::{blocked_line, dialog_key, dialog_line};
+use crate::dialog::{blocked_line, countdown_runs, dialog_key, dialog_line};
 use crate::memory::{MemberMemory, WatchMemory, slept_since};
 use crate::observe::{Activity, Listings, Seen, dialog_kind_of, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
@@ -586,9 +586,14 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
     let mut stuck = false;
     if seen == Seen::Alive(Activity::Blocked) {
         mm.blocked_open = true;
-        stuck = true;
+        // A dialog whose hook gave up is denied by the harness's own
+        // countdown a little later. Until then the member is neither stuck
+        // nor worth a line: a stall line here would tell the lead to
+        // replace a member that is about to carry on.
+        let settles_alone = countdown_runs(&info.dialogs, env.now, Duration::from_secs(cfg.poll_s));
+        stuck = !settles_alone;
         // One screen read per episode names the dialog.
-        if !mm.blocked_line_out {
+        if stuck && !mm.blocked_line_out {
             let kind = dialog_kind_of(env.ctx, &info.member);
             env.announce(
                 blocked_key(role, generation, mm.blocked_ep),

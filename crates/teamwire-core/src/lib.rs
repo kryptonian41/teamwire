@@ -43,7 +43,7 @@ pub mod who;
 pub use completion::{Completion, CompletionStatus, FinalSource, ReportGaps, ReportState};
 pub use config::{Config, OtelConfig};
 pub use dialog::{
-    ANSWER_TAKE_WAIT, DENIED_MARKER, DialogKind, DialogState, DialogVerdict,
+    ANSWER_TAKE_WAIT, DENIED_MARKER, DialogKind, DialogState, DialogVerdict, PERMISSION_COUNTDOWN,
     PERMISSION_HOOK_TIMEOUT_S, PERMISSION_INPUT_MAX, PERMISSION_WAIT, PermissionAnswer,
     PermissionDecision, PermissionRequest, SUMMARY_MAX, clock_time, decision_for, shown,
 };

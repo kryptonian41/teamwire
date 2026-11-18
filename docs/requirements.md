@@ -352,7 +352,7 @@ An AFK run is a team whose lead works while the user is away (ADR 0025).
 | PRM-6 | MUST | A denial's hook reply carries a message that starts `DIALOG DENIED:`, quotes the call, gives the lead's reason, and tells the member not to run the call another way. No message and no key press carries the denial. | ADR 0052; `crates/teamwire-cli/tests/dialog.rs` |
 | PRM-7 | MUST | Schema version 12 adds `dialog.opened`, `dialog.answered` and `dialog.closed`; older stores migrate to it. | ADR 0052; `crates/teamwire-store/tests/migrate_v12.rs` |
 | PRM-8 | MUST | Every harness answers `dialog_kind`, `parse_permission_request` and `permission_reply`. Codex and pi report no permission hook. | ADR 0052; the three `tests/contract.rs` |
-| PRM-9 | MUST | A member with a pending recorded dialog counts as waiting for the lead and never makes the watch print `TEAM-STALLED`. Once its hook gives up, it counts as stuck as before. | ADR 0052; `crates/teamwire-watch/tests/dialog.rs` |
+| PRM-9 | MUST | A member with a pending recorded dialog counts as waiting for the lead and never makes the watch print `TEAM-STALLED`. After its hook gives up, Claude Code's own countdown still denies the call at 120 s. So the member counts as stuck, and gets its `BLOCKED <role> permission (teamwire cannot answer it)` line, only when the dialog is still on the screen 120 s and one poll after it opened. | ADR 0052; `crates/teamwire-watch/tests/dialog.rs` |
 
 ### Handoff (HOF)
 

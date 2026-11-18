@@ -421,7 +421,9 @@ BLOCKED api permission Bash: rmdir /usr (dialog 01JDQ8M3W4X5Y6Z7A8B9C0D1E2, answ
 Answer the dialog first, in the turn the line arrives, before anything
 else. Never replace or close a member whose dialog is pending: its session
 is the one waiting for your answer. Such a member counts as waiting for
-you, so it never makes the watch print `TEAM-STALLED`.
+you, so it never makes the watch print `TEAM-STALLED`. When nobody answers
+in time, the watch stays quiet while Claude Code's own countdown denies the
+call, and the member carries on by itself.
 
 1. When the line cuts the command short, or you need the member's last
    steps, run `teamwire dialog show <team> --role R`. It prints the whole
