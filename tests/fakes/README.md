@@ -453,6 +453,30 @@ then `enter` trusts the folder.** `1`, `2` and other keys do nothing, and a
 bare `enter` takes "No, exit", which ends the session, as do `esc` and
 `ctrl+c`. An adapter must send `Down`, `Enter`, and only for the plain dialog.
 
+A `permission` step asks permission for one call, as Claude Code 2.1.327
+does (ADR 0052):
+
+```json
+{"permission": {"tool": "Bash", "input": {"command": "rmdir /usr"}, "timeout_ms": 120000}}
+```
+
+It prints the captured critical-path dialog, from its `Bash command` line to
+its `Esc to cancel` line with the countdown line, and marks the agent
+`blocked`. It runs each `PermissionRequest` hook command from `--settings`
+with the stdin Claude Code sends (`session_id`, `transcript_path`, `cwd`,
+`permission_mode: "bypassPermissions"`, `hook_event_name`, `tool_name`,
+`tool_input`, `permission_suggestions: []`) and takes the first
+`hookSpecificOutput.decision` a hook prints. An allow prints `Allowed by
+PermissionRequest hook`; a deny prints `Denied by PermissionRequest hook`
+and `Reason: <message>`. A key typed while it waits answers instead: `1` or
+`enter` allows, `2`, `esc` or `ctrl+c` denies. With no answer it denies after
+`timeout_ms` (default 120000) and prints `Not run · permission denied`. Each
+outcome is written to `<claude dir>/permission/<session>-<n>.json` as
+`{"by":"hook"|"key"|"timeout","decision":"allow"|"deny","message":<text or
+null>}`, n counting the session's dialogs from 1;
+`FakeHerdrEnv::permission_outcomes(session)` reads them, so a test can prove
+that no key answered the dialog.
+
 ## Where the fakes still differ from the real tools
 
 Checked against `herdr --skill`, `herdr api schema --json` (protocol 22),
@@ -508,5 +532,7 @@ Claude Code:
 - `claude mcp` knows only `add` and `remove` at user scope. The entry it
   writes, `{"type":"stdio","command":..,"args":[..],"env":{}}`, matches what
   Claude Code 2.1.296 wrote on 2026-10-10.
-- There is no MCP client, no PostToolUse hook run, no permission prompt and no
-  model: the script decides everything.
+- There is no MCP client, no PostToolUse hook run and no model: the script
+  decides everything. A permission dialog appears only at a `permission`
+  step, never on its own, and its screen is the captured Bash dialog for any
+  tool.
