@@ -17,6 +17,7 @@
 mod afk;
 mod apply;
 mod context;
+mod dialog;
 mod lease;
 mod memory;
 mod observe;

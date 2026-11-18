@@ -81,6 +81,10 @@ impl WatchMemory {
 
 /// One member's counters, for one generation.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "each flag is one fact the watch remembers about the member between polls"
+)]
 pub(crate) struct MemberMemory {
     pub generation: u32,
     /// Consecutive polls seen idle with no completion.
@@ -97,6 +101,11 @@ pub(crate) struct MemberMemory {
     pub silent_open: bool,
     pub blocked_ep: u32,
     pub blocked_open: bool,
+    /// This episode's `BLOCKED` line is out, so the poll reads no screen to
+    /// name the dialog again. Kept apart from `blocked_open`: a pending
+    /// recorded dialog opens the episode without that line, and the line
+    /// must still name the kind once the dialog expires.
+    pub blocked_line_out: bool,
 }
 
 impl MemberMemory {
@@ -109,6 +118,7 @@ impl MemberMemory {
             silent_open: silent_seen > 0,
             blocked_ep: blocked_seen.max(1),
             blocked_open: blocked_seen > 0,
+            blocked_line_out: blocked_seen > 0,
             ..Self::default()
         }
     }
