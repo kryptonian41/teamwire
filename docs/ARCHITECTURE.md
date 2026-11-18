@@ -381,6 +381,7 @@ the database itself. This section says what is enforced.
 | A member moves the base ref and shifts the diff that verify reads | Nothing: this is outside the threat model of a confused agent | ADR 0009 |
 | A repository holds back delivery | The default sink is host typing, which no repository setting can hold | DEL-7 |
 | A reviewer's independence is lost | Reviewers, plan reviewers and closers receive only from the lead | MSG-3 |
+| A member or peer answers another member's permission dialog | Only `teamwire dialog answer` answers, with the lead's session proof; the hook answers only its own dialog id; a member with shell access could still write the database directly, as for every lead-only action | DEL-15, SEC-2, PRM-5 |
 
 ## Installing teamwire
 

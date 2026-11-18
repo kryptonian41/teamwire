@@ -662,7 +662,10 @@ result line also ends with
 ```
 
 Tell the user about `TEAM-STALLED`, and about a `BLOCKED` member at a login,
-update or trust dialog ("Watch lines" in `reference.md`). Other failures are
+update or trust dialog ("Watch lines" in `reference.md`). Answer a `BLOCKED`
+member at a permission dialog yourself, in the turn the line arrives, with
+`teamwire dialog answer` ("A member at a permission dialog" in
+`reference.md`). Other failures are
 yours to handle. Run `teamwire status` before acting on `SILENT` or
 `TEAM-STALLED`, because a member that shows `working` there is not stalled.
 For a member that has worked longer than you expect, run

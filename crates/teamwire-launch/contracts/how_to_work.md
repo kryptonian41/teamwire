@@ -25,8 +25,13 @@ HOW TO WORK
 - Run each shell command directly, never inside `sh -c` or `bash -c`.
   Your harness cannot check a wrapped script, and when one also runs
   `rm` it can stop at a permission dialog even with approvals turned off.
-  Nobody answers that dialog: the command is denied after about two
-  minutes, and your run stalls until then.
+  Your lead may read that dialog and answer it. If nobody answers, the
+  command is denied after about two minutes, and your run stalls until
+  then. When the lead denies a command, the denial itself quotes the
+  command and gives the lead's reason. Do not run that command another way, such
+  as in a script, another shell or another tool. Change your approach. If
+  your work needs that command, ask the lead, or, if you send no
+  messages, say so in your report.
 - Never run `git worktree add`, `git worktree remove`, `git worktree move`
   or `git worktree prune`, and never
   write into another member's directory. Every member's checkout is shared
