@@ -334,31 +334,57 @@ retry on a weaker model. A class set too high costs only tokens.
 teamwire names no model for a kind or a class, because models change
 faster than any table. AFK runs are the one exception: launch warns when an
 AFK member runs below the AFK skill's table. You pick each member's model,
-in this order:
+and the model's family then sets the member's harness, in this order:
 
-1. **Keep your harness.** A member runs on your harness unless the user asks
-   for another, so leave `harness` out. Set `"harness": "claude-code"`,
-   `"codex"` or `"pi"` only when the user names that harness. Picking a
-   harness and picking a model are separate decisions, so never change a
-   member's harness to reach a model.
-2. **See what the harness reaches.** Run `teamwire models`. It lists the
-   models and effort levels your harness can reach on this machine, and says
-   where the list came from. `teamwire models --harness <id>` lists another
-   harness. A `builtin` list comes from the harness's docs, so a model on it
-   may still be out of reach for this account. A pi model can fail even on a
-   `listed` list, as "Setting up a machine" in `reference.md` explains.
-3. **Set each member's `task_class`** from the table under "Roles".
-4. **Read the evidence for each class.** Run
+1. **See what each harness reaches.** Run
+   `teamwire models --harness claude-code` and
+   `teamwire models --harness pi`. Each lists the models and effort levels
+   that harness can reach on this machine, and says where the list came
+   from. Without `--harness`, the command lists your own harness. A
+   `builtin` list comes from the harness's docs, so a model on it may still
+   be out of reach for this account. A pi model can fail even on a `listed`
+   list, as "Setting up a machine" in `reference.md` explains.
+2. **Set each member's `task_class`** from the table under "Roles".
+3. **Read the evidence for each class.** Run
    `teamwire models --for <class>` once per class in the plan. It adds the
    public evidence for that class, with each source and its date, and the
    outcomes of the user's own past teams for that class. Each source ranks
    only its own entries, so a rank compares models within one source. The
    command never names one best model, so weigh the sources against each
-   other yourself.
-5. **Pick `model` and `effort` yourself**, and give the reason in one line of
-   the plan per member. Use an id or an alias exactly as `teamwire models`
-   prints it. A pi member's `model` names its provider, as `provider/id`.
-   Use an effort level from the same list, because launch refuses any other.
+   other yourself. The evidence comes in two halves: the models your harness
+   reaches, then the ones it does not.
+   `teamwire models --harness <id> --for <class>` shows the same evidence
+   against another harness's list.
+4. **Pick `model` and `effort` yourself**, and give the reason in one line of
+   the plan per member.
+5. **Set the member's `harness` from the model's family.**
+   - A Claude model runs on Claude Code: `"harness": "claude-code"`. When
+     Claude Code is not working, put the member on pi with the same Claude
+     model from pi's list. Claude Code is not working when launch refuses
+     with `harness claude-code is not on PATH`, when a Claude Code member
+     fails to start or stops at a login dialog, or when the Claude account
+     is at its usage limit.
+   - A model of any other family, such as a GPT or a Gemini model, runs on
+     pi: `"harness": "pi"`. When pi's list does not hold the model, use a
+     harness whose list does.
+
+   A member whose spec names no `harness` runs on your harness, so leave
+   `harness` out only where this rule names your own harness. When the user
+   names a harness for a member or for the team, the user's choice wins.
+   Write `model` and `effort` exactly as `teamwire models --harness <id>`
+   prints them for the member's harness. The same model has another id on
+   another harness, and a pi member's `model` names its provider, as
+   `provider/id`. Launch refuses an effort level that is not on that
+   harness's list, and it refuses the whole spec with
+   `harness <id> is not on PATH` when a member's harness is not installed.
+
+A running member cannot change its harness. When Claude Code stops working
+mid-run, replace the member under a new role name, as "When a member goes
+wrong" says. A member on another harness than yours follows that harness's
+rules. Its `plugins` map holds that harness's plugin ids, as "Skills and
+plugins in members" says. teamwire sets no compaction for a Codex or pi
+member, so "When a member's context runs high" applies to it from its first
+turn.
 
 Extra thinking buys little in routine edits and a lot in judging other
 agents' work or in reasoning about a race. A higher effort also makes slower

@@ -50,11 +50,14 @@ hold for every section below.
   restart. `teamwire doctor` checks it as `pi lead package`.
 - **Members and models.** Under a pi lead, a member with no `harness` runs
   on pi. Its `model` is one of the ids or patterns `teamwire models` lists
-  for pi, and it names its provider, as `provider/id`. pi lists a provider
-  whenever it finds any credential for it, such as an `AWS_PROFILE` for
-  Amazon Bedrock, even when the account cannot call that provider. Leave
-  such a provider out with `TEAMWIRE_PI_EXCLUDE_PROVIDERS` in the
-  environment, or with `TEAMWIRE_PI_EXCLUDE_PROVIDERS = "amazon-bedrock"` in
+  for pi, and it names its provider, as `provider/id`. A member on a Claude
+  model runs on Claude Code first, so give it `"harness": "claude-code"`,
+  as "Choose each member's model" says. A member on a model of any other
+  family stays on pi. pi lists a provider whenever it finds any credential
+  for it, such as an `AWS_PROFILE` for Amazon Bedrock, even when the account
+  cannot call that provider. Leave such a provider out with
+  `TEAMWIRE_PI_EXCLUDE_PROVIDERS` in the environment, or with
+  `TEAMWIRE_PI_EXCLUDE_PROVIDERS = "amazon-bedrock"` in
   `$TEAMWIRE_HOME/config.toml`.
 - **No AFK runs.** An unattended AFK run (`/teamwire:afk`,
   `teamwire afk start`) needs a Claude Code lead. pi has no `afk` skill, so

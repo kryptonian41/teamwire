@@ -588,6 +588,67 @@ fn every_member_names_a_task_class_and_no_model() {
     }
 }
 
+/// The family of a member's model sets its harness (ADR 0053): Claude Code
+/// for a Claude model, with pi as the fallback, and pi for any other family.
+/// The skill gives every lead that rule, the pi and Codex notes repeat it for
+/// their own default, and the skill no longer forbids a harness change.
+#[test]
+fn the_models_family_sets_a_members_harness() {
+    let skill = flat(&example("skills/teamwire/SKILL.md"));
+    let (_, section) = skill
+        .split_once("## Choose each member's model")
+        .expect("the skill has a section on choosing a model");
+    let (section, _) = section
+        .split_once("## Skills and plugins in members")
+        .expect("the plugin section follows the model section");
+    assert!(
+        !section.contains("never change a member's harness"),
+        "the skill still forbids a harness change"
+    );
+    for needed in [
+        "`teamwire models --harness claude-code`",
+        "`teamwire models --harness pi`",
+        "A Claude model runs on Claude Code: `\"harness\": \"claude-code\"`",
+        "When Claude Code is not working, put the member on pi with the same Claude model",
+        "A model of any other family, such as a GPT or a Gemini model, runs on pi: \
+         `\"harness\": \"pi\"`",
+        "When pi's list does not hold the model, use a harness whose list does",
+        "the user's choice wins",
+    ] {
+        assert!(
+            section.contains(needed),
+            "the model section misses: {needed}"
+        );
+    }
+    // The family comes from the model, so the model is picked first.
+    let pick = section.find("**Pick `model` and `effort` yourself**");
+    let set = section.find("**Set the member's `harness` from the model's family.**");
+    assert!(
+        matches!((pick, set), (Some(pick), Some(set)) if pick < set),
+        "the skill sets the harness before it picks the model"
+    );
+
+    for (note, needed) in [
+        (
+            "skills/pi-lead.md",
+            "A member on a Claude model runs on Claude Code first, so give it \
+             `\"harness\": \"claude-code\"`",
+        ),
+        (
+            "skills/codex-lead.md",
+            "`\"harness\": \"claude-code\"` for a Claude model and `\"harness\": \"pi\"` for a \
+             model of any other family",
+        ),
+    ] {
+        let text = flat(&example(note));
+        assert!(text.contains(needed), "{note} misses: {needed}");
+        assert!(
+            text.contains("\"Choose each member's model\""),
+            "{note} does not point at the skill's model section"
+        );
+    }
+}
+
 /// The printed skeleton shows a member's task class beside its seat, right
 /// after `mode`, rather than after the task text where it is easy to miss.
 #[test]

@@ -39,7 +39,11 @@ hold for every section below.
 - **This skill** is `teamwire:teamwire`, and you invoke it with `$`.
 - **Members and models.** Under a Codex lead, a member with no `harness`
   runs on Codex. Its `model` is one of the ids `teamwire models` lists for
-  Codex.
+  Codex. "Choose each member's model" sets each member's harness from its
+  model's family: `"harness": "claude-code"` for a Claude model and
+  `"harness": "pi"` for a model of any other family. A member stays on Codex
+  when pi's list does not hold its model and Codex's list does, or when the
+  user names Codex.
 - **Setup.** "Setting up a machine" in `reference.md` describes Claude
   Code. For Codex, `teamwire install --harness codex` writes the plugin to
   `$TEAMWIRE_HOME/codex-plugin/`, and Codex asks you to review its hook once
