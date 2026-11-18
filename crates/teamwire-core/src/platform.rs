@@ -106,6 +106,9 @@ pub trait Platform: Send + Sync {
 
 pub trait SleepHold {
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo>;
+    /// When `start` returns, the hold is no descendant of the calling
+    /// process. An agent whose pane closes can end every process under the
+    /// command it ran, and the hold must outlive that command.
     fn start(&self, lead_pid: Pid) -> Result<HoldInfo, PlatformError>;
     /// Kills only if `hold.pid` is still an untimed hold on `lead_pid`.
     fn release(&self, hold: &HoldInfo, lead_pid: Pid) -> Result<ReleaseOutcome, PlatformError>;

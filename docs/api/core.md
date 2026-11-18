@@ -482,6 +482,8 @@ impl FileLock {
 
 pub trait SleepHold {
     fn find_existing(&self, lead_pid: Pid) -> Option<HoldInfo>;
+    /// On return the hold is no descendant of the caller, so ending the
+    /// caller's process tree leaves it running.
     fn start(&self, lead_pid: Pid) -> Result<HoldInfo, PlatformError>;
     /// Kills only if `hold.pid` is still an untimed hold on `lead_pid`.
     fn release(&self, hold: &HoldInfo, lead_pid: Pid) -> Result<ReleaseOutcome, PlatformError>;

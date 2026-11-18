@@ -145,7 +145,11 @@ Claude Code, Codex or pi.
     Each team the command moved gets its sleep hold moved to its new lead
     before the command exits. `teamwire lead --adopt` moves the hold of each
     open team the new lead takes by hand. So no team's hold ends with the old
-    lead's pane.
+    lead's pane. The command still runs in the old lead's shell tool when it
+    closes that pane, and the old lead's harness can then end every process
+    under the command. So the platform starts each hold through a shell that
+    exits at once, and launchd is the hold's parent before the hold is
+    recorded.
 
 17. **`teamwire lead --missed` lists what the old lead may have missed.** The
     window of a team starts 120 seconds before the old lead's `handoff.md` was

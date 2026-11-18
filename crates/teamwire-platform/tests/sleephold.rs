@@ -179,6 +179,49 @@ fn a_pid_that_is_not_a_hold_is_never_killed() {
     assert!(native().pid_alive(lead.pid()));
 }
 
+/// The process group of `pid`, read with `ps`.
+fn group_of(pid: Pid) -> String {
+    let out = Command::new("ps")
+        .args(["-o", "pgid=", "-p", &pid.to_string()])
+        .output()
+        .unwrap();
+    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+}
+
+/// The command that starts a hold may run in an agent's shell tool. When the
+/// agent's pane closes, the agent can end every process whose parents lead
+/// back to that command, whatever its process group. So the hold must have
+/// left the command's parent chain by the time `start` returns.
+#[test]
+fn a_hold_is_no_descendant_of_the_process_that_started_it() {
+    let mut lead = Lead::start();
+    let hold = lead.hold();
+    let me = Pid::new(std::process::id());
+    let platform = native();
+    let mut chain = Vec::new();
+    let mut pid = hold.pid;
+    while let Some((parent, _)) = platform.parent_of(pid) {
+        chain.push(parent);
+        if parent.get() <= 1 || chain.len() > 64 {
+            break;
+        }
+        pid = parent;
+    }
+    assert!(
+        !chain.is_empty(),
+        "the parent of hold {} could not be read",
+        hold.pid
+    );
+    assert!(
+        !chain.contains(&me),
+        "hold {} has this process ({me}) among its parents: {chain:?}",
+        hold.pid
+    );
+    // The terminal's Ctrl-C to the starter's group must not reach it either.
+    assert_ne!(group_of(hold.pid), group_of(me));
+    assert!(platform.pid_alive(hold.pid));
+}
+
 #[test]
 fn the_hold_ends_when_the_lead_ends() {
     let mut lead = Lead::start();

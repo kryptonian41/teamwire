@@ -3,8 +3,6 @@
 //! `caffeinate`'s own getopt rules, so `-ims -w 5`, `-imsw5` and `-i -w5`
 //! are one hold.
 
-use std::os::unix::process::CommandExt;
-use std::process::Stdio;
 use std::time::Duration;
 
 use nix::sys::signal::{Signal, kill};
@@ -17,6 +15,13 @@ use crate::{MacOs, SystemClock, io_error, process};
 
 /// Bound on the `ps` calls (DEL-14).
 const PS_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Bound on the shell that starts a hold. The shell exits as soon as the hold
+/// runs in the background.
+const START_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// The shell's exit code when it finds no `caffeinate` to run.
+const NOT_FOUND_EXIT: i32 = 127;
 
 /// How long `release` waits for a killed hold to exit, and how often it looks.
 const EXIT_WAIT: Duration = Duration::from_secs(2);
@@ -129,14 +134,7 @@ impl SleepHold for MacOs {
     }
 
     fn start(&self, lead_pid: Pid) -> Result<HoldInfo, PlatformError> {
-        let child = spawn_caffeinate(lead_pid)?;
-        let pid = Pid::new(child.id());
-        // Reap the hold when it ends, so a released hold is gone rather than
-        // a zombie that still answers `kill(pid, 0)`.
-        std::thread::spawn(move || {
-            let mut child = child;
-            drop(child.wait());
-        });
+        let pid = spawn_caffeinate(lead_pid)?;
         Ok(HoldInfo { pid, owned: true })
     }
 
@@ -207,21 +205,42 @@ fn wait_gone(pid: Pid) -> Result<ReleaseOutcome, PlatformError> {
     Ok(ReleaseOutcome::Released)
 }
 
-#[expect(
-    clippy::disallowed_methods,
-    reason = "teamwire-platform is the one crate that starts processes; the hold outlives any single run() call"
-)]
-fn spawn_caffeinate(lead_pid: Pid) -> Result<std::process::Child, PlatformError> {
-    std::process::Command::new("caffeinate")
-        .args(["-ims", "-w", &lead_pid.to_string()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        // Its own process group: the hold must outlive the launcher and not
-        // receive the signals the terminal sends to the launcher's group.
-        .process_group(0)
-        .spawn()
-        .map_err(|err| io_error("starting caffeinate", &err))
+/// Starts the hold through a shell that puts it in the background and
+/// exits, so launchd is the hold's parent before `start` returns. The command
+/// that asks for a hold may run in an agent's shell tool. When the agent's
+/// pane closes, the agent can end every process whose parents lead back to
+/// that command. A process group of its own does not protect the hold from
+/// that, because such an end follows parents, not groups. The shell runs in a
+/// process group of its own (`run_command`), and the hold stays in it, so the
+/// terminal's signals to the caller's group do not reach the hold either.
+///
+/// The hold's standard streams go to `/dev/null`, so it keeps no pipe of
+/// this run open. A missing `caffeinate` is found before the shell forks,
+/// because a background command that cannot start still gives a pid.
+fn spawn_caffeinate(lead_pid: Pid) -> Result<Pid, PlatformError> {
+    let script = "command -v caffeinate >/dev/null 2>&1 || exit 127\n\
+                  caffeinate -ims -w \"$1\" </dev/null >/dev/null 2>&1 &\n\
+                  echo $!";
+    let cmd = Command::new("/bin/sh").args(["-c", script, "teamwire-hold", &lead_pid.to_string()]);
+    let out = run_command(&cmd, START_TIMEOUT)?;
+    if out.exit_code == NOT_FOUND_EXIT {
+        return Err(PlatformError::new(
+            PlatformErrorCode::NotFound,
+            "starting caffeinate: caffeinate was not found",
+        ));
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    match text.trim().parse::<u32>() {
+        Ok(pid) if out.success() => Ok(Pid::new(pid)),
+        _ => Err(PlatformError::new(
+            PlatformErrorCode::Other,
+            format!(
+                "starting caffeinate: the shell that starts it exited {} and printed {:?}",
+                out.exit_code,
+                text.trim()
+            ),
+        )),
+    }
 }
 
 #[cfg(test)]
