@@ -865,6 +865,42 @@ pub type TeamRead = Result<Option<OpenTeam>, StoreError>;     // Ok(None): a dat
 pub fn open_teams(home: &Path, lead: Option<&SessionId>) -> Result<Vec<(TeamName, TeamRead)>, StoreError>;
 ```
 
+Permission dialogs (`crates/teamwire-store/src/dialog.rs`, ADR 0052) are three event types and
+no table. The `dialog.opened` row's ULID is the dialog id; the other two rows name it as
+`subject`. A dialog's state is read from its rows: a `dialog.closed` row gives its outcome;
+otherwise `now >= expires_at` gives `Expired`, so a hook that died never leaves a dialog
+pending; otherwise a `dialog.answered` row gives `Answered`; otherwise `Pending`.
+
+```rust
+pub struct DialogRecord { pub id: Ulid, pub role: Role, pub generation: u32,
+                          pub opened_at: Timestamp, pub expires_at: Timestamp,
+                          pub request: PermissionRequest, pub state: DialogState,
+                          pub answer: Option<PermissionAnswer>,
+                          pub answered_at: Option<Timestamp>, pub closed_at: Option<Timestamp> }
+pub enum AnswerOutcome { Recorded(Box<DialogRecord>),
+                         NoDialog,                  // no dialog.opened row with this id for this role
+                         Changed,                   // an earlier session or generation of the member
+                         NotPending(DialogState) }  // answered, taken, expired or unanswerable
+impl Tx<'_> {
+    /// dialog.opened; for a request that is not answerable also dialog.closed `unanswerable`.
+    pub fn open_dialog(&self, at: Timestamp, role: &Role, generation: u32,
+                       request: &PermissionRequest, expires_at: Timestamp) -> Result<Ulid, StoreError>;
+    /// Writes dialog.answered only while the dialog is pending at `at`, of the member's
+    /// current session and generation. The check and the write share one BEGIN IMMEDIATE.
+    pub fn answer_dialog(&self, at: Timestamp, role: &Role, id: &Ulid,
+                         answer: &PermissionAnswer) -> Result<AnswerOutcome, StoreError>;
+    /// dialog.closed: `taken` with the answer when one is recorded (even past expires_at),
+    /// else `expired`. None, and nothing written, for a dialog already closed.
+    pub fn close_dialog(&self, at: Timestamp, id: &Ulid) -> Result<Option<PermissionAnswer>, StoreError>;
+}
+impl ReadTx<'_> {
+    pub fn dialog(&self, id: &Ulid, now: Timestamp) -> Result<Option<DialogRecord>, StoreError>;
+    pub fn dialogs_of_role(&self, role: &Role, now: Timestamp) -> Result<Vec<DialogRecord>, StoreError>; // newest first
+}
+/// Pure, newest first by seq, so the watch reuses its events_of_role rows.
+pub fn dialogs_from(events: &[Event], now: Timestamp) -> Vec<DialogRecord>;
+```
+
 A command treats `NoDatabase` as "no such team", not as a broken store.
 `team_names(home)` lists every team that has a database, sorted by name; it
 is the one scan of `<home>/teams` every command uses. `user_key_path(home)`

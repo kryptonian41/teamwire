@@ -17,6 +17,7 @@
 mod completion;
 mod ctx;
 mod delivery;
+mod dialog;
 mod error;
 mod export;
 mod member;
@@ -36,6 +37,7 @@ mod watch;
 pub use completion::{CompletionRecord, NewCompletion, ResultOutcome};
 pub use ctx::{Ctx, Party};
 pub use delivery::{DeliveryRecord, DeliveryUpdate};
+pub use dialog::{AnswerOutcome, DialogRecord, dialogs_from};
 pub use error::{NO_DATABASE_HINT, StoreError};
 pub use export::{ExportClaim, ExportHolder, ExportMark};
 pub use member::NewMember;
