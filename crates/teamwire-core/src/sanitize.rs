@@ -101,7 +101,7 @@ fn skip_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
 /// Unicode's `Default_Ignorable_Code_Point` set, plus the interlinear
 /// annotation marks U+FFF9-FFFB. Written out because the standard library has
 /// no such table and a Unicode crate is not worth a dependency.
-fn is_invisible(c: char) -> bool {
+pub(crate) fn is_invisible(c: char) -> bool {
     matches!(
         c,
         '\u{00ad}'

@@ -360,6 +360,18 @@ pub trait Harness: Send + Sync {
     /// Codex parse their `PostToolUse` input; pi parses the input teamwire's
     /// lead extension writes.
     fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError>;
+    /// What kind of dialog the screen `tail` shows (ADR 0052). Default
+    /// `CannotTell`, for a harness that cannot read its own dialogs. Claude
+    /// Code, Codex and pi name the kind from their screen markers.
+    fn dialog_kind(&self, tail: &str) -> DialogKind;
+    /// Parse a permission hook's stdin into the neutral request (ADR 0052).
+    /// Default `Unsupported`: the harness has no permission hook, and
+    /// `dialog answer` refuses its members. Only Claude Code has one.
+    fn parse_permission_request(&self, stdin: &[u8]) -> Result<PermissionRequest, HarnessError>;
+    /// The bytes the permission hook prints for `decision`: allow this one
+    /// call, or deny it with the decision's message. It never writes a rule,
+    /// changes the input or stops the turn. Default `Unsupported`.
+    fn permission_reply(&self, decision: &PermissionDecision) -> Result<Vec<u8>, HarnessError>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
     /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
     /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
@@ -604,6 +616,48 @@ type-checks and routes per member, because both harnesses (`claude-code` and
 `codex`) and both hosts (`herdr` and `tmux`) are registered. A member whose
 harness or host id no adapter registers has its deliveries `undelivered` with
 `unknown_adapter`, and its launch is refused.
+
+## 6a2. Permission dialogs (`teamwire_core::dialog`, ADR 0052)
+
+The types a harness's permission hook and the lead's `dialog` commands share.
+Nothing here names a lasting grant or a key.
+
+```rust
+pub enum DialogKind { NoDialog /* "none" */, Permission, Trust, Login, Update, Unknown,
+                      CannotTell /* "cannot_tell": the harness cannot read its dialogs */ }
+pub enum DialogVerdict { Approve, Deny }
+/// Read from the events, never stored as a column.
+pub enum DialogState { Pending, Answered, Taken, Expired, Unanswerable }
+
+pub struct PermissionRequest { pub session: SessionId, pub subagent: bool, pub tool: String,
+                               pub summary: String,                    // at most SUMMARY_MAX chars
+                               pub input: Option<serde_json::Value>,   // None over PERMISSION_INPUT_MAX
+                               pub why_not: Option<String> }           // None: the lead may answer
+impl PermissionRequest { pub fn answerable(&self) -> bool; }
+pub struct PermissionAnswer { pub verdict: DialogVerdict, pub reason: String }
+pub struct PermissionDecision { pub verdict: DialogVerdict,
+                                pub message: Option<String> }          // a denial's whole text
+
+/// A denial's message, word for word:
+///   DIALOG DENIED: the lead refused this <tool> call (dialog <id>):
+///   <summary>
+///   Reason: <reason>
+///   Do not run this command another way, such as in a script, another shell or
+///   another tool. Change your approach, or ask your lead.
+pub fn decision_for(id: &Ulid, request: &PermissionRequest, answer: &PermissionAnswer)
+    -> PermissionDecision;
+/// Every character `one_line` drops, written as `\u{XXXX}`: control characters
+/// except newline and tab, and Unicode's Default_Ignorable set (bidi controls,
+/// zero-width characters). Every text a lead reads about a call goes through it.
+pub fn shown(text: &str) -> String;
+
+pub const PERMISSION_WAIT: Duration = 100 s;        // the hook's wait; Claude Code denies at 120 s
+pub const PERMISSION_HOOK_TIMEOUT_S: u64 = 110;     // the hook's settings timeout
+pub const ANSWER_TAKE_WAIT: Duration = 5 s;         // dialog answer waits this long for "taken"
+pub const PERMISSION_INPUT_MAX: usize = 65_536;     // JSON bytes the lead may answer
+pub const SUMMARY_MAX: usize = 2_000;
+pub const DENIED_MARKER: &str = "DIALOG DENIED:";
+```
 
 ## 6b. Supporting types
 
