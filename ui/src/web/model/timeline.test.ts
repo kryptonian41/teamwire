@@ -41,6 +41,26 @@ test("a member.woken row is labelled woken", () => {
   expect([l!.label, l!.details]).toEqual(["impl woken", "generation 3"]);
 });
 
+test("a dialog row is labelled with the member and the tool", () => {
+  // teamwire ADR 0052: a member's permission hook records the call, and the lead answers it.
+  const [opened, denied, approved, closed] = describeRows([
+    ev("dialog.opened", "api", { tool: "Bash", summary: "rmdir /usr", generation: 1 }, null, 1),
+    ev("dialog.answered", "api", { verdict: "deny", reason: "removes a system folder", tool: "Bash", summary: "rmdir /usr" }, null, 2),
+    ev("dialog.answered", "web", { verdict: "approve", reason: "inside its worktree", summary: "rm -r target/tmp" }, null, 3),
+    ev("dialog.closed", "api", { outcome: "taken", verdict: "deny" }, null, 4),
+  ]);
+  expect([opened!.label, opened!.details]).toEqual(["api at a permission dialog", "Bash: rmdir /usr"]);
+  expect([denied!.label, denied!.details]).toEqual(["api's dialog denied by the lead", "rmdir /usr · removes a system folder"]);
+  expect([approved!.label, approved!.details]).toEqual(["web's dialog approved by the lead", "rm -r target/tmp · inside its worktree"]);
+  expect([closed!.label, closed!.details]).toEqual(["api's dialog closed", "taken"]);
+  const [plain] = describeRows([ev("dialog.answered", "api")]);
+  expect([plain!.label, plain!.details]).toEqual(["api's dialog answered by the lead", null]);
+  for (const t of ["dialog.opened", "dialog.answered", "dialog.closed"] as const) {
+    expect(isProblem(ev(t, "api", { outcome: "expired" }))).toBe(false);
+    expect(isRoutine(ev(t))).toBe(false);
+  }
+});
+
 test("a result row names the completion before it", () => {
   expect(line(38).label).toBe("ledger's result #2 being delivered");
   expect(line(21).label).toBe("ledger's result #1 being delivered");

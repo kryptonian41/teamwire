@@ -109,7 +109,7 @@ All state for a team sits in `$TEAMWIRE_HOME/teams/<team>/`:
 | `$TEAMWIRE_HOME/locks/worktree-<sha256>.lock` | launch, close | An empty file, made if missing and never deleted. The hash names a repository's git common directory. Launch and close hold the kernel's `flock` on it, through `Platform::lock_file`, around each `git worktree add`, `remove` and `prune` they run in that repository, waiting at most 300 s. The lock ends with the holder's open file, so a killed holder leaves nothing held |
 | `$TEAMWIRE_HOME/locks/user-key.lock` | `teamwire user-key` | An empty file, made if missing and never deleted. A run holds the kernel's `flock` on it, through `Platform::lock_file`, from its first look at `user.key` to its write, so two runs at once agree on one key. The wait has no limit. The lock ends with the holder's open file, so a killed run holds nothing (ADR 0040) |
 
-The database tables (schema version 11; exact DDL is owned by the store
+The database tables (schema version 12; exact DDL is owned by the store
 crate and listed in `docs/api/core.md`):
 
 | Table | One row per | Key columns |
