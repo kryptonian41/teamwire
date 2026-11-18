@@ -42,18 +42,27 @@ fn now() -> Timestamp {
     Timestamp::from_unix_millis(i64::try_from(millis).unwrap()).unwrap()
 }
 
-/// A launched team whose recorded lead session is `lead-1`, and the herdr
-/// call count once launch and the lead's adopt are done.
-fn launched(rig: &Rig, status: &str) -> usize {
+/// What a test compares against once launch and the lead's adopt are done:
+/// the herdr call count and the `message.sent` row count.
+struct Mark {
+    calls: usize,
+    sent: usize,
+}
+
+/// A launched team whose recorded lead session is `lead-1`.
+fn launched(rig: &Rig, status: &str) -> Mark {
     rig.launch_until("true", &["src/"], &[], status);
     let adopt = rig.teamwire_with(&["lead", "--adopt", "alpha"], None, &LEAD);
     assert_eq!(adopt.code, 0, "{}", adopt.all());
-    rig.herdr.calls().len()
+    Mark {
+        calls: rig.herdr.calls().len(),
+        sent: count(rig, EventType::MessageSent),
+    }
 }
 
 /// A rig whose member stops at a permission dialog for `command` in its
 /// first turn, so its real permission hook runs and waits.
-fn at_dialog(command: &str) -> (Rig, usize) {
+fn at_dialog(command: &str) -> (Rig, Mark) {
     let script = ClaudeScript {
         turns: vec![vec![Step::Permission {
             tool: "Bash".to_owned(),
@@ -84,14 +93,19 @@ fn count(rig: &Rig, kind: EventType) -> usize {
         .len()
 }
 
-/// Neither command typed into a pane after call `from`.
-fn typed_nothing(rig: &Rig, from: usize) {
-    let calls = rig.calls_since(from);
+/// Since `from`, nothing typed into a pane and nothing sent a message.
+fn typed_nothing(rig: &Rig, from: &Mark) {
+    let calls = rig.calls_since(from.calls);
     assert!(
         !calls
             .iter()
             .any(|c| c.starts_with("agent send-keys") || c.starts_with("agent prompt")),
         "{calls:?}"
+    );
+    assert_eq!(
+        count(rig, EventType::MessageSent),
+        from.sent,
+        "a dialog command sent a message"
     );
 }
 
@@ -158,7 +172,6 @@ fn state_of(rig: &Rig, id: &Ulid) -> DialogState {
 fn the_lead_approves_and_the_hook_prints_allow_with_no_key_typed() {
     let (rig, from) = at_dialog("rmdir /usr");
     let id = hook_dialog(&rig);
-    let sent = count(&rig, EventType::MessageSent);
     let run = answer(
         &rig,
         &id.to_string(),
@@ -180,15 +193,13 @@ fn the_lead_approves_and_the_hook_prints_allow_with_no_key_typed() {
     assert_eq!(outcomes[0]["by"], "hook");
     assert_eq!(outcomes[0]["decision"], "allow");
     assert_eq!(state_of(&rig, &id), DialogState::Taken);
-    typed_nothing(&rig, from);
-    assert_eq!(count(&rig, EventType::MessageSent), sent);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
 fn the_lead_denies_and_the_hook_reply_quotes_the_call_and_the_reason() {
     let (rig, from) = at_dialog("rm -rf target");
     let id = hook_dialog(&rig);
-    let sent = count(&rig, EventType::MessageSent);
     let reason = "this removes all of target/; remove only target/debug/foo, by name";
     let run = answer(&rig, &id.to_string(), "--deny", reason, &LEAD);
     assert_eq!(run.code, 0, "{}", run.all());
@@ -206,8 +217,7 @@ fn the_lead_denies_and_the_hook_reply_quotes_the_call_and_the_reason() {
         message.contains("Do not run this command another way"),
         "{message}"
     );
-    typed_nothing(&rig, from);
-    assert_eq!(count(&rig, EventType::MessageSent), sent);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -216,7 +226,6 @@ fn an_answer_to_a_dialog_that_changed_types_nothing_and_answers_nothing() {
     let from = launched(&rig, "done");
     let old = write_dialog(&rig, "Bash", json!({"command": "rmdir /usr"}), None, -1);
     let new = write_dialog(&rig, "Bash", json!({"command": "rmdir /opt"}), None, 60);
-    let sent = count(&rig, EventType::MessageSent);
     let run = answer(&rig, &old.to_string(), "--approve", "ok", &LEAD);
     assert_eq!(run.code, 1, "{}", run.all());
     assert!(run.err.contains("refused.expired"), "{}", run.err);
@@ -229,8 +238,7 @@ fn an_answer_to_a_dialog_that_changed_types_nothing_and_answers_nothing() {
     assert_eq!(run.code, 1, "{}", run.all());
     assert!(run.err.contains("refused.changed"), "{}", run.err);
     assert_eq!(count(&rig, EventType::DialogAnswered), 0);
-    typed_nothing(&rig, from);
-    assert_eq!(count(&rig, EventType::MessageSent), sent);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -244,7 +252,7 @@ fn an_answer_to_a_trust_dialog_is_refused() {
     assert_eq!(run.code, 1, "{}", run.all());
     assert!(run.err.contains("refused.no_dialog"), "{}", run.err);
     assert_eq!(count(&rig, EventType::DialogAnswered), 0);
-    typed_nothing(&rig, from);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -255,7 +263,6 @@ fn a_member_cannot_answer_even_with_its_token_unset() {
     rig.store()
         .write(|tx| tx.set_member_token_hash(&role("api"), &teamwire_store::token_hash("tok")))
         .unwrap();
-    let sent = count(&rig, EventType::MessageSent);
     // (name, environment, whether the refusal gets past `refuse_member` and
     // so is recorded as message.refused)
     let callers: [Caller<'_>; 4] = [
@@ -293,8 +300,7 @@ fn a_member_cannot_answer_even_with_its_token_unset() {
     }
     assert_eq!(count(&rig, EventType::DialogAnswered), 0);
     assert_eq!(state_of(&rig, &id), DialogState::Pending);
-    typed_nothing(&rig, from);
-    assert_eq!(count(&rig, EventType::MessageSent), sent);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -325,7 +331,7 @@ fn an_unanswerable_call_is_refused() {
         assert!(run.err.contains(says), "{}", run.err);
     }
     assert_eq!(count(&rig, EventType::DialogAnswered), 0);
-    typed_nothing(&rig, from);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -333,7 +339,6 @@ fn an_answer_no_hook_takes_exits_7() {
     let rig = Rig::new();
     let from = launched(&rig, "done");
     let id = write_dialog(&rig, "Bash", json!({"command": "rmdir /usr"}), None, 60);
-    let sent = count(&rig, EventType::MessageSent);
     let run = answer(&rig, &id.to_string(), "--deny", "not that folder", &LEAD);
     assert_eq!(run.code, 7, "{}", run.all());
     assert!(
@@ -349,8 +354,7 @@ fn an_answer_no_hook_takes_exits_7() {
     );
     assert_eq!(state_of(&rig, &id), DialogState::Answered);
     assert_eq!(count(&rig, EventType::DialogAnswered), 1);
-    typed_nothing(&rig, from);
-    assert_eq!(count(&rig, EventType::MessageSent), sent);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -405,7 +409,7 @@ fn a_codex_member_is_refused_with_refused_harness() {
         "{}",
         run.err
     );
-    typed_nothing(&rig, from);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -476,7 +480,7 @@ fn show_prints_the_command_and_types_nothing() {
         count(&rig, EventType::DialogAnswered) + count(&rig, EventType::DialogClosed),
         events
     );
-    typed_nothing(&rig, from);
+    typed_nothing(&rig, &from);
 }
 
 #[test]
@@ -501,5 +505,5 @@ fn show_escapes_control_and_invisible_characters_in_the_command() {
     for hidden in ['\u{1b}', '\u{202e}', '\u{200b}'] {
         assert!(!run.out.contains(hidden), "{hidden:?} printed raw");
     }
-    typed_nothing(&rig, from);
+    typed_nothing(&rig, &from);
 }
