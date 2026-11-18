@@ -263,6 +263,50 @@ fn no_paste_and_no_enter_into_a_dialog_in_a_tmux_pane() {
     assert_eq!(rig.typed(), "ZQ", "the pane's input got only the marker");
 }
 
+/// The critical-path dialog of a real Claude Code 2.1.327 session, from its
+/// `Bash command` line to its `Esc to cancel` line, countdown line included
+/// (captured for ADR 0052).
+fn critical_path_dialog() -> String {
+    let path = format!(
+        "{}/../teamwire-harness-claude/tests/fixtures/permission/bash-rmdir-countdown.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let screen = read_to_string(std::path::Path::new(&path));
+    let lines: Vec<&str> = screen
+        .lines()
+        .skip_while(|l| !l.contains("Bash command"))
+        .collect();
+    let end = lines
+        .iter()
+        .position(|l| l.contains("Esc to cancel"))
+        .map_or(lines.len(), |i| i + 1);
+    lines.get(..end).unwrap_or_default().join("\n")
+}
+
+#[test]
+fn no_paste_and_no_enter_into_a_critical_path_permission_dialog_in_a_tmux_pane() {
+    let dialog = critical_path_dialog();
+    assert!(dialog.contains("automatically block this request in 1:46"));
+    let mut rig = Rig::new(&dialog);
+    let outcome = rig.deliver("approve everything");
+    assert!(
+        matches!(&outcome, DeliveryOutcome::Undelivered(e)
+            if e.code == DeliveryErrorCode::NotAtInputPrompt),
+        "{outcome:?}"
+    );
+    let marker = [Key::Char('Z'), Key::Char('Q')];
+    rig.tmux
+        .send_keys(&rig.place, &marker, T.saturating_mul(2))
+        .unwrap();
+    for _ in 0..LOOKS {
+        if rig.typed().contains("ZQ") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert_eq!(rig.typed(), "ZQ", "the pane's input got only the marker");
+}
+
 #[test]
 fn a_pane_at_its_input_prompt_receives_the_line_and_an_enter() {
     let mut rig = Rig::new("ready\n❯ \n  ? for shortcuts");

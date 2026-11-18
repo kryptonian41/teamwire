@@ -1,0 +1,50 @@
+
+ ▐▛███▛█   Claude Code v2.1.327
+▝▜██████▀  Sonnet 5.5 · Claude Ultra
+ ▝▝   ▝▝   /work/exp/work
+
+  Fable 5.2 is here for your longest and toughest coding tasks. It draws down usage faster than Opus 5.5. Switch with /model.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                                                                                                                                  ◐ medium · /effort
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ Try "refactor <filepath>"
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents

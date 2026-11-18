@@ -3,7 +3,7 @@
 //! `InputPrompt` needs positive evidence and nothing else is trusted.
 
 use teamwire_core::screen::{has_any, squash, visible};
-use teamwire_core::{OneLine, ScreenState};
+use teamwire_core::{DialogKind, OneLine, ScreenState};
 
 /// Text of the plain folder-trust dialog.
 pub(crate) const PLAIN_TRUST_MARKERS: [&str; 2] =
@@ -18,6 +18,15 @@ pub(crate) const ESCALATION_MARKERS: [&str; 5] = [
     "headersHelper",
     "This folder adds",
     "pre-approves",
+];
+
+/// The question a tool-permission dialog asks, in Claude Code 2.1.327: Bash
+/// ("proceed"), Edit, Write ("create") and `WebFetch` ("allow").
+const PERMISSION_MARKERS: [&str; 4] = [
+    "Do you want to proceed?",
+    "Do you want to make this edit",
+    "Do you want to create",
+    "Do you want to allow",
 ];
 
 /// Text a permission or confirmation dialog shows.
@@ -228,6 +237,28 @@ fn holds_text(text: &str) -> bool {
         .and_then(|rest| rest.strip_suffix('"'))
         .is_some_and(|quoted| !quoted.contains('"'));
     !text.is_empty() && !placeholder
+}
+
+/// What kind of dialog `tail` shows (ADR 0052). The lines at the end are
+/// read first, then the whole tail, as `classify` reads them. Claude Code
+/// has no login or update marker here, so those dialogs read as `Unknown`.
+pub(crate) fn dialog_kind(tail: &str) -> DialogKind {
+    if classify(tail) != ScreenState::Dialog {
+        return DialogKind::NoDialog;
+    }
+    let near: Vec<&str> = last_lines(tail)
+        .into_iter()
+        .filter(|l| !is_transcript_line(l))
+        .collect();
+    for text in [squash(&near.join("\n")), squash(tail)] {
+        if has_any(&text, &PLAIN_TRUST_MARKERS) || has_any(&text, &ESCALATION_MARKERS) {
+            return DialogKind::Trust;
+        }
+        if has_any(&text, &PERMISSION_MARKERS) {
+            return DialogKind::Permission;
+        }
+    }
+    DialogKind::Unknown
 }
 
 pub(crate) fn classify(tail: &str) -> ScreenState {

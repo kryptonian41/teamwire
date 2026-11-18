@@ -7,8 +7,12 @@ mod env_platform;
 use std::sync::Arc;
 use std::time::Duration;
 
-use teamwire_core::{Address, MemberKind, MemberLaunch, OtelConfig, Role, SessionId, TeamName};
-use teamwire_fakes::contract::{HarnessSetup, harness_contract};
+use teamwire_core::{
+    Address, DialogKind, MemberKind, MemberLaunch, OtelConfig, Role, SessionId, TeamName,
+};
+use teamwire_fakes::contract::{
+    HarnessSetup, PermissionSetup, harness_contract, permission_contract,
+};
 use teamwire_fakes::{FakeHerdrEnv, PLAIN_TRUST_TEXT};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
@@ -92,5 +96,46 @@ fn claude_code_passes_the_harness_contract() {
         live_session: Some(SessionId::parse("contract-live").unwrap()),
         unknown_session: SessionId::parse("never-heard-of").unwrap(),
         timeout: Duration::from_secs(5),
+    });
+}
+
+#[expect(clippy::unwrap_used, reason = "a missing fixture fails the test")]
+fn permission_fixture(name: &str) -> String {
+    let path = format!(
+        "{}/tests/fixtures/permission/{name}",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    std::fs::read_to_string(&path).unwrap()
+}
+
+#[test]
+fn claude_code_passes_the_permission_contract() {
+    let claude = ClaudeCode::new(
+        Arc::new(teamwire_fakes::FakePlatform::new()),
+        ClaudeConfig {
+            claude_dir: "/nonexistent/.claude".into(),
+            claude_json: "/nonexistent/.claude.json".into(),
+            claude_bin: "claude".to_owned(),
+        },
+    );
+    let mut other: serde_json::Value =
+        serde_json::from_str(&permission_fixture("bash-rmdir.json")).unwrap();
+    other
+        .as_object_mut()
+        .unwrap()
+        .insert("tool_name".into(), serde_json::json!("AskUserQuestion"));
+    permission_contract(&PermissionSetup {
+        harness: Box::new(claude),
+        prompt_screen: permission_fixture("input-prompt.txt"),
+        named_screens: vec![
+            (
+                permission_fixture("bash-rmdir-countdown.txt"),
+                DialogKind::Permission,
+            ),
+            (permission_fixture("webfetch.txt"), DialogKind::Permission),
+            (PLAIN_TRUST_TEXT.to_owned(), DialogKind::Trust),
+        ],
+        answerable_stdin: Some(permission_fixture("bash-rmdir.json").into_bytes()),
+        other_tool_stdin: Some(other.to_string().into_bytes()),
     });
 }
