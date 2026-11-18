@@ -11,10 +11,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    Address, MemberKind, MemberLaunch, OtelConfig, Pid, Role, RunOutput, SessionId, TeamName,
+    Address, DialogKind, MemberKind, MemberLaunch, OtelConfig, Pid, Role, RunOutput, SessionId,
+    TeamName,
 };
 use teamwire_fakes::FakePlatform;
-use teamwire_fakes::contract::{HarnessSetup, harness_contract};
+use teamwire_fakes::contract::{
+    HarnessSetup, PermissionSetup, harness_contract, permission_contract,
+};
 use teamwire_harness_codex::{CodexCli, CodexConfig};
 
 #[test]
@@ -77,5 +80,52 @@ fn codex_passes_the_harness_contract() {
         live_session: Some(SessionId::parse(live).unwrap()),
         unknown_session: SessionId::parse("never-heard-of").unwrap(),
         timeout: Duration::from_secs(5),
+    });
+}
+
+// Copied from the snapshot files of Codex's TUI, as in `tests/screen.rs`.
+const APPROVAL: &str = "
+  Would you like to run the following command?
+
+  $ echo hello world
+
+
+› 1. Yes, proceed (y)
+  2. Yes, and don't ask again for commands that start with `echo hello world` (p)
+  3. No, and tell Codex what to do differently (esc)
+
+  Press enter to confirm or esc to cancel";
+
+const UPDATE: &str = "
+  Update available · 0.0.0 → 9.9.9
+  Release notes: https://github.com/openai/codex/releases/latest
+
+› 1. Update now (runs `npm install -g @openai/codex`)
+  2. Skip
+  3. Skip until next version
+
+  enter continue · esc skip";
+
+/// Codex names its dialogs from the screen and has no permission hook: its
+/// members run with approvals off, so `dialog answer` refuses them.
+#[test]
+fn codex_passes_the_permission_contract_with_no_hook() {
+    let codex = CodexCli::new(
+        Arc::new(FakePlatform::new()),
+        CodexConfig {
+            codex_home: "/nowhere/codex".into(),
+            codex_bin: "codex".into(),
+        },
+    );
+    permission_contract(&PermissionSetup {
+        harness: Box::new(codex),
+        prompt_screen:
+            "\n› Ask Codex to do anything\n\n  ? for shortcuts            100% context left".into(),
+        named_screens: vec![
+            (APPROVAL.to_owned(), DialogKind::Permission),
+            (UPDATE.to_owned(), DialogKind::Update),
+        ],
+        answerable_stdin: None,
+        other_tool_stdin: None,
     });
 }

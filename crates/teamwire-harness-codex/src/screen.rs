@@ -19,6 +19,15 @@ pub(crate) const MIGRATION_MARKER: &str = "Codex just got an upgrade";
 /// The resume picker that asks which folder to continue in (`cwd_prompt.rs`).
 pub(crate) const CWD_MARKER: &str = "Working directory";
 
+/// The question of each approval overlay: a tool-permission dialog.
+pub(crate) const APPROVAL_MARKERS: [&str; 5] = [
+    "Would you like to run the following command?",
+    "Would you like to make the following edits?",
+    "Would you like to grant these permissions?",
+    "Allow this request?",
+    "Do you want to approve network access",
+];
+
 /// Text a dialog or an approval overlay shows.
 const DIALOG_MARKERS: [&str; 12] = [
     TRUST_MARKER,
@@ -26,11 +35,11 @@ const DIALOG_MARKERS: [&str; 12] = [
     UPDATE_MARKER,
     MIGRATION_MARKER,
     CWD_MARKER,
-    "Would you like to run the following command?",
-    "Would you like to make the following edits?",
-    "Would you like to grant these permissions?",
-    "Allow this request?",
-    "Do you want to approve network access",
+    APPROVAL_MARKERS[0],
+    APPROVAL_MARKERS[1],
+    APPROVAL_MARKERS[2],
+    APPROVAL_MARKERS[3],
+    APPROVAL_MARKERS[4],
     "Press enter to confirm or esc to cancel",
     "Press enter to submit or esc to cancel",
 ];

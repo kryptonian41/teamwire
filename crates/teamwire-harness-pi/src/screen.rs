@@ -11,7 +11,7 @@
 //! chosen option. `tests/screens/` holds screens captured from pi 1.4.0.
 
 use teamwire_core::screen::{squash, visible};
-use teamwire_core::{OneLine, ScreenState};
+use teamwire_core::{DialogKind, OneLine, ScreenState};
 
 /// The project-trust dialog (`trust-selector.js`).
 pub(crate) const TRUST_MARKER: &str = "Trust project folder?";
@@ -114,6 +114,20 @@ fn box_text(tail: &str) -> Option<String> {
 
 /// The state delivery acts on: `classify`, except that a box holding text is
 /// `Unknown`, so a line is never appended to what a person half typed.
+/// What kind of dialog `tail` shows (ADR 0052). pi has no tool-approval
+/// prompt, so its only named dialog is the project trust dialog. An
+/// extension's dialog is one teamwire cannot name.
+pub(crate) fn dialog_kind(tail: &str) -> DialogKind {
+    if classify(tail) != ScreenState::Dialog {
+        return DialogKind::NoDialog;
+    }
+    if squash(&visible(tail, true)).contains(TRUST_MARKER) {
+        DialogKind::Trust
+    } else {
+        DialogKind::Unknown
+    }
+}
+
 pub(crate) fn delivery_state(tail: &str) -> ScreenState {
     let state = classify(tail);
     if state == ScreenState::InputPrompt && box_holds_text(tail) {

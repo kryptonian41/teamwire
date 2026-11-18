@@ -13,10 +13,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    Address, MemberKind, MemberLaunch, OtelConfig, Pid, Role, SessionId, TeamName, Timestamp,
+    Address, DialogKind, MemberKind, MemberLaunch, OtelConfig, Pid, Role, SessionId, TeamName,
+    Timestamp,
 };
 use teamwire_fakes::FakePlatform;
-use teamwire_fakes::contract::{HarnessSetup, harness_contract};
+use teamwire_fakes::contract::{
+    HarnessSetup, PermissionSetup, harness_contract, permission_contract,
+};
 use teamwire_harness_pi::{Pi, PiConfig};
 
 #[test]
@@ -77,5 +80,29 @@ fn pi_passes_the_harness_contract() {
         live_session: Some(SessionId::parse(live).unwrap()),
         unknown_session: SessionId::parse("never-heard-of").unwrap(),
         timeout: Duration::from_secs(5),
+    });
+}
+
+/// pi has no tool-approval prompt and no permission hook, so `dialog
+/// answer` refuses its members. Its trust dialog is named from the screen.
+#[test]
+fn pi_passes_the_permission_contract_with_no_hook() {
+    let pi = Pi::new(
+        Arc::new(FakePlatform::new()),
+        PiConfig {
+            agent_dir: "/nowhere/pi".into(),
+            pi_bin: "pi".into(),
+            exclude_providers: Vec::new(),
+        },
+    );
+    permission_contract(&PermissionSetup {
+        harness: Box::new(pi),
+        prompt_screen: include_str!("screens/prompt.txt").to_owned(),
+        named_screens: vec![(
+            include_str!("screens/trust.txt").to_owned(),
+            DialogKind::Trust,
+        )],
+        answerable_stdin: None,
+        other_tool_stdin: None,
     });
 }

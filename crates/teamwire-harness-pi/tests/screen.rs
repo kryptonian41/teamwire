@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, ScreenState, one_line};
+use teamwire_core::{DialogKind, Harness, ScreenState, one_line};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_pi::{Pi, PiConfig};
 
@@ -103,6 +103,26 @@ fn an_extension_dialog_in_the_box_is_a_dialog() {
     assert_eq!(pi().screen_state(&dialog), ScreenState::Dialog);
     let input = with_box(" Your name\n > \n enter submit  escape cancel");
     assert_eq!(pi().screen_state(&input), ScreenState::Dialog);
+}
+
+#[test]
+fn the_trust_dialog_is_a_trust_dialog() {
+    for screen in [TRUST, TRUST_STYLED] {
+        assert_eq!(pi().dialog_kind(screen), DialogKind::Trust);
+    }
+}
+
+#[test]
+fn an_extension_dialog_is_a_dialog_teamwire_cannot_name() {
+    let dialog =
+        with_box(" Allow tool call?\n → Yes\n   No\n ↑↓ navigate  enter select  escape cancel");
+    assert_eq!(pi().dialog_kind(&dialog), DialogKind::Unknown);
+}
+
+#[test]
+fn the_input_prompt_shows_no_dialog() {
+    assert_eq!(pi().dialog_kind(PROMPT), DialogKind::NoDialog);
+    assert_eq!(pi().dialog_kind(PROMPT_STYLED), DialogKind::NoDialog);
 }
 
 #[test]

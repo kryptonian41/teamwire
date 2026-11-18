@@ -8,12 +8,14 @@ use std::time::Duration;
 
 use teamwire_core::screen::{STARTUP_HOST_TIMEOUT, StartupPoll};
 use teamwire_core::{
-    HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome, TrustPolicy,
+    DialogKind, HarnessError, HarnessErrorCode, Host, Key, Place, ScreenState, StartupOutcome,
+    TrustPolicy,
 };
 
 use crate::screen::{
-    CWD_MARKER, HOOKS_REVIEW_MARKER, MIGRATION_MARKER, TRUST_MARKER, UPDATE_MARKER, classify,
-    has_any, is_selected_option, last_lines, last_pointer_text, pointer_rest, squash,
+    APPROVAL_MARKERS, CWD_MARKER, HOOKS_REVIEW_MARKER, MIGRATION_MARKER, TRUST_MARKER,
+    UPDATE_MARKER, classify, has_any, is_selected_option, last_lines, last_pointer_text,
+    pointer_rest, squash,
 };
 
 /// The sign-in choices (`onboarding/auth.rs`).
@@ -77,6 +79,26 @@ fn dialog_on(screen: &str) -> Option<Dialog> {
     .into_iter()
     .find(|(marker, _)| text.contains(marker))
     .map(|(_, dialog)| dialog)
+}
+
+/// What kind of dialog `screen` shows (ADR 0052): a startup dialog by its
+/// marker, else an approval overlay. Codex runs its members with approvals
+/// off, so an approval overlay is not expected, but it is named if it comes.
+pub(crate) fn dialog_kind(screen: &str) -> DialogKind {
+    match dialog_on(screen) {
+        Some(Dialog::Login) => DialogKind::Login,
+        Some(Dialog::Trust | Dialog::HooksReview) => DialogKind::Trust,
+        Some(Dialog::Update | Dialog::Migration) => DialogKind::Update,
+        Some(Dialog::Cwd) => DialogKind::Unknown,
+        None if classify(screen) == ScreenState::Dialog => {
+            if has_any(&squash(screen), &APPROVAL_MARKERS) {
+                DialogKind::Permission
+            } else {
+                DialogKind::Unknown
+            }
+        }
+        None => DialogKind::NoDialog,
+    }
 }
 
 /// The number in front of the option named `want`: `2` for `2. Skip`.

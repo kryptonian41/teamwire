@@ -32,10 +32,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
-    LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig, Pid,
-    Place, Platform, Role, ScreenState, SessionId, SessionUsage, StartupOutcome, TeamName,
-    ToolCall, TrustPolicy, TurnEnd,
+    CallerSession, DialogKind, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host,
+    LaunchSpec, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine,
+    OtelConfig, Pid, Place, Platform, Role, ScreenState, SessionId, SessionUsage, StartupOutcome,
+    TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 use crate::lead_extension::LEAD_SESSION_VAR;
@@ -219,6 +219,10 @@ impl Harness for Pi {
 
     fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError> {
         hook::parse_tool_call(stdin)
+    }
+
+    fn dialog_kind(&self, tail: &str) -> DialogKind {
+        screen::dialog_kind(tail)
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {
