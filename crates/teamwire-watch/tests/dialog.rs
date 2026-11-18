@@ -199,3 +199,33 @@ fn a_pending_dialog_leaves_the_stall_to_the_other_members() {
         "{events:?}"
     );
 }
+
+#[test]
+fn a_summary_with_hidden_characters_prints_them_escaped_on_one_line() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    bed.blocked("api");
+    // A bell, a screen-clearing ESC sequence, a right-to-left override and a
+    // newline, all in the command the member's model wrote.
+    let id = bed.dialog(
+        "api",
+        "echo \u{7}a\u{1b}[2Jb\u{202e}c\nrm -rf /",
+        Duration::from_secs(100),
+    );
+    let lines = polls(&mut bed, 3);
+    let events = all(&lines);
+    let mine: Vec<&String> = events
+        .iter()
+        .filter(|e| e.contains(&id.to_string()))
+        .collect();
+    assert_eq!(mine.len(), 1, "{events:?}");
+    let line = mine[0];
+    assert!(
+        line.contains(r"echo \u{7}a\u{1b}[2Jb\u{202e}c rm -rf /"),
+        "{line}"
+    );
+    assert!(
+        !line.chars().any(|c| c.is_control() || c == '\u{202e}'),
+        "{line:?}"
+    );
+}
