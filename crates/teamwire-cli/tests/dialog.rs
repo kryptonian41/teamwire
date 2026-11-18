@@ -281,6 +281,41 @@ fn an_answer_to_a_trust_dialog_is_refused() {
     typed_nothing(&rig, &from);
 }
 
+/// The critical-path dialog of a real Claude Code 2.1.327 session, from its
+/// `Bash command` line to its `Esc to cancel` line.
+fn critical_path_dialog() -> String {
+    let path = format!(
+        "{}/../teamwire-harness-claude/tests/fixtures/permission/bash-rmdir-countdown.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let screen = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<&str> = screen
+        .lines()
+        .skip_while(|l| !l.contains("Bash command"))
+        .collect();
+    let end = lines
+        .iter()
+        .position(|l| l.contains("Esc to cancel"))
+        .map_or(lines.len(), |i| i + 1);
+    lines[..end].join("\n")
+}
+
+#[test]
+fn show_names_both_causes_when_no_hook_recorded_the_dialog() {
+    let (rig, from) = drawing(&critical_path_dialog());
+    let shown = show(&rig);
+    assert!(
+        shown.out.contains(
+            "teamwire cannot answer this dialog: no permission hook recorded this dialog; the \
+             member may have started before teamwire had the hook, or the call's input was over \
+             1 MiB, more than the hook reads\n"
+        ),
+        "{}",
+        shown.out
+    );
+    typed_nothing(&rig, &from);
+}
+
 #[test]
 fn a_member_cannot_answer_even_with_its_token_unset() {
     let rig = Rig::new();

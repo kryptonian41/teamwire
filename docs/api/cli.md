@@ -546,7 +546,8 @@ screen (last 60 lines):
   `teamwire cannot answer this dialog: <why>`, with the first reason that
   holds: the member's harness has no permission hook; no permission hook
   recorded this dialog (the member may have started before teamwire had the
-  hook); the hook stopped waiting at a time, so Claude Code denies the call
+  hook, or the call's input was over 1 MiB, more than the hook reads, so the
+  hook recorded nothing); the hook stopped waiting at a time, so Claude Code denies the call
   on its own or, for a dialog with no countdown, it waits for a person in the
   pane; the dialog is unanswerable, with its reason; or the dialog was
   answered and the screen may not have redrawn yet.

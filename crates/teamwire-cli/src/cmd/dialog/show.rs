@@ -192,8 +192,11 @@ fn why_cannot_answer(member: &Member, hooked: bool, newest: Option<&DialogRecord
         );
     }
     let Some(newest) = newest else {
+        // The hook reads at most 1 MiB of input; a bigger call does not
+        // parse, so the hook records nothing for it either.
         return "no permission hook recorded this dialog; the member may have started before \
-                teamwire had the hook"
+                teamwire had the hook, or the call's input was over 1 MiB, more than the hook \
+                reads"
             .to_owned();
     };
     match newest.state {
