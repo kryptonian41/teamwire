@@ -1,9 +1,8 @@
 //! The `Harness` trait for Claude Code: launch argv, per-run `settings.json`
 //! and `mcp.json`, session files and `claude agents --json` for liveness,
 //! background-session detection, Stop and `PostToolUse` hook input, the
-//! `PermissionRequest` hook's input and reply and the dialog kind a screen
-//! shows (ADR 0052), the trust dialog, and the teamwire plugin that
-//! `teamwire install` writes.
+//! `PermissionRequest` hook and the dialog kind (ADR 0052), the trust
+//! dialog, and the teamwire plugin that `teamwire install` writes.
 //!
 //! Never: write under the user's `~/.claude/` except deleting an ADR 0012
 //! skill file during install or uninstall; write `~/.claude.json` at all;
