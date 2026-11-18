@@ -229,6 +229,52 @@ fn bedrocks_dotted_deepseek_reaches_the_hyphenated_evidence_name() {
     assert_eq!(unreached, ["deepseek-v3.2-exp"]);
 }
 
+#[test]
+fn openrouters_dotted_claude_reaches_the_hyphenated_evidence_name() {
+    let pi = ModelCatalog {
+        models: vec![
+            model(Some("openrouter"), "anthropic/claude-opus-5.5", &[], None),
+            model(
+                Some("openrouter"),
+                "anthropic/claude-opus-5.5:batch",
+                &[],
+                None,
+            ),
+            model(Some("openrouter"), "anthropic/claude-opus-5", &[], None),
+        ],
+        ..catalog()
+    };
+    let evidence = Evidence {
+        as_of: "2026-11-14".to_owned(),
+        entries: vec![
+            entry(TaskClass::Judgement, "claude-opus-5-5", "Board A", 1),
+            entry(TaskClass::Judgement, "claude-opus-4-6", "Board A", 2),
+        ],
+    };
+    let view = gather(
+        &fake(Ok(pi)),
+        Some(TaskClass::Judgement),
+        &evidence,
+        &report,
+    )
+    .unwrap();
+    let ev = &view.class.as_ref().unwrap().evidence;
+    let reached: Vec<(&str, Vec<String>)> = ev
+        .reachable
+        .iter()
+        .map(|r| (r.entry.model.as_str(), r.spec_values.clone()))
+        .collect();
+    assert_eq!(
+        reached,
+        [(
+            "claude-opus-5-5",
+            vec!["openrouter/anthropic/claude-opus-5.5".to_owned()]
+        )]
+    );
+    let unreached: Vec<&str> = ev.unreachable.iter().map(|e| e.model.as_str()).collect();
+    assert_eq!(unreached, ["claude-opus-4-6"]);
+}
+
 // ---- the model list ----
 
 #[test]

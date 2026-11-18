@@ -132,14 +132,39 @@ impl ModelCatalog {
 
     /// The rows that are the model a vendor calls `name`, under any
     /// harness's or provider's spelling: the rows whose id or alias has the
-    /// same `normalise_model` name.
+    /// same `normalise_model` name, with a dot between two digits read as a
+    /// hyphen (see `version_key`).
     pub fn same_model(&self, name: &str) -> Vec<&ModelInfo> {
-        let key = normalise_model(name);
+        let key = version_key(name);
         self.models
             .iter()
-            .filter(|row| names_of(row).any(|n| normalise_model(n) == key))
+            .filter(|row| names_of(row).any(|n| version_key(n) == key))
             .collect()
     }
+}
+
+/// The name `same_model` compares by: the `normalise_model` name with each
+/// dot between two digits written as a hyphen. A vendor and a provider can
+/// differ in that one character: Anthropic names `claude-opus-5-5`, and
+/// `OpenRouter` lists the same model as `anthropic/claude-opus-5.5`.
+///
+/// `matching` does not compare by this name. It answers what a harness
+/// starts for a spec's `model`, and pi's `--model` does not find
+/// `claude-opus-5.5` when given `claude-opus-5-5`.
+fn version_key(name: &str) -> String {
+    let chars: Vec<char> = normalise_model(name).chars().collect();
+    let digit_at = |i: Option<usize>| {
+        i.and_then(|i| chars.get(i))
+            .is_some_and(char::is_ascii_digit)
+    };
+    chars
+        .iter()
+        .enumerate()
+        .map(|(i, &c)| {
+            let joins_digits = digit_at(i.checked_sub(1)) && digit_at(i.checked_add(1));
+            if c == '.' && joins_digits { '-' } else { c }
+        })
+        .collect()
 }
 
 fn names_of(row: &ModelInfo) -> impl Iterator<Item = &String> {

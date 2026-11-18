@@ -1102,7 +1102,11 @@ into one score or names one best model:
   `provider/` part, leading words such as `us.` and `anthropic.`, and a
   trailing date or version such as `-20251101` or `-v1:0`. A leading word
   followed by a version keeps its place and joins with a hyphen, so
-  Bedrock's `deepseek.v3.2` matches `deepseek-v3.2`.
+  Bedrock's `deepseek.v3.2` matches `deepseek-v3.2`. A dot between two
+  digits also counts as a hyphen, so the evidence model `claude-opus-5-5`
+  matches OpenRouter's `anthropic/claude-opus-5.5`. Only this evidence match
+  reads the dot that way. A spec's `model` still has to spell the id as the
+  harness lists it.
 - **Your past teams** from the outcome report (`docs/metrics.md` section 6):
   the rows of the class, then how many `unclassified` rows and members no
   class can claim. The section shows counts and medians, never

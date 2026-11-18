@@ -197,3 +197,55 @@ fn same_model_finds_a_vendor_name_under_every_spelling() {
     assert_eq!(ids("deepseek-v3.2"), ["deepseek.v3.2"]);
     assert!(ids("opus").is_empty());
 }
+
+/// Rows spelled as pi 1.5.0 lists them through `OpenRouter` and Bedrock.
+fn dotted_rows() -> ModelCatalog {
+    ModelCatalog {
+        source: CatalogSource::Listed,
+        models: vec![
+            row(Some("openrouter"), "anthropic/claude-opus-5.5", &[]),
+            row(Some("openrouter"), "anthropic/claude-opus-5.5:batch", &[]),
+            row(Some("openrouter"), "anthropic/claude-opus-5", &[]),
+            row(Some("openrouter"), "openai/gpt-5.4", &[]),
+            row(Some("amazon-bedrock"), "us.anthropic.claude-opus-5-5", &[]),
+        ],
+        efforts: Vec::new(),
+    }
+}
+
+#[test]
+fn same_model_reads_a_dot_between_two_digits_as_a_hyphen() {
+    let catalog = dotted_rows();
+    let ids = |name: &str| -> Vec<&str> {
+        catalog
+            .same_model(name)
+            .iter()
+            .map(|r| r.id.as_str())
+            .collect()
+    };
+    let opus = ["anthropic/claude-opus-5.5", "us.anthropic.claude-opus-5-5"];
+    assert_eq!(ids("claude-opus-5-5"), opus);
+    assert_eq!(ids("claude-opus-5.5"), opus);
+    assert_eq!(ids("Claude-Opus-5-5-20260301"), opus);
+    assert_eq!(ids("gpt-5.4"), ["openai/gpt-5.4"]);
+    assert_eq!(ids("gpt-5-4"), ["openai/gpt-5.4"]);
+    // The version is still part of the name: Opus 5 is not Opus 5.5.
+    assert_eq!(ids("claude-opus-5"), ["anthropic/claude-opus-5"]);
+    assert!(ids("claude-opus-55").is_empty());
+}
+
+#[test]
+fn matching_keeps_a_dotted_and_a_hyphenated_version_apart() {
+    // pi's `--model` does not find `claude-opus-5.5` by `claude-opus-5-5`,
+    // so a spec that writes the hyphen names only the row spelled that way.
+    let catalog = dotted_rows();
+    assert_eq!(
+        named(&catalog, "claude-opus-5-5"),
+        ["amazon-bedrock/us.anthropic.claude-opus-5-5"]
+    );
+    assert_eq!(
+        named(&catalog, "openrouter/anthropic/claude-opus-5.5"),
+        ["openrouter/anthropic/claude-opus-5.5"]
+    );
+    assert!(named(&catalog, "openrouter/claude-opus-5-5").is_empty());
+}
