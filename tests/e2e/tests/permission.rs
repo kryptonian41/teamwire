@@ -70,14 +70,30 @@ fn at_dialog(w: &World) -> (Ulid, usize) {
 /// No key typed into any pane, and no prompt typed into the member's pane,
 /// after call `from`.
 fn typed_nothing(w: &World, from: usize) {
+    let place = w
+        .store("demo")
+        .read(|tx| tx.member(&Role::parse("a").unwrap()))
+        .unwrap()
+        .unwrap()
+        .place
+        .unwrap()
+        .id;
     let calls: Vec<String> = w.herdr.calls()[from..]
         .iter()
         .map(|c| c.argv.join(" "))
         .collect();
+    let prompt = format!("agent prompt {place} ");
+    // Launch typed the task this way, so the filter below can match.
+    assert!(
+        w.herdr.calls()[..from]
+            .iter()
+            .any(|c| c.argv.join(" ").starts_with(&prompt)),
+        "launch typed no task into {place}"
+    );
     assert!(
         !calls
             .iter()
-            .any(|c| c.starts_with("agent send-keys") || c.starts_with("agent prompt tw_demo_a")),
+            .any(|c| c.starts_with("agent send-keys") || c.starts_with(&prompt)),
         "{calls:?}"
     );
 }
