@@ -18,6 +18,8 @@ pub(crate) struct Settings {
     pub(crate) env: Vec<(String, String)>,
     /// The commands of the `Stop` hooks, in file order.
     pub(crate) stop_hooks: Vec<String>,
+    /// The commands of the `PermissionRequest` hooks, in file order.
+    pub(crate) permission_hooks: Vec<String>,
 }
 
 impl Settings {
@@ -35,17 +37,24 @@ impl Settings {
                     .collect()
             })
             .unwrap_or_default();
-        let stop_hooks = doc
-            .pointer("/hooks/Stop")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter_map(|group| group.get("hooks").and_then(Value::as_array))
-            .flatten()
-            .filter_map(|h| h.get("command").and_then(Value::as_str).map(str::to_owned))
-            .collect();
-        Ok(Self { env, stop_hooks })
+        Ok(Self {
+            env,
+            stop_hooks: hook_commands(&doc, "Stop"),
+            permission_hooks: hook_commands(&doc, "PermissionRequest"),
+        })
     }
+}
+
+/// The commands of the `event` hooks, in file order.
+fn hook_commands(doc: &Value, event: &str) -> Vec<String> {
+    doc.pointer(&format!("/hooks/{event}"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|group| group.get("hooks").and_then(Value::as_array))
+        .flatten()
+        .filter_map(|h| h.get("command").and_then(Value::as_str).map(str::to_owned))
+        .collect()
 }
 
 /// What a finished shell command left.
@@ -219,12 +228,13 @@ mod tests {
         let path = dir.path().join("settings.json");
         fsutil::write_atomic(
             &path,
-            br#"{"env":{"A":"1","N":5},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"},{"type":"command","command":"y"}]}],"PostToolUse":[{"hooks":[{"command":"z"}]}]}}"#,
+            br#"{"env":{"A":"1","N":5},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"x"},{"type":"command","command":"y"}]}],"PostToolUse":[{"hooks":[{"command":"z"}]}],"PermissionRequest":[{"hooks":[{"command":"p","timeout":110}]}]}}"#,
         )
         .unwrap();
         let s = Settings::load(&path).unwrap();
         assert_eq!(s.env, [("A".to_owned(), "1".to_owned())]);
         assert_eq!(s.stop_hooks, ["x", "y"]);
+        assert_eq!(s.permission_hooks, ["p"]);
     }
 
     #[test]

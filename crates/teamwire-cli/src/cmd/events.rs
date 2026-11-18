@@ -6,7 +6,8 @@ use std::process::ExitCode;
 
 use serde::Serialize;
 use serde_json::Value;
-use teamwire_core::TeamName;
+use teamwire_core::{TeamName, shown};
+use teamwire_deliver::agent_text;
 use teamwire_store::{Store, StoreError, database_path};
 
 use crate::cmd::shared::{REFUSED, STORE, carries_member_identity, fail, home_or_refuse, say};
@@ -82,8 +83,11 @@ pub(crate) fn run(args: &EventsArgs, global: &Global, _wiring: &crate::wiring::W
         }
     } else {
         for row in &view.events {
+            let call = dialog_column(&row.kind, &row.data)
+                .map(|c| format!(" {c}"))
+                .unwrap_or_default();
             say(&format!(
-                "{} {} {} {} {}\n",
+                "{} {} {} {} {}{call}\n",
                 row.time,
                 row.seq,
                 row.kind,
@@ -93,6 +97,41 @@ pub(crate) fn run(args: &EventsArgs, global: &Global, _wiring: &crate::wiring::W
         }
     }
     ExitCode::SUCCESS
+}
+
+/// The sixth column of a dialog row: the call, the lead's verdict and
+/// reason, or how the dialog closed (ADR 0052). The model's text goes through
+/// `shown`, then onto one line, so it reads as it does in the watch line.
+fn dialog_column(kind: &str, data: &Value) -> Option<String> {
+    let text = |key: &str, max: usize| {
+        agent_text(
+            &shown(data.get(key).and_then(Value::as_str).unwrap_or("")),
+            max,
+        )
+    };
+    match kind {
+        "dialog.opened" => {
+            let why = data
+                .get("why_not")
+                .and_then(Value::as_str)
+                .map(|_| format!(" (cannot answer: {})", text("why_not", 200)))
+                .unwrap_or_default();
+            Some(format!(
+                "{}: {}{why}",
+                text("tool", 40),
+                text("summary", 120)
+            ))
+        }
+        "dialog.answered" => Some(format!(
+            "{} {} {}: {}",
+            text("verdict", 20),
+            text("tool", 40),
+            text("summary", 80),
+            text("reason", 120)
+        )),
+        "dialog.closed" => Some(text("outcome", 20)),
+        _ => None,
+    }
 }
 
 fn locate(

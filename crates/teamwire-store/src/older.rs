@@ -34,6 +34,8 @@ const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[("team", "refs")],
     // Version 11 rebuilds `events` with one more type and adds no column.
     &[],
+    // Version 12 rebuilds events with three more types and adds no column.
+    &[],
 ];
 
 /// Shows the columns that a database at version `db` lacks as NULL, on a

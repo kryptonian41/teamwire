@@ -21,6 +21,9 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |
 | `member.held` | the report check or unread messages hold a member | `gaps`, `unread` |
+| `dialog.opened` | a member's permission hook records a call its harness asks permission for (ADR 0052); the event's ULID is the dialog id | `session`, `generation`, `subagent`, `tool`, `summary`, `input` (the whole tool input, or null over 64 KiB), `why_not` (null when the lead may answer), `expires_at` |
+| `dialog.answered` | the lead's `teamwire dialog answer` records an answer to a pending dialog; `subject` is the dialog id | `verdict` (`approve`, `deny`), `reason`, `by` (`lead`), `tool`, `summary` |
+| `dialog.closed` | the hook took the answer, gave up at its 100 s wait, or the call is one teamwire does not answer; `subject` is the dialog id | `outcome` (`taken`, `expired`, `unanswerable`), `verdict` (null unless taken) |
 | `member.removed` | removal | `unverified`, `stopped` |
 | `message.sent`, `message.refused` | send stores or refuses | `type`, `sender_kind` (`lead`, `member`, `user`, `other_team`), `recipients`, `chars`; `reason` |
 | `delivery.handed_off`, `.unconfirmed`, `.undelivered` | outcome per recipient | `route`, `attempts`, `code`, `seconds` since `message.sent` |

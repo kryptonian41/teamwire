@@ -344,3 +344,12 @@ fn the_pi_skill_names_amend() {
     let skill = file(&files, "skills/teamwire/SKILL.md");
     assert!(skill.contains("teamwire amend"), "{skill}");
 }
+
+#[test]
+fn the_pi_skill_names_dialog_answer() {
+    let bed = Bed::new();
+    let shared = include_str!("../../../examples/skills/teamwire/SKILL.md");
+    let files = bed.pi().package_files(&want(), shared).unwrap();
+    let skill = file(&files, "skills/teamwire/SKILL.md");
+    assert!(skill.contains("teamwire dialog answer"), "{skill}");
+}

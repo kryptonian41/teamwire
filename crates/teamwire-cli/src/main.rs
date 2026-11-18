@@ -19,6 +19,7 @@ mod cmd {
     pub(crate) mod amend;
     pub(crate) mod close;
     pub(crate) mod decisions;
+    pub(crate) mod dialog;
     pub(crate) mod doctor;
     pub(crate) mod doctor_speckit;
     pub(crate) mod doctor_speckit_files;
@@ -63,11 +64,11 @@ const USAGE: u8 = 3;
 
 pub(crate) use args::{
     AckArgs, AfkArgs, AfkCommand, AfkStartArgs, AmendArgs, Cli, CloseArgs, Command, DecisionsArgs,
-    DoneArgs, EventsArgs, ExportArgs, Global, HandoffArgs, HookArgs, HookCommand, HookTarget,
-    InboxArgs, InstallArgs, LaunchArgs, LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs,
-    MetricsCommand, ModelsArgs, PrWatchArgs, PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs,
-    SendArgs, SpeckitArgs, SpeckitCommand, SpeckitDraftArgs, StatusArgs, TeamsArgs, UninstallArgs,
-    VerifyArgs, WatchArgs,
+    DialogAnswerArgs, DialogArgs, DialogCommand, DialogShowArgs, DoneArgs, EventsArgs, ExportArgs,
+    Global, HandoffArgs, HookArgs, HookCommand, HookTarget, InboxArgs, InstallArgs, LaunchArgs,
+    LeadArgs, LogArgs, McpArgs, MembersArgs, MetricsArgs, MetricsCommand, ModelsArgs, PrWatchArgs,
+    PresetArgs, ReceivedArgs, ReopenArgs, ResendArgs, SendArgs, SpeckitArgs, SpeckitCommand,
+    SpeckitDraftArgs, StatusArgs, TeamsArgs, UninstallArgs, VerifyArgs, WatchArgs,
 };
 
 fn main() -> ExitCode {
@@ -92,6 +93,7 @@ fn main() -> ExitCode {
         Command::Status(a) => cmd::status::run(a, global, &wiring),
         Command::Verify(a) => cmd::verify::run(a, global, &wiring),
         Command::Amend(a) => cmd::amend::run(a, global, &wiring),
+        Command::Dialog(a) => cmd::dialog::run(a, global, &wiring),
         Command::Close(a) => cmd::close::run(a, global, &wiring),
         Command::Send(a) => cmd::send::run(a, global, &wiring),
         Command::Resend(a) => cmd::resend::run(a, global, &wiring),

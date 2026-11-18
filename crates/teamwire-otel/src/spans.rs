@@ -80,6 +80,9 @@ pub(crate) fn spans_ending(h: &History, e: &Event, team: &str, team_ulid: &str) 
         | EventType::MemberRemoved
         | EventType::MemberReprompted
         | EventType::MemberWoken
+        | EventType::DialogOpened
+        | EventType::DialogAnswered
+        | EventType::DialogClosed
         | EventType::MemberHandoff
         | EventType::MemberCompletionRefused
         | EventType::MemberHeld

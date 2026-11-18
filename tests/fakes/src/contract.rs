@@ -10,11 +10,13 @@
 mod harness;
 mod host;
 mod lead_setup;
+mod permission;
 mod platform;
 
 pub use harness::{HarnessSetup, harness_contract};
 pub use host::{HostSetup, host_contract};
 pub use lead_setup::{LeadSetupSetup, lead_setup_contract};
+pub use permission::{PermissionSetup, permission_contract};
 pub use platform::{EnvProbe, PlatformSetup, RunCase, RunExpect, platform_contract};
 
 use std::fmt::Debug;

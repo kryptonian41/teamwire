@@ -358,6 +358,28 @@ fn the_finish_section_does_not_repeat_the_blocked_command_rule() {
     }
 }
 
+/// Every seat learns that its lead may answer a permission dialog, and that a
+/// denied command is not run another way (ADR 0052).
+#[test]
+fn every_kind_learns_a_lead_may_answer_its_dialog_and_a_denial_is_not_retried() {
+    for kind in MemberKind::ALL {
+        let text = render(*kind);
+        assert!(
+            text.contains("Your lead may read that dialog and answer it."),
+            "{kind}"
+        );
+        assert!(
+            text.contains("the denial itself quotes the\n  command and gives the lead's reason"),
+            "{kind}"
+        );
+        assert!(
+            text.contains("Do not run that command another way"),
+            "{kind}"
+        );
+        assert!(!text.contains("Nobody answers that dialog"), "{kind}");
+    }
+}
+
 /// The nothing-to-do case records done, so the seat's "done means the check
 /// passed" names it as an exception (D26).
 #[test]

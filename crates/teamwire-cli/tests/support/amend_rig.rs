@@ -10,7 +10,7 @@ use teamwire_core::{
     CompletionStatus, FinalSource, Member, Message, MessageType, Recipient, Role, TeamName,
     Timestamp,
 };
-use teamwire_fakes::{FakeHerdrEnv, TestHome};
+use teamwire_fakes::{ClaudeScript, FakeHerdrEnv, TestHome};
 use teamwire_store::{MessageFilter, NewCompletion, Store};
 
 #[derive(Debug)]
@@ -107,10 +107,29 @@ impl Rig {
         }
     }
 
+    /// A rig whose `fake-claude` members follow `script`.
+    pub fn with_script(script: &ClaudeScript) -> Self {
+        let mut rig = Self::new();
+        rig.herdr.set_script(script).unwrap();
+        rig
+    }
+
     /// Launches team `alpha` with the worktree implementer `api`, whose
     /// check is `check` and owns `owns`, from a repository that holds
     /// `files`. Waits for its first turn to end. Returns its worktree.
     pub fn launch(&self, check: &str, owns: &[&str], files: &[(&str, &str)]) -> PathBuf {
+        self.launch_until(check, owns, files, "done")
+    }
+
+    /// `launch`, waiting until `api`'s pane reads `status` instead: a
+    /// script that stops at a dialog never ends its first turn.
+    pub fn launch_until(
+        &self,
+        check: &str,
+        owns: &[&str],
+        files: &[(&str, &str)],
+        status: &str,
+    ) -> PathBuf {
         let repo = self.work.path().join("proj");
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -127,7 +146,7 @@ impl Rig {
              "task": "build", "check": check, "owns": owns}]});
         let run = self.teamwire_with(&["launch"], Some(&spec.to_string()), &[]);
         assert_eq!(run.code, 0, "launch: {}", run.all());
-        self.wait_for_status("done");
+        self.wait_for_status(status);
         repo.join(".worktrees/api")
     }
 

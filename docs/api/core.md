@@ -177,6 +177,7 @@ names in `docs/metrics.md` section 1:
 team.created team.closing team.closed team.lead_adopted team.refs_added
 member.creating member.started member.failed member.refused member.replaced member.removed member.reprompted member.woken member.handoff
 member.completed member.completion_refused member.held
+dialog.opened dialog.answered dialog.closed
 message.sent message.refused
 delivery.handed_off delivery.unconfirmed delivery.undelivered delivery.acked delivery.reminded delivery.resent delivery.reentered delivery.recipient_stopped
 result.delivering result.delivered result.undelivered result.unconfirmed
@@ -360,6 +361,18 @@ pub trait Harness: Send + Sync {
     /// Codex parse their `PostToolUse` input; pi parses the input teamwire's
     /// lead extension writes.
     fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError>;
+    /// What kind of dialog the screen `tail` shows (ADR 0052). Default
+    /// `CannotTell`, for a harness that cannot read its own dialogs. Claude
+    /// Code, Codex and pi name the kind from their screen markers.
+    fn dialog_kind(&self, tail: &str) -> DialogKind;
+    /// Parse a permission hook's stdin into the neutral request (ADR 0052).
+    /// Default `Unsupported`: the harness has no permission hook, and
+    /// `dialog answer` refuses its members. Only Claude Code has one.
+    fn parse_permission_request(&self, stdin: &[u8]) -> Result<PermissionRequest, HarnessError>;
+    /// The bytes the permission hook prints for `decision`: allow this one
+    /// call, or deny it with the decision's message. It never writes a rule,
+    /// changes the input or stops the turn. Default `Unsupported`.
+    fn permission_reply(&self, decision: &PermissionDecision) -> Result<Vec<u8>, HarnessError>;
     /// Classify a screen tail for delivery: at the input prompt with an empty
     /// box, showing a dialog, or unknown. A box holding text is `Unknown`, so
     /// delivery waits and then refuses with `not_at_input_prompt`. Text drawn
@@ -605,6 +618,50 @@ type-checks and routes per member, because both harnesses (`claude-code` and
 harness or host id no adapter registers has its deliveries `undelivered` with
 `unknown_adapter`, and its launch is refused.
 
+## 6a2. Permission dialogs (`teamwire_core::dialog`, ADR 0052)
+
+The types a harness's permission hook and the lead's `dialog` commands share.
+Nothing here names a lasting grant or a key.
+
+```rust
+pub enum DialogKind { NoDialog /* "none" */, Permission, Trust, Login, Update, Unknown,
+                      CannotTell /* "cannot_tell": the harness cannot read its dialogs */ }
+pub enum DialogVerdict { Approve, Deny }
+/// Read from the events, never stored as a column.
+pub enum DialogState { Pending, Answered, Taken, Expired, Unanswerable }
+
+pub struct PermissionRequest { pub session: SessionId, pub subagent: bool, pub tool: String,
+                               pub summary: String,                    // at most SUMMARY_MAX chars
+                               pub input: Option<serde_json::Value>,   // None over PERMISSION_INPUT_MAX
+                               pub why_not: Option<String> }           // None: the lead may answer
+impl PermissionRequest { pub fn answerable(&self) -> bool; }
+pub struct PermissionAnswer { pub verdict: DialogVerdict, pub reason: String }
+pub struct PermissionDecision { pub verdict: DialogVerdict,
+                                pub message: Option<String> }          // a denial's whole text
+
+/// A denial's message, word for word:
+///   DIALOG DENIED: the lead refused this <tool> call (dialog <id>):
+///   <summary>
+///   Reason: <reason>
+///   Do not run this command another way, such as in a script, another shell or
+///   another tool. Change your approach, or ask your lead.
+pub fn decision_for(id: &Ulid, request: &PermissionRequest, answer: &PermissionAnswer)
+    -> PermissionDecision;
+/// Every character `one_line` drops, written as `\u{XXXX}`: control characters
+/// except newline and tab, and Unicode's Default_Ignorable set (bidi controls,
+/// zero-width characters). Every text a lead reads about a call goes through it.
+pub fn shown(text: &str) -> String;
+/// `at` as the UTC time of day, `HH:MM:SSZ`: the "answer by" time of a watch line.
+pub fn clock_time(at: Timestamp) -> String;
+
+pub const PERMISSION_WAIT: Duration = 100 s;        // the hook's wait; Claude Code denies at 120 s
+pub const PERMISSION_HOOK_TIMEOUT_S: u64 = 110;     // the hook's settings timeout
+pub const ANSWER_TAKE_WAIT: Duration = 5 s;         // dialog answer waits this long for "taken"
+pub const PERMISSION_INPUT_MAX: usize = 65_536;     // JSON bytes the lead may answer
+pub const SUMMARY_MAX: usize = 2_000;
+pub const DENIED_MARKER: &str = "DIALOG DENIED:";
+```
+
 ## 6b. Supporting types
 
 The shapes T01 must write, so that T06 (which produces `LaunchSpec`) and T08
@@ -810,6 +867,42 @@ pub type TeamRead = Result<Option<OpenTeam>, StoreError>;     // Ok(None): a dat
 pub fn open_teams(home: &Path, lead: Option<&SessionId>) -> Result<Vec<(TeamName, TeamRead)>, StoreError>;
 ```
 
+Permission dialogs (`crates/teamwire-store/src/dialog.rs`, ADR 0052) are three event types and
+no table. The `dialog.opened` row's ULID is the dialog id; the other two rows name it as
+`subject`. A dialog's state is read from its rows: a `dialog.closed` row gives its outcome;
+otherwise `now >= expires_at` gives `Expired`, so a hook that died never leaves a dialog
+pending; otherwise a `dialog.answered` row gives `Answered`; otherwise `Pending`.
+
+```rust
+pub struct DialogRecord { pub id: Ulid, pub role: Role, pub generation: u32,
+                          pub opened_at: Timestamp, pub expires_at: Timestamp,
+                          pub request: PermissionRequest, pub state: DialogState,
+                          pub answer: Option<PermissionAnswer>,
+                          pub answered_at: Option<Timestamp>, pub closed_at: Option<Timestamp> }
+pub enum AnswerOutcome { Recorded(Box<DialogRecord>),
+                         NoDialog,                  // no dialog.opened row with this id for this role
+                         Changed,                   // an earlier session or generation of the member
+                         NotPending(DialogState) }  // answered, taken, expired or unanswerable
+impl Tx<'_> {
+    /// dialog.opened; for a request that is not answerable also dialog.closed `unanswerable`.
+    pub fn open_dialog(&self, at: Timestamp, role: &Role, generation: u32,
+                       request: &PermissionRequest, expires_at: Timestamp) -> Result<Ulid, StoreError>;
+    /// Writes dialog.answered only while the dialog is pending at `at`, of the member's
+    /// current session and generation. The check and the write share one BEGIN IMMEDIATE.
+    pub fn answer_dialog(&self, at: Timestamp, role: &Role, id: &Ulid,
+                         answer: &PermissionAnswer) -> Result<AnswerOutcome, StoreError>;
+    /// dialog.closed: `taken` with the answer when one is recorded (even past expires_at),
+    /// else `expired`. None, and nothing written, for a dialog already closed.
+    pub fn close_dialog(&self, at: Timestamp, id: &Ulid) -> Result<Option<PermissionAnswer>, StoreError>;
+}
+impl ReadTx<'_> {
+    pub fn dialog(&self, id: &Ulid, now: Timestamp) -> Result<Option<DialogRecord>, StoreError>;
+    pub fn dialogs_of_role(&self, role: &Role, now: Timestamp) -> Result<Vec<DialogRecord>, StoreError>; // newest first
+}
+/// Pure, newest first by seq, so the watch reuses its events_of_role rows.
+pub fn dialogs_from(events: &[Event], now: Timestamp) -> Vec<DialogRecord>;
+```
+
 A command treats `NoDatabase` as "no such team", not as a broken store.
 `team_names(home)` lists every team that has a database, sorted by name; it
 is the one scan of `<home>/teams` every command uses. `user_key_path(home)`
@@ -843,7 +936,7 @@ metric-export writes `claim_metric_export` (whose `up_to: Option<u64>` limit sto
 `release_metric_claim`. The list is in the `Tx` doc comment
 (`crates/teamwire-store/src/tx.rs`).
 
-The schema is version 11: `crates/teamwire-store/src/schema/v1.sql` to `v11.sql`,
+The schema is version 12: `crates/teamwire-store/src/schema/v1.sql` to `v12.sql`,
 applied in order. Version 2 adds `team.closing_pid_started_at` and
 `metric_export.claimed_by_started_at`: the start time of the pid beside
 each, NULL when the platform could not read it (ADR 0002 decision 8).
@@ -868,7 +961,10 @@ refs, because two `--add` runs may each have passed `validate`'s check before ei
 read-only open of an older database reads `refs` as empty. Version 11 (`src/schema/v11.sql`)
 rebuilds `events` with the `member.woken` type, as version 10 did, and keeps every row, every
 `seq` and the AUTOINCREMENT counter (ADR 0043). The step only goes forward: a database at
-version 11 cannot be opened by an older binary. The tables and columns are those in
+version 11 cannot be opened by an older binary. Version 12 (`src/schema/v12.sql`) rebuilds
+`events` the same way with three more types, `dialog.opened`, `dialog.answered` and
+`dialog.closed`, and adds no table and no column: a dialog's state is read from its events
+(ADR 0052). The tables and columns are those in
 `ARCHITECTURE.md`, "Data model". Constraints
 that carry integrity:
 

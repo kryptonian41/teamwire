@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use teamwire_core::{Liveness, Member, PlaceState};
+use teamwire_core::{DialogKind, Liveness, Member, PlaceState};
 use teamwire_store::{Ctx, Party};
 
 /// Every call the watch makes to a harness or host is bounded.
@@ -88,4 +88,20 @@ pub(crate) fn observe(ctx: &Ctx<'_>, member: &Member, listings: &mut Listings) -
         (Some(seen), _) => Seen::Alive(seen),
         (None, _) => Seen::NoInfo,
     }
+}
+
+/// Screen lines the watch reads to name a dialog.
+const DIALOG_LINES: u16 = 60;
+
+/// The kind of dialog the member's screen shows, as its harness reads it.
+/// One bounded screen read; any failure gives `Unknown`.
+pub(crate) fn dialog_kind_of(ctx: &Ctx<'_>, member: &Member) -> DialogKind {
+    let Ok((harness, host)) = ctx.adapters(&Party::Member(member.role.clone())) else {
+        return DialogKind::Unknown;
+    };
+    member
+        .place
+        .as_ref()
+        .and_then(|place| host.read_tail(place, DIALOG_LINES, CALL_TIMEOUT).ok())
+        .map_or(DialogKind::Unknown, |tail| harness.dialog_kind(&tail))
 }

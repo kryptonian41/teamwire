@@ -9,7 +9,9 @@ use teamwire_core::{
     Timestamp, Ulid,
 };
 use teamwire_deliver::AttemptHistory;
-use teamwire_store::{CompletionRecord, Ctx, ReadTx, StoreError, TeamRow, database_path};
+use teamwire_store::{
+    CompletionRecord, Ctx, DialogRecord, ReadTx, StoreError, TeamRow, database_path, dialogs_from,
+};
 
 use crate::text::{STALLS_ENDED, blocked_prefix, silent_prefix};
 
@@ -47,6 +49,9 @@ pub(crate) struct MemberInfo {
     pub blocked_seen: u32,
     /// The handoff point the spec set, if any.
     pub context_handoff_tokens: Option<u64>,
+    /// The permission dialogs its hook recorded in the current generation,
+    /// newest first.
+    pub dialogs: Vec<DialogRecord>,
 }
 
 /// A question to the lead that did not get there cleanly.
@@ -93,14 +98,15 @@ pub(crate) fn run_start(member: &Member, started: Option<Timestamp>) -> Timestam
     started.map_or(member.gen_started_at, |s| s.max(member.gen_started_at))
 }
 
-fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError> {
-    let started = tx
-        .events_of_role(&member.role)?
-        .all_or_corrupt()?
-        .into_iter()
+fn member_info(tx: &ReadTx<'_>, member: Member, now: Timestamp) -> Result<MemberInfo, StoreError> {
+    let events = tx.events_of_role(&member.role)?.all_or_corrupt()?;
+    let started = events
+        .iter()
         .rev()
         .find(|e| e.kind == EventType::MemberStarted)
         .map(|e| e.time);
+    let mut dialogs = dialogs_from(&events, now);
+    dialogs.retain(|d| d.generation == member.generation);
     let run_start = run_start(&member, started);
     let completion = tx
         .latest_completion(&member.role)?
@@ -112,6 +118,7 @@ fn member_info(tx: &ReadTx<'_>, member: Member) -> Result<MemberInfo, StoreError
         member,
         run_start,
         completion,
+        dialogs,
     })
 }
 
@@ -218,7 +225,7 @@ pub(crate) fn read(ctx: &Ctx<'_>) -> Result<Option<Snapshot>, StoreError> {
                 closer_missing = false;
             }
             if matches!(member.state, MemberState::Creating | MemberState::Started) {
-                members.push(member_info(tx, member)?);
+                members.push(member_info(tx, member, ctx.clock.now())?);
             }
         }
         let announced = tx

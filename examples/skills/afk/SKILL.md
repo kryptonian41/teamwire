@@ -173,6 +173,16 @@ this in the report, so the user can see which checks the run skipped.
 - `TEAM-STALLED` is yours to handle. Run `teamwire status`, read the pane,
   and replace the member once. If the replacement stalls too, cut the unit
   and report it.
+- Answer a `BLOCKED <role> permission` line first, in the turn it arrives,
+  with `teamwire dialog answer` ("A member at a permission dialog" in
+  `reference.md`). Never replace a member whose dialog is pending: its
+  session is the one waiting for your answer, and the watch does not count
+  it as stalled. In an AFK run the user approved nothing beyond the task,
+  the brief, the plan and `afk/decisions.md`, and never approves the actions
+  in section 2 point 5. So deny every command that crosses them, and say
+  what to do instead. A trust, login or update dialog cannot be answered by
+  anyone in an AFK run: replace the member once, or cut the unit, and list
+  it under **Risks**.
 - `teamwire status <team>` shows the time left in the budget. Launch the
   last implementer no later than two thirds of the way through it, so the
   review, the closer and the report still fit. Past the budget, launch

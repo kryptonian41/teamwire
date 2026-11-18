@@ -6,13 +6,14 @@ use std::collections::HashSet;
 use std::time::Duration;
 
 use teamwire_core::{
-    CompletionStatus, DeliveryErrorCode, DeliveryState, LeadRoute, MemberState, ReportState, Role,
-    Timestamp, Ulid,
+    CompletionStatus, DeliveryErrorCode, DeliveryState, DialogState, LeadRoute, MemberState,
+    ReportState, Role, Timestamp, Ulid,
 };
 use teamwire_store::{CompletionRecord, Ctx, Party};
 
+use crate::dialog::{blocked_line, countdown_runs, dialog_key, dialog_line};
 use crate::memory::{MemberMemory, WatchMemory, slept_since};
-use crate::observe::{Activity, Listings, Seen, observe};
+use crate::observe::{Activity, Listings, Seen, dialog_kind_of, observe};
 use crate::snapshot::{MemberInfo, Question, Snapshot};
 use crate::text::{
     STALLED_PREFIX, age, agent_text, asks_the_parent, blocked_key, context_key, died_key, late_key,
@@ -562,18 +563,49 @@ fn judge_running(env: &mut Env<'_>, info: &MemberInfo, mm: &mut MemberMemory) ->
         Seen::Absent | Seen::NoInfo => {}
     }
 
+    // A pending dialog the member's hook recorded waits for the lead's
+    // answer, as a question round does: one line per dialog, and the member
+    // is neither stuck nor silent, so it never makes the team stalled.
+    let pending: Vec<_> = info
+        .dialogs
+        .iter()
+        .filter(|d| d.state == DialogState::Pending)
+        .collect();
+    if !pending.is_empty() {
+        for dialog in pending {
+            env.announce(dialog_key(dialog), "BLOCKED", dialog_line(role, dialog));
+        }
+        mm.blocked_open = true;
+        mm.quiet = 0;
+        return Verdict {
+            asking: true,
+            ..Verdict::waiting()
+        };
+    }
+
     let mut stuck = false;
     if seen == Seen::Alive(Activity::Blocked) {
         mm.blocked_open = true;
-        stuck = true;
-        env.announce(
-            blocked_key(role, generation, mm.blocked_ep),
-            "BLOCKED",
-            format!("BLOCKED {role}"),
-        );
+        // A dialog whose hook gave up is denied by the harness's own
+        // countdown a little later. Until then the member is neither stuck
+        // nor worth a line: a stall line here would tell the lead to
+        // replace a member that is about to carry on.
+        let settles_alone = countdown_runs(&info.dialogs, env.now, Duration::from_secs(cfg.poll_s));
+        stuck = !settles_alone;
+        // One screen read per episode names the dialog.
+        if stuck && !mm.blocked_line_out {
+            let kind = dialog_kind_of(env.ctx, &info.member);
+            env.announce(
+                blocked_key(role, generation, mm.blocked_ep),
+                "BLOCKED",
+                blocked_line(role, kind),
+            );
+            mm.blocked_line_out = true;
+        }
     } else if matches!(seen, Seen::Alive(_)) && mm.blocked_open {
         mm.blocked_ep += 1;
         mm.blocked_open = false;
+        mm.blocked_line_out = false;
     }
     if mm.quiet >= cfg.silent_polls {
         mm.silent_open = true;

@@ -1,13 +1,14 @@
 //! The `Harness` trait for Claude Code: launch argv, per-run `settings.json`
 //! and `mcp.json`, session files and `claude agents --json` for liveness,
 //! background-session detection, Stop and `PostToolUse` hook input, the
-//! trust dialog, and the teamwire plugin that `teamwire install` writes.
+//! `PermissionRequest` hook and the dialog kind (ADR 0052), the trust
+//! dialog, and the teamwire plugin that `teamwire install` writes.
 //!
 //! Never: write under the user's `~/.claude/` except deleting an ADR 0012
 //! skill file during install or uninstall; write `~/.claude.json` at all;
 //! change Claude Code's setup other than through `claude plugin` and
 //! `claude mcp remove` (ADR 0018); answer the escalated trust dialog; register a member's hook
-//! or MCP server globally.
+//! or MCP server globally; print a permission reply that grants more than one call.
 //!
 //! Invariants: every Claude path comes from `ClaudeConfig`, so tests point
 //! them at a temporary directory; the member's identity travels in the
@@ -20,6 +21,7 @@ mod launch;
 mod lead_setup;
 mod lead_start;
 mod models;
+mod permission;
 mod screen;
 mod session;
 mod tool;
@@ -37,10 +39,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use teamwire_core::{
-    CallerSession, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host, LaunchSpec,
-    LeadSetup, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine, OtelConfig,
-    Pid, Place, Platform, Role, ScreenState, SessionId, StartupOutcome, TeamName, ToolCall,
-    TrustPolicy, TurnEnd,
+    CallerSession, DialogKind, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host,
+    LaunchSpec, LeadSetup, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine,
+    OtelConfig, PermissionDecision, PermissionRequest, Pid, Place, Platform, Role, ScreenState,
+    SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -190,6 +192,18 @@ impl Harness for ClaudeCode {
 
     fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError> {
         hook::parse_tool_call(stdin)
+    }
+
+    fn dialog_kind(&self, tail: &str) -> DialogKind {
+        screen::dialog_kind(tail)
+    }
+
+    fn parse_permission_request(&self, stdin: &[u8]) -> Result<PermissionRequest, HarnessError> {
+        permission::parse(stdin)
+    }
+
+    fn permission_reply(&self, decision: &PermissionDecision) -> Result<Vec<u8>, HarnessError> {
+        Ok(permission::reply(decision))
     }
 
     fn screen_state(&self, tail: &str) -> ScreenState {

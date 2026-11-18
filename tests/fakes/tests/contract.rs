@@ -14,8 +14,8 @@ use teamwire_core::{
     TeamName,
 };
 use teamwire_fakes::contract::{
-    EnvProbe, HarnessSetup, HostSetup, PlatformSetup, RunCase, harness_contract, host_contract,
-    platform_contract,
+    EnvProbe, HarnessSetup, HostSetup, PermissionSetup, PlatformSetup, RunCase, harness_contract,
+    host_contract, permission_contract, platform_contract,
 };
 use teamwire_fakes::{
     ESCALATED_TRUST_TEXT, FakeHarness, FakeHost, FakePlatform, Fault, PLAIN_TRUST_TEXT,
@@ -133,6 +133,39 @@ fn harness_setup(harness: &FakeHarness) -> HarnessSetup<'_> {
 #[test]
 fn fake_harness_passes_harness_contract() {
     harness_contract(&harness_setup(&FakeHarness::new()));
+}
+
+/// `FakeHarness` keeps the trait's defaults: it cannot tell its dialog kind
+/// and has no permission hook (ADR 0052).
+fn permission_setup() -> PermissionSetup {
+    PermissionSetup {
+        harness: Box::new(FakeHarness::new()),
+        prompt_screen: "ready\n> ".into(),
+        named_screens: Vec::new(),
+        answerable_stdin: None,
+        other_tool_stdin: None,
+    }
+}
+
+#[test]
+fn fake_harness_passes_the_permission_contract_with_no_hook() {
+    permission_contract(&permission_setup());
+}
+
+#[test]
+#[should_panic(expected = "dialog_kind must name this screen trust, got cannot_tell")]
+fn permission_contract_fails_when_a_named_screen_is_not_named() {
+    let mut setup = permission_setup();
+    setup.named_screens = vec![(PLAIN_TRUST_TEXT.into(), teamwire_core::DialogKind::Trust)];
+    permission_contract(&setup);
+}
+
+#[test]
+#[should_panic(expected = "parse_permission_request must succeed here")]
+fn permission_contract_fails_when_a_harness_claims_a_hook_it_has_not() {
+    let mut setup = permission_setup();
+    setup.answerable_stdin = Some(br#"{"tool_name":"Bash"}"#.to_vec());
+    permission_contract(&setup);
 }
 
 #[test]

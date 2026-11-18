@@ -335,6 +335,18 @@ impl FakeHerdrEnv {
             .ok_or_else(|| std::io::Error::other(format!("no unnamed agent made: {out:?}")))
     }
 
+    /// How each `permission` step of a `fake-claude` session ended, oldest
+    /// first: `{"by": "hook"|"key"|"timeout", "decision": "allow"|"deny",
+    /// "message": <text or null>}`, read from `<claude dir>/permission/`.
+    pub fn permission_outcomes(&self, session: &str) -> Vec<Value> {
+        let dir = self.claude_dir().join("permission");
+        (1..)
+            .map(|n| dir.join(format!("{session}-{n}.json")))
+            .map_while(|path| fsutil::read_text(&path))
+            .filter_map(|text| serde_json::from_str(&text).ok())
+            .collect()
+    }
+
     /// The session files `fake-claude` processes have written and not yet
     /// removed.
     pub fn session_files(&self) -> Vec<PathBuf> {

@@ -9,6 +9,7 @@
 
 mod agents;
 mod mcp;
+mod permission;
 mod plugin;
 mod script;
 mod settings;
@@ -49,6 +50,14 @@ enum Event {
     Key(String),
 }
 
+/// What one look at the input found.
+enum Polled {
+    Got(Event),
+    Nothing,
+    /// Input has ended.
+    Ended,
+}
+
 impl Input {
     fn from_env() -> Self {
         if let Some(dir) = std::env::var_os("FAKE_PANE_DIR") {
@@ -76,42 +85,53 @@ impl Input {
             if owner.gone() {
                 return None;
             }
-            match self {
-                Self::Pane {
-                    dir,
-                    prompts_seen,
-                    keys_seen,
-                } => {
-                    let (name, seen) = if dialog_open {
-                        ("keys", &mut *keys_seen)
-                    } else {
-                        ("inbox", &mut *prompts_seen)
-                    };
-                    let text = fsutil::read_text(&dir.join(name)).unwrap_or_default();
-                    if let Some(line) = text.lines().nth(*seen) {
-                        *seen += 1;
-                        return Some(if dialog_open {
-                            Event::Key(line.to_owned())
-                        } else {
-                            let prompt = serde_json::from_str::<String>(line)
-                                .unwrap_or_else(|_| line.to_owned());
-                            Event::Prompt(prompt)
-                        });
+            match self.poll(dialog_open) {
+                Polled::Got(event) => return Some(event),
+                Polled::Ended => return None,
+                Polled::Nothing => {
+                    if matches!(self, Self::Pane { .. }) {
+                        std::thread::sleep(Duration::from_millis(15));
                     }
-                    std::thread::sleep(Duration::from_millis(15));
                 }
-                Self::Stdin(rx) => match rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(line) => {
-                        return Some(if dialog_open {
-                            Event::Key(line)
-                        } else {
-                            Event::Prompt(line)
-                        });
-                    }
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                    Err(mpsc::RecvTimeoutError::Disconnected) => return None,
-                },
             }
+        }
+    }
+
+    /// One look for a prompt or key. A stdin read waits up to 100 ms.
+    fn poll(&mut self, dialog_open: bool) -> Polled {
+        match self {
+            Self::Pane {
+                dir,
+                prompts_seen,
+                keys_seen,
+            } => {
+                let (name, seen) = if dialog_open {
+                    ("keys", &mut *keys_seen)
+                } else {
+                    ("inbox", &mut *prompts_seen)
+                };
+                let text = fsutil::read_text(&dir.join(name)).unwrap_or_default();
+                let Some(line) = text.lines().nth(*seen) else {
+                    return Polled::Nothing;
+                };
+                *seen += 1;
+                Polled::Got(if dialog_open {
+                    Event::Key(line.to_owned())
+                } else {
+                    let prompt =
+                        serde_json::from_str::<String>(line).unwrap_or_else(|_| line.to_owned());
+                    Event::Prompt(prompt)
+                })
+            }
+            Self::Stdin(rx) => match rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(line) => Polled::Got(if dialog_open {
+                    Event::Key(line)
+                } else {
+                    Event::Prompt(line)
+                }),
+                Err(mpsc::RecvTimeoutError::Timeout) => Polled::Nothing,
+                Err(mpsc::RecvTimeoutError::Disconnected) => Polled::Ended,
+            },
         }
     }
 }
@@ -216,8 +236,13 @@ impl Session {
         self.pane_dir.as_ref().map(|d| d.join(STEP_FILE))
     }
 
-    fn run_step(&mut self, step: &Step) {
+    fn run_step(&mut self, step: &Step, input: &mut Input) {
         match step {
+            Step::Permission {
+                tool,
+                input: tool_input,
+                timeout_ms,
+            } => self.permission(tool, tool_input, *timeout_ms, input),
             Step::BackgroundTasks(tasks) => self.background_tasks.clone_from(tasks),
             Step::Print(text) => say(text),
             Step::SleepMs(ms) => std::thread::sleep(Duration::from_millis(*ms)),
@@ -287,7 +312,7 @@ impl Session {
     }
 
     /// One prompt: its steps, then the end of the turn.
-    fn turn(&mut self, n: usize, prompt: &str) -> Option<ExitCode> {
+    fn turn(&mut self, n: usize, prompt: &str, input: &mut Input) -> Option<ExitCode> {
         // Counted before the turn's first status, which carries it, so no
         // reader sees the prompt taken while the old status still shows.
         self.prompts += 1;
@@ -303,7 +328,7 @@ impl Session {
         self.set_status("working");
         self.background_tasks.clear();
         for step in self.script.turn(n).to_vec() {
-            self.run_step(&step);
+            self.run_step(&step, input);
         }
         let fault = self.script.fault;
         if fault == Fault::NeverStop && self.owner.sleep(Duration::from_secs(3600)) {
@@ -321,7 +346,7 @@ impl Session {
                 };
                 say(&format!("Stop hook feedback: {reason}"));
                 for step in self.script.on_hold.clone() {
-                    self.run_step(&step);
+                    self.run_step(&step, input);
                 }
                 active = true;
             }
@@ -484,7 +509,7 @@ pub fn run(argv: &[String]) -> ExitCode {
     let mut turns = 0;
     while let Some(event) = input.next(false, &mut session.owner) {
         if let Event::Prompt(text) = event {
-            if let Some(code) = session.turn(turns, &text) {
+            if let Some(code) = session.turn(turns, &text, &mut input) {
                 return code;
             }
             turns += 1;

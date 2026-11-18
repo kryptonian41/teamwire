@@ -31,7 +31,7 @@ struct Bed {
 }
 
 /// The wiring of a command run with no environment, with every real harness.
-fn real_wiring() -> Wiring {
+pub(super) fn real_wiring() -> Wiring {
     wire(&WiringEnv {
         herdr_env: None,
         tmux: None,

@@ -11,7 +11,8 @@ use crate::fill;
 use serde_json::{Map, Value, json};
 use teamwire_core::{
     Config, Fill, HarnessError, HarnessErrorCode, IdentityChannel, LaunchFile, LaunchSpec,
-    MIN_HANDOFF_TOKENS, MemberLaunch, OtelConfig, Role, SessionId, TeamName,
+    MIN_HANDOFF_TOKENS, MemberLaunch, OtelConfig, PERMISSION_HOOK_TIMEOUT_S, Role, SessionId,
+    TeamName,
 };
 
 const PRIVATE: u32 = 0o600;
@@ -150,6 +151,10 @@ fn settings_json(m: &MemberLaunch) -> Result<Value, HarnessError> {
         json!({
             "Stop": hook_entry(m, "claude-stop", Some(Config::default().hook_timeout_s)),
             "PostToolUse": hook_entry(m, "claude-post-tool", None),
+            // No matcher: every tool's dialog reaches the hook, which
+            // records the call and leaves the ones it cannot answer
+            // to Claude Code's own countdown (ADR 0052).
+            "PermissionRequest": hook_entry(m, "permission", Some(PERMISSION_HOOK_TIMEOUT_S)),
         }),
     );
     // The lead plugin is always off in a member, whatever the spec says: a

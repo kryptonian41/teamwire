@@ -12,11 +12,12 @@ use std::time::Duration;
 
 use serde_json::json;
 use teamwire_core::{
-    Actor, CallerSession, Clock, CompletionStatus, Config, DeliveryError, DeliveryErrorCode, Fill,
-    FinalSource, Harness, HarnessCaps, HarnessError, HarnessId, Host, HostId, LaunchSpec,
-    LeadRoute, Liveness, Member, MemberKind, MemberLaunch, MemberState, MessageType, Mode,
-    Occupant, OtelConfig, Pid, Place, PlaceState, Recipient, Registry, ReportState, Role, Route,
-    ScreenState, SessionId, StartupOutcome, TeamName, ToolRun, TrustPolicy, TurnEnd, Ulid,
+    Actor, CallerSession, Clock, CompletionStatus, Config, DeliveryError, DeliveryErrorCode,
+    DialogKind, Fill, FinalSource, Harness, HarnessCaps, HarnessError, HarnessId, Host, HostId,
+    LaunchSpec, LeadRoute, Liveness, Member, MemberKind, MemberLaunch, MemberState, MessageType,
+    Mode, Occupant, OtelConfig, PermissionRequest, Pid, Place, PlaceState, Recipient, Registry,
+    ReportState, Role, Route, ScreenState, SessionId, StartupOutcome, TeamName, ToolRun,
+    TrustPolicy, TurnEnd, Ulid,
 };
 use teamwire_fakes::{FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_store::{Ctx, NewCompletion, NewMember, NewMessage, NewTeam, ResultOutcome, Store};
@@ -30,6 +31,8 @@ struct FillHarness {
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
     reads: Arc<Mutex<Vec<SessionId>>>,
     tools: Arc<Mutex<HashMap<SessionId, ToolRun>>>,
+    /// The dialog kind every screen reads as, and how often one was read.
+    kind: Arc<Mutex<(DialogKind, usize)>>,
 }
 
 impl Harness for FillHarness {
@@ -89,6 +92,11 @@ impl Harness for FillHarness {
     ) -> Result<Option<ToolRun>, HarnessError> {
         Ok(self.tools.lock().unwrap().get(s).cloned())
     }
+    fn dialog_kind(&self, _tail: &str) -> DialogKind {
+        let mut kind = self.kind.lock().unwrap();
+        kind.1 += 1;
+        kind.0
+    }
 }
 
 pub const TEAM: &str = "alpha";
@@ -108,6 +116,7 @@ pub struct Bed {
     fills: Arc<Mutex<HashMap<SessionId, Fill>>>,
     reads: Arc<Mutex<Vec<SessionId>>>,
     tools: Arc<Mutex<HashMap<SessionId, ToolRun>>>,
+    kind: Arc<Mutex<(DialogKind, usize)>>,
     pub memory: WatchMemory,
     places: HashMap<String, Place>,
 }
@@ -149,11 +158,13 @@ impl Bed {
         let fills = Arc::new(Mutex::new(HashMap::new()));
         let reads = Arc::new(Mutex::new(Vec::new()));
         let tools = Arc::new(Mutex::new(HashMap::new()));
+        let kind = Arc::new(Mutex::new((DialogKind::NoDialog, 0)));
         let wrapped = FillHarness {
             inner: harness.clone(),
             fills: fills.clone(),
             reads: reads.clone(),
             tools: tools.clone(),
+            kind: kind.clone(),
         };
         registry.add_harness(Arc::new(wrapped)).unwrap();
         registry.add_host(host.clone()).unwrap();
@@ -169,6 +180,7 @@ impl Bed {
             fills,
             reads,
             tools,
+            kind,
             memory: WatchMemory::default(),
             places: HashMap::new(),
         }
@@ -361,6 +373,37 @@ impl Bed {
     /// What the harness reads as the tool call the member's session runs.
     pub fn tool(&self, name: &str, run: ToolRun) {
         self.tools.lock().unwrap().insert(Self::session(name), run);
+    }
+
+    /// The dialog kind the harness reads on every screen from now on. The
+    /// member's screen gets one line, so a read of it succeeds.
+    pub fn screen_kind(&self, name: &str, kind: DialogKind) {
+        self.host.set_screen(self.place(name), "a dialog\n");
+        self.kind.lock().unwrap().0 = kind;
+    }
+
+    /// How many screens the harness was asked to name a dialog in.
+    pub fn kind_reads(&self) -> usize {
+        self.kind.lock().unwrap().1
+    }
+
+    /// Records a pending permission dialog of the member's current session
+    /// for `command`, as its hook would, open for `open_for`.
+    pub fn dialog(&mut self, name: &str, command: &str, open_for: Duration) -> Ulid {
+        let member = self.member(name);
+        let now = self.clock.now();
+        let request = PermissionRequest {
+            session: Self::session(name),
+            subagent: false,
+            tool: "Bash".to_owned(),
+            summary: command.to_owned(),
+            input: Some(json!({ "command": command })),
+            why_not: None,
+        };
+        let expires = now.checked_add(open_for).unwrap();
+        self.store
+            .write(|tx| tx.open_dialog(now, &member.role, member.generation, &request, expires))
+            .unwrap()
     }
 
     /// How many times the harness was asked for the member's context fill.

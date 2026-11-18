@@ -296,6 +296,32 @@ fn post_tool_hook_names_team_and_role() {
     );
 }
 
+/// The permission hook answers a dialog only within Claude Code's own 120 s
+/// countdown: it waits 100 s, and Claude Code ends it at 110 s (ADR 0052).
+#[test]
+fn permission_hook_names_team_and_role_and_stops_before_the_countdown() {
+    let spec = claude().launch_spec(&member()).unwrap();
+    let settings = file_json(&spec, "settings.json");
+    let groups = &settings["hooks"]["PermissionRequest"];
+    assert!(groups.is_array(), "no PermissionRequest hook in {settings}");
+    let groups = groups.as_array().unwrap();
+    assert_eq!(groups.len(), 1);
+    assert_eq!(groups[0].get("matcher"), None, "every tool, no matcher");
+    let hook = &groups[0]["hooks"][0];
+    assert_eq!(hook["type"], "command");
+    assert_eq!(
+        hook["command"],
+        "/usr/local/bin/teamwire hook permission --team demo --role api"
+    );
+    assert_eq!(hook["timeout"], 110);
+    assert_eq!(teamwire_core::PERMISSION_HOOK_TIMEOUT_S, 110);
+    let wait = teamwire_core::PERMISSION_WAIT.as_secs();
+    assert!(wait < teamwire_core::PERMISSION_HOOK_TIMEOUT_S);
+    // Claude Code denies a dialog with a countdown on its own at 120 s.
+    let countdown_s = 120;
+    assert!(teamwire_core::PERMISSION_HOOK_TIMEOUT_S < countdown_s);
+}
+
 #[test]
 fn hook_command_quotes_a_binary_path_with_a_space() {
     let mut m = member();

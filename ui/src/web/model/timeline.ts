@@ -180,6 +180,20 @@ export function describe(row: EventRow, resultN: number | null = null): { label:
     }
     case "member.completion_refused":
       return { label: who && `${who}'s completion refused`, details: oneLine(str(d, "reason") ?? "") || null };
+    // A member's permission hook recorded a call, and the lead's answer to
+    // it (teamwire ADR 0052). None of the three is a problem or routine.
+    case "dialog.opened": {
+      const tool = str(d, "tool");
+      const summary = str(d, "summary");
+      return { label: who && `${who} at a permission dialog`, details: tool === null ? summary : summary === null ? tool : `${tool}: ${summary}` };
+    }
+    case "dialog.answered": {
+      const v = str(d, "verdict");
+      const how = v === "approve" ? "approved by the lead" : v === "deny" ? "denied by the lead" : "answered by the lead";
+      return { label: who && `${who}'s dialog ${how}`, details: join([str(d, "summary"), str(d, "reason")]) };
+    }
+    case "dialog.closed":
+      return { label: who && `${who}'s dialog closed`, details: str(d, "outcome") };
     case "member.held": {
       const g = d["gaps"];
       const gaps = typeof g === "object" && g !== null ? (g as Data) : {};

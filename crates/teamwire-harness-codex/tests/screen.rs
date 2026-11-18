@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, ScreenState, one_line};
+use teamwire_core::{DialogKind, Harness, ScreenState, one_line};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_codex::{CodexCli, CodexConfig};
 
@@ -134,6 +134,47 @@ const MIGRATION: &str = "
   2. Use existing model
 
   enter/esc confirm · ⌃c quit";
+
+fn kind(tail: &str) -> DialogKind {
+    codex().dialog_kind(tail)
+}
+
+// onboarding/auth.rs line 1361
+const LOGIN: &str =
+    "  Welcome to Codex\n\n> 1. Sign in with ChatGPT\n  2. Sign in with Device Code";
+
+#[test]
+fn an_approval_overlay_is_a_permission_dialog() {
+    assert_eq!(kind(APPROVAL), DialogKind::Permission);
+}
+
+#[test]
+fn the_trust_and_hooks_review_dialogs_are_trust() {
+    assert_eq!(kind(TRUST), DialogKind::Trust);
+    assert_eq!(kind(HOOKS_REVIEW), DialogKind::Trust);
+}
+
+#[test]
+fn the_update_and_migration_dialogs_are_update() {
+    assert_eq!(kind(UPDATE), DialogKind::Update);
+    assert_eq!(kind(MIGRATION), DialogKind::Update);
+}
+
+#[test]
+fn the_sign_in_dialog_is_login() {
+    assert_eq!(kind(LOGIN), DialogKind::Login);
+}
+
+#[test]
+fn the_resume_folder_picker_is_a_dialog_teamwire_cannot_name() {
+    assert_eq!(kind(CWD), DialogKind::Unknown);
+}
+
+#[test]
+fn the_idle_composer_and_a_working_turn_show_no_dialog() {
+    assert_eq!(kind(IDLE), DialogKind::NoDialog);
+    assert_eq!(kind(WORKING), DialogKind::NoDialog);
+}
 
 #[test]
 fn the_idle_composer_with_its_footer_is_a_prompt() {

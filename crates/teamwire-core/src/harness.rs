@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::config::OtelConfig;
+use crate::dialog::{DialogKind, PermissionDecision, PermissionRequest};
 use crate::host::{Host, HostError, PlaceState};
 use crate::lead_setup::LeadSetup;
 use crate::lead_start::{LeadStart, LeadStartSpec};
@@ -81,6 +82,23 @@ pub trait Harness: Send + Sync {
     /// Parse the lead's tool hook stdin into the neutral form (ADR 0035).
     /// The default is `Unsupported`, and the hook then says nothing.
     fn parse_tool_call(&self, _stdin: &[u8]) -> Result<ToolCall, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
+    /// What kind of dialog the screen `tail` shows (ADR 0052). The default is
+    /// `CannotTell`, for a harness that cannot read its own dialogs.
+    fn dialog_kind(&self, _tail: &str) -> DialogKind {
+        DialogKind::CannotTell
+    }
+    /// Parse a permission hook's stdin into the neutral request. The default is
+    /// `Unsupported`: the harness has no permission hook, and `dialog answer`
+    /// refuses its members.
+    fn parse_permission_request(&self, _stdin: &[u8]) -> Result<PermissionRequest, HarnessError> {
+        Err(HarnessError::unsupported())
+    }
+    /// The bytes the permission hook prints for `decision`. It allows this one
+    /// call, or denies it with the decision's message. It never writes a rule,
+    /// changes the input or stops the turn. The default is `Unsupported`.
+    fn permission_reply(&self, _decision: &PermissionDecision) -> Result<Vec<u8>, HarnessError> {
         Err(HarnessError::unsupported())
     }
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.

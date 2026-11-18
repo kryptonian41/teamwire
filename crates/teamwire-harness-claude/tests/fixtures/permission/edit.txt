@@ -1,0 +1,50 @@
+ ▝▝   ▝▝   /work/exp/work
+
+  Fable 5.2 is here for your longest and toughest coding tasks. It draws down usage faster than Opus 5.5. Switch with /model.
+  1 more notice hidden (ctrl+o to expand)
+
+❯ Run exactly this one Bash command and nothing else, then stop: echo askme hello
+
+  Ran 1 shell command
+
+⏺ askme hello
+
+✻ Cooked for 4s · done 3:21 PM
+
+❯ Now use the Write tool to create the file new.txt in the current folder with the content 'hello'. Do nothing else, then stop.
+
+⏺ Write(new.txt)
+  ⎿  Wrote 1 line to new.txt
+      1 hello
+
+⏺ I created new.txt in the current folder with the content hello.
+
+✻ Churned for 2s · done 3:21 PM
+
+❯ Now use the WebFetch tool once to fetch https://example.com and say its title. Do nothing else, then stop.
+
+⏺ Fetch(https://example.com)
+  ⎿  Received 577 bytes (200 OK)
+
+⏺ The page title is "Example Domain."
+
+✻ Cogitated for 6s · done 3:21 PM
+
+❯ Now use the Edit tool to change 'hi' to 'bye' in edit-me.txt. Do nothing else, then stop.
+
+  Read 1 file
+
+⏺ Update(edit-me.txt)
+
+──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ Edit file
+ edit-me.txt
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ 1 -hi
+ 1 +bye
+╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌
+ Do you want to make this edit to edit-me.txt?
+ ❯ 1. Yes
+   2. No
+
+ Esc to cancel · Tab to amend

@@ -1,5 +1,6 @@
-//! `teamwire hook`: the per-member Stop and `PostToolUse` hooks, and the lead's
-//! Stop and tool hooks (`hook/lead.rs`); always exits 0.
+//! `teamwire hook`: the per-member Stop and `PostToolUse` hooks, a member's
+//! permission hook (`hook/permission.rs`), and the lead's Stop and tool hooks
+//! (`hook/lead.rs`); always exits 0.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -18,6 +19,7 @@ use crate::wiring::Wiring;
 use crate::{Global, HookArgs, HookCommand, HookTarget};
 
 mod lead;
+mod permission;
 
 /// More hook input than this is not read; Claude Code's is a few kilobytes.
 const STDIN_LIMIT: u64 = 1 << 20;
@@ -32,6 +34,7 @@ pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode
             member_hook(t, MemberHook::PostTool, global, wiring)
         }
         HookCommand::SessionStart(t) => member_hook(t, MemberHook::SessionStart, global, wiring),
+        HookCommand::Permission(t) => permission::permission_hook(t, global, wiring),
         HookCommand::ClaudeLeadStop => lead::lead_stop_hook(None, global, wiring),
         HookCommand::LeadStop(a) => lead::lead_stop_hook(a.harness.as_deref(), global, wiring),
         HookCommand::LeadTool(a) => lead::lead_tool_hook(a.harness.as_deref(), global, wiring),
@@ -73,13 +76,7 @@ fn member_hook(
             target.role.clone().or(role_var)?,
         )
     } else {
-        let (team_var, role_var) = (team_var?, role_var?);
-        if target.team.as_deref().is_some_and(|t| t != team_var)
-            || target.role.as_deref().is_some_and(|r| r != role_var)
-        {
-            return None;
-        }
-        (team_var, role_var)
+        same_member(target, team_var, role_var)?
     };
     // From here on the session is a member's, so every way out says why on
     // stderr: a hook that does nothing must not look like one that worked.
@@ -98,6 +95,22 @@ fn member_hook(
         wiring,
         &mut stdin,
     )
+}
+
+/// The team and role a member session's environment names, when they match
+/// the command line's; `None` for any other session (ADR 0008 point 4).
+fn same_member(
+    target: &HookTarget,
+    team_var: Option<String>,
+    role_var: Option<String>,
+) -> Option<(String, String)> {
+    let (team_var, role_var) = (team_var?, role_var?);
+    if target.team.as_deref().is_some_and(|t| t != team_var)
+        || target.role.as_deref().is_some_and(|r| r != role_var)
+    {
+        return None;
+    }
+    Some((team_var, role_var))
 }
 
 /// The store opens before standard input is parsed, because the member's own

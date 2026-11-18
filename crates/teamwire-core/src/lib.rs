@@ -14,6 +14,7 @@ mod strings;
 
 pub mod completion;
 pub mod config;
+pub mod dialog;
 pub mod event;
 pub mod exclude;
 pub mod harness;
@@ -41,6 +42,11 @@ pub mod who;
 
 pub use completion::{Completion, CompletionStatus, FinalSource, ReportGaps, ReportState};
 pub use config::{Config, OtelConfig};
+pub use dialog::{
+    ANSWER_TAKE_WAIT, DENIED_MARKER, DialogKind, DialogState, DialogVerdict, PERMISSION_COUNTDOWN,
+    PERMISSION_HOOK_TIMEOUT_S, PERMISSION_INPUT_MAX, PERMISSION_WAIT, PermissionAnswer,
+    PermissionDecision, PermissionRequest, SUMMARY_MAX, clock_time, decision_for, shown,
+};
 pub use event::{Event, EventType};
 pub use harness::{
     CallerSession, DEFAULT_HANDOFF_PCT, Fill, Harness, HarnessCaps, HarnessError, HarnessErrorCode,
