@@ -51,6 +51,8 @@ pub(crate) enum Command {
     Verify(VerifyArgs),
     /// Change one running member's check or owns, and tell it.
     Amend(AmendArgs),
+    /// Show a member's dialog, or answer its permission dialog (lead).
+    Dialog(DialogArgs),
     /// Close the team, or remove one member, in the fixed order.
     Close(CloseArgs),
     /// Send one message.
@@ -266,6 +268,55 @@ pub(crate) struct AmendArgs {
     /// Why. It starts the note the member gets.
     #[arg(long, value_name = "TEXT", required = true)]
     pub(crate) reason: String,
+}
+
+#[derive(Args)]
+pub(crate) struct DialogArgs {
+    #[command(subcommand)]
+    pub(crate) command: DialogCommand,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DialogCommand {
+    /// Print a member's dialog, the whole call it asks for and its screen.
+    /// Changes nothing.
+    Show(DialogShowArgs),
+    /// Answer a member's permission dialog: allow this one call, or deny it
+    /// with a reason the member reads (lead).
+    Answer(DialogAnswerArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct DialogShowArgs {
+    pub(crate) team: String,
+    /// The member whose dialog to show.
+    #[arg(long, value_name = "R")]
+    pub(crate) role: String,
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+#[derive(Args)]
+#[command(group(ArgGroup::new("verdict").required(true).args(["approve", "deny"])))]
+pub(crate) struct DialogAnswerArgs {
+    pub(crate) team: String,
+    /// The member whose dialog to answer.
+    #[arg(long, value_name = "R")]
+    pub(crate) role: String,
+    /// The dialog id from the watch line or `dialog show`.
+    #[arg(long, value_name = "ID")]
+    pub(crate) id: String,
+    /// Allow this one call.
+    #[arg(long)]
+    pub(crate) approve: bool,
+    /// Deny this call.
+    #[arg(long)]
+    pub(crate) deny: bool,
+    /// Why. A denial's reason is what the member reads.
+    #[arg(long, value_name = "TEXT")]
+    pub(crate) reason: String,
+    #[arg(long)]
+    pub(crate) json: bool,
 }
 
 #[derive(Args)]
@@ -572,6 +623,10 @@ pub(crate) enum HookCommand {
     PostTool(HookTarget),
     #[command(about = "A member's SessionStart hook: record the session id the harness chose.")]
     SessionStart(HookTarget),
+    #[command(
+        about = "A member's PermissionRequest hook: record the call, wait for the lead's answer, print it."
+    )]
+    Permission(HookTarget),
     #[command(about = "The lead's Stop hook, on the named harness.")]
     LeadStop(LeadHookArgs),
     #[command(

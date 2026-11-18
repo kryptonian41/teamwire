@@ -18,6 +18,7 @@ keeps the commit it was first built at. `--json` prints machine-readable output 
 | 4 | Not delivered: at least one recipient is `undelivered` |
 | 5 | Unconfirmed: at least one recipient is `unconfirmed`, none `undelivered`; or a resume by `--key` skipped a recipient that another command may still be delivering |
 | 6 | Store error: busy past the timeout, disk full, schema newer than this binary, or a store that cannot be read |
+| 7 | Not taken: dialog answer recorded the answer, but the member's permission hook did not take it within 5 s |
 
 ## Lead commands
 
@@ -29,7 +30,8 @@ without `--add`; only `--dry-run` is allowed, because it creates nothing),
 `reopen`, `handoff` (except `--guide`), `afk start`, `received`, `watch` (with or without `--once`,
 because a single poll takes the lease and uses up announcement keys the lead's
 watch would then never print), `close` (except `--dry-run`),
-`amend` and `verify --waive`. Plain `verify` stays open, because the closer runs it. A
+`amend`, `dialog show`, `dialog answer` and `verify --waive`. `dialog answer`
+then also proves the lead session. Plain `verify` stays open, because the closer runs it. A
 member must never be able to remove a peer, take the watch lease, start a
 team of its own, add members by mistake, amend its own check, or waive its
 own flags (ADR 0008, VER-5, ADR 0046).
@@ -210,7 +212,7 @@ Events, each announced once per occurrence:
 | `WATCHING n members` | First poll that reads the store (a poll that fails with `STORE-ERROR` does not count). That poll never also prints `TEAM-COMPLETE`, unless `--once` was given (WAT-20) |
 | `SILENT <role>` | 3 quiet polls, no completion, after the 90 s grace. Once per episode: a new episode starts when the member is seen working again |
 | `DIED <role>` | 3 consecutive polls absent from a non-empty liveness listing, with no completion or with a completion still pending (recorded, never reported by its turn-end hook). Printed after that member's `DECLARED` line |
-| `BLOCKED <role>` | The host reports a dialog. Once per episode: a new episode starts when the dialog is gone |
+| `BLOCKED <role> <kind>` or `BLOCKED <role> permission <tool>: <summary> (dialog <id>, answer by <HH:MM:SSZ>)` | The host reports a dialog, or the member's permission hook recorded one. A recorded dialog prints once per dialog. Any other dialog prints once per episode, with its kind (`trust`, `login`, `update`, `unknown`, or `permission (teamwire cannot answer it)`); a new episode starts when the dialog is gone |
 | `LATE <role> <age>` | Past its deadline, once per generation |
 | `DECLARED <role>` | A completion recorded but not reported for 2 polls |
 | `UNREPORTED <role>: done is recorded but its turn-end hook did not report it; run teamwire doctor` | A completion stays pending while the member's harness reports it alive and idle for longer than the hook budget (40 s) plus one poll. Once per generation. The member is not settled: the team keeps waiting |
@@ -507,6 +509,114 @@ stderr prints `NOT RECORDED for <role>: the delivery record could not be
 written (store error); run teamwire resend <team> <id>`. Shell only: no MCP
 tool, no `--json`, no `--dry-run`.
 
+### `teamwire dialog show <team> --role R [--json]`
+
+Prints a member's dialog, the whole call it asks for and the member's screen
+(ADR 0052). It reads only: the store opens read-only, and the host is asked
+only for the place's state and its last 60 lines, each call bounded at 5 s.
+It prints the member's newest dialogs of its current generation, at most 5,
+and names the screen's dialog kind with the member harness's `dialog_kind`.
+Every text from the member's model or screen prints through `shown`: a
+control character other than newline and tab, and every invisible or
+bidirectional character, prints as `\u{XXXX}`.
+
+```text
+api (claude-code on herdr): at a permission dialog
+dialog 01JDQ8M3W4X5Y6Z7A8B9C0D1E2: pending, answer before 09:50:44Z (82 s left)
+  tool: Bash
+  command:
+    rmdir /usr
+  input: {"command":"rmdir /usr","description":"Remove the /usr directory if empty"}
+  answer: teamwire dialog answer alpha --role api --id 01JDQ8M3W4X5Y6Z7A8B9C0D1E2 --approve|--deny --reason TEXT
+screen (last 60 lines):
+  <the pane's tail, which also shows the member's last tool calls>
+```
+
+- The first line ends with one of: `at a permission dialog`, `at a trust
+  dialog`, `at a login dialog`, `at an update dialog`, `at a dialog teamwire
+  cannot name`, `at no dialog`, `teamwire cannot tell whether it shows a
+  dialog`.
+- The `command:` block shows Bash's `command`, Write's and Edit's
+  `file_path`, or WebFetch's `url`, whole, each line indented by four spaces.
+- A dialog in another state prints one line: `dialog <id>: answered <verdict>
+  at <time>, waiting for the member's hook`, `dialog <id>: <verdict> by the
+  lead at <time>: <reason>`, `dialog <id>: expired at <time>; nobody
+  answered`, or `dialog <id>: teamwire cannot answer it: <why_not>`.
+- With no pending dialog and a permission dialog on screen, a line says
+  `teamwire cannot answer this dialog: <why>`, with the first reason that
+  holds: the member's harness has no permission hook; no permission hook
+  recorded this dialog (the member may have started before teamwire had the
+  hook); the hook stopped waiting at a time, so Claude Code denies the call
+  on its own or, for a dialog with no countdown, it waits for a person in the
+  pane; the dialog is unanswerable, with its reason; or the dialog was
+  answered and the screen may not have redrawn yet.
+- With a pending dialog and a screen that shows no dialog, or a trust, login
+  or update dialog, a line says `warning: the screen shows no permission
+  dialog now; someone may have answered it in the pane`.
+- A host call that fails prints an `error:` line and leaves that part out.
+
+`--json` prints one object: `team`, `role`, `harness`, `host`, `state` (the
+host's word for the place, or `null`), `kind` (a dialog kind: `none`,
+`permission`, `trust`, `login`, `update`, `unknown`, `cannot_tell`; `null`
+when the screen could not be read), `dialogs` (each with `id`, `state`,
+`tool`, `summary`, `input`, `why_not`, `subagent`, `opened_at`,
+`expires_at`, `seconds_left` for a pending dialog, `verdict`, `reason`,
+`answered_at` and `closed_at`), `cannot_answer` (the `<why>` above, or
+`null`), `screen` and `errors`.
+
+Exit 0 after a read, also when a host call failed; 1 for a member session
+(`refused.identity`), an unknown team or an unknown role; 3 for usage; 6 for
+a store error. Shell only: no MCP tool.
+
+### `teamwire dialog answer <team> --role R --id ID (--approve | --deny) --reason TEXT [--json]`
+
+Records the lead's answer to one permission dialog, for the member's
+permission hook to take (ADR 0052). `--approve` allows this one call and
+never writes a lasting rule; `--deny` refuses it. `--reason` is required for
+both. Neither types into any pane or sends a message: a denial reaches the
+member only in the hook's deny reply, whose message starts `DIALOG DENIED:`,
+quotes the call, gives the reason, and tells the member not to run the call
+another way.
+
+Steps, in order. Every refusal prints `teamwire dialog answer:
+refused.<code>: <text>` on stderr, exits 1, and answers nothing:
+
+1. An empty or all-space `--reason`, or an `--id` that is not a ULID, is a
+   usage error, exit 3.
+2. A caller with a member identity is refused, `refused.identity`.
+3. The store opens; a store error is exit 6.
+4. The caller must be the team's proven lead session, as for `send --from
+   lead`; a refusal is `refused.identity` and is recorded as
+   `message.refused`.
+5. The team must be open: `refused.team`.
+6. The member must exist and be `started`: `refused.role`.
+7. The member's harness must have a permission hook: `refused.harness`
+   (`harness <id> cannot answer a dialog`), as for Codex and pi.
+8. In one transaction, the answer is recorded only while the dialog `ID` is
+   pending, belongs to the member, and is of its current session and
+   generation. Otherwise: `refused.no_dialog` (no such dialog for the
+   member), `refused.changed` (an earlier session of the member),
+   `refused.answered` (already answered, with the earlier verdict),
+   `refused.expired` (the hook gave up; Claude Code denies the call on its
+   own; to tell the member not to retry it, send a note with `teamwire
+   send`), or `refused.not_answerable` (a call teamwire does not answer, with
+   its reason).
+9. It waits up to 5 s for the member's hook to take the answer.
+
+On success it prints `answered dialog <id> of <role> in team <team>: <verdict>
+(taken by the member's permission hook)`. When the hook did not take the
+answer, stdout says `... (recorded, not taken)` and stderr adds `not taken:
+the member's permission hook did not take the answer within 5 s; the dialog
+may be closed already, or Claude Code denies it on its own at its time limit.
+Run teamwire dialog show <team> --role <role>.`
+
+`--json` prints `{"team","role","id","verdict","reason","taken"}`.
+
+Exit codes, each with one meaning: 0 the hook took the answer; 1 refused,
+nothing answered; 3 usage; 6 a store error (after step 8, stderr adds `the
+answer may be recorded; run teamwire dialog show`); 7 the answer is recorded
+but the hook did not take it within 5 s. Shell only: no MCP tool.
+
 ### `teamwire close <team> [--role R] [--stop] [--unverified] [--dry-run] [--keep-state] [--archive-to DIR] [--clear-stale-lock]`
 
 Whole team: the fixed order of CLS-1. `--role` removes one member with the
@@ -757,7 +867,15 @@ Which store it reads:
 
 `--after SEQ` prints only rows with `seq` greater than SEQ, so a caller that
 polls asks only for new rows. Without `--json`, it prints one line per row:
-`<time> <seq> <type> <role or -> <message display id or ->`.
+`<time> <seq> <type> <role or -> <message display id or ->`. A dialog row
+(ADR 0052) adds a sixth column: `<tool>: <summary>` for `dialog.opened`, with
+` (cannot answer: <why_not>)` when teamwire will not answer the call;
+`<verdict> <tool> <summary>: <reason>` for `dialog.answered`; and the outcome
+(`taken`, `expired` or `unanswerable`) for `dialog.closed`. The summary and the
+reason are the member's and the lead's text: every hidden or reordering
+character in them prints as `\u{...}`, and each is cut to one line (summary
+120 or 80 characters, reason 120). For example:
+`2026-11-18T09:49:31.002Z 412 dialog.answered api - deny Bash rmdir /usr: removes a system folder; clear only target/tmp`.
 
 `--json` prints one object:
 
@@ -1229,6 +1347,7 @@ and still exits 0.
 | `teamwire hook turn-end [--team T --role R]` | a member's Stop hook | Like `claude-stop`, on the harness the member row names. `claude-stop` is the older name of the same hook. |
 | `teamwire hook post-tool [--team T --role R]` | a member's PostToolUse hook | Like `claude-post-tool`, on the member's harness. A harness without an in-turn hook gets no reply. |
 | `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing on stdout and always exits 0. |
+| `teamwire hook permission --team T --role R` | a Claude Code member's PermissionRequest hook | Records the call as `dialog.opened`, waits up to 100 s for the lead's `dialog answer`, then prints Claude Code's allow or deny reply, or nothing. Accepted only with the member's token and for the member's current session. Never answers a call it marked unanswerable. Always exits 0. |
 | `teamwire hook lead-tool [--harness ID]` | the lead's tool hook (ADR 0035), after each of the lead's tool calls | Parses the call with the named harness (`claude-code` when absent). When the session leads an open team, prints the in-turn reply `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<note>}}` when the call is a member's work, or when anything was never typed into the lead's pane (the undelivered note below), or both, joined by a newline. A member's work is an edit to a file under a member's `repo` or `cwd` and outside `$TEAMWIRE_HOME`, a build or test run (`cargo`, `npm`, `pnpm`, `yarn`, `bun`, `go`, `pytest`, `make` and the like, and a `.sh` script whose name holds `test`, `gate`, `build` or `check`), `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `pull`, `push` or `worktree add`, and `gh pr create` or `merge`. The note is `[teamwire:<team>] You lead team <team>, so leave <this edit to PATH, this build or test run, this git merge, ...> to its members: reprompt the member that owns the work, or brief a new one. If the user asked you to do it yourself, carry on.` It names every team the session leads that the call concerns. The undelivered note is read at every call, not only for member work (ADR 0043 decisions 1 and 4): one line per delivery to the lead in state `undelivered`, `teamwire: <id> (<type> from <sender>) was never typed into your pane. Read <team dir>/comms/<id>.md, then run teamwire received <team> <id>.`, and one per member whose newest result is `undelivered`, `teamwire: <role>'s result #<n> was never typed into your pane. Read <result file>, then run teamwire received <team> <role>.`, until the lead marks it read. It never blocks the call. Returns nothing in a member session, for a subagent's call, for a harness with no tool parser, or on any error. Opens stores read-only, only after the call matched, and writes nothing, inside a bound of about 5 s. Always exits 0. |
 | `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. For a pi lead, which starts the watch with the lead package's tool, the note is `[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team "<team>") before you stop.` The hold also carries the undelivered note of `lead-tool`, after the other notes. |
 | `teamwire hook claude-stop` | a member's per-run Stop hook | Route A of ADR 0007: hold once for report gaps or unread messages, else write the result and deliver it. Reads the hook input on stdin. Always exits 0. |

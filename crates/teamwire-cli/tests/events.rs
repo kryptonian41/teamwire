@@ -21,7 +21,9 @@ use std::process::Output;
 
 use fixture::{Bed, role};
 use serde_json::Value;
-use teamwire_core::{Clock, DeliveryState};
+use teamwire_core::{
+    Clock, DeliveryState, DialogVerdict, PermissionAnswer, PermissionRequest, SessionId, Timestamp,
+};
 use teamwire_store::NewVerifyRecord;
 
 /// A team with one member, a message the lead got, and a verify verdict.
@@ -246,4 +248,77 @@ fn a_member_session_is_refused() {
 fn a_team_never_seen_is_refused() {
     let home = tempfile::tempdir().unwrap();
     refused(home.path(), &["ghost", "--json"]);
+}
+
+#[test]
+fn a_dialog_row_shows_its_call_verdict_and_reason() {
+    let mut bed = Bed::new();
+    bed.add("api");
+    let now = bed.clock.now();
+    let later = Timestamp::from_unix_millis(now.unix_millis() + 100_000).unwrap();
+    let member = bed
+        .store
+        .read(|tx| tx.member(&role("api")))
+        .unwrap()
+        .unwrap();
+    let session = SessionId::parse("s-1").unwrap();
+    let request = |tool: &str, summary: &str, why_not: Option<&str>| PermissionRequest {
+        session: session.clone(),
+        subagent: false,
+        tool: tool.to_owned(),
+        summary: summary.to_owned(),
+        input: Some(serde_json::json!({"command": summary})),
+        why_not: why_not.map(str::to_owned),
+    };
+    bed.store
+        .write(|tx| {
+            tx.set_member_session(&role("api"), &session)?;
+            let id = tx.open_dialog(
+                now,
+                &role("api"),
+                member.generation,
+                &request("Bash", "rmdir /usr\u{202e}", None),
+                later,
+            )?;
+            let answer = PermissionAnswer {
+                verdict: DialogVerdict::Deny,
+                reason: "removes a system folder; clear only target/tmp".to_owned(),
+            };
+            tx.answer_dialog(now, &role("api"), &id, &answer)?;
+            tx.close_dialog(now, &id)?;
+            tx.open_dialog(
+                now,
+                &role("api"),
+                member.generation,
+                &request("AskUserQuestion", "AskUserQuestion", Some("not Bash")),
+                later,
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    let out = events(bed.home.path(), &["alpha"]);
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    let text = String::from_utf8(out.stdout).unwrap();
+    let line = |kind: &str| -> Vec<&str> {
+        text.lines()
+            .filter(|l| l.split(' ').nth(2) == Some(kind))
+            .collect()
+    };
+    assert!(
+        line("dialog.opened")[0].ends_with(" api - Bash: rmdir /usr\\u{202e}"),
+        "{text}"
+    );
+    assert!(
+        line("dialog.answered")[0].ends_with(
+            " api - deny Bash rmdir /usr\\u{202e}: removes a system folder; clear only target/tmp"
+        ),
+        "{text}"
+    );
+    assert!(line("dialog.closed")[0].ends_with(" api - taken"), "{text}");
+    assert!(
+        line("dialog.opened")[1]
+            .ends_with(" api - AskUserQuestion: AskUserQuestion (cannot answer: not Bash)"),
+        "{text}"
+    );
+    assert!(!text.contains('\u{202e}'), "{text}");
 }

@@ -8,7 +8,7 @@ use teamwire_core::{
     HarnessError, HarnessErrorCode, HarnessId, Host, LaunchSpec, Liveness, MemberLaunch,
     OtelConfig, PermissionAnswer, PermissionDecision, PermissionRequest, Pid, Place, Role,
     ScreenState, SessionId, StartupOutcome, TeamName, Timestamp, TrustPolicy, TurnEnd, Ulid,
-    decision_for, shown,
+    clock_time, decision_for, shown,
 };
 
 /// A harness that overrides none of the dialog methods.
@@ -196,4 +196,10 @@ fn a_denial_quotes_the_call_and_the_reason() {
             message: None
         }
     );
+}
+
+#[test]
+fn clock_time_is_the_utc_time_of_day() {
+    let at = Timestamp::parse("2026-11-18T09:05:44.123Z").unwrap();
+    assert_eq!(clock_time(at), "09:05:44Z");
 }

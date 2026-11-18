@@ -651,6 +651,8 @@ pub fn decision_for(id: &Ulid, request: &PermissionRequest, answer: &PermissionA
 /// except newline and tab, and Unicode's Default_Ignorable set (bidi controls,
 /// zero-width characters). Every text a lead reads about a call goes through it.
 pub fn shown(text: &str) -> String;
+/// `at` as the UTC time of day, `HH:MM:SSZ`: the "answer by" time of a watch line.
+pub fn clock_time(at: Timestamp) -> String;
 
 pub const PERMISSION_WAIT: Duration = 100 s;        // the hook's wait; Claude Code denies at 120 s
 pub const PERMISSION_HOOK_TIMEOUT_S: u64 = 110;     // the hook's settings timeout

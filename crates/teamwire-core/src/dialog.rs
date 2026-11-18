@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::names::{SessionId, Ulid};
 use crate::sanitize::is_invisible;
 use crate::strings::string_enum;
+use crate::timestamp::Timestamp;
 
 string_enum! {
     /// What a member's screen shows, as its harness reads it.
@@ -123,6 +124,13 @@ pub fn decision_for(
         verdict: answer.verdict,
         message,
     }
+}
+
+/// `at` as the time of day in UTC, `HH:MM:SSZ`: the "answer by" time of a
+/// watch line, short enough to read at a glance.
+pub fn clock_time(at: Timestamp) -> String {
+    let t = at.as_datetime();
+    format!("{:02}:{:02}:{:02}Z", t.hour(), t.minute(), t.second())
 }
 
 /// `text` with every character that `sanitize::one_line` drops written as

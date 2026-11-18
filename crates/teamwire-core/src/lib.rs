@@ -45,7 +45,7 @@ pub use config::{Config, OtelConfig};
 pub use dialog::{
     ANSWER_TAKE_WAIT, DENIED_MARKER, DialogKind, DialogState, DialogVerdict,
     PERMISSION_HOOK_TIMEOUT_S, PERMISSION_INPUT_MAX, PERMISSION_WAIT, PermissionAnswer,
-    PermissionDecision, PermissionRequest, SUMMARY_MAX, decision_for, shown,
+    PermissionDecision, PermissionRequest, SUMMARY_MAX, clock_time, decision_for, shown,
 };
 pub use event::{Event, EventType};
 pub use harness::{
