@@ -70,7 +70,7 @@ Keep the install in the team folder. The default target,
 `~/.claude/skills/`, changes the user's own setup for every later session,
 and `--project` puts untracked files in the member's worktree, which
 `teamwire verify` flags as `uncommitted`. A path in the brief also serves a
-Codex member, which loads no Claude skills.
+member on another harness, which loads no Claude skills.
 
 ## Skills that fight a teamwire seat
 

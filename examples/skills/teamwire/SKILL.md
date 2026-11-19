@@ -127,8 +127,8 @@ For a feature built with GitHub's spec-kit, start from
 `tasks.md` exists, with `--exclude PATTERN` for each folder of archived
 records, such as `--exclude 'bench/**'` in teamwire's repository, and
 read "Spec-kit features" in `reference.md`. That section says what the base
-branch must hold, how Claude Code, Codex and pi members run
-spec-kit's commands, and what each brief says about questions, ticks,
+branch must hold, how Claude Code and pi members run spec-kit's
+commands, and what each brief says about questions, ticks,
 commits and `converge`. A team that removes spec-kit before the pull request
 follows the preset's REMOVE SPEC-KIT rule: the removal goes on the pull
 request branch, never on the implementer's own branch.
@@ -382,9 +382,8 @@ A running member cannot change its harness. When Claude Code stops working
 mid-run, replace the member under a new role name, as "When a member goes
 wrong" says. A member on another harness than yours follows that harness's
 rules. Its `plugins` map holds that harness's plugin ids, as "Skills and
-plugins in members" says. teamwire sets no compaction for a Codex or pi
-member, so "When a member's context runs high" applies to it from its first
-turn.
+plugins in members" says. teamwire sets no compaction for a pi member,
+so "When a member's context runs high" applies to it from its first turn.
 
 Extra thinking buys little in routine edits and a lot in judging other
 agents' work or in reasoning about a race. A higher effort also makes slower
@@ -395,9 +394,9 @@ reasoning yet, so check it against what `teamwire models --for` shows.
 
 Members load every user plugin, skill, hook and output style. Only the spec's
 `plugins` map turns one off. The map holds plugin ids of the member's own
-harness. Claude Code and Codex members read it, and pi members ignore it.
+harness. Claude Code members read it, and pi members ignore it.
 The plugins named in this section are Claude Code plugins, so this advice
-applies to Claude Code members. For a Codex or pi member, write the tdd and
+applies to Claude Code members. For a pi member, write the tdd and
 diagnosing-bugs sentences only when its harness has those skills, and check
 its harness for a memory feature that would carry one member's findings to
 another. Implementers keep the user's plugins. Give
@@ -942,7 +941,7 @@ yours:
 - Hand off a member that is past its handoff point before you send it a
   reprompt with findings, so the fixes run in a fresh context.
 
-teamwire sets no compaction for a Codex or pi member, so hand it off at its
+teamwire sets no compaction for a pi member, so hand it off at its
 `CONTEXT` line. "Context handoff" in `reference.md` holds the handoff point,
 what the command does, its refusals and how to recover a failed handoff.
 
@@ -1050,11 +1049,9 @@ members merge, build, test and push, and you judge what they report.
    teamwire pr-watch -R OWNER/REPO -i 45 3453 3454
    ```
 
-   A lead with no Monitor tool gets the lines another way. A Codex lead runs
-   `teamwire pr-watch --deliver <team> -R OWNER/REPO -i 45 3453 3454` in
-   the background, and each line is typed into its pane. A pi lead calls
+   A lead with no Monitor tool gets the lines another way. A pi lead calls
    the `teamwire_pr_watch` tool, and each line is steered into its session
-   as a message. Their lead files give the exact form.
+   as a message. Its lead file gives the exact form.
 
    "Pull request lines" in `reference.md` explains each line it prints and
    its exit codes. Read a `DONE` line's merge state before anyone merges.
