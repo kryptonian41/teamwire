@@ -233,11 +233,6 @@ pub struct HarnessCaps {
     /// Environment for the session can be set in a per-run
     /// config file (Claude Code `settings.json` `env`).
     pub session_env_via_config: bool,
-    /// A lead on this harness can run `teamwire watch` and read each line as
-    /// it is printed (Claude Code's Monitor tool). Without it the lead needs
-    /// `teamwire watch --deliver`, which types the lines into its pane, so
-    /// launch refuses such a lead when it cannot be located (ADR 0023).
-    pub reads_watch_lines: bool,
     /// How a lead on this harness starts `teamwire watch`. Every text that
     /// tells a lead to start a watch is worded from it.
     pub watch_start: WatchStart,

@@ -394,7 +394,6 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// Environment for the session can be set in a per-run
                          /// config file (Claude Code `settings.json` `env`).
                          pub session_env_via_config: bool,
-                         pub reads_watch_lines: bool,    // lead can read `teamwire watch` lines (ADR 0023)
                          /// How a lead starts `teamwire watch`; every text that tells a
                          /// lead to start one (Stop hold, result line, reprompt, launch)
                          /// is worded from it by `teamwire_deliver::watch_text`

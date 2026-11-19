@@ -61,8 +61,6 @@ running team. `--dry-run` validates and prints the plan, touching nothing.
 
 Refuses (exit 1, nothing created): a real launch from a member identity
 (`refused.identity`; `--dry-run` is allowed); a new team's launch with
-`lead_not_locatable` when the lead's harness cannot read watch lines and
-teamwire cannot find the lead's pane; a new team's launch with
 `lead_setup_missing` when the lead's harness says its lead setup is not
 loaded in this session (a pi session without teamwire's lead package, ADR
 0030); a background lead session; any spec error;
@@ -190,8 +188,7 @@ watch lease looks dead); a larger interval, or 0, exits 3. `--once` runs one
 poll and exits (for tests and scripts).
 Refuses to start when another live watch holds the team's lease, and names
 its pid. `--deliver` also types each printed line, with the same dated
-prefix, into the lead's place, for a lead whose harness cannot read the
-watch's output as it is printed. Each delivery ends
+prefix, into the lead's place. Each delivery ends
 within 15 s. A line that cannot be delivered is still printed, and the watch
 keeps polling. A pi lead calls the
 `teamwire_watch` tool of teamwire's lead package instead, which runs the watch

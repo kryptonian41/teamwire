@@ -118,7 +118,6 @@ impl Harness for Pi {
             session_env_via_config: true,
             // The lead's extension runs the watch and hands each line to the
             // model as a message (ADR 0030).
-            reads_watch_lines: true,
             watch_start: teamwire_core::harness::WatchStart::ExtensionTool,
             load_skill: "Load the `teamwire` skill with `/skill:teamwire`.",
             reads_input_box: true,
