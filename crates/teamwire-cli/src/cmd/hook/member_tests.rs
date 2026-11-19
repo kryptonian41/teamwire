@@ -38,12 +38,9 @@ pub(super) fn real_wiring() -> Wiring {
         user_home: None,
         claude_dir: None,
         claude_config_dir: None,
-        codex_test_home: None,
-        codex_home: None,
         pi_agent_dir: None,
         lead_harness: None,
         claude_session: None,
-        codex_thread: None,
         pi_marker: None,
     })
     .unwrap()
@@ -319,7 +316,11 @@ fn a_lead_harness_that_cannot_be_found_gets_the_monitor_wording() {
 /// harness `id` of this binary: the Stop hold, the end of a result line, the
 /// line after a reprompt, and launch's `watch:` value.
 fn watch_texts_of(id: &str) -> [String; 4] {
-    let start = lead_watch_start(Some(&HarnessId::parse(id).unwrap()), &real_wiring());
+    watch_texts_in(id, &real_wiring())
+}
+
+fn watch_texts_in(id: &str, wiring: &Wiring) -> [String; 4] {
+    let start = lead_watch_start(Some(&HarnessId::parse(id).unwrap()), wiring);
     let team = TeamName::parse("alpha").unwrap();
     [
         teamwire_report::watch_missing_note(&team, start),
@@ -342,10 +343,21 @@ fn a_claude_code_lead_is_told_to_run_the_watch_under_monitor() {
     );
 }
 
+/// No real harness starts the watch in the background any more, so a fake
+/// one with that watch start stands in for it.
 #[test]
-fn a_codex_lead_is_told_to_run_the_watch_in_the_background() {
+fn a_lead_whose_harness_starts_the_watch_in_the_background_is_told_to_run_it_so() {
+    let fake = FakeHarness::with_id(HarnessId::from_static("fake-bg"));
+    fake.set_caps(teamwire_core::HarnessCaps {
+        watch_start: WatchStart::BackgroundCommand,
+        ..FakeHarness::caps()
+    });
+    let mut wiring = real_wiring();
+    let mut registry = Registry::new();
+    registry.add_harness(Arc::new(fake)).unwrap();
+    wiring.registry = Arc::new(registry);
     assert_eq!(
-        watch_texts_of("codex"),
+        watch_texts_in("fake-bg", &wiring),
         [
             "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop.",
             "(no watch is running: nohup teamwire watch alpha --deliver >/dev/null 2>&1 &)",
@@ -401,7 +413,6 @@ fn the_lead_tool_hook_notes_a_build_through_every_harness_that_can_lead() {
     for (harness, input) in [
         (None, &shared),
         (Some("claude-code"), &shared),
-        (Some("codex"), &shared),
         (Some("pi"), &pi),
     ] {
         let note = lead_tool(&bed, &real, harness, input).unwrap();

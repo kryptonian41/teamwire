@@ -17,7 +17,6 @@ const L2: &[&str] = &[
     "teamwire-host-herdr",
     "teamwire-host-tmux",
     "teamwire-harness-claude",
-    "teamwire-harness-codex",
     "teamwire-harness-pi",
 ];
 const L3: &[&str] = &["teamwire-deliver", "teamwire-verify"];

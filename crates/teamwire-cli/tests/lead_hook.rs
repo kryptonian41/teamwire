@@ -352,7 +352,7 @@ fn the_tool_hook_notes_a_build_for_every_harness_and_writes_nothing() {
     let before = events(&fx);
     let shared = r#"{"session_id":"lead-1","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"cargo test"}}"#;
     let pi = r#"{"session_id":"lead-1","tool_name":"bash","tool_input":{"command":"cargo test"}}"#;
-    for (harness, input) in [("claude-code", shared), ("codex", shared), ("pi", pi)] {
+    for (harness, input) in [("claude-code", shared), ("pi", pi)] {
         let run = run_hook(
             fx.home.path(),
             &["hook", "lead-tool", "--harness", harness],
@@ -451,7 +451,6 @@ fn the_tool_and_stop_hooks_carry_the_undelivered_note() {
     let pi_stop = r#"{"session_id":"lead-1","hold_active":false}"#;
     for (harness, tool_input, stop_input) in [
         ("claude-code", read, stop("lead-1", "")),
-        ("codex", read, stop("lead-1", "")),
         ("pi", pi_read, pi_stop.to_owned()),
     ] {
         for (hook, input) in [

@@ -1,6 +1,7 @@
-//! `teamwire hook session-start`, run as the real binary a Codex member's
-//! `SessionStart` hook starts. The member row names `claude-code`, whose
-//! input has the same `session_id` field the hook reads.
+//! `teamwire hook session-start`, run as the real binary the `SessionStart`
+//! hook of a member starts when its harness picks its own session id. The
+//! member row names `claude-code`, whose input has the same `session_id`
+//! field the hook reads.
 #![expect(
     clippy::disallowed_methods,
     reason = "the test starts the teamwire binary as a harness would"

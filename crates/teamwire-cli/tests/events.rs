@@ -52,8 +52,8 @@ fn populated() -> Bed {
 }
 
 /// `teamwire events` with a cleared environment. The tests often run inside
-/// a member's session, and any of its identity variables, such as a pi or
-/// Codex member's `TEAMWIRE_TOKEN_FILE`, would make the lead's command refuse.
+/// a member's session, and any of its identity variables, such as a pi
+/// member's `TEAMWIRE_TOKEN_FILE`, would make the lead's command refuse.
 fn events(home: &Path, args: &[&str]) -> Output {
     std::process::Command::new(env!("CARGO_BIN_EXE_teamwire"))
         .arg("--home")

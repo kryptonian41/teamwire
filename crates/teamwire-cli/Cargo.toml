@@ -18,7 +18,6 @@ teamwire-close = { workspace = true }
 teamwire-core = { workspace = true }
 teamwire-deliver = { workspace = true }
 teamwire-harness-claude = { workspace = true }
-teamwire-harness-codex = { workspace = true }
 teamwire-harness-pi = { workspace = true }
 teamwire-host-herdr = { workspace = true }
 teamwire-host-tmux = { workspace = true }

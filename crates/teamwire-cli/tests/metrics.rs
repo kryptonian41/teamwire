@@ -899,16 +899,13 @@ fn an_export_that_fails_in_the_store_leaves_one_store_error_row() {
 }
 
 /// Tokens are counted per member whatever its harness: a pi member's and a
-/// Codex member's delivered results carry the reading their harness read
-/// from its own session file.
+/// fake harness member's delivered results carry the reading their harness
+/// read from its own session file.
 #[test]
-fn metrics_print_tokens_for_pi_and_codex_members() {
+fn metrics_print_tokens_for_pi_and_fake_harness_members() {
     let home = TestHome::new().unwrap();
     let mut s = open(&home, "alpha");
-    for (role, harness, model) in [
-        ("pi", "pi", "claude-opus-5-5"),
-        ("cx", "codex", "gpt-5-codex"),
-    ] {
+    for (role, harness, model) in [("pi", "pi", "claude-opus-5-5"), ("fk", "fake", "gpt-5.5")] {
         let role = Role::parse(role).unwrap();
         s.write(|tx| {
             tx.insert_member(
@@ -943,7 +940,7 @@ fn metrics_print_tokens_for_pi_and_codex_members() {
     }
     let run = teamwire(&home, &[], &["metrics", "alpha"]);
     assert_eq!(run.code, 0, "{}{}", run.out, run.err);
-    for (role, model) in [("pi", "claude-opus-5-5"), ("cx", "gpt-5-codex")] {
+    for (role, model) in [("pi", "claude-opus-5-5"), ("fk", "gpt-5.5")] {
         let lines: Vec<&str> = run
             .out
             .lines()

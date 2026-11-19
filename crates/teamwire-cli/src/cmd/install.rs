@@ -1,8 +1,8 @@
 //! `teamwire install` and `teamwire uninstall`: plan and make each
 //! harness's lead setup through the `LeadSetup` seam (ADR 0031): the plugin
-//! in Claude Code (ADR 0018), the plugin in Codex (ADR 0023), the lead
-//! package in pi (ADR 0030). The only commands that change a harness's
-//! configuration, and only through that harness's own program.
+//! in Claude Code (ADR 0018) and the lead package in pi (ADR 0030). The only
+//! commands that change a harness's configuration, and only through that
+//! harness's own program.
 
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -351,18 +351,18 @@ mod tests {
     #[test]
     fn a_selector_line_keeps_all_or_picks_numbers() {
         const CLAUDE: &str = "claude-code";
-        const CODEX: &str = "codex";
-        let found = [CLAUDE, CODEX];
-        assert_eq!(parse_selection("", &found).unwrap(), [CLAUDE, CODEX]);
-        assert_eq!(parse_selection(" \n", &found).unwrap(), [CLAUDE, CODEX]);
-        assert_eq!(parse_selection("2", &found).unwrap(), [CODEX]);
-        assert_eq!(parse_selection("2, 1\n", &found).unwrap(), [CODEX, CLAUDE]);
+        const PI: &str = "pi";
+        let found = [CLAUDE, PI];
+        assert_eq!(parse_selection("", &found).unwrap(), [CLAUDE, PI]);
+        assert_eq!(parse_selection(" \n", &found).unwrap(), [CLAUDE, PI]);
+        assert_eq!(parse_selection("2", &found).unwrap(), [PI]);
+        assert_eq!(parse_selection("2, 1\n", &found).unwrap(), [PI, CLAUDE]);
         assert_eq!(parse_selection("1,1", &found).unwrap(), [CLAUDE]);
         for bad in ["0", "3", "x", "1,", "claude-code"] {
             assert!(parse_selection(bad, &found).is_err(), "{bad}");
         }
         // Numbers count the list that was shown, not both harnesses.
-        assert_eq!(parse_selection("1", &[CODEX]).unwrap(), [CODEX]);
-        assert!(parse_selection("2", &[CODEX]).is_err());
+        assert_eq!(parse_selection("1", &[PI]).unwrap(), [PI]);
+        assert!(parse_selection("2", &[PI]).is_err());
     }
 }

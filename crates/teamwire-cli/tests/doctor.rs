@@ -25,7 +25,6 @@ use teamwire_core::{
 };
 use teamwire_fakes::{FakeBins, FakeClock, FakeHarness, FakeHost, FakePlatform, TestHome};
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig, McpEntry};
-use teamwire_harness_codex::{CodexCli, CodexConfig};
 use teamwire_store::{NewTeam, Store};
 
 #[path = "support/schema_1.rs"]
@@ -137,10 +136,6 @@ struct Bed {
     lead_handoff: teamwire_core::LeadHandoffSetting,
     registry: Registry,
     clock: FakeClock,
-    /// What `codex plugin list --json` prints; the Codex adapter has a
-    /// platform of its own so its replies do not mix with doctor's probes.
-    codex_list: String,
-    codex_platform: Arc<FakePlatform>,
     /// The state directory of the doctor run, when it is not `home`, the one
     /// the plugin was installed for.
     run_home: Option<PathBuf>,
@@ -177,8 +172,6 @@ impl Bed {
             lead_handoff: teamwire_core::LeadHandoffSetting::Unset,
             registry: Registry::new(),
             clock: FakeClock::new(),
-            codex_list: r#"{"installed":[],"available":[]}"#.to_owned(),
-            codex_platform: Arc::new(FakePlatform::new()),
             run_home: None,
             git: None,
             base: "HEAD".to_owned(),
@@ -196,7 +189,7 @@ impl Bed {
         bed
     }
 
-    /// The fake harness the teams run on, and the three real harnesses whose
+    /// The fake harness the teams run on, and the two real harnesses whose
     /// programs and lead setups doctor checks, each on a platform of its own
     /// so their commands do not mix with doctor's probes.
     fn registry(&self) -> Registry {
@@ -208,7 +201,6 @@ impl Bed {
                 self.claude_config(),
             )))
             .unwrap();
-        registry.add_harness(Arc::new(self.codex_setup())).unwrap();
         registry.add_harness(Arc::new(self.pi_setup())).unwrap();
         registry.add_host(Arc::new(FakeHost::new())).unwrap();
         registry
@@ -233,16 +225,6 @@ impl Bed {
                     .unwrap_or_else(|| self.home.path().to_path_buf()),
             ),
         }
-    }
-
-    fn codex_setup(&self) -> CodexCli {
-        CodexCli::new(
-            self.codex_platform.clone(),
-            CodexConfig {
-                codex_home: self.home.path().join("codex-home"),
-                codex_bin: "codex".to_owned(),
-            },
-        )
     }
 
     /// The pi adapter, on a platform of its own: the pi check reads files
@@ -327,11 +309,6 @@ impl Bed {
         self.platform.queue_run(Ok(answer("2.1.0 (Claude Code)\n")));
         self.platform.queue_run(Ok(answer(&self.claude_help)));
         self.platform.queue_run(Ok(answer("host 1.2.3\n")));
-        let codex_on_path = self.bin.path().join("codex").exists();
-        if codex_on_path {
-            self.platform.queue_run(Ok(answer("codex-cli 0.163.0\n")));
-            self.codex_platform.queue_run(Ok(answer(&self.codex_list)));
-        }
         let real_git = teamwire_platform::native();
         let git: &dyn teamwire_core::Platform = match &self.git {
             Some(fake) => fake.as_ref(),
@@ -1265,50 +1242,6 @@ fn a_member_from_another_build_whose_result_is_pending_is_counted() {
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "team alpha older members"), Level::Warn);
     assert!(detail_of(&checks, "team alpha older members").contains("web (0.0.0)"));
-}
-
-#[test]
-fn without_codex_on_path_doctor_says_nothing_about_codex() {
-    let bed = Bed::healthy();
-    let checks = bed.checks();
-    assert!(names(&checks).iter().all(|n| !n.contains("codex")));
-    assert_eq!(failing(&checks), Vec::<&str>::new());
-}
-
-#[test]
-fn codex_on_path_is_reported_with_its_version_and_a_missing_plugin_is_ok() {
-    let bed = Bed::healthy();
-    std::fs::write(bed.bin.path().join("codex"), "#!/bin/sh\n").unwrap();
-    let checks = bed.checks();
-    assert_eq!(level_of(&checks, "codex on PATH"), Level::Pass);
-    assert_eq!(detail_of(&checks, "codex version"), "codex-cli 0.163.0");
-    assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
-    assert!(
-        detail_of(&checks, "codex plugin").contains("teamwire install --harness codex"),
-        "{}",
-        detail_of(&checks, "codex plugin")
-    );
-    assert_eq!(exit_code(&checks), 0);
-}
-
-#[test]
-fn a_stale_codex_plugin_is_a_warning_that_names_the_fix() {
-    let mut bed = Bed::healthy();
-    std::fs::write(bed.bin.path().join("codex"), "#!/bin/sh\n").unwrap();
-    bed.codex_list =
-        r#"{"installed":[{"pluginId":"teamwire@teamwire","version":"old","enabled":true}]}"#
-            .to_owned();
-    let checks = bed.checks();
-    assert_eq!(level_of(&checks, "codex plugin"), Level::Warn);
-    let detail = detail_of(&checks, "codex plugin");
-    assert!(
-        detail.contains("version old") && detail.contains("teamwire install --harness codex"),
-        "{detail}"
-    );
-    // A cargo build's text differs by design, so only a disabled plugin warns.
-    bed.codex_platform.queue_run(Ok(answer(&bed.codex_list)));
-    let checks = bed.checks_as(true);
-    assert_eq!(level_of(&checks, "codex plugin"), Level::Pass);
 }
 
 #[test]

@@ -582,18 +582,16 @@ fn fake_pi(bin: &Path, exit: u8) -> std::io::Result<()> {
 #[test]
 fn without_harness_the_command_lists_the_leads_harness() {
     let home = TestHome::new().unwrap();
+    let bin = tempfile::tempdir().unwrap();
+    fake_pi(bin.path(), 0).unwrap();
     let o = teamwire(
         home.path(),
-        home.path(),
-        &[("TEAMWIRE_LEAD_HARNESS", "codex")],
+        bin.path(),
+        &[("TEAMWIRE_LEAD_HARNESS", "pi")],
         &["models"],
     );
     assert!(o.success(), "{}", err(&o));
-    assert!(
-        out(&o).starts_with("harness: codex\nsource: builtin. "),
-        "{}",
-        out(&o)
-    );
+    assert!(out(&o).starts_with("harness: pi\n"), "{}", out(&o));
     let o = teamwire(
         home.path(),
         home.path(),
@@ -606,7 +604,7 @@ fn without_harness_the_command_lists_the_leads_harness() {
 #[test]
 fn harness_names_another_harness_and_an_unknown_one_is_a_usage_error() {
     let home = TestHome::new().unwrap();
-    let lead = [("TEAMWIRE_LEAD_HARNESS", "codex")];
+    let lead = [("TEAMWIRE_LEAD_HARNESS", "pi")];
     let o = teamwire(
         home.path(),
         home.path(),
@@ -623,7 +621,7 @@ fn harness_names_another_harness_and_an_unknown_one_is_a_usage_error() {
         &["models", "--harness", "nope"],
     );
     assert_eq!(Some(o.exit_code), Some(3), "{}", err(&o));
-    assert!(err(&o).contains("claude-code, codex, pi"), "{}", err(&o));
+    assert!(err(&o).contains("claude-code, pi"), "{}", err(&o));
 }
 
 #[test]
@@ -633,7 +631,7 @@ fn an_unknown_class_is_refused_with_the_seven_classes() {
         home.path(),
         home.path(),
         &[],
-        &["models", "--harness", "codex", "--for", "hard"],
+        &["models", "--harness", "claude-code", "--for", "hard"],
     );
     assert_eq!(Some(o.exit_code), Some(3), "{}", err(&o));
     assert!(out(&o).is_empty());
