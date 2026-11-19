@@ -120,7 +120,6 @@ impl Harness for Pi {
             // model as a message (ADR 0030).
             watch_start: teamwire_core::harness::WatchStart::ExtensionTool,
             load_skill: "Load the `teamwire` skill with `/skill:teamwire`.",
-            reads_input_box: true,
             // AFK-2 still refuses a pi lead (ADR 0030 point 8).
             runs_afk: false,
         }

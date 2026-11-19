@@ -398,10 +398,6 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// lead to start one (Stop hold, result line, reprompt, launch)
                          /// is worded from it by `teamwire_deliver::watch_text`
                          pub watch_start: WatchStart,
-                         /// `box_holds_text` can tell anything: delivery on a host that
-                         /// guards dialogs reads the screen only then, and gives such a
-                         /// harness screens from `Host::read_tail_styled` (ADR 0031)
-                         pub reads_input_box: bool,
                          /// A lead on this harness can start an AFK run (AFK-2, ADR 0031)
                          pub runs_afk: bool,
                          /// The full sentence that tells a lead on this harness to load

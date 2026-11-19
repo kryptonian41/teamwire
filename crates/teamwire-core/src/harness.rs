@@ -99,6 +99,8 @@ pub trait Harness: Send + Sync {
         Err(HarnessError::unsupported())
     }
     /// Classify a screen tail: at the input prompt, showing a dialog, or unknown.
+    /// Delivery reads the tail with `Host::read_tail_styled`, so it can hold
+    /// style codes.
     fn screen_state(&self, tail: &str) -> ScreenState;
     /// Whether `line`, just submitted, still sits unsent in the input box
     /// shown by `tail`. The default is `false`: a harness that cannot tell
@@ -109,7 +111,9 @@ pub trait Harness: Send + Sync {
     }
     /// Whether the input box shown by `tail` already holds text, such as a
     /// line a person half typed. Delivery waits while it does, on every host.
-    /// The default is `false`: a harness that cannot tell types as before.
+    /// `tail` comes from `Host::read_tail_styled`, so a harness can tell dim
+    /// placeholder text from typed text by its style codes. The default is
+    /// `false`: a harness that cannot tell types as before.
     fn box_holds_text(&self, _tail: &str) -> bool {
         false
     }
@@ -241,12 +245,6 @@ pub struct HarnessCaps {
     /// harness that cannot lead. Never read back from JSON.
     #[serde(skip_deserializing)]
     pub load_skill: &'static str,
-    /// `Harness::box_holds_text` can tell anything. Delivery on a host that
-    /// guards dialogs reads the screen only when it can, so a harness that
-    /// cannot costs no extra read. Delivery gives a harness that reads the
-    /// box its screens from `Host::read_tail_styled`, in `screen_state` and
-    /// `box_holds_text` both, so they must parse style codes.
-    pub reads_input_box: bool,
     /// A lead on this harness can start an AFK run: its skill carries the
     /// AFK flow, and its pane can be proven to reach the lead (AFK-2).
     pub runs_afk: bool,

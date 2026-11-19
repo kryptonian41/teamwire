@@ -70,15 +70,6 @@ fn input_prompt_on_unguarded_host_is_typed_into() {
 }
 
 #[test]
-fn guarded_host_screen_is_not_read() {
-    let mut rig = Rig::new();
-    rig.healthy("lead-1", 100);
-    let outcome = deliver_line(&mut rig.ctx(), &Party::Lead, &one_line("hello", 80));
-    assert_eq!(outcome, DeliveryOutcome::HandedOff);
-    assert_eq!(rig.host.log().count_named("read_tail"), 0);
-}
-
-#[test]
 fn blocked_session_refused_before_submit() {
     let mut rig = Rig::new();
     let place = rig.healthy("lead-1", 100);

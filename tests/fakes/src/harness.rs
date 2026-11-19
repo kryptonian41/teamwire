@@ -93,7 +93,7 @@ pub struct FakeHarness {
 impl FakeHarness {
     pub const ID: &'static str = "fake";
 
-    /// Every capability on except `can_push` and `reads_input_box`.
+    /// Every capability on except `can_push`.
     pub fn caps() -> HarnessCaps {
         HarnessCaps {
             turn_end_hook: true,
@@ -104,7 +104,6 @@ impl FakeHarness {
             session_env_via_config: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
             load_skill: "Load the fake teamwire skill.",
-            reads_input_box: false,
             runs_afk: true,
         }
     }

@@ -120,7 +120,6 @@ impl Harness for ClaudeCode {
             session_env_via_config: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
             load_skill: "Load the `teamwire:teamwire` skill with your Skill tool.",
-            reads_input_box: true,
             runs_afk: true,
         }
     }
