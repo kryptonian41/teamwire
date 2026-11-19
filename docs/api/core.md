@@ -311,8 +311,7 @@ pub trait Harness: Send + Sync {
     /// <carried> <prompt>`, where the old transcript's newest main-chain model
     /// wins over the old flags, and so does its newest permission mode. A
     /// newest mode `claude --permission-mode` does not accept passes no
-    /// permission flag at all, drops each old one, and gives a warning. Codex: `codex --no-daemon
-    /// <carried> <prompt>`, and a chosen id is refused with `BadInput`. pi:
+    /// permission flag at all, drops each old one, and gives a warning. pi:
     /// `pi --session-id <new> <carried> -- <prompt>`. Claude Code and pi
     /// refuse a missing id. Default `Unsupported`.
     fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError>;
@@ -336,8 +335,7 @@ pub trait Harness: Send + Sync {
     /// read without writing from the harness's own session record. `cwd` is
     /// the session's working directory. `Ok(None)` means none runs, or the
     /// harness cannot tell. Default `Ok(None)`. Claude Code reads the
-    /// transcript's newest `tool_use` with no `tool_result`, Codex the
-    /// rollout's newest `function_call` with no `function_call_output`, and
+    /// transcript's newest `tool_use` with no `tool_result`, and
     /// pi the `tool` field its member extension writes to the state file.
     fn current_tool(&self, s: &SessionId, cwd: Option<&Path>) -> Result<Option<ToolRun>, HarnessError>;
     /// The session's token usage so far, per model, read without writing from
@@ -345,10 +343,7 @@ pub trait Harness: Send + Sync {
     /// `Ok(None)` means no reading. Default `Ok(None)`: the turn-end then
     /// reads the hook's transcript with the Claude Code reader in
     /// teamwire-report. pi sums every assistant message's `input`, `output`,
-    /// `cacheRead` and `cacheWrite`. Codex takes the newest
-    /// `total_token_usage`, takes `cached_input_tokens` out of `input_tokens`
-    /// as cache reads, counts reasoning inside output, reports no cache writes
-    /// (0), and puts every token under the newest turn's model.
+    /// `cacheRead` and `cacheWrite`.
     fn session_usage(&self, s: &SessionId, transcript: Option<&Path>) -> Result<Option<SessionUsage>, HarnessError>;
     fn processes_for_session(&self, s: &SessionId, timeout: Duration) -> Result<Vec<Pid>, HarnessError>;
     fn is_alive(&self, s: &SessionId, timeout: Duration) -> Result<Liveness, HarnessError>;
@@ -357,13 +352,13 @@ pub trait Harness: Send + Sync {
     /// Render the hook reply that holds the member once with `note`.
     fn hold_reply(&self, note: &str) -> Vec<u8>;
     /// Parse the lead's tool hook stdin into the neutral form (ADR 0035).
-    /// Default `Unsupported`, and the hook then says nothing. Claude Code and
-    /// Codex parse their `PostToolUse` input; pi parses the input teamwire's
+    /// Default `Unsupported`, and the hook then says nothing. Claude Code
+    /// parses its `PostToolUse` input; pi parses the input teamwire's
     /// lead extension writes.
     fn parse_tool_call(&self, stdin: &[u8]) -> Result<ToolCall, HarnessError>;
     /// What kind of dialog the screen `tail` shows (ADR 0052). Default
     /// `CannotTell`, for a harness that cannot read its own dialogs. Claude
-    /// Code, Codex and pi name the kind from their screen markers.
+    /// Code and pi name the kind from their screen markers.
     fn dialog_kind(&self, tail: &str) -> DialogKind;
     /// Parse a permission hook's stdin into the neutral request (ADR 0052).
     /// Default `Unsupported`: the harness has no permission hook, and
@@ -419,7 +414,8 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          pub load_skill: &'static str }
 /// MonitoredCommand: the lead runs the command under a tool that hands it each
 /// line (Claude Code's Monitor). BackgroundCommand: the lead runs it with
-/// `--deliver` in the background (Codex, ADR 0023). ExtensionTool: the lead
+/// `--deliver` in the background, and the watch types each line into the
+/// lead's pane (ADR 0054 decision 8). ExtensionTool: the lead
 /// calls teamwire's lead extension tool `teamwire_watch` (pi, ADR 0036).
 pub enum WatchStart { MonitoredCommand, BackgroundCommand, ExtensionTool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
@@ -543,7 +539,7 @@ pub type Probe<'a> = &'a dyn Fn(&[&str]) -> Result<String, String>;  // runs the
 
 pub trait LeadSetup: Send + Sync {
     fn program(&self) -> &str;            // looked for on PATH by install, uninstall, launch and doctor
-    fn label(&self) -> &'static str;      // "Claude Code", "Codex", "pi"
+    fn label(&self) -> &'static str;      // "Claude Code", "pi"
     /// Doctor fails without its program; install without a terminal or
     /// --harness installs it; uninstall always plans it and stops at its
     /// refusal. Every other harness is optional. Default false.
@@ -612,9 +608,9 @@ or to a service call. The team row records `lead_harness` and `lead_host`;
 each member row records its own `harness` and `host`. Every service looks the
 adapter up for the party it is dealing with: the lead's harness to prove the
 lead or locate the lead, the recipient member's harness and host to deliver to
-that member. A Claude Code lead with a member whose harness id is `codex`
+that member. A Claude Code lead with a member whose harness id is `pi`
 type-checks and routes per member, because both harnesses (`claude-code` and
-`codex`) and both hosts (`herdr` and `tmux`) are registered. A member whose
+`pi`) and both hosts (`herdr` and `tmux`) are registered. A member whose
 harness or host id no adapter registers has its deliveries `undelivered` with
 `unknown_adapter`, and its launch is refused.
 
@@ -702,7 +698,7 @@ pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Addre
                           pub otel: OtelConfig, pub teamwire_bin: PathBuf,
                           pub plugins: BTreeMap<String, bool>, // team map overlaid by member map
                           pub context_handoff_tokens: Option<u64>, // member's value, else the team's; a Claude member's compaction backstop is twice its point
-                          pub accept_trust: bool }  // the spec's accept_trust; a harness that takes folder trust as a start option (Codex, ADR 0023) reads it
+                          pub accept_trust: bool }  // the spec's accept_trust; a harness that takes folder trust as a start option reads it
 /// How full one session's context is: the tokens the model read on the
 /// session's newest main-chain request (input + cache read + cache creation),
 /// and the window of that model. Every harness computes `tokens` the same way.
@@ -766,7 +762,7 @@ pub struct LeadStart { pub old_session: SessionId, pub old_args: Vec<String>,
 pub struct LeadStartSpec { pub argv: Vec<String>, pub dropped: Vec<String>,
                            pub warnings: Vec<String> }
 /// An allow list of old flags. `keyed` carries a flag only with a value that
-/// starts as given (Codex `-c model_reasoning_effort=`). `replaced` names the
+/// starts as given (`-c model_reasoning_effort=`). `replaced` names the
 /// flags the new start sets itself, such as the session to resume, and
 /// whether each takes a value; they are neither carried nor dropped.
 pub struct CarryRules<'a> { pub switches: &'a [&'a str], pub with_value: &'a [&'a str],

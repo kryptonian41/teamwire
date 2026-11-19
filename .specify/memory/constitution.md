@@ -15,7 +15,7 @@ The lead skill (`examples/skills/teamwire/`), the presets (`examples/presets/`),
 Every store write runs in `Store::write`. Files outside SQLite are written with `Platform::write_atomic`. Time comes from the `Clock` trait. `Host::submit` takes a `OneLine`. Only `teamwire-cli` prints or exits. No `unwrap`, `expect`, `panic` or `todo` outside tests. A crate depends only on lower layers. No new dependency, and no edit to `Cargo.lock`.
 
 ### V. Every Harness
-A lead or member feature ships for Claude Code, Codex and pi through the `Harness` trait, never for Claude Code alone.
+A lead or member feature ships for Claude Code and pi through the `Harness` trait, never for Claude Code alone.
 
 ### VI. Fakes Only In Tests
 Tests never type into a real herdr or tmux pane and never start a real agent session. They use `tests/fakes/` and `teamwire_fakes::TestHome`.
