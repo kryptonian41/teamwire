@@ -463,6 +463,48 @@ fn hold_starts(rig: &Rig) -> Vec<String> {
 }
 
 #[test]
+fn a_team_still_led_by_the_old_session_keeps_its_sleep_hold_after_a_partial_handoff() {
+    let rig = Rig::new();
+    team(&rig, "alpha", "Fix the prompts", false);
+    team(&rig, "beta", "Second team", false);
+    team(&rig, "gamma", "Third team", false);
+    old_lead(&rig);
+    // Another lead adopts beta between the plan and the adoption, so the
+    // handoff stops there: alpha has moved, gamma is never tried.
+    let home = rig.home.path().to_path_buf();
+    new_session_starts_then(&rig, move || {
+        let mut store = Store::open_existing(&home, &TeamName::parse("beta").unwrap()).unwrap();
+        store
+            .write(|tx| {
+                tx.adopt_lead(
+                    teamwire_core::Timestamp::from_unix_millis(1_800_000_000_000).unwrap(),
+                    &sid("someone-else"),
+                    SessionKind::Interactive,
+                )
+                .map(|_| ())
+            })
+            .unwrap();
+    });
+
+    let (said, result) = run(&rig);
+    let Err(HandoffError::Partial(why)) = result else {
+        panic!("{result:?} {}", text(&said));
+    };
+    assert!(
+        why.contains("Moved to the new lead: alpha. Still led by this session: beta, gamma"),
+        "{why}"
+    );
+    assert_eq!(lead_of(&rig, "gamma"), Some(sid(OLD)));
+    // gamma's hold keeps waiting on the old lead, whose pane stays open.
+    assert_eq!(
+        hold_starts(&rig),
+        vec![NEW_PID.to_string()],
+        "only alpha's hold moves: {}",
+        text(&said)
+    );
+}
+
+#[test]
 fn a_dry_run_says_the_plan_and_changes_nothing() {
     let rig = Rig::new();
     team(&rig, "alpha", "Fix the prompts", false);
