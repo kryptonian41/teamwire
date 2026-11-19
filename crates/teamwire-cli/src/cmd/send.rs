@@ -436,19 +436,6 @@ mod tests {
     }
 
     #[test]
-    fn a_lead_that_cannot_read_watch_lines_is_told_to_deliver_in_the_background() {
-        let line = watch_line(
-            &team(),
-            &watch_state(Ok(None)),
-            WatchStart::BackgroundCommand,
-        );
-        assert!(
-            line.contains("`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`"),
-            "{line}"
-        );
-    }
-
-    #[test]
     fn a_lead_that_starts_the_watch_with_a_tool_is_told_the_tool() {
         let line = watch_line(&team(), &watch_state(Ok(None)), WatchStart::ExtensionTool);
         assert_eq!(

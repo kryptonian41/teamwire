@@ -27,7 +27,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use common::Rig;
-use teamwire_core::harness::WatchStart;
 use teamwire_core::{
     Clock, Config, HarnessCaps, HarnessError, HarnessId, HostCaps, HostError, HostErrorCode,
     Liveness, Occupant, Pid, Place, PlaceState, SessionId, SessionKind, SplitRequest, TeamName,
@@ -361,7 +360,6 @@ fn the_first_prompt_points_at_the_document_and_names_each_team() {
 fn picks_its_own_id(rig: &Rig, adopts: &'static [&'static str]) {
     rig.harness.set_caps(HarnessCaps {
         choose_session_id: false,
-        watch_start: WatchStart::BackgroundCommand,
         ..FakeHarness::caps()
     });
     let home = rig.home.path().to_path_buf();
@@ -412,12 +410,12 @@ fn a_lead_that_picks_its_own_id_adopts_each_team_and_the_command_waits_for_it() 
 
     let (_, req) = split_pane(&rig, &old);
     assert_eq!(rig.harness.lead_starts()[0].new_session, None);
-    // A lead that runs its watch in the background is told so.
+    // Each team's watch command is named.
     assert!(
-        req.argv.last().unwrap().contains(
-            "(`nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`; `nohup teamwire watch \
-             beta --deliver >/dev/null 2>&1 &`)"
-        ),
+        req.argv
+            .last()
+            .unwrap()
+            .contains("(`teamwire watch alpha`; `teamwire watch beta`)"),
         "{req:?}"
     );
     assert!(

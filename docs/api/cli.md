@@ -193,8 +193,7 @@ its pid. `--deliver` also types each printed line, with the same dated
 prefix, into the lead's place, for a lead whose harness cannot read the
 watch's output as it is printed. Each delivery ends
 within 15 s. A line that cannot be delivered is still printed, and the watch
-keeps polling. A lead with that limit, one that cannot read watch lines, starts it as
-`nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`. A pi lead calls the
+keeps polling. A pi lead calls the
 `teamwire_watch` tool of teamwire's lead package instead, which runs the watch
 and steers each line into the session (ADR 0036); the package refuses
 `teamwire watch` through bash. `teamwire pr-watch --deliver` types its lines
@@ -339,8 +338,7 @@ started or reused as launch does; a hold that cannot be taken is a warning.
 Then come the line `watch: <how to start it>` and a line that says a
 member killed mid-turn needs a `reprompt` or a `note`. The `watch:` line, the
 same one launch prints, reads `watch: teamwire watch <team>` for a Claude
-Code lead, `watch: nohup teamwire watch <team> --deliver >/dev/null 2>&1 &`
-for a lead whose harness starts the watch in the background, and `watch: call the teamwire_watch tool with team <team>`
+Code lead, and `watch: call the teamwire_watch tool with team <team>`
 for a pi lead. When the caller is not
 the team's lead session, a last line says that results go to the reopened lead
 and that `teamwire lead --adopt <team>` makes the caller the lead instead.

@@ -255,23 +255,6 @@ fn the_lead_stop_hook_parses_and_holds_with_the_named_harness() {
 }
 
 #[test]
-fn the_lead_stop_hook_names_the_background_watch_for_a_lead_without_watch_lines() {
-    let bed = bed(None);
-    // The team's recorded lead harness is `fake-a`.
-    let mut caps = bed.a.capabilities();
-    caps.reads_watch_lines = false;
-    caps.watch_start = WatchStart::BackgroundCommand;
-    bed.a.set_caps(caps);
-    let reply = lead_stop(&bed, Some("fake-a")).unwrap();
-    let doc: serde_json::Value = serde_json::from_slice(&reply).unwrap();
-    let note = doc.get("reason").and_then(|n| n.as_str()).unwrap();
-    assert!(
-        note.contains("nohup teamwire watch alpha --deliver"),
-        "{note}"
-    );
-}
-
-#[test]
 fn the_lead_stop_hook_names_the_watch_tool_for_a_lead_that_calls_one() {
     let bed = bed(None);
     // The team's recorded lead harness is `fake-a`.
@@ -339,30 +322,6 @@ fn a_claude_code_lead_is_told_to_run_the_watch_under_monitor() {
             "(no watch is running: teamwire watch alpha)",
             "no watch is running: start one with `teamwire watch alpha`",
             "teamwire watch alpha",
-        ]
-    );
-}
-
-/// No real harness starts the watch in the background any more, so a fake
-/// one with that watch start stands in for it.
-#[test]
-fn a_lead_whose_harness_starts_the_watch_in_the_background_is_told_to_run_it_so() {
-    let fake = FakeHarness::with_id(HarnessId::from_static("fake-bg"));
-    fake.set_caps(teamwire_core::HarnessCaps {
-        watch_start: WatchStart::BackgroundCommand,
-        ..FakeHarness::caps()
-    });
-    let mut wiring = real_wiring();
-    let mut registry = Registry::new();
-    registry.add_harness(Arc::new(fake)).unwrap();
-    wiring.registry = Arc::new(registry);
-    assert_eq!(
-        watch_texts_in("fake-bg", &wiring),
-        [
-            "[teamwire:alpha] no watch is running; start it in the background with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &` before you stop.",
-            "(no watch is running: nohup teamwire watch alpha --deliver >/dev/null 2>&1 &)",
-            "no watch is running: start one with `nohup teamwire watch alpha --deliver >/dev/null 2>&1 &`",
-            "nohup teamwire watch alpha --deliver >/dev/null 2>&1 &",
         ]
     );
 }

@@ -411,11 +411,9 @@ pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
                          /// uses it (ADR 0051). Never read back from JSON
                          pub load_skill: &'static str }
 /// MonitoredCommand: the lead runs the command under a tool that hands it each
-/// line (Claude Code's Monitor). BackgroundCommand: the lead runs it with
-/// `--deliver` in the background, and the watch types each line into the
-/// lead's pane (ADR 0054 decision 8). ExtensionTool: the lead
-/// calls teamwire's lead extension tool `teamwire_watch` (pi, ADR 0036).
-pub enum WatchStart { MonitoredCommand, BackgroundCommand, ExtensionTool }
+/// line (Claude Code's Monitor). ExtensionTool: the lead calls teamwire's lead
+/// extension tool `teamwire_watch` (pi, ADR 0036).
+pub enum WatchStart { MonitoredCommand, ExtensionTool }
 pub struct TurnEnd { pub session: SessionId, pub subagent: bool,
                      pub hold_already_active: bool, pub final_message: Option<String>,
                      // read only when it is a regular file of at most 64 MiB,

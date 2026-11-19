@@ -281,10 +281,6 @@ string_enum! {
         /// The lead runs the command under a tool that hands it each line
         /// as the command prints it.
         MonitoredCommand => "monitored_command",
-        /// The lead runs the command in the background with `--deliver`, and
-        /// the watch types each line into the lead's pane. No harness starts
-        /// the watch this way now; ADR 0054 decision 7 lists it for removal.
-        BackgroundCommand => "background_command",
         /// The lead calls a tool of teamwire's lead extension, which runs the
         /// watch and hands the lead each line (ADR 0036).
         ExtensionTool => "extension_tool",

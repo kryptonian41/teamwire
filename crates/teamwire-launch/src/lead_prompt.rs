@@ -61,9 +61,7 @@ pub(crate) fn first_prompt(caps: &HarnessCaps, p: &FirstPrompt<'_>) -> String {
             let text = watch_text(caps.watch_start, WatchText::Launch, &t.name);
             match caps.watch_start {
                 WatchStart::ExtensionTool => text,
-                WatchStart::MonitoredCommand | WatchStart::BackgroundCommand => {
-                    format!("`{text}`")
-                }
+                WatchStart::MonitoredCommand => format!("`{text}`"),
             }
         })
         .collect();

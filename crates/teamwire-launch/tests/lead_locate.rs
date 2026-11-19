@@ -24,7 +24,6 @@ fn rig_without_watch_reading() -> Rig {
     let rig = Rig::new();
     let mut caps = FakeHarness::caps();
     caps.reads_watch_lines = false;
-    caps.watch_start = WatchStart::BackgroundCommand;
     rig.harness.set_caps(caps);
     rig
 }
@@ -86,12 +85,6 @@ fn launched_watch_command(rig: &Rig) -> String {
 #[test]
 fn the_watch_command_follows_what_the_leads_harness_reads() {
     assert_eq!(launched_watch_command(&Rig::new()), "teamwire watch demo");
-    let rig = rig_without_watch_reading();
-    put_lead_in_its_pane(&rig);
-    assert_eq!(
-        launched_watch_command(&rig),
-        "nohup teamwire watch demo --deliver >/dev/null 2>&1 &"
-    );
 }
 
 #[test]
