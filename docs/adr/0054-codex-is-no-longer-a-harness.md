@@ -80,38 +80,27 @@ The user decided on 2026-11-19 to remove support for the Codex harness.
 7. **Shared code that only Codex used is removed in a second step.** Each
    piece is removed in its own commit, after the adapter is gone, and only
    when a search shows that no harness and no host route still needs it.
-   The candidates are:
-   - `HarnessCaps::reads_watch_lines` and the launch check that refuses a
-     lead who cannot be located (ADR 0023 point 9). Claude Code and pi both
-     set it to `true`.
-   - `HarnessCaps::choose_session_id` and the code path for a harness that
-     picks its own session id. Claude Code and pi both set it to `true`.
-   - `WatchStart::BackgroundCommand`, the watch start that only a Codex lead
-     used.
-   - The `MCP_META_<key>` lookup in `Harness::caller_session`.
-   - `MemberLaunch::with_run_context`, kept for a harness that carries its
-     hook and MCP commands in argv.
-   - `MemberLaunch::accept_trust`, the copy of the spec's `accept_trust` that
-     launch writes into each member's start. Launch still writes it, and no
-     adapter reads it. The spec's own `accept_trust`, which decides whether
-     launch answers the folder-trust prompt, is not a candidate.
-   - The `false` value of `HarnessCaps::reads_input_box` and the two branches
-     for it in `crates/teamwire-deliver/src/deliver.rs`, which skip the
-     input-box check on a host that guards dialogs and read the screen
-     without style codes on another host. Claude Code and pi both set it to
-     `true`.
-   - `CarryRules::keyed` in `crates/teamwire-core/src/lead_start.rs`, which
-     carries an old lead's flag only with a value that starts as given.
-     Claude Code and pi both pass an empty list.
-   - The hook `before_read` of the lead-setup contract suite in
-     `tests/fakes/src/contract/lead_setup.rs`, which queues what a harness's
-     program answers when asked what is installed. Every caller passes a hook
-     that does nothing.
+   The search found no such user for any of the nine pieces, so every piece
+   is removed:
+
+   | Piece | Outcome |
+   | --- | --- |
+   | `HarnessCaps::reads_watch_lines` and the launch check that refuses a lead who cannot be located (ADR 0023 point 9) | Removed. Claude Code and pi both set it to `true`, so the check never ran for them. |
+   | `HarnessCaps::choose_session_id` and the code path for a harness that picks its own session id | Removed, with `teamwire hook session-start` and the lead handoff's wait for a new lead to adopt its teams. teamwire chooses every session id. |
+   | `WatchStart::BackgroundCommand` | Removed. Only a Codex lead started its watch this way. |
+   | The `MCP_META_<key>` lookup in `Harness::caller_session` | Removed. Only a test harness read it. |
+   | `MemberLaunch::with_run_context` | Removed. Claude Code and pi keep the hook and MCP commands in per-run files, never in argv. |
+   | `MemberLaunch::accept_trust`, the copy of the spec's `accept_trust` | Removed. No adapter read it. The spec's own `accept_trust` stays. |
+   | `HarnessCaps::reads_input_box` | Removed whole, because only `true` was left. Delivery always checks the input box on a host that guards dialogs, and always reads the screen with style codes on another host. |
+   | `CarryRules::keyed` | Removed. Claude Code and pi both passed an empty list. |
+   | The hook `before_read` of the lead-setup contract suite | Removed. Every caller passed a hook that did nothing. |
+
 8. **These parts stay.**
    - The list of agent kinds in `crates/teamwire-host-herdr/src/spawn.rs`.
      The list holds herdr's own kind names, and `codex` is one of them.
-   - `teamwire watch --deliver` and `teamwire pr-watch --deliver`, unless
-     the second step proves that no lead route uses them.
+   - `teamwire watch --deliver` and `teamwire pr-watch --deliver`. After the
+     second step no harness, launch text or hook tells a lead to run either
+     one. Both stay as commands a person can run.
    - Entries in `examples/models/evidence.json` that were measured in the
      Codex CLI. Each entry is evidence about a model, and its text already
      says where it was measured.
