@@ -102,8 +102,8 @@ The user decided on 2026-11-19 to remove support for the Codex harness.
      says where it was measured.
    - A stored row with harness `codex` in a migration test. The row is old
      data, and a migration must still read old data.
-9. **History is not edited.** `studies/`, `docs/research/`, `docs/design/`,
-   `specs/` and every accepted ADR file stay as they are.
+9. **History is not edited.** `bench/studies/`, `docs/research/`,
+   `docs/design/`, `specs/` and every accepted ADR file stay as they are.
 10. **The store does not change.** No schema version is added.
 
 ## Rejected
