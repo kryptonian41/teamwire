@@ -355,8 +355,8 @@ fn the_first_prompt_points_at_the_document_and_names_each_team() {
     );
 }
 
-/// A harness that picks its own session id, like Codex: the new lead
-/// adopts each team itself, and the command waits for that.
+/// A harness that picks its own session id: the new lead adopts each team
+/// itself, and the command waits for that.
 /// The new lead picks its own session id, and adopts the teams in `adopts`.
 fn picks_its_own_id(rig: &Rig, adopts: &'static [&'static str]) {
     rig.harness.set_caps(HarnessCaps {

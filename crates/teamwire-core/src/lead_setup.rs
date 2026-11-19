@@ -1,7 +1,7 @@
 //! The `LeadSetup` trait: what `teamwire install`, `uninstall` and `doctor`
 //! ask of a harness, so the CLI loops over the registered harnesses and never
 //! names one (ADR 0031). Each adapter keeps its own mechanism (a Claude Code
-//! plugin, a Codex plugin, a pi package). This module holds what they share:
+//! plugin, a pi package). This module holds what they share:
 //! the command the setup runs, the change list the CLI only displays, the one
 //! loop that makes changes in order, and the errors.
 
@@ -179,7 +179,7 @@ pub type Probe<'a> = &'a dyn Fn(&[&str]) -> Result<String, String>;
 pub trait LeadSetup: Send + Sync {
     /// The program the harness runs, which install and doctor look for.
     fn program(&self) -> &str;
-    /// The harness's name in a sentence, such as "Codex".
+    /// The harness's name in a sentence, such as "Claude Code".
     fn label(&self) -> &'static str;
     /// The harness teamwire assumes when nothing names one: doctor fails
     /// without its program, install without a terminal or `--harness`
@@ -333,12 +333,11 @@ mod tests {
 
     #[test]
     fn an_optional_setup_that_is_missing_passes_and_names_the_install() {
-        let missing = optional_check(Ok(LeadStatus::Missing), "codex", "Codex");
+        let missing = optional_check(Ok(LeadStatus::Missing), "pi", "pi");
         assert_eq!(
             missing,
             CheckOutcome::Pass(
-                "not installed; to lead from Codex, run `teamwire install --harness codex`"
-                    .to_owned()
+                "not installed; to lead from pi, run `teamwire install --harness pi`".to_owned()
             )
         );
         assert!(matches!(

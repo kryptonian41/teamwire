@@ -35,8 +35,7 @@ pub trait Harness: Send + Sync {
     /// The caller's own session, read through `get`: the process
     /// environment for a command (`|name| std::env::var(name).ok()`). The
     /// lead's MCP server also answers `MCP_META_<key>` with a string field of
-    /// the request's `_meta`, for a harness that names the session only there
-    /// (Codex, ADR 0023).
+    /// the request's `_meta`, for a harness that names the session only there.
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The
@@ -285,7 +284,7 @@ string_enum! {
         /// as the command prints it.
         MonitoredCommand => "monitored_command",
         /// The lead runs the command in the background with `--deliver`, and
-        /// the watch types each line into the lead's pane (ADR 0023).
+        /// the watch types each line into the lead's pane (ADR 0054 decision 8).
         BackgroundCommand => "background_command",
         /// The lead calls a tool of teamwire's lead extension, which runs the
         /// watch and hands the lead each line (ADR 0036).
@@ -357,7 +356,7 @@ pub struct MemberLaunch {
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
     /// The spec's `accept_trust`. Read by a harness that takes folder trust
-    /// as a start option rather than answering a dialog (Codex, ADR 0023).
+    /// as a start option rather than answering a dialog.
     #[serde(default)]
     pub accept_trust: bool,
 }
@@ -419,7 +418,7 @@ impl MemberLaunch {
 
     /// A resume's launch with what the first start recorded beyond the model:
     /// the `teamwire` binary and the plugin switches. A harness that carries
-    /// hook and MCP commands in argv (Codex) needs both to match the start.
+    /// hook and MCP commands in argv needs both to match the start.
     #[must_use]
     pub fn with_run_context(
         mut self,

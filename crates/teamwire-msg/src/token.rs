@@ -1,9 +1,9 @@
 //! Where a member's token comes from (ADR 0023 point 4).
 
 /// `TEAMWIRE_TOKEN`, else the contents of the file `TEAMWIRE_TOKEN_FILE`
-/// names, with trailing whitespace removed. A harness that cannot put the
-/// token in a session's environment without putting it in argv (Codex)
-/// passes the file's path instead. An unreadable or empty file is no token.
+/// names, with trailing whitespace removed. A harness that passes the file's
+/// path instead of the token, as pi's member extension does (ADR 0029),
+/// keeps the token out of argv. An unreadable or empty file is no token.
 pub fn caller_token(get: impl Fn(&str) -> Option<String>) -> Option<String> {
     if let Some(token) = get("TEAMWIRE_TOKEN").filter(|t| !t.is_empty()) {
         return Some(token);

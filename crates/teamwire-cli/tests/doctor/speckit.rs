@@ -197,9 +197,7 @@ fn git_is_asked_about_head_at_the_root() {
         "--",
         ".specify",
         ".claude",
-        ".agents",
         ".pi",
-        ".codex",
     ]);
     asked(&["show", &format!("{SHA}:.specify/memory/constitution.md")]);
     asked(&["check-ignore", "-q", "--no-index", ".specify/feature.json"]);
@@ -385,29 +383,6 @@ fn each_installed_integration_needs_its_command_folder() {
 }
 
 #[test]
-fn codex_needs_its_skills_folder() {
-    let bed = speckit_bed();
-    put_committed(
-        bed.home.path(),
-        ".specify/integration.json",
-        r#"{"installed_integrations": ["codex"]}"#,
-    );
-    assert_eq!(
-        level_of(&bed.checks(), "spec-kit integrations"),
-        Level::Warn
-    );
-    put_committed(
-        bed.home.path(),
-        ".agents/skills/speckit-plan/SKILL.md",
-        "plan",
-    );
-    assert_eq!(
-        level_of(&bed.checks(), "spec-kit integrations"),
-        Level::Pass
-    );
-}
-
-#[test]
 fn an_unreadable_integration_file_warns() {
     let bed = speckit_bed();
     remove_committed(bed.home.path(), ".specify/integration.json");
@@ -529,9 +504,8 @@ fn an_extension_that_declares_events_warns_and_one_that_does_not_passes() {
 }
 
 #[test]
-fn an_integration_events_file_or_a_codex_config_warns() {
+fn an_integration_events_file_sets_up_no_hook_on_its_own() {
     let bed = speckit_bed();
-    // An override file sets up no hook on its own.
     put_committed(bed.home.path(), ".specify/integration-events.yml", "{}\n");
     let (level, detail) = events(&bed);
     assert_eq!(level, Level::Pass);
@@ -539,33 +513,6 @@ fn an_integration_events_file_or_a_codex_config_warns() {
         !detail.contains(".specify/integration-events.yml"),
         "{detail}"
     );
-
-    let bed = speckit_bed();
-    put_committed(
-        bed.home.path(),
-        ".codex/config.toml",
-        "[[hooks.PreToolUse]]\n",
-    );
-    let (level, detail) = events(&bed);
-    assert_eq!(level, Level::Warn);
-    assert!(detail.contains(".codex/config.toml"), "{detail}");
-    assert!(detail.contains("Codex member"), "{detail}");
-}
-
-#[test]
-fn a_codex_hooks_file_warns_because_codex_launch_refuses_it() {
-    let bed = speckit_bed();
-    put_committed(bed.home.path(), ".codex/hooks.json", "{}\n");
-    let (level, detail) = events(&bed);
-    assert_eq!(level, Level::Warn);
-    assert!(detail.contains(".codex/hooks.json"), "{detail}");
-    // Committed, the removal needs a commit.
-    assert!(
-        detail.ends_with("remove it from the repository, then commit on HEAD"),
-        "{detail}"
-    );
-    assert!(detail.contains("Codex member"), "{detail}");
-    assert!(!detail.contains(".codex/config.toml"), "{detail}");
 }
 
 #[test]
@@ -788,24 +735,10 @@ const EVX_CLAUDE_SETTINGS: &str = r#"{
 }
 "#;
 
-/// The `.codex/config.toml` that `specify extension add --dev evx` wrote.
-const EVX_CODEX_CONFIG: &str = "
-
-[[hooks.SessionStart]]
-matcher = \"*\"
-
-[[hooks.SessionStart.hooks]]
-type = \"command\"
-command = \"python3 .specify/events.py speckit.evx.guard session_start 60\"
-timeout = 65
-speckit_marker = true
-";
-
-/// Every file `specify extension add --dev evx` wrote for Claude Code and Codex.
+/// Every file `specify extension add --dev evx` wrote for Claude Code.
 fn put_evx(root: &Path) {
     put(root, ".specify/extensions/evx/extension.yml", EVX_MANIFEST);
     put(root, ".claude/settings.json", EVX_CLAUDE_SETTINGS);
-    put(root, ".codex/config.toml", EVX_CODEX_CONFIG);
     put(root, ".specify/events.py", "#!/usr/bin/env python3\n");
 }
 
@@ -826,7 +759,6 @@ fn every_line_reads_the_commit_and_a_change_only_on_disk_does_not_clear_a_warnin
     for file in [
         ".specify/extensions/evx/extension.yml",
         ".claude/settings.json",
-        ".codex/config.toml",
         ".specify/events.py",
     ] {
         std::fs::remove_file(root.join(file)).unwrap();
@@ -836,7 +768,6 @@ fn every_line_reads_the_commit_and_a_change_only_on_disk_does_not_clear_a_warnin
     assert_eq!(level_of(&checks, "spec-kit events"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit events");
     assert!(detail.contains(".claude/settings.json"), "{detail}");
-    assert!(detail.contains(".codex/config.toml"), "{detail}");
     assert_eq!(level_of(&checks, "spec-kit integrations"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit integrations");
     assert!(
@@ -994,10 +925,14 @@ fn a_file_on_disk_but_not_in_the_commit_is_named_untracked_changed_new_or_git_ig
     put(
         root,
         ".specify/integration.json",
-        &INTEGRATIONS.replace("pi", "codex"),
+        &INTEGRATIONS.replace("1.3.3.dev0", "1.3.3"),
     );
-    put(root, ".agents/skills/speckit-plan/SKILL.md", "plan");
-    put(root, ".agents/skills/speckit-tasks/SKILL.md", "tasks");
+    put(root, ".claude/skills/speckit-tasks/SKILL.md", "tasks");
+    put(
+        root,
+        ".claude/skills/speckit-implement/SKILL.md",
+        "implement",
+    );
     put(root, ".specify/scripts/bash/common.sh", "#!/bin/sh\n");
     git(root, &["add", ".specify/scripts"]);
     put(root, ".gitignore", ".pi/prompts/speckit.tasks.md\n");
@@ -1020,7 +955,7 @@ fn a_file_on_disk_but_not_in_the_commit_is_named_untracked_changed_new_or_git_ig
         "{detail}"
     );
     assert!(
-        detail.contains(".agents/skills/speckit-* (untracked, 2 files)"),
+        detail.contains(".claude/skills/speckit-* (untracked, 2 files)"),
         "{detail}"
     );
     assert!(
@@ -1040,32 +975,35 @@ fn a_file_on_disk_but_not_in_the_commit_is_named_untracked_changed_new_or_git_ig
 }
 
 #[test]
-fn codex_installed_but_not_committed_warns_until_the_named_git_add_is_committed() {
+fn pi_installed_but_not_committed_warns_until_the_named_git_add_is_committed() {
     let bed = speckit_bed();
     let root = bed.home.path();
-    // What `specify integration install codex` changes on a committed claude setup.
-    put(
+    // A committed claude setup.
+    remove_committed(root, ".pi");
+    put_committed(
         root,
         ".specify/integration.json",
-        &INTEGRATIONS.replace("\"pi\"", "\"codex\""),
+        &INTEGRATIONS.replace(",\n    \"pi\"", ""),
     );
-    put(root, ".specify/integrations/codex.manifest.json", "{}\n");
+    // What `specify integration install pi` changes on it.
+    put(root, ".specify/integration.json", INTEGRATIONS);
+    put(root, ".specify/integrations/pi.manifest.json", "{}\n");
     for cmd in ["plan", "tasks", "implement"] {
-        put(root, &format!(".agents/skills/speckit-{cmd}/SKILL.md"), cmd);
+        put(root, &format!(".pi/prompts/speckit.{cmd}.md"), cmd);
     }
     let checks = bed.checks();
     assert_eq!(level_of(&checks, "spec-kit committed"), Level::Warn);
     let detail = detail_of(&checks, "spec-kit committed").to_owned();
     assert!(
-        detail.contains(".agents/skills/speckit-* (untracked, 3 files)"),
+        detail.contains(".pi/prompts/speckit.*.md (untracked, 3 files)"),
         "{detail}"
     );
     assert!(
-        detail.contains(".specify/integrations/codex.manifest.json (untracked)"),
+        detail.contains(".specify/integrations/pi.manifest.json (untracked)"),
         "{detail}"
     );
     assert!(
-        detail.contains("run `git add .agents/skills/speckit-* .specify`"),
+        detail.contains("run `git add .pi/prompts/speckit.*.md .specify`"),
         "{detail}"
     );
 
@@ -1303,30 +1241,20 @@ fn events_warn_only_on_hooks_spec_kit_wrote_and_each_named_remedy_clears_them() 
     for (named, keeps_manifest) in remedies {
         let bed = speckit_bed();
         let root = bed.home.path();
-        put(
-            root,
-            ".specify/integration.json",
-            &INTEGRATIONS.replace("\"pi\"", "\"codex\""),
-        );
         put_evx(root);
         commit(root);
         let (level, detail) = events(&bed);
         assert_eq!(level, Level::Warn);
         assert!(detail.contains(named), "{named}: {detail}");
         assert!(
-            detail.contains("and `specify integration upgrade codex --force"),
+            detail.contains("and `specify integration upgrade pi --force"),
             "{detail}"
         );
         assert!(detail.contains(".claude/settings.json"), "{detail}");
-        assert!(detail.contains(".codex/config.toml"), "{detail}");
         assert!(detail.contains(".specify/events.py"), "{detail}");
         assert!(detail.ends_with("then commit on HEAD"), "{detail}");
 
-        for file in [
-            ".claude/settings.json",
-            ".codex/config.toml",
-            ".specify/events.py",
-        ] {
+        for file in [".claude/settings.json", ".specify/events.py"] {
             std::fs::remove_file(root.join(file)).unwrap();
         }
         if !keeps_manifest {
@@ -1336,27 +1264,6 @@ fn events_warn_only_on_hooks_spec_kit_wrote_and_each_named_remedy_clears_them() 
         let (level, detail) = events(&bed);
         assert_eq!(level, Level::Pass, "{named}: {detail}");
     }
-}
-
-#[test]
-fn a_codex_file_only_on_disk_warns_because_codex_launch_refuses_it_there() {
-    let bed = speckit_bed();
-    let root = bed.home.path();
-    put(root, ".codex/hooks.json", "{}\n");
-    let (level, detail) = events(&bed);
-    assert_eq!(level, Level::Warn);
-    assert!(
-        detail.contains(".codex/hooks.json is on disk but not in HEAD ("),
-        "{detail}"
-    );
-    assert!(detail.contains("Codex member"), "{detail}");
-    assert!(
-        detail.ends_with("remove it from the repository"),
-        "{detail}"
-    );
-    assert!(!detail.contains("then commit"), "{detail}");
-    std::fs::remove_file(root.join(".codex/hooks.json")).unwrap();
-    assert_eq!(events(&bed).0, Level::Pass);
 }
 
 #[test]

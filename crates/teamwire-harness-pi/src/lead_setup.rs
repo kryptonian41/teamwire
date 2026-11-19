@@ -5,9 +5,9 @@
 //! a restart of pi. teamwire never writes pi's directory; it reads
 //! `settings.json` there to see whether the package is registered.
 //!
-//! As for Codex, `plan_*` reads and checks and changes nothing, and
-//! `apply_lead_setup` makes the changes in order and stops at the first
-//! failure, so a caller that only plans has a dry run.
+//! As the `LeadSetup` trait asks, `plan_*` reads and checks and changes
+//! nothing, and `apply_lead_setup` makes the changes in order and stops at
+//! the first failure, so a caller that only plans has a dry run.
 
 use std::fmt;
 use std::path::{Component, Path, PathBuf};

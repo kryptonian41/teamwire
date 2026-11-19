@@ -195,7 +195,7 @@ pub(crate) fn plan<'r>(
     };
     let mut warnings = Vec::new();
     let old_args = old_args(ctx.platform, harness, &old).unwrap_or_else(|| {
-        // A Codex or pi lead's approval flags live only in its arguments, so
+        // A pi lead's approval flags live only in its arguments, so
         // the user must hear that none of them reach the new lead.
         warnings.push(
             "the old lead's arguments could not be read, so the new lead starts with no flag \

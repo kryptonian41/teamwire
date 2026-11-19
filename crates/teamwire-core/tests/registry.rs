@@ -93,9 +93,9 @@ fn unknown_and_duplicate_ids_refused() {
         RegistryError::Duplicate("none".to_owned())
     );
 
-    let codex = HarnessId::parse("codex").unwrap();
-    let err = registry.harness(&codex).err().unwrap();
-    assert_eq!(err, RegistryError::UnknownHarness(codex));
+    let unknown = HarnessId::parse("nonesuch").unwrap();
+    let err = registry.harness(&unknown).err().unwrap();
+    assert_eq!(err, RegistryError::UnknownHarness(unknown));
     assert_eq!(
         DeliveryError::from(err).code,
         DeliveryErrorCode::UnknownAdapter

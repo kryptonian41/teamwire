@@ -315,7 +315,8 @@ fn only_a_members_own_brief_is_its_agreed_plan() {
     }
 }
 
-/// Codex and pi members get the same text, so no harness's tool prefix appears.
+/// Claude Code and pi members get the same text, so no harness's tool prefix
+/// appears.
 #[test]
 fn tools_are_named_by_the_server_not_one_harness_prefix() {
     for kind in MemberKind::ALL {

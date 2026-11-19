@@ -587,31 +587,6 @@ fn agent_start_refuses_bad_input_like_herdr() {
 }
 
 #[test]
-fn a_codex_agent_meets_the_same_newline_rule() {
-    let env = FakeHerdrEnv::new().unwrap();
-    let pane_id = pane(&env, "/tmp");
-    let run = |arg: &str| {
-        env.run(&[
-            "agent",
-            "start",
-            "tw_demo_api",
-            "--kind",
-            "codex",
-            "--pane",
-            &pane_id,
-            "--",
-            arg,
-        ])
-        .unwrap()
-    };
-    assert_eq!(
-        run("a=\"\"\"\nb\"\"\"").error_code().as_deref(),
-        Some("invalid_agent_argument")
-    );
-    assert_eq!(run("a=\"b\\nc\"").code, Some(0));
-}
-
-#[test]
 fn a_busy_pane_and_a_taken_name_are_refused() {
     let env = FakeHerdrEnv::new().unwrap();
     let a = pane(&env, "/tmp");

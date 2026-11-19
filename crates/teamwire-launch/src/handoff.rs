@@ -29,8 +29,8 @@ pub struct HandoffPlan<'r> {
     pub team: TeamName,
     pub member: Member,
     /// The id the new session starts with, for a harness that lets teamwire
-    /// choose it. `None` for one that picks its own (Codex), whose
-    /// session-start hook records it.
+    /// choose it. `None` for one that picks its own, whose session-start
+    /// hook records it.
     pub new_session: Option<SessionId>,
     /// The argv of the new session, for `--dry-run`.
     pub argv: Vec<String>,
@@ -327,8 +327,8 @@ fn reason(outcome: ReopenOutcome) -> String {
 }
 
 /// `why`, and how to get the member back. Nothing recorded the handoff, but
-/// a harness that records its own session (Codex, through its session-start
-/// hook) may have put the new session on the row before the failure. The
+/// a harness that records its own session (through its session-start hook)
+/// may have put the new session on the row before the failure. The
 /// old one is written back, after the new tab is closed, so reopen resumes
 /// the session that holds the member's work.
 fn failed(ctx: &mut Ctx<'_>, plan: &HandoffPlan<'_>, why: &str) -> String {

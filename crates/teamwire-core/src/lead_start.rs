@@ -46,9 +46,9 @@ pub struct CarryRules<'a> {
     pub switches: &'a [&'a str],
     /// Flags that take one value, as the next word or after `=`.
     pub with_value: &'a [&'a str],
-    /// A flag and the start its value must have to be carried, such as
-    /// Codex's `-c` with `model_reasoning_effort=`. The flag with any other
-    /// value is dropped.
+    /// A flag and the start its value must have to be carried, such as `-c`
+    /// with `model_reasoning_effort=`. The flag with any other value is
+    /// dropped.
     pub keyed: &'a [(&'a str, &'a str)],
     /// Flags the new start sets itself, such as the session to resume, and
     /// whether each takes a value. They are neither carried nor dropped.

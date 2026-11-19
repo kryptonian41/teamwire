@@ -33,11 +33,10 @@ const CLAIM_PAUSE: Duration = Duration::from_millis(500);
 const CLAIM_TRIES: u32 = 8;
 
 /// The name a hook run gives its events (`docs/metrics.md` section 5). The
-/// two harnesses that existed before this name was derived keep theirs.
+/// harness that existed before this name was derived keeps its own.
 fn hook_name(harness: &HarnessId) -> String {
     match harness.as_str() {
         "claude-code" => "claude-stop".to_owned(),
-        "codex" => "codex-stop".to_owned(),
         other => format!("{other}-stop"),
     }
 }
@@ -63,7 +62,7 @@ pub fn on_turn_end(ctx: &mut Ctx<'_>, me: &Role, t: &TurnEnd) -> TurnEndReply {
     reply
 }
 
-/// The member's harness reads its own session file (pi, Codex). A harness
+/// The member's harness reads its own session file (pi). A harness
 /// that gives no reading leaves the transcript the hook was handed to the
 /// Claude Code reader here, which finds nothing in another harness's file.
 fn session_usage(ctx: &Ctx<'_>, member: &Member, t: &TurnEnd) -> Option<serde_json::Value> {
@@ -453,7 +452,7 @@ mod tests {
     fn the_hook_name_follows_the_harness() {
         let name = |id: &'static str| hook_name(&HarnessId::from_static(id));
         assert_eq!(name("claude-code"), "claude-stop");
-        assert_eq!(name("codex"), "codex-stop");
+        assert_eq!(name("pi"), "pi-stop");
         assert_eq!(name("other"), "other-stop");
     }
 

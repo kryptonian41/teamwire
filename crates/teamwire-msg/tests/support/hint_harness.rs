@@ -1,6 +1,7 @@
 //! A harness that names the caller's session only through one lookup key,
-//! as Codex does through `MCP_META_sessionId`, and that can run a function
-//! when its startup dialog is answered, as a session-start hook would.
+//! such as `MCP_META_sessionId` from an MCP request, and that can run a
+//! function when its startup dialog is answered, as a session-start hook
+//! would.
 //! Everything else is the fake's.
 #![expect(
     clippy::unwrap_used,
@@ -42,8 +43,8 @@ impl HintHarness {
         }
     }
 
-    /// `launch_spec` reads the contract file, as Codex does, and fails when
-    /// it is not there yet.
+    /// `launch_spec` reads the contract file, as a harness that puts its text
+    /// in argv would, and fails when it is not there yet.
     pub(crate) fn reading_contract(mut self) -> Self {
         self.reads_contract = true;
         self

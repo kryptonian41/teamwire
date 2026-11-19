@@ -145,7 +145,7 @@ fn a_classified_and_an_unclassified_member_get_their_own_rows() {
                 title: "db".to_owned(),
                 kind: MemberKind::Reviewer,
                 mode: Mode::Pane,
-                harness: HarnessId::from_static("codex"),
+                harness: HarnessId::from_static("pi"),
                 host: HostId::from_static("herdr"),
                 cwd: PathBuf::from("/tmp"),
                 repo: None,
@@ -359,7 +359,7 @@ fn an_archive_is_read_beside_an_open_team_and_each_team_counts_once() {
     member(
         &mut beta,
         "web",
-        "codex",
+        "pi",
         &json!("mechanical_edit"),
         &json!({}),
     );
@@ -375,7 +375,7 @@ fn an_archive_is_read_beside_an_open_team_and_each_team_counts_once() {
         .iter()
         .map(|r| (r.harness.as_str(), r.members))
         .collect();
-    assert_eq!(harnesses, vec![("claude-code", 1), ("codex", 1)]);
+    assert_eq!(harnesses, vec![("claude-code", 1), ("pi", 1)]);
 }
 
 /// Copies `store` to `archive/<name>/team.db`, with a `SHA256SUMS` file

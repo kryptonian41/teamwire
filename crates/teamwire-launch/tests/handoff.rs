@@ -259,7 +259,7 @@ fn a_session_its_start_hook_recorded_before_the_handoff_write_is_kept() {
     let mut caps = FakeHarness::caps();
     caps.choose_session_id = false;
     rig.harness.set_caps(caps);
-    let hooked = SessionId::parse("codex-new").unwrap();
+    let hooked = SessionId::parse("hooked-new").unwrap();
     let mut ctx = ctx(&rig, &mut store);
     let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
     // The new session's start hook runs while the tab opens.
@@ -327,9 +327,9 @@ fn a_failed_trust_step_puts_back_the_old_session_a_start_hook_replaced() {
     );
     let mut ctx = ctx(&rig, &mut store);
     let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
-    // The new Codex session's start hook records it while the tab opens.
+    // The new session's start hook records it while the tab opens.
     ctx.store
-        .write(|tx| tx.set_member_session(&role("api"), &SessionId::parse("codex-new").unwrap()))
+        .write(|tx| tx.set_member_session(&role("api"), &SessionId::parse("hooked-new").unwrap()))
         .unwrap();
     let why = open_handoff(&mut ctx, &plan).unwrap_err();
     assert!(

@@ -24,7 +24,8 @@ pub struct LeadSetupSetup<'a> {
     pub shared_skill: &'a str,
     /// Called before each `status` and plan: queues on `platform` what the
     /// harness's program answers when asked what is installed, for a harness
-    /// that asks it (Codex's `plugin list`). Nothing is installed.
+    /// that asks it. It is a no-op for Claude Code and pi. Nothing is
+    /// installed.
     pub before_read: &'a dyn Fn(&FakePlatform),
 }
 

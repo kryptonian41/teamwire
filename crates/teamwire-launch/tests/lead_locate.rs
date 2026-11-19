@@ -58,7 +58,7 @@ fn a_lead_that_cannot_be_found_is_refused_before_anything_is_made() {
     let errors = rig.validate(&spec, false).unwrap_err();
     assert_eq!(codes(&errors), ["lead_not_locatable"]);
     let message = &errors.first().unwrap().message;
-    assert!(message.contains("codex --no-daemon"), "{message}");
+    assert!(message.ends_with("runs inside its own pane."), "{message}");
     assert!(rig.home_is_empty());
 }
 

@@ -181,7 +181,7 @@ fn lead_must_be_locatable(env: &ValidateEnv<'_>, lead: &LeadPlan, errors: &mut V
             format!(
                 "teamwire cannot find the lead's pane ({why}), and this lead cannot read \
                  `teamwire watch`, so results would reach nobody. Start the lead so its session \
-                 runs inside its own pane: for Codex, run `codex --no-daemon`."
+                 runs inside its own pane."
             ),
         ));
     }

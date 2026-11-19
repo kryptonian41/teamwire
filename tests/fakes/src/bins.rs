@@ -14,7 +14,7 @@ const SYSTEM_DIRS: [&str; 4] = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"];
 /// The real programs a test must never reach by name: the hosts, which
 /// type into the user's panes, and the harnesses, which start real sessions.
 /// A Linux package puts `tmux` and `herdr` in /usr/bin; macOS has none there.
-const REAL_BINS: [&str; 4] = ["herdr", "claude", "tmux", "codex"];
+const REAL_BINS: [&str; 3] = ["herdr", "claude", "tmux"];
 
 /// The directory that holds the built `fake-herdr` and `fake-claude`.
 #[derive(Debug, Clone)]

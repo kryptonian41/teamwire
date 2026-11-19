@@ -674,8 +674,8 @@ fn a_result_file_that_was_not_written_points_the_lead_at_the_report() {
     assert_eq!(rig.newest(&api).result_sha256, None);
 }
 
-/// The fake harness, with a usage reading of its own, as pi's and Codex's
-/// harnesses read one from their session files.
+/// The fake harness, with a usage reading of its own, as pi's harness reads
+/// one from its session files.
 struct UsageHarness {
     inner: Arc<teamwire_fakes::FakeHarness>,
     usage: teamwire_core::SessionUsage,
@@ -758,14 +758,14 @@ impl teamwire_core::Harness for UsageHarness {
     }
 }
 
-/// A member whose harness reads its own session file (pi, Codex) gets that
+/// A member whose harness reads its own session file (pi) gets that
 /// reading on the delivering event, in the shape the metrics read.
 #[test]
 fn delivering_event_carries_the_usage_the_members_harness_reads() {
     let (mut rig, api) = finished_member();
     let mut usage = teamwire_core::SessionUsage::new();
     usage.insert(
-        "gpt-5-codex".to_owned(),
+        "gpt-5.5".to_owned(),
         teamwire_core::TokenCounts {
             input: 2_000,
             output: 400,
@@ -790,6 +790,6 @@ fn delivering_event_carries_the_usage_the_members_harness_reads() {
     let delivering = &rig.events(EventType::ResultDelivering)[0];
     assert_eq!(
         delivering.data["usage"],
-        serde_json::json!({"gpt-5-codex": {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0}})
+        serde_json::json!({"gpt-5.5": {"input": 2000, "output": 400, "cache_read": 3000, "cache_creation": 0}})
     );
 }

@@ -1,5 +1,5 @@
 //! A resumed member gets the binary and the plugin switches its first start
-//! used: a harness that carries hook and MCP commands in argv (Codex) would
+//! used: a harness that carries hook and MCP commands in argv would
 //! otherwise run a bare `teamwire` and lose the switches.
 #![expect(
     clippy::unwrap_used,

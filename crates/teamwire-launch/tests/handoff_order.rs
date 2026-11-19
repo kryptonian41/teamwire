@@ -138,7 +138,8 @@ fn a_failed_place_close_stops_before_the_spawn_and_names_reopen() {
 }
 
 /// `close_place`, then the new session's start hook recording an id of its
-/// own while the tab opens, as Codex's does.
+/// own while the tab opens, as the hook of a harness that picks its own
+/// session id does.
 fn close_place_then_hook(
     ctx: &Ctx<'_>,
     team: &TeamName,
@@ -147,7 +148,7 @@ fn close_place_then_hook(
     let said = close_place(ctx, team, member);
     Store::open_existing(ctx.home, team)
         .unwrap()
-        .write(|tx| tx.set_member_session(&member.role, &SessionId::parse("codex-new").unwrap()))
+        .write(|tx| tx.set_member_session(&member.role, &SessionId::parse("hooked-new").unwrap()))
         .unwrap();
     said
 }

@@ -131,8 +131,7 @@ pub(crate) fn agent_exited(state_path: &Path, pane_id: &str) -> bool {
 
 /// How many prompts typed into the pane's inbox its agent has not taken yet.
 /// Zero when the agent will take none: it exited, its process is gone, or it
-/// does not count what it takes (no `prompts` in its `status.json`, as with
-/// the Codex stand-in).
+/// does not count what it takes (no `prompts` in its `status.json`).
 pub(crate) fn untaken_prompts(state_path: &Path, pane_id: &str, pid: u32) -> usize {
     if agent_exited(state_path, pane_id) || !fsutil::pid_alive(pid) {
         return 0;
