@@ -69,7 +69,7 @@ fn without_config_env_identity_moves_to_the_host_channel() {
     let spec = h.launch_spec(&member()).unwrap();
     assert_eq!(spec.identity_channel, IdentityChannel::HostEnv);
     assert_eq!(spec.env.len(), 2);
-    assert!(!spec.argv.contains(&"--session-id".to_owned()));
+    assert!(spec.argv.contains(&"--session-id".to_owned()));
     let doc: Value = serde_json::from_slice(&spec.files.first().unwrap().bytes).unwrap();
     assert!(doc.get("env").is_none());
 }
