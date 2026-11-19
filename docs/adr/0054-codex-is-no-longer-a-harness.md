@@ -14,12 +14,17 @@ far as it describes what Claude Code and pi do:
   row names (`crates/teamwire-cli/src/cmd/hook.rs`, `member_hook_in`).
 - Point 10: the contract text names no harness
   (`crates/teamwire-launch/contracts/`).
-- Point 9, two of its bullets only. The wiring picks the lead harness from
+- Point 9, four of its parts only. The wiring picks the lead harness from
   `TEAMWIRE_LEAD_HARNESS`, else from the session the command runs in
   (`crates/teamwire-cli/src/wiring.rs`, `lead_harness`). `teamwire install`
   shows a numbered selector of the harnesses on PATH in a terminal, and
   installs `--harness` or `claude-code` without one
-  (`crates/teamwire-cli/src/cmd/install.rs`).
+  (`crates/teamwire-cli/src/cmd/install.rs`). `teamwire watch <team>
+  --deliver` types each line it prints into the lead's pane, through
+  `teamwire-deliver` (`crates/teamwire-cli/src/cmd/watch.rs`,
+  `deliver_to_lead`). The CLI passes the shared skill text in, because one
+  adapter crate may not depend on another
+  (`crates/teamwire-core/src/lead_setup.rs`, `LeadTarget::shared_skill`).
 
 Also supersedes each sentence in the table at the end of this file, as far
 as the sentence gives a rule for a Codex lead or a Codex member. A sentence

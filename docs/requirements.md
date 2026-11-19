@@ -138,7 +138,7 @@ Each one has a test named in `docs/failure-modes.md`.
 | REP-9 | MUST | The result file is written, atomically, before delivery is attempted. | specmsg R20, C5 |
 | REP-10 | MUST | The turn-end hook never fails the harness turn. It exits 0 on every path, returns at once for sessions that are not team members, and ignores subagent stops. A member hook that gives up before its work starts prints one `teamwire hook: <why>` line on stderr, and a store error with code busy, full, corrupt or io also leaves a `store.error` row when the store can take it. | specmsg R21, B9, B10; speclife LC-37; ADR 0026 |
 | REP-11 | MUST | A finished member is matched by its session id and its team identity together. A different session in the same place is not the member. | specmsg R22, L11 |
-| REP-12 | MUST | The wake-up line is short: role, status, a summary of at most 200 characters, and the result file path. It may end with a note that no watch is running (ADR 0018 point 6; ADR 0023 point 9). | specmsg C4; ADR 0018; ADR 0023 |
+| REP-12 | MUST | The wake-up line is short: role, status, a summary of at most 200 characters, and the result file path. It may end with a note that no watch is running (ADR 0018 point 6). | specmsg C4; ADR 0018 |
 | REP-13 | MUST | With a harness that has no turn-end hook, a completion is still reported to the lead, through the watch. | speclife Q2; harness 1.4 |
 
 ### Messages between members (MSG)
