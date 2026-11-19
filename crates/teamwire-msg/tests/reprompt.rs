@@ -276,7 +276,10 @@ fn a_reprompt_after_a_handoff_gets_the_next_generation_and_gives_back_to_the_han
     rig.clock.advance(Duration::from_secs(5));
     let at = rig.now();
     rig.store
-        .write(|tx| tx.record_handoff(at, &role("api"), None, &place))
+        .write(|tx| {
+            let session = teamwire_core::SessionId::parse("api-new").unwrap();
+            tx.record_handoff(at, &role("api"), &session, &place)
+        })
         .unwrap();
     assert_eq!(generation(&rig, "api"), (3, at));
 

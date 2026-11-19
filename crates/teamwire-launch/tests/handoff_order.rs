@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use common::{Rig, member_row, pane_member, role_events, team_spec};
 use teamwire_core::{Address, Clock, HostError, HostErrorCode, Member, Role, SessionId, TeamName};
-use teamwire_fakes::{FakeHarness, Fault};
+use teamwire_fakes::Fault;
 use teamwire_launch::{HandoffError, PlaceCloser, Said, hand_off};
 use teamwire_store::{Ctx, Store};
 
@@ -137,42 +137,19 @@ fn a_failed_place_close_stops_before_the_spawn_and_names_reopen() {
     assert_eq!(member_row(&store, "api").unwrap(), before);
 }
 
-/// `close_place`, then the new session's start hook recording an id of its
-/// own while the tab opens, as the hook of a harness that picks its own
-/// session id does.
-fn close_place_then_hook(
-    ctx: &Ctx<'_>,
-    team: &TeamName,
-    member: &Member,
-) -> Result<Option<String>, String> {
-    let said = close_place(ctx, team, member);
-    Store::open_existing(ctx.home, team)
-        .unwrap()
-        .write(|tx| tx.set_member_session(&member.role, &SessionId::parse("hooked-new").unwrap()))
-        .unwrap();
-    said
-}
-
 #[test]
-fn a_failure_after_the_spawn_closes_the_new_tab_and_restores_the_old_session() {
+fn a_failure_after_the_spawn_closes_the_new_tab_and_keeps_the_old_session() {
     let rig = Rig::new();
     let mut store = running_team(&rig);
     let before = member_row(&store, "api").unwrap();
     let old = before.session_id.clone().unwrap();
-    let mut caps = FakeHarness::caps();
-    caps.choose_session_id = false;
-    rig.harness.set_caps(caps);
     rig.host.log().clear();
     rig.host.inject(
         "read_tail",
         Fault::Fail(HostError::new(HostErrorCode::Other, "screen unreadable")),
         1,
     );
-    let closer = PlaceCloser {
-        refusals: no_refusals,
-        close: close_place_then_hook,
-    };
-    let (_, result) = run(&rig, &mut store, closer);
+    let (_, result) = run(&rig, &mut store, CLOSES);
     let Err(HandoffError::Partial(why)) = result else {
         panic!("{result:?}");
     };

@@ -9,7 +9,7 @@
 
 use std::sync::Arc;
 
-use teamwire_core::{Harness, HarnessErrorCode, LeadStart, SessionId};
+use teamwire_core::{Harness, LeadStart, SessionId};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_pi::{Pi, PiConfig};
 
@@ -32,7 +32,7 @@ fn request(old_args: &str) -> LeadStart {
     LeadStart {
         old_session: SessionId::parse(OLD).unwrap(),
         old_args: old_args.split(' ').map(str::to_owned).collect(),
-        new_session: Some(SessionId::parse(NEW).unwrap()),
+        new_session: SessionId::parse(NEW).unwrap(),
         prompt: PROMPT.to_owned(),
     }
 }
@@ -67,12 +67,4 @@ fn the_new_lead_keeps_its_model_thinking_and_session_folder_and_nothing_else() {
     let all = format!("{:?}", (&spec.argv, &spec.dropped));
     assert!(!all.contains("s3cret"), "{all}");
     assert!(!all.contains(OLD), "{all}");
-}
-
-#[test]
-fn a_pi_lead_start_without_a_chosen_session_id_is_refused() {
-    let mut req = request("pi");
-    req.new_session = None;
-    let err = pi().lead_start(&req).unwrap_err();
-    assert_eq!(err.code, HarnessErrorCode::BadInput);
 }

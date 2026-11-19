@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use common::{Rig, member_row, pane_member, role_events, team_spec};
 use teamwire_core::{Address, Clock, Host, HostError, HostErrorCode, Pid, Role, SessionId};
-use teamwire_fakes::{FakeHarness, Fault};
+use teamwire_fakes::Fault;
 use teamwire_launch::{Handoff, HandoffError, open_handoff, plan_handoff};
 use teamwire_store::{Ctx, Store};
 
@@ -207,25 +207,6 @@ fn a_failed_trust_step_closes_the_new_tab_and_records_nothing() {
 }
 
 #[test]
-fn a_harness_that_picks_its_own_session_is_recorded_with_none() {
-    let rig = Rig::new();
-    let mut store = running_team(&rig);
-    close_old_place(&rig, &store);
-    let mut caps = FakeHarness::caps();
-    caps.choose_session_id = false;
-    rig.harness.set_caps(caps);
-
-    let done = hand_off(&rig, &mut store).unwrap();
-
-    let (_, argv, _) = rig.host.spawned_with(&done.place).unwrap();
-    assert!(!argv.iter().any(|a| a == "--session-id"), "{argv:?}");
-    assert_eq!(member_row(&store, "api").unwrap().session_id, None);
-    let events = role_events(&store, "api");
-    let (_, data) = events.iter().rfind(|(k, _)| k == "member.handoff").unwrap();
-    assert!(data["new_session"].is_null(), "{data}");
-}
-
-#[test]
 fn planning_refuses_a_closing_team_and_an_unknown_member_and_writes_nothing() {
     let rig = Rig::new();
     let mut store = running_team(&rig);
@@ -249,25 +230,6 @@ fn planning_refuses_a_closing_team_and_an_unknown_member_and_writes_nothing() {
         host_calls(&rig, "spawn").len() == 1,
         "only the launch spawned"
     );
-}
-
-#[test]
-fn a_session_its_start_hook_recorded_before_the_handoff_write_is_kept() {
-    let rig = Rig::new();
-    let mut store = running_team(&rig);
-    close_old_place(&rig, &store);
-    let mut caps = FakeHarness::caps();
-    caps.choose_session_id = false;
-    rig.harness.set_caps(caps);
-    let hooked = SessionId::parse("hooked-new").unwrap();
-    let mut ctx = ctx(&rig, &mut store);
-    let plan = plan_handoff(&ctx, &role("api")).unwrap();
-    // The new session's start hook runs while the tab opens.
-    ctx.store
-        .write(|tx| tx.set_member_session(&role("api"), &hooked))
-        .unwrap();
-    open_handoff(&mut ctx, &plan).unwrap();
-    assert_eq!(member_row(&store, "api").unwrap().session_id, Some(hooked));
 }
 
 #[test]
@@ -312,14 +274,11 @@ fn a_current_document_is_named_and_a_missing_or_old_one_is_replaced_by_the_repor
 }
 
 #[test]
-fn a_failed_trust_step_puts_back_the_old_session_a_start_hook_replaced() {
+fn a_failed_trust_step_keeps_the_old_session() {
     let rig = Rig::new();
     let mut store = running_team(&rig);
     let old = member_row(&store, "api").unwrap().session_id.unwrap();
     close_old_place(&rig, &store);
-    let mut caps = FakeHarness::caps();
-    caps.choose_session_id = false;
-    rig.harness.set_caps(caps);
     rig.host.inject(
         "read_tail",
         Fault::Fail(HostError::new(HostErrorCode::Other, "screen unreadable")),
@@ -327,10 +286,6 @@ fn a_failed_trust_step_puts_back_the_old_session_a_start_hook_replaced() {
     );
     let mut ctx = ctx(&rig, &mut store);
     let plan = plan_handoff(&ctx, &role("api")).unwrap();
-    // The new session's start hook records it while the tab opens.
-    ctx.store
-        .write(|tx| tx.set_member_session(&role("api"), &SessionId::parse("hooked-new").unwrap()))
-        .unwrap();
     let why = open_handoff(&mut ctx, &plan).unwrap_err();
     assert!(
         why.contains(&format!("The old session {old} is still recorded")),

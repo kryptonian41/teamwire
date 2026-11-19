@@ -17,9 +17,8 @@ pub struct LeadStart {
     /// The old lead process's arguments, `argv[0]` first, or empty when they
     /// cannot be read.
     pub old_args: Vec<String>,
-    /// The new session's id, when the harness lets teamwire choose it
-    /// (`HarnessCaps::choose_session_id`).
-    pub new_session: Option<SessionId>,
+    /// The new session's id, which teamwire chooses.
+    pub new_session: SessionId,
     /// The first prompt of the new session.
     pub prompt: String,
 }

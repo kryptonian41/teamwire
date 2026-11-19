@@ -1,6 +1,5 @@
-//! Steps 6 and 7 of a lead handoff (ADR 0051): the new lead becomes each
-//! led team's lead, recorded by the command, or by the new lead itself when
-//! its harness picks its own session id.
+//! Step 6 of a lead handoff (ADR 0051): the new lead becomes each led
+//! team's lead, recorded by the command.
 //!
 //! Never: roll back a team that moved; record a team that closed or took
 //! another lead since the plan.
@@ -11,7 +10,6 @@ use teamwire_core::{Place, SessionId, SessionKind, TeamName, TeamState};
 use teamwire_store::{Store, StoreError};
 
 use crate::handoff::HandoffError;
-use crate::lead_handoff::{LeadHandoffWaits, poll};
 use crate::lead_plan::{LeadHandoffCtx, Planned};
 
 /// Step 6: one store write per team. A team that fails stays with the old
@@ -100,46 +98,6 @@ fn partial_adoption(
         new_place.id,
         commands.join(", ")
     ))
-}
-
-/// Step 7: a new lead that picks its own session id adopts each team
-/// itself; the command waits until no led team names the old session.
-pub(crate) fn wait_for_adoption(
-    ctx: &LeadHandoffCtx<'_>,
-    planned: &Planned<'_>,
-    new_place: &Place,
-    waits: LeadHandoffWaits,
-) -> Result<Vec<(TeamName, SessionId)>, HandoffError> {
-    let old = &planned.seat.session;
-    let names = planned.seat.names();
-    let found = poll(ctx.clock, (waits.pause, waits.adopt), || {
-        let mut moved = Vec::new();
-        for team in &names {
-            match lead_of(ctx.home, team) {
-                Some(lead) if lead != *old => moved.push((team.clone(), lead)),
-                _ => return Err(team.to_string()),
-            }
-        }
-        Ok(moved)
-    });
-    found.map_err(|_| {
-        let moved = moved_teams(ctx, planned);
-        let rest: Vec<TeamName> = names
-            .iter()
-            .filter(|t| !moved.iter().any(|(m, _)| m == *t))
-            .cloned()
-            .collect();
-        partial_adoption(
-            planned,
-            new_place,
-            &moved,
-            &rest,
-            &format!(
-                "the new lead did not adopt every team within {} s",
-                waits.adopt.as_secs()
-            ),
-        )
-    })
 }
 
 /// Each led team whose recorded lead is no longer the old session, with that

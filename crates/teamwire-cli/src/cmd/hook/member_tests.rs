@@ -116,13 +116,12 @@ fn bed(session: Option<&str>) -> Bed {
     }
 }
 
-fn run(bed: &Bed, kind: MemberHook, token: Option<&str>, input: &str) -> Option<Vec<u8>> {
+fn run(bed: &Bed, kind: MemberHook, input: &str) -> Option<Vec<u8>> {
     member_hook_in(
         bed.home.path(),
         &bed.team,
         &bed.role,
         kind,
-        token,
         &bed.wiring,
         &mut input.as_bytes(),
     )
@@ -130,15 +129,6 @@ fn run(bed: &Bed, kind: MemberHook, token: Option<&str>, input: &str) -> Option<
 
 fn input(session: &str) -> String {
     json!({ "session_id": session, "stop_hook_active": false }).to_string()
-}
-
-fn recorded(bed: &Bed) -> Option<SessionId> {
-    let store = Store::open_existing(bed.home.path(), &bed.team).unwrap();
-    store
-        .read(|tx| tx.member(&bed.role))
-        .unwrap()
-        .unwrap()
-        .session_id
 }
 
 /// A completion with no report file holds the member's first stop.
@@ -161,7 +151,7 @@ fn complete(bed: &Bed) {
 fn a_turn_end_asks_the_harness_the_member_row_names() {
     let bed = bed(Some("s-1"));
     complete(&bed);
-    let reply = run(&bed, MemberHook::TurnEnd, None, &input("s-1")).unwrap();
+    let reply = run(&bed, MemberHook::TurnEnd, &input("s-1")).unwrap();
     assert_eq!(
         serde_json::from_slice::<serde_json::Value>(&reply)
             .unwrap()
@@ -179,32 +169,8 @@ fn a_harness_without_an_in_turn_hook_gets_no_post_tool_reply() {
     let mut caps = bed.b.capabilities();
     caps.in_turn_hook = false;
     bed.b.set_caps(caps);
-    assert_eq!(run(&bed, MemberHook::PostTool, None, &input("s-1")), None);
+    assert_eq!(run(&bed, MemberHook::PostTool, &input("s-1")), None);
     assert_eq!(bed.b.log().count_named("parse_turn_end"), 0);
-}
-
-#[test]
-fn the_right_token_records_the_session() {
-    let bed = bed(None);
-    assert_eq!(
-        run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1")),
-        None
-    );
-    assert_eq!(recorded(&bed), Some(SessionId::parse("s-1").unwrap()));
-    assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
-}
-
-#[test]
-fn a_wrong_or_missing_token_records_nothing() {
-    let bed = bed(None);
-    run(
-        &bed,
-        MemberHook::SessionStart,
-        Some("not-the-token"),
-        &input("s-1"),
-    );
-    run(&bed, MemberHook::SessionStart, None, &input("s-1"));
-    assert_eq!(recorded(&bed), None);
 }
 
 #[test]
@@ -218,16 +184,9 @@ fn a_removed_member_is_ignored() {
                 .map(|_| ())
         })
         .unwrap();
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1"));
-    assert_eq!(recorded(&bed), None);
-}
-
-#[test]
-fn a_second_call_replaces_the_first_session() {
-    let bed = bed(None);
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-1"));
-    run(&bed, MemberHook::SessionStart, Some(TOKEN), &input("s-2"));
-    assert_eq!(recorded(&bed), Some(SessionId::parse("s-2").unwrap()));
+    assert_eq!(run(&bed, MemberHook::TurnEnd, &input("s-1")), None);
+    assert_eq!(bed.a.log().count_named("parse_turn_end"), 0);
+    assert_eq!(bed.b.log().count_named("parse_turn_end"), 0);
 }
 
 fn lead_stop(bed: &Bed, harness: Option<&str>) -> Option<Vec<u8>> {

@@ -99,7 +99,6 @@ impl FakeHarness {
             turn_end_hook: true,
             in_turn_hook: true,
             mcp_client: true,
-            choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
@@ -264,10 +263,7 @@ impl FakeHarness {
         let mut argv = vec!["fake-claude".to_owned()];
         match resume {
             Some(s) => argv.extend(["--resume".to_owned(), s.as_str().to_owned()]),
-            None if caps.choose_session_id => {
-                argv.extend(["--session-id".to_owned(), m.session_id.as_str().to_owned()]);
-            }
-            None => {}
+            None => argv.extend(["--session-id".to_owned(), m.session_id.as_str().to_owned()]),
         }
         argv.extend(["--settings".to_owned(), settings_path.display().to_string()]);
         let via_config = caps.session_env_via_config;

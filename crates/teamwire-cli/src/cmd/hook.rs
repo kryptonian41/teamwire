@@ -33,7 +33,6 @@ pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode
         HookCommand::ClaudePostTool(t) | HookCommand::PostTool(t) => {
             member_hook(t, MemberHook::PostTool, global, wiring)
         }
-        HookCommand::SessionStart(t) => member_hook(t, MemberHook::SessionStart, global, wiring),
         HookCommand::Permission(t) => permission::permission_hook(t, global, wiring),
         HookCommand::ClaudeLeadStop => lead::lead_stop_hook(None, global, wiring),
         HookCommand::LeadStop(a) => lead::lead_stop_hook(a.harness.as_deref(), global, wiring),
@@ -50,7 +49,6 @@ pub(crate) fn run(args: &HookArgs, global: &Global, wiring: &Wiring) -> ExitCode
 enum MemberHook {
     TurnEnd,
     PostTool,
-    SessionStart,
 }
 
 /// The bytes to print, or `None` for a hook with nothing to say.
@@ -64,20 +62,11 @@ fn member_hook(
     let CallerEnv {
         team: team_var,
         role: role_var,
-        token,
         ..
     } = caller_env(None);
     // The command line names the same member as the environment, or this is
-    // not that member's session (ADR 0008 point 4). A session-start hook may
-    // have no member environment: its token proves who it is instead.
-    let (team_var, role_var) = if kind == MemberHook::SessionStart {
-        (
-            target.team.clone().or(team_var)?,
-            target.role.clone().or(role_var)?,
-        )
-    } else {
-        same_member(target, team_var, role_var)?
-    };
+    // not that member's session (ADR 0008 point 4).
+    let (team_var, role_var) = same_member(target, team_var, role_var)?;
     // From here on the session is a member's, so every way out says why on
     // stderr: a hook that does nothing must not look like one that worked.
     let team = said(TeamName::parse(&team_var), "the team name is not valid")?;
@@ -86,15 +75,7 @@ fn member_hook(
         return quit("no state directory: set --home, TEAMWIRE_HOME or HOME");
     };
     let mut stdin = std::io::stdin().lock().take(STDIN_LIMIT);
-    member_hook_in(
-        &home,
-        &team,
-        &role,
-        kind,
-        token.as_deref(),
-        wiring,
-        &mut stdin,
-    )
+    member_hook_in(&home, &team, &role, kind, wiring, &mut stdin)
 }
 
 /// The team and role a member session's environment names, when they match
@@ -120,7 +101,6 @@ fn member_hook_in(
     team: &TeamName,
     role: &Role,
     kind: MemberHook,
-    token: Option<&str>,
     wiring: &Wiring,
     stdin: &mut dyn Read,
 ) -> Option<Vec<u8>> {
@@ -130,17 +110,10 @@ fn member_hook_in(
     )?;
     let mut store = Recorded::new(opened, &wiring.clock, kind.op());
     let found = said(
-        // The token is checked even when absent, so every hook reads the
-        // same rows and a damaged one fails each the same way.
-        store.read(|tx| {
-            Ok((
-                tx.member(role)?,
-                tx.token_matches(role, token.unwrap_or_default())?,
-            ))
-        }),
+        store.read(|tx| tx.member(role)),
         "the member could not be read",
     )?;
-    let (Some(member), token_matches) = found else {
+    let Some(member) = found else {
         return quit(&format!("team {team} has no member {role}"));
     };
     if member.state == MemberState::Removed {
@@ -162,20 +135,6 @@ fn member_hook_in(
         harness.parse_turn_end(&input),
         "the hook input did not parse",
     )?;
-
-    if kind == MemberHook::SessionStart {
-        // Only the member's own token may name its session (ADR 0023 point 5).
-        match (token, token_matches) {
-            (Some(_), Some(true)) => {}
-            (Some(_), Some(false)) => return quit("the token does not belong to this member"),
-            _ => return quit("no member token to prove the session with"),
-        }
-        said(
-            store.write(|tx| tx.set_member_session(role, &turn.session)),
-            "could not record the session",
-        )?;
-        return None;
-    }
 
     let config = Config::default();
     let mut ctx = Ctx {
@@ -202,7 +161,6 @@ impl MemberHook {
         match self {
             Self::TurnEnd => "turn_end",
             Self::PostTool => "post_tool",
-            Self::SessionStart => "session_start",
         }
     }
 }

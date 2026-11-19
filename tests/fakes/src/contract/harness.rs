@@ -145,12 +145,10 @@ fn launch_rules(setup: &HarnessSetup<'_>) {
         "launch_spec writes only under the member's directory",
         spec.files.iter().all(|f| f.path.starts_with(&m.member_dir)),
     );
-    if caps.choose_session_id {
-        require(
-            "a harness that chooses session ids puts the id in argv",
-            spec.argv.iter().any(|a| a.contains(m.session_id.as_str())),
-        );
-    }
+    require(
+        "launch_spec puts the session id in argv",
+        spec.argv.iter().any(|a| a.contains(m.session_id.as_str())),
+    );
 
     let secrets: Vec<&(String, String)> = m
         .identity
@@ -227,11 +225,13 @@ fn lead_start_rules(setup: &HarnessSetup<'_>) {
     let h = setup.harness;
     let caps = h.capabilities();
     let prompt = "You are a teamwire lead. Read the handoff document in full.";
-    let new = SessionId::parse("6f1c2d3e-0000-4000-8000-00000000c0de").ok();
+    let Ok(new) = SessionId::parse("6f1c2d3e-0000-4000-8000-00000000c0de") else {
+        fail("the contract's session id parses", "6f1c2d3e-…");
+    };
     let req = LeadStart {
         old_session: setup.unknown_session.clone(),
         old_args: Vec::new(),
-        new_session: new.filter(|_| caps.choose_session_id),
+        new_session: new,
         prompt: prompt.to_owned(),
     };
     let spec = match h.lead_start(&req) {
@@ -247,12 +247,12 @@ fn lead_start_rules(setup: &HarnessSetup<'_>) {
         "lead_start puts the prompt last, as one word",
         spec.argv.last().map(String::as_str) == Some(prompt),
     );
-    if let Some(new) = &req.new_session {
-        require(
-            "a harness that chooses session ids puts the new id in the lead's argv",
-            spec.argv.iter().any(|a| a.contains(new.as_str())),
-        );
-    }
+    require(
+        "lead_start puts the new session id in the lead's argv",
+        spec.argv
+            .iter()
+            .any(|a| a.contains(req.new_session.as_str())),
+    );
     require(
         "a fresh lead never resumes the old session",
         !spec

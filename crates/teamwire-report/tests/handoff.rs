@@ -172,7 +172,7 @@ fn a_new_generation_past_the_point_is_told_again() {
     assert!(note(&mut rig, &api, &stub).is_some());
     let place = rig.healthy("api-2", 200);
     rig.store
-        .write(|tx| tx.record_handoff(at(9), &api, Some(&sid("api-2")), &place))
+        .write(|tx| tx.record_handoff(at(9), &api, &sid("api-2"), &place))
         .unwrap();
     let again = handoff_note(&mut rig.ctx(), &api, &stub, &sid("api-2"), None);
     assert!(again.is_some(), "generation 1 has not been told");

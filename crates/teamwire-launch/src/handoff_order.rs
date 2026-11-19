@@ -53,10 +53,7 @@ pub fn hand_off(
         || "no recorded place".to_owned(),
         |p| format!("place {}", p.id),
     );
-    let session = plan.new_session.as_ref().map_or_else(
-        || "the session it picks".to_owned(),
-        |s| format!("session {s}"),
-    );
+    let session = format!("session {}", plan.new_session);
     for w in &plan.warnings {
         say(Said::Warning(format!("warning: {w}")));
     }

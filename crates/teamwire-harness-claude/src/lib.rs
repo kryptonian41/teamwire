@@ -115,7 +115,6 @@ impl Harness for ClaudeCode {
             turn_end_hook: true,
             in_turn_hook: true,
             mcp_client: true,
-            choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
             watch_start: teamwire_core::harness::WatchStart::MonitoredCommand,
@@ -149,7 +148,11 @@ impl Harness for ClaudeCode {
     }
 
     fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
-        lead_start::lead_start(&self.config.claude_bin, &self.config.claude_dir, req)
+        Ok(lead_start::lead_start(
+            &self.config.claude_bin,
+            &self.config.claude_dir,
+            req,
+        ))
     }
 
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {

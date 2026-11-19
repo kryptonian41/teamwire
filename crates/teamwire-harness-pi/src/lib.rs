@@ -113,7 +113,6 @@ impl Harness for Pi {
             turn_end_hook: true,
             in_turn_hook: true,
             mcp_client: true,
-            choose_session_id: true,
             can_push: false,
             session_env_via_config: true,
             // The lead's extension runs the watch and hands each line to the
@@ -169,7 +168,7 @@ impl Harness for Pi {
     }
 
     fn lead_start(&self, req: &LeadStart) -> Result<LeadStartSpec, HarnessError> {
-        lead_start::lead_start(&self.config.pi_bin, req)
+        Ok(lead_start::lead_start(&self.config.pi_bin, req))
     }
 
     fn lead_setup_missing(&self) -> Option<String> {

@@ -621,8 +621,6 @@ pub(crate) enum HookCommand {
     TurnEnd(HookTarget),
     #[command(about = "A member's PostToolUse hook, on the member's own harness.")]
     PostTool(HookTarget),
-    #[command(about = "A member's SessionStart hook: record the session id the harness chose.")]
-    SessionStart(HookTarget),
     #[command(
         about = "A member's PermissionRequest hook: record the call, wait for the lead's answer, print it."
     )]

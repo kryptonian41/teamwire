@@ -64,7 +64,6 @@ fn without_config_env_identity_moves_to_the_host_channel() {
     let h = FakeHarness::new();
     h.set_caps(HarnessCaps {
         session_env_via_config: false,
-        choose_session_id: false,
         ..FakeHarness::caps()
     });
     let spec = h.launch_spec(&member()).unwrap();

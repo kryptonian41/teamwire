@@ -172,7 +172,6 @@ fn fake_harness_without_config_env_passes_harness_contract() {
     let harness = FakeHarness::new();
     harness.set_caps(HarnessCaps {
         session_env_via_config: false,
-        choose_session_id: false,
         can_push: true,
         ..FakeHarness::caps()
     });

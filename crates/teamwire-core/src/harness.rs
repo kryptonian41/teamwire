@@ -232,7 +232,6 @@ pub struct HarnessCaps {
     pub turn_end_hook: bool,
     pub in_turn_hook: bool,
     pub mcp_client: bool,
-    pub choose_session_id: bool,
     pub can_push: bool,
     /// Environment for the session can be set in a per-run
     /// config file (Claude Code `settings.json` `env`).

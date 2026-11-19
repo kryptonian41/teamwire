@@ -15,8 +15,8 @@ pub(crate) struct FirstPrompt<'a> {
     pub(crate) old: &'a SessionId,
     pub(crate) teams: &'a [TeamRow],
     pub(crate) document: &'a Path,
-    /// The new lead records itself as each team's lead first: its harness
-    /// picks its own session id, or the user starts it by hand.
+    /// The new lead records itself as each team's lead first, because the
+    /// user starts it by hand.
     pub(crate) adopt_first: bool,
 }
 

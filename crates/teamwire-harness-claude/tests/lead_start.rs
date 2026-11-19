@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
-use teamwire_core::{Harness, HarnessErrorCode, LeadStart, Platform, SessionId};
+use teamwire_core::{Harness, LeadStart, Platform, SessionId};
 use teamwire_fakes::FakePlatform;
 use teamwire_harness_claude::{ClaudeCode, ClaudeConfig};
 
@@ -34,7 +34,7 @@ fn request(old_args: &str) -> LeadStart {
     LeadStart {
         old_session: SessionId::parse(OLD).unwrap(),
         old_args: old_args.split(' ').map(str::to_owned).collect(),
-        new_session: Some(SessionId::parse(NEW).unwrap()),
+        new_session: SessionId::parse(NEW).unwrap(),
         prompt: PROMPT.to_owned(),
     }
 }
@@ -242,13 +242,4 @@ fn with_no_mode_in_the_transcript_the_old_flags_decide() {
         ]
     );
     assert!(spec.warnings.is_empty(), "{:?}", spec.warnings);
-}
-
-#[test]
-fn a_lead_start_without_a_new_session_id_is_refused() {
-    let dir = tempfile::tempdir().unwrap();
-    let mut req = request("claude");
-    req.new_session = None;
-    let err = claude(dir.path()).lead_start(&req).unwrap_err();
-    assert_eq!(err.code, HarnessErrorCode::BadInput);
 }
