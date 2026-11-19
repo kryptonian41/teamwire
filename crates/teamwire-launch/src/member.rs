@@ -410,7 +410,6 @@ fn run_member(
             .spec
             .context_handoff_tokens
             .or(plan.spec.context_handoff_tokens),
-        accept_trust: m.spec.accept_trust,
     };
     make_scratch(&launch, made)?;
     write_contract(ctx, dirs, m, &launch)?;

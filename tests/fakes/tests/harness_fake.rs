@@ -41,7 +41,6 @@ fn member() -> MemberLaunch {
         teamwire_bin: "/bin/teamwire".into(),
         plugins: std::collections::BTreeMap::new(),
         context_handoff_tokens: None,
-        accept_trust: false,
     }
 }
 

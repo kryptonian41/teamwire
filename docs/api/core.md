@@ -697,8 +697,7 @@ pub struct MemberLaunch { pub team: TeamName, pub role: Role, pub address: Addre
                           pub contract_path: PathBuf, pub identity: Vec<(String, String)>,
                           pub otel: OtelConfig, pub teamwire_bin: PathBuf,
                           pub plugins: BTreeMap<String, bool>, // team map overlaid by member map
-                          pub context_handoff_tokens: Option<u64>, // member's value, else the team's; a Claude member's compaction backstop is twice its point
-                          pub accept_trust: bool }  // the spec's accept_trust; launch sets it and no adapter reads it now (ADR 0054 decision 7)
+                          pub context_handoff_tokens: Option<u64> } // member's value, else the team's; a Claude member's compaction backstop is twice its point
 /// How full one session's context is: the tokens the model read on the
 /// session's newest main-chain request (input + cache read + cache creation),
 /// and the window of that model. Every harness computes `tokens` the same way.

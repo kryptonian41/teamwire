@@ -356,10 +356,6 @@ pub struct MemberLaunch {
     /// member's compaction backstop is set from it (and from the model).
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
-    /// The spec's `accept_trust`. Launch sets it, and no adapter reads it
-    /// now; ADR 0054 decision 7 lists it for removal.
-    #[serde(default)]
-    pub accept_trust: bool,
 }
 
 impl MemberLaunch {
@@ -393,8 +389,6 @@ impl MemberLaunch {
             plugins: BTreeMap::new(),
             // A resume never rewrites the per-run files.
             context_handoff_tokens: None,
-            // The member started once, so its folder was accepted then.
-            accept_trust: true,
         }
     }
 }
@@ -569,7 +563,6 @@ impl fmt::Debug for MemberLaunch {
             .field("teamwire_bin", &self.teamwire_bin)
             .field("plugins", &self.plugins)
             .field("context_handoff_tokens", &self.context_handoff_tokens)
-            .field("accept_trust", &self.accept_trust)
             .finish()
     }
 }
@@ -664,7 +657,6 @@ mod tests {
             teamwire_bin: PathBuf::from("teamwire"),
             plugins: BTreeMap::new(),
             context_handoff_tokens: None,
-            accept_trust: false,
         };
         assert_eq!(
             launch.scratch_dir(),

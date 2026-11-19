@@ -62,7 +62,6 @@ fn member(root: &Path) -> MemberLaunch {
         teamwire_bin: "/usr/local/bin/teamwire".into(),
         plugins: BTreeMap::new(),
         context_handoff_tokens: None,
-        accept_trust: false,
     }
 }
 

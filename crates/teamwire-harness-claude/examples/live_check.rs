@@ -88,7 +88,6 @@ fn main() -> Result<(), String> {
         teamwire_bin: stub,
         plugins: std::collections::BTreeMap::new(),
         context_handoff_tokens: None,
-        accept_trust: false,
     };
     let claude = ClaudeCode::new(
         platform.clone(),
