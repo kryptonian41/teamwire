@@ -98,9 +98,10 @@ The user decided on 2026-11-19 to remove support for the Codex harness.
 8. **These parts stay.**
    - The list of agent kinds in `crates/teamwire-host-herdr/src/spawn.rs`.
      The list holds herdr's own kind names, and `codex` is one of them.
-   - `teamwire watch --deliver` and `teamwire pr-watch --deliver`. After the
-     second step no harness, launch text or hook tells a lead to run either
-     one. Both stay as commands a person can run.
+   - `teamwire watch --deliver` and `teamwire pr-watch --deliver` stay in
+     this release. After the second step, no harness, skill or launch text
+     starts either one. Whether they are removed is a separate decision that
+     this record does not make.
    - Entries in `examples/models/evidence.json` that were measured in the
      Codex CLI. Each entry is evidence about a model, and its text already
      says where it was measured.
