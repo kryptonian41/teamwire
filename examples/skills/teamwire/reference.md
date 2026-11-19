@@ -195,9 +195,9 @@ messages that follow the reprompt are typed as usual.
 
 If the command fails after it closed the old session, run
 `teamwire reopen <team> --role <role>` once the old session has ended. That
-resumes the old session, with its full context. The command writes the old
-session back first when it can. When the member had no recorded session, the
-error says `reopen` has nothing to resume.
+resumes the old session, with its full context. The failed command leaves the
+old session recorded. When the member had no recorded session, the error says
+`reopen` has nothing to resume.
 
 A Claude Code member that passes its point and gets no handoff compacts its
 own context at twice that point. teamwire sets no compaction for pi

@@ -389,7 +389,7 @@ pub trait Harness: Send + Sync {
 }
 
 pub struct HarnessCaps { pub turn_end_hook: bool, pub in_turn_hook: bool,
-                         pub mcp_client: bool, pub choose_session_id: bool,
+                         pub mcp_client: bool,
                          pub can_push: bool,
                          /// Environment for the session can be set in a per-run
                          /// config file (Claude Code `settings.json` `env`).
@@ -742,9 +742,9 @@ impl SplitRequest {
 }
 /// What `Harness::lead_start` takes. `old_args` is the old lead process's
 /// arguments, `argv[0]` first, or empty when they cannot be read.
-/// `new_session` is Some when `choose_session_id` is true.
+/// `new_session` is the id teamwire chose for the new lead.
 pub struct LeadStart { pub old_session: SessionId, pub old_args: Vec<String>,
-                       pub new_session: Option<SessionId>, pub prompt: String }
+                       pub new_session: SessionId, pub prompt: String }
 /// The new lead's argv, with the prompt last, and each old flag not carried,
 /// by name only: a value can hold a secret (`pi --api-key`).
 /// `warnings` are one line each, printed as `warning:` lines by `teamwire lead
@@ -844,7 +844,7 @@ pub fn token_hash(token: &str) -> [u8; 32];
 pub fn same_hash(a: &[u8], b: &[u8]) -> bool;   // compares every byte, no early exit
 // ReadTx::token_matches(role, token) -> Result<Option<bool>, StoreError>: None when role has no
 // member that is not removed, or no stored hash; else whether the hashes are the same (same_hash).
-// It is the one token check: msg's prove, report's done and the CLI's session-start hook use it.
+// It is the one token check: msg's prove, report's done and the CLI's permission hook use it.
 
 pub struct OpenTeam { pub store: Store, pub row: TeamRow }   // the store opened read-only
 pub type TeamRead = Result<Option<OpenTeam>, StoreError>;     // Ok(None): a database with no team row
@@ -929,7 +929,7 @@ adds `team.afk_budget_ends_at`: when an AFK run's wall-clock budget ends, NULL
 on an ordinary team (ADR 0025). Version 6 rebuilds `events` with `member.refused`
 in its CHECK list, as version 4 did for `delivery.reentered`, and keeps every
 row, every `seq` and the AUTOINCREMENT counter. Version 7 does the same for `member.handoff`
-(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null when the harness picks its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028).
+(ADR 0027), whose data holds `generation`, `old_session`, `new_session` (null only in an event an older build wrote for a harness that picked its own id) and `place`. Version 8 does the same for `delivery.recipient_stopped` (ADR 0028).
 Version 9 rebuilds `members` with `plan_reviewer` in its `kind` CHECK list
 (ADR 0034) and keeps every row. It creates `members_new`, copies the rows,
 drops `members` and renames `members_new`, so the foreign keys of

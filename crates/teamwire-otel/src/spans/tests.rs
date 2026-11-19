@@ -121,8 +121,9 @@ fn a_handoff_opens_a_new_generation_span_with_the_new_session() {
         Some(&Attr::Str("sess-2".to_owned()))
     );
 
-    // A harness that picks its own session leaves none known until its hook
-    // records one; the old session must not be shown for the new generation.
+    // An older build recorded a handoff with no new session for a harness
+    // that picked its own; the old session must not be shown for the new
+    // generation.
     let mut log = Log(Vec::new());
     log.add(
         1,

@@ -369,9 +369,7 @@ The steps run in this order, one line on stdout for each:
 2. Close the old place, as `close --role` does, including the wait for its
    processes to end. A member with no recorded place has nothing to close.
 3. Open a new tab with a new session id, in the member's folder, with the
-   per-run files and the model and effort the member was launched with. A
-   harness that picks its own session id is recorded with no session
-   until its session-start hook records one.
+   per-run files and the model and effort the member was launched with.
 4. Answer the plain folder-trust dialog, as launch does. A failure closes the
    new tab.
 5. Record the handoff in one store write: the new session and place, the next
@@ -407,12 +405,10 @@ worktree or pane. `close --role` is unchanged.
 When the close does not finish, no session is opened and the old one is still
 recorded. After the old session has ended, `teamwire reopen <team> --role R`
 resumes it. After a failure past the close (the spawn, the trust step or the
-write), the command closes the new tab and writes the old session id back when
-the row holds another one, which a harness that records its own session
-can cause. The error then says that `reopen` resumes the old session. When the
-row held no session before the handoff, the error says `reopen` has nothing to
-resume. When the old id cannot be written back, the error says the member may
-hold a new, empty session.
+write), the command closes the new tab. The row still holds the old session,
+because only the write of step 5 changes it, and the error says that `reopen`
+resumes the old session. When the row held no session before the handoff, the
+error says `reopen` has nothing to resume.
 
 `--dry-run` prints the checks, then `would close`, `would open` and `would
 answer the trust dialog, record the handoff and send` lines, then `dry run:
@@ -923,8 +919,8 @@ released its hold and nothing would release a new one.
 session in a pane beside the caller's (ADR 0051). The old lead runs it as the
 last action of a turn, because the command closes the pane it runs in. Where
 the caller's harness limits how long a command may run, the caller gives it at
-least 240 seconds, because the wait of step 7, for a harness that picks its
-own session id, lasts up to 180 seconds.
+least 240 seconds, because opening the pane may wait up to `spawn_timeout_s`
+and the proof of step 5 up to 90 seconds more.
 The steps run in this order, one line on stdout for each:
 
 1. Find the caller. The command finds the caller's session through each open
@@ -960,7 +956,7 @@ The steps run in this order, one line on stdout for each:
    only. Each warning of the harness's lead start, such as a permission mode
    the new lead cannot be started with, gives one `warning:` line too, also
    on `--dry-run`.
-5. Prove, for a harness that chooses the session id (Claude Code, pi). The
+5. Prove. The
    command waits up to 90 seconds, or `spawn_timeout_s` when that is lower,
    for the locator to find the new session in the new pane. The 90 seconds
    end before the 120-second default limit of Claude Code's Bash tool. On a
@@ -969,19 +965,15 @@ The steps run in this order, one line on stdout for each:
    open and still led by the old session, then records the new lead and
    writes `team.lead_adopted`. The line reads
    `team <team>: lead is now session <new>`.
-7. For a harness that picks its own session id, steps 5 and 6 are
-   skipped. The new lead's first prompt tells it to run
-   `teamwire lead --adopt <team>` for each team, and the command waits up to
-   180 seconds until no led team names the old session.
-8. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
-   hold that cannot be taken is a `warning:` line. When step 6 or step 7
-   exits 2, the command first moves the hold of each team whose recorded
-   lead is no longer the old session, to that lead.
-9. Report the teams, the new pane, the document path, and that this session
+7. Move the sleep hold to the new lead, as `ensure_hold` does for launch. A
+   hold that cannot be taken is a `warning:` line. When step 6 exits 2, the
+   command first moves the hold of each team whose recorded lead is no longer
+   the old session, to that lead.
+8. Report the teams, the new pane, the document path, and that this session
    is no longer the lead.
-10. Locate the old session again and close its pane with `Host::close_pane`.
-    A close that fails is a `warning:` line that tells the old lead to end
-    its turn and the user to close the pane.
+9. Locate the old session again and close its pane with `Host::close_pane`.
+   A close that fails is a `warning:` line that tells the old lead to end
+   its turn and the user to close the pane.
 
 Exit codes:
 
@@ -989,7 +981,7 @@ Exit codes:
 | --- | --- |
 | 0 | Every led team has the new lead, and the old pane was closed or a warning said why not |
 | 1 | Refused, and nothing changed: a refusal of step 1 or step 2 |
-| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed or the wait of step 7 ran out: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move, which also moves that team's sleep hold to the new lead |
+| 2 | Partial. The new pane could not be opened, or the new session was not seen in it, and every team still has the old lead. Or a team's write failed: the output names the teams that moved and the teams that did not, both panes stay open, and nothing is rolled back. The new lead runs `teamwire lead --adopt <team>` for each team that did not move, which also moves that team's sleep hold to the new lead |
 | 3 | A usage error |
 | 6 | An open team's store could not be read while finding the caller |
 
@@ -997,7 +989,7 @@ Exit codes:
 harness's lead-start warnings of step 4. It then prints `teams:`,
 `old pane:`, `handoff document:`, the label and folder of the pane it would
 open, one `environment: NAME=value` line for each variable the new pane gets,
-`new session:` (the chosen id, or the one its harness picks), `command:` with
+`new session:` (the chosen id), `command:` with
 the new lead's command line, and one `not passed on:` line per dropped flag. It ends with `dry run: no pane was
 opened and no team changed`. It opens every store read-only.
 
@@ -1342,7 +1334,6 @@ and still exits 0.
 | --- | --- | --- |
 | `teamwire hook turn-end [--team T --role R]` | a member's Stop hook | Like `claude-stop`, on the harness the member row names. `claude-stop` is the older name of the same hook. |
 | `teamwire hook post-tool [--team T --role R]` | a member's PostToolUse hook | Like `claude-post-tool`, on the member's harness. A harness without an in-turn hook gets no reply. |
-| `teamwire hook session-start --team T --role R` | a member's SessionStart hook | Records the session id the harness chose for the member. Accepted only with the member's token (`TEAMWIRE_TOKEN` or `TEAMWIRE_TOKEN_FILE`) and for a member that is not removed; a later call replaces the session. Prints nothing on stdout and always exits 0. |
 | `teamwire hook permission --team T --role R` | a Claude Code member's PermissionRequest hook | Records the call as `dialog.opened`, waits up to 100 s for the lead's `dialog answer`, then prints Claude Code's allow or deny reply, or nothing. Accepted only with the member's token and for the member's current session. Never answers a call it marked unanswerable. Always exits 0. |
 | `teamwire hook lead-tool [--harness ID]` | the lead's tool hook (ADR 0035), after each of the lead's tool calls | Parses the call with the named harness (`claude-code` when absent). When the session leads an open team, prints the in-turn reply `{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":<note>}}` when the call is a member's work, or when anything was never typed into the lead's pane (the undelivered note below), or both, joined by a newline. A member's work is an edit to a file under a member's `repo` or `cwd` and outside `$TEAMWIRE_HOME`, a build or test run (`cargo`, `npm`, `pnpm`, `yarn`, `bun`, `go`, `pytest`, `make` and the like, and a `.sh` script whose name holds `test`, `gate`, `build` or `check`), `git commit`, `merge`, `rebase`, `cherry-pick`, `revert`, `am`, `apply`, `pull`, `push` or `worktree add`, and `gh pr create` or `merge`. The note is `[teamwire:<team>] You lead team <team>, so leave <this edit to PATH, this build or test run, this git merge, ...> to its members: reprompt the member that owns the work, or brief a new one. If the user asked you to do it yourself, carry on.` It names every team the session leads that the call concerns. The undelivered note is read at every call, not only for member work (ADR 0043 decisions 1 and 4): one line per delivery to the lead in state `undelivered`, `teamwire: <id> (<type> from <sender>) was never typed into your pane. Read <team dir>/comms/<id>.md, then run teamwire received <team> <id>.`, and one per member whose newest result is `undelivered`, `teamwire: <role>'s result #<n> was never typed into your pane. Read <result file>, then run teamwire received <team> <role>.`, until the lead marks it read. It never blocks the call. Returns nothing in a member session, for a subagent's call, for a harness with no tool parser, or on any error. Opens stores read-only, only after the call matched, and writes nothing, inside a bound of about 5 s. Always exits 0. |
 | `teamwire hook lead-stop [--harness ID]` | the lead's Stop hook | Like `claude-lead-stop`, parsing and holding with the named harness (`claude-code` when absent). For a lead whose harness cannot read watch lines, the note names the background `--deliver` watch instead of Monitor. For a pi lead, which starts the watch with the lead package's tool, the note is `[teamwire:<team>] no watch is running; start it with the teamwire_watch tool (team "<team>") before you stop.` The hold also carries the undelivered note of `lead-tool`, after the other notes. |

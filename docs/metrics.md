@@ -17,7 +17,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `member.replaced` | a failed member's role is launched again | the failed attempt's `reason` and times |
 | `member.reprompted` | a reprompt raises the generation | `generation`, `message` |
 | `member.woken` | a message other than a reprompt raises the generation of a finished member (ADR 0043); not a reprompt, so no reprompt metric counts it | `generation`, `message`; an undo after a known delivery failure adds `undone: true` |
-| `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null when the harness picks its own id), `place` |
+| `member.handoff` | `teamwire handoff` gives a member a fresh session (ADR 0027) | `generation` (the new one), `old_session`, `new_session` (null only in an event an older build wrote for a harness that picked its own id), `place` |
 | `member.completed` | `done` stores a completion | `status`, `generation`, `n` |
 | `member.completion_refused` | `done` refuses (invalid status, gaps on a hook-less harness) | `reason` |
 | `member.held` | the report check or unread messages hold a member | `gaps`, `unread` |
@@ -35,7 +35,7 @@ the OpenTelemetry naming rules (dot-separated, units in the unit field).
 | `watch.started`, `watch.line`, `watch.stopped` | the watch starts, prints, exits | `pid`, `host` (started); `events` (list of event names in the line); `reason`, `polls` (stopped) |
 | `verify.recorded`, `verify.waived` | a verify record; a waiver | `verdict`, `flags`, `exit`, `seconds`, `head_sha` (recorded) |
 | `close.step`, `close.refused` | each close step; a refusal | `step`, `outcome`, `reason` |
-| `store.error` | a failed transaction with code busy, full, corrupt or io (a write, or a read of a store opened for writing), written after the rollback by the command, hook, MCP tool or watch poll that hit it; never for a read-only store or a refused schema. A delivery to another team that opens that team's store records its failure there, with `op` `send` or `resend`. A failure while a store is being opened writes no row, because an open that fails has no connection, an unreadable header, or a file not yet at this binary's schema, which `record_failure` never writes to, and a busy header read means the database stayed locked past the 5 s busy timeout, so a second write would fail the same way; the failure is still reported where it happens | `op` (the command, MCP tool, `turn_end`, `post_tool`, `session_start`, `watch`, `send` or `resend`), `code` |
+| `store.error` | a failed transaction with code busy, full, corrupt or io (a write, or a read of a store opened for writing), written after the rollback by the command, hook, MCP tool or watch poll that hit it; never for a read-only store or a refused schema. A delivery to another team that opens that team's store records its failure there, with `op` `send` or `resend`. A failure while a store is being opened writes no row, because an open that fails has no connection, an unreadable header, or a file not yet at this binary's schema, which `record_failure` never writes to, and a busy header read means the database stayed locked past the 5 s busy timeout, so a second write would fail the same way; the failure is still reported where it happens | `op` (the command, MCP tool, `turn_end`, `post_tool`, `watch`, `send` or `resend`), `code` |
 
 The `close.step` rows in an archived database end at `finish`: `archive_final` and `delete_state` run after the archive is copied.
 

@@ -259,7 +259,7 @@ fn closed_text(place: &Place, closed: Result<(), HostError>) -> String {
     }
 }
 
-/// Step 8: the sleep hold waits on the new lead's process.
+/// Step 7: the sleep hold waits on the new lead's process.
 fn hold(
     ctx: &LeadHandoffCtx<'_>,
     planned: &Planned<'_>,
@@ -295,7 +295,7 @@ fn hold(
     warnings.extend(said.into_iter().map(|w| format!("team {team}: {w}")));
 }
 
-/// Step 10: the old session is located again, then its pane is closed.
+/// Step 9: the old session is located again, then its pane is closed.
 fn close_old(ctx: &LeadHandoffCtx<'_>, planned: &Planned<'_>, say: &mut dyn FnMut(Said)) {
     let old = &planned.seat.session;
     let located = locate_session(ctx.platform, ctx.clock, old, planned.harness, planned.host)
