@@ -141,11 +141,11 @@ The user decided on 2026-11-19 to remove support for the Codex harness.
   2026-11-19.
 - pi through OpenRouter is the only route to a model of another family. A
   Claude model keeps two routes (ADR 0053).
-- `tidy --base` prints `WEAKENED` for each deleted Codex test and
+- `tidy --base` prints `WEAKENED` for each deleted Codex test, and for each
+  deleted test of a piece that decision 7 lists as removed. It prints
   `PROTECTED-CHANGED` for the root `Cargo.toml`, `Cargo.lock`, `xtask/`,
   `scripts/test-changed.sh` and `tests/fakes/`. This ADR is the reason for
-  each of those lines. A deleted test that is not a Codex test is still a
-  weakened test.
+  each of those lines. Any other deleted test is still a weakened test.
 - The `Harness` trait keeps two real adapters. Claude Code works through
   hooks and a plugin. pi works through extensions. ADR 0004's promise about
   a new harness is still tested by two different designs.
