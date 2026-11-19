@@ -410,20 +410,6 @@ impl MemberLaunch {
         let home = self.home_from_member_dir()?;
         Some(team_scratch_dir(Path::new(&home), &self.team).join(self.role.as_str()))
     }
-
-    /// A resume's launch with what the first start recorded beyond the model:
-    /// the `teamwire` binary and the plugin switches. A harness that carries
-    /// hook and MCP commands in argv needs both to match the start.
-    #[must_use]
-    pub fn with_run_context(
-        mut self,
-        teamwire_bin: PathBuf,
-        plugins: BTreeMap<String, bool>,
-    ) -> Self {
-        self.teamwire_bin = teamwire_bin;
-        self.plugins = plugins;
-        self
-    }
 }
 
 /// The folder of a team's member scratch folders, `<home>/scratch/<team>`.

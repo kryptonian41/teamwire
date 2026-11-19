@@ -7,8 +7,6 @@
 //! Never: close the old place after a refusal; open a new session when the
 //! old place's close failed.
 
-use std::path::PathBuf;
-
 use teamwire_core::{Address, Member, Role, TeamName};
 use teamwire_store::Ctx;
 
@@ -39,12 +37,11 @@ pub enum Said {
 pub fn hand_off(
     ctx: &mut Ctx<'_>,
     role: &Role,
-    teamwire_bin: Option<PathBuf>,
     closer: PlaceCloser,
     dry_run: bool,
     say: &mut dyn FnMut(Said),
 ) -> Result<(), HandoffError> {
-    let plan = plan_handoff(ctx, role, teamwire_bin)?;
+    let plan = plan_handoff(ctx, role)?;
     let refusals = (closer.refusals)(ctx, &plan.member);
     if !refusals.is_empty() {
         return Err(HandoffError::Refused(refusals.join("; ")));

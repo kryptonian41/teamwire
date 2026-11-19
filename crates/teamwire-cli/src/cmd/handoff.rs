@@ -49,17 +49,10 @@ pub(crate) fn run(args: &HandoffArgs, global: &Global, wiring: &Wiring) -> ExitC
     }
     let dry_run = args.dry_run;
     let work = |ctx: &mut Ctx<'_>| {
-        hand_off(
-            ctx,
-            &role,
-            std::env::current_exe().ok(),
-            CLOSER,
-            dry_run,
-            &mut |said| match said {
-                Said::Line(text) => say_line(&text),
-                Said::Warning(text) => warn(&text),
-            },
-        )
+        hand_off(ctx, &role, CLOSER, dry_run, &mut |said| match said {
+            Said::Line(text) => say_line(&text),
+            Said::Warning(text) => warn(&text),
+        })
     };
     // A dry run writes nothing, not even the migration of an older database.
     let outcome = if dry_run {

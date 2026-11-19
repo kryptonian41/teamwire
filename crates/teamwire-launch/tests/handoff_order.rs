@@ -72,7 +72,7 @@ fn run(rig: &Rig, store: &mut Store, closer: PlaceCloser) -> (Vec<Said>, Result<
         config: &rig.config,
     };
     let mut said = Vec::new();
-    let result = hand_off(&mut ctx, &role("api"), None, closer, false, &mut |s| {
+    let result = hand_off(&mut ctx, &role("api"), closer, false, &mut |s| {
         said.push(s);
     });
     (said, result)

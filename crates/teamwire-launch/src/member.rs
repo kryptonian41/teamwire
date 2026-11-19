@@ -523,7 +523,8 @@ fn run_member(
     steps.mark(ctx, "trust_done");
     let mut data = extra.clone();
     put(&mut data, "steps", steps.json());
-    // `reopen` resumes with these; a resume without them runs on the default.
+    // `reopen` resumes with the model and the effort; a resume without them
+    // runs on the default.
     put(&mut data, "model", json!(m.spec.model));
     put(&mut data, "effort", json!(m.spec.effort));
     put(&mut data, "plugins", json!(launch.plugins));

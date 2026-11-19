@@ -12,7 +12,6 @@
 //! resume reuses as they are; the session id never changes; only the
 //! member's recorded place does.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -40,9 +39,6 @@ pub struct ReopenOpts {
     /// The user's home directory. The lead is never reopened there, because
     /// reopen would answer Claude's folder-trust dialog for it (LCH-15).
     pub user_home: Option<PathBuf>,
-    /// The running `teamwire` binary, which a resumed member's hook and MCP
-    /// commands name. `None` is the bare name `teamwire`.
-    pub teamwire_bin: Option<PathBuf>,
 }
 
 /// How one session's reopen ended. On a dry run `Reopened` means "would be".
@@ -253,10 +249,7 @@ fn reopen_member<'r>(
             member.cwd.display()
         ));
     }
-    let launch = match member_launch(ctx, &team.name, member, options, opts, session) {
-        Ok(launch) => launch,
-        Err(outcome) => return outcome,
-    };
+    let launch = member_launch(ctx, &team.name, member, options, session);
     let spec = match harness.resume_spec(&launch, session) {
         Ok(spec) => spec,
         Err(e) => {
@@ -297,33 +290,24 @@ fn reopen_member<'r>(
 const UNKNOWN: &str = "it is not known whether the session runs";
 
 /// What a started member's harness needs to start one of its sessions again
-/// with the per-run files launch wrote: the model and effort, and the plugin
-/// switches, that `member.started` recorded.
+/// with the per-run files launch wrote: the model and effort that
+/// `member.started` recorded. The binary and the plugin switches are in
+/// those files already, and a resume never writes them again.
 pub(crate) fn member_launch(
     ctx: &Ctx<'_>,
     team: &teamwire_core::TeamName,
     member: &Member,
     options: &RunOptions,
-    opts: &ReopenOpts,
     session: &teamwire_core::SessionId,
-) -> Result<MemberLaunch, ReopenOutcome> {
+) -> MemberLaunch {
     let team_dir = ctx.home.join("teams").join(team.as_str());
-    let plugins = recorded_plugins(ctx, &member.role).map_err(|e| {
-        ReopenOutcome::failed(format!("its plugin switches could not be read: {e}"))
-    })?;
-    Ok(MemberLaunch::for_resume(
+    MemberLaunch::for_resume(
         &team_dir,
         team,
         member,
         session,
         (options.model.clone(), options.effort.clone()),
     )
-    .with_run_context(
-        opts.teamwire_bin
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("teamwire")),
-        plugins,
-    ))
 }
 
 /// Refuses a spec that needs what only launch had: an identity in the
@@ -413,20 +397,6 @@ pub(crate) fn open_place(r: &Ready<'_>) -> Result<Place, ReopenOutcome> {
         Err(e) => format!("the trust step failed: {e}"),
     };
     Err(ReopenOutcome::Failed(close_new_tab(r, &place, &failed)))
-}
-
-/// The plugin switches the member's newest `member.started` event recorded.
-/// An older event has none, which is an empty map.
-fn recorded_plugins(
-    ctx: &Ctx<'_>,
-    role: &Role,
-) -> Result<BTreeMap<String, bool>, teamwire_store::StoreError> {
-    let started = ctx
-        .store
-        .read(|tx| tx.latest_event(Some(role), teamwire_core::EventType::MemberStarted))?;
-    Ok(started
-        .and_then(|e| serde_json::from_value(e.data.get("plugins")?.clone()).ok())
-        .unwrap_or_default())
 }
 
 /// Records a member's new place. It runs after its tab is up, so a failed

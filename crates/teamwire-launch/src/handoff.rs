@@ -10,7 +10,7 @@
 //! write already started the new generation).
 
 use std::fmt::Write as _;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use teamwire_core::{
     Address, DeliveryState, Member, MemberState, Mode, Place, Recipient, Role, SessionId,
@@ -20,9 +20,7 @@ use teamwire_store::Ctx;
 use thiserror::Error;
 
 use crate::member_steps::{first_line, not_open};
-use crate::reopen::{
-    Ready, ReopenOpts, ReopenOutcome, close_new_tab, member_launch, open_place, reusable,
-};
+use crate::reopen::{Ready, ReopenOutcome, close_new_tab, member_launch, open_place, reusable};
 
 /// A member that passed launch's checks, with the tab its new session needs.
 pub struct HandoffPlan<'r> {
@@ -78,11 +76,7 @@ pub struct Handoff {
 /// Checks that `role` can get a fresh session, and builds its tab request:
 /// the team is open, the member started, its folder and per-run files are
 /// there. Writes nothing.
-pub fn plan_handoff<'r>(
-    ctx: &Ctx<'r>,
-    role: &Role,
-    teamwire_bin: Option<PathBuf>,
-) -> Result<HandoffPlan<'r>, HandoffError> {
+pub fn plan_handoff<'r>(ctx: &Ctx<'r>, role: &Role) -> Result<HandoffPlan<'r>, HandoffError> {
     let (team, member, options, unread) = ctx
         .store
         .read(|tx| {
@@ -95,8 +89,7 @@ pub fn plan_handoff<'r>(
             ))
         })
         .map_err(|e| HandoffError::Store(e.to_string()))?;
-    plan_with(ctx, role, teamwire_bin, (team, member, options, unread))
-        .map_err(HandoffError::Refused)
+    plan_with(ctx, role, (team, member, options, unread)).map_err(HandoffError::Refused)
 }
 
 /// Every delivery state but `acked`: what `teamwire inbox` still returns,
@@ -119,7 +112,6 @@ type Read = (
 fn plan_with<'r>(
     ctx: &Ctx<'r>,
     role: &Role,
-    teamwire_bin: Option<PathBuf>,
     (team, member, options, unread): Read,
 ) -> Result<HandoffPlan<'r>, String> {
     let team = team.ok_or("the team has no record")?;
@@ -148,12 +140,7 @@ fn plan_with<'r>(
         ));
     }
     let session = SessionId::parse(&uuid::Uuid::new_v4().to_string()).map_err(|e| e.to_string())?;
-    let opts = ReopenOpts {
-        teamwire_bin,
-        ..ReopenOpts::default()
-    };
-    let launch = member_launch(ctx, &team.name, &member, &options, &opts, &session)
-        .map_err(|o| format!("{role}: {}", reason(o)))?;
+    let launch = member_launch(ctx, &team.name, &member, &options, &session);
     let spec = harness
         .launch_spec(&launch)
         .map_err(|e| format!("{role}: the harness could not build the launch: {e}"))?;

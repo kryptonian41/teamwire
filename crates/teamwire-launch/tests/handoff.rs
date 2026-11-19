@@ -68,7 +68,7 @@ fn ctx<'a>(rig: &'a Rig, store: &'a mut Store) -> Ctx<'a> {
 
 fn hand_off(rig: &Rig, store: &mut Store) -> Result<Handoff, String> {
     let mut ctx = ctx(rig, store);
-    let plan = plan_handoff(&ctx, &role("api"), None).map_err(|e| e.to_string())?;
+    let plan = plan_handoff(&ctx, &role("api")).map_err(|e| e.to_string())?;
     open_handoff(&mut ctx, &plan)
 }
 
@@ -231,7 +231,7 @@ fn planning_refuses_a_closing_team_and_an_unknown_member_and_writes_nothing() {
     let mut store = running_team(&rig);
     {
         let ctx = ctx(&rig, &mut store);
-        let why = plan_handoff(&ctx, &role("nobody"), None).unwrap_err();
+        let why = plan_handoff(&ctx, &role("nobody")).unwrap_err();
         assert!(
             matches!(&why, HandoffError::Refused(w) if w.contains("no member nobody")),
             "{why}"
@@ -240,7 +240,7 @@ fn planning_refuses_a_closing_team_and_an_unknown_member_and_writes_nothing() {
     let now = rig.clock.now();
     store.write(|tx| tx.begin_close(now, Pid::new(1))).unwrap();
     let ctx = ctx(&rig, &mut store);
-    let why = plan_handoff(&ctx, &role("api"), None).unwrap_err();
+    let why = plan_handoff(&ctx, &role("api")).unwrap_err();
     assert!(
         matches!(&why, HandoffError::Refused(w) if w.contains("only an open team can hand off")),
         "{why}"
@@ -261,7 +261,7 @@ fn a_session_its_start_hook_recorded_before_the_handoff_write_is_kept() {
     rig.harness.set_caps(caps);
     let hooked = SessionId::parse("hooked-new").unwrap();
     let mut ctx = ctx(&rig, &mut store);
-    let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+    let plan = plan_handoff(&ctx, &role("api")).unwrap();
     // The new session's start hook runs while the tab opens.
     ctx.store
         .write(|tx| tx.set_member_session(&role("api"), &hooked))
@@ -276,7 +276,7 @@ fn a_current_document_is_named_and_a_missing_or_old_one_is_replaced_by_the_repor
     let mut store = running_team(&rig);
     let plan_of = |store: &mut Store| {
         let ctx = ctx(&rig, store);
-        let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+        let plan = plan_handoff(&ctx, &role("api")).unwrap();
         (plan.first_line.clone(), plan.warnings.clone())
     };
 
@@ -326,7 +326,7 @@ fn a_failed_trust_step_puts_back_the_old_session_a_start_hook_replaced() {
         1,
     );
     let mut ctx = ctx(&rig, &mut store);
-    let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+    let plan = plan_handoff(&ctx, &role("api")).unwrap();
     // The new session's start hook records it while the tab opens.
     ctx.store
         .write(|tx| tx.set_member_session(&role("api"), &SessionId::parse("hooked-new").unwrap()))
@@ -352,7 +352,7 @@ fn a_store_that_cannot_be_read_is_a_store_error() {
         })
         .unwrap();
     let ctx = ctx(&rig, &mut store);
-    let why = plan_handoff(&ctx, &role("api"), None).unwrap_err();
+    let why = plan_handoff(&ctx, &role("api")).unwrap_err();
     assert!(matches!(why, HandoffError::Store(_)), "{why}");
 }
 
@@ -396,7 +396,7 @@ fn a_handoff_first_line_counts_the_held_messages() {
         })
         .unwrap();
     let ctx = ctx(&rig, &mut store);
-    let plan = plan_handoff(&ctx, &role("api"), None).unwrap();
+    let plan = plan_handoff(&ctx, &role("api")).unwrap();
     assert!(
         plan.first_line.contains("1 unread message(s)"),
         "{}",
