@@ -32,6 +32,5 @@ fn pi_passes_the_lead_setup_contract() {
             home: Some(home.path().to_path_buf()),
         },
         shared_skill: SHARED,
-        before_read: &|_| {},
     });
 }

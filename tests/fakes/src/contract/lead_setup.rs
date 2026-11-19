@@ -22,11 +22,6 @@ pub struct LeadSetupSetup<'a> {
     pub home: &'a Path,
     pub command: LeadCommand,
     pub shared_skill: &'a str,
-    /// Called before each `status` and plan: queues on `platform` what the
-    /// harness's program answers when asked what is installed, for a harness
-    /// that asks it. It is a no-op for Claude Code and pi. Nothing is
-    /// installed.
-    pub before_read: &'a dyn Fn(&FakePlatform),
 }
 
 impl std::fmt::Debug for LeadSetupSetup<'_> {
@@ -50,7 +45,6 @@ pub fn lead_setup_contract(setup: &LeadSetupSetup<'_>) {
         compare_files: true,
     };
 
-    (setup.before_read)(setup.platform);
     match ok("status", s.status(&target)) {
         LeadStatus::Missing => {}
         other @ (LeadStatus::Stale(_) | LeadStatus::Current) => {
@@ -84,7 +78,6 @@ pub fn lead_setup_contract(setup: &LeadSetupSetup<'_>) {
             .any(|c| matches!(c.step(), LeadStep::WriteFiles { .. })),
     );
 
-    (setup.before_read)(setup.platform);
     let removal = ok("plan_uninstall", s.plan_uninstall(setup.home, false)).changes;
     require(
         "uninstall deletes the files install wrote",
@@ -101,7 +94,6 @@ pub fn lead_setup_contract(setup: &LeadSetupSetup<'_>) {
         .collect();
     ok("apply of the deletions", s.apply(&deletions));
     require("after uninstall no file is left", !has_entries(setup.home));
-    (setup.before_read)(setup.platform);
     require(
         "a second uninstall plans nothing",
         ok("plan_uninstall", s.plan_uninstall(setup.home, false))
@@ -110,7 +102,6 @@ pub fn lead_setup_contract(setup: &LeadSetupSetup<'_>) {
     );
     ok("apply of nothing", s.apply(&[]));
 
-    (setup.before_read)(setup.platform);
     let checks = s.doctor_checks(Ok(&target), setup.home);
     require("doctor has a check of the setup", !checks.is_empty());
     let checks = s.doctor_checks(Err("no binary"), setup.home);
@@ -121,7 +112,6 @@ pub fn lead_setup_contract(setup: &LeadSetupSetup<'_>) {
 }
 
 fn plan_install(setup: &LeadSetupSetup<'_>, target: &LeadTarget<'_>) -> Vec<LeadChange> {
-    (setup.before_read)(setup.platform);
     ok("plan_install", setup.setup.plan_install(target, false)).changes
 }
 

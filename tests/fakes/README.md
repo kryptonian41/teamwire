@@ -199,9 +199,7 @@ child.kill()?;
 
 Fields: `setup` (the `LeadSetup`), `platform` (the `FakePlatform` it was
 built on), `home` (an empty state directory, apart from the harness's own
-directory), `command`, `shared_skill`, and `before_read`, which queues on the
-platform what the harness's program answers when asked what is installed
-(a no-op for Claude Code and pi). The suite checks a fresh setup end to end
+directory), `command` and `shared_skill`. The suite checks a fresh setup end to end
 without running the program: missing status, a plan that writes nothing,
 files only under `home`, steps that run only
 `setup.program()`, a write failure and a failing program each stopping
