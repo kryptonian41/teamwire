@@ -406,9 +406,16 @@ fn without_a_terminal_or_a_flag_install_keeps_to_claude_code() {
 #[test]
 fn an_unknown_harness_is_a_usage_error_and_one_not_on_path_a_refusal_and_both_name_it() {
     let bed = Bed::new();
-    let run = bed.teamwire(&["install", "--harness", "gemini"], &[]);
-    assert_eq!(run.code, 3, "{}", run.err);
-    assert!(run.err.contains("`gemini`"), "{}", run.err);
+    // `codex` is an unknown id like any other since ADR 0054.
+    for name in ["gemini", "codex"] {
+        let run = bed.teamwire(&["install", "--harness", name], &[]);
+        assert_eq!(run.code, 3, "{name}: {}", run.err);
+        assert!(
+            run.err.contains(&format!("`{name}`")),
+            "{name}: {}",
+            run.err
+        );
+    }
     // `teamwire` without the fake `pi` on PATH.
     let run = bed.teamwire(&["install", "--harness", "pi"], &[]);
     assert_eq!(run.code, 1, "a refusal, not a usage error: {}", run.err);

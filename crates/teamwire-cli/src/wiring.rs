@@ -329,8 +329,10 @@ mod tests {
         assert_eq!(lead_with(Some("pi"), Some("s1")), "pi");
         assert_eq!(lead_with(Some("claude-code"), None), "claude-code");
         assert_eq!(lead_with(Some("pi"), None), "pi");
-        // An empty or unknown value does not decide.
+        // An empty or unknown value does not decide. `codex` is an unknown
+        // id since ADR 0054.
         assert_eq!(lead_in_pi(Some("nope"), None), "pi");
+        assert_eq!(lead_in_pi(Some("codex"), None), "pi");
         assert_eq!(lead_in_pi(None, Some("")), "pi");
     }
 
@@ -421,7 +423,7 @@ mod tests {
     #[test]
     fn registry_holds_every_adapter_of_this_binary() {
         let wiring = wire(&env(None)).unwrap();
-        // Exactly these two (ADR 0054).
+        // Exactly these two. Codex left in ADR 0054.
         assert_eq!(wiring.registry.harness_ids(), ["claude-code", "pi"]);
         assert_eq!(wiring.registry.host_ids(), ["herdr", "none", "tmux"]);
         assert!(wiring.registry.harness(&wiring.lead_harness).is_ok());
