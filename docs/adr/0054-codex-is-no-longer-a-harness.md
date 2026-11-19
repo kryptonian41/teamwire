@@ -91,8 +91,23 @@ The user decided on 2026-11-19 to remove support for the Codex harness.
    - The `MCP_META_<key>` lookup in `Harness::caller_session`.
    - `MemberLaunch::with_run_context`, kept for a harness that carries its
      hook and MCP commands in argv.
+   - `MemberLaunch::accept_trust`, the copy of the spec's `accept_trust` that
+     launch writes into each member's start. Launch still writes it, and no
+     adapter reads it. The spec's own `accept_trust`, which decides whether
+     launch answers the folder-trust prompt, is not a candidate.
+   - The `false` value of `HarnessCaps::reads_input_box` and the two branches
+     for it in `crates/teamwire-deliver/src/deliver.rs`, which skip the
+     input-box check on a host that guards dialogs and read the screen
+     without style codes on another host. Claude Code and pi both set it to
+     `true`.
+   - `CarryRules::keyed` in `crates/teamwire-core/src/lead_start.rs`, which
+     carries an old lead's flag only with a value that starts as given.
+     Claude Code and pi both pass an empty list.
+   - The hook `before_read` of the lead-setup contract suite in
+     `tests/fakes/src/contract/lead_setup.rs`, which queues what a harness's
+     program answers when asked what is installed. Every caller passes a hook
+     that does nothing.
 8. **These parts stay.**
-   - `MemberLaunch::accept_trust`, because the pi adapter reads it.
    - The list of agent kinds in `crates/teamwire-host-herdr/src/spawn.rs`.
      The list holds herdr's own kind names, and `codex` is one of them.
    - `teamwire watch --deliver` and `teamwire pr-watch --deliver`, unless

@@ -948,7 +948,7 @@ fn the_speckit_preset_runs_spec_then_analyze_then_impl() {
     }
 }
 
-/// A spec-kit feature runs through members on three harnesses, so the
+/// A spec-kit feature runs through members on two harnesses, so the
 /// reference says how each one runs `implement`, and how a worktree member
 /// finds its feature. The skill points at that section and says that
 /// spec-kit's `specs/` folder is a product file a member commits.

@@ -284,7 +284,8 @@ string_enum! {
         /// as the command prints it.
         MonitoredCommand => "monitored_command",
         /// The lead runs the command in the background with `--deliver`, and
-        /// the watch types each line into the lead's pane (ADR 0054 decision 8).
+        /// the watch types each line into the lead's pane. No harness starts
+        /// the watch this way now; ADR 0054 decision 7 lists it for removal.
         BackgroundCommand => "background_command",
         /// The lead calls a tool of teamwire's lead extension, which runs the
         /// watch and hands the lead each line (ADR 0036).
@@ -355,8 +356,8 @@ pub struct MemberLaunch {
     /// member's compaction backstop is set from it (and from the model).
     #[serde(default)]
     pub context_handoff_tokens: Option<u64>,
-    /// The spec's `accept_trust`. Read by a harness that takes folder trust
-    /// as a start option rather than answering a dialog.
+    /// The spec's `accept_trust`. Launch sets it, and no adapter reads it
+    /// now; ADR 0054 decision 7 lists it for removal.
     #[serde(default)]
     pub accept_trust: bool,
 }
