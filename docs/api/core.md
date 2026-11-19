@@ -761,12 +761,10 @@ pub struct LeadStart { pub old_session: SessionId, pub old_args: Vec<String>,
 /// --handoff` and its dry run, and never a secret; the contract checks both.
 pub struct LeadStartSpec { pub argv: Vec<String>, pub dropped: Vec<String>,
                            pub warnings: Vec<String> }
-/// An allow list of old flags. `keyed` carries a flag only with a value that
-/// starts as given (`-c model_reasoning_effort=`). `replaced` names the
-/// flags the new start sets itself, such as the session to resume, and
-/// whether each takes a value; they are neither carried nor dropped.
+/// An allow list of old flags. `replaced` names the flags the new start
+/// sets itself, such as the session to resume, and whether each takes a
+/// value; they are neither carried nor dropped.
 pub struct CarryRules<'a> { pub switches: &'a [&'a str], pub with_value: &'a [&'a str],
-                            pub keyed: &'a [(&'a str, &'a str)],
                             pub replaced: &'a [(&'a str, bool)] }
 /// The carried flags in their order, and the dropped flag names. A flag's
 /// value is the next word unless that word is a flag. A word that is no flag

@@ -29,7 +29,6 @@ const RULES: CarryRules<'static> = CarryRules {
         "--session-dir",
         "--tui-mode",
     ],
-    keyed: &[],
     replaced: &[
         ("--session-id", true),
         ("--session", true),

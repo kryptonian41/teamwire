@@ -26,7 +26,6 @@ const RULES: CarryRules<'static> = CarryRules {
         "--verbose",
     ],
     with_value: &[MODE, MODEL, "--effort", "--fallback-model"],
-    keyed: &[],
     replaced: &[
         ("--session-id", true),
         ("--resume", true),
