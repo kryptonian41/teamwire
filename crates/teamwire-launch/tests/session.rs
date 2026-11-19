@@ -38,7 +38,7 @@ fn rig_with(by_hook: Option<&'static str>) -> Rig {
     rig.harness.set_caps(caps);
     let host = Arc::clone(&rig.host);
     let home = rig.home.path().to_path_buf();
-    let harness = HintHarness::new(Arc::clone(&rig.harness), "unused").on_startup(move |place| {
+    let harness = HintHarness::new(Arc::clone(&rig.harness)).on_startup(move |place| {
         host.set_occupant(
             place,
             Occupant {
@@ -87,7 +87,7 @@ fn a_session_the_hook_recorded_is_kept() {
 #[test]
 fn the_contract_is_on_disk_before_the_harness_builds_its_launch() {
     let mut rig = Rig::new();
-    let harness = HintHarness::new(Arc::clone(&rig.harness), "unused").reading_contract();
+    let harness = HintHarness::new(Arc::clone(&rig.harness)).reading_contract();
     let mut registry = Registry::new();
     registry.add_harness(Arc::new(harness)).unwrap();
     registry.add_host(rig.host.clone()).unwrap();

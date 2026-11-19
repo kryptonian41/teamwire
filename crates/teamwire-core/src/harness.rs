@@ -33,9 +33,7 @@ pub trait Harness: Send + Sync {
     /// configuration (shown by `status --role`, never run by teamwire).
     fn resume_spec(&self, m: &MemberLaunch, s: &SessionId) -> Result<LaunchSpec, HarnessError>;
     /// The caller's own session, read through `get`: the process
-    /// environment for a command (`|name| std::env::var(name).ok()`). The
-    /// lead's MCP server also answers `MCP_META_<key>` with a string field of
-    /// the request's `_meta`, for a harness that names the session only there.
+    /// environment (`|name| std::env::var(name).ok()`).
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession>;
     /// The argv that resumes the lead's own session: a plain resume, with no
     /// per-run files, because the lead loads the teamwire plugin itself. The

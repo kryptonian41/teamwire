@@ -1,12 +1,6 @@
-//! A harness that names the caller's session only through one lookup key,
-//! such as `MCP_META_sessionId` from an MCP request, and that can run a
-//! function when its startup dialog is answered, as a session-start hook
-//! would.
-//! Everything else is the fake's.
-#![expect(
-    clippy::unwrap_used,
-    reason = "helper functions in an integration-test file unwrap; a failure there fails the test"
-)]
+//! A harness that can run a function when its startup dialog is answered,
+//! as a session-start hook would, and that can read the contract file when
+//! it builds a launch. Everything else is the fake's.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,7 +9,7 @@ use std::time::Duration;
 use teamwire_core::{
     CallerSession, Harness, HarnessCaps, HarnessError, HarnessErrorCode, HarnessId, Host,
     LaunchSpec, Liveness, MemberLaunch, OneLine, OtelConfig, Pid, Place, Role, ScreenState,
-    SessionId, SessionKind, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
+    SessionId, StartupOutcome, TeamName, TrustPolicy, TurnEnd,
 };
 use teamwire_fakes::FakeHarness;
 
@@ -23,16 +17,14 @@ type StartupFn = Box<dyn Fn(&Place) + Send + Sync>;
 
 pub(crate) struct HintHarness {
     inner: Arc<FakeHarness>,
-    key: &'static str,
     on_startup: Option<StartupFn>,
     reads_contract: bool,
 }
 
 impl HintHarness {
-    pub(crate) fn new(inner: Arc<FakeHarness>, key: &'static str) -> Self {
+    pub(crate) fn new(inner: Arc<FakeHarness>) -> Self {
         Self {
             inner,
-            key,
             on_startup: None,
             reads_contract: false,
         }
@@ -76,10 +68,7 @@ impl Harness for HintHarness {
         self.inner.resume_spec(m, s)
     }
     fn caller_session(&self, get: &dyn Fn(&str) -> Option<String>) -> Option<CallerSession> {
-        Some(CallerSession {
-            id: SessionId::parse(&get(self.key)?).unwrap(),
-            kind: SessionKind::Interactive,
-        })
+        self.inner.caller_session(get)
     }
     fn session_cwd(&self, s: &SessionId) -> Result<Option<PathBuf>, HarnessError> {
         self.inner.session_cwd(s)

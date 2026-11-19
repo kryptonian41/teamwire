@@ -82,7 +82,6 @@ pub(crate) fn call(
     caller: &McpCaller,
     tool: &str,
     args: JsonObject,
-    meta: &JsonObject,
 ) -> Result<Reply, ToolFailure> {
     if !TOOLS.iter().any(|(name, _)| *name == tool) {
         return Err(ToolFailure::invalid(format!("no tool named {tool}")));
@@ -119,7 +118,7 @@ pub(crate) fn call(
         clock: env.clock.as_ref(),
         config: &env.config,
     };
-    let env_of_caller = caller_env(caller, &env.process, &team, meta);
+    let env_of_caller = caller_env(caller, &env.process, &team);
     let proof = if reads {
         prove_actor(&ctx, &env_of_caller)
     } else {
@@ -172,34 +171,21 @@ fn team_of(caller: &McpCaller, args: &JsonObject) -> Result<TeamName, ToolFailur
 }
 
 /// What ADR 0008 asks each kind of caller to present.
-/// The lead's request `_meta` reaches the proof as hints; a member's never does.
 /// The lead also carries the member variables of the server's own process,
 /// because a member's environment proves no lead.
-fn caller_env(
-    caller: &McpCaller,
-    process: &CallerEnv,
-    team: &TeamName,
-    meta: &JsonObject,
-) -> CallerEnv {
+fn caller_env(caller: &McpCaller, process: &CallerEnv, team: &TeamName) -> CallerEnv {
     match caller {
         McpCaller::Member { role, token, .. } => CallerEnv {
             team: Some(team.as_str().to_owned()),
             role: Some(role.as_str().to_owned()),
             token: Some(token.clone()),
             from: None,
-            hints: Vec::new(),
             ..CallerEnv::default()
         },
         // The claim is always the lead's, so a tool call never speaks as the
         // user, whatever the server's own process holds (ADR 0040).
         McpCaller::Lead => CallerEnv {
             from: Some("lead".to_owned()),
-            hints: meta
-                .iter()
-                .filter_map(|(key, value)| {
-                    Some((format!("MCP_META_{key}"), value.as_str()?.to_owned()))
-                })
-                .collect(),
             ..process.clone()
         },
     }
@@ -497,13 +483,7 @@ mod tests {
             role: api,
             token: "t".to_owned(),
         };
-        let out = call(
-            &env,
-            &caller,
-            "team_inbox",
-            JsonObject::new(),
-            &JsonObject::new(),
-        );
+        let out = call(&env, &caller, "team_inbox", JsonObject::new());
         assert!(out.is_err());
         let errors: Vec<Value> = store
             .read(|tx| tx.events_after(0, None, None)?.all_or_corrupt())

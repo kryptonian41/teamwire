@@ -34,7 +34,6 @@ pub(crate) fn caller_env(from: Option<String>) -> CallerEnv {
         token_file: var("TEAMWIRE_TOKEN_FILE"),
         user_key: var("TEAMWIRE_USER_KEY"),
         from,
-        hints: Vec::new(),
     }
 }
 
