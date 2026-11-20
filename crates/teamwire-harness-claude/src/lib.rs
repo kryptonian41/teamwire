@@ -40,9 +40,9 @@ use std::time::Duration;
 
 use teamwire_core::{
     CallerSession, DialogKind, Fill, Harness, HarnessCaps, HarnessError, HarnessId, Host,
-    LaunchSpec, LeadSetup, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog, OneLine,
-    OtelConfig, PermissionDecision, PermissionRequest, Pid, Place, Platform, Role, ScreenState,
-    SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
+    LaunchSpec, LeadSetup, LeadStart, LeadStartSpec, Liveness, MemberLaunch, ModelCatalog,
+    ModelFamily, OneLine, OtelConfig, PermissionDecision, PermissionRequest, Pid, Place, Platform,
+    Role, ScreenState, SessionId, StartupOutcome, TeamName, ToolCall, TrustPolicy, TurnEnd,
 };
 
 /// Where Claude Code keeps its files, and how to start it.
@@ -246,6 +246,12 @@ impl Harness for ClaudeCode {
 
     fn models(&self, _timeout: Duration) -> Result<ModelCatalog, HarnessError> {
         Ok(models::catalog())
+    }
+
+    /// Claude Code starts Claude models only, whatever the value: an alias
+    /// such as `opus` names no vendor, yet it is a Claude model here.
+    fn model_family(&self, _model: &str) -> ModelFamily {
+        ModelFamily::Claude
     }
 
     fn otel_env(&self, team: &TeamName, role: &Role, base: &OtelConfig) -> Vec<(String, String)> {
