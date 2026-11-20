@@ -134,11 +134,11 @@ reader prints nothing.
 | Code | When | What to do |
 | --- | --- | --- |
 | `set_too_small` | A set has one reader. | Add a reader on another family. When only one family is reachable, no set runs: treat the one report as a single review. |
-| `set_same_family` | Two readers of one set have the same family. | Move one of them to a model of another family. |
+| `set_same_family` | Two readers of one set have the same family. Launch reads an earlier reader's model from the record of its start, so a reader whose launch has not finished yet counts for nothing, and two launches at the same time can miss this warning. | Move one of them to a model of another family. Launch every reader of one set from one spec file. |
 | `set_family_unknown` | A reader names no model, or launch cannot tell its model's family. | Fill in the model, or check its family by eye. |
 | `set_mixed_kinds` | Two readers of one set differ in kind. | Give every reader of the set one kind. |
 | `set_reader_not_quiet` | A reader may send messages. | Give it `"quiet": true`, or use a kind that is quiet by nature. |
-| `set_briefs_differ` | Two readers in the spec file have different brief text. | Give every reader the same `task` or the same `task_file`. |
+| `set_briefs_differ` | Two readers in the spec file have different brief text. teamwire stores no brief text, so launch never compares a reader added later with `--add` with an earlier reader. | Give every reader the same `task` or the same `task_file`. Launch every reader of one set from one spec file. |
 | `set_reconciler_alone` | A `reconciler` has no set label, or no reader carries its label. | Fix the reconciler's `set` label. |
 | `set_reconciler_early` | A `reconciler` is in the same spec file as a reader of its set, or a reader has not reported. One line per such reader. | Leave the reconciler out, and add it with `--add` after every reader has reported. |
 

@@ -352,3 +352,37 @@ fn the_research_note_states_what_song_and_greptile_measured() {
         "the note still counts bugs"
     );
 }
+
+/// Launch compares briefs only within one spec file, and reads an earlier
+/// reader's model from the record of its start. The set section tells the
+/// lead to launch the readers together, and each list of the warnings says
+/// the limit beside its code.
+#[test]
+fn the_two_limits_of_the_set_warnings_are_written_beside_them() {
+    let section = set_section();
+    for phrase in [
+        "Launch every reader of one set from one spec file.",
+        "teamwire stores no brief text.",
+        "never compares a reader added later with `--add` with an earlier one (`set_briefs_differ`)",
+        "two launches at the same time can miss two readers of one family (`set_same_family`)",
+    ] {
+        assert!(section.contains(phrase), "the set section lacks: {phrase}");
+    }
+    let row = |text: &str, code: &str| -> String {
+        text.lines()
+            .find(|l| l.starts_with(&format!("| `{code}` |")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let reference = example("skills/teamwire/reference.md");
+    let cli = repo_doc("docs/api/cli.md");
+    for (place, text) in [("reference.md", &reference), ("cli.md", &cli)] {
+        let briefs = row(text, "set_briefs_differ");
+        assert!(briefs.contains("no brief text"), "{place}: {briefs}");
+        let family = row(text, "set_same_family");
+        assert!(
+            family.contains("two launches at the same time can miss this warning"),
+            "{place}: {family}"
+        );
+    }
+}

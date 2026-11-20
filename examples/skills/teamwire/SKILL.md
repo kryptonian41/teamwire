@@ -517,6 +517,17 @@ A team that runs the same preset again, for another diff, renames the `set`
 label, all four roles and the report paths in the reconciler's task. Launch
 never uses a role twice in one team.
 
+Launch every reader of one set from one spec file. Launch can check two
+things only between readers of the spec file it launches:
+
+- **The briefs.** teamwire stores no brief text. So launch compares the
+  briefs of the readers in one spec file only, and never compares a reader
+  added later with `--add` with an earlier one (`set_briefs_differ`).
+- **The families.** Launch reads an earlier reader's model from the record
+  of its start. A reader whose launch has not finished yet has no model
+  there. So two launches at the same time can miss two readers of one
+  family (`set_same_family`).
+
 This spec adds a reviewer set to the team `myteam`. The model ids are
 placeholders: fill in the ids that `teamwire models --harness <id>` prints.
 A pi id is the whole id that `teamwire models --harness pi` prints, with its
