@@ -75,8 +75,8 @@ fn the_set_example_names_no_real_model() {
     let section = set_section();
     for placeholder in [
         "\"model\": \"<newest Claude model>\"",
-        "\"model\": \"<provider>/<newest GPT model>\"",
-        "\"model\": \"<provider>/<newest Gemini model>\"",
+        "\"model\": \"<pi id of the newest GPT model>\"",
+        "\"model\": \"<pi id of the newest Gemini model>\"",
         "\"set\": \"revset\"",
         "\"harness\": \"claude-code\"",
         "\"harness\": \"pi\"",
@@ -158,18 +158,34 @@ fn the_skill_describes_set_and_quiet() {
 }
 
 /// The closing section and the reference show the money line, with a
-/// made-up role and the model as `<provider>/<model>`, since no file under
+/// made-up role and the model as `<vendor>/<model>`, since no file under
 /// `examples/` names a real model.
 #[test]
 fn the_skill_and_the_reference_show_the_money_line() {
     let line = "teamwire.member.cost{team=myteam,role=revb,kind=reviewer,\
-                model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd";
+                model=<vendor>/<model>,effort=high,task_class=judgement} 1.5878 usd";
     let skill = example("skills/teamwire/SKILL.md");
     let reference = example("skills/teamwire/reference.md");
     let (_, closing) = skill.split_once("## Closing a team down").unwrap();
     assert!(closing.contains(line), "{closing}");
     assert!(flat(closing).contains("read a missing line as not recorded, never as zero"));
     assert!(reference.contains(line));
+    // The two placeholders stand for two different strings, and each one
+    // says which.
+    assert!(flat(closing).contains(
+        "The `model` label is the model as pi's session file records it, `<vendor>/<model>`, \
+         without the `openrouter/` that the spec's id starts with."
+    ));
+    assert!(flat(&skill).contains(
+        "A pi id is the whole id that `teamwire models --harness pi` prints, with its provider \
+         first, such as `openrouter/<vendor>/<model>`."
+    ));
+    for text in [&skill, &reference] {
+        assert!(
+            !text.contains("<provider>"),
+            "a placeholder still reads <provider>"
+        );
+    }
     assert!(reference.contains("The counter `teamwire.member.cost`, unit `usd`"));
 }
 
