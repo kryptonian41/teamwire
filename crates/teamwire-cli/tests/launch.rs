@@ -255,6 +255,60 @@ fn dry_run_shows_each_members_harness_model_effort_and_task_class() {
 }
 
 #[test]
+fn dry_run_accepts_a_pane_reconciler_and_shows_quiet_and_the_set() {
+    let rig = Rig::new();
+    let mut spec = pane_spec("demo", rig.work.path());
+    spec["children"][0]["quiet"] = json!(true);
+    spec["children"][0]["set"] = json!("rev1");
+    spec["children"].as_array_mut().unwrap().push(
+        json!({"role": "rec", "title": "Reconcile", "kind": "reconciler",
+                     "mode": "pane", "cwd": rig.work.path(), "task": "merge the reports"}),
+    );
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", text(&out.stderr));
+    let shown = text(&out.stdout);
+    let line = |role: &str| {
+        shown
+            .lines()
+            .find(|l| l.starts_with(&format!("  {role} (")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let (a, rec) = (line("a"), line("rec"));
+    assert!(a.ends_with(", quiet, set rev1"), "{shown}");
+    assert!(rec.starts_with("  rec (reconciler, pane)"), "{shown}");
+    assert!(!rec.contains("quiet") && !rec.contains("set "), "{shown}");
+    assert!(rig.home_is_empty(), "a dry run creates no state");
+}
+
+#[test]
+fn a_reconciler_in_worktree_mode_is_refused_and_nothing_is_created() {
+    let rig = Rig::new();
+    let repo = rig.repo();
+    let spec = json!({"team": "demo", "title": "Demo team", "children": [
+        {"role": "rec", "title": "Reconcile", "kind": "reconciler", "mode": "worktree",
+         "repo": repo, "task": "merge the reports"}]});
+    let file = rig.spec_file(&spec);
+    let out = rig.launch(
+        &["--dry-run", "--spec", file.to_str().unwrap()],
+        None,
+        false,
+    );
+    assert_eq!(out.status.code(), Some(1));
+    let err = text(&out.stderr);
+    assert!(
+        err.contains("refused [rec]: reconciler_needs_pane"),
+        "{err}"
+    );
+    assert!(rig.home_is_empty());
+}
+
+#[test]
 fn an_unknown_task_class_is_refused_and_nothing_is_created() {
     let rig = Rig::new();
     let mut spec = pane_spec("demo", rig.work.path());

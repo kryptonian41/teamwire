@@ -193,6 +193,16 @@ pub(crate) fn plan_member(
             ),
         );
     }
+    if kind == MemberKind::Reconciler && child.mode != Mode::Pane {
+        bad(
+            "mode",
+            "reconciler_needs_pane",
+            format!(
+                "role {role} is a reconciler, so it needs mode pane; it writes nothing, so a worktree would only leave a branch behind"
+            ),
+        );
+    }
+    marks(child, kind, &mut bad);
     let harness_id = child
         .harness
         .clone()
@@ -225,6 +235,42 @@ pub(crate) fn plan_member(
 }
 
 pub(crate) type Bad<'a> = dyn FnMut(&str, &str, String) + 'a;
+
+/// The `quiet` setting and the set label. `quiet` may make any member
+/// quiet, but never a quiet kind talk: `false` there would read as a promise
+/// the rules do not keep. A set label follows the rule of a role name.
+fn marks(child: &MemberSpec, kind: MemberKind, bad: &mut Bad<'_>) {
+    let role = child.role.as_str();
+    if child.quiet == Some(false) && kind.is_quiet() {
+        bad(
+            "quiet",
+            "quiet_cannot_be_unset",
+            format!(
+                "role {role} is a {kind}, which is quiet by nature; drop \"quiet\": false from the spec"
+            ),
+        );
+    }
+    if let Some(set) = &child.set
+        && !set_label_ok(set)
+    {
+        bad(
+            "set",
+            "set_label_invalid",
+            format!(
+                "role {role}: set {set:?} must match ^[a-z][a-z0-9_]{{0,15}}$, as a role name does"
+            ),
+        );
+    }
+}
+
+/// `^[a-z][a-z0-9_]{0,15}$`, the pattern of a role name.
+fn set_label_ok(set: &str) -> bool {
+    set.len() <= Role::MAX_LEN
+        && set.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && set
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
 
 /// LCH-5: a role is never reused, except one that failed before it started.
 fn role_state(cx: &Cx<'_>, child: &MemberSpec, bad: &mut Bad<'_>) -> bool {

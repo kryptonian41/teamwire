@@ -332,6 +332,26 @@ fn a_member_below_the_afk_table_gets_one_warning_each() {
     }
 }
 
+/// A reconciler sits in the reviewer's row of the AFK table: opus at xhigh.
+#[test]
+fn a_reconciler_below_xhigh_gets_the_reviewers_warning() {
+    let rig = Rig::new();
+    let cwd = rig.work.path();
+    let warnings = warnings_for(
+        &rig,
+        true,
+        &[
+            model_member("r", "reconciler", Some("opus"), Some("high"), cwd),
+            model_member("s", "reconciler", Some("opus"), Some("xhigh"), cwd),
+        ],
+    );
+    let afk: Vec<_> = warnings.iter().filter(|w| w.contains("AFK")).collect();
+    assert_eq!(afk.len(), 1, "{warnings:?}");
+    let only = afk.first().unwrap();
+    assert!(only.contains("member r (reconciler)"), "{only}");
+    assert!(only.contains("(opus at xhigh)"), "{only}");
+}
+
 #[test]
 fn an_ordinary_team_gets_no_afk_warning() {
     let rig = Rig::new();

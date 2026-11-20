@@ -181,8 +181,21 @@ fn print_plan(plan: &ValidPlan) {
             None => format!("in {}", m.cwd.display()),
         };
         let again = if m.relaunch { ", launched again" } else { "" };
+        // What the spec set, not what the kind implies: a reviewer's line
+        // says no `quiet`, though it is quiet by nature.
+        let quiet = if m.spec.quiet == Some(true) {
+            ", quiet"
+        } else {
+            ""
+        };
+        let set = m
+            .spec
+            .set
+            .as_ref()
+            .map(|s| format!(", set {s}"))
+            .unwrap_or_default();
         println!(
-            "  {} ({}, {}) {} via {}, identity by {}{again}",
+            "  {} ({}, {}) {} via {}, identity by {}{again}{quiet}{set}",
             m.spec.role, m.kind, m.spec.mode, place, m.host, m.channel
         );
         let model = m.spec.model.as_deref().unwrap_or("the default model");

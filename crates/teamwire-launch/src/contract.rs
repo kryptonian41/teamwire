@@ -20,6 +20,7 @@ const KIND_REVIEWER: &str = include_str!("../contracts/kind_reviewer.md");
 const KIND_INVESTIGATOR: &str = include_str!("../contracts/kind_investigator.md");
 const KIND_CLOSER: &str = include_str!("../contracts/kind_closer.md");
 const KIND_PLAN_REVIEWER: &str = include_str!("../contracts/kind_plan_reviewer.md");
+const KIND_RECONCILER: &str = include_str!("../contracts/kind_reconciler.md");
 const SCOPE_HEAD: &str = include_str!("../contracts/scope_head.md");
 const SCOPE_OWNS: &str = include_str!("../contracts/scope_owns.md");
 const SCOPE_CHECK: &str = include_str!("../contracts/scope_check.md");
@@ -50,6 +51,9 @@ pub struct ContractParts<'a> {
     pub teamwire_bin: &'a Path,
     pub check: Option<&'a str>,
     pub owns: &'a [String],
+    /// What the spec's `quiet` said. True gives a member of any kind the
+    /// quiet parts: it sends no message and asks the parent in its report.
+    pub quiet: bool,
 }
 
 fn kind_text(kind: MemberKind) -> &'static str {
@@ -59,6 +63,7 @@ fn kind_text(kind: MemberKind) -> &'static str {
         MemberKind::Investigator => KIND_INVESTIGATOR,
         MemberKind::Closer => KIND_CLOSER,
         MemberKind::PlanReviewer => KIND_PLAN_REVIEWER,
+        MemberKind::Reconciler => KIND_RECONCILER,
     }
 }
 
@@ -77,25 +82,36 @@ fn scope(check: Option<&str>, owns: &[String]) -> String {
     out
 }
 
-/// Every member that talks sends every kind of information, to its own team
-/// and to other teams (MSG-1, MSG-20); a quiet kind talks to no one.
-fn talking(kind: MemberKind) -> String {
+/// Whether the member gets the quiet parts: its kind is quiet, or its spec
+/// set `quiet` (MSG-3). The match names every kind, so a new kind must say
+/// which it is.
+fn quiet_parts(kind: MemberKind, quiet: bool) -> bool {
     match kind {
-        MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer => {
-            TALKING_SILENT.to_owned()
-        }
-        MemberKind::Implementer | MemberKind::Investigator => {
-            [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
-        }
+        MemberKind::Reviewer
+        | MemberKind::Closer
+        | MemberKind::PlanReviewer
+        | MemberKind::Reconciler => true,
+        MemberKind::Implementer | MemberKind::Investigator => quiet,
     }
 }
 
-/// How a member reaches the parent with a question. A quiet kind may send no
-/// message (MSG-3), so its question goes in its report file.
-fn ask_the_parent(kind: MemberKind) -> String {
-    let ask = match kind {
-        MemberKind::Reviewer | MemberKind::Closer | MemberKind::PlanReviewer => TOGETHER_ASK_REPORT,
-        MemberKind::Implementer | MemberKind::Investigator => TOGETHER_ASK_MESSAGE,
+/// Every member that talks sends every kind of information, to its own team
+/// and to other teams (MSG-1, MSG-20); a quiet member talks to no one.
+fn talking(kind: MemberKind, quiet: bool) -> String {
+    if quiet_parts(kind, quiet) {
+        TALKING_SILENT.to_owned()
+    } else {
+        [TALKING_HEAD, TALKING_INFO, TALKING_TAIL, TALKING_TEAMS].concat()
+    }
+}
+
+/// How a member reaches the parent with a question. A quiet member may send
+/// no message (MSG-3), so its question goes in its report file.
+fn ask_the_parent(kind: MemberKind, quiet: bool) -> String {
+    let ask = if quiet_parts(kind, quiet) {
+        TOGETHER_ASK_REPORT
+    } else {
+        TOGETHER_ASK_MESSAGE
     };
     [TOGETHER, ask].concat()
 }
@@ -118,10 +134,10 @@ pub fn render_contract(p: &ContractParts<'_>) -> String {
         head,
         kind_text(p.kind).to_owned(),
         scope(p.check, p.owns),
-        talking(p.kind)
+        talking(p.kind, p.quiet)
             .replace("{teamwire}", &bin)
             .replace("{team}", p.team.as_str()),
-        ask_the_parent(p.kind),
+        ask_the_parent(p.kind, p.quiet),
         HOW_TO_WORK.to_owned(),
         finish,
     ]
@@ -152,6 +168,7 @@ pub fn rewrite_contract(
         teamwire_bin,
         check: member.check.as_deref(),
         owns: &member.owns,
+        quiet: member.quiet,
     });
     let path = dirs.contract(role);
     write_file(platform, &path, text.as_bytes(), 0o644)?;

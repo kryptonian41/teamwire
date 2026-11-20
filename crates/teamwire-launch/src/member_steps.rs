@@ -299,6 +299,7 @@ pub(crate) fn write_contract(
         teamwire_bin: &launch.teamwire_bin,
         check: m.spec.check.as_deref(),
         owns: &m.spec.owns,
+        quiet: m.spec.quiet.unwrap_or(false),
     });
     write_file(
         ctx.platform,

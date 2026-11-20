@@ -37,6 +37,8 @@ fn member(check: &str, owns: &[&str]) -> Member {
         gate_told_generation: None,
         removed_at: None,
         removed_note: None,
+        quiet: false,
+        set: None,
     }
 }
 
@@ -51,6 +53,7 @@ fn rendered(home: &Path, team: &TeamName, m: &Member, bin: &Path) -> String {
         teamwire_bin: bin,
         check: m.check.as_deref(),
         owns: &m.owns,
+        quiet: m.quiet,
     })
 }
 
@@ -75,4 +78,27 @@ fn rewrite_contract_writes_the_new_scope() {
     assert_eq!(text, rendered(home.path(), &team, &new, bin));
     assert!(text.contains("cargo test -p b"), "{text}");
     assert!(!text.contains("cargo test -p a"), "{text}");
+}
+
+/// An amend rewrites the seat from the stored row, so a member whose spec
+/// set `quiet` keeps its quiet parts after the rewrite.
+#[test]
+fn rewrite_contract_keeps_a_quiet_members_quiet_parts() {
+    let home = TestHome::new().unwrap();
+    let team = TeamName::parse("demo").unwrap();
+    let bin = Path::new("/opt/x/teamwire");
+    let quiet = Member {
+        kind: MemberKind::Investigator,
+        mode: Mode::Pane,
+        quiet: true,
+        ..member("cargo test -p b", &[])
+    };
+    let platform = FakePlatform::new();
+    let path = rewrite_contract(&platform, home.path(), &team, &quiet, bin).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("You send no messages, and members do not message you"),
+        "{text}"
+    );
+    assert!(!text.contains("/opt/x/teamwire send"), "{text}");
 }
