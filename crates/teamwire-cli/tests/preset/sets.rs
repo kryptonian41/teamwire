@@ -75,8 +75,8 @@ fn the_set_example_names_no_real_model() {
     let section = set_section();
     for placeholder in [
         "\"model\": \"<newest Claude model>\"",
-        "\"model\": \"<provider>/<newest GPT model>\"",
-        "\"model\": \"<provider>/<newest Gemini model>\"",
+        "\"model\": \"<pi id of the newest GPT model>\"",
+        "\"model\": \"<pi id of the newest Gemini model>\"",
         "\"set\": \"revset\"",
         "\"harness\": \"claude-code\"",
         "\"harness\": \"pi\"",
@@ -158,18 +158,34 @@ fn the_skill_describes_set_and_quiet() {
 }
 
 /// The closing section and the reference show the money line, with a
-/// made-up role and the model as `<provider>/<model>`, since no file under
+/// made-up role and the model as `<vendor>/<model>`, since no file under
 /// `examples/` names a real model.
 #[test]
 fn the_skill_and_the_reference_show_the_money_line() {
     let line = "teamwire.member.cost{team=myteam,role=revb,kind=reviewer,\
-                model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd";
+                model=<vendor>/<model>,effort=high,task_class=judgement} 1.5878 usd";
     let skill = example("skills/teamwire/SKILL.md");
     let reference = example("skills/teamwire/reference.md");
     let (_, closing) = skill.split_once("## Closing a team down").unwrap();
     assert!(closing.contains(line), "{closing}");
     assert!(flat(closing).contains("read a missing line as not recorded, never as zero"));
     assert!(reference.contains(line));
+    // The two placeholders stand for two different strings, and each one
+    // says which.
+    assert!(flat(closing).contains(
+        "The `model` label is the model as pi's session file records it, `<vendor>/<model>`, \
+         without the `openrouter/` that the spec's id starts with."
+    ));
+    assert!(flat(&skill).contains(
+        "A pi id is the whole id that `teamwire models --harness pi` prints, with its provider \
+         first, such as `openrouter/<vendor>/<model>`."
+    ));
+    for text in [&skill, &reference] {
+        assert!(
+            !text.contains("<provider>"),
+            "a placeholder still reads <provider>"
+        );
+    }
     assert!(reference.contains("The counter `teamwire.member.cost`, unit `usd`"));
 }
 
@@ -312,6 +328,61 @@ fn the_decision_record_states_the_rules_of_a_set() {
         assert!(
             adr.contains(&format!(" {rule}. ")),
             "ADR 0061 lacks rule {rule}"
+        );
+    }
+}
+
+/// Each figure the note takes from Song and from Greptile says what the
+/// source measured, and the note keeps the paper's caveat on its own count.
+#[test]
+fn the_research_note_states_what_song_and_greptile_measured() {
+    let note = flat(&repo_doc("docs/research/2026-11-19-model-family-sets.md"));
+    for phrase in [
+        "The mixed pair's gain over the two Claude reviews has a Holm-adjusted p of .006.",
+        "Two GPT-5.4 reviews that saw only the artifact were compared with the mixed pair \
+         on the 29 artifacts with no failed session.",
+        "\"the classification is keyword-based and was not validated\"",
+        "measured the recall of high-severity bugs",
+        "about 2.0 and 3.2 percentage points",
+    ] {
+        assert!(note.contains(phrase), "the note lacks: {phrase}");
+    }
+    assert!(
+        !note.contains("2 to 3 points more"),
+        "the note still counts bugs"
+    );
+}
+
+/// Launch compares briefs only within one spec file, and reads an earlier
+/// reader's model from the record of its start. The set section tells the
+/// lead to launch the readers together, and each list of the warnings says
+/// the limit beside its code.
+#[test]
+fn the_two_limits_of_the_set_warnings_are_written_beside_them() {
+    let section = set_section();
+    for phrase in [
+        "Launch every reader of one set from one spec file.",
+        "teamwire stores no brief text.",
+        "never compares a reader added later with `--add` with an earlier one (`set_briefs_differ`)",
+        "two launches at the same time can miss two readers of one family (`set_same_family`)",
+    ] {
+        assert!(section.contains(phrase), "the set section lacks: {phrase}");
+    }
+    let row = |text: &str, code: &str| -> String {
+        text.lines()
+            .find(|l| l.starts_with(&format!("| `{code}` |")))
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let reference = example("skills/teamwire/reference.md");
+    let cli = repo_doc("docs/api/cli.md");
+    for (place, text) in [("reference.md", &reference), ("cli.md", &cli)] {
+        let briefs = row(text, "set_briefs_differ");
+        assert!(briefs.contains("no brief text"), "{place}: {briefs}");
+        let family = row(text, "set_same_family");
+        assert!(
+            family.contains("two launches at the same time can miss this warning"),
+            "{place}: {family}"
         );
     }
 }

@@ -517,8 +517,21 @@ A team that runs the same preset again, for another diff, renames the `set`
 label, all four roles and the report paths in the reconciler's task. Launch
 never uses a role twice in one team.
 
+Launch every reader of one set from one spec file. Launch can check two
+things only between readers of the spec file it launches:
+
+- **The briefs.** teamwire stores no brief text. So launch compares the
+  briefs of the readers in one spec file only, and never compares a reader
+  added later with `--add` with an earlier one (`set_briefs_differ`).
+- **The families.** Launch reads an earlier reader's model from the record
+  of its start. A reader whose launch has not finished yet has no model
+  there. So two launches at the same time can miss two readers of one
+  family (`set_same_family`).
+
 This spec adds a reviewer set to the team `myteam`. The model ids are
 placeholders: fill in the ids that `teamwire models --harness <id>` prints.
+A pi id is the whole id that `teamwire models --harness pi` prints, with its
+provider first, such as `openrouter/<vendor>/<model>`.
 The three readers share one `task_file`, so their briefs are the same file.
 
 ```json
@@ -532,11 +545,11 @@ The three readers share one `task_file`, so their briefs are the same file.
      "task_file": "/abs/path/briefs/review-set.md"},
     {"role": "revb", "title": "Review the diffs, reader b", "kind": "reviewer",
      "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
-     "harness": "pi", "model": "<provider>/<newest GPT model>", "effort": "<its highest level>",
+     "harness": "pi", "model": "<pi id of the newest GPT model>", "effort": "<its highest level>",
      "task_file": "/abs/path/briefs/review-set.md"},
     {"role": "revc", "title": "Review the diffs, reader c", "kind": "reviewer",
      "set": "revset", "mode": "pane", "task_class": "judgement", "cwd": "/abs/path/repo",
-     "harness": "pi", "model": "<provider>/<newest Gemini model>", "effort": "<its highest level>",
+     "harness": "pi", "model": "<pi id of the newest Gemini model>", "effort": "<its highest level>",
      "task_file": "/abs/path/briefs/review-set.md"}
   ]
 }
@@ -1281,10 +1294,12 @@ harness records money, which today means pi, also gets one money line per
 model, in dollars to 4 places:
 
 ```
-teamwire.member.cost{team=myteam,role=revb,kind=reviewer,model=<provider>/<model>,effort=high,task_class=judgement} 1.5878 usd
+teamwire.member.cost{team=myteam,role=revb,kind=reviewer,model=<vendor>/<model>,effort=high,task_class=judgement} 1.5878 usd
 ```
 
-A Claude Code member gets no money line, so read a missing line as not
+The `model` label is the model as pi's session file records it,
+`<vendor>/<model>`, without the `openrouter/` that the spec's id starts
+with. A Claude Code member gets no money line, so read a missing line as not
 recorded, never as zero.
 
 ```bash

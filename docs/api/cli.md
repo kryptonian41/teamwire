@@ -155,11 +155,11 @@ reconciler with no label.
 | Code | When | Text |
 | --- | --- | --- |
 | `set_too_small` | A set has one reader. | `set <label> has one reader (<role>); a set needs at least two` |
-| `set_same_family` | Two readers of one set have the same known family. | `set <label>: <role> and <role> are both <family> models; a set needs a different family per reader` |
+| `set_same_family` | Two readers of one set have the same known family. A stored reader's model comes from its newest `member.started` event, so a stored reader with no such event yet has no family, and two launches at the same time can miss this warning. | `set <label>: <role> and <role> are both <family> models; a set needs a different family per reader` |
 | `set_family_unknown` | A reader names no model, or its family is `unknown`. | `set <label>: cannot tell the family of <role> (<model or "no model">); check it by eye` |
 | `set_mixed_kinds` | Two readers of one set differ in kind. | `set <label>: <role> is a <kind> and <role> is a <kind>; the readers of a set share one kind` |
 | `set_reader_not_quiet` | A reader is not quiet. | `set <label>: <role> may send messages; give it "quiet": true so the readers stay independent` |
-| `set_briefs_differ` | Two readers of one set, both in the spec file, have different brief text (`task_file` content or `task`). | `set <label>: <role> and <role> have different briefs; the readers of a set get the same brief` |
+| `set_briefs_differ` | Two readers of one set, both in the spec file, have different brief text (`task_file` content or `task`). Launch stores no brief text, so a reader added by a later `--add` is never compared with a stored reader. | `set <label>: <role> and <role> have different briefs; the readers of a set get the same brief` |
 | `set_reconciler_alone` | A `reconciler` has no set label, or a label that no reader carries. | `<role> is a reconciler with no set to read` |
 | `set_reconciler_early` | A `reconciler` is launched while a reader of its set is in the same spec file, or is in the team with no completion of its current generation. One line per such reader. | `<role> reconciles set <label>, but <role> has not reported; add the reconciler after every reader has reported` |
 
