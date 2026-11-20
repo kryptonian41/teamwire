@@ -76,8 +76,8 @@ fn a_version_11_store_migrates_and_takes_dialog_events() {
     assert_eq!(before.len(), 3);
 
     let store = Store::open(home.path(), &team()).unwrap();
-    assert_eq!(SCHEMA_VERSION, 12);
-    assert_eq!(store.schema_version().unwrap(), 12);
+    assert_eq!(SCHEMA_VERSION, 13);
+    assert_eq!(store.schema_version().unwrap(), 13);
     drop(store);
     assert_eq!(event_rows(&path), before, "every event kept with its seq");
 

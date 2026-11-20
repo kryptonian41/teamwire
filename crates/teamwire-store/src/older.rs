@@ -4,7 +4,8 @@
 //! later version added is shown as NULL through a temporary view of the same
 //! name, so each reader runs its usual query. The views live in the
 //! connection's temp schema, which `SQLite` searches before `main`; the file
-//! is never written.
+//! is never written. A view has no rowid, so a reader that orders by rowid
+//! reads it from the `main` table.
 
 use std::collections::BTreeMap;
 
@@ -16,7 +17,7 @@ use crate::error::StoreError;
 /// The columns each migration adds, as (table, column): `ADDED_COLUMNS[i]`
 /// belongs to the step from version `i` to `i + 1`. Every added column is
 /// nullable or has a default the reader accepts NULL for (`team.refs` reads
-/// NULL as no refs). A step that does more than add such a column needs
+/// NULL as no refs, `members.quiet` reads NULL as not quiet). A step that does more than add such a column needs
 /// another way to be read unmigrated.
 const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
@@ -36,6 +37,8 @@ const ADDED_COLUMNS: [&[(&str, &str)]; SCHEMA_VERSION as usize] = [
     &[],
     // Version 12 rebuilds events with three more types and adds no column.
     &[],
+    // Version 13 rebuilds `members` with one more kind and two columns.
+    &[("members", "quiet"), ("members", "set_label")],
 ];
 
 /// Shows the columns that a database at version `db` lacks as NULL, on a

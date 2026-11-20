@@ -37,7 +37,7 @@ pub struct NewMember {
 
 const MEMBER_COLS: &str = "role, title, kind, mode, harness, host, place, session_id, cwd, repo, \
      branch, base, base_sha, check_cmd, owns, deadline_s, state, generation, gen_started_at, \
-     gate_told_generation, removed_at, removed_note";
+     gate_told_generation, removed_at, removed_note, quiet, set_label";
 
 fn member_from_row(row: &Row<'_>) -> Result<Member, String> {
     let host: HostId = parsed(row, 5, "host", HostId::parse)?;
@@ -51,6 +51,9 @@ fn member_from_row(row: &Row<'_>) -> Result<Member, String> {
     let deadline: i64 = col(row, 15)?;
     let generation: i64 = col(row, 17)?;
     let told: Option<i64> = col(row, 19)?;
+    // A read-only open of a database older than version 13 shows `quiet`
+    // as NULL: the member set no `quiet`.
+    let quiet: Option<i64> = col(row, 22)?;
     Ok(Member {
         role: parsed(row, 0, "role", Role::parse)?,
         title: col(row, 1)?,
@@ -79,6 +82,12 @@ fn member_from_row(row: &Row<'_>) -> Result<Member, String> {
             .transpose()?,
         removed_at: ts_opt(row, 20)?,
         removed_note: col(row, 21)?,
+        quiet: match quiet {
+            None | Some(0) => false,
+            Some(1) => true,
+            Some(other) => return Err(bad("quiet", other)),
+        },
+        set: col(row, 23)?,
     })
 }
 
@@ -560,10 +569,16 @@ impl ReadTx<'_> {
 
     /// Every member, removed ones included, in the order they were inserted.
     /// A damaged row is reported in `bad` and left out.
+    ///
+    /// The order is read from the stored table, because a read-only open of a
+    /// database older than version 13 reads `members` through a view
+    /// (`older.rs`), and a view has no rowid.
     pub fn members(&self) -> Result<Listing<Member>, StoreError> {
-        let mut stmt = self
-            .connection()
-            .prepare(&format!("SELECT {MEMBER_COLS} FROM members ORDER BY rowid"))?;
+        let mut stmt = self.connection().prepare(&format!(
+            "SELECT {MEMBER_COLS} FROM members
+             ORDER BY (SELECT stored.rowid FROM main.members AS stored
+                       WHERE stored.role = members.role)"
+        ))?;
         listing("members", &mut stmt, [], member_from_row)
     }
 
@@ -591,5 +606,6 @@ impl ReadTx<'_> {
     }
 }
 
+mod marks;
 #[cfg(test)]
 mod tests;

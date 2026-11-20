@@ -43,8 +43,10 @@ use crate::error::StoreError;
 /// `set_completion_final`, `announce_once`, `heartbeat_watch_lease`, the
 /// metric-export `claim_metric_export`, `commit_metric_export`,
 /// `release_metric_claim` (an event there would feed the export its own tail),
-/// and `set_member_scope`, whose record is the `CHECK AMENDED:` note stored in
-/// the same transaction (ADR 0046).
+/// `set_member_scope`, whose record is the `CHECK AMENDED:` note stored in
+/// the same transaction (ADR 0046), and `set_member_marks`, whose record is
+/// the `quiet` and `set` that launch puts in the data of the
+/// `member.creating` event it writes in the same transaction.
 ///
 /// Data a hook or a launch adds to events, with no new event type: a hook
 /// puts `hook_ms` in the data of the events it writes (the source of

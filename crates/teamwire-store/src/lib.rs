@@ -55,7 +55,7 @@ pub use verify::{NewVerifyRecord, VerifyRow, Waiver};
 pub use watch::{Announcement, LeaseOutcome, WatchLease};
 
 /// The schema version this binary writes.
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 
 /// The DDL of schema version 1.
 pub const SCHEMA_V1_SQL: &str = include_str!("schema/v1.sql");
@@ -105,6 +105,12 @@ pub const SCHEMA_V11_SQL: &str = include_str!("schema/v11.sql");
 /// The DDL that takes version 11 to 12: `events` rebuilt with the three
 /// permission-dialog types in its type list (ADR 0052).
 pub const SCHEMA_V12_SQL: &str = include_str!("schema/v12.sql");
+
+/// The DDL that takes version 12 to 13: `members` rebuilt with the
+/// `reconciler` kind in its CHECK list and the `quiet` and `set_label`
+/// columns. Every row is kept, and the foreign keys of other tables still
+/// name `members`.
+pub const SCHEMA_V13_SQL: &str = include_str!("schema/v13.sql");
 
 #[cfg(test)]
 mod tests {
