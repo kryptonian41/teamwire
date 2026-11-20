@@ -38,6 +38,8 @@ fn the_messages_section_says_what_a_receipt_is_and_what_a_long_reprompt_looks_li
         "`NOT SENT`",
         "no message id",
         "A reminder after a member's tool call is not reading",
+        "`m012 reprompt sent: api: handed_off, started generation 4`",
+        "`no generation started: api stays in generation 3`",
     ] {
         assert!(
             messages.contains(needed),
@@ -89,6 +91,8 @@ fn closing_names_the_checked_close_the_abandon_and_the_bare_close_refusal() {
         "A refused reprompt starts no generation",
         "`skipped` and `clean` are not results",
         "Never use `--abandon` to get past a refused send",
+        "Each member is checked on its own",
+        "an `--expect` of the member's older result does not answer that reprompt",
     ] {
         assert!(
             closing.contains(needed),

@@ -779,7 +779,9 @@ while the reprompt is unread, or read with no result recorded.
 A send succeeded only when its receipt names a message id and the target
 role. The CLI prints the id, then one line per recipient role with its
 delivery state. The `team_send` tool's text reads
-`m012 reprompt sent: api: handed_off, now generation 4`. A refused send
+`m012 reprompt sent: api: handed_off, started generation 4`. A reprompt
+that started no generation says `no generation started: api stays in
+generation 3`, and then the member is still on its old task. A refused send
 stores nothing and starts no generation. The tool's text then starts with
 `NOT SENT` and says there is no message id, and the CLI exits 1. Fix the
 call and send again. Never read the last error of a refused send as a
@@ -1137,6 +1139,13 @@ the reason, which close records as one of its steps. The two flags do not
 combine, and both are for a whole-team close. Never use `--abandon` to get past a
 refused send you meant to make: fix the send, wait for the result, then
 close.
+
+A close also refuses while a member's newest reprompt from you was refused,
+or started no generation because its delivery failed. Each member is
+checked on its own. A later note, a message to another member, or an
+`--expect` of the member's older result does not answer that reprompt. Send
+that member a new reprompt, check that its receipt says `started
+generation N`, wait for its result, then close.
 
 Close runs its steps in a safe order and stops at the first that fails.
 It refuses a busy member and uncommitted work, archives the team, and

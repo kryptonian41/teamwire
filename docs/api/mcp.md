@@ -116,8 +116,21 @@ holds. The user sends with `teamwire send --from user` (ADR 0040). A `reprompt` 
 when the lead's watch lease could not be read.
 
 The text names the id, the type and each recipient's state. A reprompt's
-text also names the generation it started for each member, as in
-`m014 reprompt sent: harness: handed_off, now generation 4`.
+text also names, for each member, the generation that this message started,
+read from its own start event (ADR 0059):
+
+| case | text after the state |
+| --- | --- |
+| started the member's current generation | `, started generation 4` |
+| started one, and the member has moved on since | `, started generation 4 (now in generation 5)` |
+| started none (delivery failed and the generation was given back, or a replayed key) | `, no generation started: harness stays in generation 3` |
+
+as in `m014 reprompt sent: harness: handed_off, started generation 4`. The
+structured content carries the same facts as `generations: [{"to":
+"harness", "started": 4, "current": 4}]`, with `started: null` when the
+message started none. A refused send's text starts `NOT SENT` and says no
+message was stored and no generation started. A refused `team_resend`'s
+text starts `NOT RESENT` and says the message is still stored.
 
 With a `key` already used by this sender, the output is the first message's,
 with `duplicate_of_key: true`. Only recipients still `pending` or

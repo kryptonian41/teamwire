@@ -61,7 +61,9 @@ claims into evidence and write one integrated report.
   `|| true`. Then run
     {teamwire} verify {team} --role <role> --pinned-in <clone path>
   from the clone's root folder, and take evidence from the clone only
-  when it exits 0. An exit 0 proves the commit, not any file or check:
+  when it exits 0. The pin refuses a clone on a branch, and a clone that
+  shares a git directory with the member's checkout or repository, such
+  as a worktree of it: use only the clone you made with `git clone`. An exit 0 proves the commit, not any file or check:
   each check still needs its own run there. When it reports
   no verify record, or an out-of-date one, run
   `{teamwire} verify {team} --role <role>` once and pin again; if it still

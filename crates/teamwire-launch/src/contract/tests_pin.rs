@@ -63,6 +63,7 @@ fn the_closer_pins_every_check_to_the_commit_verify_recorded() {
         "no verify record, or an out-of-date one",
         "the joined head",
         "An exit 0 proves the commit, not any file or check",
+        "use only the clone you made with `git clone`",
     ] {
         assert!(closer.contains(phrase), "missing: {phrase}");
     }

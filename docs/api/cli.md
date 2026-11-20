@@ -453,14 +453,21 @@ hash, not its bytes (STO-10).
 <verdict>); the clone at <DIR> is on that commit. This proves the commit
 only: each check still needs its own run there` when DIR is the root folder of
 a git checkout, DIR's HEAD is the head of R's newest verify record, and R's
-current HEAD is that head too. A removed member is pinned against its record
-alone. Otherwise it prints one `NOT PINNED: <why>` line per problem, then
+current HEAD is that head too. A removed worktree member's current HEAD is
+the tip of the branch its removal kept. Otherwise it prints one
+`NOT PINNED: <why>` line per problem, then
 `evidence from this clone is not evidence for the verified commit`, and exits
-1. The problems are: no verify record, a record older than R's current HEAD,
-R's checkout missing or not readable as its own root, DIR missing, DIR not a
-git checkout or a folder inside one, and DIR on another commit. A member with
-no record and no worktree prints `<role>: <why there is nothing to pin>` and
-exits 0. The closer runs it from its clone after
+1. The problems are: no verify record, a record older than R's current HEAD
+(for a removed member, a kept branch past the record, which verify never
+judged), R's checkout missing or not readable as its own root, DIR missing,
+DIR not a git checkout or a folder inside one, DIR on another commit, DIR on
+a branch rather than detached, and DIR sharing a git directory with R's
+checkout or R's recorded repository. Both recorded folders are read,
+whatever sits at R's old worktree path now. A DIR or a repository whose git
+directory cannot be read is refused, since the clone is then not proven
+separate. A pane member with a check and no record is refused. A pane member
+with no check, or a record whose head is `none`, prints
+`<role>: <why there is nothing to pin>` and exits 0. The closer runs it from its clone after
 `git checkout --quiet --detach <sha>`.
 
 ### `teamwire amend <team> --role R [--check CMD] [--owns PATTERN]... --reason TEXT`
@@ -647,6 +654,17 @@ older one had one, and names the lead's newest send when it was refused and
 no message was stored after it. An `--expect` naming a member accepts that
 member's outcome, and the refused send only when expectations name each of
 its recipients. A member with no result at all does not refuse.
+Without `--abandon`, the close also checks each started member's newest
+reprompt from the lead on its own, refused or stored. It refuses with
+`<role>'s newest reprompt from the lead was refused (...)` or
+`<role>'s newest reprompt from the lead, <id>, started no generation: ...`
+while that reprompt started no generation. `--expect` does not answer it,
+and neither does a later note, finding or reprompt to another member. A new
+reprompt to that member that starts its generation answers it, and the
+close then waits for that generation's result. A refused send with no type
+counts as a reprompt, and one that named no started member counts for each
+of them. `--expect` also refuses on a store with no team row, and is
+checked when a team closed with `--keep-state` is closed again.
 `--abandon WHY` closes the team as it is and records `closing as it is
 (--abandon): WHY` as a step. WHY must not be blank. `--expect` and `--abandon`
 do not combine, and neither works with `--role` or `--clear-stale-lock`. A
