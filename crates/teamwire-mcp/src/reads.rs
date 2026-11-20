@@ -33,8 +33,19 @@ pub(crate) fn run(
             if matches!(actor, Actor::Member(_)) {
                 view.lead = None;
             }
+            // The text names each member, as the structured view does: a
+            // model that reads only the text must see who is in which
+            // generation and state before it acts (ADR 0057).
+            let each: Vec<String> = view
+                .members
+                .iter()
+                .map(|m| format!("{}: {}, generation {}", m.role, m.state, m.generation))
+                .collect();
             Ok(Reply {
-                summary: format!("team {team}: {} member(s)", view.members.len()),
+                summary: listed(
+                    &format!("team {team}: {} member(s)", view.members.len()),
+                    &each,
+                ),
                 value: to_value(&view)?,
             })
         }
@@ -49,11 +60,23 @@ pub(crate) fn run(
                 Some(other) if other != team => roster_of(ctx, other)?,
                 _ => roster(ctx)?,
             };
+            let each: Vec<String> = entries
+                .iter()
+                .map(|e| {
+                    format!(
+                        "{} ({}, {}, generation {})",
+                        e.role, e.kind, e.lifecycle, e.generation
+                    )
+                })
+                .collect();
             Ok(Reply {
-                summary: format!(
-                    "team {}: {} member(s)",
-                    of.as_ref().unwrap_or(team),
-                    entries.len()
+                summary: listed(
+                    &format!(
+                        "team {}: {} member(s)",
+                        of.as_ref().unwrap_or(team),
+                        entries.len()
+                    ),
+                    &each,
                 ),
                 value: json!({ "members": to_value(&entries)? }),
             })
@@ -140,5 +163,14 @@ pub(crate) fn run(
             })
         }
         other => Err(ToolFailure::invalid(format!("no tool named {other}"))),
+    }
+}
+
+/// `head`, then each part after a colon, comma-separated.
+fn listed(head: &str, parts: &[String]) -> String {
+    if parts.is_empty() {
+        head.to_owned()
+    } else {
+        format!("{head}: {}", parts.join(", "))
     }
 }

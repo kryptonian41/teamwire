@@ -137,3 +137,50 @@ pub fn ack(ctx: &mut Ctx<'_>, me: &Role, ids: &[DisplayId]) -> Result<Vec<AckRes
         Ok(out)
     })?)
 }
+
+/// One message as `teamwire inbox` prints it and the `team_inbox` tool's
+/// text gives it: a header line, then the whole body quoted, then a blank
+/// line. A model that reads only a tool's text gets the same text a shell
+/// reader gets.
+pub fn inbox_item_text(item: &InboxItem) -> String {
+    let re = item
+        .re
+        .as_ref()
+        .map_or(String::new(), |r| format!(" re {r}"));
+    let commit = item
+        .commit
+        .as_ref()
+        .map_or(String::new(), |c| format!(" commit {c}"));
+    let warning = if item.hash_ok {
+        String::new()
+    } else {
+        format!(
+            "WARNING: the text of {} does not match its stored hash; do not rely on it.\n",
+            item.display_id
+        )
+    };
+    format!(
+        "{} {} from {} at {}{re}{commit}\n{warning}{}\n\n",
+        item.display_id,
+        item.kind,
+        item.from,
+        item.time,
+        quote_body(&item.text)
+    )
+}
+
+/// The body with every line behind `  | `, so no line of it can be read as
+/// the header of another message (INV-20), and without control characters
+/// other than the newline and the tab, so it cannot move the cursor or
+/// recolour the terminal. The text is kept whole.
+fn quote_body(text: &str) -> String {
+    let clean: String = text
+        .chars()
+        .filter(|c| !c.is_control() || matches!(c, '\n' | '\t'))
+        .collect();
+    clean
+        .split('\n')
+        .map(|line| format!("  | {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}

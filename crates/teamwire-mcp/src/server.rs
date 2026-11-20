@@ -39,11 +39,20 @@ fn success(reply: Reply) -> CallToolResult {
     result
 }
 
-fn refusal(failure: &ToolFailure) -> CallToolResult {
-    let mut result = CallToolResult::error(vec![ContentBlock::text(format!(
-        "{}: {}",
-        failure.code, failure.message
-    ))]);
+/// The text of a refused call. A refused send says first that nothing was
+/// sent: a lead once read the last error of a refused send as a receipt and
+/// went on to close the team (ADR 0057).
+fn refusal(failure: &ToolFailure, tool: &str) -> CallToolResult {
+    let text = match tool {
+        "team_send" | "team_resend" => format!(
+            "NOT SENT: {}: {}. No message was stored, no generation started, and there is no \
+             message id. Fix the call and send again; only a reply that names a message id and \
+             its recipient is a receipt.",
+            failure.code, failure.message
+        ),
+        _ => format!("{}: {}", failure.code, failure.message),
+    };
+    let mut result = CallToolResult::error(vec![ContentBlock::text(text)]);
     result.structured_content = Some(failure.to_json());
     result
 }
@@ -86,16 +95,17 @@ impl ServerHandler for McpServer {
         let env = Arc::clone(&self.env);
         let caller = Arc::clone(&self.caller);
         let name = request.name.to_string();
+        let tool_name = name.clone();
         let args = request.arguments.unwrap_or_default();
         let outcome =
             tokio::task::spawn_blocking(move || tools::call(&env, &caller, &name, args)).await;
         let result = match outcome {
             Ok(Ok(reply)) => success(reply),
-            Ok(Err(failure)) => refusal(&failure),
-            Err(e) => refusal(&ToolFailure::new(
-                "internal",
-                format!("the call did not finish: {e}"),
-            )),
+            Ok(Err(failure)) => refusal(&failure, &tool_name),
+            Err(e) => refusal(
+                &ToolFailure::new("internal", format!("the call did not finish: {e}")),
+                &tool_name,
+            ),
         };
         Ok(result.into())
     }

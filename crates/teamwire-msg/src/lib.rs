@@ -35,7 +35,7 @@ use teamwire_store::StoreError;
 use thiserror::Error;
 
 pub use directory::{TeamEntry, describe, roster_of, teams};
-pub use inbox::{ack, inbox};
+pub use inbox::{ack, inbox, inbox_item_text};
 pub use lead::{AdoptReport, adopt_lead};
 pub use lead_copy::adds_lead_copy;
 pub use log::{log, log_party};
