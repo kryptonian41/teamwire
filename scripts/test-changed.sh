@@ -16,8 +16,10 @@
 # each member that reads it from outside that member's directory. A member
 # reads a path when one of its .rs files holds a string literal that starts
 # with ../ (or /../) and that literal, resolved against the file's folder or
-# against the member's folder, names an existing file or folder outside the
-# member's folder. A changed file inside such a folder counts too. The script
+# against the member's folder, names a file or folder outside the member's
+# folder that exists or is itself a changed file. A changed file inside such
+# a folder counts too. A renamed file counts under its old and its new name,
+# so a deleted or renamed file still tests the member that names it. The script
 # works this out from the code on every run, so no list of crates is kept by
 # hand. Its limit: it cannot see a path that code builds in pieces, such as
 # join("examples").join("presets"); give such a path one literal.
@@ -170,8 +172,10 @@ FNR == 1 { state = "code" }
 }
 '
 
-# "<package> <path>" for each existing file or folder outside a member's
-# directory that a string literal of the member's Rust code names.
+# "<package> <path>" for each file or folder outside a member's directory
+# that a string literal of the member's Rust code names, and that exists or is
+# one of the changed files in $files. A deleted or renamed file no longer
+# exists, yet its reader must still be tested.
 reads_outside() {
   echo "$members" | while read -r dir name; do
     [ -n "$dir" ] || continue
@@ -180,7 +184,7 @@ reads_outside() {
     # shellcheck disable=SC2086
     awk -v member="$dir" -v pkg="$name" -v q="'" "$scan" $rs
   done | sort -u | while read -r pkg path; do
-    if [ -e "$path" ]; then
+    if [ -e "$path" ] || echo "$files" | grep -qxF -e "$path"; then
       echo "$pkg $path"
     fi
   done
@@ -215,7 +219,8 @@ else
   fi
   echo "test-changed: base: $base"
   base="$(git merge-base "$base" HEAD)" || exit 1
-  tracked="$(git diff --name-only "$base")" || exit 1
+  # --no-renames lists a rename as its old and its new name.
+  tracked="$(git diff --name-only --no-renames "$base")" || exit 1
   untracked="$(git ls-files --others --exclude-standard)" || exit 1
   files="$tracked
 $untracked"

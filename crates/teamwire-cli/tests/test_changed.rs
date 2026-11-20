@@ -126,3 +126,22 @@ fn a_file_flag_without_a_path_is_a_usage_error() {
         .expect("bash runs");
     assert_eq!(out.status.code(), Some(3));
 }
+
+/// A file of the repository that does not exist, named by a relative path
+/// as a reader of another crate's file names it. Under `docs/`, no crate
+/// reads a folder that holds it.
+const DELETED: &str = "../../docs/test-changed-deleted-file.md";
+
+/// A deleted or renamed file still tests the crate that names it: the script
+/// matches the old path, which no longer exists.
+#[test]
+fn a_deleted_file_tests_the_crate_that_names_it() {
+    let path = DELETED.trim_start_matches("../../");
+    let root = script()
+        .parent()
+        .and_then(Path::parent)
+        .expect("the script sits two folders below the root")
+        .join(path);
+    assert!(!root.exists(), "{} must not exist", root.display());
+    assert_eq!(changed(path), ["teamwire-cli"]);
+}

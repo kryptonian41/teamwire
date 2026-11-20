@@ -130,8 +130,10 @@ file also tests each crate that reads it from outside the crate's folder. A
 crate reads a path when one of its `.rs` files holds a string literal that
 starts with `../` (or `/../`, as after `env!("CARGO_MANIFEST_DIR")`), and that
 literal, resolved against the file's folder or against the crate's folder,
-names an existing file or folder outside the crate's folder. A changed file
-inside such a folder counts too. The script works this out from the code on
+names a file or folder outside the crate's folder that exists or is itself a
+changed file. A changed file inside such a folder counts too. A rename counts
+under its old and its new name, so a deleted or renamed file still tests the
+crate that names it. The script works this out from the code on
 each run, so it keeps no list of crates by hand. It cannot see a path that
 code builds in pieces, such as `join("examples").join("presets")`. A changed
 file that no crate holds or reads, such as `docs/api/cli.md`, tests nothing.
