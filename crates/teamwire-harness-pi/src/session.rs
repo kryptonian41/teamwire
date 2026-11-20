@@ -237,9 +237,10 @@ pub(crate) fn context_fill(file: &Path) -> Option<Fill> {
 /// (pi's `session-format.md`). pi writes each response once, as one entry
 /// with its own id, so each line counts once. `cost.total` is that reply's
 /// money in US dollars, rounded to whole millionths before it is added; a
-/// line without it adds no money. A `"type":"usage"` line repeats a reply's
-/// figures and is skipped. `None` when the file is missing, larger than
-/// `MAX_USAGE_BYTES`, or holds no assistant message.
+/// line without it adds no money. In real pi files only `message` lines
+/// hold a `cost`, and every line of another type is skipped. `None` when
+/// the file is missing, larger than `MAX_USAGE_BYTES`, or holds no
+/// assistant message.
 pub(crate) fn session_usage(file: &Path) -> Option<SessionUsage> {
     std::fs::metadata(file)
         .ok()

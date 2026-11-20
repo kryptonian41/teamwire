@@ -30,8 +30,8 @@ That table would name models and prices, and both change often.
    `cost_micro_usd`, whole millionths of a US dollar. A float would lose the
    type's `Eq` and `Copy`. The pi reader rounds each reply's figure to the
    nearest millionth before it adds the figure, over the same lines whose
-   tokens it counts. pi's `"type":"usage"` lines repeat a reply's figures
-   and are skipped.
+   tokens it counts. In real pi files only `message` lines hold a `cost`,
+   and the reader skips every line of another type.
 3. **The JSON keeps its old shape when there is no money.** The key is left
    out when it is 0, so a harness that records none writes the four token
    keys it wrote before. An event written before this change reads as no
