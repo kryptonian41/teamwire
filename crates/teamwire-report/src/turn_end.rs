@@ -18,6 +18,7 @@ use crate::final_message;
 use crate::note::{FIX_THEN_STOP, READ_THEN_STOP, gap_note, unread_note};
 use crate::paths::{report_file, team_dir};
 use crate::reminder::{mark_stopped, unread};
+use crate::reprompt_hold::{Corrective, owed};
 use crate::result_file::{MISSING_FROM_HARNESS, Rendered, write_current};
 
 /// The cap on a result line that ends with the no-watch note: the 1000
@@ -129,7 +130,13 @@ fn run(
 
     let mut check_error = None;
     if !t.hold_already_active {
-        let (note, error) = hold(ctx, &member, latest.as_ref(), started)?;
+        // The corrective hold is a backstop: a store it cannot read (a
+        // damaged reprompt) costs the hold, never the member's result.
+        let corrective = owed(ctx, &member, latest.as_ref()).unwrap_or_else(|e| {
+            tracing::warn!(error = %e, role = %member.role, "could not check the reprompt hold");
+            None
+        });
+        let (note, error) = hold(ctx, &member, latest.as_ref(), corrective.as_ref(), started)?;
         if let Some(note) = note {
             return Ok(TurnEndReply::Hold(note));
         }
@@ -203,12 +210,14 @@ fn late_final(
     Ok(())
 }
 
-/// The one hold a stop may get: report gaps (once per generation) and unread
-/// messages (once per message), in one note.
+/// The one hold a stop may get: report gaps (once per generation), unread
+/// messages (once per message) and the generation's corrective hold (once
+/// per generation, ADR 0059), in one note.
 fn hold(
     ctx: &mut Ctx<'_>,
     member: &Member,
     latest: Option<&CompletionRecord>,
+    corrective: Option<&Corrective>,
     started: std::time::Instant,
 ) -> Result<(Option<String>, Option<String>), StoreError> {
     // A `delivering` completion already passed the check before the crash.
@@ -220,22 +229,24 @@ fn hold(
         (teamwire_core::ReportGaps::default(), None)
     };
     let told = !gaps.is_empty();
-    let unread = unread(ctx, &member.role)?;
-    if !told && unread.is_empty() {
+    // A handoff or a question round not yet delivered goes to the lead at
+    // this stop: an unread message is left unread, and unreminded, for the
+    // next session or the next round, which reads it then.
+    let waits = latest.is_some_and(|r| {
+        matches!(
+            r.completion.report_state,
+            ReportState::Pending | ReportState::Delivering
+        ) && crate::reprompt_hold::waits_on_purpose(r)
+    });
+    let unread = if waits {
+        Vec::new()
+    } else {
+        unread(ctx, &member.role)?
+    };
+    if !told && unread.is_empty() && corrective.is_none() {
         return Ok((None, check_error));
     }
     let ids: Vec<String> = unread.iter().map(|u| u.display_id.clone()).collect();
-    let mut parts = Vec::new();
-    if told {
-        parts.push(gap_note(
-            &gaps,
-            &report_file(ctx, &member.role),
-            FIX_THEN_STOP,
-        ));
-    }
-    if !ids.is_empty() {
-        parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
-    }
     let at = ctx.clock.now();
     let mut data = json!({
         "hook": hook_name(&member.harness),
@@ -243,11 +254,25 @@ fn hold(
         "gaps": gaps,
         "unread": ids,
     });
-    if let (Some(error), Some(fields)) = (&check_error, data.as_object_mut()) {
+    if let (Some(fields), Some(error)) = (data.as_object_mut(), &check_error) {
         fields.insert("report_check_error".to_owned(), json!(error));
     }
     let recipient = teamwire_core::Recipient::Member(member.role.clone());
+    // The corrective hold is claimed in the write that records it: two
+    // stops of one generation that both found it owed run one after the
+    // other here, and only the first records it (ADR 0059).
     let held = ctx.store.write(|tx| {
+        let claimed = match corrective {
+            Some(_) => !crate::reprompt_hold::already_held(&tx.reader(), member)?,
+            None => false,
+        };
+        if !told && unread.is_empty() && !claimed {
+            return Ok(false);
+        }
+        let mut data = data.clone();
+        if let (Some(fields), Some(c), true) = (data.as_object_mut(), corrective, claimed) {
+            fields.insert("corrective".to_owned(), c.data());
+        }
         if told {
             tx.hold_member(at, &member.role, member.generation, &data)?;
         } else {
@@ -257,12 +282,32 @@ fn hold(
             // A message read since the list was made is left alone.
             tx.mark_reminded(at, &u.message, &recipient).ok();
         }
-        Ok(())
+        Ok(claimed)
     });
     // The member still hears the facts. With nothing recorded, the next
     // stop may hold once more, which is better than a result it never fixed.
-    if let Err(e) = held {
-        tracing::warn!(error = %e, role = %member.role, "could not record the hold");
+    let corrective = match held {
+        Ok(true) => corrective,
+        Ok(false) if !told && ids.is_empty() => return Ok((None, check_error)),
+        Ok(false) => None,
+        Err(e) => {
+            tracing::warn!(error = %e, role = %member.role, "could not record the hold");
+            corrective
+        }
+    };
+    let mut parts = Vec::new();
+    if told {
+        parts.push(gap_note(
+            &gaps,
+            &report_file(ctx, &member.role),
+            FIX_THEN_STOP,
+        ));
+    }
+    if let Some(c) = corrective {
+        parts.push(c.note());
+    }
+    if !ids.is_empty() {
+        parts.push(format!("{} {READ_THEN_STOP}", unread_note(&ids)));
     }
     Ok((Some(parts.join(" ")), check_error))
 }

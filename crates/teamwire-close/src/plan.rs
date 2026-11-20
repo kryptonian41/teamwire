@@ -20,6 +20,18 @@ pub fn plan_close_with(ctx: &Ctx<'_>, target: CloseTarget, opts: &CloseOpts) -> 
     if target == CloseTarget::Team
         && let Some((team, dir)) = crate::empty::nothing_recorded(ctx, opts)
     {
+        // A store with no member holds no result, so no expectation can
+        // hold, and the close must not delete it (ADR 0059).
+        if !opts.expect.is_empty() {
+            return ClosePlan {
+                refusals: opts
+                    .expect
+                    .iter()
+                    .map(|e| format!("--expect {e}: the team has no member {}", e.role))
+                    .collect(),
+                ..ClosePlan::default()
+            };
+        }
         return ClosePlan {
             steps: vec![crate::empty::plan(&team, &dir)],
             ..ClosePlan::default()
@@ -74,6 +86,14 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         plan.refusals
             .extend(facts::member_refusals(ctx, &team.name, members));
         plan.refusals.extend(crate::afk::report_refusal(ctx, team));
+        plan.refusals
+            .extend(crate::expect::outcome_refusals(ctx, team, members, opts));
+        if let Some(why) = &opts.abandon {
+            plan.steps.push(step(
+                "abandon",
+                format!("closing as it is (--abandon): {why}"),
+            ));
+        }
         let checked = live(members).count();
         plan.steps.push(step(
             "check",
@@ -89,6 +109,16 @@ fn team_plan(ctx: &Ctx<'_>, team: &TeamRow, members: &[Member], opts: &CloseOpts
         plan.steps.push(step(
             "lock",
             "take the close lock: launch, reprompt and removal wait",
+        ));
+    } else if !opts.expect.is_empty() {
+        // A closed team kept on disk still holds its results. Finishing its
+        // close deletes them, so a named expectation is checked here too
+        // (ADR 0059). The outcome checks of an open team do not apply: the
+        // team was already closed on purpose.
+        plan.refusals.extend(crate::expect::expectation_refusals(
+            ctx,
+            members,
+            &opts.expect,
         ));
     }
     let dest = archive::destination(ctx, &team.name, opts);

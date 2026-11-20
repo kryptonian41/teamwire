@@ -182,7 +182,7 @@ impl Seq<'_, '_> {
             }
         }
         self.done("lock", Ok(format!("close lock taken by pid {pid}")));
-        if !self.locked_steps() {
+        if !(self.recheck_outcome() && self.locked_steps()) {
             let step = self.report.stopped_at.clone().unwrap_or_default();
             self.give_up(&step);
             return;
@@ -202,6 +202,43 @@ impl Seq<'_, '_> {
         if let Err(e) = self.ctx.store.write(|tx| tx.finish_close(now, &end)) {
             tracing::warn!(step, error = %e, "the close lock could not be given back");
         }
+    }
+
+    /// The outcome checks again, now that the lock stops every new send and
+    /// reprompt (ADR 0059): a result that changed since the plan stops the
+    /// close before anything is taken away. An `--abandon` reason is
+    /// recorded here as its own step.
+    fn recheck_outcome(&mut self) -> bool {
+        (self.observer)("expect");
+        let refusals = match read(self.ctx) {
+            Ok((team, members)) => {
+                crate::expect::outcome_refusals(self.ctx, &team, &members, &self.opts)
+            }
+            Err(why) => vec![why],
+        };
+        if !refusals.is_empty() {
+            return self.done(
+                "expect",
+                Err(format!(
+                    "the world changed under the lock: {}",
+                    refusals.join("; ")
+                )),
+            );
+        }
+        if let Some(why) = self.opts.abandon.clone() {
+            return self.done(
+                "abandon",
+                Ok(format!("closing as it is (--abandon): {why}")),
+            );
+        }
+        if self.opts.expect.is_empty() {
+            return true;
+        }
+        let names: Vec<String> = self.opts.expect.iter().map(ToString::to_string).collect();
+        self.done(
+            "expect",
+            Ok(format!("results as expected: {}", names.join(", "))),
+        )
     }
 
     /// Archive, verify, remove worktrees, close places, release the hold, and

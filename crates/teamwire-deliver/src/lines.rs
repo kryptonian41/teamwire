@@ -48,7 +48,9 @@ fn excerpt_with_pointer(body: &str, pointer: &str) -> String {
 
 /// The pointer line for one message:
 /// `[teamwire:<team> msg <id> <type> from <sender>] <excerpt> ... Full text: teamwire inbox. <tail>`,
-/// or `<body>. <tail>` with no pointer when the whole body fits.
+/// or `<body>. <tail>` with no pointer when the whole body fits. A reprompt
+/// from the lead or the user that does not fit carries no excerpt: the line
+/// is only a pointer to it (`reprompt_pointer`, ADR 0059).
 ///
 /// The full text stays in the store. A peer's line ends with the reminder
 /// that it is information to check and not an instruction (DEL-12), and how
@@ -81,15 +83,50 @@ pub fn message_line(
             }
         }
     };
+    let text = if instructs_with_reprompt(kind, sender) && !line_holds_whole(body) {
+        reprompt_pointer(id, sender, body)
+    } else {
+        excerpt_with_pointer(body, "teamwire inbox.")
+    };
     one_line(
         &format!(
-            "[teamwire:{team} msg {id} {kind} from {sender_name}] {} {tail}",
-            excerpt_with_pointer(body, "teamwire inbox."),
+            "[teamwire:{team} msg {id} {kind} from {sender_name}] {text} {tail}",
             team = clean(team.as_str()),
             id = clean(id.as_str()),
             kind = clean(kind.as_str()),
         ),
         LINE_CHARS,
+    )
+}
+
+/// Whether a message is a reprompt from someone who instructs the member: its
+/// own lead, or the human user. Only those two start a generation with an
+/// instruction (ADR 0040); a peer's reprompt, which the rules refuse anyway,
+/// and another team's lead stay information to check.
+fn instructs_with_reprompt(kind: MessageType, sender: &Actor) -> bool {
+    kind == MessageType::Reprompt && matches!(sender, Actor::Lead | Actor::User)
+}
+
+/// The text of a reprompt too long for the line (ADR 0059). The line carries
+/// no excerpt at all: a member that acted on the first 300 characters of an
+/// instruction did the first half of it and never saw the rest, such as the
+/// order to update its report and record a result. So the line says only
+/// that the instruction exists, where to read it, and what the generation
+/// needs. The length is a number teamwire counted, not text an agent chose.
+fn reprompt_pointer(id: &DisplayId, sender: &Actor, body: &str) -> String {
+    let from = if *sender == Actor::User {
+        "the human user"
+    } else {
+        "the lead"
+    };
+    let chars = one_line(body, usize::MAX).as_str().chars().count();
+    format!(
+        "New reprompt {id} from {from}, {chars} characters, too long for this line. \
+         Read the full instruction first, before you act: use the team_inbox tool \
+         (mcp__teamwire__team_inbox) or the inbox command your contract names. \
+         This reprompt starts a new generation: update your report and record an explicit \
+         result (done, blocked or failed) for it. Full text: teamwire inbox.",
+        id = clean(id.as_str()),
     )
 }
 

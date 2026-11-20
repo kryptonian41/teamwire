@@ -165,7 +165,9 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
    submitted:
    `[teamwire:tw msg m014 finding from specmsg] <excerpt> ... Full text: teamwire inbox. <tail>`,
    or `<body>. <tail>` with no pointer when the whole body fits in the
-   300-character excerpt (ADR 0021). Host success marks `handed_off`. A stall or timeout marks `unconfirmed`
+   300-character excerpt (ADR 0021). A reprompt from the lead or the user
+   that is longer than 300 characters is typed as a pointer with none of its
+   body, naming its id and asking for an inbox read first (ADR 0059). Host success marks `handed_off`. A stall or timeout marks `unconfirmed`
    and is not retried. A "not submitted" code is tried at most 3 times (2
    retries) in about 5 seconds, then marks `undelivered`.
 5. **Remind.** If the recipient was working, its PostToolUse hook reminds it
@@ -173,7 +175,9 @@ A message from `specmsg` (investigator) to `harness` (investigator), type
    unread messages (ADR 0003, point 8). A `handed_off` message whose typed
    line held the whole body is not unread (ADR 0021). For the watch and
    `status` only, neither is one the member recorded a completion after
-   (ADR 0022).
+   (ADR 0022). Once per generation, the Stop hook also holds a member whose
+   generation's reprompt is unread and was clipped, or read with no result
+   recorded, even after a tool-hook reminder (ADR 0059).
 6. **Read.** The recipient calls `teamwire inbox` or `team_inbox`, which
    checks each body's hash, returns unread messages oldest first, and marks
    them `acked`.
@@ -187,7 +191,9 @@ the `done` call stores the completion; the member's Stop hook checks the
 report once, writes the result file, marks `delivering`, locates the lead,
 types one line, and records the outcome. A completion the lead could not
 receive becomes `undelivered`, and the watch prints `UNDELIVERED` once with
-the result path.
+the result path. A whole-team close refuses a started member's blocked,
+failed or unfinished current generation unless the lead names that result
+with `--expect` or closes on purpose with `--abandon` (ADR 0059).
 
 A message to another team's agent (`--to db@billing`) is stored twice under
 one ULID (ADR 0016). The sender's copy is stored as in step 2, with a row for

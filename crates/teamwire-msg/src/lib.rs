@@ -35,7 +35,7 @@ use teamwire_store::StoreError;
 use thiserror::Error;
 
 pub use directory::{TeamEntry, describe, roster_of, teams};
-pub use inbox::{ack, inbox};
+pub use inbox::{ack, inbox, inbox_item_text};
 pub use lead::{AdoptReport, adopt_lead};
 pub use lead_copy::adds_lead_copy;
 pub use log::{log, log_party};
@@ -43,7 +43,7 @@ pub use prove::prove_actor;
 pub use resend::resend;
 pub use roster::{RosterEntry, roster};
 pub use send::{
-    Stored, parse_type_logged, prove_actor_logged, record_refusal, send, send_with,
+    Stored, parse_type_logged, prove_actor_logged, record_invalid, record_refusal, send, send_with,
     send_with_write, watch_running,
 };
 pub use teamwire_store::token_hash;
