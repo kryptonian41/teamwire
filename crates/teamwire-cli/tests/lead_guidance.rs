@@ -12,7 +12,7 @@ fn example(path: &str) -> String {
             .join("../../examples")
             .join(path),
     )
-    .unwrap();
+    .unwrap_or_else(|e| unreachable!("cannot read examples/{path}: {e}"));
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
